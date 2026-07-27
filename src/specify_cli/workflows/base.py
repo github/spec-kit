@@ -56,6 +56,9 @@ class StepContext:
     #: Current fan-out item (set only inside fan-out iterations).
     item: Any = None
 
+    #: Whether the current step is executing inside a fan-out template.
+    inside_fan_out: bool = False
+
     #: Fan-in aggregated results (set only for fan-in steps).
     fan_in: dict[str, Any] = field(default_factory=dict)
 

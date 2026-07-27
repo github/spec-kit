@@ -315,13 +315,14 @@ def _validate_steps(
     seen_ids: set[str],
     errors: list[str],
     input_names: set[str] | None = None,
+    inside_fan_out: bool = False,
 ) -> None:
     """Recursively validate a list of steps.
 
     ``input_names`` is the set of declared workflow input names (or ``None``
-    when the inputs block is malformed). Threaded through recursion so
-    cross-reference checks (e.g. gate ``verdict_input``) can verify that
-    referenced inputs exist.
+    when the inputs block is malformed). ``inside_fan_out`` is threaded
+    through nested control-flow steps so gate verdict bindings can be rejected
+    anywhere inside a fan-out template.
     """
     from . import STEP_REGISTRY
 
@@ -415,52 +416,73 @@ def _validate_steps(
                             f"unknown or not-yet-declared step id {wid!r}."
                         )
 
-        # Gate verdict_input: must reference a declared workflow input.
-        # ``_resolve_inputs`` iterates only over ``definition.inputs`` — a
-        # provided value for an undeclared name is silently dropped at both
-        # initial run and resume (resume merges then re-resolves through the
-        # same path). So an undeclared ``verdict_input`` can never receive a
-        # value through any channel; the gate would pause forever. Surface
-        # this wiring error at validation time, mirroring the fan-in
-        # ``wait_for`` unknown-id check above. Only check when the value is
-        # a non-empty string — malformed shapes are already reported by
-        # ``GateStep.validate()``; never pile on a confusing duplicate.
-        if step_type == "gate" and input_names is not None:
+        # Gate verdict_input: fan-out items cannot bind shared workflow inputs
+        # as per-item verdicts. Outside fan-out, the binding must reference a
+        # declared workflow input because ``_resolve_inputs`` drops undeclared
+        # names at both initial run and resume. Only check a non-empty string;
+        # malformed shapes are already reported by ``GateStep.validate()``.
+        if step_type == "gate":
             verdict_input = step_config.get("verdict_input")
-            if (
-                isinstance(verdict_input, str)
-                and verdict_input
-                and verdict_input not in input_names
-            ):
-                errors.append(
-                    f"Gate step {step_id!r}: 'verdict_input' references "
-                    f"undeclared input {verdict_input!r}."
-                )
+            if isinstance(verdict_input, str) and verdict_input:
+                if inside_fan_out:
+                    errors.append(
+                        f"Gate step {step_id!r}: 'verdict_input' is not "
+                        "supported inside fan-out templates."
+                    )
+                elif input_names is not None and verdict_input not in input_names:
+                    errors.append(
+                        f"Gate step {step_id!r}: 'verdict_input' references "
+                        f"undeclared input {verdict_input!r}."
+                    )
 
         # Recursively validate nested steps
         for nested_key in ("then", "else", "steps"):
             nested = step_config.get(nested_key)
             if isinstance(nested, list):
-                _validate_steps(nested, seen_ids, errors, input_names)
+                _validate_steps(
+                    nested,
+                    seen_ids,
+                    errors,
+                    input_names,
+                    inside_fan_out=inside_fan_out,
+                )
 
         # Validate switch cases
         cases = step_config.get("cases")
         if isinstance(cases, dict):
             for _case_key, case_steps in cases.items():
                 if isinstance(case_steps, list):
-                    _validate_steps(case_steps, seen_ids, errors, input_names)
+                    _validate_steps(
+                        case_steps,
+                        seen_ids,
+                        errors,
+                        input_names,
+                        inside_fan_out=inside_fan_out,
+                    )
 
         # Validate switch default
         default = step_config.get("default")
         if isinstance(default, list):
-            _validate_steps(default, seen_ids, errors, input_names)
+            _validate_steps(
+                default,
+                seen_ids,
+                errors,
+                input_names,
+                inside_fan_out=inside_fan_out,
+            )
 
         # Validate fan-out nested step (template — not added to seen_ids
         # since the engine generates parentId:templateId:index at runtime)
         fan_step = step_config.get("step")
         if isinstance(fan_step, dict):
             fan_errors: list[str] = []
-            _validate_steps([fan_step], set(), fan_errors, input_names)
+            _validate_steps(
+                [fan_step],
+                set(),
+                fan_errors,
+                input_names,
+                inside_fan_out=True,
+            )
             errors.extend(fan_errors)
 
 
@@ -1332,11 +1354,18 @@ class WorkflowEngine:
         # Sequential path — identical to the historical behavior.
         if workers <= 1:
             results: list[Any] = []
-            for item_idx, item_val in enumerate(items):
-                context.item = item_val
-                results.append(run_item(item_idx, context))
-                if state.status in halting:
-                    break
+            previous_item = context.item
+            previous_inside_fan_out = context.inside_fan_out
+            context.inside_fan_out = True
+            try:
+                for item_idx, item_val in enumerate(items):
+                    context.item = item_val
+                    results.append(run_item(item_idx, context))
+                    if state.status in halting:
+                        break
+            finally:
+                context.item = previous_item
+                context.inside_fan_out = previous_inside_fan_out
             return results
 
         # Concurrent path — bounded sliding window; results assembled in item order.
@@ -1347,7 +1376,14 @@ class WorkflowEngine:
             # Each item runs against its own context copy so context.item is not
             # clobbered across threads; the shared steps dict is written only on the
             # disjoint parentId:templateId:index key (GIL-safe on distinct keys).
-            return run_item(idx, dataclasses.replace(context, item=items[idx]))
+            return run_item(
+                idx,
+                dataclasses.replace(
+                    context,
+                    item=items[idx],
+                    inside_fan_out=True,
+                ),
+            )
 
         def item_halt_status(idx: int) -> RunStatus | None:
             # If THIS item's own execution halted the run, return the resulting run

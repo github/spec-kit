@@ -2240,6 +2240,28 @@ class TestGateStep:
         assert result.status == StepStatus.FAILED
         assert error_fragment in (result.error or "")
 
+    def test_verdict_input_fails_inside_fan_out_context(self):
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        result = GateStep().execute(
+            {
+                "id": "review",
+                "message": "Review the item.",
+                "options": ["approve", "reject"],
+                "verdict_input": "spec_verdict",
+            },
+            StepContext(
+                inputs={"spec_verdict": "approve"},
+                inside_fan_out=True,
+            ),
+        )
+
+        assert result.status == StepStatus.FAILED
+        assert "'verdict_input' is not supported inside fan-out" in (
+            result.error or ""
+        )
+
     @pytest.mark.parametrize(
         ("value", "error_fragment"),
         [(42, "must be a string"), ("maybe", "does not match")],
@@ -3536,6 +3558,36 @@ class TestFanOutConcurrency:
         results, _ = self._run(tmp_path, items, 6)
         assert [r["seen"]["id"] for r in results] == [f"x{i}" for i in range(6)]
 
+    @pytest.mark.parametrize("max_concurrency", [1, 2])
+    def test_marks_item_context_as_inside_fan_out(self, tmp_path, max_concurrency):
+        from specify_cli.workflows.base import StepBase, StepResult, StepStatus
+
+        class _ContextProbeStep(StepBase):
+            type_key = "context-probe"
+
+            def execute(self, config, context):
+                return StepResult(
+                    status=StepStatus.COMPLETED,
+                    output={"inside_fan_out": context.inside_fan_out},
+                )
+
+        engine, context, state, _registry, _template = self._build(tmp_path)
+        results = engine._run_fan_out(
+            ["a", "b"],
+            {"id": "probe", "type": "context-probe"},
+            "fan",
+            context,
+            state,
+            {"context-probe": _ContextProbeStep()},
+            max_concurrency,
+        )
+
+        assert results == [
+            {"inside_fan_out": True},
+            {"inside_fan_out": True},
+        ]
+        assert context.inside_fan_out is False
+
     def test_empty_items(self, tmp_path):
         results, _ = self._run(tmp_path, [], 4)
         assert results == []
@@ -4323,7 +4375,64 @@ steps:
         )
 
     def test_verdict_input_in_fan_out_template(self):
-        # Recursion coverage: bad reference inside a fan-out step template.
+        # Fan-out items share workflow inputs, so a bound verdict would be
+        # consumed by multiple item gates with undefined pause/resume semantics.
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+inputs:
+  spec_verdict:
+    type: string
+    default: ""
+steps:
+  - id: fan
+    type: fan-out
+    items: [a, b]
+    step:
+      id: review
+      type: gate
+      message: "Review?"
+      options: [approve, reject]
+      verdict_input: spec_verdict
+""")
+        assert any(
+            "'verdict_input' is not supported inside fan-out templates" in e
+            for e in errors
+        )
+
+    def test_verdict_input_nested_inside_fan_out_template(self):
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+inputs:
+  spec_verdict:
+    type: string
+    default: ""
+steps:
+  - id: fan
+    type: fan-out
+    items: [a, b]
+    step:
+      id: maybe-review
+      type: if
+      condition: "{{ item }}"
+      then:
+        - id: review
+          type: gate
+          message: "Review?"
+          options: [approve, reject]
+          verdict_input: spec_verdict
+""")
+        assert any(
+            "'verdict_input' is not supported inside fan-out templates" in e
+            for e in errors
+        )
+
+    def test_gate_without_verdict_input_in_fan_out_template_passes(self):
         errors = self._errors("""
 workflow:
   id: wf
@@ -4338,11 +4447,9 @@ steps:
       type: gate
       message: "Review?"
       options: [approve, reject]
-      verdict_input: ghost_input
 """)
-        assert any(
-            "'verdict_input' references undeclared input 'ghost_input'" in e
-            for e in errors
+        assert not any(
+            "not supported inside fan-out templates" in e for e in errors
         )
 
     def test_malformed_inputs_block_no_cascade(self):

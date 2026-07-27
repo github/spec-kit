@@ -532,6 +532,11 @@ This enables `specify workflow resume` to continue from the exact step where a r
 
 `verdict_input` binds a gate's verdict to a named workflow input. The input must be declared in the workflow's `inputs` block; `specify workflow validate` reports an undeclared reference.
 
+`verdict_input` is not supported inside a `fan-out` template. Fan-out items
+share workflow inputs, while workflow state can represent only one paused
+gate. Place a gate before the fan-out to approve the whole batch, or after a
+fan-in to review the aggregated results.
+
 **Input value semantics:**
 
 | Value | Behavior |

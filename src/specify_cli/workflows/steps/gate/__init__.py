@@ -86,6 +86,15 @@ class GateStep(StepBase):
                 ),
             )
 
+        if has_verdict_input and context.inside_fan_out:
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Gate step {config.get('id', '?')!r}: 'verdict_input' is "
+                    "not supported inside fan-out templates."
+                ),
+            )
+
         show_file = config.get("show_file")
         if isinstance(show_file, str) and "{{" in show_file:
             show_file = evaluate_expression(show_file, context)
