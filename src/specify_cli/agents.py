@@ -270,7 +270,7 @@ class CommandRegistrar:
         return text
 
     def render_markdown_command(
-        self, frontmatter: dict, body: str, source_id: str, context_note: str = None
+        self, frontmatter: dict, body: str, source_id: str, context_note: Optional[str] = None
     ) -> str:
         """Render command in Markdown format.
 
@@ -597,7 +597,7 @@ class CommandRegistrar:
         source_id: str,
         source_dir: Path,
         project_root: Path,
-        context_note: str = None,
+        context_note: Optional[str] = None,
         _resolved_dir: Path = None,
         link_outputs: bool = False,
         extension_id: Optional[str] = None,
@@ -1016,7 +1016,7 @@ class CommandRegistrar:
         source_id: str,
         source_dir: Path,
         project_root: Path,
-        context_note: str = None,
+        context_note: Optional[str] = None,
         link_outputs: bool = False,
         create_missing_active_skills_dir: bool = False,
         extension_id: Optional[str] = None,
