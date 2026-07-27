@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-24T00:00:00Z",
+  "updated_at": "2026-07-27T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -2075,11 +2075,11 @@
       "id": "linear-weave",
       "description": "Weave Spec Kit into Linear: pull requirements, mirror tasks.md into sub-issues, sync statuses.",
       "author": "Tony Woodhouse",
-      "version": "1.0.0",
-      "download_url": "https://github.com/tonydwoodhouse/spec-kit-linear-weave/archive/refs/tags/v1.0.0.zip",
+      "version": "1.0.1",
+      "download_url": "https://github.com/tonydwoodhouse/spec-kit-linear-weave/archive/refs/tags/v1.0.1.zip",
       "repository": "https://github.com/tonydwoodhouse/spec-kit-linear-weave",
       "homepage": "https://github.com/tonydwoodhouse/spec-kit-linear-weave",
-      "documentation": "https://github.com/tonydwoodhouse/spec-kit-linear-weave#readme",
+      "documentation": "https://github.com/tonydwoodhouse/spec-kit-linear-weave/blob/main/README.md",
       "changelog": "https://github.com/tonydwoodhouse/spec-kit-linear-weave/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "integration",
@@ -2102,7 +2102,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-21T00:00:00Z",
-      "updated_at": "2026-07-21T00:00:00Z"
+      "updated_at": "2026-07-27T00:00:00Z"
     },
     "loop": {
       "name": "Loop Engineering",
