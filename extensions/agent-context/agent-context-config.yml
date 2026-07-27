@@ -1,20 +1,24 @@
 # Coding Agent Context Extension Configuration
-# These values are populated automatically by `specify init` and
-# `specify integration use` / `specify integration install`.
 
-# Path (relative to the project root) to the default coding agent context file
-# managed by this extension (e.g. CLAUDE.md, AGENTS.md,
-# .github/copilot-instructions.md). Set automatically from the active
-# integration and regenerated during `specify init` or integration switches.
+# WHAT: The single agent context file relative to the project root (the directory containing .specify/). Absolute paths, backslash separators, and `..` path segments are rejected.
+# REQUIREMENT: OPTIONAL. Use this if you want to manually specify a single context file. If you leave this entry blank, it will use the default context file for the coding agent you picked when you set up Spec Kit. See `agent-context-defaults.json` for the defaults.
+# EXAMPLE: context_file: CLAUDE.md
 context_file: ""
 
-# Optional list of project-relative coding agent context files managed by this
-# extension. When non-empty, this list takes precedence over `context_file`.
-# Use this for projects that intentionally keep multiple agent anchors in sync.
+# WHAT: List of agent context files relative to the project root (the directory containing .specify/). If you have both `context_file` and `context_files` filled, then this (`context_files`) takes precedence. Absolute paths, backslash separators, and `..` path segments are rejected.
+# REQUIREMENT: OPTIONAL. Use this if your project requires you to keep multiple agent context files in sync.
+# EXAMPLE:
+# context_files:
+#   - AGENTS.md
+#   - CLAUDE.md
 context_files: []
 
-# Delimiters for the managed Spec Kit section.
-# Edit these to use custom markers.
+# WHAT: Markers (delimiters) for the managed Spec Kit section. This extension injects information only between these markers.
+# REQUIREMENT: OPTIONAL. Only change if you wish to have a custom marker name.
+# EXAMPLE:
+# context_markers:
+#   start: "<!-- AGENT SPEC KIT CONTEXT START -->"
+#   end: "<!-- AGENT SPEC KIT CONTEXT END -->"
 context_markers:
   start: "<!-- SPECKIT START -->"
   end: "<!-- SPECKIT END -->"

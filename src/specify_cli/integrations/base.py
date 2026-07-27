@@ -14,6 +14,7 @@ Provides:
 from __future__ import annotations
 
 import os
+import platform
 import re
 import shlex
 import shutil
@@ -669,6 +670,46 @@ class IntegrationBase(ABC):
         return sys.executable or "python3"
 
     @staticmethod
+    def build_python_invocation(
+        script_command: str, project_root: Path | None = None
+    ) -> str:
+        """Build a Python script command for the current platform shell."""
+        interpreter = IntegrationBase.resolve_python_interpreter(project_root)
+        if os.name == "nt" and not re.fullmatch(r"[A-Za-z0-9_./:\\-]+", interpreter):
+            quoted_interpreter = interpreter.replace("'", "''")
+            interpreter = f"& '{quoted_interpreter}'"
+        elif os.name != "nt":
+            interpreter = shlex.quote(interpreter)
+        return f"{interpreter} {script_command}"
+
+    @staticmethod
+    def select_script_variant(
+        requested: object, script_commands: dict[str, str]
+    ) -> str:
+        """Select the requested variant or a runnable platform fallback."""
+        if isinstance(requested, str) and requested in script_commands:
+            return requested
+
+        platform_variant = (
+            "ps" if platform.system().lower().startswith("win") else "sh"
+        )
+        secondary_variant = "sh" if platform_variant == "ps" else "ps"
+        fallbacks = (
+            (platform_variant, "py")
+            if requested == "py"
+            else (platform_variant, secondary_variant, "py")
+        )
+        for candidate in fallbacks:
+            if candidate in script_commands:
+                return candidate
+
+        available = ", ".join(sorted(script_commands)) or "none"
+        raise ValueError(
+            "No runnable script variant for this platform: "
+            f"requested {requested!r}; available: {available}"
+        )
+
+    @staticmethod
     def _interpreter_runs(path: str) -> bool:
         """Return True when *path* executes as a Python interpreter.
 
@@ -702,7 +743,8 @@ class IntegrationBase(ABC):
         """Process a raw command template into agent-ready content.
 
         Performs the same transformations as the release script:
-        1. Extract ``scripts.<script_type>`` value from YAML frontmatter
+        1. Select ``scripts.<script_type>`` from YAML frontmatter, falling
+           back to a runnable platform shell or Python variant when unavailable
         2. Replace ``{SCRIPT}`` with the extracted script command
         3. Strip ``scripts:`` section from frontmatter
         4. Replace ``{ARGS}`` and ``$ARGUMENTS`` with *arg_placeholder*
@@ -711,37 +753,46 @@ class IntegrationBase(ABC):
         7. Replace ``__SPECKIT_COMMAND_<NAME>__`` with invocation strings
         """
         # 1. Extract script command from frontmatter
-        script_command = ""
-        script_pattern = re.compile(
-            rf"^\s*{re.escape(script_type)}:\s*(.+)$", re.MULTILINE
-        )
+        script_commands: dict[str, str] = {}
+        script_pattern = re.compile(r"^\s*([A-Za-z0-9_-]+):\s*(.+)$")
         # Find the scripts: block
+        in_frontmatter = False
         in_scripts = False
         for line in content.splitlines():
-            if line.strip() == "scripts:":
+            if line == "---":
+                if in_frontmatter:
+                    break
+                in_frontmatter = True
+                continue
+            if not in_frontmatter:
+                continue
+            if line == "scripts:":
                 in_scripts = True
                 continue
             if in_scripts and line and not line[0].isspace():
-                in_scripts = False
+                break
             if in_scripts:
                 m = script_pattern.match(line)
                 if m:
-                    script_command = m.group(1).strip()
-                    break
+                    script_commands[m.group(1)] = m.group(2).strip()
+
+        selected_script_type = (
+            IntegrationBase.select_script_variant(script_type, script_commands)
+            if script_commands
+            else ""
+        )
+
+        script_command = script_commands.get(selected_script_type, "")
 
         # 2. Replace {SCRIPT}
         if script_command:
             # For the Python script type, prefix the resolved interpreter so
             # the command is portable (``.py`` files are not directly
             # executable on Windows).
-            if script_type == "py":
-                interpreter = IntegrationBase.resolve_python_interpreter(project_root)
-                # Quote the interpreter if it contains whitespace (e.g. an
-                # absolute ``sys.executable`` path under Windows
-                # ``Program Files``) so it isn't split into multiple args.
-                if any(ch.isspace() for ch in interpreter):
-                    interpreter = f'"{interpreter}"'
-                script_command = f"{interpreter} {script_command}"
+            if selected_script_type == "py":
+                script_command = IntegrationBase.build_python_invocation(
+                    script_command, project_root
+                )
             content = content.replace("{SCRIPT}", script_command)
 
         # 3. Strip scripts: section from frontmatter

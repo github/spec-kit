@@ -2,11 +2,12 @@
 
 Network isolation contract (SC-004 / FR-014): every test that exercises
 `specify self check` or `_fetch_latest_release_tag()` MUST mock the outbound
-urllib path it expects (`urlopen` for unauthenticated requests, `build_opener`
-for authenticated requests) so no real outbound call ever reaches api.github.com.
-Tests for non-network `self upgrade` behavior should keep that contract explicit
-with local mocks. Run this module under `pytest-socket` (if installed) with
-`--disable-socket` as an extra safety net.
+urllib path so no real call reaches api.github.com. Production always uses an
+isolated `build_opener`; this module's autouse fixture routes its `open()` back
+through the locally mocked `urlopen`. Tests for non-network `self upgrade`
+behavior should keep that contract explicit with local mocks. Run this module
+under `pytest-socket` (if installed) with `--disable-socket` as an extra safety
+net.
 """
 
 import urllib.error
@@ -17,6 +18,7 @@ import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
+from specify_cli._download_security import read_response_limited as _real_read_response_limited
 from specify_cli._version import (
     _fetch_latest_release_tag,
     _get_installed_version,
@@ -24,7 +26,10 @@ from specify_cli._version import (
     _normalize_tag,
 )
 from tests.conftest import strip_ansi
-from tests.http_helpers import mock_urlopen_response
+from tests.http_helpers import (
+    mock_urlopen_response,
+    route_opener_open_through_urlopen,  # noqa: F401 (autouse fixture)
+)
 
 runner = CliRunner()
 
@@ -233,6 +238,46 @@ class TestFailureCategorization:
         ):
             with pytest.raises(RuntimeError):
                 _fetch_latest_release_tag()
+
+
+class TestBoundedRead:
+    """Regression test for the read_response_limited hardening.
+
+    A future refactor could silently revert `_fetch_latest_release_tag` to
+    `resp.read()` (the unbounded form) — this test pins the contract that
+    the response body is read through ``read_response_limited`` with a
+    bounded ``max_bytes``.
+    """
+
+    def test_response_body_is_bounded(self):
+        recorded: dict[str, int | str] = {}
+
+        def _spy(response, *, max_bytes: int, label: str, **kwargs):
+            # max_bytes and label are keyword-only with no defaults: if the
+            # caller forgets to pass either, the call raises TypeError here
+            # (instead of recording a misleading None).
+            recorded["max_bytes"] = max_bytes
+            recorded["label"] = label
+            # Forward to the real implementation so the function under test
+            # still gets a parseable body.
+            return _real_read_response_limited(
+                response, max_bytes=max_bytes, label=label, **kwargs
+            )
+
+        with patch(
+            "specify_cli.authentication.http.urllib.request.urlopen",
+            return_value=mock_urlopen_response({"tag_name": "v9.9.9"}),
+        ), patch("specify_cli._version.read_response_limited", side_effect=_spy):
+            tag, reason = _fetch_latest_release_tag()
+
+        assert tag == "v9.9.9"
+        assert reason is None
+        # The cap (1 MiB) is a deliberate ceiling for the GitHub release
+        # JSON — keep it explicit so a future refactor that drops the
+        # `max_bytes=` argument fails this test instead of regressing
+        # silently to the default.
+        assert recorded["max_bytes"] == 1024 * 1024
+        assert recorded["label"] == "GitHub latest release"
 
 
 _FAILURE_CASES = [

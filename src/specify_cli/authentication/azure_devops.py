@@ -8,6 +8,7 @@ import os
 import subprocess
 from typing import TYPE_CHECKING
 
+from .._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
 from .base import AuthProvider
 
 if TYPE_CHECKING:
@@ -15,6 +16,20 @@ if TYPE_CHECKING:
 
 # Azure DevOps resource ID for OAuth / Azure AD token acquisition.
 _ADO_RESOURCE_ID = "499b84ac-1321-427f-aa17-267ca6975798"
+
+
+class _TokenResponseTooLarge(Exception):
+    """Raised when an Azure AD token response exceeds the bounded read limit."""
+
+
+def _extract_token(payload: object, key: str) -> str | None:
+    """Return a normalized token from a JSON object, or None for other shapes."""
+    if not isinstance(payload, dict):
+        return None
+    token = payload.get(key)
+    if not isinstance(token, str):
+        return None
+    return token.strip() or None
 
 
 class AzureDevOpsAuth(AuthProvider):
@@ -74,8 +89,7 @@ class AzureDevOpsAuth(AuthProvider):
             if result.returncode != 0:
                 return None
             payload = _json.loads(result.stdout)
-            token = payload.get("accessToken", "").strip()
-            return token or None
+            return _extract_token(payload, "accessToken")
         except (
             OSError,
             subprocess.TimeoutExpired,
@@ -119,9 +133,37 @@ class AzureDevOpsAuth(AuthProvider):
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
-                payload = _json.loads(resp.read().decode("utf-8"))
-                token = payload.get("access_token", "").strip()
-                return token or None
-        except (urllib.error.URLError, OSError, _json.JSONDecodeError, KeyError):
+            from specify_cli.authentication.http import _StripAuthOnRedirect
+
+            def reject_token_redirect(_old_url: str, new_url: str) -> None:
+                # A 307/308 redirect preserves this POST body, including the
+                # client_secret. Refuse every redirect so credentials cannot
+                # leave the fixed Microsoft token endpoint.
+                raise urllib.error.URLError(
+                    f"Azure AD token request must not be redirected to {new_url}"
+                )
+
+            opener = urllib.request.build_opener(
+                _StripAuthOnRedirect((), reject_token_redirect)
+            )
+            with opener.open(req, timeout=30) as resp:  # noqa: S310
+                payload = _json.loads(
+                    read_response_limited(
+                        resp,
+                        max_bytes=MAX_JSON_METADATA_BYTES,
+                        error_type=_TokenResponseTooLarge,
+                        label="Azure DevOps token response",
+                    ).decode("utf-8")
+                )
+                return _extract_token(payload, "access_token")
+        except (
+            urllib.error.URLError,
+            OSError,
+            _json.JSONDecodeError,
+            UnicodeDecodeError,
+            _TokenResponseTooLarge,
+        ):
+            # Network failure, malformed JSON, or an oversized response — fall
+            # through to the next strategy. Unrelated programming errors (other
+            # ValueErrors, KeyErrors) intentionally propagate so they surface.
             return None

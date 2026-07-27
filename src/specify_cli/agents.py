@@ -7,7 +7,6 @@ command files into agent-specific directories in the correct format.
 """
 
 import os
-import platform
 import re
 from copy import deepcopy
 from pathlib import Path
@@ -114,13 +113,24 @@ class CommandRegistrar:
         if not content.startswith("---"):
             return {}, content
 
-        # Find second ---
-        end_marker = content.find("---", 3)
-        if end_marker == -1:
+        # The closing delimiter is a line that is exactly ``---`` (a YAML
+        # document separator), not any ``---`` substring. Scanning with
+        # ``content.find("---", 3)`` stops at the first ``---`` *anywhere* —
+        # including one embedded in a frontmatter value (e.g. a description like
+        # "Separate sections with ---") or inside an indented literal block —
+        # which truncates the frontmatter and spills the remainder into the
+        # body. Match on line boundaries instead, mirroring the line-anchored
+        # scan in ``VibeIntegration._inject_frontmatter_flag``.
+        lines = content.splitlines(keepends=True)
+        end_line = next(
+            (i for i in range(1, len(lines)) if lines[i].rstrip() == "---"),
+            None,
+        )
+        if end_line is None:
             return {}, content
 
-        frontmatter_str = content[3:end_marker].strip()
-        body = content[end_marker + 3 :].strip()
+        frontmatter_str = "".join(lines[1:end_line]).strip()
+        body = "".join(lines[end_line + 1 :]).strip()
 
         try:
             frontmatter = yaml.safe_load(frontmatter_str) or {}
@@ -475,26 +485,19 @@ class CommandRegistrar:
             init_opts = {}
 
         script_variant = init_opts.get("script")
-        if script_variant not in {"sh", "ps"}:
-            fallback_order = []
-            default_variant = (
-                "ps" if platform.system().lower().startswith("win") else "sh"
+        if scripts:
+            from specify_cli.integrations.base import IntegrationBase
+
+            script_variant = IntegrationBase.select_script_variant(
+                script_variant, scripts
             )
-            secondary_variant = "sh" if default_variant == "ps" else "ps"
-
-            if default_variant in scripts:
-                fallback_order.append(default_variant)
-            if secondary_variant in scripts:
-                fallback_order.append(secondary_variant)
-
-            for key in scripts:
-                if key not in fallback_order:
-                    fallback_order.append(key)
-
-            script_variant = fallback_order[0] if fallback_order else None
 
         script_command = scripts.get(script_variant) if script_variant else None
         if script_command:
+            if script_variant == "py":
+                script_command = IntegrationBase.build_python_invocation(
+                    script_command, project_root
+                )
             script_command = script_command.replace("{ARGS}", "$ARGUMENTS")
             body = body.replace("{SCRIPT}", script_command)
 

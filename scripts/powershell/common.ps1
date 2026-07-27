@@ -29,13 +29,16 @@ function Find-SpecifyRoot {
 # command against a member project from a monorepo root without cd.
 #
 # Precondition: $env:SPECIFY_INIT_DIR is set. Returns the validated project root,
-# or writes an error and exits 1. Strict by design: the path must exist and
+# or writes an error and exits 1 unless -ReturnNullOnError is set. Strict by
+# design: the path must exist and
 # contain .specify/, with no silent fallback. (An empty string is falsy, so the
 # caller's `if ($env:SPECIFY_INIT_DIR)` guard treats empty as unset.)
 #
 # This is the single resolver: bundled extensions inherit it by sourcing core
 # (e.g. the git extension's create-new-feature-branch) rather than duplicating it.
 function Resolve-SpecifyInitDir {
+    param([switch]$ReturnNullOnError)
+
     $initDir = $env:SPECIFY_INIT_DIR
     # Normalize: relative paths resolve against the current directory.
     if (-not [System.IO.Path]::IsPathRooted($initDir)) {
@@ -47,6 +50,7 @@ function Resolve-SpecifyInitDir {
     # "not a Spec Kit project" error below.
     if (-not $resolved -or -not (Test-Path -LiteralPath $resolved.Path -PathType Container)) {
         [Console]::Error.WriteLine("ERROR: SPECIFY_INIT_DIR does not point to an existing directory: $($env:SPECIFY_INIT_DIR)")
+        if ($ReturnNullOnError) { return $null }
         exit 1
     }
     # Resolve-Path echoes back any trailing separator from the input; trim it so
@@ -56,6 +60,7 @@ function Resolve-SpecifyInitDir {
     $initRoot = [System.IO.Path]::TrimEndingDirectorySeparator($resolved.Path)
     if (-not (Test-Path -LiteralPath (Join-Path $initRoot '.specify') -PathType Container)) {
         [Console]::Error.WriteLine("ERROR: SPECIFY_INIT_DIR is not a Spec Kit project (no .specify/ directory): $initRoot")
+        if ($ReturnNullOnError) { return $null }
         exit 1
     }
     return $initRoot
@@ -64,9 +69,11 @@ function Resolve-SpecifyInitDir {
 # Get repository root, prioritizing .specify directory
 # This prevents using a parent repository when spec-kit is initialized in a subdirectory
 function Get-RepoRoot {
+    param([switch]$ReturnNullOnError)
+
     # Explicit project override wins (see Resolve-SpecifyInitDir).
     if ($env:SPECIFY_INIT_DIR) {
-        return (Resolve-SpecifyInitDir)
+        return (Resolve-SpecifyInitDir -ReturnNullOnError:$ReturnNullOnError)
     }
 
     # First, look for .specify directory (spec-kit's own marker)
@@ -147,10 +154,12 @@ function Get-FeaturePathsEnv {
     # so pure path resolution never writes .specify/feature.json, which would
     # dirty the working tree or overwrite a pinned value (issue #3025).
     param(
-        [switch]$NoPersist
+        [switch]$NoPersist,
+        [switch]$ReturnNullOnError
     )
 
-    $repoRoot = Get-RepoRoot
+    $repoRoot = Get-RepoRoot -ReturnNullOnError:$ReturnNullOnError
+    if (-not $repoRoot) { return $null }
     $currentBranch = Get-CurrentBranch
 
     # Resolve feature directory.  Priority:
@@ -174,7 +183,8 @@ function Get-FeaturePathsEnv {
         try {
             $featureConfig = $featureJsonRaw | ConvertFrom-Json
         } catch {
-            [Console]::Error.WriteLine("ERROR: Failed to parse .specify/feature.json: $_")
+            [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or ensure .specify/feature.json contains feature_directory.")
+            if ($ReturnNullOnError) { return $null }
             exit 1
         }
         if ($featureConfig.feature_directory) {
@@ -185,10 +195,12 @@ function Get-FeaturePathsEnv {
             }
         } else {
             [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or ensure .specify/feature.json contains feature_directory.")
+            if ($ReturnNullOnError) { return $null }
             exit 1
         }
     } else {
         [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or run the specify command to create .specify/feature.json.")
+        if ($ReturnNullOnError) { return $null }
         exit 1
     }
 
@@ -334,30 +346,64 @@ function Resolve-Template {
     if (Test-Path $presetsDir) {
         $registryFile = Join-Path $presetsDir '.registry'
         $sortedPresets = @()
+        $registryParsed = $false
         if (Test-Path $registryFile) {
             try {
                 $registryData = Get-Content $registryFile -Raw | ConvertFrom-Json
-                $presets = $registryData.presets
-                if ($presets) {
-                    $sortedPresets = $presets.PSObject.Properties |
+                if ($null -eq $registryData -or $registryData -isnot [PSCustomObject]) {
+                    throw 'Registry root must be an object'
+                }
+                $presetsProperty = $registryData.PSObject.Properties['presets']
+                if ($presetsProperty) {
+                    $presets = $presetsProperty.Value
+                    if ($null -eq $presets -or $presets -isnot [PSCustomObject]) {
+                        throw 'Registry presets must be an object'
+                    }
+                    $presetEntries = @($presets.PSObject.Properties)
+                    $priorityFor = {
+                        param($Entry)
+                        if ($Entry.Value -is [PSCustomObject]) {
+                            $priorityProperty = $Entry.Value.PSObject.Properties['priority']
+                            if ($priorityProperty) { return $priorityProperty.Value }
+                        }
+                        return 10
+                    }
+                    if ($presetEntries.Count -gt 1) {
+                        $allNumeric = $true
+                        $allStrings = $true
+                        foreach ($entry in $presetEntries) {
+                            $priority = & $priorityFor $entry
+                            if ($null -eq $priority -or $priority -isnot [ValueType]) {
+                                $allNumeric = $false
+                            }
+                            if ($null -eq $priority -or $priority -isnot [string]) {
+                                $allStrings = $false
+                            }
+                        }
+                        if (-not $allNumeric -and -not $allStrings) {
+                            throw 'Registry priorities are not mutually orderable'
+                        }
+                    }
+                    $sortedPresets = $presetEntries |
+                        Where-Object { $_.Value -is [PSCustomObject] } |
                         Where-Object { $null -eq $_.Value.enabled -or $_.Value.enabled -ne $false } |
-                        Sort-Object { if ($null -ne $_.Value.priority) { $_.Value.priority } else { 10 } } |
+                        Sort-Object { & $priorityFor $_ } |
                         ForEach-Object { $_.Name }
                 }
+                $registryParsed = $true
             } catch {
-                # Fallback: alphabetical directory order
-                $sortedPresets = @()
+                $registryParsed = $false
             }
         }
 
-        if ($sortedPresets.Count -gt 0) {
+        if ($registryParsed) {
             foreach ($presetId in $sortedPresets) {
                 $candidate = Join-Path $presetsDir "$presetId/templates/$TemplateName.md"
                 if (Test-Path $candidate) { return $candidate }
             }
         } else {
             # Fallback: alphabetical directory order
-            foreach ($preset in Get-ChildItem -Path $presetsDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '.*' }) {
+            foreach ($preset in Get-ChildItem -Path $presetsDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '.*' } | Sort-Object Name) {
                 $candidate = Join-Path $preset.FullName "templates/$TemplateName.md"
                 if (Test-Path $candidate) { return $candidate }
             }

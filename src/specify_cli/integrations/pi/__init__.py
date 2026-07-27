@@ -18,3 +18,4 @@ class PiIntegration(MarkdownIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
+    multi_install_safe = True

@@ -1,7 +1,7 @@
 # Community Friends
 
 > [!NOTE]
-> Community projects listed here are independently created and maintained by their respective authors. They are **not reviewed, nor endorsed, nor supported by GitHub**. Review their source code before installation and use at your own discretion.
+> Community projects listed here are independently created and maintained by their respective authors. Unless explicitly marked as a **first-party GitHub project**, they are **not reviewed, nor endorsed, nor supported by GitHub**. Review their source code before installation and use at your own discretion.
 
 Community projects that extend, visualize, or build on Spec Kit:
 
@@ -16,3 +16,5 @@ Community projects that extend, visualize, or build on Spec Kit:
 - **[cc-spec-kit](https://github.com/speckit-community/cc-spec-kit)** — Community-maintained plugin for Claude Code and GitHub Copilot CLI that installs Spec Kit skills via the plugin marketplace.
 
 - **[spectatui](https://github.com/tinesoft/spectatui)** — A terminal UI (TUI) dashboard for Spec Kit that lets you track features, manage specifications, integrations, presets, workflows, and extensions, and monitor AI agent workflows. Attach to existing AI sessions or launch new ones from your terminal. Keyboard and mouse support. Light/dark theme support. Customizable and performance-oriented. Requires the `specify` CLI in your PATH.
+
+- **[spec-kit-copilot](https://github.com/github/spec-kit-copilot)** — _First-party GitHub project._ A GitHub Copilot **skills plugin** that exposes the Spec Kit `specify` CLI to the Copilot agent in both the Copilot CLI and the GitHub Copilot app. It provides a focused skill per `specify` command group — setup, init, check, extensions, presets, bundles, workflows, workflow steps, and self-upgrade — so you can navigate and drive the entire Spec Kit ecosystem through natural language, letting Copilot decide when and how to run the right `specify` commands on your behalf.

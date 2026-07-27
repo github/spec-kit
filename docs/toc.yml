@@ -55,6 +55,8 @@
       href: concepts/spec-persistence.md
     - name: Handling Complex Features
       href: concepts/complex-features.md
+    - name: Spec of Specs
+      href: concepts/spec-of-specs.md
 
 # Development workflows
 - name: Development

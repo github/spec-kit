@@ -38,7 +38,7 @@ from ._helpers import (
 @integration_app.command("install")
 def integration_install(
     key: str = typer.Argument(help="Integration key to install (e.g. claude, copilot)"),
-    script: str | None = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
+    script: str | None = typer.Option(None, "--script", help="Script type: sh, ps, or py (default: from init-options.json or platform default)"),
     force: bool = typer.Option(False, "--force", help="Allow multi-install when integrations are not declared safe"),
     integration_options: str | None = typer.Option(None, "--integration-options", help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")'),
 ):

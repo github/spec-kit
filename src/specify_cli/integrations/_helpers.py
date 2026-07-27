@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import typer
+from rich.markup import escape
 
 from .._agent_config import SCRIPT_TYPE_CHOICES
 from .._console import console
@@ -206,7 +207,7 @@ def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, 
     while i < len(tokens):
         token = tokens[i]
         if not token.startswith("-"):
-            console.print(f"[red]Error:[/red] Unexpected integration option value '{token}'.")
+            console.print(f"[red]Error:[/red] Unexpected integration option value '{escape(token)}'.")
             if allowed:
                 console.print(f"Allowed options: {allowed}")
             raise typer.Exit(1)
@@ -217,7 +218,7 @@ def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, 
             name, value = name.split("=", 1)
         opt = declared.get(name)
         if not opt:
-            console.print(f"[red]Error:[/red] Unknown integration option '{token}'.")
+            console.print(f"[red]Error:[/red] Unknown integration option '{escape(token)}'.")
             if allowed:
                 console.print(f"Allowed options: {allowed}")
             raise typer.Exit(1)
@@ -500,6 +501,26 @@ def _unregister_presets_for_agent(
             preset_err,
             continuing=continuing,
         )
+
+
+def _unregister_enabled_extension_commands_for_agent(
+    project_root: Path,
+    agent_key: str,
+    *,
+    continuing: str,
+) -> None:
+    """Best-effort removal of enabled extension command artifacts for ``agent_key``."""
+    _best_effort_extension_op(
+        project_root,
+        agent_key,
+        lambda mgr, key: mgr.unregister_agent_artifacts(
+            key,
+            enabled_only=True,
+            commands_only=True,
+        ),
+        phase="clean up enabled extension command artifacts for",
+        continuing=continuing,
+    )
 
 
 # ---------------------------------------------------------------------------

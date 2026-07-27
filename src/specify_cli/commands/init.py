@@ -86,7 +86,7 @@ def register(app: typer.Typer) -> None:
             help="Name for your new project directory (optional if using --here, or use '.' for current directory)",
         ),
         script_type: str = typer.Option(
-            None, "--script", help="Script type to use: sh or ps"
+            None, "--script", help="Script type to use: sh, ps, or py"
         ),
         ignore_agent_tools: bool = typer.Option(
             False,
@@ -700,6 +700,7 @@ def register(app: typer.Typer) -> None:
         zed_skill_mode = selected_ai == "zed" and _is_skills_integration
         grok_skill_mode = selected_ai == "grok" and _is_skills_integration
         cline_skill_mode = selected_ai == "cline"
+        forge_skill_mode = selected_ai == "forge"
         bob_skill_mode = selected_ai == "bob" and _is_skills_integration
         native_skill_mode = (
             codex_skill_mode
@@ -776,6 +777,7 @@ def register(app: typer.Typer) -> None:
             if (
                 _is_slash_skills_agent(selected_ai, _ai_skills_enabled)
                 or cline_skill_mode
+                or forge_skill_mode
             ):
                 return f"/speckit-{name}"
             return f"/speckit.{name}"

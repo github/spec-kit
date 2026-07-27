@@ -296,6 +296,39 @@ def test_python_normal_mode_persists_feature_json(prereq_repo: Path) -> None:
     assert data["feature_directory"] == "specs/002-other"
 
 
+@requires_bash
+def test_persisted_feature_json_is_lexical_when_specs_is_symlink(
+    prereq_repo: Path, tmp_path: Path
+) -> None:
+    """A symlinked specs/ dir must persist "specs/NNN" like Bash does with its
+    lexical prefix strip — resolve() would escape the repo and store a
+    machine-specific absolute path."""
+    real_specs = tmp_path / "real-specs"
+    feat = real_specs / "002-other"
+    feat.mkdir(parents=True)
+    (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
+    repo = prereq_repo.resolve()
+    try:
+        (repo / "specs").symlink_to(real_specs, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlinks not supported on this platform")
+    env = _clean_env()
+    env["SPECIFY_FEATURE_DIRECTORY"] = str(repo / "specs" / "002-other")
+    feature_json = repo / ".specify" / "feature.json"
+
+    bash = _run(_bash_cmd(prereq_repo, "--json"), prereq_repo, env=env)
+    assert bash.returncode == 0, bash.stderr
+    bash_persisted = json.loads(feature_json.read_text(encoding="utf-8"))
+    feature_json.unlink()
+
+    py = _run(_py_cmd(prereq_repo, "--json"), prereq_repo, env=env)
+    assert py.returncode == 0, py.stderr
+    py_persisted = json.loads(feature_json.read_text(encoding="utf-8"))
+
+    assert py_persisted == bash_persisted
+    assert py_persisted["feature_directory"] == "specs/002-other"
+
+
 @pytest.mark.parametrize(
     ("args", "expected"),
     [

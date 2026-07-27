@@ -4,7 +4,10 @@
 [CmdletBinding()]
 param(
     [switch]$Json,
-    [switch]$Help
+    [switch]$Help,
+    # Capture extra positional arguments to match Bash/Python behavior.
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$RemainingArgs
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,7 +24,11 @@ if ($Help) {
 . "$PSScriptRoot/common.ps1"
 
 # Get all paths and variables from common functions
-$paths = Get-FeaturePathsEnv
+$paths = Get-FeaturePathsEnv -ReturnNullOnError
+if (-not $paths) {
+    [Console]::Error.WriteLine("ERROR: Failed to resolve feature paths")
+    exit 1
+}
 
 # Ensure the feature directory exists
 New-Item -ItemType Directory -Path $paths.FEATURE_DIR -Force | Out-Null

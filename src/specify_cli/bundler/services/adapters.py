@@ -15,23 +15,24 @@ from pathlib import Path
 from urllib.parse import ParseResult, urlparse
 from urllib.request import url2pathname
 
+from ..._assets import _locate_core_pack, _repo_root
 from .. import BundlerError
 from ..lib.yamlio import loads_json
 from ..models.catalog import CatalogSource
 from ..models.manifest import ComponentRef
 
-# Built-in catalog payloads ship empty by default; a host distribution can
-# replace these with curated content. Keeping them here makes ``search``/``info``
-# work fully offline against the default stack.
+COMMUNITY_CATALOG_URL = (
+    "https://raw.githubusercontent.com/github/spec-kit/main/"
+    "bundles/catalog.community.json"
+)
+
+# The default catalog is reserved for first-party bundles. The community
+# catalog is loaded from the repository online and from the packaged snapshot
+# offline so discovery remains useful without network access.
 _BUILTIN_CATALOGS: dict[str, dict] = {
     "builtin://default": {
         "schema_version": "1.0",
         "catalog_url": "builtin://default",
-        "bundles": {},
-    },
-    "builtin://community": {
-        "schema_version": "1.0",
-        "catalog_url": "builtin://community",
         "bundles": {},
     },
 }
@@ -95,6 +96,18 @@ def _validate_remote_url(source_id: str, url: str) -> None:
         )
 
 
+def _load_packaged_community_catalog() -> dict:
+    core_pack = _locate_core_pack()
+    path = (
+        core_pack / "bundles" / "catalog.community.json"
+        if core_pack is not None
+        else _repo_root() / "bundles" / "catalog.community.json"
+    )
+    if not path.is_file():
+        raise BundlerError(f"Bundled community catalog not found: {path}")
+    return loads_json(path.read_text(encoding="utf-8"), origin=str(path))
+
+
 def make_catalog_fetcher(*, allow_network: bool = True):
     """Return a fetcher callable suitable for :class:`CatalogStack`.
 
@@ -108,6 +121,10 @@ def make_catalog_fetcher(*, allow_network: bool = True):
         scheme = parsed.scheme.lower()
 
         if scheme == "builtin":
+            if url == "builtin://community":
+                if allow_network:
+                    return _http_get_json(source.id, COMMUNITY_CATALOG_URL)
+                return _load_packaged_community_catalog()
             payload = _BUILTIN_CATALOGS.get(url)
             if payload is None:
                 raise BundlerError(f"Unknown built-in catalog '{url}'.")

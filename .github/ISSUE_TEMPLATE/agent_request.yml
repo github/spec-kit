@@ -8,7 +8,7 @@ body:
       value: |
         Thanks for requesting a new agent! Before submitting, please check if the agent is already supported.
 
-        **Currently supported agents**: Amp, Antigravity, Auggie CLI, Claude Code, Cline, CodeBuddy, Codex CLI, Cursor, Devin for Terminal, Firebender, Forge, Gemini CLI, GitHub Copilot, Goose, Grok Build, Hermes Agent, IBM Bob, Junie, Kilo Code, Kimi Code, Kiro CLI, Lingma, Mistral Vibe, Oh My Pi, opencode, Pi Coding Agent, Qoder CLI, Qwen Code, RovoDev ACLI, SHAI, Tabnine CLI, Trae, ZCode, Zed
+        **Currently supported agents**: Amp, Antigravity, Auggie CLI, Claude Code, Cline, CodeBuddy, Codex CLI, Cursor, Devin for Terminal, Factory Droid, Firebender, Forge, Gemini CLI, GitHub Copilot, Goose, Grok Build, Hermes Agent, IBM Bob, Junie, Kilo Code, Kimi Code, Kiro CLI, Lingma, Mistral Vibe, Oh My Pi, opencode, Pi Coding Agent, Qoder CLI, Qwen Code, RovoDev ACLI, SHAI, Tabnine CLI, Trae, ZCode, Zed
 
   - type: input
     id: agent-name

@@ -39,3 +39,21 @@ def test_pinned_action_ref_accepts_uppercase_hex_sha():
     assert PINNED_SHA_RE.search(
         "actions/example@0123456789ABCDEF0123456789ABCDEF01234567"
     )
+
+
+def test_community_bundle_submission_automation_is_wired():
+    source = WORKFLOWS_DIR / "add-community-bundle.md"
+    compiled = WORKFLOWS_DIR / "add-community-bundle.lock.yml"
+    assignment = WORKFLOWS_DIR / "catalog-assign.yml"
+
+    assert source.is_file()
+    assert compiled.is_file()
+    source_text = source.read_text(encoding="utf-8")
+    assignment_text = assignment.read_text(encoding="utf-8")
+
+    assert "names: [bundle-submission]" in source_text
+    assert "bundles/catalog.community.json" in source_text
+    assert "docs/community/bundles.md" in source_text
+    assert "verified: false" in source_text
+    assert "allowed-files:" in source_text
+    assert "bundle-submission" in assignment_text

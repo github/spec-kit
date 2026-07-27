@@ -6,6 +6,8 @@ import os
 import pytest
 import yaml
 
+from tests.http_helpers import route_opener_open_through_urlopen  # noqa: F401
+
 from specify_cli.integrations.catalog import (
     IntegrationCatalog,
     IntegrationCatalogEntry,
@@ -13,7 +15,32 @@ from specify_cli.integrations.catalog import (
     IntegrationDescriptor,
     IntegrationDescriptorError,
     IntegrationValidationError,
+    _catalog_shape_error,
 )
+
+
+class TestCatalogShapeValidator:
+    """The shared shape validator used by BOTH the fresh-fetch and cache-read
+    paths, so a poisoned/older cache can't bypass the format contract the fresh
+    fetch enforces (dict + 'schema_version' + dict 'integrations')."""
+
+    def test_valid_payload_returns_none(self):
+        assert _catalog_shape_error({"schema_version": "1.0", "integrations": {}}) is None
+
+    def test_missing_schema_version_is_rejected(self):
+        # The exact bypass the two paths used to disagree on: a dict with a dict
+        # 'integrations' but no 'schema_version'.
+        assert _catalog_shape_error({"integrations": {}}) is not None
+
+    def test_missing_integrations_is_rejected(self):
+        assert _catalog_shape_error({"schema_version": "1.0"}) is not None
+
+    def test_non_dict_integrations_is_rejected(self):
+        assert _catalog_shape_error({"schema_version": "1.0", "integrations": []}) is not None
+
+    @pytest.mark.parametrize("payload", [[], "x", 5, None])
+    def test_non_dict_payload_is_rejected(self, payload):
+        assert _catalog_shape_error(payload) is not None
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +277,48 @@ class TestCatalogFetch:
         assert len(results) >= 1
         ids = [r["id"] for r in results]
         assert "acme-coder" in ids
+
+    def test_poisoned_cache_shape_is_dropped_and_refetched(self, tmp_path, monkeypatch):
+        """A fresh-but-mis-shaped cache (e.g. integrations as a list) must be
+        dropped and refetched, not returned — otherwise it later crashes on
+        .items(). The cache path must clear the same shape checks as a fresh
+        fetch."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+        (tmp_path / ".specify").mkdir()
+        cat = IntegrationCatalog(tmp_path)
+
+        catalog = {
+            "schema_version": "1.0",
+            "updated_at": "2026-01-01T00:00:00Z",
+            "integrations": {
+                "acme-coder": {
+                    "id": "acme-coder", "name": "Acme Coder", "version": "2.0.0",
+                    "description": "Community integration", "author": "acme-org",
+                    "tags": ["cli"],
+                },
+            },
+        }
+        self._patch_urlopen(monkeypatch, catalog)
+        cat.search()  # populate the cache legitimately
+
+        # Poison the cached payload (integrations as a list), keeping the fresh
+        # metadata so the age check passes and the cache branch is taken.
+        cache_dir = tmp_path / ".specify" / "integrations" / ".cache"
+        data_files = [
+            f for f in cache_dir.glob("catalog-*.json")
+            if not f.name.endswith("-metadata.json")
+        ]
+        assert data_files, "cache was not populated"
+        data_files[0].write_text(
+            json.dumps({"schema_version": "1.0", "integrations": []}),
+            encoding="utf-8",
+        )
+
+        # The poisoned cache is dropped and the (valid) source is refetched.
+        results = cat.search()
+        assert "acme-coder" in [r["id"] for r in results]
 
     def test_search_by_tag(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HOME", str(tmp_path))

@@ -3,21 +3,34 @@
 [CmdletBinding()]
 param(
     [switch]$Json,
-    [switch]$Help
+    [switch]$Help,
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$RemainingArgs
 )
 
 $ErrorActionPreference = 'Stop'
 
+# Help wins over unknown-argument validation to match the Bash/Python
+# variants, which stop at --help and exit 0.
 if ($Help) {
     Write-Output "Usage: setup-tasks.ps1 [-Json] [-Help]"
     exit 0
+}
+
+if ($RemainingArgs.Count -gt 0) {
+    [Console]::Error.WriteLine("ERROR: Unknown option '$($RemainingArgs[0])'")
+    exit 1
 }
 
 # Source common functions
 . "$PSScriptRoot/common.ps1"
 
 # Get feature paths
-$paths = Get-FeaturePathsEnv
+$paths = Get-FeaturePathsEnv -ReturnNullOnError
+if (-not $paths) {
+    [Console]::Error.WriteLine("ERROR: Failed to resolve feature paths")
+    exit 1
+}
 
 if (-not (Test-Path $paths.IMPL_PLAN -PathType Leaf)) {
     [Console]::Error.WriteLine("ERROR: plan.md not found in $($paths.FEATURE_DIR)")
@@ -45,8 +58,8 @@ if (Test-Path $paths.QUICKSTART) { $docs += 'quickstart.md' }
 # Resolve tasks template through override stack
 $tasksTemplate = Resolve-Template -TemplateName 'tasks-template' -RepoRoot $paths.REPO_ROOT
 if (-not $tasksTemplate -or -not (Test-Path -LiteralPath $tasksTemplate -PathType Leaf)) {
-    $expectedCoreTemplate = Join-Path $paths.REPO_ROOT '.specify/templates/tasks-template.md'
-    [Console]::Error.WriteLine("ERROR: Tasks template not found for repository root: $($paths.REPO_ROOT)`nTemplate resolution order: overrides -> presets -> extensions -> core.`nExpected shared/core template location: $expectedCoreTemplate`nTo continue, verify whether 'tasks-template.md' is available in '.specify/templates/overrides/', preset templates, extension templates, or restore the shared/core templates (for example by re-running 'specify init') so that '.specify/templates/tasks-template.md' exists.")
+    [Console]::Error.WriteLine("ERROR: Could not resolve required tasks-template from the template override stack for $($paths.REPO_ROOT)")
+    [Console]::Error.WriteLine("Template 'tasks-template' was not found in any supported location (overrides, presets, extensions, or shared core). Add an override at .specify/templates/overrides/tasks-template.md, or run 'specify init' / reinstall shared infra to restore the core .specify/templates/tasks-template.md template.")
     exit 1
 }
 $tasksTemplate = (Resolve-Path -LiteralPath $tasksTemplate).Path

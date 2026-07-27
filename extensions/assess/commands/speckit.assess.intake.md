@@ -21,6 +21,8 @@ The user input is the idea and (optionally) a slug. Treat it as one of:
 3. **A codebase pointer** — phrasing like "an idea for this repo" or a path. Read enough of the repository to record what the idea relates to.
 4. **A mix** of the above.
 
+There is **no requirement for existing source code**: within an initialized Spec Kit project, intake works just as well when the project is empty of code as when it already has a codebase. Pasted text or a URL (options 1–2) need no existing codebase; a codebase pointer (option 3) targets existing code. Both are equally valid.
+
 If the input is empty, ask the user for the idea (interactive), or stop with a note that there is nothing to intake (automated).
 
 ## Slug Resolution

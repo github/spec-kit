@@ -63,10 +63,14 @@ independently specified sub-features. Each sub-feature gets its own
 `spec.md`, `plan.md`, and `tasks.md`, and runs through its own
 specify/plan/tasks/implement cycle.
 
-This is the "spec of specs" approach: the first iteration breaks a massive
-feature into smaller, self-contained specs that can each be implemented without
-overwhelming the model. It adds the most overhead, so reserve it for features
-that are too large to handle any other way.
+This is the "spec of specs" approach: a first pass breaks a massive feature into
+smaller, self-contained specs that can each be implemented without overwhelming the
+model. It adds the most overhead, so reserve it for features that are too large to
+handle any other way.
+
+See [Spec of Specs](spec-of-specs.md) for the full procedure — how to run the
+roadmap pass, structure the roadmap artifact, link sub-specs back to it, and a worked
+example.
 
 ## Which Approach to Choose
 

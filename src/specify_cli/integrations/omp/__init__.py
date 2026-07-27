@@ -20,6 +20,7 @@ class OmpIntegration(MarkdownIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
+    multi_install_safe = True
 
     def build_exec_args(
         self,

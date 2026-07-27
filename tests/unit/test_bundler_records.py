@@ -45,6 +45,27 @@ def test_load_missing_file_returns_empty(tmp_path: Path):
     assert load_records(tmp_path) == []
 
 
+@pytest.mark.parametrize("bad", [0, False, "", {}])
+def test_load_records_rejects_falsy_non_list_bundles(tmp_path: Path, bad):
+    # `data.get("bundles") or []` coerced a FALSY non-list (0, '', False, {})
+    # to [] before the isinstance guard, silently treating a corrupt records
+    # file as "no bundles". Only an absent/None value means empty.
+    (tmp_path / ".specify").mkdir()
+    records_path(tmp_path).write_text(
+        json.dumps({"schema_version": "1.0", "bundles": bad}), encoding="utf-8"
+    )
+    with pytest.raises(BundlerError, match="'bundles' must be a list"):
+        load_records(tmp_path)
+
+
+@pytest.mark.parametrize("bad", [0, False, "", {}])
+def test_from_dict_rejects_falsy_non_list_contributed_components(bad):
+    # Same falsy-coercion hole for a record's 'contributed_components'.
+    data = {"bundle_id": "a", "version": "1.0.0", "contributed_components": bad}
+    with pytest.raises(BundlerError, match="'contributed_components' must be a list"):
+        InstalledBundleRecord.from_dict(data)
+
+
 def test_corrupt_priority_raises_actionable_error(tmp_path: Path):
     (tmp_path / ".specify").mkdir()
     rec = _record("a", [("presets", "p1")])

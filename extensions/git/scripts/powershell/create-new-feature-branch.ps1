@@ -565,6 +565,12 @@ if (-not $DryRun) {
     $env:SPECIFY_FEATURE = $branchName
 }
 
+# Build the PowerShell-idiomatic persist hint, mirroring the core
+# create-new-feature.ps1 twin (and the bash/python twins of this script), which
+# all emit "# To persist in your shell: ...".
+$quotedBranchName = "'" + $branchName.Replace("'", "''") + "'"
+$featureAssignment = '$env:SPECIFY_FEATURE = ' + $quotedBranchName
+
 if ($Json) {
     $obj = [PSCustomObject]@{
         BRANCH_NAME = $branchName
@@ -581,6 +587,6 @@ if ($Json) {
     Write-Output "BRANCH_NAME: $branchName"
     Write-Output "FEATURE_NUM: $featureNum"
     if (-not $DryRun) {
-        Write-Output "SPECIFY_FEATURE environment variable set to: $branchName"
+        Write-Output "# To persist in your shell: $featureAssignment"
     }
 }

@@ -77,9 +77,9 @@ specify init <project_name> --integration pi
 specify init <project_name> --integration omp
 ```
 
-### Specify Script Type (Shell vs PowerShell)
+### Specify Script Type (Shell, PowerShell, or Python)
 
-All automation scripts now have both Bash (`.sh`) and PowerShell (`.ps1`) variants.
+Automation scripts are available as Bash (`.sh`), PowerShell (`.ps1`), and Python (`.py`) variants.
 
 Auto behavior:
 
@@ -92,6 +92,7 @@ Force a specific script type:
 ```bash
 specify init <project_name> --script sh
 specify init <project_name> --script ps
+specify init <project_name> --script py
 ```
 
 ### Ignore Agent Tools Check
@@ -131,6 +132,7 @@ Scripts are installed into a variant subdirectory matching the chosen script typ
 
 - `.specify/scripts/bash/` — contains `.sh` scripts (default on Linux/macOS)
 - `.specify/scripts/powershell/` — contains `.ps1` scripts (default on Windows)
+- `.specify/scripts/python/` — contains `.py` scripts (chosen with `--script py`; also installs the platform shell fallback)
 
 ## Troubleshooting
 

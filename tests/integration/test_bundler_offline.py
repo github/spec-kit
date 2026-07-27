@@ -31,6 +31,25 @@ def test_builtin_catalog_resolves_offline():
     assert stack.search() == []
 
 
+def test_builtin_community_catalog_resolves_from_packaged_snapshot_offline():
+    fetcher = make_catalog_fetcher(allow_network=False)
+    source = _src(
+        "community",
+        "builtin://community",
+        priority=20,
+        policy="discovery-only",
+    )
+    payload = fetcher(source)
+    stack = CatalogStack([source], fetcher)
+
+    assert isinstance(payload.get("bundles"), dict)
+    assert all(
+        result.source.id == "community" and not result.install_allowed
+        for result in stack.search()
+    )
+    assert stack.sources[0].install_allowed is False
+
+
 def test_file_catalog_resolves_offline(tmp_path: Path):
     catalog_path = tmp_path / "catalog.json"
     write_catalog_file(catalog_path, {"demo": catalog_entry_dict("demo")})

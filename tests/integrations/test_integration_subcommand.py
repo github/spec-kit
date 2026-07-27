@@ -15,6 +15,22 @@ from tests.conftest import strip_ansi
 runner = CliRunner()
 
 
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["init", "--help"],
+        ["integration", "install", "--help"],
+        ["integration", "switch", "--help"],
+        ["integration", "upgrade", "--help"],
+    ],
+)
+def test_script_help_includes_python_variant(args):
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 0
+    assert "sh, ps, or py" in " ".join(strip_ansi(result.output).split())
+
+
 def _init_project(tmp_path, integration="copilot", integration_options=None):
     """Helper: init a spec-kit project with the given integration."""
     project = tmp_path / "proj"
@@ -51,6 +67,26 @@ def _write_invalid_manifest(project, key):
     manifest = project / ".specify" / "integrations" / f"{key}.manifest.json"
     manifest.write_bytes(b"\xff\xfe\x00")
     return manifest
+
+
+def _move_kilocode_install_to_legacy_layout(project):
+    """Simulate a pre-.kilo Kilo install tracked under .kilocode/workflows."""
+    canonical = project / ".kilo" / "commands"
+    legacy = project / ".kilocode" / "workflows"
+    assert canonical.is_dir(), "init should have created .kilo/commands/"
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    canonical.rename(legacy)
+    assert legacy.is_dir()
+    assert not canonical.exists()
+
+    manifest_path = project / ".specify" / "integrations" / "kilocode.manifest.json"
+    manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest_data["files"] = {
+        path.replace(".kilo/commands/", ".kilocode/workflows/"): info
+        for path, info in manifest_data.get("files", {}).items()
+    }
+    manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+    return canonical, legacy
 
 
 def _copy_project_template(tmp_path, template):
@@ -2941,6 +2977,211 @@ class TestIntegrationUpgrade:
             f"found: {[f.name for f in core_remaining]}"
         )
 
+    def test_upgrade_migrates_kilocode_legacy_dir(self, tmp_path):
+        """Upgrade moves Kilo commands from .kilocode/workflows/ to .kilo/commands/."""
+        project = _init_project(tmp_path, "kilocode")
+        canonical, legacy = _move_kilocode_install_to_legacy_layout(project)
+
+        old_commands = sorted(legacy.glob("speckit.*.md"))
+        assert old_commands, "Legacy dir should have speckit command files"
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "kilocode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code == 0, f"upgrade failed: {result.output}"
+
+        assert canonical.is_dir(), ".kilo/commands/ should exist after upgrade"
+        new_commands = sorted(canonical.glob("speckit.*.md"))
+        assert new_commands, "Commands should exist in .kilo/commands/"
+
+        core_remaining = [
+            f for f in legacy.glob("speckit.*.md")
+            if "agent-context" not in f.name
+        ]
+        assert core_remaining == [], (
+            "Legacy .kilocode/workflows/ should have no core speckit files "
+            f"after upgrade, found: {[f.name for f in core_remaining]}"
+        )
+
+    def test_upgrade_kilocode_legacy_dir_rejects_installed_preset_overrides(
+        self, tmp_path
+    ):
+        """Kilo legacy command-root migration must fail closed with presets."""
+        project = _init_project(tmp_path, "kilocode")
+        canonical, legacy = _move_kilocode_install_to_legacy_layout(project)
+
+        preset_file = legacy / "speckit.plan.md"
+        preset_file.write_text("# preset plan override\n", encoding="utf-8")
+
+        presets_dir = project / ".specify" / "presets"
+        presets_dir.mkdir(parents=True, exist_ok=True)
+        (presets_dir / ".registry").write_text(
+            json.dumps({
+                "presets": {
+                    "my-preset": {
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "registered_commands": {"kilocode": ["speckit.plan"]},
+                        "registered_skills": [],
+                    }
+                }
+            }),
+            encoding="utf-8",
+        )
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "kilocode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code != 0, (
+            "Kilo legacy command-root migration with presets must be rejected"
+        )
+        assert "preset" in result.output.lower()
+        assert "my-preset" in result.output
+        assert ".kilocode/workflows" in strip_ansi(result.output)
+        assert ".kilo/commands" in strip_ansi(result.output)
+        assert not canonical.exists(), (
+            "canonical Kilo commands must not be scaffolded after rejection"
+        )
+        assert preset_file.read_text(encoding="utf-8") == "# preset plan override\n"
+
+    def test_upgrade_reconciles_kilocode_legacy_extension_artifacts(self, tmp_path):
+        """Kilo upgrade moves enabled extension commands to the canonical dir."""
+        project = _init_project(tmp_path, "kilocode")
+        canonical, legacy = _move_kilocode_install_to_legacy_layout(project)
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        assert sorted(legacy.glob("speckit.git.*.md")), (
+            "legacy Kilo should render the git extension under .kilocode/workflows"
+        )
+        assert not canonical.exists()
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "kilocode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code == 0, f"upgrade failed: {result.output}"
+
+        assert sorted(canonical.glob("speckit.git.*.md")), (
+            "enabled git extension commands should be recreated in .kilo/commands"
+        )
+        assert not sorted(legacy.glob("speckit.git.*.md")), (
+            "legacy git extension commands should be removed after Kilo upgrade"
+        )
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "kilocode" in registered
+
+    def test_upgrade_preserves_disabled_kilocode_legacy_extension_and_user_file(
+        self, tmp_path
+    ):
+        """Legacy reconciliation must not clean disabled or user-owned files."""
+        project = _init_project(tmp_path, "kilocode")
+        canonical, legacy = _move_kilocode_install_to_legacy_layout(project)
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        result = _run_in_project(project, ["extension", "disable", "git"])
+        assert result.exit_code == 0, f"extension disable failed: {result.output}"
+
+        disabled_extension_files = sorted(legacy.glob("speckit.git.*.md"))
+        assert disabled_extension_files, "disabled extension artifact should remain pre-upgrade"
+
+        user_file = legacy / "speckit.user-owned.md"
+        user_file.write_text("# user-owned legacy command", encoding="utf-8")
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "kilocode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code == 0, f"upgrade failed: {result.output}"
+
+        assert canonical.is_dir(), ".kilo/commands/ should exist after upgrade"
+        assert user_file.read_text(encoding="utf-8") == "# user-owned legacy command"
+        for disabled_file in disabled_extension_files:
+            assert disabled_file.exists(), (
+                "disabled extension artifacts should be preserved during "
+                "legacy command-root reconciliation"
+            )
+        assert not sorted(canonical.glob("speckit.git.*.md")), (
+            "disabled extensions must not be re-registered in the canonical dir"
+        )
+
+    def test_upgrade_secondary_kilocode_legacy_dir_cleans_commands_without_backfill(
+        self, tmp_path
+    ):
+        """Kilo cleanup stays agent-scoped without inactive extension backfill."""
+        project = _init_project(tmp_path, "copilot", integration_options="--skills")
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        skill = project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
+        assert skill.exists(), "precondition: active copilot has the git extension skill"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+
+        def _git_skills():
+            data = json.loads(registry_path.read_text(encoding="utf-8"))
+            return data["extensions"]["git"].get("registered_skills", [])
+
+        assert _git_skills(), "precondition: git skills registered for active copilot"
+
+        result = _run_in_project(project, [
+            "integration", "install", "kilocode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        canonical, legacy = _move_kilocode_install_to_legacy_layout(project)
+        legacy_git_command = legacy / "speckit.git.feature.md"
+        legacy_git_command.write_text("# legacy Kilo git command\n", encoding="utf-8")
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        registry["extensions"]["git"].setdefault("registered_commands", {})[
+            "kilocode"
+        ] = ["speckit.git.feature"]
+        registry_path.write_text(json.dumps(registry), encoding="utf-8")
+        assert legacy_git_command.exists(), (
+            "precondition: secondary Kilo has a legacy extension command file"
+        )
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "kilocode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        assert canonical.is_dir(), ".kilo/commands/ should exist after upgrade"
+        assert not sorted(canonical.glob("speckit.git.*.md")), (
+            "inactive Kilo must wait for use/switch before extension rescaffolding"
+        )
+        assert not legacy_git_command.exists(), (
+            "secondary Kilo legacy extension commands should still be cleaned up"
+        )
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        registered_commands = registry["extensions"]["git"].get(
+            "registered_commands", {}
+        )
+        assert "kilocode" not in registered_commands
+        assert skill.exists(), (
+            "secondary Kilo legacy cleanup must not delete the active agent's "
+            "extension skill"
+        )
+        assert _git_skills(), (
+            "secondary Kilo legacy cleanup must not untrack the active agent's "
+            "extension skills in the registry"
+        )
+
     def test_upgrade_bob_skills_migration_preserves_manifest(self, tmp_path):
         """Regression (review #3415, 4724160183, comment 1).
 
@@ -3121,14 +3362,15 @@ class TestIntegrationUpgrade:
             "extension registry must keep tracking the surviving artifacts"
         )
 
-    def test_upgrade_active_bob_layout_change_reconciles_presets(self, tmp_path):
+    def test_upgrade_active_layout_change_rejected_before_missing_preset_source_can_lose_override(
+        self, tmp_path
+    ):
         """Regression (review 3623357447).
 
-        A layout-changing upgrade of the *active* integration must no longer
-        be rejected when preset overrides are installed: the post-upgrade
-        preset rescaffold (``register_enabled_presets_for_agent``) re-registers
-        enabled presets in the new layout and retires the old layout's stale
-        files. Covers the CLI-level toggle both ways (legacy→skills→legacy).
+        Layout-changing upgrades must fail closed even for the active
+        integration. Preset rescaffolding is best-effort, so a missing source
+        file could otherwise let stale integration cleanup delete the tracked
+        old-layout override without creating its replacement.
         """
         project = _init_project(
             tmp_path, "bob", integration_options="--legacy-commands"
@@ -3172,62 +3414,30 @@ class TestIntegrationUpgrade:
         cmd_file = commands / "speckit.plan.md"
         assert "Overridden plan content" in cmd_file.read_text(encoding="utf-8")
 
-        registry_path = project / ".specify" / "presets" / ".registry"
+        installed_source = (
+            project
+            / ".specify"
+            / "presets"
+            / "cmd-preset"
+            / "commands"
+            / "speckit.plan.md"
+        )
+        assert installed_source.exists(), "precondition: preset source was installed"
+        installed_source.unlink()
 
-        def _preset_registry():
-            meta = json.loads(registry_path.read_text(encoding="utf-8"))[
-                "presets"
-            ]["cmd-preset"]
-            return (
-                meta.get("registered_commands", {}),
-                meta.get("registered_skills", {}),
-            )
-
-        registered_commands, _ = _preset_registry()
-        assert registered_commands.get("bob") == ["speckit.plan"]
-
-        # Migrate legacy -> skills: allowed, preset reconciled to a skill.
         result = _run_in_project(project, [
             "integration", "upgrade", "bob",
             "--integration-options", "--skills",
             "--script", "sh", "--force",
         ])
-        assert result.exit_code == 0, (
-            f"active-agent layout change with presets must succeed: {result.output}"
+        assert result.exit_code != 0, (
+            "layout change with tracked preset artifacts must be rejected"
         )
-        assert not cmd_file.exists(), (
-            "stale preset command file must be removed after --skills migration"
+        assert "cmd-preset" in result.output
+        assert not skills.exists(), "no skills layout must be scaffolded on rejection"
+        assert "Overridden plan content" in cmd_file.read_text(encoding="utf-8"), (
+            "tracked old-layout override must remain untouched"
         )
-        skill_file = skills / "speckit-plan" / "SKILL.md"
-        assert skill_file.exists(), (
-            "preset must be re-registered as a skill after --skills migration"
-        )
-        registered_commands, registered_skills = _preset_registry()
-        assert not registered_commands.get("bob"), (
-            "preset registry must drop the stale bob command entry"
-        )
-        assert "speckit-plan" in (registered_skills.get("bob") or []), (
-            "preset registry must record the migrated bob skill"
-        )
-
-        # Migrate skills -> legacy: the reverse reconciliation must also hold.
-        result = _run_in_project(project, [
-            "integration", "upgrade", "bob",
-            "--integration-options", "--legacy-commands",
-            "--script", "sh", "--force",
-        ])
-        assert result.exit_code == 0, (
-            f"--legacy-commands migration with presets must succeed: {result.output}"
-        )
-        assert not skill_file.exists(), (
-            "stale preset skill must be removed after --legacy-commands migration"
-        )
-        assert cmd_file.exists() and "Overridden plan content" in cmd_file.read_text(
-            encoding="utf-8"
-        ), "preset command override must be recreated in the legacy layout"
-        registered_commands, registered_skills = _preset_registry()
-        assert registered_commands.get("bob") == ["speckit.plan"]
-        assert not (registered_skills.get("bob") if isinstance(registered_skills, dict) else registered_skills)
 
     def test_upgrade_active_layout_change_rejected_with_disabled_preset(
         self, tmp_path
@@ -3240,7 +3450,7 @@ class TestIntegrationUpgrade:
         rejected while a disabled preset still owns artifacts for the agent —
         proceeding would delete its old-layout files in stale-manifest
         cleanup, skip recreating them, and leave its registry entries stale.
-        Re-enabling the preset unblocks the migration.
+        Re-enabling does not make a non-transactional layout migration safe.
         """
         project = _init_project(
             tmp_path, "bob", integration_options="--legacy-commands"
@@ -3300,7 +3510,7 @@ class TestIntegrationUpgrade:
             "the disabled preset's command file must be left untouched"
         )
 
-        # Re-enabling makes the preset reconcilable → migration proceeds.
+        # Enabled presets are also rejected: rescaffolding can still fail.
         result = _run_in_project(project, ["preset", "enable", "cmd-preset"])
         assert result.exit_code == 0, f"preset enable failed: {result.output}"
         result = _run_in_project(project, [
@@ -3308,11 +3518,10 @@ class TestIntegrationUpgrade:
             "--integration-options", "--skills",
             "--script", "sh", "--force",
         ])
-        assert result.exit_code == 0, (
-            f"layout change must succeed once the preset is enabled: {result.output}"
-        )
-        assert not cmd_file.exists()
-        assert (skills / "speckit-plan" / "SKILL.md").exists()
+        assert result.exit_code != 0
+        assert "cmd-preset" in result.output
+        assert not skills.exists()
+        assert "Overridden plan content" in cmd_file.read_text(encoding="utf-8")
 
     def test_upgrade_secondary_layout_change_rejected_with_presets_installed(
         self, tmp_path
@@ -3706,6 +3915,7 @@ class TestIntegrationUpgrade:
         """
         from specify_cli.integrations._migrate_commands import (
             _PresetRegistryUnreadableError,
+            _installed_command_presets_affecting_agent,
             _installed_presets_affecting_agent,
         )
 
@@ -3775,8 +3985,7 @@ class TestIntegrationUpgrade:
         registry.write_text(json.dumps({"presets": {}}), encoding="utf-8")
         assert _installed_presets_affecting_agent(project, "bob") == []
 
-        # Valid registry with a preset registered for bob → reported with its
-        # enabled state (absent flag defaults to enabled).
+        # Valid registry with a preset registered for bob → report its ID.
         # registered_skills comes in two shapes: a legacy flat list (not
         # agent-scoped → fail closed, any entry affects) and the per-agent
         # dict written by preset registration ({agent: [skill names]} → only
@@ -3799,10 +4008,14 @@ class TestIntegrationUpgrade:
             encoding="utf-8",
         )
         assert sorted(_installed_presets_affecting_agent(project, "bob")) == [
-            ("p1", True),
-            ("p3", True),
-            ("p4", True),
-            ("p7", False),
+            "p1",
+            "p3",
+            "p4",
+            "p7",
+        ]
+        assert _installed_command_presets_affecting_agent(project, "bob") == [
+            "p1",
+            "p7",
         ]
 
 
@@ -3921,6 +4134,30 @@ class TestParseIntegrationOptionsEqualsForm:
             _parse_integration_options(integration, '--commands-dir "foo')
         assert excinfo.value.exit_code == 1
         assert "Error: Could not parse integration options: No closing quotation." in capsys.readouterr().out
+
+    def test_bad_option_token_with_rich_markup_exits_cleanly(self):
+        """A bad option token carrying Rich markup must exit cleanly, not crash.
+
+        The token is user-controlled and gets interpolated into console.print.
+        A value like '[/red]foo' parses fine through shlex but is an unexpected
+        value / unknown option — and an unbalanced Rich tag would raise
+        rich.errors.MarkupError inside console.print, leaking a traceback
+        instead of the intended typer.Exit(1). The token must be escaped."""
+        import typer
+
+        from specify_cli.integrations._commands import _parse_integration_options
+        from specify_cli.integrations import get_integration
+
+        integration = get_integration("generic")
+        assert integration is not None
+
+        # Unexpected value token carrying markup.
+        with pytest.raises(typer.Exit):
+            _parse_integration_options(integration, "[/red]foo")
+
+        # Unknown option token carrying markup.
+        with pytest.raises(typer.Exit):
+            _parse_integration_options(integration, "--[/red]bad")
 
 
 class TestUninstallNoManifestClearsInitOptions:

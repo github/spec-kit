@@ -20,6 +20,7 @@ ISSUE_TEMPLATE_AGENT_KEYS = [
     "codex",
     "cursor-agent",
     "devin",
+    "droid",
     "firebender",
     "forge",
     "gemini",

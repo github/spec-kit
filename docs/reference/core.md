@@ -12,7 +12,7 @@ specify init [<project_name>]
 | ------------------------ | ------------------------------------------------------------------------ |
 | `--integration <key>`    | AI coding agent integration to use (e.g. `copilot`, `claude`, `gemini`). See the [Integrations reference](integrations.md) for all available keys |
 | `--integration-options`  | Options for the integration (e.g. `--integration-options="--commands-dir .myagent/cmds"`) |
-| `--script sh\|ps`        | Script type: `sh` (bash/zsh) or `ps` (PowerShell)                       |
+| `--script sh\|ps\|py`    | Script type: `sh` (bash/zsh), `ps` (PowerShell), or `py` (Python)       |
 | `--here`                 | Initialize in the current directory instead of creating a new one        |
 | `--force`                | Force merge/overwrite when initializing in an existing directory         |
 | `--ignore-agent-tools`   | Skip checks for AI coding agent CLI tools                                |

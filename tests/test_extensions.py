@@ -9,6 +9,7 @@ Tests cover:
 - Catalog stack (multi-catalog support)
 """
 
+import io
 import pytest
 import json
 import os
@@ -22,6 +23,8 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 from tests.conftest import strip_ansi
+from tests.http_helpers import route_opener_open_through_urlopen  # noqa: F401
+from specify_cli import extensions as _ext_module
 from specify_cli.extensions import (
     CatalogEntry,
     CORE_COMMAND_NAMES,
@@ -1100,6 +1103,52 @@ class TestExtensionManager:
         assert (ext_dir / "extension.yml").exists()
         assert (ext_dir / "commands" / "hello.md").exists()
 
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX execute bits are not meaningful on Windows"
+    )
+    def test_install_restores_execute_bit_on_shipped_scripts(
+        self, extension_dir, project_dir
+    ):
+        """Every install route restores execute bits on shipped POSIX scripts.
+
+        ``install_from_directory`` is the single sink all routes funnel through
+        (``install_from_zip`` delegates to it; ``extension add``, ``extension
+        update``, and bundle installs all call these two methods). copytree /
+        zipfile.extractall do not restore a stripped Unix mode, so a shipped
+        ``*.sh`` would land non-executable and a documented
+        ``.specify/extensions/<id>/scripts/...`` invocation would fail with
+        "Permission denied". Guards that every route restores the bit; fails
+        without the ensure_executable_scripts() call in install_from_directory.
+        """
+        import zipfile
+        import tempfile
+
+        scripts = extension_dir / "scripts"
+        scripts.mkdir()
+        script = scripts / "gate.sh"
+        script.write_text("#!/usr/bin/env bash\necho hi\n")
+        script.chmod(0o644)  # non-executable, as extractall/copytree may leave it
+
+        installed = (
+            project_dir / ".specify" / "extensions" / "test-ext" / "scripts" / "gate.sh"
+        )
+        manager = ExtensionManager(project_dir)
+
+        # Route 1 — install_from_directory (extension add --dev, bundle dir install)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+        assert os.access(installed, os.X_OK), "directory install left script non-executable"
+
+        # Route 2 — install_from_zip, force=True: the ZIP path (extension add --from,
+        # bundle zip) and the remove-then-reinstall shape of `extension update`.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zip_path = Path(tmpdir) / "test-ext.zip"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                for f in extension_dir.rglob("*"):
+                    if f.is_file():
+                        zf.write(f, f.relative_to(extension_dir))
+            manager.install_from_zip(zip_path, "0.1.0", force=True)
+        assert os.access(installed, os.X_OK), "zip/update install left script non-executable"
+
     def test_install_from_directory_explicitly_recovers_active_skills_dir(
         self, extension_dir, project_dir, monkeypatch
     ):
@@ -1226,6 +1275,785 @@ class TestExtensionManager:
         new_config = ext_dir / "test-ext-config.yml"
         assert new_config.exists()
         assert new_config.read_text() == "test: config"
+
+    def test_reinstall_after_keep_config_preserves_config(
+        self, extension_dir, project_dir
+    ):
+        """Reinstalling after `remove --keep-config` must not overwrite preserved config."""
+        manager = ExtensionManager(project_dir)
+
+        # Add a packaged default config so the reinstall has a file to overwrite.
+        # Without the fix, the packaged default would silently win on reinstall.
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\nmax_iterations: 1\n")
+
+        # Install once (packaged default is copied into the installed directory)
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        # Overwrite the installed config with user-customized values
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+
+        # Remove while preserving config
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+        assert config_file.exists()
+        assert "custom-model" in config_file.read_text()
+
+        # Plain reinstall (no --force) — packaged default is still present in
+        # extension_dir, so a naive implementation would overwrite the custom values.
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        # Preserved config must survive the reinstall and beat the packaged default
+        assert config_file.exists()
+        assert "custom-model" in config_file.read_text()
+        assert "99" in config_file.read_text()
+        assert "default-model" not in config_file.read_text()
+
+    def test_reinstall_after_keep_config_preserves_local_config(
+        self, extension_dir, project_dir
+    ):
+        """Local config override files (*-config.local.yml) are also rescued on reinstall."""
+        manager = ExtensionManager(project_dir)
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        local_cfg = ext_dir / "test-ext-config.local.yml"
+        local_cfg.write_text("local_override: true\n")
+
+        manager.remove("test-ext", keep_config=True)
+        assert local_cfg.exists()
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        assert local_cfg.exists()
+        assert "local_override: true" in local_cfg.read_text()
+
+    def test_reinstall_after_legacy_keep_config_preserves_config(
+        self, extension_dir, project_dir
+    ):
+        """Pre-marker keep-config leftovers are still rescued on reinstall."""
+        manager = ExtensionManager(project_dir)
+
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\nmax_iterations: 1\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: legacy-custom-model\nmax_iterations: 99\n")
+
+        manager.remove("test-ext", keep_config=True)
+        (ext_dir / ".keep-config").unlink()
+        assert not manager.registry.is_installed("test-ext")
+        assert config_file.exists()
+        assert "legacy-custom-model" in config_file.read_text()
+
+        packaged_config.write_text("model: upgraded-default-model\nmax_iterations: 2\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        assert config_file.exists()
+        assert "legacy-custom-model" in config_file.read_text()
+        assert "99" in config_file.read_text()
+        assert "upgraded-default-model" not in config_file.read_text()
+
+    def test_reinstall_with_symlinked_config_rejects_install(
+        self, extension_dir, project_dir
+    ):
+        """A preserved symlinked config must abort reinstall, not be deleted."""
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        if not can_create_symlink(ext_dir.parent if ext_dir.parent.exists() else project_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        manager = ExtensionManager(project_dir)
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        # Replace the installed config with a symlink to a file outside dest_dir.
+        config_file = ext_dir / "test-ext-config.yml"
+        external_target = project_dir / "external-config.yml"
+        external_target.write_text("model: linked-model\n")
+        config_file.unlink()
+        os.symlink(external_target, config_file)
+        assert config_file.is_symlink()
+
+        # `remove --keep-config` follows the symlink via is_file() and keeps it.
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+        assert config_file.is_symlink()
+
+        # Plain reinstall must reject rather than silently delete the link.
+        with pytest.raises(ValidationError, match="is a symlink"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # The symlink and its target survive; nothing was silently discarded.
+        assert config_file.is_symlink()
+        assert external_target.read_text() == "model: linked-model\n"
+        assert not manager.registry.is_installed("test-ext")
+
+    def test_retry_with_symlinked_live_config_aborts_and_preserves_both(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """A live config replaced by a symlink on retry is a conflict, not overwritten."""
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        if not can_create_symlink(project_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        manager = ExtensionManager(project_dir)
+
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+        staged_bytes = config_file.read_bytes()
+
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+
+        staging_dir = manager._rescue_staging_dir("test-ext")
+
+        original_copytree = shutil.copytree
+        copytree_calls = 0
+
+        def flaky_copytree(*args, **kwargs):
+            nonlocal copytree_calls
+            copytree_calls += 1
+            if copytree_calls == 1:
+                dst = args[1]
+                Path(dst).mkdir(parents=True, exist_ok=True)
+                (Path(dst) / "_partial.txt").write_text("partial")
+                raise OSError("simulated disk full")
+            return original_copytree(*args, **kwargs)
+
+        monkeypatch.setattr(_ext_module.shutil, "copytree", flaky_copytree)
+
+        with pytest.raises(OSError, match="simulated disk full"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        assert staging_dir.exists()
+        assert (staging_dir / ".rescue-complete").exists()
+
+        # Simulate the user replacing the live config with a symlink before retry.
+        external_target = project_dir / "external-config.yml"
+        external_target.write_text("model: newer-linked-model\n")
+        config_file.unlink()
+        os.symlink(external_target, config_file)
+        assert config_file.is_symlink()
+
+        with pytest.raises(ValidationError, match="Preserved extension config conflict"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # Both copies survive: the live symlink choice and the staged backup.
+        assert config_file.is_symlink()
+        assert external_target.read_text() == "model: newer-linked-model\n"
+        assert staging_dir.exists()
+        assert (staging_dir / "test-ext-config.yml").read_bytes() == staged_bytes
+        assert not manager.registry.is_installed("test-ext")
+
+    def test_copytree_failure_restores_stranded_config(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """A copytree failure must not permanently lose a preserved config.
+
+        When copytree raises after the existing directory has been removed, the
+        rollback path must write the rescued bytes back to dest_dir and restore
+        the original file mode, while leaving the extension unregistered.
+        """
+        import stat
+
+        manager = ExtensionManager(project_dir)
+
+        # Add a packaged default config so copytree would overwrite it on success.
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+
+        # Install once so the extension is on disk.
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+
+        # Set a known, non-default mode so we can assert it survives the rollback.
+        if platform.system() != "Windows":
+            config_file.chmod(0o640)
+        original_bytes = config_file.read_bytes()
+        original_mode = config_file.stat().st_mode
+
+        # Remove while preserving the config — it is now a stranded file.
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+        assert config_file.exists()
+
+        # Make copytree create a partial destination then raise so the rollback
+        # path is exercised.
+
+        def failing_copytree(src, dst, **kwargs):
+            Path(dst).mkdir(parents=True, exist_ok=True)
+            (Path(dst) / "_partial.txt").write_text("partial")
+            raise OSError("simulated disk full")
+
+        monkeypatch.setattr(_ext_module.shutil, "copytree", failing_copytree)
+
+        with pytest.raises(OSError, match="simulated disk full"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # The preserved config must have been written back by the rollback path.
+        assert config_file.exists(), "rollback must recreate the config file"
+        assert config_file.read_bytes() == original_bytes
+
+        # On POSIX, the original file mode must be faithfully restored.
+        if platform.system() != "Windows":
+            restored_mode = config_file.stat().st_mode
+            assert stat.S_IMODE(restored_mode) == stat.S_IMODE(original_mode)
+
+        # The extension must remain unregistered after the failed install.
+        assert not manager.registry.is_installed("test-ext")
+
+    def test_extensionignore_load_failure_preserves_kept_config(
+        self, extension_dir, project_dir
+    ):
+        """An .extensionignore load failure must not lose a preserved config.
+
+        `.extensionignore` is loaded/validated before the rescue staging
+        directory is read or created (and thus before dest_dir is deleted), so a
+        ValidationError raised for invalid UTF-8 must abort the reinstall while
+        leaving the kept config authoritative in its documented location. It must
+        NOT publish a stale staging copy that a later retry — after the user
+        fixes the ignore file and edits the kept config — would reload and use to
+        silently overwrite the newer bytes.
+        """
+        manager = ExtensionManager(project_dir)
+
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+        original_bytes = config_file.read_bytes()
+
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+        assert config_file.exists()
+
+        # Author an .extensionignore that is not valid UTF-8 so the loader
+        # raises before rescue staging is read or created.
+        (extension_dir / ".extensionignore").write_bytes(b"\xff\xfe invalid\n")
+
+        with pytest.raises(ValidationError, match="not valid UTF-8"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # The kept config must remain in its documented location, untouched.
+        assert config_file.exists(), "config must survive the ignore-load failure"
+        assert config_file.read_bytes() == original_bytes
+        assert not manager.registry.is_installed("test-ext")
+
+        # No rescue staging may have been published, so a later retry reads the
+        # live (possibly newly edited) config rather than stale staged bytes.
+        staging_dir = manager._rescue_staging_dir("test-ext")
+        assert not staging_dir.exists()
+
+        # Simulate the user fixing the ignore file and editing the kept config,
+        # then retrying: the retry must adopt the newer bytes, never a stale
+        # staged copy.
+        (extension_dir / ".extensionignore").write_text("*.log\n")
+        config_file.write_text("model: newer-model\n")
+        newer_bytes = config_file.read_bytes()
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        assert manager.registry.is_installed("test-ext")
+        assert config_file.read_bytes() == newer_bytes
+
+    def test_retry_after_staging_backup_restores_stranded_config(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """A retry after an interrupted install restores the rescued config.
+
+        When the live config is unchanged since the interrupted attempt (it
+        still matches the staged backup), the retry proceeds and yields the
+        preserved bytes, and the staging directory is cleaned up on success.
+        """
+        import stat
+
+        manager = ExtensionManager(project_dir)
+
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+
+        if platform.system() != "Windows":
+            config_file.chmod(0o640)
+        original_bytes = config_file.read_bytes()
+        original_mode = config_file.stat().st_mode
+
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+        assert config_file.exists()
+
+        staging_dir = manager._rescue_staging_dir("test-ext")
+        assert not staging_dir.exists()
+
+        original_copytree = shutil.copytree
+        copytree_calls = 0
+
+        def flaky_copytree(*args, **kwargs):
+            nonlocal copytree_calls
+            copytree_calls += 1
+            if copytree_calls == 1:
+                dst = args[1]
+                Path(dst).mkdir(parents=True, exist_ok=True)
+                (Path(dst) / "_partial.txt").write_text("partial")
+                raise OSError("simulated disk full")
+            return original_copytree(*args, **kwargs)
+
+        monkeypatch.setattr(_ext_module.shutil, "copytree", flaky_copytree)
+
+        with pytest.raises(OSError, match="simulated disk full"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        assert staging_dir.exists()
+        assert (staging_dir / ".rescue-complete").exists()
+        assert (staging_dir / "test-ext-config.yml").exists()
+
+        # The rollback restored the preserved bytes to the live config, so it
+        # still agrees with the staged backup — the retry proceeds normally.
+        assert config_file.read_bytes() == original_bytes
+
+        manifest = manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        assert manifest.id == "test-ext"
+        assert manager.registry.is_installed("test-ext")
+        assert config_file.read_bytes() == original_bytes
+        assert not (ext_dir / "_partial.txt").exists()
+        assert not staging_dir.exists()
+
+        if platform.system() != "Windows":
+            restored_mode = config_file.stat().st_mode
+            assert stat.S_IMODE(restored_mode) == stat.S_IMODE(original_mode)
+
+    def test_retry_restores_config_from_staging_when_live_absent(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """Retry succeeds using only staging when the live config is absent.
+
+        After a copytree failure, staging is complete and the rollback writes
+        the config back to dest_dir.  If a power loss interrupts that rollback
+        the config may be absent on the next attempt.  The retry-from-staging
+        branch (``if staging_is_complete``) must restore the config from staging
+        alone so the original bytes and mode are recovered even when no live copy
+        is present.  This is the critical path that distinguishes the staging
+        branch from the live-dir fallback.
+        """
+        import stat
+
+        manager = ExtensionManager(project_dir)
+
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+
+        if platform.system() != "Windows":
+            config_file.chmod(0o640)
+        original_bytes = config_file.read_bytes()
+        original_mode = config_file.stat().st_mode
+
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+        assert config_file.exists()
+
+        staging_dir = manager._rescue_staging_dir("test-ext")
+        assert not staging_dir.exists()
+
+        original_copytree = shutil.copytree
+        copytree_calls = 0
+
+        def flaky_copytree(*args, **kwargs):
+            nonlocal copytree_calls
+            copytree_calls += 1
+            if copytree_calls == 1:
+                dst = args[1]
+                Path(dst).mkdir(parents=True, exist_ok=True)
+                (Path(dst) / "_partial.txt").write_text("partial")
+                raise OSError("simulated disk full")
+            return original_copytree(*args, **kwargs)
+
+        monkeypatch.setattr(_ext_module.shutil, "copytree", flaky_copytree)
+
+        with pytest.raises(OSError, match="simulated disk full"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # Staging is complete after the first failure.
+        assert staging_dir.exists()
+        assert (staging_dir / ".rescue-complete").exists()
+        assert (staging_dir / "test-ext-config.yml").exists()
+
+        # Simulate a power loss that prevented the rollback from writing the
+        # config back: delete the live copy so the retry must rely on staging.
+        config_file.unlink()
+        assert not config_file.exists()
+
+        manifest = manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        # The staging branch must restore the original bytes even though no live
+        # copy was present — proving staging (not the live-dir fallback) was used.
+        assert manifest.id == "test-ext"
+        assert manager.registry.is_installed("test-ext")
+        assert config_file.read_bytes() == original_bytes
+        assert not (ext_dir / "_partial.txt").exists()
+        assert not staging_dir.exists()
+
+        if platform.system() != "Windows":
+            restored_mode = config_file.stat().st_mode
+            assert stat.S_IMODE(restored_mode) == stat.S_IMODE(original_mode)
+
+    def test_retry_ignores_live_only_packaged_config_after_registry_failure(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """Retry should keep packaged live-only configs that still match source."""
+        manager = ExtensionManager(project_dir)
+
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+        original_bytes = config_file.read_bytes()
+
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+
+        live_only_packaged = extension_dir / "test-ext-config.local.yml"
+        live_only_packaged.write_text("new_default: true\n")
+
+        original_add = manager.registry.add
+        add_calls = 0
+
+        def flaky_add(*args, **kwargs):
+            nonlocal add_calls
+            add_calls += 1
+            if add_calls == 1:
+                raise OSError("simulated registry failure")
+            return original_add(*args, **kwargs)
+
+        monkeypatch.setattr(manager.registry, "add", flaky_add)
+
+        with pytest.raises(OSError, match="simulated registry failure"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        staging_dir = manager._rescue_staging_dir("test-ext")
+        assert staging_dir.exists()
+        assert (staging_dir / ".rescue-complete").exists()
+        assert config_file.read_bytes() == original_bytes
+        assert (
+            ext_dir / "test-ext-config.local.yml"
+        ).read_text() == "new_default: true\n"
+
+        manifest = manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        assert manifest.id == "test-ext"
+        assert manager.registry.is_installed("test-ext")
+        assert config_file.read_bytes() == original_bytes
+        assert (
+            ext_dir / "test-ext-config.local.yml"
+        ).read_text() == "new_default: true\n"
+        assert not staging_dir.exists()
+
+    def test_retry_with_edited_live_config_aborts_and_preserves_both(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """A retry must not silently overwrite a config edited after a crash.
+
+        A complete staging directory proves only that staging finished, not
+        that dest_dir was modified. If the user edits the live kept config
+        before retrying, the retry must detect the divergence, preserve both
+        copies, and abort rather than blindly restoring the older staged bytes.
+        """
+        manager = ExtensionManager(project_dir)
+
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+        staged_bytes = config_file.read_bytes()
+
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+
+        staging_dir = manager._rescue_staging_dir("test-ext")
+
+        original_copytree = shutil.copytree
+        copytree_calls = 0
+
+        def flaky_copytree(*args, **kwargs):
+            nonlocal copytree_calls
+            copytree_calls += 1
+            if copytree_calls == 1:
+                dst = args[1]
+                Path(dst).mkdir(parents=True, exist_ok=True)
+                (Path(dst) / "_partial.txt").write_text("partial")
+                raise OSError("simulated disk full")
+            return original_copytree(*args, **kwargs)
+
+        monkeypatch.setattr(_ext_module.shutil, "copytree", flaky_copytree)
+
+        with pytest.raises(OSError, match="simulated disk full"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        assert staging_dir.exists()
+        assert (staging_dir / ".rescue-complete").exists()
+
+        # Simulate the user editing the live config before retrying so it now
+        # diverges from the staged backup.
+        config_file.write_text("model: newer-edited-model\n")
+        edited_bytes = config_file.read_bytes()
+        assert edited_bytes != staged_bytes
+
+        with pytest.raises(ValidationError, match="Preserved extension config conflict"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # Both copies must survive: the edited live config and the staged backup.
+        assert config_file.read_bytes() == edited_bytes
+        assert staging_dir.exists()
+        assert (staging_dir / "test-ext-config.yml").read_bytes() == staged_bytes
+        assert not manager.registry.is_installed("test-ext")
+
+    @pytest.mark.parametrize(
+        "failure_mode",
+        [
+            pytest.param("mkdir", id="mkdir"),
+            pytest.param("os_open", id="os_open"),
+            pytest.param("fsync", id="fsync"),
+        ],
+    )
+    def test_staging_failure_aborts_before_dest_dir_removal(
+        self, extension_dir, project_dir, monkeypatch, failure_mode
+    ):
+        """Staging failures abort the install before dest_dir is removed.
+
+        When mkdir, os.open, or fsync fails while publishing rescue staging,
+        the install must abort before removing dest_dir so the preserved
+        config bytes remain authoritative, any partial staging is cleaned up
+        rather than trusted on retry, and the extension stays unregistered.
+        """
+        import errno as _errno
+
+        manager = ExtensionManager(project_dir)
+
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+        original_bytes = config_file.read_bytes()
+
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+        assert config_file.exists()
+
+        staging_dir = manager._rescue_staging_dir("test-ext")
+        assert not staging_dir.exists()
+
+        if failure_mode == "mkdir":
+            original_mkdir = Path.mkdir
+
+            def failing_mkdir(self_path, *args, **kwargs):
+                if self_path == staging_dir:
+                    raise OSError("staging mkdir failed")
+                return original_mkdir(self_path, *args, **kwargs)
+
+            monkeypatch.setattr(Path, "mkdir", failing_mkdir)
+
+        elif failure_mode == "os_open":
+            original_os_open = _ext_module.os.open
+
+            def failing_os_open(path, flags, mode=0o777, *args, **kwargs):
+                # Fail only for file creation (O_CREAT) inside the staging
+                # directory so other os.open calls (e.g. directory fsync) are
+                # unaffected.
+                if str(staging_dir) in str(path) and (flags & os.O_CREAT):
+                    raise OSError(_errno.ENOSPC, "No space left on device")
+                return original_os_open(path, flags, mode, *args, **kwargs)
+
+            monkeypatch.setattr(_ext_module.os, "open", failing_os_open)
+
+        else:  # "fsync"
+            def failing_fsync_fd(fd: int) -> None:
+                # Simulate a real storage error (EIO) that the helper propagates.
+                raise OSError(_errno.EIO, "Input/output error")
+
+            monkeypatch.setattr(_ext_module, "_fsync_fd", failing_fsync_fd)
+
+        with pytest.raises(OSError):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # dest_dir must still exist — the install aborted before rmtree.
+        assert ext_dir.exists(), "dest_dir must survive a staging failure"
+        assert config_file.read_bytes() == original_bytes, (
+            "preserved config must remain authoritative"
+        )
+        # Partial staging must have been cleaned up and not left as complete.
+        assert not staging_dir.exists() or not (
+            staging_dir / ".rescue-complete"
+        ).exists(), "incomplete staging must not be trusted"
+        assert not manager.registry.is_installed("test-ext")
+
+    def test_rescue_staging_dir_is_fixed_length_for_long_ids(self, project_dir):
+        """The rescue staging component length must not grow with the ID length.
+
+        Manifest validation caps the ID character set but not its length, so a
+        very long (but valid) ID must not lengthen the single staging path
+        component past a filesystem's per-component byte limit.
+        """
+        manager = ExtensionManager(project_dir)
+
+        short_dir = manager._rescue_staging_dir("a")
+        long_id = "a" * 250
+        long_dir = manager._rescue_staging_dir(long_id)
+
+        # Same fixed component length regardless of ID length.
+        assert len(short_dir.name) == len(long_dir.name)
+        # Comfortably within the common 255-byte component limit.
+        assert len(long_dir.name.encode("utf-8")) <= 255
+        # Distinct IDs still map to distinct staging directories.
+        assert manager._rescue_staging_dir("b") != short_dir
+
+    def test_failed_install_without_keep_config_does_not_rescue_defaults(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """A dir left by a partially-failed install must not trigger the rescue path.
+
+        Any install that copies files but then fails during command, skill, or
+        hook registration also leaves a complete dest_dir with no registry entry.
+        On a later retry from an updated package this branch must not treat the
+        previous package's default config as user-preserved data and restore it
+        over the new defaults.  Only directories explicitly left by
+        ``remove --keep-config`` (which writes a ``.keep-config`` marker) should
+        trigger the rescue path.
+        """
+        manager = ExtensionManager(project_dir)
+
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+
+        # Simulate a partially-failed install: the extension directory is present
+        # with the packaged default config but there is no .keep-config marker and
+        # the extension is not in the registry.  This matches what happens when
+        # copytree succeeds but command/hook registration raises afterwards.
+        manager.registry.remove("test-ext")
+        assert not manager.registry.is_installed("test-ext")
+        assert ext_dir.exists()
+        assert not (ext_dir / ".keep-config").exists()
+
+        # Update the packaged config so a retry with the new package would use
+        # different defaults — the old defaults must NOT be rescued.
+        packaged_config.write_text("model: updated-default-model\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        assert manager.registry.is_installed("test-ext")
+        # The new packaged default must win; the old default was not user data.
+        assert config_file.read_text() == "model: updated-default-model\n"
 
     def test_install_force_without_existing(self, extension_dir, project_dir):
         """Test force-install when extension is NOT already installed (works normally)."""
@@ -1638,6 +2466,21 @@ $ARGUMENTS
 
         assert frontmatter == {}
         assert "Command body" in body
+
+    def test_parse_frontmatter_dash_in_value(self):
+        """A ``---`` inside a frontmatter value must not close the block early."""
+        content = """---
+description: Separate sections with --- markers
+argument-hint: "[name]"
+---
+Real body starts here.
+"""
+        registrar = CommandRegistrar()
+        frontmatter, body = registrar.parse_frontmatter(content)
+
+        assert frontmatter["description"] == "Separate sections with --- markers"
+        assert frontmatter["argument-hint"] == "[name]"
+        assert body == "Real body starts here."
 
     def test_render_frontmatter(self):
         """Test rendering frontmatter to YAML."""
@@ -2324,7 +3167,9 @@ Run {SCRIPT}
         """Without init metadata, Windows fallback should prefer ps scripts over sh."""
         import yaml
 
-        monkeypatch.setattr("specify_cli.agents.platform.system", lambda: "Windows")
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.platform.system", lambda: "Windows"
+        )
 
         ext_dir = temp_dir / "ext-script-windows-fallback"
         ext_dir.mkdir()
@@ -3651,6 +4496,94 @@ class TestExtensionCatalog:
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
 
+    def test_fetch_single_catalog_revalidates_redirected_url(self, temp_dir):
+        """An HTTPS catalog URL that redirects to http:// must be rejected AFTER
+        the redirect. _open_url follows redirects (auth stripped on downgrade),
+        so without re-validating response.geturl() the http payload would still
+        be fetched and trusted — and it supplies each extension's download_url +
+        sha256, defeating sha256 verification. Parity with the
+        integrations/presets/workflows catalog fetchers."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(
+            {"schema_version": "1.0", "extensions": {}}
+        ).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "http://evil.test/catalog.json"
+
+        entry = CatalogEntry(
+            url="https://good.example/catalog.json",
+            name="c",
+            priority=1,
+            install_allowed=True,
+        )
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            with pytest.raises(ExtensionError, match="HTTPS"):
+                catalog._fetch_single_catalog(entry, force_refresh=True)
+
+    def test_fetch_single_catalog_validates_every_redirect_hop(self, temp_dir):
+        """A redirect_validator is passed to _open_url and rejects a non-HTTPS
+        INTERMEDIATE hop — closing the https -> http -> attacker-https chain a
+        terminal-URL-only check would miss."""
+        catalog = self._make_catalog(temp_dir)
+        captured = {}
+
+        def fake_open(url, timeout=None, extra_headers=None, redirect_validator=None):
+            captured["rv"] = redirect_validator
+            redirect_validator("https://good.example/catalog.json", "http://evil.test/hop")
+            raise AssertionError("redirect_validator should have raised")
+
+        catalog._open_url = fake_open
+        entry = CatalogEntry(
+            url="https://good.example/catalog.json",
+            name="c",
+            priority=1,
+            install_allowed=True,
+        )
+        with pytest.raises(ExtensionError, match="HTTPS"):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+        assert captured["rv"] is not None
+
+    def test_fetch_catalog_legacy_revalidates_redirected_url(self, temp_dir):
+        """The legacy single-catalog fetch_catalog() path also rejects an
+        HTTPS -> http redirected payload (final geturl() check) — it previously
+        parsed the body with no redirect check."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(
+            {"schema_version": "1.0", "extensions": {}}
+        ).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "http://evil.test/catalog.json"
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            with pytest.raises(ExtensionError, match="HTTPS"):
+                catalog.fetch_catalog(force_refresh=True)
+
+    def test_fetch_catalog_legacy_validates_every_redirect_hop(self, temp_dir):
+        """The legacy fetch_catalog() path also validates every INTERMEDIATE hop
+        (not just the terminal URL): it must supply a redirect_validator that
+        rejects an insecure hop, so an https -> http -> https chain is caught."""
+        catalog = self._make_catalog(temp_dir)
+        captured = {}
+
+        def fake_open(url, timeout=None, extra_headers=None, redirect_validator=None):
+            captured["rv"] = redirect_validator
+            redirect_validator(url, "http://evil.test/hop")
+            raise AssertionError("redirect_validator should have raised")
+
+        catalog._open_url = fake_open
+        with pytest.raises(ExtensionError, match="HTTPS"):
+            catalog.fetch_catalog(force_refresh=True)
+        assert captured["rv"] is not None
+
     @pytest.mark.parametrize(
         "payload",
         [
@@ -3684,6 +4617,7 @@ class TestExtensionCatalog:
         mock_response.read.return_value = json.dumps(payload).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         entry = CatalogEntry(
             url="https://example.com/catalog.json",
@@ -3752,6 +4686,7 @@ class TestExtensionCatalog:
         mock_response.read.return_value = json.dumps(valid).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         entry = CatalogEntry(
             url=ExtensionCatalog.DEFAULT_CATALOG_URL,
@@ -3799,6 +4734,7 @@ class TestExtensionCatalog:
         mock_response.read.return_value = json.dumps(payload).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         with patch.object(catalog, "_open_url", return_value=mock_response):
             with pytest.raises(ExtensionError, match="Invalid catalog format"):
@@ -3839,6 +4775,7 @@ class TestExtensionCatalog:
         mock_response.read.return_value = json.dumps(valid).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         with patch.object(catalog, "_open_url", return_value=mock_response):
             result = catalog.fetch_catalog(force_refresh=False)
@@ -3877,6 +4814,7 @@ class TestExtensionCatalog:
         mock_response.read.return_value = json.dumps(valid).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         with patch.object(catalog, "_open_url", return_value=mock_response):
             result = catalog.fetch_catalog(force_refresh=False)
@@ -3951,6 +4889,7 @@ class TestExtensionCatalog:
         mock_response.read.return_value = json.dumps(payload).encode("utf-8")
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         # Record every ``write_text`` call's encoding kwarg so the
         # assertion observes the production writer's argument directly.
@@ -4002,6 +4941,7 @@ class TestExtensionCatalog:
         mock_response.read.return_value = json.dumps(valid).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         # Simulate an unwritable cache dir: every write_text under the
         # cache directory raises PermissionError (an OSError subclass).
@@ -4053,6 +4993,7 @@ class TestExtensionCatalog:
         mock_response.read.return_value = json.dumps(payload).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         entry = CatalogEntry(
             url="https://example.com/catalog.json",
@@ -4086,7 +5027,7 @@ class TestExtensionCatalog:
         zip_bytes = zip_buf.getvalue()
 
         release_response = MagicMock()
-        release_response.read.return_value = json.dumps(
+        release_response.read.side_effect = io.BytesIO(json.dumps(
             {
                 "assets": [
                     {
@@ -4095,12 +5036,12 @@ class TestExtensionCatalog:
                     }
                 ]
             }
-        ).encode()
+        ).encode()).read
         release_response.__enter__ = lambda s: s
         release_response.__exit__ = MagicMock(return_value=False)
 
         asset_response = MagicMock()
-        asset_response.read.return_value = zip_bytes
+        asset_response.read.side_effect = io.BytesIO(zip_bytes).read
         asset_response.__enter__ = lambda s: s
         asset_response.__exit__ = MagicMock(return_value=False)
 
@@ -5423,6 +6364,50 @@ class TestExtensionAddCLI:
         else:
             assert not agent_file.is_symlink()
 
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX execute bits are not meaningful on Windows"
+    )
+    def test_add_makes_shipped_scripts_executable(self, extension_dir, project_dir):
+        """extension add must restore execute bits on bundled POSIX scripts.
+
+        Archives are unpacked with zipfile.extractall and --dev installs copy the
+        tree; neither restores a stripped Unix mode, so a shipped *.sh can land
+        non-executable and a documented `.specify/extensions/<id>/scripts/...`
+        invocation then fails with "Permission denied". init / migrate /
+        integration-install already call ensure_executable_scripts(); this guards
+        that `extension add` does too.
+        """
+        import stat
+
+        scripts_dir = extension_dir / "scripts"
+        scripts_dir.mkdir()
+        script = scripts_dir / "gate.sh"
+        script.write_text("#!/usr/bin/env bash\necho hi\n")
+        script.chmod(0o644)  # non-executable, as an unpacked/copied script may be
+        assert not os.access(script, os.X_OK)
+
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", str(extension_dir), "--dev"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        installed = (
+            project_dir / ".specify" / "extensions" / "test-ext" / "scripts" / "gate.sh"
+        )
+        assert installed.exists(), result.output
+        assert os.access(installed, os.X_OK), (
+            f"installed script not executable: mode="
+            f"{stat.S_IMODE(installed.stat().st_mode):o}"
+        )
+
     def test_add_dev_writes_codex_skills_as_files(self, extension_dir, project_dir):
         """Codex dev skills should be written as files so Codex can load them."""
         from typer.testing import CliRunner
@@ -5712,6 +6697,80 @@ class TestExtensionAddCLI:
         assert result.exception is None or isinstance(result.exception, SystemExit)
         plain = strip_ansi(result.output)
         assert "Invalid URL" in plain
+
+    def test_add_from_bracketed_non_ip_url_exits_cleanly(self, tmp_path):
+        """A bracketed-but-invalid IPv6 host must produce a clean error, not a
+        ValueError traceback. "https://[not-an-ip]/ext.zip" is a malformed
+        authority that raises ValueError during URL validation; the try/except
+        guard around parsing and the .hostname read must turn that into a clean
+        "Invalid URL" message.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "my-ext", "--from", "https://[not-an-ip]/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        plain = strip_ansi(result.output)
+        assert "Invalid URL" in plain
+
+    def test_add_from_url_lazy_hostname_valueerror_exits_cleanly(self, tmp_path, monkeypatch):
+        """Synthetic defensive coverage: monkeypatch urlparse() to return an
+        object whose .hostname raises ValueError lazily. This does not reproduce
+        any specific CPython behavior -- it just exercises the case where the
+        ValueError surfaces on the .hostname read rather than at parse time, so a
+        raw ValueError would leak if .hostname were read outside the try/except.
+        """
+        import urllib.parse
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        real_urlparse = urllib.parse.urlparse
+
+        class _LazyHostnameRaiser:
+            def __init__(self, parsed):
+                self._parsed = parsed
+
+            @property
+            def hostname(self):
+                raise ValueError("simulated lazy IPv6 hostname failure")
+
+            def __getattr__(self, name):
+                return getattr(self._parsed, name)
+
+        def _fake_urlparse(url, *args, **kwargs):
+            return _LazyHostnameRaiser(real_urlparse(url, *args, **kwargs))
+
+        monkeypatch.setattr(urllib.parse, "urlparse", _fake_urlparse)
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "my-ext", "--from", "https://example.com/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Invalid URL" in strip_ansi(result.output)
 
     def test_add_status_escapes_extension_markup(self, tmp_path):
         """User-controlled extension names must not be parsed as Rich markup."""
@@ -6081,6 +7140,7 @@ class TestDownloadExtensionBundled:
         mock_response.read.return_value = b"fake zip data"
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         with patch.object(catalog, "get_extension_info", return_value=bundled_with_url), \
              patch.object(urllib.request, "urlopen", return_value=mock_response):
@@ -7345,6 +8405,42 @@ class TestHookInvocationRendering:
         assert execution["command"] == "my-extension.do-something"
         assert execution["invocation"] == "/speckit-my-extension-do-something"
 
+    def test_forge_hooks_render_hyphenated_invocation(self, project_dir):
+        """Forge projects should render /speckit-* invocations (like Cline)."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "forge"}))
+
+        hook_executor = HookExecutor(project_dir)
+        execution = hook_executor.execute_hook(
+            {
+                "extension": "test-ext",
+                "command": "speckit.tasks",
+                "optional": False,
+            }
+        )
+
+        assert execution["command"] == "speckit.tasks"
+        assert execution["invocation"] == "/speckit-tasks"
+
+    def test_forge_hooks_render_extension_command(self, project_dir):
+        """Forge projects should render /speckit-my-ext-cmd for extension hooks."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "forge"}))
+
+        hook_executor = HookExecutor(project_dir)
+        execution = hook_executor.execute_hook(
+            {
+                "extension": "test-ext",
+                "command": "my-extension.do-something",
+                "optional": False,
+            }
+        )
+
+        assert execution["command"] == "my-extension.do-something"
+        assert execution["invocation"] == "/speckit-my-extension-do-something"
+
     def test_non_skill_command_keeps_slash_invocation(self, project_dir):
         """Custom hook commands should keep slash invocation style."""
         init_options = project_dir / ".specify" / "init-options.json"
@@ -7832,10 +8928,10 @@ def test_extension_wrapper_resolves_ghes_asset_when_host_configured(tmp_path, mo
     def fake_open(url, timeout=None, extra_headers=None):
         captured.append(url)
         resp = MagicMock()
-        resp.read.return_value = json.dumps({
+        resp.read.side_effect = io.BytesIO(json.dumps({
             "assets": [{"name": "ext.zip",
                         "url": "https://ghes.example/api/v3/repos/o/r/releases/assets/7"}]
-        }).encode()
+        }).encode()).read
         yield resp
 
     monkeypatch.setattr(catalog, "_open_url", fake_open)
@@ -8079,3 +9175,34 @@ class TestConfigManagerCrossExtensionEnvLeak:
         # Must not raise; must fall back to the "no siblings" path.
         cfg = ConfigManager(tmp_path, "testext")._get_env_config()
         assert cfg == {"url": "v"}
+
+
+def test_forge_extension_install_listing_hyphenates_command_names(
+    extension_dir, project_dir
+):
+    """The post-install 'Provided commands' listing must show hyphenated
+    /speckit-<name> command names for a Forge project (Forge registers
+    hyphenated names), mirroring the existing Cline handling."""
+    import json
+    import os
+
+    from typer.testing import CliRunner
+
+    from specify_cli import app
+
+    init_options = project_dir / ".specify" / "init-options.json"
+    init_options.write_text(json.dumps({"ai": "forge", "script": "sh"}))
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project_dir)
+        result = CliRunner().invoke(
+            app, ["extension", "add", str(extension_dir), "--dev"]
+        )
+    finally:
+        os.chdir(old_cwd)
+
+    assert result.exit_code == 0, result.output
+    # Forge registers hyphenated command names, so the summary must match.
+    assert "speckit-test-ext-hello" in result.output
+    assert "speckit.test-ext.hello" not in result.output

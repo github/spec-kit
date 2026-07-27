@@ -221,11 +221,13 @@ Each hook entry supports the following fields:
 | `command` | Extension command associated with the hook. |
 | `enabled` | Whether the hook is active. Hooks with `enabled: false` are skipped. |
 | `optional` | Whether the hook is optional. If `true`, the hook is presented with its `prompt` and can be skipped; if `false`, the hook is emitted as an automatic hook (includes `EXECUTE_COMMAND` markers). |
-| `priority` | Priority metadata for the hook. Values must be integers >= 1; invalid values fall back to the default priority `10`. Current command templates surface hooks in their configured YAML order and do not sort them by `priority`. |
+| `priority` | Priority metadata for the hook. Registered hook entries use integer values >= 1; entries installed from manifests default to `10` when no priority is declared. Current command templates surface hooks in their configured YAML order and do not sort them by `priority`. |
 | `prompt` | Message shown when asking whether to run an optional hook. |
 | `description` | Human-readable explanation of what the hook does. |
 | `condition` | Optional expression evaluated by `HookExecutor` (using `config.<path>` or `env.<VAR>` with `is set`, `==`, or `!=`). Current command templates do not evaluate conditions and skip hooks with a non-empty condition. |
 Hook event names identify when a hook is invoked. They generally use `before_<command>` or `after_<command>`, such as `before_implement`, `after_implement`, `before_tasks`, and `after_tasks`.
+
+Extension manifests reject invalid hook priorities during installation. For existing `.specify/extensions.yml` entries, `HookExecutor.get_hooks_for_event()` sorts with `normalize_priority()`: missing values, booleans, non-numeric values rejected by `int()`, and values less than `1` fall back to `10`; numeric strings and finite floats are coerced with `int()`, while non-finite floats are unsupported and may fail instead of falling back.
 
 `HookExecutor.get_hooks_for_event()` returns hooks ordered by `priority`, with lower values first. However, current command templates read hook lists directly and surface them in their configured YAML order rather than using priority ordering.
 

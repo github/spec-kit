@@ -26,7 +26,7 @@ class GateStep(StepBase):
     later with ``specify workflow resume``.
 
     The user's choice is stored in ``output.choice``.  ``on_reject``
-    controls abort / skip behaviour.
+    controls abort / skip / retry behaviour.
     """
 
     type_key = "gate"
@@ -42,6 +42,35 @@ class GateStep(StepBase):
 
         options = config.get("options", ["approve", "reject"])
         on_reject = config.get("on_reject", "abort")
+
+        # ``validate`` rejects a non-list (or empty) ``options``, and requires
+        # every option to be a string, but the engine does not auto-validate
+        # before ``execute``. An unvalidated run with a scalar/dict/None
+        # ``options`` would otherwise reach ``_prompt`` and crash the whole run
+        # with a raw ``TypeError`` (``enumerate``/``len`` on a non-iterable) or
+        # ``KeyError`` (indexing a dict); a non-string option would crash at the
+        # ``choice.lower()`` reject check with ``AttributeError``. Fail this step
+        # loudly instead — mirroring the switch 'cases' and command 'input'
+        # guards. Checked before the non-TTY short-circuit so the error surfaces
+        # in CI too, rather than PAUSING and crashing later on interactive resume.
+        if (
+            not isinstance(options, list)
+            or not options
+            or not all(isinstance(o, str) for o in options)
+        ):
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Gate step {config.get('id', '?')!r}: 'options' must be a "
+                    f"non-empty list of strings, got {type(options).__name__}."
+                ),
+                output={
+                    "message": message,
+                    "options": options,
+                    "on_reject": on_reject,
+                    "choice": None,
+                },
+            )
 
         show_file = config.get("show_file")
         if isinstance(show_file, str) and "{{" in show_file:
@@ -139,7 +168,11 @@ class GateStep(StepBase):
             except (EOFError, KeyboardInterrupt):
                 print()
                 return options[-1]  # default to last (usually reject)
-            if raw.isdigit() and 1 <= int(raw) <= len(options):
+            # isdecimal() (not isdigit()): int() accepts exactly the decimal-digit
+            # set, whereas isdigit() also returns True for superscripts/subscripts
+            # (e.g. "²") that int() then rejects with ValueError — crashing
+            # this interactive loop.
+            if raw.isdecimal() and 1 <= int(raw) <= len(options):
                 return options[int(raw) - 1]
             # Also accept the option name directly
             if raw.lower() in [o.lower() for o in options]:

@@ -36,6 +36,7 @@ from ._helpers import (
     _resolve_script_type,
     _set_default_integration,
     _set_default_integration_or_exit,
+    _unregister_enabled_extension_commands_for_agent,
     _unregister_extensions_for_agent,
     _unregister_presets_for_agent,
     _update_init_options_for_integration,
@@ -56,6 +57,66 @@ def _manifest_tracks_skill_layout(manifest) -> bool:
     return any(str(rel).endswith("/SKILL.md") for rel in manifest.files)
 
 
+def _manifest_path_under(rel_path: str, root: str) -> bool:
+    """Return True when manifest key *rel_path* is inside project-relative *root*."""
+    normalized_root = PurePath(root).as_posix().strip("/")
+    normalized_rel = PurePath(rel_path).as_posix().strip("/")
+    if not normalized_root:
+        return False
+    return normalized_rel == normalized_root or normalized_rel.startswith(
+        f"{normalized_root}/"
+    )
+
+
+def _legacy_command_root_changed(
+    integration,
+    project_root: Path,
+    old_manifest,
+    new_manifest,
+) -> bool:
+    """Return True when command artifacts moved from legacy_dir to canonical dir."""
+    config = integration.registrar_config or {}
+    canonical = config.get("dir")
+    legacy = config.get("legacy_dir")
+    if (
+        not isinstance(canonical, str)
+        or not canonical.strip()
+        or not isinstance(legacy, str)
+        or not legacy.strip()
+        or PurePath(canonical).as_posix() == PurePath(legacy).as_posix()
+    ):
+        return False
+
+    canonical_dir = project_root / canonical
+    legacy_dir = project_root / legacy
+    if not canonical_dir.is_dir() or not legacy_dir.is_dir():
+        return False
+
+    old_had_legacy = any(
+        _manifest_path_under(rel, legacy) for rel in old_manifest.files
+    )
+    new_has_canonical = any(
+        _manifest_path_under(rel, canonical) for rel in new_manifest.files
+    )
+    return old_had_legacy and new_has_canonical
+
+
+def _legacy_command_root_upgrade_pending(integration, old_manifest) -> bool:
+    """Return True when the old manifest tracks command files under legacy_dir."""
+    config = integration.registrar_config or {}
+    canonical = config.get("dir")
+    legacy = config.get("legacy_dir")
+    if (
+        not isinstance(canonical, str)
+        or not canonical.strip()
+        or not isinstance(legacy, str)
+        or not legacy.strip()
+        or PurePath(canonical).as_posix() == PurePath(legacy).as_posix()
+    ):
+        return False
+    return any(_manifest_path_under(rel, legacy) for rel in old_manifest.files)
+
+
 class _PresetRegistryUnreadableError(Exception):
     """Raised when an existing preset registry cannot be read or parsed.
 
@@ -67,21 +128,20 @@ class _PresetRegistryUnreadableError(Exception):
 
 
 def _installed_presets_affecting_agent(
-    project_root, agent_key: str
-) -> list[tuple[str, bool]]:
-    """Return ``(preset_id, enabled)`` for presets with artifacts for *agent_key*.
+    project_root,
+    agent_key: str,
+    *,
+    include_skills: bool = True,
+) -> list[str]:
+    """Return IDs of installed presets with artifacts registered for *agent_key*.
 
     Preset registration is active-agent-only (#2948): command overrides are
     written for the active non-skills agent and skills for the active skills
     agent, tracked per preset in ``registered_commands`` /
     ``registered_skills``. Entries for *other* agents may still exist from
-    when those agents were active. Across a command↔skills *layout change*,
-    only the active integration's presets are reconciled — the post-upgrade
-    rescaffold re-registers *enabled* presets in the new layout — so callers
-    use this to reject the unsafe cases (non-active agent, or a disabled
-    preset whose frozen artifacts the rescaffold must not touch) rather than
-    silently orphaning preset files / leaving stale registry entries (see
-    ``integration_upgrade``).
+    when those agents were active. Callers use this to reject command-root or
+    command↔skills layout migrations before mutation: preset rescaffolding is
+    best-effort and cannot guarantee every tracked artifact has a replacement.
 
     Fails **closed**: a genuinely absent registry (no presets ever installed)
     returns an empty list, but if the registry file exists and cannot be read
@@ -111,7 +171,7 @@ def _installed_presets_affecting_agent(
             "preset registry structure is malformed"
         )
 
-    affected: list[tuple[str, bool]] = []
+    affected: list[str] = []
     for preset_id, meta in data.get("presets", {}).items():
         # A malformed entry means we cannot verify whether this preset owns
         # artifacts for the agent, so fail closed rather than skip it.
@@ -138,25 +198,39 @@ def _installed_presets_affecting_agent(
                 raise _PresetRegistryUnreadableError(
                     f"preset '{preset_id}' registered_skills is malformed"
                 )
-            has_skills = bool(registered_skills.get(agent_key))
+            has_skills = include_skills and bool(
+                registered_skills.get(agent_key)
+            )
         elif isinstance(registered_skills, (list, tuple)):
             # Legacy flat list: not agent-scoped, so any recorded skill may
             # belong to this agent — fail closed and count it as affecting.
-            has_skills = bool(registered_skills)
+            has_skills = include_skills and bool(registered_skills)
         else:
             raise _PresetRegistryUnreadableError(
                 f"preset '{preset_id}' registered_skills is malformed"
             )
         has_commands = bool(registered_commands.get(agent_key))
         if has_commands or has_skills:
-            affected.append((preset_id, bool(meta.get("enabled", True))))
+            affected.append(preset_id)
     return affected
+
+
+def _installed_command_presets_affecting_agent(
+    project_root,
+    agent_key: str,
+) -> list[str]:
+    """Return installed presets with command artifacts registered for *agent_key*."""
+    return _installed_presets_affecting_agent(
+        project_root,
+        agent_key,
+        include_skills=False,
+    )
 
 
 @integration_app.command("switch")
 def integration_switch(
     target: str = typer.Argument(help="Integration key to switch to"),
-    script: str | None = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
+    script: str | None = typer.Option(None, "--script", help="Script type: sh, ps, or py (default: from init-options.json or platform default)"),
     force: bool = typer.Option(False, "--force", help="Force removal of modified files during uninstall of the previous integration"),
     refresh_shared_infra: bool = typer.Option(False, "--refresh-shared-infra", help="Also overwrite shared infrastructure files even if you customized them (otherwise customizations are preserved)"),
     integration_options: str | None = typer.Option(None, "--integration-options", help='Options for the target integration'),
@@ -494,7 +568,7 @@ def integration_switch(
 def integration_upgrade(
     key: str | None = typer.Argument(None, help="Integration key to upgrade (default: current integration)"),
     force: bool = typer.Option(False, "--force", help="Force upgrade even if files are modified"),
-    script: str | None = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
+    script: str | None = typer.Option(None, "--script", help="Script type: sh, ps, or py (default: from init-options.json or platform default)"),
     integration_options: str | None = typer.Option(None, "--integration-options", help="Options for the integration"),
 ):
     """Upgrade an integration by reinstalling with diff-aware file handling.
@@ -556,26 +630,65 @@ def integration_upgrade(
         integration, current, key, integration_options
     )
 
-    # Guard: a command↔skills layout change is refused while preset overrides
-    # are installed for a *non-active* agent, or while the preset registry is
-    # unreadable (review #3415).  A dual-mode agent (e.g. Bob) can flip layout
-    # across an upgrade (``--skills`` / ``--legacy-commands``).  Extension
-    # artifacts are reconciled after the flip (see below), and for the
-    # *active* integration preset artifacts are too: the post-upgrade
-    # ``_register_presets_for_agent`` rescaffold re-registers every enabled
-    # preset in the new layout and retires the old layout's stale files
-    # (#2948), so an active-agent layout change proceeds — provided every
-    # affected preset is *enabled*: the rescaffold iterates enabled presets
-    # only, and a disabled preset's artifacts are deliberately frozen until
-    # removal (``preset disable``), so it can reconcile neither.  A
-    # non-active integration gets no such rescaffold (preset registration is
-    # active-only), so migrating it would delete a preset's old-layout files
-    # without recreating them and leave the preset registry claiming
-    # artifacts that no longer exist — bail out *before* any mutation with an
-    # actionable error.  An unreadable registry fails closed for either
-    # agent: the rescaffold cannot reconcile unknown state.  Detect the
-    # intended layout (``is_skills_mode`` reflects the resolved flags/disk
-    # state, so a plain same-layout upgrade is unaffected).
+    legacy_command_root_upgrade_pending = _legacy_command_root_upgrade_pending(
+        integration,
+        old_manifest,
+    )
+
+    # Guard: Kilo's legacy command root moves from .kilocode/workflows to
+    # .kilo/commands. Preset command artifacts are tracked outside the
+    # integration manifest, and their agent-scoped rescaffold is best-effort,
+    # not transactional with command-root cleanup. Refuse before setup writes
+    # .kilo/commands rather than risking orphaned legacy files or missing
+    # registry-tracked overrides in the canonical directory.
+    if key == "kilocode" and legacy_command_root_upgrade_pending:
+        config = integration.registrar_config or {}
+        legacy = config.get("legacy_dir", "legacy command directory")
+        canonical = config.get("dir", "canonical command directory")
+        try:
+            affected_presets = _installed_command_presets_affecting_agent(
+                project_root,
+                key,
+            )
+        except _PresetRegistryUnreadableError as exc:
+            console.print(
+                f"[red]Error:[/red] Cannot migrate '{key}' command directory "
+                f"from [cyan]{legacy}[/cyan] to [cyan]{canonical}[/cyan]: "
+                "the preset registry could not be read to verify installed presets."
+            )
+            console.print(f"[dim]Details:[/dim] {_cli_error_detail(exc)}")
+            console.print(
+                "A command directory migration cannot reconcile preset command "
+                "artifacts while the preset registry state is unknown. Fix or "
+                "restore [cyan].specify/presets/.registry[/cyan] and retry."
+            )
+            raise typer.Exit(1)
+        if affected_presets:
+            preset_list = ", ".join(sorted(affected_presets))
+            console.print(
+                f"[red]Error:[/red] Cannot migrate '{key}' command directory "
+                f"from [cyan]{legacy}[/cyan] to [cyan]{canonical}[/cyan] while "
+                f"preset override(s) are installed: [bold]{preset_list}[/bold]."
+            )
+            console.print(
+                "Preset command artifacts cannot yet be reconciled across this "
+                "command directory migration, so the upgrade is refused before "
+                "changing files."
+            )
+            console.print(
+                "Remove the preset(s), run the upgrade, then reinstall them:\n"
+                f"  [cyan]specify preset remove <id>[/cyan]\n"
+                f"  [cyan]specify integration upgrade {key} --script {selected_script} --force[/cyan]\n"
+                f"  [cyan]specify preset add <id>[/cyan]"
+            )
+            raise typer.Exit(1)
+
+    # Reject command↔skills layout changes while preset artifacts are tracked
+    # for the integration (review #3415). Preset rescaffolding is best-effort:
+    # an enabled preset can still have a missing/corrupt manifest or command
+    # source, or fail during a write. Phase 2 would otherwise delete the
+    # old-layout file before a replacement is known to exist. Refuse before
+    # any mutation; same-layout upgrades still rescaffold the active agent.
     if _manifest_tracks_skill_layout(old_manifest) != integration.is_skills_mode(
         parsed_options, project_root
     ):
@@ -594,47 +707,23 @@ def integration_upgrade(
                 "[cyan].specify/presets/.registry[/cyan] and retry."
             )
             raise typer.Exit(1)
-        if affected_presets and key != installed_key:
-            preset_list = ", ".join(sorted(pid for pid, _ in affected_presets))
+        if affected_presets:
+            preset_list = ", ".join(sorted(affected_presets))
             console.print(
-                f"[red]Error:[/red] Cannot change the non-active integration "
-                f"'{key}' command layout while preset override(s) are installed "
-                f"for it: [bold]{preset_list}[/bold]."
+                f"[red]Error:[/red] Cannot change '{key}' command layout while "
+                f"preset override(s) are installed: [bold]{preset_list}[/bold]."
             )
             console.print(
-                "Preset artifacts are only reconciled for the active "
-                "integration, so this migration would orphan the preset's "
-                "old-layout files and leave the preset registry inconsistent."
+                "Preset artifacts cannot be safely reconciled across a "
+                "command↔skills layout change, so the migration is refused "
+                "before changing files."
             )
             console.print(
-                "Switch to it first (which rescaffolds presets), or remove the "
-                "preset(s), run the upgrade, then reinstall them:\n"
+                "Remove the preset(s), run the upgrade, then reinstall them:\n"
                 f"  [cyan]specify preset remove <id>[/cyan]\n"
                 f"  [cyan]specify integration upgrade {key} "
                 f"--integration-options \"...\"[/cyan]\n"
                 f"  [cyan]specify preset add <id>[/cyan]"
-            )
-            raise typer.Exit(1)
-        disabled_affected = sorted(
-            pid for pid, enabled in affected_presets if not enabled
-        )
-        if disabled_affected:
-            preset_list = ", ".join(disabled_affected)
-            console.print(
-                f"[red]Error:[/red] Cannot change '{key}' command layout while "
-                f"disabled preset override(s) still own artifacts for it: "
-                f"[bold]{preset_list}[/bold]."
-            )
-            console.print(
-                "A disabled preset keeps its registered files until removal "
-                "and is skipped by the post-upgrade preset rescaffold, so the "
-                "migration would orphan its old-layout files and leave the "
-                "preset registry inconsistent."
-            )
-            console.print(
-                "Re-enable or remove the preset(s) first:\n"
-                "  [cyan]specify preset enable <id>[/cyan]  (reconciled by the upgrade)\n"
-                "  [cyan]specify preset remove <id>[/cyan]"
             )
             raise typer.Exit(1)
 
@@ -747,39 +836,26 @@ def integration_upgrade(
         if stale_removed:
             console.print(f"  Removed {len(stale_removed)} stale file(s) from previous install")
 
+    legacy_command_root_changed = _legacy_command_root_changed(
+        integration,
+        project_root,
+        old_manifest,
+        new_manifest,
+    )
+    if legacy_command_root_changed:
+        _unregister_enabled_extension_commands_for_agent(
+            project_root,
+            key,
+            continuing=(
+                "The integration command directory changed, but legacy enabled "
+                "extension artifacts may need manual cleanup."
+            ),
+        )
+
     # Re-register enabled extensions and presets only when upgrading the
-    # *active* integration, so its command artifacts are (re)created after
-    # the upgrade settled (Phase 2 included). Done outside the try/except
-    # above so this best-effort step cannot affect upgrade success. Non-active
-    # integrations are rescaffolded by `use` / `switch` instead — the #2886
-    # back-fill for non-active agents was removed at maintainer request
-    # (#2948).
-    #
-    # Layout-change reconciliation: a dual-mode agent (e.g. Bob) can flip
-    # between the legacy commands layout and the skills layout across an
-    # upgrade (``upgrade bob --integration-options "--skills"`` / reverse
-    # ``--legacy-commands``). Phase 2 above only removes stale files tracked
-    # by the *integration* manifest (core commands); extension and preset
-    # artifacts are tracked in their own registries. Their re-registration
-    # below retires each old-layout artifact itself, and only *after* its
-    # replacement in the new layout is confirmed — the deferred toggle
-    # cleanup in ``register_enabled_extensions_for_agent`` and the analogous
-    # handling in ``register_enabled_presets_for_agent`` — so a partial or
-    # failed re-registration never strips a still-tracked artifact. An eager
-    # ``unregister_agent_artifacts`` pass here would delete the old artifact
-    # and its tracking before the replacement exists, defeating that
-    # failure-safety (and, run for a *secondary* agent, could even delete the
-    # active agent's skills via its any-agent fallback scan). Disabled
-    # extensions are skipped by re-registration, leaving their artifacts
-    # frozen in place until re-enable/removal — consistent with how disabled
-    # presets are handled (their case is rejected by the guard near the top
-    # of this function, since the preset rescaffold cannot retire files it
-    # must not touch).
-    #
-    # The cases the preset rescaffold cannot reconcile — a non-active
-    # integration (preset registration is active-only, #2948) and a disabled
-    # preset's frozen artifacts — are rejected by that same guard, so
-    # control never reaches here in those states.
+    # active integration. Inactive integrations remain untouched until
+    # `use` or `switch` activates and rescaffolds them (#2948). This runs
+    # after the core upgrade transaction, so failures remain best-effort.
     if key == installed_key:
         _register_extensions_for_agent(
             project_root,

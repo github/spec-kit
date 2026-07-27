@@ -10,12 +10,18 @@ and ``process_template`` turns them into a valid Python invocation
 existence check below enforces that ordering.
 """
 
+import os
 import re
+import shlex
+import subprocess
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from specify_cli.integrations.base import IntegrationBase
+from tests.parity_helpers import HAS_POWERSHELL, POWERSHELL_EXE
 
 REPO_ROOT = Path(__file__).parent.parent
 TEMPLATES_DIR = REPO_ROOT / "templates" / "commands"
@@ -77,6 +83,122 @@ def test_template_renders_python_invocation(name: str):
     ), f"{name} did not render a Python invocation"
 
 
+def test_py_missing_variant_rejects_opposite_shell_only():
+    opposite_variant = "sh" if os.name == "nt" else "ps"
+    opposite_command = (
+        "scripts/bash/setup-plan.sh --json"
+        if opposite_variant == "sh"
+        else "scripts/powershell/setup-plan.ps1 -Json"
+    )
+    content = """---
+scripts:
+  {variant}: {command}
+---
+Run {{SCRIPT}} now.
+""".format(variant=opposite_variant, command=opposite_command)
+
+    with pytest.raises(ValueError, match="No runnable script variant"):
+        IntegrationBase.process_template(content, "agent", "py")
+
+
+def test_missing_script_preference_keeps_available_shell(monkeypatch):
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.platform.system", lambda: "Windows"
+    )
+
+    selected = IntegrationBase.select_script_variant(
+        None, {"sh": "scripts/bash/setup-plan.sh --json"}
+    )
+
+    assert selected == "sh"
+
+
+def test_spaced_python_interpreter_uses_powershell_call_operator(monkeypatch):
+    interpreter = r"C:\Program Files\Py$thon's\python.exe"
+    quoted_interpreter = interpreter.replace("'", "''")
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.shutil.which", lambda name: None
+    )
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.sys.executable",
+        interpreter,
+    )
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.os", SimpleNamespace(name="nt")
+    )
+
+    content = "---\nscripts:\n  py: scripts/python/setup_plan.py --json\n---\n{SCRIPT}\n"
+    result = IntegrationBase.process_template(content, "agent", "py")
+
+    assert (
+        f"& '{quoted_interpreter}' "
+        ".specify/scripts/python/setup_plan.py --json"
+    ) in result
+
+
+def test_spaced_python_interpreter_uses_posix_shell_quoting(monkeypatch):
+    interpreter = "/opt/Python $HOME's/bin/python"
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.shutil.which", lambda name: None
+    )
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.sys.executable",
+        interpreter,
+    )
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.os", SimpleNamespace(name="posix")
+    )
+
+    content = "---\nscripts:\n  py: scripts/python/setup_plan.py --json\n---\n{SCRIPT}\n"
+    result = IntegrationBase.process_template(content, "agent", "py")
+
+    assert (
+        f"{shlex.quote(interpreter)} "
+        ".specify/scripts/python/setup_plan.py --json"
+    ) in result
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_spaced_python_interpreter_invocation_runs_in_powershell(
+    tmp_path, monkeypatch
+):
+    interpreter_dir = tmp_path / "Python With Spaces"
+    interpreter_dir.mkdir()
+    if os.name == "nt":
+        interpreter = interpreter_dir / "python.cmd"
+        interpreter.write_text(f'@"{sys.executable}" %*\n', encoding="utf-8")
+    else:
+        interpreter = interpreter_dir / "python"
+        interpreter.write_text(
+            f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8"
+        )
+        interpreter.chmod(0o755)
+
+    (tmp_path / "probe.py").write_text("print('ok')\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.shutil.which", lambda name: None
+    )
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.sys.executable", str(interpreter)
+    )
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.os", SimpleNamespace(name="nt")
+    )
+
+    content = "---\nscripts:\n  py: probe.py\n---\n{SCRIPT}\n"
+    command = IntegrationBase.process_template(content, "agent", "py").splitlines()[-1]
+    result = subprocess.run(
+        [POWERSHELL_EXE, "-NoProfile", "-Command", command],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "ok"
+
+
 @pytest.mark.parametrize("name", PY_TEMPLATES)
 def test_sh_rendering_unchanged(name: str):
     # Negative: adding py: lines must not leak into sh rendering.
@@ -102,6 +224,9 @@ def test_install_shared_infra_copies_python_scripts(tmp_path):
         console=Console(quiet=True),
         force=False,
     )
-    dest = tmp_path / ".specify" / "scripts" / "python"
-    assert (dest / "check_prerequisites.py").is_file()
-    assert not (tmp_path / ".specify" / "scripts" / "powershell").exists()
+    scripts_dir = tmp_path / ".specify" / "scripts"
+    assert (scripts_dir / "python" / "check_prerequisites.py").is_file()
+    shell_variant = "powershell" if os.name == "nt" else "bash"
+    other_variant = "bash" if os.name == "nt" else "powershell"
+    assert (scripts_dir / shell_variant).is_dir()
+    assert not (scripts_dir / other_variant).exists()
