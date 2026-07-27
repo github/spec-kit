@@ -7426,7 +7426,11 @@ class TestExtensionUpdateCLI:
         remove.assert_not_called()
         install.assert_not_called()
         assert installed_extension_dir.resolve() not in removed_paths
-        assert not (manager.extensions_dir / ".backup" / "test-ext-update").exists()
+        assert not list(
+            (manager.extensions_dir / ".backup").glob(
+                "update-*-*"
+            )
+        )
         assert ExtensionManager(project_dir).registry.get("test-ext")["version"] == "1.0.0"
 
     @pytest.mark.parametrize(
@@ -7729,6 +7733,8 @@ class TestExtensionUpdateCLI:
         project_dir.mkdir()
         specify_dir = project_dir / ".specify"
         specify_dir.mkdir()
+        copilot_agents_dir = project_dir / ".github" / "agents"
+        copilot_agents_dir.mkdir(parents=True)
         (specify_dir / "init-options.json").write_text(
             json.dumps(
                 {
@@ -7755,6 +7761,18 @@ class TestExtensionUpdateCLI:
         assert old_registry_entry["registered_skills"] == [old_skill.name]
         new_skill = skills_dir / "speckit-test-ext-new"
         new_skill.mkdir()
+        user_skill_content = (
+            "---\n"
+            "name: user-new-skill\n"
+            "description: User-owned skill\n"
+            "metadata:\n"
+            "  source: user\n"
+            "---\n\nUSER SKILL\n"
+        )
+        (new_skill / "SKILL.md").write_text(
+            user_skill_content,
+            encoding="utf-8",
+        )
         user_support_file = new_skill / "support.txt"
         user_support_file.write_text("USER CONTENT", encoding="utf-8")
 
@@ -7827,11 +7845,6 @@ class TestExtensionUpdateCLI:
                 "register_hooks",
                 fail_after_skill_registration,
             ),
-            patch.object(
-                CommandRegistrar,
-                "register_commands_for_all_agents",
-                return_value={},
-            ),
         ):
             result = runner.invoke(
                 app,
@@ -7846,8 +7859,21 @@ class TestExtensionUpdateCLI:
         assert ExtensionManager(project_dir).registry.get("test-ext") == old_registry_entry
         assert (old_skill / "SKILL.md").read_text(encoding="utf-8") == old_skill_content
         assert user_support_file.read_text(encoding="utf-8") == "USER CONTENT"
-        assert not (new_skill / "SKILL.md").exists()
+        assert (
+            new_skill / "SKILL.md"
+        ).read_text(encoding="utf-8") == user_skill_content
         assert not (skills_dir / "speckit-test-ext-fresh").exists()
+        for command_name in ("hello", "new", "fresh"):
+            qualified_name = f"speckit.test-ext.{command_name}"
+            assert not (
+                copilot_agents_dir / f"{qualified_name}.agent.md"
+            ).exists()
+            assert not (
+                project_dir
+                / ".github"
+                / "prompts"
+                / f"{qualified_name}.prompt.md"
+            ).exists()
 
     @pytest.mark.parametrize(
         ("manifest_text", "expected_detail"),

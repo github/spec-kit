@@ -60,7 +60,7 @@ _ZIP_LOCAL_HEADER_SIZE = 30
 _ZIP_LOCAL_SIGNATURE = b"PK\x03\x04"
 _ZIP_EXTRA_HEADER = struct.Struct("<HH")
 _ZIP64_EXTRA_FIELD_ID = 0x0001
-_ZIP64_EXTRACT_VERSION = 45
+_ZIP64_MIN_EXTRACT_VERSION = 45
 _ZIP_UINT16_MAX = (1 << 16) - 1
 _ZIP_UINT32_MAX = (1 << 32) - 1
 _ZIP_MAX_COMMENT_BYTES = (1 << 16) - 1
@@ -462,19 +462,24 @@ def _preflight_zip_entry_features(
 ) -> None:
     """Enforce the formats whose output can be bounded by ``ZipExtFile``.
 
-    APPNOTE assigns extract version 4.5 to ZIP64 size extensions, so reject it
-    independently of the usual size sentinels and extra field. Python's BZIP2
-    and LZMA ``ZipExtFile`` paths do not pass the requested output length to the
-    decompressor; only STORED and DEFLATED preserve this module's hard memory
-    bound.
+    Python's BZIP2 and LZMA ``ZipExtFile`` paths do not pass the requested
+    output length to the decompressor; only STORED and DEFLATED preserve this
+    module's hard memory bound. APPNOTE assigns extract version 4.5 to ZIP64
+    size extensions. Because this field declares the minimum extractor feature
+    level, reject 4.5 and every newer level for the supported methods,
+    independently of the usual size sentinels and extra field.
     """
-    if extract_version == _ZIP64_EXTRACT_VERSION:
-        _raise_zip64(error_type)
     if compression_method not in _BOUNDED_ZIP_COMPRESSION_METHODS:
         _raise(
             error_type,
             f"Unsupported ZIP compression method {compression_method}; "
             "the bounded extractor supports only STORED and DEFLATED",
+        )
+    if extract_version >= _ZIP64_MIN_EXTRACT_VERSION:
+        _raise(
+            error_type,
+            "ZIP64 or newer ZIP features requiring extractor version 4.5 or "
+            "newer are not supported by the bounded extractor",
         )
 
 

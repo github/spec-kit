@@ -13,7 +13,13 @@ TRAVERSAL_PAYLOADS = [
     "../pwned",
     "../../etc/passwd",
     "subdir/../../escape",
+    "link/../victim",
     "/absolute/evil",
+    "NUL",
+    "name:stream",
+    "x?y",
+    "trailing.",
+    "group\\run",
 ]
 
 
@@ -89,7 +95,8 @@ class TestAliasTraversal:
     @pytest.mark.parametrize("bad_alias", TRAVERSAL_PAYLOADS)
     def test_gemini_rejects_traversal_in_alias(self, tmp_path, bad_alias):
         project, ext_dir = _project_and_source(tmp_path)
-        (project / ".gemini" / "commands").mkdir(parents=True)
+        commands_dir = project / ".gemini" / "commands"
+        commands_dir.mkdir(parents=True)
 
         registrar = CommandRegistrar()
         with pytest.raises(ValueError, match="escapes|outside|Invalid"):
@@ -102,12 +109,15 @@ class TestAliasTraversal:
             )
 
         _assert_no_stray_files(tmp_path, Path(bad_alias).name.replace("/", ""))
+        assert list(commands_dir.rglob("*")) == []
 
     @pytest.mark.parametrize("bad_alias", TRAVERSAL_PAYLOADS)
     def test_copilot_rejects_traversal_in_alias(self, tmp_path, bad_alias):
         project, ext_dir = _project_and_source(tmp_path)
-        (project / ".github" / "agents").mkdir(parents=True)
-        (project / ".github" / "prompts").mkdir(parents=True)
+        agents_dir = project / ".github" / "agents"
+        prompts_dir = project / ".github" / "prompts"
+        agents_dir.mkdir(parents=True)
+        prompts_dir.mkdir(parents=True)
 
         registrar = CommandRegistrar()
         with pytest.raises(ValueError, match="escapes|outside|Invalid"):
@@ -120,6 +130,8 @@ class TestAliasTraversal:
             )
 
         _assert_no_stray_files(tmp_path, Path(bad_alias).name.replace("/", ""))
+        assert list(agents_dir.rglob("*")) == []
+        assert list(prompts_dir.rglob("*")) == []
 
 
 class TestCopilotPromptTraversal:
@@ -290,6 +302,13 @@ class TestRelativeExtensionPathPolicy:
             "\\\\server\\share\\x.md",
             "../escape.md",
             "commands/../../escape.md",
+            "NUL",
+            "commands/CON.md",
+            "commands\\run.md",
+            "name:stream",
+            "x?y",
+            "trailing.",
+            "directory/",
         ],
     )
     def test_unsafe_values_report_violation(self, value):
@@ -380,3 +399,27 @@ class TestReadSkipWarning:
             / "speckit-myext-hi"
             / "SKILL.md"
         ).exists()
+
+    def test_copilot_nested_alias_creates_companion_prompt(self, tmp_path):
+        project, ext_dir = _project_and_source(tmp_path)
+        agents_dir = project / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+
+        registrar = CommandRegistrar()
+        registered = registrar.register_commands(
+            "copilot",
+            [_cmd("speckit.myext.hello", ["group/run"])],
+            "myext",
+            ext_dir,
+            project,
+        )
+
+        assert registered == ["speckit.myext.hello", "group/run"]
+        assert (agents_dir / "group" / "run.agent.md").is_file()
+        assert (
+            project
+            / ".github"
+            / "prompts"
+            / "group"
+            / "run.prompt.md"
+        ).is_file()

@@ -636,9 +636,10 @@ def test_safe_extract_zip_rejects_force_zip64_local_header_before_zipfile(
         safe_extract_zip(zip_path, tmp_path / "out")
 
 
+@pytest.mark.parametrize("extract_version", [45, 46])
 @pytest.mark.parametrize("visible_version", ["central", "local"])
-def test_safe_extract_zip_rejects_masked_zip64_data_descriptor_version(
-    tmp_path, monkeypatch, visible_version
+def test_safe_extract_zip_rejects_masked_zip64_data_descriptor_version_or_newer(
+    tmp_path, monkeypatch, visible_version, extract_version
 ):
     class UnseekableBuffer(io.BytesIO):
         def seek(self, *_args, **_kwargs):
@@ -657,18 +658,21 @@ def test_safe_extract_zip_rejects_masked_zip64_data_descriptor_version(
     assert struct.unpack_from("<H", archive, central_header + 6)[0] == 45
 
     # Hide the local size sentinels and ZIP64 extra ID while retaining the
-    # 64-bit data descriptor emitted by ZipFile. Leave version 4.5 visible in
-    # exactly one header to exercise both preflight checks.
+    # 64-bit data descriptor emitted by ZipFile. Leave a ZIP64-or-newer
+    # extractor version visible in exactly one header to exercise both
+    # preflight checks.
     struct.pack_into("<LL", archive, local_header + 18, 0, 0)
     filename_size = struct.unpack_from("<H", archive, local_header + 26)[0]
     local_extra = local_header + 30 + filename_size
     struct.pack_into("<H", archive, local_extra, 0xCAFE)
+    struct.pack_into("<H", archive, local_header + 4, 20)
+    struct.pack_into("<H", archive, central_header + 6, 20)
     if visible_version == "central":
-        struct.pack_into("<H", archive, local_header + 4, 20)
+        struct.pack_into("<H", archive, central_header + 6, extract_version)
     else:
-        struct.pack_into("<H", archive, central_header + 6, 20)
+        struct.pack_into("<H", archive, local_header + 4, extract_version)
 
-    zip_path = tmp_path / f"masked-{visible_version}-zip64.zip"
+    zip_path = tmp_path / f"masked-{visible_version}-v{extract_version}.zip"
     zip_path.write_bytes(archive)
     with zipfile.ZipFile(zip_path) as zf:
         assert zf.read("file.txt") == b"contents"
@@ -678,7 +682,7 @@ def test_safe_extract_zip_rejects_masked_zip64_data_descriptor_version(
         lambda *_args, **_kwargs: pytest.fail("ZipFile constructor was called"),
     )
 
-    with pytest.raises(ValueError, match="ZIP64"):
+    with pytest.raises(ValueError, match="extractor version 4.5 or newer"):
         safe_extract_zip(zip_path, tmp_path / "out")
 
 
@@ -797,7 +801,10 @@ def test_safe_extract_zip_wraps_unsupported_zip_version(tmp_path):
     struct.pack_into("<H", archive, central_header + 6, 99)
     zip_path.write_bytes(archive)
 
-    with pytest.raises(_CustomZipError, match="Invalid ZIP archive"):
+    with pytest.raises(
+        _CustomZipError,
+        match="extractor version 4.5 or newer",
+    ):
         safe_extract_zip(zip_path, tmp_path / "out", error_type=_CustomZipError)
 
 

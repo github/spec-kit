@@ -675,6 +675,23 @@ class CommandRegistrar:
             cmd_name = cmd_info["name"]
             aliases = cmd_info.get("aliases", [])
             cmd_file = cmd_info["file"]
+            name_reason = relative_extension_path_violation(cmd_name)
+            if name_reason:
+                raise ValueError(
+                    f"Invalid command name {cmd_name!r}: {name_reason}"
+                )
+            if aliases is None:
+                aliases = []
+            if not isinstance(aliases, list):
+                raise ValueError(
+                    f"Aliases for command {cmd_name!r} must be a list"
+                )
+            for alias in aliases:
+                alias_reason = relative_extension_path_violation(alias)
+                if alias_reason:
+                    raise ValueError(
+                        f"Invalid command alias {alias!r}: {alias_reason}"
+                    )
 
             # Guard against path traversal using the single shared policy in
             # relative_extension_path_violation(), so the runtime guard stays
@@ -957,10 +974,16 @@ class CommandRegistrar:
             project_root: Path to project root
             cmd_name: Command name (e.g. 'speckit.my-ext.example')
         """
+        name_reason = relative_extension_path_violation(cmd_name)
+        if name_reason:
+            raise ValueError(
+                f"Invalid Copilot prompt name {cmd_name!r}: {name_reason}"
+            )
         prompts_dir = project_root / ".github" / "prompts"
         prompts_dir.mkdir(parents=True, exist_ok=True)
         prompt_file = prompts_dir / f"{cmd_name}.prompt.md"
         CommandRegistrar._ensure_inside(prompt_file, prompts_dir)
+        prompt_file.parent.mkdir(parents=True, exist_ok=True)
         prompt_file.write_text(f"---\nagent: {cmd_name}\n---\n", encoding="utf-8")
 
     @staticmethod

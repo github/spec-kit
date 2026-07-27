@@ -1805,6 +1805,99 @@ class TestExtensionSkillUnregistration:
         assert found == [fallback_skill.resolve()]
         assert configured_dir.is_symlink()
 
+    def test_fallback_scan_rejects_symlinked_root_outside_project(
+        self, project_dir, temp_dir
+    ):
+        """Fallback discovery must not authorize a root by resolving it first."""
+        if not hasattr(os, "symlink"):
+            pytest.skip("symlinks are unavailable")
+
+        from specify_cli import AGENT_CONFIG, DEFAULT_SKILLS_DIR
+
+        skill_name = "speckit-test-ext-hello"
+        frontmatter = yaml.safe_dump(
+            {
+                "name": skill_name,
+                "description": "Extension skill",
+                "metadata": {"source": "extension:test-ext"},
+            },
+            sort_keys=False,
+        )
+        skill_content = f"---\n{frontmatter}---\n\nExtension skill\n"
+
+        safe_skill = project_dir / DEFAULT_SKILLS_DIR / skill_name
+        safe_skill.mkdir(parents=True)
+        (safe_skill / "SKILL.md").write_text(skill_content, encoding="utf-8")
+
+        outside_skills = temp_dir / "outside-skills"
+        outside_skill = outside_skills / skill_name
+        outside_skill.mkdir(parents=True)
+        outside_skill_file = outside_skill / "SKILL.md"
+        outside_skill_file.write_text(skill_content, encoding="utf-8")
+
+        agent_folder = AGENT_CONFIG["claude"]["folder"].rstrip("/")
+        symlinked_fallback = project_dir / agent_folder / "skills"
+        symlinked_fallback.parent.mkdir(parents=True)
+        try:
+            os.symlink(
+                outside_skills,
+                symlinked_fallback,
+                target_is_directory=True,
+            )
+        except OSError:
+            pytest.skip("Current platform/user cannot create directory symlinks")
+
+        manager = ExtensionManager(project_dir)
+        found = manager._find_extension_skill_dirs(
+            [skill_name],
+            "test-ext",
+        )
+
+        assert found == [safe_skill.resolve()]
+
+        manager._unregister_extension_skills([skill_name], "test-ext")
+
+        assert not safe_skill.exists()
+        assert outside_skill.is_dir()
+        assert outside_skill_file.read_text(encoding="utf-8") == skill_content
+
+    def test_configured_global_skills_root_remains_supported(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """A trusted configured global root must not be treated as a fallback."""
+        home = temp_dir / "home"
+        home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: home)
+        _create_init_options(project_dir, ai="hermes", ai_skills=True)
+
+        skill_name = "speckit-test-ext-hello"
+        skill_dir = home / ".hermes" / "skills" / skill_name
+        skill_dir.mkdir(parents=True)
+        frontmatter = yaml.safe_dump(
+            {
+                "name": skill_name,
+                "description": "Global extension skill",
+                "metadata": {"source": "extension:test-ext"},
+            },
+            sort_keys=False,
+        )
+        (skill_dir / "SKILL.md").write_text(
+            f"---\n{frontmatter}---\n\nGlobal extension skill\n",
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        found = manager._find_extension_skill_dirs(
+            [skill_name],
+            "test-ext",
+            create_skills_dir=False,
+        )
+
+        assert found == [skill_dir.resolve()]
+
+        manager._unregister_extension_skills([skill_name], "test-ext")
+        assert not skill_dir.exists()
+
     def test_skills_removed_on_extension_remove(self, skills_project, extension_dir):
         """Removing an extension should clean up its skill directories."""
         project_dir, skills_dir = skills_project

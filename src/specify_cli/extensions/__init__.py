@@ -404,6 +404,12 @@ class ExtensionManifest:
                     raise ValidationError(
                         f"Aliases for command '{cmd['name']}' must be strings"
                     )
+                alias_reason = relative_extension_path_violation(alias)
+                if alias_reason:
+                    raise ValidationError(
+                        f"Invalid alias {alias!r} for command "
+                        f"'{cmd['name']}': {alias_reason}"
+                    )
 
         # Rewrite any hook command references that pointed at a renamed command or
         # an alias-form ref (ext.cmd → speckit.ext.cmd).  Always emit a warning when
@@ -810,7 +816,7 @@ class ExtensionManager:
         - primary commands must use this extension's namespace
         - command namespaces must not shadow core commands
         - duplicate command/alias names inside one manifest are rejected
-        - aliases are validated for type and uniqueness only (no pattern enforcement)
+        - aliases are free-form but must remain safe relative output paths
 
         Args:
             manifest: Parsed extension manifest
@@ -845,6 +851,12 @@ class ExtensionManager:
                 if not isinstance(name, str):
                     raise ValidationError(
                         f"{kind.capitalize()} for command '{primary_name}' must be a string"
+                    )
+
+                path_reason = relative_extension_path_violation(name)
+                if path_reason:
+                    raise ValidationError(
+                        f"Invalid {kind} {name!r}: {path_reason}"
                     )
 
                 # Enforce canonical pattern only for primary command names;
@@ -1350,6 +1362,7 @@ class ExtensionManager:
             fallback_dirs.add(self.project_root / DEFAULT_SKILLS_DIR)
             return fallback_dirs
 
+        fallback_dirs = _fallback_candidate_dirs()
         if skills_dir:
             candidate_dirs = {skills_dir}
             # Read-only backup discovery cannot know whether remove() will
@@ -1357,13 +1370,27 @@ class ExtensionManager:
             # unregistration falls back to all known roots, so capture those
             # artifacts now as well.
             if not create_skills_dir and not skills_dir.is_dir():
-                candidate_dirs.update(_fallback_candidate_dirs())
+                candidate_dirs.update(fallback_dirs)
         else:
-            candidate_dirs = _fallback_candidate_dirs()
+            candidate_dirs = fallback_dirs
+
+        from ..shared_infra import _validate_safe_shared_directory
 
         owned_dirs: List[Path] = []
         seen_dirs: set[Path] = set()
         for skills_candidate in candidate_dirs:
+            if skills_candidate in fallback_dirs:
+                try:
+                    # Validate project-local fallback roots lexically before
+                    # resolving them. Otherwise a symlinked fallback root
+                    # resolves to its external target and makes descendants
+                    # appear contained within itself. Explicit configured roots
+                    # can legitimately be global (for example Hermes).
+                    _validate_safe_shared_directory(
+                        self.project_root, skills_candidate
+                    )
+                except (OSError, ValueError):
+                    continue
             if not skills_candidate.is_dir():
                 continue
             for skill_name in skill_names:

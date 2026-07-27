@@ -8,12 +8,14 @@ which re-fetch from the parent package at call time so test monkeypatching of
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import tempfile
 import zipfile
 from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 
 import typer
 import yaml
@@ -31,6 +33,7 @@ from .._download_security import (
     read_response_limited,
     read_zip_member_limited,
 )
+from .._init_options import is_ai_skills_enabled
 
 extension_app = typer.Typer(
     name="extension",
@@ -1152,7 +1155,14 @@ def extension_update(
             console.print(f"📦 Updating {safe_ext_name}...")
 
             # Backup paths
-            backup_base = manager.extensions_dir / ".backup" / f"{extension_id}-update"
+            backup_root = manager.extensions_dir / ".backup"
+            backup_key = hashlib.sha256(
+                extension_id.encode("utf-8")
+            ).hexdigest()[:16]
+            backup_base = (
+                backup_root
+                / f"update-{backup_key}-{uuid4().hex}"
+            )
             backup_ext_dir = backup_base / "extension"
             backup_commands_dir = backup_base / "commands"
             backup_skills_dir = backup_base / "skills"
@@ -1163,14 +1173,89 @@ def extension_update(
             backup_installed = UNSET  # Original installed list from extensions.yml
             backup_hooks = None  # None means backup step 4 not yet reached; {} or {...} means backup was captured
             backed_up_command_files = {}
+            backed_up_command_symlinks = {}
             backed_up_skill_dirs = {}
+            new_command_dirs_absent_before_update = []
+            new_command_paths_absent_before_update = []
             new_skill_names = []
             new_skill_paths_absent_before_update = []
             # Validation failures must not rewrite an untouched installation.
             installation_modified = False
+            zip_cleanup_error = None
+            backup_created_by_attempt = False
+
+            def backup_command_artifact(original_file, backup_file):
+                """Back up one command artifact once, preserving its full path."""
+                nonlocal backup_created_by_attempt
+                original_key = str(original_file)
+                if original_key in backed_up_command_files:
+                    return
+                if original_file.is_symlink():
+                    backed_up_command_symlinks[original_key] = os.readlink(
+                        original_file
+                    )
+                else:
+                    if original_file.stat().st_nlink > 1:
+                        raise RuntimeError(
+                            "Cannot safely update hard-linked generated "
+                            f"artifact '{original_file}'"
+                        )
+                    backup_created_by_attempt = True
+                    backup_file.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(original_file, backup_file)
+                backed_up_command_files[original_key] = str(backup_file)
+
+            def restore_command_artifact(original_path, backup_path):
+                """Restore one regular file or symlink without following it."""
+                original_key = str(original_path)
+                original_file = Path(original_path)
+                backup_file = Path(backup_path)
+                symlink_state = backed_up_command_symlinks.get(
+                    original_key
+                )
+
+                if symlink_state is not None:
+                    if original_file.is_symlink() or original_file.is_file():
+                        original_file.unlink()
+                    elif original_file.exists():
+                        raise RuntimeError(
+                            "Command rollback found an unexpected directory "
+                            f"at '{original_file}'"
+                        )
+                    original_file.parent.mkdir(parents=True, exist_ok=True)
+                    os.symlink(symlink_state, original_file)
+                    return
+
+                if not backup_file.is_file() or backup_file.is_symlink():
+                    raise RuntimeError(
+                        "Command rollback backup is missing for "
+                        f"'{original_file}'"
+                    )
+                if original_file.is_symlink() or original_file.is_file():
+                    original_file.unlink()
+                elif original_file.exists():
+                    raise RuntimeError(
+                        "Command rollback found an unexpected directory "
+                        f"at '{original_file}'"
+                    )
+                original_file.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(backup_file, original_file)
+
+            def remember_absent_parent_dirs(artifact_path, root_dir):
+                """Remember absent parents a failed renderer may create."""
+                boundary = root_dir.parent
+                if root_dir.is_relative_to(project_root):
+                    boundary = project_root
+                parent = artifact_path.parent
+                while parent != boundary:
+                    if parent.exists() or parent.is_symlink():
+                        break
+                    new_command_dirs_absent_before_update.append(parent)
+                    parent = parent.parent
 
             def backup_extension_skills(skill_names):
                 """Back up every owned skill directory that remove() may delete."""
+                nonlocal backup_created_by_attempt
                 for skill_dir in manager._find_extension_skill_dirs(
                     skill_names,
                     extension_id,
@@ -1179,6 +1264,7 @@ def extension_update(
                     original_key = str(skill_dir)
                     if original_key in backed_up_skill_dirs:
                         continue
+                    backup_created_by_attempt = True
                     backup_skills_dir.mkdir(parents=True, exist_ok=True)
                     backup_skill_dir = backup_skills_dir / str(
                         len(backed_up_skill_dirs)
@@ -1187,12 +1273,24 @@ def extension_update(
                     backed_up_skill_dirs[original_key] = str(backup_skill_dir)
 
             try:
+                if backup_root.is_symlink():
+                    raise RuntimeError(
+                        "Cannot safely create update backup under symlinked "
+                        f"directory '{backup_root}'"
+                    )
+                if backup_base.exists() or backup_base.is_symlink():
+                    raise RuntimeError(
+                        "Cannot safely reuse an existing update backup "
+                        f"directory '{backup_base}'"
+                    )
+
                 # 1. Backup registry entry (always, even if extension dir doesn't exist)
                 backup_registry_entry = manager.registry.get(extension_id)
 
                 # 2. Backup extension directory
                 extension_dir = manager.extensions_dir / extension_id
                 if extension_dir.exists():
+                    backup_created_by_attempt = True
                     backup_base.mkdir(parents=True, exist_ok=True)
                     if backup_ext_dir.exists():
                         shutil.rmtree(backup_ext_dir)
@@ -1216,30 +1314,83 @@ def extension_update(
                     commands_dir = _AgentReg._resolve_agent_dir(
                         agent_name, agent_config, project_root
                     )
+                    dirs_to_backup = [commands_dir]
+                    legacy = agent_config.get("legacy_dir")
+                    if legacy:
+                        legacy_dir = project_root / legacy
+                        if (
+                            legacy_dir.exists()
+                            and legacy_dir != commands_dir
+                        ):
+                            dirs_to_backup.append(legacy_dir)
 
                     for cmd_name in cmd_names:
-                        output_name = _AgentReg._compute_output_name(agent_name, cmd_name, agent_config)
-                        cmd_file = commands_dir / f"{output_name}{agent_config['extension']}"
-                        if cmd_file.exists():
-                            # Mirror the real on-disk layout under the backup dir.
-                            # Skills agents (extension == "/SKILL.md") name every
-                            # command file "SKILL.md", living in a per-command
-                            # subdir (e.g. speckit-plan/SKILL.md). Using cmd_file.name
-                            # alone would collide all of them onto one backup path and
-                            # break rollback; keep the relative path to stay unique.
-                            backup_cmd_path = backup_commands_dir / agent_name / cmd_file.relative_to(commands_dir)
-                            backup_cmd_path.parent.mkdir(parents=True, exist_ok=True)
-                            shutil.copy2(cmd_file, backup_cmd_path)
-                            backed_up_command_files[str(cmd_file)] = str(backup_cmd_path)
+                        output_name = _AgentReg._compute_output_name(
+                            agent_name, cmd_name, agent_config
+                        )
+                        names_to_backup = [output_name]
+                        if (
+                            output_name != cmd_name
+                            and _AgentReg._is_safe_command_name(cmd_name)
+                        ):
+                            names_to_backup.append(cmd_name)
+
+                        for dir_index, target_dir in enumerate(
+                            dirs_to_backup
+                        ):
+                            for name in names_to_backup:
+                                cmd_file = (
+                                    target_dir
+                                    / f"{name}{agent_config['extension']}"
+                                )
+                                try:
+                                    _AgentReg._ensure_inside(
+                                        cmd_file, target_dir
+                                    )
+                                except ValueError:
+                                    continue
+                                if (
+                                    cmd_file.exists()
+                                    or cmd_file.is_symlink()
+                                ):
+                                    # Keep both the directory location and
+                                    # relative path unique. unregister_commands()
+                                    # removes legacy and canonical copies, and
+                                    # skills agents place every SKILL.md in its
+                                    # own command subdirectory.
+                                    backup_cmd_path = (
+                                        backup_commands_dir
+                                        / agent_name
+                                        / f"location-{dir_index}"
+                                        / cmd_file.relative_to(target_dir)
+                                    )
+                                    backup_command_artifact(
+                                        cmd_file, backup_cmd_path
+                                    )
 
                         # Also backup copilot prompt files
                         if agent_name == "copilot":
-                            prompt_file = project_root / ".github" / "prompts" / f"{cmd_name}.prompt.md"
-                            if prompt_file.exists():
-                                backup_prompt_path = backup_commands_dir / "copilot-prompts" / prompt_file.name
-                                backup_prompt_path.parent.mkdir(parents=True, exist_ok=True)
-                                shutil.copy2(prompt_file, backup_prompt_path)
-                                backed_up_command_files[str(prompt_file)] = str(backup_prompt_path)
+                            prompts_dir = (
+                                project_root / ".github" / "prompts"
+                            )
+                            prompt_file = (
+                                prompts_dir / f"{cmd_name}.prompt.md"
+                            )
+                            try:
+                                _AgentReg._ensure_inside(
+                                    prompt_file, prompts_dir
+                                )
+                            except ValueError:
+                                continue
+                            if prompt_file.exists() or prompt_file.is_symlink():
+                                backup_prompt_path = (
+                                    backup_commands_dir
+                                    / "copilot-prompts"
+                                    / prompt_file.relative_to(prompts_dir)
+                                )
+                                backup_command_artifact(
+                                    prompt_file, backup_prompt_path
+                                )
 
                 raw_registered_skills = (
                     backup_registry_entry.get("registered_skills", [])
@@ -1285,10 +1436,16 @@ def extension_update(
                         # this pre-scan cannot approve one entry while extraction
                         # later overwrites it with a backslash alias.
                         manifest_candidates = []
+                        archive_entries = []
                         for name in namelist:
                             normalized_name = normalize_zip_member_name(name)
-                            parts = normalized_name.split("/")
+                            parts = normalized_name.removesuffix("/").split(
+                                "/"
+                            )
                             path_key = portable_zip_path_key(normalized_name)
+                            archive_entries.append(
+                                (normalized_name, parts)
+                            )
                             if (
                                 len(parts) in {1, 2}
                                 and path_key[-1] == "extension.yml"
@@ -1307,25 +1464,52 @@ def extension_update(
                                 )
                             seen_manifest_keys[path_key] = name
 
+                        for _name, normalized_name, _path_key in manifest_candidates:
+                            if normalized_name.split("/")[-1] != "extension.yml":
+                                raise ValueError(
+                                    "Downloaded extension archive manifest "
+                                    "filenames must use canonical "
+                                    "'extension.yml' casing"
+                                )
+
                         root_manifest = next(
                             (
                                 name
-                                for name, normalized_name, _path_key
+                                for name, _normalized_name, path_key
                                 in manifest_candidates
-                                if normalized_name == "extension.yml"
+                                if path_key == ("extension.yml",)
                             ),
                             None,
                         )
                         nested_manifests = [
-                            name
-                            for name, normalized_name, _path_key
+                            (name, normalized_name)
+                            for name, normalized_name, path_key
                             in manifest_candidates
-                            if normalized_name.endswith("/extension.yml")
-                            and normalized_name.count("/") == 1
+                            if len(path_key) == 2
+                            and path_key[-1] == "extension.yml"
                         ]
                         manifest_path = root_manifest
                         if manifest_path is None and len(nested_manifests) == 1:
-                            manifest_path = nested_manifests[0]
+                            manifest_path, normalized_manifest_path = (
+                                nested_manifests[0]
+                            )
+                            manifest_root = normalized_manifest_path.split(
+                                "/", 1
+                            )[0]
+                            top_level_dirs = {
+                                parts[0]
+                                for normalized_name, parts in archive_entries
+                                if (
+                                    len(parts) > 1
+                                    or normalized_name.endswith("/")
+                                )
+                            }
+                            if top_level_dirs != {manifest_root}:
+                                raise ValueError(
+                                    "Downloaded extension archive with a "
+                                    "nested extension.yml must contain exactly "
+                                    "one top-level directory"
+                                )
 
                         if manifest_path is not None:
                             manifest_bytes = read_zip_member_limited(
@@ -1393,18 +1577,128 @@ def extension_update(
                     # cross-extension command conflicts.
                     manager._validate_install_conflicts(preflight_manifest)
 
-                    new_skill_names = list(
-                        dict.fromkeys(
-                            manager._skill_name_for_command(command["name"])
-                            for command in preflight_manifest.commands
+                    new_command_names = list(
+                        manager._collect_manifest_command_names(
+                            preflight_manifest
                         )
                     )
+                    new_skill_names = list(
+                        dict.fromkeys(
+                            manager._skill_name_for_command(command_name)
+                            for command_name in new_command_names
+                        )
+                    )
+
+                    # Command rendering happens before hook registration and
+                    # registry.add(). Preserve every candidate output that
+                    # already exists, and remember paths that are absent now so
+                    # rollback can remove files created before registry state is
+                    # available. Include aliases and Copilot companion prompts.
+                    for agent_name, agent_config in registrar.AGENT_CONFIGS.items():
+                        commands_dir = _AgentReg._resolve_agent_dir(
+                            agent_name, agent_config, project_root
+                        )
+                        if not commands_dir.is_dir():
+                            continue
+                        for command_name in new_command_names:
+                            output_name = _AgentReg._compute_output_name(
+                                agent_name, command_name, agent_config
+                            )
+                            command_file = (
+                                commands_dir
+                                / f"{output_name}{agent_config['extension']}"
+                            )
+                            _AgentReg._ensure_inside(command_file, commands_dir)
+                            backup_command_path = (
+                                backup_commands_dir
+                                / agent_name
+                                / command_file.relative_to(commands_dir)
+                            )
+                            if command_file.exists() or command_file.is_symlink():
+                                backup_command_artifact(
+                                    command_file, backup_command_path
+                                )
+                            else:
+                                new_command_paths_absent_before_update.append(
+                                    command_file
+                                )
+                                remember_absent_parent_dirs(
+                                    command_file, commands_dir
+                                )
+
+                            if agent_name == "copilot":
+                                prompts_dir = (
+                                    project_root / ".github" / "prompts"
+                                )
+                                prompt_file = (
+                                    prompts_dir / f"{command_name}.prompt.md"
+                                )
+                                _AgentReg._ensure_inside(
+                                    prompt_file, prompts_dir
+                                )
+                                if prompt_file.is_symlink():
+                                    raise RuntimeError(
+                                        "Cannot safely update symlinked Copilot "
+                                        f"prompt artifact '{prompt_file}'"
+                                    )
+                                backup_prompt_path = (
+                                    backup_commands_dir
+                                    / "copilot-prompts"
+                                    / prompt_file.relative_to(prompts_dir)
+                                )
+                                if (
+                                    prompt_file.exists()
+                                    or prompt_file.is_symlink()
+                                ):
+                                    backup_command_artifact(
+                                        prompt_file, backup_prompt_path
+                                    )
+                                else:
+                                    new_command_paths_absent_before_update.append(
+                                        prompt_file
+                                    )
+                                    remember_absent_parent_dirs(
+                                        prompt_file, prompts_dir
+                                    )
+
+                    new_command_paths_absent_before_update = list(
+                        dict.fromkeys(
+                            new_command_paths_absent_before_update
+                        )
+                    )
+                    new_command_dirs_absent_before_update = list(
+                        dict.fromkeys(
+                            new_command_dirs_absent_before_update
+                        )
+                    )
+
                     # A newly introduced command may reuse an existing
                     # extension-owned skill directory that was not present in
                     # the old registry. Back it up before cleanup can touch it.
                     backup_extension_skills(new_skill_names)
                     new_skills_dir = manager._get_skills_dir(create=False)
                     if new_skills_dir is not None:
+                        init_options = load_init_options(project_root)
+                        if (
+                            isinstance(init_options, dict)
+                            and is_ai_skills_enabled(init_options)
+                            and isinstance(init_options.get("ai"), str)
+                            and init_options["ai"]
+                        ):
+                            # resolve_active_skills_dir() first creates the
+                            # configured project-local skills marker. Some
+                            # agents (notably Hermes) then redirect rendered
+                            # skills to a different global root, so snapshot
+                            # both locations for exact rollback.
+                            from .. import _get_skills_dir
+
+                            configured_skills_dir = _get_skills_dir(
+                                project_root, init_options["ai"]
+                            )
+                            remember_absent_parent_dirs(
+                                configured_skills_dir / ".update-marker",
+                                configured_skills_dir,
+                            )
                         new_skills_root = new_skills_dir.resolve()
                         for skill_name in new_skill_names:
                             skill_path = new_skills_dir / skill_name
@@ -1416,6 +1710,16 @@ def extension_update(
                                 new_skill_paths_absent_before_update.append(
                                     skill_path
                                 )
+                                remember_absent_parent_dirs(
+                                    skill_path / "SKILL.md",
+                                    new_skills_dir,
+                                )
+
+                    new_command_dirs_absent_before_update = list(
+                        dict.fromkeys(
+                            new_command_dirs_absent_before_update
+                        )
+                    )
 
                     # 7. Remove old extension (handles command file cleanup and registry removal)
                     installation_modified = True
@@ -1468,15 +1772,42 @@ def extension_update(
                                             hook["enabled"] = False
                                 hook_executor.save_project_config(config)
                 finally:
-                    # Clean up downloaded ZIP
+                    # ZIP cleanup is housekeeping: never replace an install
+                    # error or roll back an already committed update because a
+                    # scanner temporarily locks the download on Windows.
                     if zip_path.exists():
-                        zip_path.unlink()
+                        try:
+                            zip_path.unlink()
+                        except OSError as error:
+                            zip_cleanup_error = error
 
-                # 10. Clean up backup on success
-                if backup_base.exists():
-                    shutil.rmtree(backup_base)
+                # 10. Clean up backup on success. The update has committed at
+                # this point, so a locked backup file must not trigger rollback
+                # of an otherwise successful installation.
+                cleanup_error = None
+                if backup_created_by_attempt and backup_base.exists():
+                    try:
+                        shutil.rmtree(backup_base)
+                    except OSError as error:
+                        cleanup_error = error
 
                 console.print(f"   [green]✓[/green] Updated to v{update['available']}")
+                if cleanup_error is not None:
+                    console.print(
+                        "   [yellow]Warning:[/yellow] Could not fully remove "
+                        "update backup: "
+                        f"{_escape_markup(str(cleanup_error))}"
+                    )
+                    console.print(
+                        "   [dim]Backup may remain at: "
+                        f"{_escape_markup(str(backup_base))}[/dim]"
+                    )
+                if zip_cleanup_error is not None:
+                    console.print(
+                        "   [yellow]Warning:[/yellow] Could not remove "
+                        "downloaded update archive: "
+                        f"{_escape_markup(str(zip_cleanup_error))}"
+                    )
                 updated_extensions.append(ext_name)
 
             except KeyboardInterrupt:
@@ -1484,9 +1815,15 @@ def extension_update(
             except Exception as e:
                 console.print(f"   [red]✗[/red] Failed: {_escape_markup(str(e))}")
                 failed_updates.append((ext_name, str(e)))
+                if zip_cleanup_error is not None:
+                    console.print(
+                        "   [yellow]Warning:[/yellow] Could not remove "
+                        "downloaded update archive: "
+                        f"{_escape_markup(str(zip_cleanup_error))}"
+                    )
 
                 if not installation_modified:
-                    if backup_base.exists():
+                    if backup_created_by_attempt and backup_base.exists():
                         try:
                             shutil.rmtree(backup_base)
                         except OSError as cleanup_error:
@@ -1512,7 +1849,18 @@ def extension_update(
                         shutil.copytree(backup_ext_dir, extension_dir)
 
                     # Remove any NEW command files created by failed install
-                    # (files that weren't in the original backup)
+                    # (files that weren't in the original backup). Registration
+                    # writes before registry.add(), so start with the paths that
+                    # were absent at the destructive boundary instead of relying
+                    # only on a possibly missing new registry entry.
+                    for command_path in new_command_paths_absent_before_update:
+                        if command_path.is_symlink() or command_path.is_file():
+                            command_path.unlink()
+                        elif command_path.exists():
+                            raise RuntimeError(
+                                "Command rollback found an unexpected directory "
+                                f"at '{command_path}'"
+                            )
                     new_registered_skills = []
                     try:
                         new_registry_entry = manager.registry.get(extension_id)
@@ -1546,6 +1894,17 @@ def extension_update(
                     except KeyError:
                         pass  # No new registry entry exists, nothing to clean up
 
+                    # Restore command artifacts that existed before the update
+                    # before extension-skill cleanup inspects ownership. A
+                    # failed skills registrar may have overwritten a user's
+                    # pre-existing SKILL.md with extension metadata; restoring
+                    # it first prevents the conservative skill unregistrar from
+                    # misclassifying and deleting the user's whole directory.
+                    for original_path, backup_path in backed_up_command_files.items():
+                        restore_command_artifact(
+                            original_path, backup_path
+                        )
+
                     # Skill generation happens before hooks and registry.add(),
                     # so a failed install may have created skills that are not
                     # recorded in any registry entry yet. Derive names from the
@@ -1566,14 +1925,6 @@ def extension_update(
                     manager._unregister_extension_skills(
                         skills_to_remove, extension_id
                     )
-
-                    # Restore backed up command files
-                    for original_path, backup_path in backed_up_command_files.items():
-                        backup_file = Path(backup_path)
-                        if backup_file.exists():
-                            original_file = Path(original_path)
-                            original_file.parent.mkdir(parents=True, exist_ok=True)
-                            shutil.copy2(backup_file, original_file)
 
                     # Restore all original registered skill artifacts after
                     # removing skills created by the failed installation.
@@ -1598,6 +1949,23 @@ def extension_update(
                             original_skill_dir,
                             symlinks=True,
                         )
+
+                    # Remove empty artifact directories that did not exist at
+                    # the destructive boundary. Do this after skill cleanup and
+                    # restoration so newly created skills roots and their
+                    # project-local parents can also be removed exactly.
+                    for command_dir in sorted(
+                        new_command_dirs_absent_before_update,
+                        key=lambda path: len(path.parts),
+                        reverse=True,
+                    ):
+                        if command_dir.is_dir() and not command_dir.is_symlink():
+                            try:
+                                command_dir.rmdir()
+                            except OSError:
+                                # Preserve any non-empty directory: other
+                                # content may belong to the user.
+                                pass
 
                     # Restore metadata in extensions.yml (hooks and installed list).
                     # Only run if backup step 4 was reached (backup_hooks is not None);
@@ -1652,10 +2020,26 @@ def extension_update(
                     if backup_registry_entry:
                         manager.registry.restore(extension_id, backup_registry_entry)
 
+                    # Backup cleanup is post-rollback housekeeping. A locked
+                    # file (notably on Windows) must not turn successfully
+                    # restored state into a contradictory "Rollback failed".
+                    cleanup_error = None
+                    if backup_created_by_attempt and backup_base.exists():
+                        try:
+                            shutil.rmtree(backup_base)
+                        except OSError as error:
+                            cleanup_error = error
                     console.print("   [green]✓[/green] Rollback successful")
-                    # Clean up backup directory only on successful rollback
-                    if backup_base.exists():
-                        shutil.rmtree(backup_base)
+                    if cleanup_error is not None:
+                        console.print(
+                            "   [yellow]Warning:[/yellow] Could not fully "
+                            "remove rollback backup: "
+                            f"{_escape_markup(str(cleanup_error))}"
+                        )
+                        console.print(
+                            "   [dim]Backup may remain at: "
+                            f"{_escape_markup(str(backup_base))}[/dim]"
+                        )
                 except Exception as rollback_error:
                     console.print(f"   [red]✗[/red] Rollback failed: {_escape_markup(str(rollback_error))}")
                     console.print(f"   [dim]Backup preserved at: {_escape_markup(str(backup_base))}[/dim]")

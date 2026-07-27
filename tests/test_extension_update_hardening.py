@@ -71,6 +71,16 @@ def _stub_available_update(monkeypatch, registry_entry):
     monkeypatch.setattr("typer.confirm", lambda _: True)
 
 
+def _update_backup_dirs(project_dir):
+    """Return per-attempt update backups created for test-ext."""
+    backup_root = (
+        project_dir / ".specify" / "extensions" / ".backup"
+    )
+    if not backup_root.is_dir():
+        return []
+    return list(backup_root.glob("update-*-*"))
+
+
 @pytest.fixture
 def project_dir(tmp_path):
     """Create a mock spec-kit project directory."""
@@ -304,13 +314,7 @@ def test_extension_update_download_failure_never_removes_live_extension(
     assert remove_calls == []
     assert live_extension.resolve() not in removed_paths
     assert sentinel.read_text() == "ORIGINAL"
-    assert not (
-        project_dir
-        / ".specify"
-        / "extensions"
-        / ".backup"
-        / "test-ext-update"
-    ).exists()
+    assert _update_backup_dirs(project_dir) == []
 
 
 def test_extension_update_partial_extension_backup_preserves_live_tree(
@@ -336,14 +340,6 @@ def test_extension_update_partial_extension_backup_preserves_live_tree(
         monkeypatch, {"version": "1.0.0", "enabled": True}
     )
 
-    backup_extension = (
-        project_dir
-        / ".specify"
-        / "extensions"
-        / ".backup"
-        / "test-ext-update"
-        / "extension"
-    )
     real_copytree = shutil.copytree
 
     def fail_partial_backup(src, dst, *args, **kwargs):
@@ -376,7 +372,65 @@ def test_extension_update_partial_extension_backup_preserves_live_tree(
     assert remove_calls == []
     assert first_file.read_text() == "FIRST ORIGINAL"
     assert second_file.read_text() == "SECOND ORIGINAL"
-    assert not backup_extension.parent.exists()
+    assert _update_backup_dirs(project_dir) == []
+
+
+def test_extension_update_rejects_symlinked_backup_root_without_cleanup(
+    project_dir, monkeypatch
+):
+    """A rejected backup root must never be followed during error cleanup."""
+    import os
+
+    if not hasattr(os, "symlink"):
+        pytest.skip("symlinks are unavailable")
+
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    _stub_available_update(
+        monkeypatch, {"version": "1.0.0", "enabled": True}
+    )
+
+    outside = project_dir / "outside-backups"
+    outside.mkdir()
+    sentinel = outside / "keep.txt"
+    sentinel.write_text("KEEP", encoding="utf-8")
+    backup_root = (
+        project_dir / ".specify" / "extensions" / ".backup"
+    )
+    backup_root.parent.mkdir(parents=True)
+    try:
+        os.symlink(outside, backup_root)
+    except OSError:
+        pytest.skip("Current platform/user cannot create directory symlinks")
+
+    download_calls = []
+    remove_calls = []
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: download_calls.append(ext_id),
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: remove_calls.append(ext_id),
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 1
+    assert "symlinked directory" in result.output
+    assert "Rolling back" not in result.output
+    assert download_calls == []
+    assert remove_calls == []
+    assert backup_root.is_symlink()
+    assert sentinel.read_text(encoding="utf-8") == "KEEP"
 
 
 def test_extension_update_partial_command_backup_preserves_live_commands(
@@ -408,13 +462,11 @@ def test_extension_update_partial_command_backup_preserves_live_commands(
     }
     _stub_available_update(monkeypatch, registry_entry)
 
-    backup_commands = (
+    backup_root = (
         project_dir
         / ".specify"
         / "extensions"
         / ".backup"
-        / "test-ext-update"
-        / "commands"
     )
     real_copy2 = shutil.copy2
     command_backup_count = 0
@@ -423,8 +475,16 @@ def test_extension_update_partial_command_backup_preserves_live_commands(
         nonlocal command_backup_count
         dst = Path(dst)
         try:
-            dst.resolve().relative_to(backup_commands.resolve())
+            relative_backup = dst.resolve().relative_to(
+                backup_root.resolve()
+            )
         except ValueError:
+            return real_copy2(src, dst, *args, **kwargs)
+        if (
+            len(relative_backup.parts) < 2
+            or not relative_backup.parts[0].startswith("update-")
+            or relative_backup.parts[1] != "commands"
+        ):
             return real_copy2(src, dst, *args, **kwargs)
         command_backup_count += 1
         if command_backup_count == 2:
@@ -453,7 +513,7 @@ def test_extension_update_partial_command_backup_preserves_live_commands(
     assert remove_calls == []
     assert plan_file.read_text() == "PLAN ORIGINAL"
     assert tasks_file.read_text() == "TASKS ORIGINAL"
-    assert not backup_commands.parent.exists()
+    assert _update_backup_dirs(project_dir) == []
 
 
 def test_extension_update_rolls_back_partial_remove(project_dir, monkeypatch):
@@ -496,13 +556,283 @@ def test_extension_update_rolls_back_partial_remove(project_dir, monkeypatch):
     assert "Remove failed" in result.output
     assert "Rolling back" in result.output
     assert sentinel.read_text() == "ORIGINAL"
-    assert not (
+    assert _update_backup_dirs(project_dir) == []
+
+
+def test_extension_update_reports_success_when_backup_cleanup_fails(
+    project_dir, monkeypatch
+):
+    """A retained backup is isolated from the next successful update."""
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    live_extension = (
+        project_dir / ".specify" / "extensions" / "test-ext"
+    )
+    live_extension.mkdir(parents=True)
+    (live_extension / "sentinel.txt").write_text(
+        "ORIGINAL", encoding="utf-8"
+    )
+    _stub_available_update(
+        monkeypatch, {"version": "1.0.0", "enabled": True}
+    )
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(mock_zip)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: None,
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        lambda *args, **kwargs: None,
+    )
+
+    backup_root = (
         project_dir
         / ".specify"
         / "extensions"
         / ".backup"
-        / "test-ext-update"
-    ).exists()
+    )
+    real_rmtree = shutil.rmtree
+    failed_cleanup = False
+
+    def fail_backup_cleanup_once(path, *args, **kwargs):
+        nonlocal failed_cleanup
+        candidate = Path(path)
+        if (
+            candidate.parent == backup_root
+            and candidate.name.startswith("update-")
+            and not failed_cleanup
+        ):
+            failed_cleanup = True
+            raise OSError("Backup is locked")
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", fail_backup_cleanup_once)
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Updated to v1.1.0" in result.output
+    assert "Could not fully remove update backup" in result.output
+    assert "Rolling back" not in result.output
+    assert failed_cleanup
+
+    retained_backups = _update_backup_dirs(project_dir)
+    assert len(retained_backups) == 1
+    stale_config = (
+        retained_backups[0] / "config" / "stale-config.yml"
+    )
+    stale_config.parent.mkdir(parents=True, exist_ok=True)
+    stale_config.write_text("stale: true\n", encoding="utf-8")
+
+    # A second attempt receives a distinct backup directory. The retained
+    # config from the first completed update must never be resurrected.
+    _write_update_zip(mock_zip)
+    second_result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert second_result.exit_code == 0, second_result.output
+    assert not (live_extension / stale_config.name).exists()
+    assert _update_backup_dirs(project_dir) == retained_backups
+
+
+def test_extension_update_reports_restored_state_when_cleanup_fails(
+    project_dir, monkeypatch
+):
+    """Post-rollback cleanup errors must not contradict restored state."""
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    live_extension = (
+        project_dir / ".specify" / "extensions" / "test-ext"
+    )
+    live_extension.mkdir(parents=True)
+    sentinel = live_extension / "sentinel.txt"
+    sentinel.write_text("ORIGINAL", encoding="utf-8")
+    _stub_available_update(
+        monkeypatch, {"version": "1.0.0", "enabled": True}
+    )
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(mock_zip)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+
+    def fail_partial_remove(self, ext_id, keep_config=False):
+        sentinel.unlink()
+        raise OSError("Remove failed")
+
+    monkeypatch.setattr(
+        ExtensionManager, "remove", fail_partial_remove
+    )
+
+    backup_root = (
+        project_dir
+        / ".specify"
+        / "extensions"
+        / ".backup"
+    )
+    real_rmtree = shutil.rmtree
+    failed_cleanup = False
+
+    def fail_backup_cleanup_once(path, *args, **kwargs):
+        nonlocal failed_cleanup
+        candidate = Path(path)
+        if (
+            candidate.parent == backup_root
+            and candidate.name.startswith("update-")
+            and not failed_cleanup
+        ):
+            failed_cleanup = True
+            raise OSError("Backup is locked")
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", fail_backup_cleanup_once)
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 1
+    assert "Rollback successful" in result.output
+    assert "Could not fully remove rollback backup" in result.output
+    assert "Rollback failed" not in result.output
+    assert sentinel.read_text(encoding="utf-8") == "ORIGINAL"
+    assert failed_cleanup
+
+
+def test_extension_update_does_not_rollback_for_locked_download_cleanup(
+    project_dir, monkeypatch
+):
+    """A locked downloaded ZIP is non-fatal after the update commits."""
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    _stub_available_update(
+        monkeypatch, {"version": "1.0.0", "enabled": True}
+    )
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(mock_zip)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: None,
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        lambda *args, **kwargs: None,
+    )
+
+    real_unlink = Path.unlink
+    failed_cleanup = False
+
+    def fail_zip_cleanup_once(path, *args, **kwargs):
+        nonlocal failed_cleanup
+        if path == mock_zip and not failed_cleanup:
+            failed_cleanup = True
+            raise OSError("Downloaded ZIP is locked")
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_zip_cleanup_once)
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Updated to v1.1.0" in result.output
+    assert "Could not remove downloaded update archive" in result.output
+    assert "Rolling back" not in result.output
+    assert failed_cleanup
+
+
+def test_extension_update_preserves_install_error_when_zip_cleanup_fails(
+    project_dir, monkeypatch
+):
+    """ZIP cleanup must not replace the error that caused rollback."""
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    _stub_available_update(
+        monkeypatch, {"version": "1.0.0", "enabled": True}
+    )
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(mock_zip)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: None,
+    )
+
+    def fail_install(*args, **kwargs):
+        raise RuntimeError("Original install failure")
+
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        fail_install,
+    )
+
+    real_unlink = Path.unlink
+    failed_cleanup = False
+
+    def fail_zip_cleanup_once(path, *args, **kwargs):
+        nonlocal failed_cleanup
+        if path == mock_zip and not failed_cleanup:
+            failed_cleanup = True
+            raise OSError("Downloaded ZIP is locked")
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_zip_cleanup_once)
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 1
+    assert "Original install failure" in result.output
+    assert "Failed: Downloaded ZIP is locked" not in result.output
+    assert "Could not remove downloaded update archive" in result.output
+    assert "Rollback successful" in result.output
+    assert failed_cleanup
 
 
 @pytest.mark.parametrize(
@@ -661,13 +991,82 @@ def test_extension_update_rejects_command_conflicts_before_removal(
     )
 
     assert result.exit_code == 1
+    normalized_output = " ".join(result.output.split())
     assert (
         "Command 'speckit.other.run' must use extension namespace 'test-ext'"
-        in result.output
+        in normalized_output
     )
     assert "Rolling back" not in result.output
     assert remove_calls == []
     assert install_calls == []
+
+
+def test_extension_update_rejects_alias_parent_traversal_before_removal(
+    project_dir, monkeypatch
+):
+    """Alias '..' segments cannot escape through a symlinked subdirectory."""
+    import os
+
+    if not hasattr(os, "symlink"):
+        pytest.skip("symlinks are unavailable")
+
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    _stub_available_update(
+        monkeypatch, {"version": "1.0.0", "enabled": True}
+    )
+
+    commands_dir = project_dir / ".github" / "agents"
+    commands_dir.mkdir(parents=True)
+    outside_dir = project_dir / "outside" / "subdir"
+    outside_dir.mkdir(parents=True)
+    outside_target = outside_dir.parent / "victim.agent.md"
+    outside_target.write_text("USER CONTENT", encoding="utf-8")
+    try:
+        os.symlink(outside_dir, commands_dir / "link")
+    except OSError:
+        pytest.skip("Current platform/user cannot create directory symlinks")
+
+    manifest = _valid_update_manifest()
+    manifest["provides"]["commands"][0]["aliases"] = [
+        "link/../victim"
+    ]
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(mock_zip, manifest=manifest)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+
+    remove_calls = []
+    install_calls = []
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: remove_calls.append(ext_id),
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        lambda *args, **kwargs: install_calls.append(args),
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 1
+    normalized_output = " ".join(result.output.split())
+    assert "Invalid alias 'link/../victim'" in normalized_output
+    assert "Rolling back" not in result.output
+    assert remove_calls == []
+    assert install_calls == []
+    assert outside_target.read_text(encoding="utf-8") == "USER CONTENT"
 
 
 def test_extension_update_accepts_normalized_equivalent_archive_version(
@@ -712,6 +1111,764 @@ def test_extension_update_accepts_normalized_equivalent_archive_version(
     assert remove_calls == ["test-ext"]
     assert len(install_calls) == 1
     assert "Updated to v1.1.0" in result.output
+
+
+def test_extension_update_rejects_noncanonical_root_manifest_alias(
+    project_dir, monkeypatch
+):
+    """Root aliases must not select different manifests across filesystems."""
+    import zipfile
+
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    _stub_available_update(
+        monkeypatch, {"version": "1.0.0", "enabled": True}
+    )
+
+    injected_manifest = _valid_update_manifest()
+    injected_manifest["extension"]["id"] = "injected"
+    mock_zip = project_dir / "mock.zip"
+    with zipfile.ZipFile(mock_zip, "w") as archive:
+        archive.writestr(
+            "EXTENSION.YML",
+            yaml.safe_dump(injected_manifest),
+        )
+        archive.writestr(
+            "repo/extension.yml",
+            yaml.safe_dump(_valid_update_manifest()),
+        )
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+
+    remove_calls = []
+    install_calls = []
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: remove_calls.append(ext_id),
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        lambda *args, **kwargs: install_calls.append(args),
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 1
+    assert "canonical 'extension.yml' casing" in result.output
+    assert "Rolling back" not in result.output
+    assert remove_calls == []
+    assert install_calls == []
+
+
+def test_extension_update_rejects_multiple_nested_archive_roots_before_removal(
+    project_dir, monkeypatch
+):
+    """Nested manifests must match install_from_zip's one-directory layout."""
+    import zipfile
+
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    _stub_available_update(
+        monkeypatch, {"version": "1.0.0", "enabled": True}
+    )
+
+    mock_zip = project_dir / "mock.zip"
+    with zipfile.ZipFile(mock_zip, "w") as archive:
+        archive.writestr(
+            "repo/extension.yml",
+            yaml.safe_dump(_valid_update_manifest()),
+        )
+        archive.writestr("other/content.txt", "SECOND ROOT")
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+
+    remove_calls = []
+    install_calls = []
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: remove_calls.append(ext_id),
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        lambda *args, **kwargs: install_calls.append(args),
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 1
+    normalized_output = " ".join(result.output.split())
+    assert (
+        "must contain exactly one top-level directory"
+        in normalized_output
+    )
+    assert "Rolling back" not in result.output
+    assert remove_calls == []
+    assert install_calls == []
+
+
+def test_extension_update_accepts_root_file_beside_nested_manifest(
+    project_dir, monkeypatch
+):
+    """Root files do not create another directory during ZIP extraction."""
+    import zipfile
+
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    _stub_available_update(
+        monkeypatch, {"version": "1.0.0", "enabled": True}
+    )
+
+    mock_zip = project_dir / "mock.zip"
+    with zipfile.ZipFile(mock_zip, "w") as archive:
+        archive.writestr(
+            "repo/extension.yml",
+            yaml.safe_dump(_valid_update_manifest()),
+        )
+        archive.writestr("README.md", "ROOT FILE")
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+
+    remove_calls = []
+    install_calls = []
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: remove_calls.append(ext_id),
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        lambda *args, **kwargs: install_calls.append(args),
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert remove_calls == ["test-ext"]
+    assert len(install_calls) == 1
+
+
+def test_extension_update_rolls_back_commands_written_before_registry_add(
+    project_dir, monkeypatch
+):
+    """Rollback uses preflight paths when a failed install has no new registry."""
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    agents_dir = project_dir / ".github" / "agents"
+    prompts_dir = project_dir / ".github" / "prompts"
+    agents_dir.mkdir(parents=True)
+    prompts_dir.mkdir(parents=True)
+
+    registry_entry = {
+        "version": "1.0.0",
+        "enabled": True,
+        "registered_commands": {},
+    }
+    _stub_available_update(monkeypatch, registry_entry)
+
+    command_name = "speckit.test-ext.new"
+    alias_names = [
+        "speckit.test-ext.group-a/shared",
+        "speckit.test-ext.group-b/shared",
+    ]
+    new_nested_alias = "speckit.test-ext/new-group/deep"
+    manifest = _valid_update_manifest(command_name=command_name)
+    manifest["provides"]["commands"][0]["aliases"] = [
+        *alias_names,
+        new_nested_alias,
+    ]
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(mock_zip, manifest=manifest)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+
+    new_command = agents_dir / f"{command_name}.agent.md"
+    new_prompt = prompts_dir / f"{command_name}.prompt.md"
+    new_nested_command = (
+        agents_dir / f"{new_nested_alias}.agent.md"
+    )
+    new_nested_prompt = (
+        prompts_dir / f"{new_nested_alias}.prompt.md"
+    )
+    existing_aliases = [
+        agents_dir / f"{alias_name}.agent.md"
+        for alias_name in alias_names
+    ]
+    existing_alias_prompts = [
+        prompts_dir / f"{alias_name}.prompt.md"
+        for alias_name in alias_names
+    ]
+    for index, alias_file in enumerate(existing_aliases):
+        alias_file.parent.mkdir(parents=True, exist_ok=True)
+        alias_file.write_text(f"USER COMMAND {index}", encoding="utf-8")
+    for index, prompt_file in enumerate(existing_alias_prompts):
+        prompt_file.parent.mkdir(parents=True, exist_ok=True)
+        prompt_file.write_text(f"USER PROMPT {index}", encoding="utf-8")
+
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: None,
+    )
+
+    def fail_before_registry_add(*args, **kwargs):
+        new_command.write_text("NEW COMMAND", encoding="utf-8")
+        new_prompt.write_text("NEW PROMPT", encoding="utf-8")
+        new_nested_command.parent.mkdir(parents=True)
+        new_nested_prompt.parent.mkdir(parents=True)
+        new_nested_command.write_text(
+            "NEW NESTED COMMAND", encoding="utf-8"
+        )
+        new_nested_prompt.write_text(
+            "NEW NESTED PROMPT", encoding="utf-8"
+        )
+        for alias_file in existing_aliases:
+            alias_file.write_text("OVERWRITTEN COMMAND", encoding="utf-8")
+        for prompt_file in existing_alias_prompts:
+            prompt_file.write_text("OVERWRITTEN PROMPT", encoding="utf-8")
+        raise RuntimeError("Hook registration failed before registry add")
+
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        fail_before_registry_add,
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 1
+    assert "Hook registration failed before registry add" in result.output
+    assert "Rollback successful" in result.output
+    assert not new_command.exists()
+    assert not new_prompt.exists()
+    assert not new_nested_command.exists()
+    assert not new_nested_prompt.exists()
+    assert not (agents_dir / "speckit.test-ext").exists()
+    assert not (prompts_dir / "speckit.test-ext").exists()
+    for index, alias_file in enumerate(existing_aliases):
+        assert (
+            alias_file.read_text(encoding="utf-8")
+            == f"USER COMMAND {index}"
+        )
+    for index, prompt_file in enumerate(existing_alias_prompts):
+        assert (
+            prompt_file.read_text(encoding="utf-8")
+            == f"USER PROMPT {index}"
+        )
+
+
+def test_extension_update_restores_canonical_and_legacy_commands(
+    project_dir, monkeypatch
+):
+    """Rollback restores every command location cleaned by unregister."""
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    canonical_dir = project_dir / ".opencode" / "commands"
+    legacy_dir = project_dir / ".opencode" / "command"
+    canonical_dir.mkdir(parents=True)
+    legacy_dir.mkdir(parents=True)
+
+    old_command = "speckit.test-ext.old"
+    canonical_file = canonical_dir / f"{old_command}.md"
+    legacy_file = legacy_dir / f"{old_command}.md"
+    canonical_file.write_text("CANONICAL USER COMMAND", encoding="utf-8")
+    legacy_file.write_text("LEGACY USER COMMAND", encoding="utf-8")
+    _stub_available_update(
+        monkeypatch,
+        {
+            "version": "1.0.0",
+            "enabled": True,
+            "registered_commands": {"opencode": [old_command]},
+        },
+    )
+
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(mock_zip)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+
+    def remove_both_command_copies(
+        self, ext_id, keep_config=False
+    ):
+        canonical_file.unlink()
+        legacy_file.unlink()
+
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        remove_both_command_copies,
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("Install failed after legacy cleanup")
+        ),
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 1
+    assert "Rollback successful" in result.output
+    assert (
+        canonical_file.read_text(encoding="utf-8")
+        == "CANONICAL USER COMMAND"
+    )
+    assert (
+        legacy_file.read_text(encoding="utf-8")
+        == "LEGACY USER COMMAND"
+    )
+
+
+def test_extension_update_removes_new_active_skills_root_on_rollback(
+    project_dir, monkeypatch
+):
+    """Rollback removes an active skills hierarchy created by registration."""
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    (project_dir / ".specify" / "init-options.json").write_text(
+        '{"ai":"claude","ai_skills":true}',
+        encoding="utf-8",
+    )
+    _stub_available_update(
+        monkeypatch,
+        {
+            "version": "1.0.0",
+            "enabled": True,
+            "registered_commands": {},
+        },
+    )
+
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(mock_zip)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: None,
+    )
+
+    new_skill = (
+        project_dir
+        / ".claude"
+        / "skills"
+        / "speckit-test-ext-run"
+    )
+
+    def fail_after_creating_skill(*args, **kwargs):
+        new_skill.mkdir(parents=True)
+        (new_skill / "SKILL.md").write_text(
+            "GENERATED SKILL", encoding="utf-8"
+        )
+        raise RuntimeError("Hook registration failed after skill creation")
+
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        fail_after_creating_skill,
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 1
+    assert "Rollback successful" in result.output
+    assert not (project_dir / ".claude").exists()
+
+
+def test_extension_update_removes_new_hermes_marker_on_rollback(
+    project_dir, monkeypatch, tmp_path
+):
+    """Rollback removes Hermes' local marker as well as global skill output."""
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    (project_dir / ".specify" / "init-options.json").write_text(
+        '{"ai":"hermes","ai_skills":true}',
+        encoding="utf-8",
+    )
+    _stub_available_update(
+        monkeypatch,
+        {
+            "version": "1.0.0",
+            "enabled": True,
+            "registered_commands": {},
+        },
+    )
+
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(mock_zip)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: None,
+    )
+
+    local_marker = project_dir / ".hermes" / "skills"
+    global_skill = (
+        fake_home
+        / ".hermes"
+        / "skills"
+        / "speckit-test-ext-run"
+    )
+
+    def fail_after_creating_hermes_skill(*args, **kwargs):
+        local_marker.mkdir(parents=True)
+        global_skill.mkdir(parents=True)
+        (global_skill / "SKILL.md").write_text(
+            "GENERATED SKILL", encoding="utf-8"
+        )
+        raise RuntimeError("Hook registration failed after Hermes skill")
+
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        fail_after_creating_hermes_skill,
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 1
+    assert "Rollback successful" in result.output
+    assert not (project_dir / ".hermes").exists()
+    assert not (fake_home / ".hermes" / "skills").exists()
+
+
+def test_extension_update_restores_command_symlinks(
+    project_dir, monkeypatch
+):
+    """Rollback preserves valid and dangling command symlinks byte-for-byte."""
+    import os
+
+    if not hasattr(os, "symlink"):
+        pytest.skip("symlinks are unavailable")
+
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    agents_dir = project_dir / ".github" / "agents"
+    prompts_dir = project_dir / ".github" / "prompts"
+    agents_dir.mkdir(parents=True)
+    _stub_available_update(
+        monkeypatch,
+        {
+            "version": "1.0.0",
+            "enabled": True,
+            "registered_commands": {},
+        },
+    )
+
+    alias_names = [
+        "speckit.test-ext.valid-link",
+        "speckit.test-ext.dangling-link",
+    ]
+    manifest = _valid_update_manifest()
+    manifest["provides"]["commands"][0]["aliases"] = alias_names
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(mock_zip, manifest=manifest)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+
+    targets_dir = project_dir / "user-targets"
+    targets_dir.mkdir()
+    command_targets = [
+        targets_dir / "command-valid.md",
+        targets_dir / "command-dangling.md",
+    ]
+    command_targets[0].write_text(
+        "USER COMMAND TARGET", encoding="utf-8"
+    )
+
+    alias_files = [
+        agents_dir / f"{alias_name}.agent.md"
+        for alias_name in alias_names
+    ]
+    generated_prompt = (
+        prompts_dir / "speckit.test-ext.run.prompt.md"
+    )
+    command_link_texts = []
+    try:
+        for alias_file, target in zip(alias_files, command_targets):
+            link_text = os.path.relpath(target, alias_file.parent)
+            os.symlink(link_text, alias_file)
+            command_link_texts.append(link_text)
+    except OSError:
+        pytest.skip("Current platform/user cannot create file symlinks")
+
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: None,
+    )
+
+    def fail_before_registry_add(*args, **kwargs):
+        # Normal command rendering replaces command symlinks.
+        for alias_file in alias_files:
+            alias_file.unlink()
+            alias_file.write_text("GENERATED COMMAND", encoding="utf-8")
+        generated_prompt.parent.mkdir(parents=True)
+        generated_prompt.write_text(
+            "GENERATED PROMPT", encoding="utf-8"
+        )
+        raise RuntimeError("Hook registration failed after symlink writes")
+
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        fail_before_registry_add,
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 1
+    assert "Rollback successful" in result.output
+    for alias_file, link_text in zip(
+        alias_files, command_link_texts
+    ):
+        assert alias_file.is_symlink()
+        assert os.readlink(alias_file) == link_text
+    assert (
+        command_targets[0].read_text(encoding="utf-8")
+        == "USER COMMAND TARGET"
+    )
+    assert not command_targets[1].exists()
+    assert not prompts_dir.exists()
+
+
+def test_extension_update_rejects_symlinked_copilot_prompt_before_removal(
+    project_dir, monkeypatch
+):
+    """Prompt links are rejected before rendering can write through them."""
+    import os
+
+    if not hasattr(os, "symlink"):
+        pytest.skip("symlinks are unavailable")
+
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    agents_dir = project_dir / ".github" / "agents"
+    prompts_dir = project_dir / ".github" / "prompts"
+    agents_dir.mkdir(parents=True)
+    prompts_dir.mkdir(parents=True)
+    _stub_available_update(
+        monkeypatch,
+        {
+            "version": "1.0.0",
+            "enabled": True,
+            "registered_commands": {},
+        },
+    )
+
+    command_name = "speckit.test-ext.linked-prompt"
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(
+        mock_zip,
+        manifest=_valid_update_manifest(command_name=command_name),
+    )
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+
+    target = project_dir / "user-prompt.md"
+    target.write_text("USER PROMPT", encoding="utf-8")
+    prompt_file = prompts_dir / f"{command_name}.prompt.md"
+    link_text = os.path.relpath(target, prompt_file.parent)
+    try:
+        os.symlink(link_text, prompt_file)
+    except OSError:
+        pytest.skip("Current platform/user cannot create file symlinks")
+
+    remove_calls = []
+    install_calls = []
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: remove_calls.append(ext_id),
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        lambda *args, **kwargs: install_calls.append(args),
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 1
+    assert "Cannot safely update symlinked Copilot prompt artifact" in result.output
+    assert "Rolling back" not in result.output
+    assert remove_calls == []
+    assert install_calls == []
+    assert prompt_file.is_symlink()
+    assert os.readlink(prompt_file) == link_text
+    assert target.read_text(encoding="utf-8") == "USER PROMPT"
+
+
+@pytest.mark.parametrize("artifact_kind", ["command", "prompt"])
+def test_extension_update_rejects_hard_linked_artifacts_before_removal(
+    project_dir, monkeypatch, artifact_kind
+):
+    """Rendering must not mutate another name for a shared inode."""
+    import os
+
+    if not hasattr(os, "link"):
+        pytest.skip("hard links are unavailable")
+
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    agents_dir = project_dir / ".github" / "agents"
+    prompts_dir = project_dir / ".github" / "prompts"
+    agents_dir.mkdir(parents=True)
+    prompts_dir.mkdir(parents=True)
+    _stub_available_update(
+        monkeypatch,
+        {
+            "version": "1.0.0",
+            "enabled": True,
+            "registered_commands": {},
+        },
+    )
+
+    command_name = "speckit.test-ext.hard-link"
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(
+        mock_zip,
+        manifest=_valid_update_manifest(command_name=command_name),
+    )
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+
+    user_target = project_dir / "user-artifact.md"
+    user_target.write_text("USER CONTENT", encoding="utf-8")
+    if artifact_kind == "command":
+        artifact = agents_dir / f"{command_name}.agent.md"
+    else:
+        artifact = prompts_dir / f"{command_name}.prompt.md"
+    try:
+        os.link(user_target, artifact)
+    except OSError:
+        pytest.skip("Current filesystem cannot create hard links")
+    original_stat = user_target.stat()
+
+    remove_calls = []
+    install_calls = []
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: remove_calls.append(ext_id),
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        lambda *args, **kwargs: install_calls.append(args),
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 1
+    assert "Cannot safely update hard-linked generated artifact" in result.output
+    assert "Rolling back" not in result.output
+    assert remove_calls == []
+    assert install_calls == []
+    assert artifact.read_text(encoding="utf-8") == "USER CONTENT"
+    assert user_target.read_text(encoding="utf-8") == "USER CONTENT"
+    assert artifact.stat().st_ino == original_stat.st_ino
+    assert artifact.stat().st_dev == original_stat.st_dev
 
 
 def _write_owned_extension_skill(skill_dir, extension_id, body):
@@ -873,10 +2030,4 @@ def test_extension_update_partial_skill_backup_preserves_live_skills(
     assert (second_skill / "SKILL.md").exists()
     assert first_support.read_text(encoding="utf-8") == "FIRST SUPPORT"
     assert second_support.read_text(encoding="utf-8") == "SECOND SUPPORT"
-    assert not (
-        project_dir
-        / ".specify"
-        / "extensions"
-        / ".backup"
-        / "test-ext-update"
-    ).exists()
+    assert _update_backup_dirs(project_dir) == []
