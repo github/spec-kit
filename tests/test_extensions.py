@@ -7710,6 +7710,145 @@ class TestExtensionUpdateCLI:
         for cmd_file in command_files:
             assert cmd_file.exists(), f"Expected command file to be restored after rollback: {cmd_file}"
 
+    def test_update_failure_after_skill_registration_restores_old_skills(
+        self, tmp_path, monkeypatch
+    ):
+        """Rollback must not depend on a new registry entry to restore skills."""
+        import zipfile
+        import yaml
+
+        from specify_cli import app
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        specify_dir = project_dir / ".specify"
+        specify_dir.mkdir()
+        (specify_dir / "init-options.json").write_text(
+            json.dumps(
+                {
+                    "ai": "claude",
+                    "ai_skills": True,
+                    "script": "sh",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        v1_dir = self._create_extension_source(tmp_path, "1.0.0")
+        manager.install_from_directory(
+            v1_dir,
+            "0.1.0",
+            register_commands=False,
+        )
+
+        old_registry_entry = manager.registry.get("test-ext")
+        skills_dir = project_dir / ".claude" / "skills"
+        old_skill = skills_dir / "speckit-test-ext-hello"
+        old_skill_content = (old_skill / "SKILL.md").read_text(encoding="utf-8")
+        assert old_registry_entry["registered_skills"] == [old_skill.name]
+        new_skill = skills_dir / "speckit-test-ext-new"
+        new_skill.mkdir()
+        user_support_file = new_skill / "support.txt"
+        user_support_file.write_text("USER CONTENT", encoding="utf-8")
+
+        v2_dir = self._create_extension_source(tmp_path, "2.0.0")
+        manifest_path = v2_dir / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["provides"]["commands"].append(
+            {
+                "name": "speckit.test-ext.new",
+                "file": "commands/new.md",
+                "description": "New command",
+            }
+        )
+        manifest["provides"]["commands"].append(
+            {
+                "name": "speckit.test-ext.fresh",
+                "file": "commands/fresh.md",
+                "description": "Fresh command",
+            }
+        )
+        manifest_path.write_text(
+            yaml.safe_dump(manifest, sort_keys=False),
+            encoding="utf-8",
+        )
+        (v2_dir / "commands" / "hello.md").write_text(
+            "---\ndescription: New hello\n---\n\nNEW HELLO\n",
+            encoding="utf-8",
+        )
+        (v2_dir / "commands" / "new.md").write_text(
+            "---\ndescription: New command\n---\n\nNEW COMMAND\n",
+            encoding="utf-8",
+        )
+        (v2_dir / "commands" / "fresh.md").write_text(
+            "---\ndescription: Fresh command\n---\n\nFRESH COMMAND\n",
+            encoding="utf-8",
+        )
+
+        zip_path = tmp_path / "test-ext-update.zip"
+        with zipfile.ZipFile(zip_path, "w") as archive:
+            for source_path in v2_dir.rglob("*"):
+                if source_path.is_file():
+                    archive.write(
+                        source_path,
+                        source_path.relative_to(v2_dir),
+                    )
+
+        def fail_after_skill_registration(self, manifest):
+            raise RuntimeError("Hook registration failed")
+
+        runner = CliRunner()
+        with (
+            patch.object(Path, "cwd", return_value=project_dir),
+            patch.object(
+                ExtensionCatalog,
+                "get_extension_info",
+                return_value={
+                    "id": "test-ext",
+                    "name": "Test Extension",
+                    "version": "2.0.0",
+                    "_install_allowed": True,
+                },
+            ),
+            patch.object(
+                ExtensionCatalog,
+                "download_extension",
+                return_value=zip_path,
+            ),
+            patch.object(
+                HookExecutor,
+                "register_hooks",
+                fail_after_skill_registration,
+            ),
+            patch.object(
+                CommandRegistrar,
+                "register_commands_for_all_agents",
+                return_value={},
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                ["extension", "update", "test-ext"],
+                input="y\n",
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert "Hook registration failed" in result.output
+        assert "Rollback successful" in result.output
+        assert ExtensionManager(project_dir).registry.get("test-ext") == old_registry_entry
+        assert (old_skill / "SKILL.md").read_text(encoding="utf-8") == old_skill_content
+        assert user_support_file.read_text(encoding="utf-8") == "USER CONTENT"
+        assert not (new_skill / "SKILL.md").exists()
+        assert not (skills_dir / "speckit-test-ext-fresh").exists()
+
     @pytest.mark.parametrize(
         ("manifest_text", "expected_detail"),
         [

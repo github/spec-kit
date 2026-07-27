@@ -1037,6 +1037,7 @@ def extension_update(
     from . import (
         ExtensionManager,
         ExtensionCatalog,
+        ExtensionManifest,
         ExtensionError,
         ValidationError,
         CommandRegistrar,
@@ -1154,6 +1155,7 @@ def extension_update(
             backup_base = manager.extensions_dir / ".backup" / f"{extension_id}-update"
             backup_ext_dir = backup_base / "extension"
             backup_commands_dir = backup_base / "commands"
+            backup_skills_dir = backup_base / "skills"
             backup_config_dir = backup_base / "config"
 
             # Store backup state
@@ -1161,8 +1163,28 @@ def extension_update(
             backup_installed = UNSET  # Original installed list from extensions.yml
             backup_hooks = None  # None means backup step 4 not yet reached; {} or {...} means backup was captured
             backed_up_command_files = {}
+            backed_up_skill_dirs = {}
+            new_skill_names = []
+            new_skill_paths_absent_before_update = []
             # Validation failures must not rewrite an untouched installation.
             installation_modified = False
+
+            def backup_extension_skills(skill_names):
+                """Back up every owned skill directory that remove() may delete."""
+                for skill_dir in manager._find_extension_skill_dirs(
+                    skill_names,
+                    extension_id,
+                    create_skills_dir=False,
+                ):
+                    original_key = str(skill_dir)
+                    if original_key in backed_up_skill_dirs:
+                        continue
+                    backup_skills_dir.mkdir(parents=True, exist_ok=True)
+                    backup_skill_dir = backup_skills_dir / str(
+                        len(backed_up_skill_dirs)
+                    )
+                    shutil.copytree(skill_dir, backup_skill_dir, symlinks=True)
+                    backed_up_skill_dirs[original_key] = str(backup_skill_dir)
 
             try:
                 # 1. Backup registry entry (always, even if extension dir doesn't exist)
@@ -1219,6 +1241,14 @@ def extension_update(
                                 shutil.copy2(prompt_file, backup_prompt_path)
                                 backed_up_command_files[str(prompt_file)] = str(backup_prompt_path)
 
+                raw_registered_skills = (
+                    backup_registry_entry.get("registered_skills", [])
+                    if isinstance(backup_registry_entry, dict)
+                    else []
+                )
+                registered_skills = manager._valid_name_list(raw_registered_skills)
+                backup_extension_skills(registered_skills)
+
                 # 4. Backup hooks and installed list from extensions.yml
                 # get_project_config() always normalizes installed->[] and hooks->{},
                 # so no sentinel is needed to distinguish key-absent from key-empty.
@@ -1244,6 +1274,7 @@ def extension_update(
                     with open_zip_bounded(zip_path) as zf:
                         import yaml
                         manifest_data = None
+                        manifest_bytes = None
                         namelist = zf.namelist()
 
                         # Read the manifest under a hard size cap: this happens
@@ -1297,8 +1328,11 @@ def extension_update(
                             manifest_path = nested_manifests[0]
 
                         if manifest_path is not None:
+                            manifest_bytes = read_zip_member_limited(
+                                zf, manifest_path
+                            )
                             parsed_manifest = yaml.safe_load(
-                                read_zip_member_limited(zf, manifest_path)
+                                manifest_bytes
                             )
                             manifest_data = (
                                 parsed_manifest
@@ -1318,11 +1352,70 @@ def extension_update(
                                 "Invalid extension manifest in downloaded archive: expected 'extension' mapping"
                             )
 
-                    zip_extension_id = extension_data.get("id")
+                    # Run the same manifest and compatibility validation as a
+                    # normal install while the existing extension is still
+                    # untouched. Reuse the exact bounded bytes selected above.
+                    if manifest_bytes is None:
+                        raise ValueError(
+                            "Downloaded extension archive is missing 'extension.yml'"
+                        )
+                    with tempfile.TemporaryDirectory(
+                        prefix="speckit-update-manifest-"
+                    ) as manifest_tmpdir:
+                        manifest_file = Path(manifest_tmpdir) / "extension.yml"
+                        manifest_file.write_bytes(manifest_bytes)
+                        preflight_manifest = ExtensionManifest(manifest_file)
+                        manager.check_compatibility(
+                            preflight_manifest, speckit_version
+                        )
+
+                    zip_extension_id = preflight_manifest.id
                     if zip_extension_id != extension_id:
                         raise ValueError(
                             f"Extension ID mismatch: expected '{extension_id}', got '{zip_extension_id}'"
                         )
+
+                    expected_version = pkg_version.Version(update["available"])
+                    archive_version = pkg_version.Version(
+                        preflight_manifest.version
+                    )
+                    if archive_version != expected_version:
+                        raise ValueError(
+                            "Extension version mismatch: "
+                            f"expected '{update['available']}', "
+                            f"got '{preflight_manifest.version}'"
+                        )
+
+                    # Match the remaining deterministic install validation
+                    # before crossing the destructive boundary. The helper
+                    # excludes this extension's current registry entry while
+                    # still detecting namespace, core, duplicate, and
+                    # cross-extension command conflicts.
+                    manager._validate_install_conflicts(preflight_manifest)
+
+                    new_skill_names = list(
+                        dict.fromkeys(
+                            manager._skill_name_for_command(command["name"])
+                            for command in preflight_manifest.commands
+                        )
+                    )
+                    # A newly introduced command may reuse an existing
+                    # extension-owned skill directory that was not present in
+                    # the old registry. Back it up before cleanup can touch it.
+                    backup_extension_skills(new_skill_names)
+                    new_skills_dir = manager._get_skills_dir(create=False)
+                    if new_skills_dir is not None:
+                        new_skills_root = new_skills_dir.resolve()
+                        for skill_name in new_skill_names:
+                            skill_path = new_skills_dir / skill_name
+                            resolved_skill_path = skill_path.resolve(strict=False)
+                            resolved_skill_path.relative_to(new_skills_root)
+                            if not (
+                                skill_path.exists() or skill_path.is_symlink()
+                            ):
+                                new_skill_paths_absent_before_update.append(
+                                    skill_path
+                                )
 
                     # 7. Remove old extension (handles command file cleanup and registry removal)
                     installation_modified = True
@@ -1420,12 +1513,16 @@ def extension_update(
 
                     # Remove any NEW command files created by failed install
                     # (files that weren't in the original backup)
+                    new_registered_skills = []
                     try:
                         new_registry_entry = manager.registry.get(extension_id)
                         if new_registry_entry is None or not isinstance(new_registry_entry, dict):
                             new_registered_commands = {}
                         else:
                             new_registered_commands = new_registry_entry.get("registered_commands", {})
+                            new_registered_skills = manager._valid_name_list(
+                                new_registry_entry.get("registered_skills", [])
+                            )
                         for agent_name, cmd_names in new_registered_commands.items():
                             if agent_name not in registrar.AGENT_CONFIGS:
                                 continue
@@ -1449,6 +1546,27 @@ def extension_update(
                     except KeyError:
                         pass  # No new registry entry exists, nothing to clean up
 
+                    # Skill generation happens before hooks and registry.add(),
+                    # so a failed install may have created skills that are not
+                    # recorded in any registry entry yet. Derive names from the
+                    # preflighted manifest as well as any partial new entry.
+                    skills_to_remove = list(
+                        dict.fromkeys(new_skill_names + new_registered_skills)
+                    )
+                    # A write failure can leave a partial skill without valid
+                    # ownership metadata, which the normal conservative
+                    # unregistrar intentionally refuses to delete. Paths that
+                    # were absent at the destructive boundary are safe to
+                    # remove directly during rollback.
+                    for skill_path in new_skill_paths_absent_before_update:
+                        if skill_path.is_symlink() or skill_path.is_file():
+                            skill_path.unlink()
+                        elif skill_path.exists():
+                            shutil.rmtree(skill_path)
+                    manager._unregister_extension_skills(
+                        skills_to_remove, extension_id
+                    )
+
                     # Restore backed up command files
                     for original_path, backup_path in backed_up_command_files.items():
                         backup_file = Path(backup_path)
@@ -1456,6 +1574,30 @@ def extension_update(
                             original_file = Path(original_path)
                             original_file.parent.mkdir(parents=True, exist_ok=True)
                             shutil.copy2(backup_file, original_file)
+
+                    # Restore all original registered skill artifacts after
+                    # removing skills created by the failed installation.
+                    for original_path, backup_path in backed_up_skill_dirs.items():
+                        backup_skill_dir = Path(backup_path)
+                        if not backup_skill_dir.is_dir():
+                            raise RuntimeError(
+                                "Skill rollback backup is missing for "
+                                f"'{original_path}'"
+                            )
+                        original_skill_dir = Path(original_path)
+                        if (
+                            original_skill_dir.is_symlink()
+                            or original_skill_dir.is_file()
+                        ):
+                            original_skill_dir.unlink()
+                        elif original_skill_dir.exists():
+                            shutil.rmtree(original_skill_dir)
+                        original_skill_dir.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copytree(
+                            backup_skill_dir,
+                            original_skill_dir,
+                            symlinks=True,
+                        )
 
                     # Restore metadata in extensions.yml (hooks and installed list).
                     # Only run if backup step 4 was reached (backup_hooks is not None);

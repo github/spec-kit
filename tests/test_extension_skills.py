@@ -311,6 +311,16 @@ class TestExtensionManagerGetSkillsDir:
         assert result is not None
         assert result.is_dir()
 
+    def test_read_only_lookup_does_not_create_skills_dir(self, project_dir):
+        """Backup discovery can resolve the target without mutating the project."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+
+        result = manager._get_skills_dir(create=False)
+
+        assert result == project_dir / ".claude" / "skills"
+        assert not result.exists()
+
     def test_returns_kimi_skills_dir_when_ai_skills_disabled(self, project_dir):
         """Kimi should still use its native skills dir when ai_skills is false."""
         _create_init_options(project_dir, ai="kimi", ai_skills=False)
@@ -584,6 +594,27 @@ class TestExtensionSkillRegistration:
         assert "speckit-test-ext-world" in metadata["registered_skills"]
         # The pre-existing one should NOT be in registered_skills (it was skipped)
         assert "speckit-test-ext-hello" not in metadata["registered_skills"]
+
+    def test_existing_skill_directory_without_marker_is_not_modified(
+        self, skills_project, extension_dir
+    ):
+        """A user directory without SKILL.md must not become extension-owned."""
+        project_dir, skills_dir = skills_project
+        custom_dir = skills_dir / "speckit-test-ext-hello"
+        custom_dir.mkdir(parents=True)
+        support_file = custom_dir / "support.txt"
+        support_file.write_text("USER CONTENT", encoding="utf-8")
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        assert support_file.read_text(encoding="utf-8") == "USER CONTENT"
+        assert not (custom_dir / "SKILL.md").exists()
+        metadata = manager.registry.get(manifest.id)
+        assert "speckit-test-ext-hello" not in metadata["registered_skills"]
+        assert "speckit-test-ext-world" in metadata["registered_skills"]
 
     def test_dev_skill_symlink_refreshes_existing_cache(
         self, skills_project, extension_dir, temp_dir
@@ -1689,6 +1720,90 @@ class TestExtensionSkillRegistration:
 
 class TestExtensionSkillUnregistration:
     """Test _unregister_extension_skills() on ExtensionManager."""
+
+    def test_read_only_discovery_includes_fallback_when_target_is_missing(
+        self, project_dir
+    ):
+        """Backup discovery covers removal's fallback without creating a target."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        configured_dir = project_dir / ".claude" / "skills"
+        fallback_skill = (
+            project_dir
+            / ".agents"
+            / "skills"
+            / "speckit-test-ext-hello"
+        )
+        fallback_skill.mkdir(parents=True)
+        frontmatter = yaml.safe_dump(
+            {
+                "name": fallback_skill.name,
+                "description": "Fallback skill",
+                "metadata": {"source": "extension:test-ext"},
+            },
+            sort_keys=False,
+        )
+        (fallback_skill / "SKILL.md").write_text(
+            f"---\n{frontmatter}---\n\nFallback\n",
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        found = manager._find_extension_skill_dirs(
+            [fallback_skill.name],
+            "test-ext",
+            create_skills_dir=False,
+        )
+
+        assert found == [fallback_skill.resolve()]
+        assert not configured_dir.exists()
+
+    def test_read_only_discovery_includes_fallback_when_target_is_symlinked(
+        self, project_dir
+    ):
+        """Backup and remove agree when the configured target is unsafe."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        configured_dir = project_dir / ".claude" / "skills"
+        configured_dir.parent.mkdir(parents=True)
+        symlink_target = project_dir / "linked-skills"
+        symlink_target.mkdir()
+        try:
+            os.symlink(
+                symlink_target,
+                configured_dir,
+                target_is_directory=True,
+            )
+        except OSError:
+            pytest.skip("Current platform/user cannot create directory symlinks")
+
+        fallback_skill = (
+            project_dir
+            / ".agents"
+            / "skills"
+            / "speckit-test-ext-hello"
+        )
+        fallback_skill.mkdir(parents=True)
+        frontmatter = yaml.safe_dump(
+            {
+                "name": fallback_skill.name,
+                "description": "Fallback skill",
+                "metadata": {"source": "extension:test-ext"},
+            },
+            sort_keys=False,
+        )
+        (fallback_skill / "SKILL.md").write_text(
+            f"---\n{frontmatter}---\n\nFallback\n",
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        found = manager._find_extension_skill_dirs(
+            [fallback_skill.name],
+            "test-ext",
+            create_skills_dir=False,
+        )
+
+        assert found == [fallback_skill.resolve()]
+        assert configured_dir.is_symlink()
 
     def test_skills_removed_on_extension_remove(self, skills_project, extension_dir):
         """Removing an extension should clean up its skill directories."""

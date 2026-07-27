@@ -1012,18 +1012,21 @@ class ExtensionManager:
 
         return _ignore
 
-    def _get_skills_dir(self) -> Optional[Path]:
+    def _get_skills_dir(self, *, create: bool = True) -> Optional[Path]:
         """Return the active skills directory for extension skill registration.
 
         Delegates to :func:`resolve_active_skills_dir` which reads
         init-options, applies the Kimi native-skills fallback, and
-        safely creates the directory when ``ai_skills`` is enabled.
+        safely creates the directory when ``ai_skills`` is enabled and
+        ``create`` is true. Read-only callers can pass ``create=False`` to
+        resolve the configured target without changing the filesystem.
 
         Returns ``None`` (instead of raising) when the directory cannot
         be created due to symlink, containment, or permission issues so
         that callers can fall back gracefully.
         """
         from .. import (
+            _get_skills_dir as resolve_configured_skills_dir,
             _print_cli_warning,
             load_init_options,
             resolve_active_skills_dir,
@@ -1045,6 +1048,41 @@ class ExtensionManager:
                 return None
             return skills_dir
 
+        opts = load_init_options(self.project_root)
+        if not isinstance(opts, dict):
+            return None
+        selected_ai = opts.get("ai")
+        if not isinstance(selected_ai, str) or not selected_ai:
+            return None
+
+        from ..agents import CommandRegistrar
+
+        registrar = CommandRegistrar()
+        agent_config = registrar.AGENT_CONFIGS.get(selected_ai)
+        ai_skills_enabled = is_ai_skills_enabled(opts)
+        if not create:
+            if not ai_skills_enabled and selected_ai != "kimi":
+                return None
+            configured_skills_dir = resolve_configured_skills_dir(
+                self.project_root, selected_ai
+            )
+            from ..shared_infra import _validate_safe_shared_directory
+
+            try:
+                _validate_safe_shared_directory(
+                    self.project_root, configured_skills_dir
+                )
+            except (OSError, ValueError):
+                return None
+            skills_dir = configured_skills_dir
+            if agent_config and agent_config.get("extension") == "/SKILL.md":
+                skills_dir = registrar._resolve_agent_dir(
+                    selected_ai, agent_config, self.project_root
+                )
+            if ai_skills_enabled:
+                return skills_dir
+            return skills_dir if skills_dir.is_dir() else None
+
         try:
             skills_dir = resolve_active_skills_dir(self.project_root)
         except (ValueError, OSError) as exc:
@@ -1059,23 +1097,19 @@ class ExtensionManager:
         if skills_dir is None:
             return None
 
-        opts = load_init_options(self.project_root)
-        if not isinstance(opts, dict):
-            return _ensure_usable(skills_dir)
-        selected_ai = opts.get("ai")
-        if not isinstance(selected_ai, str) or not selected_ai:
-            return _ensure_usable(skills_dir)
-
-        from ..agents import CommandRegistrar
-
-        registrar = CommandRegistrar()
-        agent_config = registrar.AGENT_CONFIGS.get(selected_ai)
         if agent_config and agent_config.get("extension") == "/SKILL.md":
-            agent_skills_dir = registrar._resolve_agent_dir(
+            skills_dir = registrar._resolve_agent_dir(
                 selected_ai, agent_config, self.project_root
             )
-            return _ensure_usable(agent_skills_dir)
         return _ensure_usable(skills_dir)
+
+    @staticmethod
+    def _skill_name_for_command(command_name: str) -> str:
+        """Return the generated skill directory name for an extension command."""
+        short_name = command_name
+        if short_name.startswith("speckit."):
+            short_name = short_name[len("speckit.") :]
+        return f"speckit-{short_name.replace('.', '-')}"
 
     def _register_extension_skills(
         self,
@@ -1164,10 +1198,7 @@ class ExtensionManager:
 
             # Derive skill name from command name using the same hyphenated
             # convention as hook rendering and preset skill registration.
-            short_name_raw = cmd_name
-            if short_name_raw.startswith("speckit."):
-                short_name_raw = short_name_raw[len("speckit.") :]
-            skill_name = f"speckit-{short_name_raw.replace('.', '-')}"
+            skill_name = self._skill_name_for_command(cmd_name)
 
             # Check if skill already exists before creating the directory
             skill_subdir = skills_dir / skill_name
@@ -1175,6 +1206,9 @@ class ExtensionManager:
             cache_root = extension_dir / ".specify-dev" / "extension-skills"
             cache_file = cache_root / skill_name / "SKILL.md"
             use_dev_symlink = link_outputs and not agent_config.get("dev_no_symlink")
+            skill_dir_preexists = (
+                skill_subdir.exists() or skill_subdir.is_symlink()
+            )
             CommandRegistrar._ensure_inside(cache_file, cache_root)
             if skill_file.exists() or skill_file.is_symlink():
                 is_expected_dev_symlink = self._is_expected_dev_symlink(
@@ -1185,6 +1219,11 @@ class ExtensionManager:
                 # to be refreshed on a subsequent dev install.
                 if not is_expected_dev_symlink:
                     continue
+            elif skill_dir_preexists:
+                # Never add files to a pre-existing user directory. Without a
+                # verifiable SKILL.md ownership marker, rollback/removal cannot
+                # distinguish our output from unrelated user artifacts.
+                continue
 
             # Create skill directory; track whether we created it so we can clean
             # up safely if reading the source file subsequently fails.
@@ -1277,6 +1316,94 @@ class ExtensionManager:
         except OSError:
             return False
 
+    def _find_extension_skill_dirs(
+        self,
+        skill_names: List[str],
+        extension_id: str,
+        skills_dir: Optional[Path] = None,
+        *,
+        create_skills_dir: bool = True,
+    ) -> List[Path]:
+        """Return owned skill directories that removal is allowed to delete.
+
+        This is the single discovery path used by both update backups and
+        unregistration. Keeping the ownership and containment checks shared
+        prevents rollback from backing up a different set of artifacts than
+        ``remove()`` later deletes.
+        """
+        if not skill_names:
+            return []
+
+        if skills_dir is None:
+            skills_dir = self._get_skills_dir(create=create_skills_dir)
+
+        def _fallback_candidate_dirs() -> set[Path]:
+            from .. import AGENT_CONFIG, DEFAULT_SKILLS_DIR
+
+            fallback_dirs: set[Path] = set()
+            for cfg in AGENT_CONFIG.values():
+                folder = cfg.get("folder", "")
+                if folder:
+                    fallback_dirs.add(
+                        self.project_root / folder.rstrip("/") / "skills"
+                    )
+            fallback_dirs.add(self.project_root / DEFAULT_SKILLS_DIR)
+            return fallback_dirs
+
+        if skills_dir:
+            candidate_dirs = {skills_dir}
+            # Read-only backup discovery cannot know whether remove() will
+            # later succeed in creating the configured target. If it does not,
+            # unregistration falls back to all known roots, so capture those
+            # artifacts now as well.
+            if not create_skills_dir and not skills_dir.is_dir():
+                candidate_dirs.update(_fallback_candidate_dirs())
+        else:
+            candidate_dirs = _fallback_candidate_dirs()
+
+        owned_dirs: List[Path] = []
+        seen_dirs: set[Path] = set()
+        for skills_candidate in candidate_dirs:
+            if not skills_candidate.is_dir():
+                continue
+            for skill_name in skill_names:
+                # Guard against path traversal from a corrupted registry entry.
+                sn_path = Path(skill_name)
+                if sn_path.is_absolute() or len(sn_path.parts) != 1:
+                    continue
+                try:
+                    candidate_root = skills_candidate.resolve()
+                    skill_subdir = (skills_candidate / skill_name).resolve()
+                    skill_subdir.relative_to(candidate_root)
+                except (OSError, ValueError):
+                    continue
+                if skill_subdir in seen_dirs or not skill_subdir.is_dir():
+                    continue
+
+                skill_md = skill_subdir / "SKILL.md"
+                if not skill_md.is_file():
+                    continue
+                try:
+                    from ..agents import CommandRegistrar as _Registrar
+
+                    raw = skill_md.read_text(encoding="utf-8")
+                    fm, _ = _Registrar.parse_frontmatter(raw)
+                    source = (
+                        fm.get("metadata", {}).get("source", "")
+                        if isinstance(fm, dict)
+                        else ""
+                    )
+                    if source != f"extension:{extension_id}":
+                        continue
+                except Exception:
+                    # If ownership cannot be verified, preserve the directory.
+                    continue
+
+                seen_dirs.add(skill_subdir)
+                owned_dirs.append(skill_subdir)
+
+        return owned_dirs
+
     def _unregister_extension_skills(
         self,
         skill_names: List[str],
@@ -1306,114 +1433,10 @@ class ExtensionManager:
                 caller needs to target a specific agent's skills directory
                 regardless of the currently-active agent in init-options.
         """
-        if not skill_names:
-            return
-
-        if skills_dir is None:
-            skills_dir = self._get_skills_dir()
-
-        if skills_dir:
-            # Fast path: we know the exact skills directory
-            for skill_name in skill_names:
-                # Guard against path traversal from a corrupted registry entry:
-                # reject names that are absolute, contain path separators, or
-                # resolve to a path outside the skills directory.
-                sn_path = Path(skill_name)
-                if sn_path.is_absolute() or len(sn_path.parts) != 1:
-                    continue
-                try:
-                    skill_subdir = (skills_dir / skill_name).resolve()
-                    skill_subdir.relative_to(skills_dir.resolve())  # raises if outside
-                except (OSError, ValueError):
-                    continue
-                if not skill_subdir.is_dir():
-                    continue
-                # Safety check: only delete if SKILL.md exists and its
-                # metadata.source matches exactly this extension — mirroring
-                # the fallback branch — so a corrupted registry entry cannot
-                # delete an unrelated user skill.
-                skill_md = skill_subdir / "SKILL.md"
-                if not skill_md.is_file():
-                    continue
-                try:
-                    from ..agents import CommandRegistrar as _Registrar
-
-                    raw = skill_md.read_text(encoding="utf-8")
-                    # Parse on the ``---`` delimiter *line*, not any ``---``
-                    # substring: a description containing ``---`` would trip a
-                    # raw ``split("---", 2)`` and hide metadata.source, so this
-                    # extension's own skill would look unrelated and be left
-                    # orphaned. Mirrors the #3590 parse_frontmatter fix.
-                    fm, _ = _Registrar.parse_frontmatter(raw)
-                    source = (
-                        fm.get("metadata", {}).get("source", "")
-                        if isinstance(fm, dict)
-                        else ""
-                    )
-                    if source != f"extension:{extension_id}":
-                        continue
-                except (OSError, UnicodeDecodeError, Exception):
-                    continue
-                shutil.rmtree(skill_subdir)
-        else:
-            # Fallback: scan all possible agent skills directories
-            from .. import AGENT_CONFIG, DEFAULT_SKILLS_DIR
-
-            candidate_dirs: set[Path] = set()
-            for cfg in AGENT_CONFIG.values():
-                folder = cfg.get("folder", "")
-                if folder:
-                    candidate_dirs.add(
-                        self.project_root / folder.rstrip("/") / "skills"
-                    )
-            candidate_dirs.add(self.project_root / DEFAULT_SKILLS_DIR)
-
-            for skills_candidate in candidate_dirs:
-                if not skills_candidate.is_dir():
-                    continue
-                for skill_name in skill_names:
-                    # Same path-traversal guard as the fast path above
-                    sn_path = Path(skill_name)
-                    if sn_path.is_absolute() or len(sn_path.parts) != 1:
-                        continue
-                    try:
-                        skill_subdir = (skills_candidate / skill_name).resolve()
-                        skill_subdir.relative_to(
-                            skills_candidate.resolve()
-                        )  # raises if outside
-                    except (OSError, ValueError):
-                        continue
-                    if not skill_subdir.is_dir():
-                        continue
-                    # Safety check: only delete if SKILL.md exists and its
-                    # metadata.source matches exactly this extension.  If the
-                    # file is missing or unreadable we skip to avoid deleting
-                    # unrelated user-created directories.
-                    skill_md = skill_subdir / "SKILL.md"
-                    if not skill_md.is_file():
-                        continue
-                    try:
-                        from ..agents import CommandRegistrar as _Registrar
-
-                        raw = skill_md.read_text(encoding="utf-8")
-                        # Parse on the ``---`` delimiter *line*, not any ``---``
-                        # substring: a description containing ``---`` would trip
-                        # a raw ``split("---", 2)`` and hide metadata.source, so
-                        # this extension's own skill would look unrelated and be
-                        # left orphaned. Mirrors the #3590 parse_frontmatter fix.
-                        fm, _ = _Registrar.parse_frontmatter(raw)
-                        source = (
-                            fm.get("metadata", {}).get("source", "")
-                            if isinstance(fm, dict)
-                            else ""
-                        )
-                        # Only remove skills explicitly created by this extension
-                        if source != f"extension:{extension_id}":
-                            continue
-                    except (OSError, UnicodeDecodeError, Exception):
-                        # If we can't verify, skip to avoid accidental deletion
-                        continue
-                    shutil.rmtree(skill_subdir)
+        for skill_subdir in self._find_extension_skill_dirs(
+            skill_names, extension_id, skills_dir=skills_dir
+        ):
+            shutil.rmtree(skill_subdir)
 
     def check_compatibility(
         self, manifest: ExtensionManifest, speckit_version: str

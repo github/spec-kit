@@ -1,6 +1,7 @@
 from specify_cli.extensions import ExtensionManager, ExtensionRegistry, ExtensionCatalog
 from pathlib import Path
 import pytest
+import shutil
 import yaml
 from typer.testing import CliRunner
 from specify_cli import app
@@ -8,7 +9,29 @@ from specify_cli import app
 runner = CliRunner()
 
 
-def _write_update_zip(zip_path):
+def _valid_update_manifest(version="1.1.0", command_name="speckit.test-ext.run"):
+    """Return a manifest accepted by normal install preflight validation."""
+    return {
+        "schema_version": "1.0",
+        "extension": {
+            "id": "test-ext",
+            "name": "Test Ext",
+            "version": version,
+            "description": "Update hardening test extension",
+        },
+        "requires": {"speckit_version": ">=0"},
+        "provides": {
+            "commands": [
+                {
+                    "name": command_name,
+                    "file": "commands/run.md",
+                }
+            ]
+        },
+    }
+
+
+def _write_update_zip(zip_path, *, version="1.1.0", manifest=None):
     """Create the minimal archive required by the update preflight."""
     import zipfile
 
@@ -16,13 +39,9 @@ def _write_update_zip(zip_path):
         archive.writestr(
             "extension.yml",
             yaml.safe_dump(
-                {
-                    "extension": {
-                        "id": "test-ext",
-                        "name": "Test Ext",
-                        "version": "1.1.0",
-                    }
-                }
+                manifest
+                if manifest is not None
+                else _valid_update_manifest(version=version)
             ),
         )
 
@@ -477,6 +496,383 @@ def test_extension_update_rolls_back_partial_remove(project_dir, monkeypatch):
     assert "Remove failed" in result.output
     assert "Rolling back" in result.output
     assert sentinel.read_text() == "ORIGINAL"
+    assert not (
+        project_dir
+        / ".specify"
+        / "extensions"
+        / ".backup"
+        / "test-ext-update"
+    ).exists()
+
+
+@pytest.mark.parametrize(
+    ("manifest", "expected_error"),
+    [
+        (
+            {
+                "extension": {
+                    "id": "test-ext",
+                    "name": "Test Ext",
+                    "version": "1.1.0",
+                }
+            },
+            "Missing required field: schema_version",
+        ),
+        (
+            {
+                **_valid_update_manifest(),
+                "requires": {"speckit_version": ">=9999"},
+            },
+            "Extension requires spec-kit >=9999",
+        ),
+    ],
+)
+def test_extension_update_validates_full_manifest_before_removal(
+    project_dir, monkeypatch, manifest, expected_error
+):
+    """Malformed or incompatible manifests must fail before remove()."""
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    _stub_available_update(
+        monkeypatch, {"version": "1.0.0", "enabled": True}
+    )
+
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(mock_zip, manifest=manifest)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+
+    remove_calls = []
+    install_calls = []
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: remove_calls.append(ext_id),
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        lambda *args, **kwargs: install_calls.append(args),
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 1
+    assert expected_error in result.output
+    assert "Rolling back" not in result.output
+    assert remove_calls == []
+    assert install_calls == []
+
+
+def test_extension_update_rejects_catalog_archive_version_mismatch(
+    project_dir, monkeypatch
+):
+    """The archive version must match the normalized catalog version."""
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    _stub_available_update(
+        monkeypatch, {"version": "1.0.0", "enabled": True}
+    )
+
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(mock_zip, version="1.0.1")
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+
+    remove_calls = []
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: remove_calls.append(ext_id),
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 1
+    assert (
+        "Extension version mismatch: expected '1.1.0', got '1.0.1'"
+        in result.output
+    )
+    assert "Updated to v1.1.0" not in result.output
+    assert "Rolling back" not in result.output
+    assert remove_calls == []
+
+
+def test_extension_update_rejects_command_conflicts_before_removal(
+    project_dir, monkeypatch
+):
+    """Deterministic install conflicts belong on the safe side of remove()."""
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    _stub_available_update(
+        monkeypatch, {"version": "1.0.0", "enabled": True}
+    )
+
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(
+        mock_zip,
+        manifest=_valid_update_manifest(
+            command_name="speckit.other.run"
+        ),
+    )
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+
+    remove_calls = []
+    install_calls = []
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: remove_calls.append(ext_id),
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        lambda *args, **kwargs: install_calls.append(args),
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 1
+    assert (
+        "Command 'speckit.other.run' must use extension namespace 'test-ext'"
+        in result.output
+    )
+    assert "Rolling back" not in result.output
+    assert remove_calls == []
+    assert install_calls == []
+
+
+def test_extension_update_accepts_normalized_equivalent_archive_version(
+    project_dir, monkeypatch
+):
+    """Equivalent PEP 440 spellings must not cause a false mismatch."""
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    registry_entry = {"version": "1.0.0", "enabled": True}
+    _stub_available_update(monkeypatch, registry_entry)
+
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(mock_zip, version="v1.1")
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+
+    remove_calls = []
+    install_calls = []
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: remove_calls.append(ext_id),
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        lambda *args, **kwargs: install_calls.append(args),
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert remove_calls == ["test-ext"]
+    assert len(install_calls) == 1
+    assert "Updated to v1.1.0" in result.output
+
+
+def _write_owned_extension_skill(skill_dir, extension_id, body):
+    """Write a SKILL.md whose metadata identifies its owning extension."""
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    frontmatter = yaml.safe_dump(
+        {
+            "name": skill_dir.name,
+            "description": "Extension update rollback test",
+            "metadata": {"source": f"extension:{extension_id}"},
+        },
+        sort_keys=False,
+    )
+    (skill_dir / "SKILL.md").write_text(
+        f"---\n{frontmatter}---\n\n{body}\n",
+        encoding="utf-8",
+    )
+
+
+def test_extension_update_rolls_back_registered_skill_artifacts(
+    project_dir, monkeypatch
+):
+    """Rollback restores old registered skills and removes newly created ones."""
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "init-options.json").write_text(
+        '{"ai":"claude","ai_skills":true}',
+        encoding="utf-8",
+    )
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+
+    skills_root = project_dir / ".claude" / "skills"
+    old_skill = skills_root / "speckit-test-ext-old"
+    new_skill = skills_root / "speckit-test-ext-new"
+    _write_owned_extension_skill(old_skill, "test-ext", "OLD SKILL")
+    (old_skill / "support.txt").write_text("OLD SUPPORT", encoding="utf-8")
+
+    registry_entry = {
+        "version": "1.0.0",
+        "enabled": True,
+        "registered_skills": [old_skill.name],
+    }
+    _stub_available_update(monkeypatch, registry_entry)
+
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(
+        mock_zip,
+        manifest=_valid_update_manifest(
+            command_name="speckit.test-ext.new"
+        ),
+    )
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+
+    def mock_remove(self, ext_id, keep_config=False):
+        shutil.rmtree(old_skill)
+
+    def mock_install_fail(*args, **kwargs):
+        # Simulate a write failure before ownership frontmatter is complete.
+        # The normal unregistrar must preserve unverifiable directories, so
+        # rollback relies on the absent-before-update snapshot to remove this.
+        new_skill.mkdir(parents=True)
+        (new_skill / "SKILL.md").write_text("---\n", encoding="utf-8")
+        raise RuntimeError("Install failed during skill registration")
+
+    monkeypatch.setattr(ExtensionManager, "remove", mock_remove)
+    monkeypatch.setattr(
+        ExtensionManager, "install_from_zip", mock_install_fail
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 1
+    assert "Rollback successful" in result.output
+    assert (old_skill / "SKILL.md").exists()
+    assert "OLD SKILL" in (old_skill / "SKILL.md").read_text(encoding="utf-8")
+    assert (old_skill / "support.txt").read_text(encoding="utf-8") == "OLD SUPPORT"
+    assert not new_skill.exists()
+
+
+def test_extension_update_partial_skill_backup_preserves_live_skills(
+    project_dir, monkeypatch
+):
+    """An incomplete skill backup must abort before remove() touches live data."""
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "init-options.json").write_text(
+        '{"ai":"claude","ai_skills":true}',
+        encoding="utf-8",
+    )
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+
+    first_skill = (
+        project_dir / ".claude" / "skills" / "speckit-test-ext-old"
+    )
+    second_skill = (
+        project_dir / ".claude" / "skills" / "speckit-test-ext-second"
+    )
+    _write_owned_extension_skill(first_skill, "test-ext", "FIRST SKILL")
+    _write_owned_extension_skill(second_skill, "test-ext", "SECOND SKILL")
+    first_support = first_skill / "support.txt"
+    second_support = second_skill / "support.txt"
+    first_support.write_text("FIRST SUPPORT", encoding="utf-8")
+    second_support.write_text("SECOND SUPPORT", encoding="utf-8")
+
+    registry_entry = {
+        "version": "1.0.0",
+        "enabled": True,
+        "registered_skills": [first_skill.name, second_skill.name],
+    }
+    _stub_available_update(monkeypatch, registry_entry)
+
+    real_copytree = shutil.copytree
+    skill_backup_count = 0
+
+    def fail_partial_skill_backup(src, dst, *args, **kwargs):
+        nonlocal skill_backup_count
+        source = Path(src).resolve()
+        if source in {first_skill.resolve(), second_skill.resolve()}:
+            skill_backup_count += 1
+            if skill_backup_count == 2:
+                Path(dst).mkdir(parents=True, exist_ok=True)
+                shutil.copy2(
+                    Path(src) / "SKILL.md",
+                    Path(dst) / "SKILL.md",
+                )
+                raise OSError("Skill backup failed")
+        return real_copytree(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "copytree", fail_partial_skill_backup)
+    remove_calls = []
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: remove_calls.append(ext_id),
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 1
+    assert "Skill backup failed" in result.output
+    assert "Rolling back" not in result.output
+    assert remove_calls == []
+    assert skill_backup_count == 2
+    assert (first_skill / "SKILL.md").exists()
+    assert (second_skill / "SKILL.md").exists()
+    assert first_support.read_text(encoding="utf-8") == "FIRST SUPPORT"
+    assert second_support.read_text(encoding="utf-8") == "SECOND SUPPORT"
     assert not (
         project_dir
         / ".specify"
