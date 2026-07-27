@@ -113,6 +113,44 @@ def test_absent_or_empty_catalogs_is_noop(tmp_path: Path, body: str):
     assert len(sources) > 0
 
 
+def test_load_source_stack_rejects_unknown_schema_version(tmp_path: Path):
+    """A bundle-catalogs.yml with an unsupported MAJOR schema_version must raise
+    on the resolution path (load_source_stack -> _merge_config), matching the
+    sibling reader commands_impl/catalog_config._read. Without this a file
+    written by a newer/incompatible Spec Kit was silently parsed under v1
+    assumptions on the install/search path, while the other reader rejected it."""
+    make_project(tmp_path)
+    config = {
+        "schema_version": "2.0",
+        "catalogs": [{"id": "corp", "url": "https://corp/catalog.json",
+                      "priority": 1, "install_policy": "install-allowed"}],
+    }
+    (tmp_path / ".specify" / "bundle-catalogs.yml").write_text(
+        yaml.safe_dump(config), encoding="utf-8"
+    )
+    with pytest.raises(BundlerError, match="Unsupported catalog config schema version"):
+        load_source_stack(tmp_path)
+
+
+def test_load_source_stack_accepts_matching_or_absent_schema_version(tmp_path: Path):
+    """A matching major version (1.x) and an absent schema_version both stay
+    valid — the guard rejects only a different major, so existing configs that
+    omit the key are unaffected."""
+    make_project(tmp_path)
+    cfg = tmp_path / ".specify" / "bundle-catalogs.yml"
+    cfg.write_text(yaml.safe_dump({
+        "schema_version": "1.5",  # same major as CONFIG_SCHEMA_VERSION (1.0)
+        "catalogs": [{"id": "corp", "url": "https://corp/catalog.json",
+                      "priority": 1, "install_policy": "install-allowed"}],
+    }), encoding="utf-8")
+    assert "corp" in {s.id for s in load_source_stack(tmp_path)}
+    cfg.write_text(yaml.safe_dump({  # no schema_version key
+        "catalogs": [{"id": "corp2", "url": "https://corp2/catalog.json",
+                      "priority": 1, "install_policy": "install-allowed"}],
+    }), encoding="utf-8")
+    assert "corp2" in {s.id for s in load_source_stack(tmp_path)}
+
+
 def test_project_config_overrides_same_id(tmp_path: Path):
     make_project(tmp_path)
     config = {

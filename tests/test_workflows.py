@@ -3821,6 +3821,48 @@ class TestWorkflowDefinition:
         assert definition.id == "test-workflow"
         assert len(definition.inputs) == 2
 
+    @pytest.mark.parametrize(
+        "block",
+        [
+            "workflow:\n  id: w\n  name: W\nsteps: []\ninputs: []\n",   # list
+            "workflow:\n  id: w\n  name: W\nsteps: []\ninputs:\n",       # null
+        ],
+    )
+    def test_resolve_inputs_tolerates_non_mapping_inputs(self, block):
+        # execute()/resume() run UNVALIDATED definitions; a non-mapping `inputs:`
+        # block (list/null) is stored raw and would crash _resolve_inputs at
+        # `.items()`. It must be treated as "no inputs" instead.
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        definition = WorkflowDefinition.from_string(block)
+        resolved = WorkflowEngine()._resolve_inputs(definition, {})  # must not raise
+        assert resolved == {}
+
+    @pytest.mark.parametrize(
+        "block", ["workflow:\nsteps: []\n", "workflow: hi\nsteps: []\n", "workflow: [a]\nsteps: []\n"]
+    )
+    def test_non_mapping_workflow_block_parses_then_validates(self, block):
+        # A present-but-non-mapping `workflow:` block must not crash construction
+        # with AttributeError; it should parse to an empty header so
+        # validate_workflow reports the missing id/name (it reads the parsed
+        # attributes, not the raw block).
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string(block)  # must not raise
+        assert definition.id == ""
+        errors = validate_workflow(definition)
+        assert any("workflow.id" in e for e in errors)
+        # The RAW malformed value is preserved on .data (the guard only
+        # normalizes the local var, not self.data) — .data is what gets written
+        # back out when a definition is serialized. Assert it was NOT replaced
+        # with {} by comparing against the original parse and confirming it is
+        # still a non-mapping.
+        import yaml
+
+        raw_workflow = yaml.safe_load(block).get("workflow")
+        assert definition.data["workflow"] == raw_workflow
+        assert not isinstance(definition.data["workflow"], dict)
+
     def test_from_string_invalid(self):
         from specify_cli.workflows.engine import WorkflowDefinition
 
@@ -10704,6 +10746,60 @@ steps:
         assert "Bracket [Search]" in result.output
         assert "desc [with] brackets" in result.output
         assert "tag[1]" in result.output
+
+    def test_catalog_list_escapes_rich_markup(self, project_dir, monkeypatch):
+        """User-editable catalog name/url/description must not be parsed as Rich markup."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        monkeypatch.chdir(project_dir)
+        configs = [
+            {
+                "name": "Bracket [Catalog]",
+                "url": "https://example.com/[cat].json",
+                "description": "desc [with] brackets",
+                "install_allowed": True,
+            },
+        ]
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_catalog_configs",
+            lambda self: [dict(c) for c in configs],
+        )
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "catalog", "list"])
+        assert result.exit_code == 0, result.output
+        assert "Bracket [Catalog]" in result.output
+        assert "https://example.com/[cat].json" in result.output
+        assert "desc [with] brackets" in result.output
+
+    def test_step_catalog_list_escapes_rich_markup(self, project_dir, monkeypatch):
+        """User-editable step-catalog name/url/description must not be parsed as Rich markup."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepCatalog
+
+        monkeypatch.chdir(project_dir)
+        configs = [
+            {
+                "name": "Bracket [Step]",
+                "url": "https://example.com/[step].json",
+                "description": "step [with] brackets",
+                "install_allowed": True,
+            },
+        ]
+        monkeypatch.setattr(
+            StepCatalog,
+            "get_catalog_configs",
+            lambda self: [dict(c) for c in configs],
+        )
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "catalog", "list"])
+        assert result.exit_code == 0, result.output
+        assert "Bracket [Step]" in result.output
+        assert "https://example.com/[step].json" in result.output
+        assert "step [with] brackets" in result.output
 
     # -- update ----------------------------------------------------------
 

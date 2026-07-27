@@ -102,8 +102,17 @@ def resolve_github_release_asset_api_url(
 
     from specify_cli._download_security import read_response_limited
 
-    parsed = urlparse(download_url)
-    hostname = (parsed.hostname or "").lower()
+    # Accessing ``.hostname`` (like ``.port`` below) raises ValueError on a
+    # malformed authority, e.g. an invalid bracketed IPv6 host
+    # ``https://[not-an-ip]/...``. The function's contract is to return None for
+    # anything it can't resolve, not to raise, so guard the read. ``download_url``
+    # is server-controlled here (a catalog ``download_url`` payload), so a
+    # malformed value must not leak a raw traceback past the caller.
+    try:
+        parsed = urlparse(download_url)
+        hostname = (parsed.hostname or "").lower()
+    except ValueError:
+        return None
     parts = [unquote(part) for part in parsed.path.strip("/").split("/")]
 
     is_ghes = (

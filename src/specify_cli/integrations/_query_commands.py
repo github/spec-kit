@@ -489,13 +489,14 @@ def integration_catalog_list():
         display_name = str(raw_name).strip() if raw_name is not None else ""
         if not display_name:
             display_name = f"catalog-{i + 1}"
+        safe_name = _rich_escape(display_name)
         if env_override or project_configs is None:
-            console.print(f"  - [bold]{display_name}[/bold] — {install_status}")
+            console.print(f"  - [bold]{safe_name}[/bold] — {install_status}")
         else:
-            console.print(f"  [{i}] [bold]{display_name}[/bold] — {install_status}")
-        console.print(f"      {cfg.get('url', '')}")
+            console.print(f"  [{i}] [bold]{safe_name}[/bold] — {install_status}")
+        console.print(f"      {_rich_escape(str(cfg.get('url', '')))}")
         if cfg.get("description"):
-            console.print(f"      [dim]{cfg['description']}[/dim]")
+            console.print(f"      [dim]{_rich_escape(str(cfg['description']))}[/dim]")
         console.print()
 
 

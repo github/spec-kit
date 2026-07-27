@@ -15,6 +15,11 @@ from .. import BundlerError
 from ..lib.yamlio import ensure_within, load_yaml
 
 CONFIG_FILENAME = "bundle-catalogs.yml"
+# Supported bundle-catalogs.yml schema (major version). Both readers of the
+# file — this module's _merge_config and commands_impl/catalog_config._read —
+# reject an unsupported major version so a file written by a newer/incompatible
+# Spec Kit fails fast instead of being parsed under the wrong assumptions.
+CONFIG_SCHEMA_VERSION = "1.0"
 
 
 class InstallPolicy(str, Enum):
@@ -266,6 +271,23 @@ def _merge_config(by_id: dict[str, CatalogSource], config_path: Path, scope: Sco
         raise BundlerError(
             f"Malformed catalog config at {config_path}: expected a mapping at "
             f"the top level, got {type(data).__name__}."
+        )
+    # Reject an unsupported major schema version, matching the sibling reader
+    # commands_impl/catalog_config._read. Without this, a file written by a
+    # newer/incompatible Spec Kit was silently parsed under v1 assumptions on
+    # the resolution path (bundle search/install), while the other reader
+    # rejected it — the two readers disagreed. An absent schema_version stays
+    # valid (backward compatible with configs that omit it).
+    schema_version = data.get("schema_version")
+    if schema_version is not None and (
+        str(schema_version).strip().split(".")[0]
+        != CONFIG_SCHEMA_VERSION.split(".")[0]
+    ):
+        raise BundlerError(
+            f"Unsupported catalog config schema version "
+            f"'{str(schema_version).strip()}' at {config_path}; this Spec Kit "
+            f"understands version {CONFIG_SCHEMA_VERSION}. The file may have been "
+            "written by a newer version or is corrupt."
         )
     catalogs = data.get("catalogs")
     if catalogs is None:

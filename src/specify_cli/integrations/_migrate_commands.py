@@ -35,6 +35,7 @@ from ._helpers import (
     _resolve_script_type,
     _set_default_integration,
     _set_default_integration_or_exit,
+    _unregister_enabled_extension_commands_for_agent,
     _unregister_extensions_for_agent,
     _update_init_options_for_integration,
     _write_integration_json,
@@ -54,6 +55,66 @@ def _manifest_tracks_skill_layout(manifest) -> bool:
     return any(str(rel).endswith("/SKILL.md") for rel in manifest.files)
 
 
+def _manifest_path_under(rel_path: str, root: str) -> bool:
+    """Return True when manifest key *rel_path* is inside project-relative *root*."""
+    normalized_root = PurePath(root).as_posix().strip("/")
+    normalized_rel = PurePath(rel_path).as_posix().strip("/")
+    if not normalized_root:
+        return False
+    return normalized_rel == normalized_root or normalized_rel.startswith(
+        f"{normalized_root}/"
+    )
+
+
+def _legacy_command_root_changed(
+    integration,
+    project_root: Path,
+    old_manifest,
+    new_manifest,
+) -> bool:
+    """Return True when command artifacts moved from legacy_dir to canonical dir."""
+    config = integration.registrar_config or {}
+    canonical = config.get("dir")
+    legacy = config.get("legacy_dir")
+    if (
+        not isinstance(canonical, str)
+        or not canonical.strip()
+        or not isinstance(legacy, str)
+        or not legacy.strip()
+        or PurePath(canonical).as_posix() == PurePath(legacy).as_posix()
+    ):
+        return False
+
+    canonical_dir = project_root / canonical
+    legacy_dir = project_root / legacy
+    if not canonical_dir.is_dir() or not legacy_dir.is_dir():
+        return False
+
+    old_had_legacy = any(
+        _manifest_path_under(rel, legacy) for rel in old_manifest.files
+    )
+    new_has_canonical = any(
+        _manifest_path_under(rel, canonical) for rel in new_manifest.files
+    )
+    return old_had_legacy and new_has_canonical
+
+
+def _legacy_command_root_upgrade_pending(integration, old_manifest) -> bool:
+    """Return True when the old manifest tracks command files under legacy_dir."""
+    config = integration.registrar_config or {}
+    canonical = config.get("dir")
+    legacy = config.get("legacy_dir")
+    if (
+        not isinstance(canonical, str)
+        or not canonical.strip()
+        or not isinstance(legacy, str)
+        or not legacy.strip()
+        or PurePath(canonical).as_posix() == PurePath(legacy).as_posix()
+    ):
+        return False
+    return any(_manifest_path_under(rel, legacy) for rel in old_manifest.files)
+
+
 class _PresetRegistryUnreadableError(Exception):
     """Raised when an existing preset registry cannot be read or parsed.
 
@@ -64,7 +125,12 @@ class _PresetRegistryUnreadableError(Exception):
     """
 
 
-def _installed_presets_affecting_agent(project_root, agent_key: str) -> list[str]:
+def _installed_presets_affecting_agent(
+    project_root,
+    agent_key: str,
+    *,
+    include_skills: bool = True,
+) -> list[str]:
     """Return IDs of installed presets with artifacts registered for *agent_key*.
 
     Presets register command overrides for every detected agent and mirror
@@ -117,15 +183,28 @@ def _installed_presets_affecting_agent(project_root, agent_key: str) -> list[str
                 f"preset '{preset_id}' registered_commands is malformed"
             )
         registered_skills = meta.get("registered_skills", [])
-        if not isinstance(registered_skills, (list, tuple)):
-            raise _PresetRegistryUnreadableError(
-                f"preset '{preset_id}' registered_skills is malformed"
-            )
+        if include_skills:
+            if not isinstance(registered_skills, (list, tuple)):
+                raise _PresetRegistryUnreadableError(
+                    f"preset '{preset_id}' registered_skills is malformed"
+                )
         has_commands = bool(registered_commands.get(agent_key))
-        has_skills = bool(registered_skills)
+        has_skills = include_skills and bool(registered_skills)
         if has_commands or has_skills:
             affected.append(preset_id)
     return affected
+
+
+def _installed_command_presets_affecting_agent(
+    project_root,
+    agent_key: str,
+) -> list[str]:
+    """Return installed presets with command artifacts registered for *agent_key*."""
+    return _installed_presets_affecting_agent(
+        project_root,
+        agent_key,
+        include_skills=False,
+    )
 
 
 @integration_app.command("switch")
@@ -487,6 +566,60 @@ def integration_upgrade(
         integration, current, key, integration_options
     )
 
+    legacy_command_root_upgrade_pending = _legacy_command_root_upgrade_pending(
+        integration,
+        old_manifest,
+    )
+
+    # Guard: Kilo's legacy command root moves from .kilocode/workflows to
+    # .kilo/commands. Preset command artifacts are registered only during
+    # preset install/remove, with no agent-scoped re-registration hook to
+    # recreate them at the new command root while preserving priority and
+    # composition semantics. Refuse before setup writes .kilo/commands rather
+    # than leaving legacy preset files orphaned or registry-tracked overrides
+    # missing from the canonical directory.
+    if key == "kilocode" and legacy_command_root_upgrade_pending:
+        config = integration.registrar_config or {}
+        legacy = config.get("legacy_dir", "legacy command directory")
+        canonical = config.get("dir", "canonical command directory")
+        try:
+            affected_presets = _installed_command_presets_affecting_agent(
+                project_root,
+                key,
+            )
+        except _PresetRegistryUnreadableError as exc:
+            console.print(
+                f"[red]Error:[/red] Cannot migrate '{key}' command directory "
+                f"from [cyan]{legacy}[/cyan] to [cyan]{canonical}[/cyan]: "
+                "the preset registry could not be read to verify installed presets."
+            )
+            console.print(f"[dim]Details:[/dim] {_cli_error_detail(exc)}")
+            console.print(
+                "A command directory migration cannot reconcile preset command "
+                "artifacts while the preset registry state is unknown. Fix or "
+                "restore [cyan].specify/presets/.registry[/cyan] and retry."
+            )
+            raise typer.Exit(1)
+        if affected_presets:
+            preset_list = ", ".join(sorted(affected_presets))
+            console.print(
+                f"[red]Error:[/red] Cannot migrate '{key}' command directory "
+                f"from [cyan]{legacy}[/cyan] to [cyan]{canonical}[/cyan] while "
+                f"preset override(s) are installed: [bold]{preset_list}[/bold]."
+            )
+            console.print(
+                "Preset command artifacts cannot yet be reconciled across this "
+                "command directory migration, so the upgrade is refused before "
+                "changing files."
+            )
+            console.print(
+                "Remove the preset(s), run the upgrade, then reinstall them:\n"
+                f"  [cyan]specify preset remove <id>[/cyan]\n"
+                f"  [cyan]specify integration upgrade {key} --script {selected_script} --force[/cyan]\n"
+                f"  [cyan]specify preset add <id>[/cyan]"
+            )
+            raise typer.Exit(1)
+
     # Guard: reject a command↔skills layout change while preset overrides are
     # installed for this agent (review #3415).  A dual-mode agent (e.g. Bob)
     # can flip layout across an upgrade (``--skills`` / ``--legacy-commands``).
@@ -645,6 +778,22 @@ def integration_upgrade(
         )
         if stale_removed:
             console.print(f"  Removed {len(stale_removed)} stale file(s) from previous install")
+
+    legacy_command_root_changed = _legacy_command_root_changed(
+        integration,
+        project_root,
+        old_manifest,
+        new_manifest,
+    )
+    if legacy_command_root_changed:
+        _unregister_enabled_extension_commands_for_agent(
+            project_root,
+            key,
+            continuing=(
+                "The integration command directory changed, but legacy enabled "
+                "extension artifacts may need manual cleanup."
+            ),
+        )
 
     # Re-register enabled extensions for the upgraded agent so its extension
     # commands are (re)created — including agents installed before this

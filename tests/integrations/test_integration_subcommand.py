@@ -69,6 +69,26 @@ def _write_invalid_manifest(project, key):
     return manifest
 
 
+def _move_kilocode_install_to_legacy_layout(project):
+    """Simulate a pre-.kilo Kilo install tracked under .kilocode/workflows."""
+    canonical = project / ".kilo" / "commands"
+    legacy = project / ".kilocode" / "workflows"
+    assert canonical.is_dir(), "init should have created .kilo/commands/"
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    canonical.rename(legacy)
+    assert legacy.is_dir()
+    assert not canonical.exists()
+
+    manifest_path = project / ".specify" / "integrations" / "kilocode.manifest.json"
+    manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest_data["files"] = {
+        path.replace(".kilo/commands/", ".kilocode/workflows/"): info
+        for path, info in manifest_data.get("files", {}).items()
+    }
+    manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+    return canonical, legacy
+
+
 def _copy_project_template(tmp_path, template):
     project = tmp_path / "proj"
     shutil.copytree(template, project)
@@ -2493,6 +2513,206 @@ class TestIntegrationUpgrade:
             f"found: {[f.name for f in core_remaining]}"
         )
 
+    def test_upgrade_migrates_kilocode_legacy_dir(self, tmp_path):
+        """Upgrade moves Kilo commands from .kilocode/workflows/ to .kilo/commands/."""
+        project = _init_project(tmp_path, "kilocode")
+        canonical, legacy = _move_kilocode_install_to_legacy_layout(project)
+
+        old_commands = sorted(legacy.glob("speckit.*.md"))
+        assert old_commands, "Legacy dir should have speckit command files"
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "kilocode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code == 0, f"upgrade failed: {result.output}"
+
+        assert canonical.is_dir(), ".kilo/commands/ should exist after upgrade"
+        new_commands = sorted(canonical.glob("speckit.*.md"))
+        assert new_commands, "Commands should exist in .kilo/commands/"
+
+        core_remaining = [
+            f for f in legacy.glob("speckit.*.md")
+            if "agent-context" not in f.name
+        ]
+        assert core_remaining == [], (
+            "Legacy .kilocode/workflows/ should have no core speckit files "
+            f"after upgrade, found: {[f.name for f in core_remaining]}"
+        )
+
+    def test_upgrade_kilocode_legacy_dir_rejects_installed_preset_overrides(
+        self, tmp_path
+    ):
+        """Kilo legacy command-root migration must fail closed with presets."""
+        project = _init_project(tmp_path, "kilocode")
+        canonical, legacy = _move_kilocode_install_to_legacy_layout(project)
+
+        preset_file = legacy / "speckit.plan.md"
+        preset_file.write_text("# preset plan override\n", encoding="utf-8")
+
+        presets_dir = project / ".specify" / "presets"
+        presets_dir.mkdir(parents=True, exist_ok=True)
+        (presets_dir / ".registry").write_text(
+            json.dumps({
+                "presets": {
+                    "my-preset": {
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "registered_commands": {"kilocode": ["speckit.plan"]},
+                        "registered_skills": [],
+                    }
+                }
+            }),
+            encoding="utf-8",
+        )
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "kilocode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code != 0, (
+            "Kilo legacy command-root migration with presets must be rejected"
+        )
+        assert "preset" in result.output.lower()
+        assert "my-preset" in result.output
+        assert ".kilocode/workflows" in strip_ansi(result.output)
+        assert ".kilo/commands" in strip_ansi(result.output)
+        assert not canonical.exists(), (
+            "canonical Kilo commands must not be scaffolded after rejection"
+        )
+        assert preset_file.read_text(encoding="utf-8") == "# preset plan override\n"
+
+    def test_upgrade_reconciles_kilocode_legacy_extension_artifacts(self, tmp_path):
+        """Kilo upgrade moves enabled extension commands to the canonical dir."""
+        project = _init_project(tmp_path, "kilocode")
+        canonical, legacy = _move_kilocode_install_to_legacy_layout(project)
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        assert sorted(legacy.glob("speckit.git.*.md")), (
+            "legacy Kilo should render the git extension under .kilocode/workflows"
+        )
+        assert not canonical.exists()
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "kilocode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code == 0, f"upgrade failed: {result.output}"
+
+        assert sorted(canonical.glob("speckit.git.*.md")), (
+            "enabled git extension commands should be recreated in .kilo/commands"
+        )
+        assert not sorted(legacy.glob("speckit.git.*.md")), (
+            "legacy git extension commands should be removed after Kilo upgrade"
+        )
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "kilocode" in registered
+
+    def test_upgrade_preserves_disabled_kilocode_legacy_extension_and_user_file(
+        self, tmp_path
+    ):
+        """Legacy reconciliation must not clean disabled or user-owned files."""
+        project = _init_project(tmp_path, "kilocode")
+        canonical, legacy = _move_kilocode_install_to_legacy_layout(project)
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        result = _run_in_project(project, ["extension", "disable", "git"])
+        assert result.exit_code == 0, f"extension disable failed: {result.output}"
+
+        disabled_extension_files = sorted(legacy.glob("speckit.git.*.md"))
+        assert disabled_extension_files, "disabled extension artifact should remain pre-upgrade"
+
+        user_file = legacy / "speckit.user-owned.md"
+        user_file.write_text("# user-owned legacy command", encoding="utf-8")
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "kilocode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code == 0, f"upgrade failed: {result.output}"
+
+        assert canonical.is_dir(), ".kilo/commands/ should exist after upgrade"
+        assert user_file.read_text(encoding="utf-8") == "# user-owned legacy command"
+        for disabled_file in disabled_extension_files:
+            assert disabled_file.exists(), (
+                "disabled extension artifacts should be preserved during "
+                "legacy command-root reconciliation"
+            )
+        assert not sorted(canonical.glob("speckit.git.*.md")), (
+            "disabled extensions must not be re-registered in the canonical dir"
+        )
+
+    def test_upgrade_secondary_kilocode_legacy_dir_preserves_active_agent_skills(
+        self, tmp_path
+    ):
+        """Kilo command-root cleanup must not touch active agent extension skills."""
+        project = _init_project(tmp_path, "copilot", integration_options="--skills")
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        skill = project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
+        assert skill.exists(), "precondition: active copilot has the git extension skill"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+
+        def _git_skills():
+            data = json.loads(registry_path.read_text(encoding="utf-8"))
+            return data["extensions"]["git"].get("registered_skills", [])
+
+        assert _git_skills(), "precondition: git skills registered for active copilot"
+
+        result = _run_in_project(project, [
+            "integration", "install", "kilocode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        canonical, legacy = _move_kilocode_install_to_legacy_layout(project)
+        legacy_git_command = legacy / "speckit.git.feature.md"
+        legacy_git_command.write_text("# legacy Kilo git command\n", encoding="utf-8")
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        registry["extensions"]["git"].setdefault("registered_commands", {})[
+            "kilocode"
+        ] = ["speckit.git.feature"]
+        registry_path.write_text(json.dumps(registry), encoding="utf-8")
+        assert legacy_git_command.exists(), (
+            "precondition: secondary Kilo has a legacy extension command file"
+        )
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "kilocode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        assert canonical.is_dir(), ".kilo/commands/ should exist after upgrade"
+        assert sorted(canonical.glob("speckit.git.*.md")), (
+            "secondary Kilo should regain enabled extension commands"
+        )
+        assert not legacy_git_command.exists(), (
+            "secondary Kilo legacy extension commands should still be cleaned up"
+        )
+        assert skill.exists(), (
+            "secondary Kilo legacy cleanup must not delete the active agent's "
+            "extension skill"
+        )
+        assert _git_skills(), (
+            "secondary Kilo legacy cleanup must not untrack the active agent's "
+            "extension skills in the registry"
+        )
+
     def test_upgrade_bob_skills_migration_preserves_manifest(self, tmp_path):
         """Regression (review #3415, 4724160183, comment 1).
 
@@ -2936,6 +3156,7 @@ class TestIntegrationUpgrade:
         """
         from specify_cli.integrations._migrate_commands import (
             _PresetRegistryUnreadableError,
+            _installed_command_presets_affecting_agent,
             _installed_presets_affecting_agent,
         )
 
@@ -3000,6 +3221,9 @@ class TestIntegrationUpgrade:
         assert sorted(_installed_presets_affecting_agent(project, "bob")) == [
             "p1",
             "p3",
+        ]
+        assert _installed_command_presets_affecting_agent(project, "bob") == [
+            "p1"
         ]
 
 

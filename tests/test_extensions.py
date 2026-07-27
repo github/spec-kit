@@ -1103,6 +1103,52 @@ class TestExtensionManager:
         assert (ext_dir / "extension.yml").exists()
         assert (ext_dir / "commands" / "hello.md").exists()
 
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX execute bits are not meaningful on Windows"
+    )
+    def test_install_restores_execute_bit_on_shipped_scripts(
+        self, extension_dir, project_dir
+    ):
+        """Every install route restores execute bits on shipped POSIX scripts.
+
+        ``install_from_directory`` is the single sink all routes funnel through
+        (``install_from_zip`` delegates to it; ``extension add``, ``extension
+        update``, and bundle installs all call these two methods). copytree /
+        zipfile.extractall do not restore a stripped Unix mode, so a shipped
+        ``*.sh`` would land non-executable and a documented
+        ``.specify/extensions/<id>/scripts/...`` invocation would fail with
+        "Permission denied". Guards that every route restores the bit; fails
+        without the ensure_executable_scripts() call in install_from_directory.
+        """
+        import zipfile
+        import tempfile
+
+        scripts = extension_dir / "scripts"
+        scripts.mkdir()
+        script = scripts / "gate.sh"
+        script.write_text("#!/usr/bin/env bash\necho hi\n")
+        script.chmod(0o644)  # non-executable, as extractall/copytree may leave it
+
+        installed = (
+            project_dir / ".specify" / "extensions" / "test-ext" / "scripts" / "gate.sh"
+        )
+        manager = ExtensionManager(project_dir)
+
+        # Route 1 — install_from_directory (extension add --dev, bundle dir install)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+        assert os.access(installed, os.X_OK), "directory install left script non-executable"
+
+        # Route 2 — install_from_zip, force=True: the ZIP path (extension add --from,
+        # bundle zip) and the remove-then-reinstall shape of `extension update`.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zip_path = Path(tmpdir) / "test-ext.zip"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                for f in extension_dir.rglob("*"):
+                    if f.is_file():
+                        zf.write(f, f.relative_to(extension_dir))
+            manager.install_from_zip(zip_path, "0.1.0", force=True)
+        assert os.access(installed, os.X_OK), "zip/update install left script non-executable"
+
     def test_install_from_directory_explicitly_recovers_active_skills_dir(
         self, extension_dir, project_dir, monkeypatch
     ):
@@ -6316,6 +6362,50 @@ class TestExtensionAddCLI:
             assert ".specify-dev" in agent_file.resolve().parts
         else:
             assert not agent_file.is_symlink()
+
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX execute bits are not meaningful on Windows"
+    )
+    def test_add_makes_shipped_scripts_executable(self, extension_dir, project_dir):
+        """extension add must restore execute bits on bundled POSIX scripts.
+
+        Archives are unpacked with zipfile.extractall and --dev installs copy the
+        tree; neither restores a stripped Unix mode, so a shipped *.sh can land
+        non-executable and a documented `.specify/extensions/<id>/scripts/...`
+        invocation then fails with "Permission denied". init / migrate /
+        integration-install already call ensure_executable_scripts(); this guards
+        that `extension add` does too.
+        """
+        import stat
+
+        scripts_dir = extension_dir / "scripts"
+        scripts_dir.mkdir()
+        script = scripts_dir / "gate.sh"
+        script.write_text("#!/usr/bin/env bash\necho hi\n")
+        script.chmod(0o644)  # non-executable, as an unpacked/copied script may be
+        assert not os.access(script, os.X_OK)
+
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", str(extension_dir), "--dev"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        installed = (
+            project_dir / ".specify" / "extensions" / "test-ext" / "scripts" / "gate.sh"
+        )
+        assert installed.exists(), result.output
+        assert os.access(installed, os.X_OK), (
+            f"installed script not executable: mode="
+            f"{stat.S_IMODE(installed.stat().st_mode):o}"
+        )
 
     def test_add_dev_writes_codex_skills_as_files(self, extension_dir, project_dir):
         """Codex dev skills should be written as files so Codex can load them."""
