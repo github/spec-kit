@@ -3735,11 +3735,46 @@ class PresetManager:
             except ImportError:
                 CommandRegistrar = None
             if CommandRegistrar is not None:
-                registered_commands = {
-                    agent_name: cmd_names
-                    for agent_name, cmd_names in registered_commands.items()
-                    if CommandRegistrar.AGENT_CONFIGS.get(agent_name, {}).get("extension") != "/SKILL.md"
-                }
+                skill_coverage = (
+                    registered_skills
+                    if isinstance(registered_skills, dict)
+                    else {}
+                )
+                commands_to_unregister: Dict[str, List[str]] = {}
+                for agent_name, cmd_names in registered_commands.items():
+                    is_native_skill_agent = (
+                        CommandRegistrar.AGENT_CONFIGS.get(
+                            agent_name, {}
+                        ).get("extension")
+                        == "/SKILL.md"
+                    )
+                    if not is_native_skill_agent:
+                        commands_to_unregister[agent_name] = cmd_names
+                        continue
+
+                    raw_skill_names = skill_coverage.get(agent_name, [])
+                    covered_skill_names = {
+                        name
+                        for name in (
+                            raw_skill_names
+                            if isinstance(raw_skill_names, list)
+                            else []
+                        )
+                        if isinstance(name, str)
+                    }
+                    uncovered_commands = [
+                        cmd_name
+                        for cmd_name in cmd_names
+                        if not isinstance(cmd_name, str)
+                        or covered_skill_names.isdisjoint(
+                            self._skill_names_for_command(cmd_name)
+                        )
+                    ]
+                    if uncovered_commands:
+                        commands_to_unregister[agent_name] = (
+                            uncovered_commands
+                        )
+                registered_commands = commands_to_unregister
 
         # Unregister non-skill command files from AI agents.
         if registered_commands:

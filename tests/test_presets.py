@@ -6403,6 +6403,57 @@ class TestPresetSkills:
             not in remaining_skill.read_text(encoding="utf-8")
         ), "persisted partial ownership must remain removable"
 
+    def test_remove_cleans_native_skill_missing_from_partial_skill_map(
+        self, project_dir, temp_dir
+    ):
+        """Command cleanup must cover native skills absent from a partial map."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "partial-agent-skill-map-preset",
+            "speckit.partial-native",
+            "Partial native skill",
+            "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        metadata = manager.registry.get("partial-agent-skill-map-preset")
+        assert metadata["registered_skills"].get("claude")
+
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        (project_dir / ".agents" / "skills").mkdir(parents=True)
+
+        from unittest.mock import patch
+
+        with patch.object(
+            PresetManager,
+            "_register_skills",
+            side_effect=RuntimeError("simulated skills phase failure"),
+        ):
+            manager.register_enabled_presets_for_agent("codex")
+
+        codex_skill = (
+            project_dir
+            / ".agents"
+            / "skills"
+            / "speckit-partial-native"
+            / "SKILL.md"
+        )
+        assert codex_skill.exists()
+        metadata = manager.registry.get("partial-agent-skill-map-preset")
+        assert "speckit.partial-native" in metadata[
+            "registered_commands"
+        ].get("codex", [])
+        assert not metadata["registered_skills"].get("codex")
+
+        assert manager.remove("partial-agent-skill-map-preset") is True
+        assert not codex_skill.exists(), (
+            "native skill written by the commands phase must not be orphaned "
+            "when another agent makes registered_skills globally non-empty"
+        )
+
     def test_partial_skill_install_failure_rolls_back_persisted_writes(
         self, project_dir, temp_dir, monkeypatch
     ):
