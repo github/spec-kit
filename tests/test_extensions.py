@@ -6506,7 +6506,7 @@ class TestExtensionAddCLI:
             f"but was called with '{download_called_with[0]}'"
         )
 
-    def test_add_by_name_tolerates_non_string_catalog_name(self, tmp_path):
+    def test_info_by_name_tolerates_non_string_catalog_name(self, tmp_path):
         """Display-name resolution must not crash on a non-string catalog name.
 
         Catalog JSON is user-editable, so ``catalog.search()`` may return an
