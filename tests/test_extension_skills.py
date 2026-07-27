@@ -2364,6 +2364,48 @@ class TestExtensionSkillRegistration:
             "dropped by the earlier auggie-scoped unregister call (#2948)"
         )
 
+    def test_unregister_agent_artifacts_preserves_dashed_description_mirror_tracking(
+        self, project_dir, temp_dir
+    ):
+        """A ``---`` substring in frontmatter must not hide mirror ownership."""
+        extension_id = "dash-mirror-ext"
+        skill_name = f"speckit-{extension_id}-hello"
+
+        _create_init_options(project_dir, ai="auggie", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_dashed_description_extension_dir(
+                temp_dir, ext_id=extension_id
+            ),
+            "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("auggie")
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        auggie_skill = (
+            project_dir / ".augment" / "skills" / skill_name / "SKILL.md"
+        )
+        copilot_skill = (
+            project_dir / ".github" / "skills" / skill_name / "SKILL.md"
+        )
+        assert auggie_skill.exists() and copilot_skill.exists()
+        assert "--- markers" in copilot_skill.read_text(encoding="utf-8")
+
+        manager.unregister_agent_artifacts("auggie")
+
+        assert not auggie_skill.exists()
+        assert copilot_skill.exists()
+        metadata = manager.registry.get(extension_id)
+        assert skill_name in metadata.get("registered_skills", []), (
+            "tracking must survive while another marker-owned mirror exists"
+        )
+
+        assert manager.remove(extension_id) is True
+        assert not copilot_skill.exists()
+
     def test_extension_owned_skill_names_rejects_symlinked_candidate_directory(
         self, project_dir, temp_dir
     ):

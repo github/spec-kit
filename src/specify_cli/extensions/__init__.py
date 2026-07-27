@@ -1657,19 +1657,15 @@ class ExtensionManager:
                 if not skill_md.is_file():
                     continue
                 try:
-                    import yaml as _yaml
+                    from ..agents import CommandRegistrar as _Registrar
 
                     raw = skill_md.read_text(encoding="utf-8")
-                    source = ""
-                    if raw.startswith("---"):
-                        parts = raw.split("---", 2)
-                        if len(parts) >= 3:
-                            fm = _yaml.safe_load(parts[1]) or {}
-                            source = (
-                                fm.get("metadata", {}).get("source", "")
-                                if isinstance(fm, dict)
-                                else ""
-                            )
+                    fm, _ = _Registrar.parse_frontmatter(raw)
+                    source = (
+                        fm.get("metadata", {}).get("source", "")
+                        if isinstance(fm, dict)
+                        else ""
+                    )
                 except (OSError, UnicodeDecodeError, Exception):
                     continue
                 if source == marker:
