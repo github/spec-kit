@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-24T00:00:00Z",
+  "updated_at": "2026-07-27T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -4818,11 +4818,11 @@
     "verify-review-ship": {
       "name": "Verify Review Ship",
       "id": "verify-review-ship",
-      "description": "Adds verify and review quality gates plus transactional merge, cleanup, and delivery summary.",
+      "description": "Post-convergence operational verification, technical review, learning governance, and transactional delivery.",
       "author": "Carlos Eduardo Gevaerd Araujo",
-      "version": "0.3.0",
-      "download_url": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/archive/refs/tags/v0.3.0.zip",
-      "sha256": "a7326c899855f46ff28e9f03ede2f89c4db0fd2b8a64c85017b3ab639e004fd3",
+      "version": "0.4.1",
+      "download_url": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/archive/refs/tags/v0.4.1.zip",
+      "sha256": "cfa89b405fcf4857745653e923dfab92f101fbdda15e1e8757ad9f2ea55ae5e2",
       "repository": "https://github.com/cadugevaerd/spec-kit-verify-review-ship",
       "homepage": "https://github.com/cadugevaerd/spec-kit-verify-review-ship",
       "documentation": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/blob/main/README.md",
@@ -4831,24 +4831,27 @@
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=0.11.2"
       },
       "provides": {
         "commands": 3,
-        "hooks": 1
+        "hooks": 0
       },
       "tags": [
         "quality",
         "review",
         "shipping",
         "merge",
-        "workflow"
+        "cleanup",
+        "learning",
+        "governance",
+        "agent-skills"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-10T00:00:00Z",
-      "updated_at": "2026-07-24T00:00:00Z"
+      "updated_at": "2026-07-27T00:00:00Z"
     },
     "verify-tasks": {
       "name": "Verify Tasks Extension",
