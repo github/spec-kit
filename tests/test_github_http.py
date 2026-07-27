@@ -379,6 +379,31 @@ class TestResolveGitHubReleaseAssetApiUrl:
         assert result == "https://api.github.com/repos/org/repo/releases/assets/99"
         assert captured == ["https://api.github.com/repos/org/repo/releases/tags/v1.0"]
 
+    def test_tag_with_literal_slash_in_path(self):
+        """A tag containing a literal '/' (e.g. feature/v1.0.0) splits across
+        multiple URL path segments. The implementation must join all segments
+        between 'download/' and the asset name to reconstruct the full tag."""
+        captured_urls = []
+        asset_url = "https://api.github.com/repos/org/repo/releases/assets/77"
+
+        @contextmanager
+        def capturing_open(url, timeout=None, extra_headers=None):
+            captured_urls.append(url)
+            resp = MagicMock()
+            resp.read.side_effect = io.BytesIO(json.dumps({
+                "assets": [{"name": "asset.zip", "url": asset_url}]
+            }).encode()).read
+            yield resp
+
+        result = resolve_github_release_asset_api_url(
+            "https://github.com/org/repo/releases/download/feature/v1.0.0/asset.zip",
+            capturing_open,
+        )
+        assert result == asset_url
+        # Tag must be the full "feature/v1.0.0", not just "v1.0.0"
+        assert len(captured_urls) == 1
+        assert "releases/tags/feature%2Fv1.0.0" in captured_urls[0]
+
 
 class TestGitHubRedirectAuth:
     """Tests for GitHub-owned redirect auth handling."""

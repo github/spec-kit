@@ -159,8 +159,9 @@ def resolve_github_release_asset_api_url(
     if len(parts) < 6 or parts[2:4] != ["releases", "download"]:
         return None
 
-    owner, repo, tag = parts[0], parts[1], parts[4]
-    asset_name = "/".join(parts[5:])
+    owner, repo = parts[0], parts[1]
+    tag = "/".join(parts[4:-1])
+    asset_name = parts[-1]
     encoded_tag = quote(tag, safe="")
     release_url = f"{api_base}/repos/{owner}/{repo}/releases/tags/{encoded_tag}"
 
