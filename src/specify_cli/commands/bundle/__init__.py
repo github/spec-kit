@@ -13,6 +13,7 @@ from pathlib import Path
 
 import typer
 
+from ..._download_security import MAX_DOWNLOAD_BYTES, read_response_limited
 from ..._console import console, err_console
 from ...bundler import BundlerError
 from ...bundler.lib.project import (
@@ -879,7 +880,7 @@ def _download_remote_manifest(entry_id: str, url: str):
             extra_headers=extra_headers,
         ) as resp:
             _require_https(f"bundle '{entry_id}'", resp.geturl())
-            raw = resp.read()
+            raw = read_response_limited(resp, max_bytes=MAX_DOWNLOAD_BYTES)
     except BundlerError:
         raise
     except Exception as exc:  # noqa: BLE001
