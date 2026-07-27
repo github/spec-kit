@@ -2014,6 +2014,14 @@ class PresetManager:
         if not command_names:
             return set()
 
+        command_names = [
+            name
+            for name in command_names
+            if self._extension_installed_for_command(name)
+        ]
+        if not command_names:
+            return set()
+
         resolver = PresetResolver(self.project_root)
         active_skills_dir = self._get_skills_dir()
 

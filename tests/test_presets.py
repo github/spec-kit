@@ -5618,6 +5618,48 @@ class TestPresetSkills:
         metadata = manager.registry.get("ext-scoped-preset")
         assert not (metadata.get("registered_commands") or {}).get("copilot")
 
+    def test_rescaffold_skips_extension_skills_when_extension_not_installed(
+        self, project_dir, temp_dir
+    ):
+        """Historical tracking must not recreate a missing extension's skill."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        skills_dir = project_dir / ".github" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "ext-scoped-skill-preset",
+            "speckit.git.feature",
+            "Ext override",
+            "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_name = "speckit-git-feature"
+        skill_file = skills_dir / skill_name / "SKILL.md"
+        assert not skill_file.exists()
+
+        manager.registry.update(
+            "ext-scoped-skill-preset",
+            {"registered_skills": {"copilot": [skill_name]}},
+        )
+        overrides_dir = (
+            project_dir / ".specify" / "templates" / "overrides"
+        )
+        overrides_dir.mkdir(parents=True)
+        (overrides_dir / "speckit.git.feature.md").write_text(
+            "---\ndescription: Project override\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert not skill_file.exists(), (
+            "rescaffold must not materialize an extension-scoped skill "
+            "whose extension isn't installed"
+        )
+
     def test_same_mode_partial_command_rescaffold_keeps_skipped_tracking(
         self, project_dir, temp_dir
     ):
