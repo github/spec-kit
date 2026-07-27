@@ -22,6 +22,8 @@ from typing import Any
 
 import yaml
 
+from .._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
+
 
 # ---------------------------------------------------------------------------
 # Errors
@@ -538,7 +540,9 @@ class WorkflowCatalog:
                 entry.url, timeout=30, redirect_validator=_validate_redirect
             ) as resp:
                 _validate_catalog_url(resp.geturl())
-                data = json.loads(resp.read().decode("utf-8"))
+                data = json.loads(
+                    read_response_limited(resp, max_bytes=MAX_JSON_METADATA_BYTES).decode("utf-8")
+                )
         except Exception as exc:
             # Fall back to cache if available
             if cache_file.exists():
@@ -1211,7 +1215,9 @@ class StepCatalog:
                 entry.url, timeout=30, redirect_validator=_validate_redirect
             ) as resp:
                 _validate_url(resp.geturl())
-                data = json.loads(resp.read().decode("utf-8"))
+                data = json.loads(
+                    read_response_limited(resp, max_bytes=MAX_JSON_METADATA_BYTES).decode("utf-8")
+                )
         except Exception as exc:
             if cache_safe and cache_file.exists():
                 try:
