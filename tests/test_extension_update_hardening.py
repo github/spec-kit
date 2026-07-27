@@ -1724,6 +1724,10 @@ def test_extension_update_rejects_symlinked_copilot_prompt_before_removal(
         pytest.skip("symlinks are unavailable")
 
     monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "init-options.json").write_text(
+        '{"ai":"copilot","ai_skills":false}',
+        encoding="utf-8",
+    )
     (project_dir / ".specify" / "extensions.yml").write_text(
         yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
     )
@@ -1790,6 +1794,190 @@ def test_extension_update_rejects_symlinked_copilot_prompt_before_removal(
     assert target.read_text(encoding="utf-8") == "USER PROMPT"
 
 
+@pytest.mark.parametrize(
+    ("active_agent", "ai_skills"),
+    [("gemini", False), ("copilot", True)],
+)
+def test_extension_update_ignores_inactive_copilot_artifacts(
+    project_dir, monkeypatch, active_agent, ai_skills
+):
+    """Preflight must inspect only outputs the active install can render."""
+    import json
+    import os
+
+    if not hasattr(os, "link") or not hasattr(os, "symlink"):
+        pytest.skip("links are unavailable")
+
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "init-options.json").write_text(
+        json.dumps({"ai": active_agent, "ai_skills": ai_skills}),
+        encoding="utf-8",
+    )
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    if active_agent == "gemini":
+        (project_dir / ".gemini" / "commands").mkdir(parents=True)
+
+    agents_dir = project_dir / ".github" / "agents"
+    prompts_dir = project_dir / ".github" / "prompts"
+    agents_dir.mkdir(parents=True)
+    prompts_dir.mkdir(parents=True)
+    _stub_available_update(
+        monkeypatch,
+        {
+            "version": "1.0.0",
+            "enabled": True,
+            "registered_commands": {},
+        },
+    )
+
+    command_name = "speckit.test-ext.inactive-copilot"
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(
+        mock_zip,
+        manifest=_valid_update_manifest(command_name=command_name),
+    )
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+
+    command_target = project_dir / "user-command.md"
+    command_target.write_text("USER COMMAND", encoding="utf-8")
+    command_file = agents_dir / f"{command_name}.agent.md"
+    prompt_target = project_dir / "user-prompt.md"
+    prompt_target.write_text("USER PROMPT", encoding="utf-8")
+    prompt_file = prompts_dir / f"{command_name}.prompt.md"
+    try:
+        os.link(command_target, command_file)
+        os.symlink(
+            os.path.relpath(prompt_target, prompt_file.parent),
+            prompt_file,
+        )
+    except OSError:
+        pytest.skip("Current filesystem cannot create test links")
+
+    remove_calls = []
+    install_calls = []
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: remove_calls.append(ext_id),
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        lambda *args, **kwargs: install_calls.append(args),
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert remove_calls == ["test-ext"]
+    assert len(install_calls) == 1
+    assert command_file.read_text(encoding="utf-8") == "USER COMMAND"
+    assert prompt_file.is_symlink()
+    assert prompt_target.read_text(encoding="utf-8") == "USER PROMPT"
+
+
+@pytest.mark.parametrize("broken_active_marker", [False, True])
+def test_extension_update_ignores_unreachable_global_hermes_target(
+    project_dir, tmp_path, monkeypatch, broken_active_marker
+):
+    """Preflight skips Hermes when its project marker cannot be detected."""
+    import os
+
+    if not hasattr(os, "link"):
+        pytest.skip("hard links are unavailable")
+
+    monkeypatch.chdir(project_dir)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home)
+    if broken_active_marker:
+        (project_dir / ".specify" / "init-options.json").write_text(
+            '{"ai":"hermes","ai_skills":true}',
+            encoding="utf-8",
+        )
+        (project_dir / ".hermes").write_text(
+            "marker parent is not a directory",
+            encoding="utf-8",
+        )
+    (project_dir / ".specify" / "extensions.yml").write_text(
+        yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
+    )
+    _stub_available_update(
+        monkeypatch,
+        {
+            "version": "1.0.0",
+            "enabled": True,
+            "registered_commands": {},
+        },
+    )
+
+    command_name = "speckit.test-ext.unmarked-hermes"
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(
+        mock_zip,
+        manifest=_valid_update_manifest(command_name=command_name),
+    )
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, ext_id: mock_zip,
+    )
+
+    from specify_cli.agents import CommandRegistrar
+
+    registrar = CommandRegistrar()
+    agent_config = registrar.AGENT_CONFIGS["hermes"]
+    commands_dir = registrar._resolve_agent_dir(
+        "hermes", agent_config, project_dir
+    )
+    output_name = registrar._compute_output_name(
+        "hermes", command_name, agent_config
+    )
+    artifact = commands_dir / f"{output_name}{agent_config['extension']}"
+    artifact.parent.mkdir(parents=True)
+    user_target = project_dir / "user-hermes-skill.md"
+    user_target.write_text("USER HERMES SKILL", encoding="utf-8")
+    try:
+        os.link(user_target, artifact)
+    except OSError:
+        pytest.skip("Current filesystem cannot create hard links")
+
+    remove_calls = []
+    install_calls = []
+    monkeypatch.setattr(
+        ExtensionManager,
+        "remove",
+        lambda self, ext_id, keep_config=False: remove_calls.append(ext_id),
+    )
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        lambda *args, **kwargs: install_calls.append(args),
+    )
+
+    result = runner.invoke(
+        app,
+        ["extension", "update", "test-ext"],
+        obj={"project_root": project_dir},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert remove_calls == ["test-ext"]
+    assert len(install_calls) == 1
+    assert artifact.read_text(encoding="utf-8") == "USER HERMES SKILL"
+    assert not (project_dir / ".hermes" / "skills").exists()
+
+
 @pytest.mark.parametrize("artifact_kind", ["command", "prompt"])
 def test_extension_update_rejects_hard_linked_artifacts_before_removal(
     project_dir, monkeypatch, artifact_kind
@@ -1801,6 +1989,10 @@ def test_extension_update_rejects_hard_linked_artifacts_before_removal(
         pytest.skip("hard links are unavailable")
 
     monkeypatch.chdir(project_dir)
+    (project_dir / ".specify" / "init-options.json").write_text(
+        '{"ai":"copilot","ai_skills":false}',
+        encoding="utf-8",
+    )
     (project_dir / ".specify" / "extensions.yml").write_text(
         yaml.safe_dump({"installed": ["test-ext"], "hooks": {}})
     )

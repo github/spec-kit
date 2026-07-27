@@ -177,9 +177,17 @@ def _resolve_catalog_extension(
         if ext_info:
             return (ext_info, None)
 
-        # Try by display name - search using argument as query, then filter for exact match
-        search_results = catalog.search(query=argument)
-        name_matches = [ext for ext in search_results if ext["name"].lower() == argument.lower()]
+        # Try by display name - search using argument as query, then filter for exact match.
+        # Coerce name defensively: catalog JSON is user-editable, so a hand-authored
+        # non-string/missing name must not crash the match (the ambiguous-match display
+        # below already str()-coerces name for the same reason).
+        search_results = catalog.search()
+        argument_lower = argument.lower()
+        name_matches = [
+            ext
+            for ext in search_results
+            if str(ext.get("name", "")).lower() == argument_lower
+        ]
 
         if len(name_matches) == 1:
             return (name_matches[0], None)
@@ -808,10 +816,24 @@ def extension_search(
 
             # Stats
             stats = []
-            if ext.get('downloads') is not None:
-                stats.append(f"Downloads: {ext['downloads']:,}")
-            if ext.get('stars') is not None:
-                stats.append(f"Stars: {ext['stars']}")
+            downloads = ext.get('downloads')
+            if downloads is not None:
+                # Catalog fields are untrusted; a non-numeric ``downloads``
+                # (e.g. the JSON string "1500") would crash the ``:,`` format
+                # with "Cannot specify ',' with 's'". Only group-format numbers,
+                # and escape the fallback: the joined stats are rendered as Rich
+                # markup, so a value like "[/red]foo" would raise MarkupError
+                # (matching how every other catalog field here is escaped).
+                stats.append(
+                    f"Downloads: {downloads:,}"
+                    if isinstance(downloads, (int, float))
+                    else f"Downloads: {_escape_markup(str(downloads))}"
+                )
+            stars = ext.get('stars')
+            if stars is not None:
+                # Same untrusted-value/Rich-markup hazard as `downloads` above,
+                # in the same joined string.
+                stats.append(f"Stars: {_escape_markup(str(stars))}")
             if stats:
                 console.print(f"  [dim]{' | '.join(stats)}[/dim]")
 
@@ -897,9 +919,30 @@ def extension_info(
             console.print()
 
             if ext_manifest.commands:
+                # Print each command the way the active agent registers it.
+                # Cline and Forge hyphenate command names (e.g. Forge invokes
+                # `/speckit-jira-sync`, not the manifest's dotted
+                # `speckit.jira.sync`), so mirror the same formatting used by
+                # `extension add`'s "Provided commands" listing — otherwise the
+                # names shown here don't match what the user actually types.
+                selected_ai = load_init_options(project_root).get("ai")
+                if selected_ai == "cline":
+                    from specify_cli.integrations.cline import (
+                        format_cline_command_name as _format_command_name,
+                    )
+                elif selected_ai == "forge":
+                    from specify_cli.integrations.forge import (
+                        format_forge_command_name as _format_command_name,
+                    )
+                else:
+                    _format_command_name = None
+
                 console.print("[bold]Commands:[/bold]")
                 for cmd in ext_manifest.commands:
-                    console.print(f"  • {_escape_markup(str(cmd['name']))}: {_escape_markup(str(cmd.get('description', '')))}")
+                    cmd_name = cmd['name']
+                    if _format_command_name is not None:
+                        cmd_name = _format_command_name(cmd_name)
+                    console.print(f"  • {_escape_markup(str(cmd_name))}: {_escape_markup(str(cmd.get('description', '')))}")
                 console.print()
 
         # Show catalog status
@@ -989,10 +1032,24 @@ def _print_extension_info(ext_info: dict, manager):
 
     # Statistics
     stats = []
-    if ext_info.get('downloads') is not None:
-        stats.append(f"Downloads: {ext_info['downloads']:,}")
-    if ext_info.get('stars') is not None:
-        stats.append(f"Stars: {ext_info['stars']}")
+    downloads = ext_info.get('downloads')
+    if downloads is not None:
+        # Catalog fields are untrusted; a non-numeric ``downloads`` (e.g. the
+        # JSON string "1500") would crash the ``:,`` format with "Cannot
+        # specify ',' with 's'". Only group-format numbers, and escape the
+        # fallback: the joined stats are rendered as Rich markup, so a value
+        # like "[/red]foo" would raise MarkupError (matching how every other
+        # catalog field here is escaped).
+        stats.append(
+            f"Downloads: {downloads:,}"
+            if isinstance(downloads, (int, float))
+            else f"Downloads: {_escape_markup(str(downloads))}"
+        )
+    stars = ext_info.get('stars')
+    if stars is not None:
+        # Same untrusted-value/Rich-markup hazard as `downloads` above, in the
+        # same joined string.
+        stats.append(f"Stars: {_escape_markup(str(stars))}")
     if stats:
         console.print(f"[bold]Statistics:[/bold] {' | '.join(stats)}")
         console.print()
@@ -1253,12 +1310,13 @@ def extension_update(
                     new_command_dirs_absent_before_update.append(parent)
                     parent = parent.parent
 
-            def backup_extension_skills(skill_names):
+            def backup_extension_skills(skill_names, *, skills_dir=None):
                 """Back up every owned skill directory that remove() may delete."""
                 nonlocal backup_created_by_attempt
                 for skill_dir in manager._find_extension_skill_dirs(
                     skill_names,
                     extension_id,
+                    skills_dir=skills_dir,
                     create_skills_dir=False,
                 ):
                     original_key = str(skill_dir)
@@ -1594,12 +1652,11 @@ def extension_update(
                     # already exists, and remember paths that are absent now so
                     # rollback can remove files created before registry state is
                     # available. Include aliases and Copilot companion prompts.
-                    for agent_name, agent_config in registrar.AGENT_CONFIGS.items():
-                        commands_dir = _AgentReg._resolve_agent_dir(
-                            agent_name, agent_config, project_root
-                        )
-                        if not commands_dir.is_dir():
-                            continue
+                    for (
+                        agent_name,
+                        commands_dir,
+                    ) in manager._command_registration_targets().items():
+                        agent_config = registrar.AGENT_CONFIGS[agent_name]
                         for command_name in new_command_names:
                             output_name = _AgentReg._compute_output_name(
                                 agent_name, command_name, agent_config
@@ -1678,6 +1735,19 @@ def extension_update(
                     backup_extension_skills(new_skill_names)
                     new_skills_dir = manager._get_skills_dir(create=False)
                     if new_skills_dir is not None:
+                        # Unscoped removal deliberately ignores home-scoped
+                        # outputs because the flat registry cannot establish
+                        # project ownership. The active install can still
+                        # replace a marker-owned skill in its explicit root,
+                        # so back up that exact project/home target separately.
+                        backup_extension_skills(
+                            list(
+                                dict.fromkeys(
+                                    registered_skills + new_skill_names
+                                )
+                            ),
+                            skills_dir=new_skills_dir,
+                        )
                         init_options = load_init_options(project_root)
                         if (
                             isinstance(init_options, dict)

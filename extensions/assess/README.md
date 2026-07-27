@@ -6,6 +6,8 @@ Discovery answers *"is this worth building?"* Delivery answers *"how do we build
 
 ## Overview
 
+`assess` runs inside an initialized Spec Kit project (it writes assessments under `.specify/assessments/`), but that project can be **completely empty of source code** — a freshly initialized project with no code works just as well as an established codebase. The input is just an idea: pasted text, a URL, or a ticket need no existing code, while a codebase pointer lets you assess an idea for code that already exists. Neither starting point is more "correct" than the other.
+
 Each idea lives in its own directory under `.specify/assessments/<slug>/`, with one Markdown artifact per stage:
 
 ```

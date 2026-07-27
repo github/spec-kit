@@ -42,6 +42,17 @@ class WorkflowDefinition:
         self.source_path = source_path
 
         workflow = data.get("workflow", {})
+        # A present-but-non-mapping ``workflow:`` block (bare ``workflow:`` ->
+        # None, or ``workflow: <str/list>``) would crash the following
+        # ``workflow.get(...)`` calls with AttributeError, so construction fails
+        # before any validation can run. Normalize the local to {} instead: the
+        # header fields fall back to their defaults and ``validate_workflow``
+        # (which reads those parsed attributes) reports the missing
+        # ``workflow.id``/``workflow.name``. ``self.data`` is deliberately left
+        # holding the raw value, since it is what gets written back out when a
+        # definition is serialized. Mirrors the default_options guard below.
+        if not isinstance(workflow, dict):
+            workflow = {}
         self.id: str = workflow.get("id", "")
         self.name: str = workflow.get("name", "")
         self.version: str = workflow.get("version", "0.0.0")
@@ -1400,6 +1411,14 @@ class WorkflowEngine:
     ) -> dict[str, Any]:
         """Resolve workflow inputs against definitions and provided values."""
         resolved: dict[str, Any] = {}
+        # execute()/resume() accept UNVALIDATED definitions (load_workflow does
+        # not validate). A non-mapping ``inputs:`` block (bare ``inputs:`` ->
+        # None, or ``inputs: []``) is stored raw, so iterating ``.items()`` here
+        # would crash the run with AttributeError. Treat a non-mapping inputs
+        # block as "no inputs"; validate_workflow reports the malformed shape
+        # via its own isinstance check.
+        if not isinstance(definition.inputs, dict):
+            return {}
         for name, input_def in definition.inputs.items():
             if not isinstance(input_def, dict):
                 continue

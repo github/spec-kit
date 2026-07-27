@@ -76,7 +76,7 @@ Options:
   --dry-run           Compute feature name and paths without creating directories or files
   --allow-existing-branch  Reuse an existing feature directory if it already exists
   --short-name <name> Provide a custom short name (2-4 words) for the feature
-  --number N          Specify branch number manually (overrides auto-detection)
+  --number N          Prefer a feature number (auto-corrected if its specs prefix exists)
   --timestamp         Use timestamp prefix (YYYYMMDD-HHMMSS) instead of sequential numbering
   --help, -h          Show this help message
 
@@ -204,6 +204,43 @@ def _get_highest_from_specs(specs_dir: Path) -> int:
     return highest
 
 
+def _fit_branch_name(feature_num: str, branch_suffix: str) -> str:
+    """Fit a feature prefix and suffix within GitHub's branch-name limit."""
+    branch_name = f"{feature_num}-{branch_suffix}"
+    if len(branch_name) <= _MAX_BRANCH_LENGTH:
+        return branch_name
+
+    max_suffix_length = _MAX_BRANCH_LENGTH - (len(feature_num) + 1)
+    truncated_suffix = re.sub(r"-$", "", branch_suffix[:max_suffix_length])
+    return f"{feature_num}-{truncated_suffix}"
+
+
+def _spec_prefix_exists(specs_dir: Path, feature_num: str) -> bool:
+    """Return whether a spec directory owns the given numeric prefix."""
+    try:
+        return any(
+            entry.is_dir() and entry.name.startswith(f"{feature_num}-")
+            for entry in specs_dir.iterdir()
+        )
+    except OSError:
+        # Match Bash globbing and PowerShell's ErrorAction=SilentlyContinue.
+        return False
+
+
+def _has_spec_prefix_conflict(
+    specs_dir: Path,
+    feature_num: str,
+    requested_dir: Path,
+    *,
+    allow_existing: bool,
+) -> bool:
+    """Return whether another spec directory owns the requested prefix."""
+    if allow_existing and requested_dir.is_dir():
+        return False
+
+    return _spec_prefix_exists(specs_dir, feature_num)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv0 = sys.argv[0]
     args = _parse_args(list(argv if argv is not None else sys.argv[1:]), argv0)
@@ -261,18 +298,48 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         feature_num = f"{number:03d}"
 
+        # Treat an explicit number as a preference when its prefix is already used
+        # by a feature directory. Auto-detected numbers are already conflict-free.
+        if branch_number:
+            requested_branch_name = _fit_branch_name(feature_num, branch_suffix)
+            requested_dir = specs_dir / requested_branch_name
+            spec_conflict = _has_spec_prefix_conflict(
+                specs_dir,
+                feature_num,
+                requested_dir,
+                allow_existing=args.allow_existing,
+            )
+            if spec_conflict:
+                requested_num = feature_num
+                number = _get_highest_from_specs(specs_dir)
+                while True:
+                    number += 1
+                    if number > _MAX_FEATURE_NUMBER:
+                        print(
+                            f"Error: feature number must be between 0 and "
+                            f"{_MAX_FEATURE_NUMBER}, got '{number}'",
+                            file=sys.stderr,
+                        )
+                        return 1
+                    feature_num = f"{number:03d}"
+                    if not _spec_prefix_exists(specs_dir, feature_num):
+                        break
+                print(
+                    f"[specify] Warning: --number {requested_num} conflicts with "
+                    f"an existing spec directory; using {feature_num} instead",
+                    file=sys.stderr,
+                )
+
     max_suffix_length = _MAX_BRANCH_LENGTH - (len(feature_num) + 1)
     if max_suffix_length <= 0:
         print("Error: feature number is too long for a branch name", file=sys.stderr)
         return 1
 
-    branch_name = f"{feature_num}-{branch_suffix}"
+    original_branch_name = f"{feature_num}-{branch_suffix}"
+    branch_name = _fit_branch_name(feature_num, branch_suffix)
 
     # GitHub enforces a 244-byte limit on branch names.
-    if len(branch_name) > _MAX_BRANCH_LENGTH:
-        truncated_suffix = re.sub(r"-$", "", branch_suffix[:max_suffix_length])
-        original_branch_name = branch_name
-        branch_name = f"{feature_num}-{truncated_suffix}"
+    if branch_name != original_branch_name:
         print(
             "[specify] Warning: Branch name exceeded GitHub's 244-byte limit",
             file=sys.stderr,

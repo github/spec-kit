@@ -633,6 +633,40 @@ class TestIntegrationListCatalog:
         assert "copilot" in result.output
         assert "installed" in result.output
 
+    def test_catalog_list_escapes_rich_markup(self, tmp_path, monkeypatch):
+        """User-editable catalog name/url/description must not be parsed as Rich markup."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.integrations.catalog import IntegrationCatalog
+        runner = CliRunner()
+        project = self._init_project(tmp_path)
+
+        configs = [
+            {
+                "name": "Bracket [Catalog]",
+                "url": "https://example.com/[cat].json",
+                "description": "desc [with] brackets",
+                "install_allowed": True,
+            },
+        ]
+        monkeypatch.setattr(
+            IntegrationCatalog,
+            "get_project_catalog_configs",
+            lambda self: [dict(c) for c in configs],
+        )
+
+        old = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, ["integration", "catalog", "list"])
+        finally:
+            os.chdir(old)
+
+        assert result.exit_code == 0, result.output
+        assert "Bracket [Catalog]" in result.output
+        assert "https://example.com/[cat].json" in result.output
+        assert "desc [with] brackets" in result.output
+
 
 # ---------------------------------------------------------------------------
 # CLI: integration upgrade
