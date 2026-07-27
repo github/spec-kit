@@ -325,7 +325,9 @@ class TestAlquimiaAIIntegration:
         assert "disable-model-invocation: false" in content
 
         metadata = manager.registry.get("alquimia-skill-command")
-        assert "speckit-research" in metadata.get("registered_skills", [])
+        assert "speckit-research" in metadata.get("registered_skills", {}).get(
+            "alquimia", []
+        )
 
 
 class TestAlquimiaArgumentHints:
