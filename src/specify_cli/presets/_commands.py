@@ -61,7 +61,7 @@ def preset_list():
         console.print(f"  [bold]{pack['name']}[/bold] ({pack['id']}) v{pack['version']} — {status} — priority {pri}")
         console.print(f"    {pack['description']}")
         if pack.get("tags"):
-            tags_str = ", ".join(str(t) for t in pack["tags"])
+            tags_str = _escape_markup(", ".join(str(t) for t in pack["tags"]))
             console.print(f"    [dim]Tags: {tags_str}[/dim]")
         console.print(f"    [dim]Templates: {pack['template_count']}[/dim]")
         console.print()
