@@ -170,7 +170,7 @@ def _resolve_catalog_extension(
         # Coerce name defensively: catalog JSON is user-editable, so a hand-authored
         # non-string/missing name must not crash the match (the ambiguous-match display
         # below already str()-coerces name for the same reason).
-        search_results = catalog.search(query=argument)
+        search_results = catalog.search()
         argument_lower = argument.lower()
         name_matches = [
             ext
