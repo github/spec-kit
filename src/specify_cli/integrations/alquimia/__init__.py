@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from ..._utils import dump_frontmatter
 from ..base import SkillsIntegration
-from ..manifest import IntegrationManifest
 
 # Mapping of command template stem → argument-hint text shown inline
 # when a user invokes the slash command in Alquimia AI.
@@ -165,45 +163,3 @@ class AlquimiaAIIntegration(SkillsIntegration):
                     updated = self.inject_argument_hint(updated, hint)
                 break
         return updated
-
-    def setup(
-        self,
-        project_root: Path,
-        manifest: IntegrationManifest,
-        parsed_options: dict[str, Any] | None = None,
-        **opts: Any,
-    ) -> list[Path]:
-        """Install Alquimia skills, then inject Alquimia-specific flags and argument-hints."""
-        created = super().setup(project_root, manifest, parsed_options, **opts)
-
-        # Post-process generated skill files
-        skills_dir = self.skills_dest(project_root).resolve()
-
-        for path in created:
-            # Only touch SKILL.md files under the skills directory
-            try:
-                path.resolve().relative_to(skills_dir)
-            except ValueError:
-                continue
-            if path.name != "SKILL.md":
-                continue
-
-            content_bytes = path.read_bytes()
-            content = content_bytes.decode("utf-8")
-
-            updated = content
-
-            # Inject argument-hint if available for this skill
-            skill_dir_name = path.parent.name  # e.g. "speckit-plan"
-            stem = skill_dir_name
-            if stem.startswith("speckit-"):
-                stem = stem[len("speckit-") :]
-            hint = ARGUMENT_HINTS.get(stem, "")
-            if hint:
-                updated = self.inject_argument_hint(updated, hint)
-
-            if updated != content:
-                path.write_bytes(updated.encode("utf-8"))
-                self.record_file_in_manifest(path, project_root, manifest)
-
-        return created

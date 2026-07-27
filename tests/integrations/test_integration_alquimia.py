@@ -32,6 +32,29 @@ class TestAlquimiaAIIntegration:
         assert integration.registrar_config["args"] == "$ARGUMENTS"
         assert integration.registrar_config["extension"] == "/SKILL.md"
 
+    def test_requires_cli_is_true(self):
+        integration = get_integration("alquimia")
+        assert integration.config["requires_cli"] is True
+        assert integration.multi_install_safe is True
+
+    def test_build_exec_args_uses_headless_prompt_flag(self):
+        """Workflow dispatch relies on the inherited
+        ``SkillsIntegration.build_exec_args()`` — pin its argv shape so a
+        future change to the base class or this integration's config is
+        caught here rather than surfacing as a silent workflow failure."""
+        integration = get_integration("alquimia")
+        args = integration.build_exec_args(
+            "hello", model="alquimia-default", output_json=True
+        )
+        assert args is not None
+        assert args[0] == "alquimia" or args[0].endswith("/alquimia")
+        assert "-p" in args
+        assert "hello" in args
+        assert "--model" in args
+        assert "alquimia-default" in args
+        assert "--output-format" in args
+        assert "json" in args
+
     def test_setup_creates_skill_files(self, tmp_path):
         integration = get_integration("alquimia")
         manifest = IntegrationManifest("alquimia", tmp_path)
