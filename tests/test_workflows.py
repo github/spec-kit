@@ -6196,6 +6196,94 @@ steps:
         assert len(runs) == 1
         assert runs[0]["workflow_id"] == "list-test"
 
+    def test_list_skips_malformed_json(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        bad_dir = runs_dir / "bad-run"
+        bad_dir.mkdir(parents=True)
+        (bad_dir / "state.json").write_text("{invalid json", encoding="utf-8")
+
+        engine = WorkflowEngine(project_dir)
+        assert engine.list_runs() == []
+
+    def test_list_skips_unreadable_file(self, project_dir):
+        import sys
+        import subprocess
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        bad_dir = runs_dir / "bad-run"
+        bad_dir.mkdir(parents=True)
+        state_file = bad_dir / "state.json"
+        state_file.write_text('{"run_id": "x"}', encoding="utf-8")
+
+        if sys.platform == "win32":
+            subprocess.run(["attrib", "+R", str(state_file)], check=True)
+        else:
+            state_file.chmod(0o000)
+
+        try:
+            engine = WorkflowEngine(project_dir)
+            if sys.platform == "win32":
+                assert engine.list_runs() == [{"run_id": "x"}]
+            else:
+                assert engine.list_runs() == []
+        finally:
+            if sys.platform == "win32":
+                subprocess.run(["attrib", "-R", str(state_file)], check=True)
+            else:
+                state_file.chmod(0o644)
+
+    def test_list_skips_non_dict_payload(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        bad_dir = runs_dir / "bad-run"
+        bad_dir.mkdir(parents=True)
+        (bad_dir / "state.json").write_text('["not", "a", "dict"]', encoding="utf-8")
+
+        engine = WorkflowEngine(project_dir)
+        assert engine.list_runs() == []
+
+    def test_list_skips_empty_dict_payload(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        bad_dir = runs_dir / "bad-run"
+        bad_dir.mkdir(parents=True)
+        (bad_dir / "state.json").write_text('{}', encoding="utf-8")
+
+        engine = WorkflowEngine(project_dir)
+        assert engine.list_runs() == []
+
+    def test_list_skips_bad_file_with_valid_sibling(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        bad_dir = runs_dir / "bad-run"
+        bad_dir.mkdir(parents=True)
+        (bad_dir / "state.json").write_text("{bad", encoding="utf-8")
+
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "good-run"
+  name: "Good Run"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    type: shell
+    run: "echo test"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        engine.execute(definition)
+
+        runs = engine.list_runs()
+        assert len(runs) == 1
+        assert runs[0]["workflow_id"] == "good-run"
+
 
 # ===== Workflow Registry Tests =====
 
