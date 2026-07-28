@@ -372,7 +372,7 @@ class CopilotIntegration(IntegrationBase):
         # 1. Process and write command files as .agent.md
         for src_file in templates:
             resolved_template = preset_resolver.resolve(
-                src_file.stem, template_type="command"
+                f"speckit.{src_file.stem}", template_type="command"
             )
             source_path = resolved_template or src_file
             raw = source_path.read_text(encoding="utf-8")

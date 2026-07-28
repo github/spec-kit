@@ -209,7 +209,7 @@ class TestCopilotIntegration:
 
         preset_dir = tmp_path / ".specify" / "presets" / "demo"
         (preset_dir / "commands").mkdir(parents=True, exist_ok=True)
-        (preset_dir / "commands" / "specify.md").write_text(
+        (preset_dir / "commands" / "speckit.specify.md").write_text(
             "preset override content\n",
             encoding="utf-8",
         )
