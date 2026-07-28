@@ -4272,7 +4272,7 @@ class PresetCatalog:
                 if final_url != entry.url:
                     self._validate_catalog_url(final_url)
                 catalog_data = json.loads(
-                    read_response_limited(response, max_bytes=MAX_JSON_METADATA_BYTES).decode("utf-8")
+                    read_response_limited(response, max_bytes=MAX_JSON_METADATA_BYTES, error_type=PresetError)
                 )
 
             self._validate_catalog_payload(catalog_data, entry.url)
@@ -4436,7 +4436,7 @@ class PresetCatalog:
                 if final_url != catalog_url:
                     self._validate_catalog_url(final_url)
                 catalog_data = json.loads(
-                    read_response_limited(response, max_bytes=MAX_JSON_METADATA_BYTES).decode("utf-8")
+                    read_response_limited(response, max_bytes=MAX_JSON_METADATA_BYTES, error_type=PresetError)
                 )
 
             # Validate catalog structure. Reuses the same helper as
@@ -4638,7 +4638,7 @@ class PresetCatalog:
 
         try:
             with self._open_url(download_url, timeout=60, extra_headers=extra_headers) as response:
-                zip_data = read_response_limited(response, max_bytes=MAX_DOWNLOAD_BYTES)
+                zip_data = read_response_limited(response, max_bytes=MAX_DOWNLOAD_BYTES, error_type=PresetError)
 
             verify_archive_sha256(
                 zip_data, pack_info.get("sha256"), pack_id, PresetError
