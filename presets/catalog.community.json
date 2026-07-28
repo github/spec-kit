@@ -426,21 +426,21 @@
     "intake-sequencing-governance": {
       "name": "Intake Sequencing Governance",
       "id": "intake-sequencing-governance",
-      "version": "0.1.0",
-      "description": "Manages traceable intake-series order, typed dependencies, lifecycle, and safe next-candidate selection without executing downstream workflows.",
+      "version": "0.2.2",
+      "description": "Manages language-aware intake-series order, typed dependencies, lifecycle, and authority-neutral next-candidate selection.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/archive/refs/tags/v0.1.0.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/archive/refs/tags/v0.2.2.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/blob/v0.1.0/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/blob/v0.2.2/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
       },
       "provides": {
-        "templates": 10,
+        "templates": 11,
         "commands": 6,
-        "scripts": 5
+        "scripts": 8
       },
       "tags": [
         "intake",
@@ -450,7 +450,7 @@
         "lifecycle"
       ],
       "created_at": "2026-07-27T00:00:00Z",
-      "updated_at": "2026-07-27T00:00:00Z"
+      "updated_at": "2026-07-28T00:00:00Z"
     },
     "isaqb-architecture-governance": {
       "name": "iSAQB Architecture Governance",
