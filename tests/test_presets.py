@@ -218,17 +218,10 @@ class TestPresetManifest:
         with pytest.raises(PresetValidationError, match="templates.*expected a list"):
             PresetManifest(manifest_path)
 
-    def test_empty_list_templates_still_reports_no_templates(
-        self, temp_dir, valid_pack_data
-    ):
-        """An EMPTY LIST is a well-typed container with no templates, so it keeps
-        the "must provide at least one template" message (regression guard for the
-        type-before-emptiness ordering)."""
-        valid_pack_data["provides"]["templates"] = []
-        manifest_path = temp_dir / "preset.yml"
-        manifest_path.write_text(yaml.dump(valid_pack_data), encoding="utf-8")
-        with pytest.raises(PresetValidationError, match="at least one template"):
-            PresetManifest(manifest_path)
+    # NOTE: the empty-list case (a well-typed container with no templates, which
+    # must keep the "must provide at least one template" message after the
+    # type-before-emptiness reordering) is already covered by
+    # test_no_templates_provided below.
 
     @pytest.mark.parametrize("bad_entry", [None, 5, "oops", ["nested"]])
     def test_non_mapping_template_entry_raises_validation_error(
