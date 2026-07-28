@@ -359,9 +359,9 @@ class WorkflowCatalog:
         # shape check has to run BEFORE the emptiness check, or a FALSY non-list
         # (``catalogs: {}``/``''``/``0``/``false``) is silently swallowed as
         # "no catalogs" while a TRUTHY non-list (``catalogs: 5``) correctly
-        # raises. An absent key or an explicit ``catalogs:`` null means "nothing
-        # configured here" (matching the bundler's reader), and an empty list
-        # stays valid too.
+        # raises. An absent key, an explicit ``catalogs:`` null, and an empty
+        # list all keep their existing "nothing configured here" behavior --
+        # only the misreported shapes change.
         catalogs_data = data.get("catalogs")
         if catalogs_data is None:
             return None
