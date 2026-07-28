@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 
 import typer
+from rich.markup import escape as _escape_markup
 
 from ..._console import console, err_console
 from ...bundler import BundlerError
@@ -184,11 +185,16 @@ def bundle_search(
             else ""
         )
         console.print(
-            f"  [bold]{r.entry.id}[/bold] v{r.entry.version} — {r.entry.name} "
-            f"[dim]({r.entry.role})[/dim] {_trust_badge(r.entry.verified)} {policy}"
+            f"  [bold]{_escape_markup(str(r.entry.id))}[/bold] "
+            f"v{_escape_markup(str(r.entry.version))} — "
+            f"{_escape_markup(str(r.entry.name))} "
+            f"[dim]({_escape_markup(str(r.entry.role))})[/dim] "
+            f"{_trust_badge(r.entry.verified)} {policy}"
         )
-        console.print(f"    {r.entry.description}")
-        console.print(f"    [dim]source: {r.source.id}[/dim]")
+        console.print(f"    {_escape_markup(str(r.entry.description))}")
+        console.print(
+            f"    [dim]source: {_escape_markup(str(r.source.id))}[/dim]"
+        )
 
 
 @bundle_app.command("info")
@@ -241,16 +247,31 @@ def bundle_info(
         print(_json.dumps(payload, indent=2))
         return
 
-    console.print(f"\n[bold cyan]{entry.id}[/bold cyan] v{entry.version} — {entry.name}")
-    console.print(f"  Role: {entry.role}")
-    console.print(f"  {entry.description}")
-    console.print(f"  Author: {entry.author}   License: {entry.license}")
-    console.print(f"  Source: {resolved.source.id} ({resolved.source.install_policy.value})")
+    console.print(
+        f"\n[bold cyan]{_escape_markup(str(entry.id))}[/bold cyan] "
+        f"v{_escape_markup(str(entry.version))} — "
+        f"{_escape_markup(str(entry.name))}"
+    )
+    console.print(f"  Role: {_escape_markup(str(entry.role))}")
+    console.print(f"  {_escape_markup(str(entry.description))}")
+    console.print(
+        f"  Author: {_escape_markup(str(entry.author))}   "
+        f"License: {_escape_markup(str(entry.license))}"
+    )
+    console.print(
+        f"  Source: {_escape_markup(str(resolved.source.id))} "
+        f"({resolved.source.install_policy.value})"
+    )
     console.print(f"  Trust: {_trust_badge(entry.verified)}")
     if entry.requires_speckit_version:
-        console.print(f"  Requires Spec Kit: {entry.requires_speckit_version}")
+        console.print(
+            f"  Requires Spec Kit: "
+            f"{_escape_markup(str(entry.requires_speckit_version))}"
+        )
     if manifest and manifest.integration:
-        console.print(f"  Integration: {manifest.integration.id}")
+        console.print(
+            f"  Integration: {_escape_markup(str(manifest.integration.id))}"
+        )
 
     if components:
         console.print("\n  [bold]Components[/bold] (added on install):")
@@ -260,7 +281,9 @@ def bundle_info(
                 continue
             console.print(f"    [bold]{kind}:[/bold]")
             for item in items:
-                console.print(f"      - {_format_component(item)}")
+                console.print(
+                    f"      - {_escape_markup(_format_component(item))}"
+                )
     else:
         console.print("\n  [bold]Provides:[/bold]")
         for kind in ("extensions", "presets", "steps", "workflows"):
@@ -271,7 +294,9 @@ def bundle_info(
     if overlaps:
         console.print("\n  [yellow]Overlaps with already-installed bundles:[/yellow]")
         for overlap in overlaps:
-            console.print(f"    [yellow]-[/yellow] {overlap}")
+            console.print(
+                f"    [yellow]-[/yellow] {_escape_markup(str(overlap))}"
+            )
 
     if not resolved.install_allowed:
         console.print(
