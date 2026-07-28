@@ -4685,7 +4685,7 @@ class TestExtensionCatalog:
 
         catalog_data = {"schema_version": "1.0", "extensions": {}}
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(catalog_data).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(catalog_data).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://raw.githubusercontent.com/org/repo/main/catalog.json"
@@ -4723,9 +4723,9 @@ class TestExtensionCatalog:
         catalog = self._make_catalog(temp_dir)
 
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(
+        mock_response.read.side_effect = io.BytesIO(json.dumps(
             {"schema_version": "1.0", "extensions": {}}
-        ).encode()
+        ).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "http://evil.test/catalog.json"
@@ -4771,9 +4771,9 @@ class TestExtensionCatalog:
 
         catalog = self._make_catalog(temp_dir)
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(
+        mock_response.read.side_effect = io.BytesIO(json.dumps(
             {"schema_version": "1.0", "extensions": {}}
-        ).encode()
+        ).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "http://evil.test/catalog.json"
@@ -4829,7 +4829,7 @@ class TestExtensionCatalog:
         catalog = self._make_catalog(temp_dir)
 
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"
@@ -4898,7 +4898,7 @@ class TestExtensionCatalog:
             "extensions": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"
@@ -4946,7 +4946,7 @@ class TestExtensionCatalog:
 
         catalog = self._make_catalog(temp_dir)
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"
@@ -4987,7 +4987,7 @@ class TestExtensionCatalog:
             "extensions": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"
@@ -5026,7 +5026,7 @@ class TestExtensionCatalog:
             "extensions": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"
@@ -5101,7 +5101,7 @@ class TestExtensionCatalog:
             "extensions": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode("utf-8")
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode("utf-8")).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"
@@ -5152,11 +5152,13 @@ class TestExtensionCatalog:
             "schema_version": "1.0",
             "extensions": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
-        mock_response.geturl.return_value = "https://example.com/catalog.json"
+        def _make_mock_response():
+            resp = MagicMock()
+            resp.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
+            resp.__enter__ = lambda s: s
+            resp.__exit__ = MagicMock(return_value=False)
+            resp.geturl.return_value = "https://example.com/catalog.json"
+            return resp
 
         # Simulate an unwritable cache dir: every write_text under the
         # cache directory raises PermissionError (an OSError subclass).
@@ -5169,7 +5171,7 @@ class TestExtensionCatalog:
 
         monkeypatch.setattr(_PathCls, "write_text", failing_write_text)
 
-        with patch.object(catalog, "_open_url", return_value=mock_response):
+        with patch.object(catalog, "_open_url", side_effect=lambda *a, **kw: _make_mock_response()):
             # Legacy single-catalog path.
             assert catalog.fetch_catalog(force_refresh=True) == valid
 
@@ -5205,7 +5207,7 @@ class TestExtensionCatalog:
             },
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"
@@ -5303,7 +5305,7 @@ class TestExtensionCatalog:
         from unittest.mock import MagicMock
 
         resp = MagicMock()
-        resp.read.return_value = data
+        resp.read.side_effect = io.BytesIO(data).read
         # Configure the context-manager protocol explicitly so `with resp`
         # yields `resp` itself, independent of how the protocol is invoked.
         resp.__enter__.return_value = resp
@@ -5407,7 +5409,7 @@ class TestExtensionCatalog:
         zip_bytes = zip_buf.getvalue()
 
         asset_response = MagicMock()
-        asset_response.read.return_value = zip_bytes
+        asset_response.read.side_effect = io.BytesIO(zip_bytes).read
         asset_response.__enter__ = lambda s: s
         asset_response.__exit__ = MagicMock(return_value=False)
 
@@ -7401,7 +7403,7 @@ class TestDownloadExtensionBundled:
         }
 
         mock_response = MagicMock()
-        mock_response.read.return_value = b"fake zip data"
+        mock_response.read.side_effect = io.BytesIO(b"fake zip data").read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"

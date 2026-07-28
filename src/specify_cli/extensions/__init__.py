@@ -29,6 +29,7 @@ from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from .._assets import _locate_core_pack, _repo_root
+from .._download_security import MAX_DOWNLOAD_BYTES, MAX_JSON_METADATA_BYTES, read_response_limited
 from .._init_options import is_ai_skills_enabled
 from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
 from .._utils import dump_frontmatter, relative_extension_path_violation, version_satisfies
@@ -3351,7 +3352,9 @@ class ExtensionCatalog(CatalogStackBase):
                 final_url = response.geturl()
                 if final_url != entry.url:
                     self._validate_catalog_url(final_url)
-                catalog_data = json.loads(response.read())
+                catalog_data = json.loads(
+                    read_response_limited(response, max_bytes=MAX_JSON_METADATA_BYTES, error_type=ExtensionError).decode("utf-8")
+                )
 
             self._validate_catalog_payload(catalog_data, entry.url)
 
@@ -3539,7 +3542,9 @@ class ExtensionCatalog(CatalogStackBase):
                 final_url = response.geturl()
                 if final_url != catalog_url:
                     self._validate_catalog_url(final_url)
-                catalog_data = json.loads(response.read())
+                catalog_data = json.loads(
+                    read_response_limited(response, max_bytes=MAX_JSON_METADATA_BYTES, error_type=ExtensionError).decode("utf-8")
+                )
 
             # Validate catalog structure. Reuses the same helper as
             # ``_fetch_single_catalog`` so all three branches (root type,
@@ -3740,7 +3745,7 @@ class ExtensionCatalog(CatalogStackBase):
             with self._open_url(
                 download_url, timeout=60, extra_headers=extra_headers
             ) as response:
-                zip_data = response.read()
+                zip_data = read_response_limited(response, max_bytes=MAX_DOWNLOAD_BYTES, error_type=ExtensionError)
 
             verify_archive_sha256(
                 zip_data, ext_info.get("sha256"), extension_id, ExtensionError
