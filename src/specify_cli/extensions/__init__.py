@@ -263,8 +263,25 @@ class ExtensionManifest:
                 f"(expected {self.SCHEMA_VERSION})"
             )
 
+        # The REQUIRED_FIELDS loop above only checks key PRESENCE, so a section
+        # that is written but left empty (``provides:`` -> None) or given the
+        # wrong shape (``provides: []``) passes it and then fails on first use:
+        # ``field not in None`` raises TypeError and ``None.get(...)`` raises
+        # AttributeError. Neither is a ValidationError, so both escape the
+        # callers that already handle malformed manifests -- list_installed()'s
+        # "Corrupted extension" fallback catches ValidationError only, so one bad
+        # extension made ``specify extension list`` exit 1 with a raw
+        # AttributeError instead of listing the rest. Guard each required
+        # section's shape, mirroring the nested guards below ("Invalid
+        # provides.commands: expected a list", "Invalid hooks: expected a
+        # mapping") and _load_yaml's document-root check.
+
         # Validate extension metadata
         ext = self.data["extension"]
+        if not isinstance(ext, dict):
+            raise ValidationError(
+                f"Invalid extension: expected a mapping, got {type(ext).__name__}"
+            )
         for field in ["id", "name", "version", "description"]:
             if field not in ext:
                 raise ValidationError(f"Missing extension.{field}")
@@ -299,11 +316,19 @@ class ExtensionManifest:
 
         # Validate requires section
         requires = self.data["requires"]
+        if not isinstance(requires, dict):
+            raise ValidationError(
+                f"Invalid requires: expected a mapping, got {type(requires).__name__}"
+            )
         if "speckit_version" not in requires:
             raise ValidationError("Missing requires.speckit_version")
 
         # Validate provides section
         provides = self.data["provides"]
+        if not isinstance(provides, dict):
+            raise ValidationError(
+                f"Invalid provides: expected a mapping, got {type(provides).__name__}"
+            )
         commands = provides.get("commands", [])
         hooks = self.data.get("hooks")
 

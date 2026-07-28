@@ -614,6 +614,64 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match="Invalid provides.commands"):
             ExtensionManifest(manifest_path)
 
+    @pytest.mark.parametrize("section", ["extension", "requires", "provides"])
+    @pytest.mark.parametrize("bad", [None, [], "text"])
+    def test_required_section_not_mapping_rejected(
+        self, temp_dir, valid_manifest_data, section, bad
+    ):
+        """A required section that is written but empty or wrongly shaped must
+        raise ValidationError, not a raw TypeError/AttributeError.
+
+        REQUIRED_FIELDS only checks key presence, so `provides:` with no value
+        passed it and then hit `None.get(...)`. That AttributeError escaped
+        list_installed()'s ValidationError-only "Corrupted extension" fallback,
+        so one bad extension made `specify extension list` exit 1 instead of
+        listing the others.
+        """
+        import yaml
+
+        valid_manifest_data[section] = bad
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match=f"Invalid {section}"):
+            ExtensionManifest(manifest_path)
+
+    def test_empty_provides_mapping_is_still_accepted_with_hooks(
+        self, temp_dir, valid_manifest_data
+    ):
+        """Regression guard: `provides: {}` is a well-SHAPED mapping, so the new
+        shape check must not reject it — an extension may provide only hooks."""
+        import yaml
+
+        valid_manifest_data["provides"] = {}
+        assert valid_manifest_data.get("hooks"), "fixture is expected to define hooks"
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        ExtensionManifest(manifest_path)  # must not raise
+
+    def test_empty_provides_and_no_hooks_keeps_its_own_message(
+        self, temp_dir, valid_manifest_data
+    ):
+        """...and with no hooks either, it keeps the pre-existing message rather
+        than the new shape error."""
+        import yaml
+
+        valid_manifest_data["provides"] = {}
+        valid_manifest_data.pop("hooks", None)
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="at least one command or hook"):
+            ExtensionManifest(manifest_path)
+
     def test_hooks_not_dict_rejected(self, temp_dir, valid_manifest_data):
         """Test manifest with hooks as a list is rejected."""
         import yaml
