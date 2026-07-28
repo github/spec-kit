@@ -289,7 +289,7 @@ def bundle_info(
         for kind in ("extensions", "presets", "steps", "workflows"):
             count = entry.provides.get(kind, 0)
             if count:
-                console.print(f"    {kind}: {count}")
+                console.print(f"    {kind}: {_escape_markup(str(count))}")
 
     if overlaps:
         console.print("\n  [yellow]Overlaps with already-installed bundles:[/yellow]")

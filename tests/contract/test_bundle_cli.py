@@ -30,7 +30,7 @@ MARKUP_BUNDLE_ID = "[red]markup-id[/red]"
 MARKUP_SOURCE_ID = "[underline]markup-source[/underline]"
 
 
-def _configure_markup_catalog(project: Path) -> dict:
+def _configure_markup_catalog(project: Path, **overrides: object) -> dict:
     entry = catalog_entry_dict(
         MARKUP_BUNDLE_ID,
         name="[green]Markup Name[/green]",
@@ -41,6 +41,7 @@ def _configure_markup_catalog(project: Path) -> dict:
         license="[bold]Markup License[/bold]",
         download_url="https://example.com/markup-bundle.zip",
         requires={"speckit_version": "[italic]>=0.1.0[/italic]"},
+        **overrides,
     )
     catalog = project / "markup-catalog.json"
     write_catalog_file(catalog, {MARKUP_BUNDLE_ID: entry})
@@ -367,6 +368,29 @@ def test_info_escapes_catalog_markup(project: Path, monkeypatch):
         "[blink]markup-overlap[/blink]",
     ):
         assert value in output
+
+
+def test_info_escapes_catalog_provides_fallback_markup(project: Path, monkeypatch):
+    markup_count = "[bold]markup-count[/bold]"
+    _configure_markup_catalog(
+        project,
+        provides={"extensions": markup_count},
+    )
+    bundle_dir = project / "markup-bundle"
+    bundle_dir.mkdir()
+    manifest_data = valid_manifest_dict(provides={})
+    manifest_data["bundle"]["id"] = MARKUP_BUNDLE_ID
+    manifest_path = bundle_dir / "bundle.yml"
+    manifest_path.write_text(yaml.safe_dump(manifest_data), encoding="utf-8")
+    _mock_manifest_download(monkeypatch, manifest_path)
+
+    result = runner.invoke(
+        app,
+        ["bundle", "info", MARKUP_BUNDLE_ID, "--offline"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert markup_count in strip_ansi(result.output)
 
 
 def test_info_expands_discovery_only_bundle(project: Path, monkeypatch):
