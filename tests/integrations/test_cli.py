@@ -1343,6 +1343,18 @@ class TestIntegrationCatalogDiscoveryCLI:
             "_install_allowed": True,
         },
     ]
+    MARKUP_INTEGRATION = {
+        "id": "[red]markup-id[/red]",
+        "name": "[green]Markup Name[/green]",
+        "version": "[blue]1.0.0[/blue]",
+        "description": "[yellow]Markup Description[/yellow]",
+        "author": "[magenta]Markup Author[/magenta]",
+        "license": "[cyan]Markup License[/cyan]",
+        "repository": "[bold]Markup Repository[/bold]",
+        "tags": ["[italic]markup-tag[/italic]"],
+        "_catalog_name": "[underline]markup-catalog[/underline]",
+        "_install_allowed": False,
+    }
 
     def _make_project(self, tmp_path):
         project = tmp_path / "proj"
@@ -1806,6 +1818,25 @@ class TestIntegrationCatalogDiscoveryCLI:
         # acme-coder is flagged _install_allowed=False, so we should warn
         assert "Not directly installable" in result.output
 
+    def test_search_escapes_catalog_markup(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch, integrations=[self.MARKUP_INTEGRATION])
+
+        result = self._invoke(["integration", "search"], project)
+
+        assert result.exit_code == 0, result.output
+        output = _normalize_cli_output(result.output)
+        for value in (
+            self.MARKUP_INTEGRATION["id"],
+            self.MARKUP_INTEGRATION["name"],
+            self.MARKUP_INTEGRATION["version"],
+            self.MARKUP_INTEGRATION["description"],
+            self.MARKUP_INTEGRATION["author"],
+            self.MARKUP_INTEGRATION["tags"][0],
+            self.MARKUP_INTEGRATION["_catalog_name"],
+        ):
+            assert value in output
+
     # -- info --------------------------------------------------------------
 
     def test_info_found(self, tmp_path, monkeypatch):
@@ -1835,6 +1866,30 @@ class TestIntegrationCatalogDiscoveryCLI:
         result = self._invoke(["integration", "info", "copilot"], project)
         assert result.exit_code == 0, result.output
         assert "Built-in integration" in result.output
+
+    def test_info_escapes_catalog_markup(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch, integrations=[self.MARKUP_INTEGRATION])
+
+        result = self._invoke(
+            ["integration", "info", self.MARKUP_INTEGRATION["id"]],
+            project,
+        )
+
+        assert result.exit_code == 0, result.output
+        output = _normalize_cli_output(result.output)
+        for value in (
+            self.MARKUP_INTEGRATION["id"],
+            self.MARKUP_INTEGRATION["name"],
+            self.MARKUP_INTEGRATION["version"],
+            self.MARKUP_INTEGRATION["description"],
+            self.MARKUP_INTEGRATION["author"],
+            self.MARKUP_INTEGRATION["license"],
+            self.MARKUP_INTEGRATION["repository"],
+            self.MARKUP_INTEGRATION["tags"][0],
+            self.MARKUP_INTEGRATION["_catalog_name"],
+        ):
+            assert value in output
 
     # -- validation vs network guidance ------------------------------------
 
