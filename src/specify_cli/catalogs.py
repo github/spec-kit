@@ -74,6 +74,11 @@ class CatalogStackBase:
         try:
             parsed = urlparse(url)
             hostname = parsed.hostname
+            # Accessing ``port`` performs urllib's syntax/range validation;
+            # ``hostname`` alone does not, so a non-numeric or out-of-range
+            # port would otherwise pass validation here and escape as a raw
+            # http.client.InvalidURL at fetch time.
+            _ = parsed.port
         except ValueError:
             raise cls._error(f"Catalog URL is malformed: {url}") from None
         is_localhost = hostname in ("localhost", "127.0.0.1", "::1")

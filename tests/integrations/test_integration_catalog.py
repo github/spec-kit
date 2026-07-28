@@ -116,12 +116,15 @@ class TestCatalogURLValidation:
         [
             "https://[::1",                 # unclosed ipv6 bracket
             "https://[not-an-ip]/c.json",   # bracketed non-ip host
+            "https://example.com:notaport/c.json",  # non-numeric port
+            "https://example.com:65536/c.json",     # out-of-range port
         ],
     )
     def test_malformed_url_rejected_cleanly(self, url):
-        # A malformed authority makes urlparse/hostname raise ValueError. The
-        # validator must turn that into its normal catalog error, not leak a
-        # raw ValueError to the caller.
+        # A malformed authority makes urlparse/hostname raise ValueError, and a
+        # bad port makes ``parsed.port`` raise it. The validator must turn that
+        # into its normal catalog error, not leak a raw ValueError to the caller
+        # (or, for a bad port, accept the URL and fail later at fetch time).
         with pytest.raises(IntegrationCatalogError, match="malformed"):
             IntegrationCatalog._validate_catalog_url(url)
 
