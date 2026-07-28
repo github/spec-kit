@@ -458,7 +458,7 @@ def integration_info(
         else:
             console.print("\nTry again when online, or use a built-in integration ID directly.")
     else:
-        console.print(f"[red]Error:[/red] Integration '{integration_id}' not found")
+        console.print(f"[red]Error:[/red] Integration '{safe_integration_id}' not found")
         console.print("\nTry: specify integration search")
     raise typer.Exit(1)
 

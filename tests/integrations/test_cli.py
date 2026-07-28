@@ -1859,6 +1859,19 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert result.exit_code == 1
         assert "not found" in result.output
 
+    def test_info_not_found_escapes_query_markup(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch)
+        integration_id = "[red]does-not-exist[/red]"
+
+        result = self._invoke(
+            ["integration", "info", integration_id],
+            project,
+        )
+
+        assert result.exit_code == 1
+        assert integration_id in _normalize_cli_output(result.output)
+
     def test_info_builtin_not_in_catalog(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)
         # Empty catalog, but copilot is a registered built-in.
