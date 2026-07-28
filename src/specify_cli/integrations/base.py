@@ -847,10 +847,8 @@ class IntegrationBase(ABC):
         content = CommandRegistrar.rewrite_project_relative_paths(content)
 
         # 8. Replace __SPECKIT_COMMAND_<NAME>__ with invocation strings
-        invocation_prefix = (
-            "$"
-            if is_dollar_skills_agent(agent_name, invoke_separator == "-")
-            else "/"
+        invocation_prefix = get_invocation_prefix(
+            agent_name, invoke_separator == "-"
         )
         content = IntegrationBase.resolve_command_refs(
             content, invoke_separator, invocation_prefix

@@ -328,6 +328,16 @@ class TestResolveCommandRefs:
         result = IntegrationBase.resolve_command_refs(text, "-", "/skill:")
         assert result == "Run `/skill:speckit-plan` to plan."
 
+    def test_process_template_kimi_uses_skill_colon_prefix(self):
+        """process_template must use /skill: prefix for Kimi without relying on
+        post_process_skill_content's broad replacement."""
+        text = "---\ndescription: test\n---\nRun `__SPECKIT_COMMAND_PLAN__` to plan."
+        result = IntegrationBase.process_template(
+            text, "kimi", "sh", invoke_separator="-"
+        )
+        assert "/skill:speckit-plan" in result
+        assert "/speckit-plan" not in result
+
     def test_multiple_placeholders(self):
         text = "__SPECKIT_COMMAND_SPECIFY__ then __SPECKIT_COMMAND_PLAN__ then __SPECKIT_COMMAND_TASKS__"
         result = IntegrationBase.resolve_command_refs(text, ".")
