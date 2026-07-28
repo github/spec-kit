@@ -103,6 +103,24 @@ def test_models_command_covers_every_registered_integration():
         assert f"`{key}`" in content
 
 
+def test_every_workflow_command_carries_orchestrator_dispatch():
+    """Every command that consumes models.json must dispatch its own steps.
+
+    `constitution` is exempt (it never reads models.json) and `models` is the
+    command that writes the configuration in the first place.
+    """
+    commands_dir = ROOT / "templates" / "commands"
+    exempt = {"constitution.md", "models.md"}
+
+    for template in sorted(commands_dir.glob("*.md")):
+        if template.name in exempt:
+            continue
+        content = template.read_text(encoding="utf-8")
+        assert "Orchestrator dispatch (MANDATORY" in content, template.name
+        assert "by_complexity" in content, template.name
+        assert "through to the next candidate" in content, template.name
+
+
 def test_implement_command_continues_with_ordered_fallback_state():
     content = IMPLEMENT_TEMPLATE.read_text(encoding="utf-8")
 

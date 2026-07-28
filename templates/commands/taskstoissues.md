@@ -38,6 +38,13 @@ You **MUST** consider the user input before proceeding (if not empty).
   - Level `5` models are reserved for very few cases (manager role, exceptional tasks) — never assign them to routine work.
 - If the file exists but cannot be parsed as JSON, or is missing `manager` or `by_complexity`, STOP and tell the user to re-run `__SPECKIT_COMMAND_MODELS__` to regenerate it.
 
+**Orchestrator dispatch (MANDATORY — applies to every step below)**:
+- You are the `manager` (communicator). You do **not** write the issue bodies yourself. For each substantive step of this command, classify its complexity level (`5` critical → `1` trivial), look up that level in `by_complexity`, and dispatch the step to the first candidate through its `executors` entry.
+- Typical levels here: composing issue bodies and dependency ordering → `2`; mechanical conversion and formatting → `1`. Keep the actual GitHub write calls in the manager so credentials and side effects stay in one place.
+- Dispatch is optimistic: if the invocation fails (agent not loaded, unknown agent name, model unavailable), fall through to the next candidate in that level's list. If every candidate fails, report the attempts and only then continue in-session.
+- Keep in the manager only: reading configuration, classifying steps, asking the user questions, issue creation calls, merging worker output, and the final report.
+- Give each worker only the context it needs (paths, prior artifacts, the exact step definition) and require it to return the produced content.
+
 **Check for extension hooks (before tasks-to-issues conversion)**:
 - Check if `.specify/extensions.yml` exists in the project root.
 - If it exists, read it and look for entries under the `hooks.before_taskstoissues` key
