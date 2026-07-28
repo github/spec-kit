@@ -262,8 +262,7 @@ def _write_shared_bytes(
         _ensure_safe_shared_destination(project_path, dest)
         os.replace(temp_path, dest)
     finally:
-        if temp_path.exists():
-            temp_path.unlink()
+        temp_path.unlink(missing_ok=True)
 
 
 _BASH_FORMAT_COMMAND_RE = re.compile(
