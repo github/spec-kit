@@ -515,6 +515,32 @@ class TestAutoCommitParity:
         assert p.stderr.strip() == b.stderr.strip()
         assert self._last_message(bash_proj) == self._last_message(py_proj) == "spec done"
 
+    def test_custom_message_with_trailing_whitespace_after_quote(self, tmp_path: Path):
+        """Trailing whitespace after a closing quote must not leave the quote
+        dangling in the commit message. A raw close-quote strip anchored to
+        end-of-string skips the quote when spaces follow it (``spec done"  ``);
+        trimming first (matching the PowerShell twin) yields a clean message and
+        keeps bash/python in parity."""
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        config = (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "spec done"  \n'  # trailing spaces after the closing quote
+        )
+        for proj in (bash_proj, py_proj):
+            _write_config(proj, config)
+            self._dirty(proj)
+        b = _run_bash("auto-commit.sh", bash_proj, "after_specify")
+        p = _run_py("auto-commit", py_proj, "after_specify")
+        _assert_parity(b, p)
+        assert (
+            self._last_message(bash_proj)
+            == self._last_message(py_proj)
+            == "spec done"
+        )
+
     def test_default_true_applies_to_unlisted_event(self, tmp_path: Path):
         bash_proj, py_proj = _twin_projects(tmp_path)
         for proj in (bash_proj, py_proj):

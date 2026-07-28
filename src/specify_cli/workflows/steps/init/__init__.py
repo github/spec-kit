@@ -59,7 +59,7 @@ class InitStep(StepBase):
         Extra options for the integration (e.g. ``"--skills"`` or
         ``"--commands-dir .myagent/cmds"``).
     ``script``
-        Script type, ``sh`` or ``ps``.
+        Script type, ``sh``, ``ps``, or ``py``.
     ``force``
         Merge/overwrite without confirmation when the directory is not
         empty.

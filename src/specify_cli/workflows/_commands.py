@@ -20,6 +20,10 @@ import yaml
 from rich.markup import escape as _escape_markup
 
 from .._console import console, err_console
+from .._download_security import (
+    is_https_or_localhost_http,
+    is_safe_download_redirect,
+)
 from .._project import _resolve_init_dir_override
 
 workflow_app = typer.Typer(
@@ -383,27 +387,12 @@ _RESERVED_WORKFLOW_IDS: frozenset[str] = frozenset({"overlays", "runs", "steps"}
 def _reject_insecure_download_redirect(old_url: str, new_url: str) -> None:
     """Reject insecure redirects before they are followed."""
     import urllib.error
-    from ipaddress import ip_address
-    from urllib.parse import urlparse
 
-    def _is_loopback_http(url: str) -> bool:
-        parsed = urlparse(url)
-        if parsed.scheme != "http":
-            return False
-        host = parsed.hostname or ""
-        if host == "localhost":
-            return True
-        try:
-            return ip_address(host).is_loopback
-        except ValueError:
-            return False
-
-    if urlparse(new_url).scheme == "https":
-        return
-    if _is_loopback_http(old_url) and _is_loopback_http(new_url):
+    if is_safe_download_redirect(old_url, new_url):
         return
     raise urllib.error.URLError(
-        "redirect target must use HTTPS; loopback HTTP may only redirect from loopback HTTP"
+        "redirect target must use HTTPS without entering a local target; "
+        "loopback HTTP may only redirect from another loopback URL"
     )
 
 
@@ -1579,24 +1568,15 @@ def workflow_add(
         else (source if source.startswith(("http://", "https://")) else None)
     )
     if download_url is not None:
-        from ipaddress import ip_address
         from urllib.parse import urlparse
         from specify_cli.authentication.http import open_url as _open_url
 
         try:
-            parsed_src = urlparse(download_url)
+            urlparse(download_url).port
         except ValueError:
             console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(download_url)}")
             raise typer.Exit(1)
-        src_host = parsed_src.hostname or ""
-        src_loopback = src_host == "localhost"
-        if not src_loopback:
-            try:
-                src_loopback = ip_address(src_host).is_loopback
-            except ValueError:
-                # Host is not an IP literal (e.g., a DNS name); keep default non-loopback.
-                pass
-        if parsed_src.scheme != "https" and not (parsed_src.scheme == "http" and src_loopback):
+        if not is_https_or_localhost_http(download_url):
             console.print("[red]Error:[/red] Only HTTPS URLs are allowed, except HTTP for localhost.")
             raise typer.Exit(1)
 
@@ -1647,16 +1627,7 @@ def workflow_add(
                 redirect_validator=_reject_insecure_download_redirect,
             ) as resp:
                 final_url = resp.geturl()
-                final_parsed = urlparse(final_url)
-                final_host = final_parsed.hostname or ""
-                final_lb = final_host == "localhost"
-                if not final_lb:
-                    try:
-                        final_lb = ip_address(final_host).is_loopback
-                    except ValueError:
-                        # Redirect host is not an IP literal; keep loopback as determined above.
-                        pass
-                if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_lb):
+                if not is_https_or_localhost_http(final_url):
                     console.print(
                         f"[red]Error:[/red] URL redirected to non-HTTPS: {_escape_markup(final_url)}"
                     )
@@ -1788,27 +1759,17 @@ def _install_workflow_from_catalog(
         raise typer.Exit(1)
 
     # Validate URL scheme (HTTPS required, HTTP allowed for localhost only)
-    from ipaddress import ip_address
     from urllib.parse import urlparse
 
     try:
         parsed_url = urlparse(workflow_url)
-        url_host = parsed_url.hostname or ""
+        parsed_url.port
     except ValueError:
         console.print(
             f"[red]Error:[/red] Workflow '{safe_wf_id}' has a malformed install URL."
         )
         raise typer.Exit(1)
-    is_loopback = False
-    if url_host == "localhost":
-        is_loopback = True
-    else:
-        try:
-            is_loopback = ip_address(url_host).is_loopback
-        except ValueError:
-            # Host is not an IP literal (e.g., a regular hostname); treat as non-loopback.
-            pass
-    if parsed_url.scheme != "https" and not (parsed_url.scheme == "http" and is_loopback):
+    if not is_https_or_localhost_http(workflow_url):
         console.print(
             f"[red]Error:[/red] Workflow '{safe_wf_id}' has an invalid install URL. "
             "Only HTTPS URLs are allowed, except HTTP for localhost/loopback."
@@ -1862,16 +1823,7 @@ def _install_workflow_from_catalog(
         ) as response:
             # Validate final URL after redirects
             final_url = response.geturl()
-            final_parsed = urlparse(final_url)
-            final_host = final_parsed.hostname or ""
-            final_loopback = final_host == "localhost"
-            if not final_loopback:
-                try:
-                    final_loopback = ip_address(final_host).is_loopback
-                except ValueError:
-                    # Host is not an IP literal (e.g., a regular hostname); treat as non-loopback.
-                    pass
-            if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_loopback):
+            if not is_https_or_localhost_http(final_url):
                 _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
                 console.print(
                     f"[red]Error:[/red] Workflow '{safe_wf_id}' redirected to non-HTTPS URL: {_escape_markup(final_url)}"
@@ -2402,14 +2354,25 @@ def workflow_info(
         raise typer.Exit(1)
 
     if definition:
-        console.print(f"\n[bold cyan]{definition.name}[/bold cyan] ({definition.id})")
-        console.print(f"  Version:     {definition.version}")
+        # Escape every user-controlled field: workflow.yml values (name,
+        # version, author, description, integration, input names/types) are not
+        # trusted, and console.print has Rich markup enabled, so an unescaped
+        # `[...]` in any of them is parsed as a style tag and silently swallowed
+        # (same defect fixed for the step graph below; the sibling workflow_list
+        # already escapes all of these).
+        console.print(
+            f"\n[bold cyan]{_escape_markup(str(definition.name))}[/bold cyan] "
+            f"({_escape_markup(str(definition.id))})"
+        )
+        console.print(f"  Version:     {_escape_markup(str(definition.version))}")
         if definition.author:
-            console.print(f"  Author:      {definition.author}")
+            console.print(f"  Author:      {_escape_markup(str(definition.author))}")
         if definition.description:
-            console.print(f"  Description: {definition.description}")
+            console.print(f"  Description: {_escape_markup(str(definition.description))}")
         if definition.default_integration:
-            console.print(f"  Integration: {definition.default_integration}")
+            console.print(
+                f"  Integration: {_escape_markup(str(definition.default_integration))}"
+            )
         if installed:
             console.print("  [green]Installed[/green]")
 
@@ -2418,13 +2381,24 @@ def workflow_info(
             for name, inp in definition.inputs.items():
                 if isinstance(inp, dict):
                     req = "required" if inp.get("required") else "optional"
-                    console.print(f"    {name} ({inp.get('type', 'string')}) — {req}")
+                    console.print(
+                        f"    {_escape_markup(str(name))} "
+                        f"({_escape_markup(str(inp.get('type', 'string')))}) — {req}"
+                    )
 
         if definition.steps:
             console.print(f"\n  [bold]Steps ({len(definition.steps)}):[/bold]")
             for step in definition.steps:
                 stype = step.get("type", "command")
-                console.print(f"    → {step.get('id', '?')} [{stype}]")
+                # Escape the literal bracket (\[) so Rich renders `[<type>]`
+                # instead of parsing it as a style tag named after the step
+                # type (which it silently swallows); escape id/type too, as
+                # the sibling workflow_list does. Mirrors the `\[disabled]`
+                # precedent above.
+                console.print(
+                    f"    → {_escape_markup(str(step.get('id', '?')))} "
+                    f"\\[{_escape_markup(str(stype))}]"
+                )
         return
 
     # Try catalog
@@ -2435,15 +2409,23 @@ def workflow_info(
         info = None
 
     if info:
-        console.print(f"\n[bold cyan]{info.get('name', workflow_id)}[/bold cyan] ({workflow_id})")
-        console.print(f"  Version:     {info.get('version', '?')}")
+        # Catalog-derived fields are untrusted; escape them so bracketed content
+        # is rendered literally rather than parsed (and swallowed) as Rich markup.
+        console.print(
+            f"\n[bold cyan]{_escape_markup(str(info.get('name', workflow_id)))}[/bold cyan] "
+            f"({_escape_markup(str(workflow_id))})"
+        )
+        console.print(f"  Version:     {_escape_markup(str(info.get('version', '?')))}")
         if info.get("description"):
-            console.print(f"  Description: {info['description']}")
+            console.print(f"  Description: {_escape_markup(str(info['description']))}")
         if info.get("tags"):
-            console.print(f"  Tags:        {', '.join(info['tags'])}")
+            safe_tags = _escape_markup(", ".join(str(t) for t in info["tags"]))
+            console.print(f"  Tags:        {safe_tags}")
         console.print("  [yellow]Not installed[/yellow]")
     else:
-        console.print(f"[red]Error:[/red] Workflow '{workflow_id}' not found")
+        console.print(
+            f"[red]Error:[/red] Workflow '{_escape_markup(str(workflow_id))}' not found"
+        )
         raise typer.Exit(1)
 
 
@@ -2464,10 +2446,10 @@ def workflow_catalog_list():
     console.print("\n[bold cyan]Workflow Catalog Sources:[/bold cyan]\n")
     for i, cfg in enumerate(configs):
         install_status = "[green]install allowed[/green]" if cfg["install_allowed"] else "[yellow]discovery only[/yellow]"
-        console.print(f"  [{i}] [bold]{cfg['name']}[/bold] — {install_status}")
-        console.print(f"      {cfg['url']}")
+        console.print(f"  [{i}] [bold]{_escape_markup(str(cfg['name']))}[/bold] — {install_status}")
+        console.print(f"      {_escape_markup(str(cfg['url']))}")
         if cfg.get("description"):
-            console.print(f"      [dim]{cfg['description']}[/dim]")
+            console.print(f"      [dim]{_escape_markup(str(cfg['description']))}[/dim]")
         console.print()
 
 
@@ -2694,28 +2676,17 @@ def workflow_step_add(
             )
             raise typer.Exit(1)
 
-    from urllib.parse import urlparse
     from specify_cli.authentication.http import open_url as _open_url
 
     def _safe_fetch(url: str) -> bytes:
-        parsed = urlparse(url)
-        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
-        if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+        if not is_https_or_localhost_http(url):
             raise ValueError(f"Refusing to fetch from non-HTTPS URL: {url}")
-        if not parsed.hostname:
-            raise ValueError(f"Refusing to fetch from URL with no hostname: {url}")
         with _open_url(
             url, timeout=30, redirect_validator=_reject_insecure_download_redirect
         ) as resp:
             final_url = resp.geturl()
-            final_parsed = urlparse(final_url)
-            final_is_localhost = final_parsed.hostname in ("localhost", "127.0.0.1", "::1")
-            if final_parsed.scheme != "https" and not (
-                final_parsed.scheme == "http" and final_is_localhost
-            ):
+            if not is_https_or_localhost_http(final_url):
                 raise ValueError(f"Redirect to non-HTTPS URL: {final_url}")
-            if not final_parsed.hostname:
-                raise ValueError(f"Redirect to URL with no hostname: {final_url}")
             return _read_response_within_limit(resp)
 
     _validate_step_id_or_exit(step_id)
@@ -3118,10 +3089,10 @@ def workflow_step_catalog_list():
             if cfg["install_allowed"]
             else "[yellow]discovery only[/yellow]"
         )
-        console.print(f"  [{i}] [bold]{cfg['name']}[/bold] — {install_status}")
-        console.print(f"      {cfg['url']}")
+        console.print(f"  [{i}] [bold]{_escape_markup(str(cfg['name']))}[/bold] — {install_status}")
+        console.print(f"      {_escape_markup(str(cfg['url']))}")
         if cfg.get("description"):
-            console.print(f"      [dim]{cfg['description']}[/dim]")
+            console.print(f"      [dim]{_escape_markup(str(cfg['description']))}[/dim]")
         console.print()
 
 

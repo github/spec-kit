@@ -502,6 +502,32 @@ args: "{{ inputs.spec }}"
 message: "{{ status | default('pending') }}"
 ```
 
+### Interpolation and shell safety
+
+Expressions are resolved by **plain string substitution** — the value of `{{ ... }}` is spliced into the surrounding text exactly as-is, with no quoting or escaping added. That is convenient for building `args` and `message` strings, but it has an important consequence for `shell` steps: a `run` field is handed to the system shell (`/bin/sh -c` on POSIX), so any interpolated value is interpreted as **shell syntax**, not just data.
+
+If an interpolated value can contain characters like `;`, `|`, `&`, `$( )`, backticks, or quotes, it can change or extend the command that actually runs. This matters most when the value is not fully under the workflow author's control:
+
+- **Workflow `inputs.*`** — supplied by whoever runs the workflow.
+- **A prior step's output**, e.g. `{{ steps.plan.output.stdout }}` — for a `prompt` step this is **text produced by the AI agent**, which can in turn be influenced by files, tickets, or web content the agent read. Treat agent output as untrusted when it flows into a `shell` step.
+
+There is **no shell-escaping filter** in the expression language and **no sandbox** around a `shell` step, so none of the practices below can be treated as a guarantee that a hostile value is neutralised. The only reliable control is to constrain what an interpolated value *can* be, and to keep values you cannot constrain out of `run` fields entirely. Scrutinise every `run` field that interpolates a value you do not control, and at minimum:
+
+- **Constrain the value at the source with `enum`/an allowlist.** When `inputs.*` feeds a `run` field, restrict it to a fixed set of known-safe values so a caller cannot supply arbitrary shell text at all. This is the strongest control the engine offers — prefer it over any downstream mitigation.
+
+  ```yaml
+  inputs:
+    target:
+      type: string
+      enum: [staging, production]   # caller cannot inject arbitrary text
+  ```
+
+- **Keep unconstrained values out of `run`.** If a value cannot be constrained to an allowlist — most agent/`prompt` output — do not interpolate it into a `run` field. Branch on it with `if`/`switch` against fixed conditions, or act on it in a `command`/`prompt` step rather than a shell command built from it.
+- **Quoting is not a security boundary.** Surrounding a substitution with quotes (`'{{ inputs.x }}'`) helps the shell treat a *trusted* value as a single argument and avoids word-splitting on spaces, but a value that itself contains the matching quote character can still break out and inject shell syntax. Quote for correctness on constrained values; never rely on quoting to make an *unconstrained* substitution safe.
+- **Gates do not inspect the next step, and `message` is printed verbatim.** A `gate` step renders only its own `message`/`show_file` — it does not display, resolve, or sanitise the command that follows it, and approval never neutralises an injectable interpolation. Do **not** interpolate raw untrusted data into `message`: it is printed as-is with no control-character stripping, so agent or caller output could inject terminal/ANSI escapes that alter or hide the approval prompt. Keep `message` to trusted, constrained text, and surface untrusted material for review via `show_file` instead — its path and contents are control/ANSI-stripped before display.
+
+A `shell` step is an arbitrary-command primitive by design; these practices reduce exposure and keep *which* command runs under the author's control, but they do not eliminate the risk of interpolating values you do not fully control.
+
 ## Shell Step Environment Variables
 
 Shell steps automatically receive the following environment variables:

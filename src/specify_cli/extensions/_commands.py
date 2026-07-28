@@ -166,9 +166,17 @@ def _resolve_catalog_extension(
         if ext_info:
             return (ext_info, None)
 
-        # Try by display name - search using argument as query, then filter for exact match
-        search_results = catalog.search(query=argument)
-        name_matches = [ext for ext in search_results if ext["name"].lower() == argument.lower()]
+        # Try by display name - search using argument as query, then filter for exact match.
+        # Coerce name defensively: catalog JSON is user-editable, so a hand-authored
+        # non-string/missing name must not crash the match (the ambiguous-match display
+        # below already str()-coerces name for the same reason).
+        search_results = catalog.search()
+        argument_lower = argument.lower()
+        name_matches = [
+            ext
+            for ext in search_results
+            if str(ext.get("name", "")).lower() == argument_lower
+        ]
 
         if len(name_matches) == 1:
             return (name_matches[0], None)
@@ -428,10 +436,17 @@ def extension_add(
 
         try:
             parsed = urlparse(from_url)
+            # Read .hostname inside the try: parsing a malformed authority -- or
+            # accessing .hostname on one, e.g. an invalid bracketed IPv6 host like
+            # "https://[not-an-ip]/x.zip" -- can raise ValueError. Keeping both the
+            # parse and the .hostname read inside the guard surfaces a clean
+            # "Invalid URL" message instead of leaking a raw traceback past the
+            # CLI. Reuse the value below.
+            hostname = parsed.hostname
         except ValueError:
             console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(from_url)}")
             raise typer.Exit(1)
-        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
 
         if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
             console.print("[red]Error:[/red] URL must use HTTPS for security.")
@@ -623,16 +638,22 @@ def extension_add(
         for warning in manifest.warnings:
             console.print(f"\n[yellow]⚠  Compatibility warning:[/yellow] {_escape_markup(str(warning))}")
 
-        is_cline = load_init_options(project_root).get("ai") == "cline"
+        selected_ai = load_init_options(project_root).get("ai")
+        is_cline = selected_ai == "cline"
+        is_forge = selected_ai == "forge"
 
         if is_cline:
             from specify_cli.integrations.cline import format_cline_command_name
+        if is_forge:
+            from specify_cli.integrations.forge import format_forge_command_name
 
         console.print("\n[bold cyan]Provided commands:[/bold cyan]")
         for cmd in manifest.commands:
             cmd_name = cmd['name']
             if is_cline:
                 cmd_name = format_cline_command_name(cmd_name)
+            elif is_forge:
+                cmd_name = format_forge_command_name(cmd_name)
             console.print(f"  • {_escape_markup(str(cmd_name))} - {_escape_markup(str(cmd.get('description', '')))}")
 
         # Report agent skills registration
@@ -777,10 +798,24 @@ def extension_search(
 
             # Stats
             stats = []
-            if ext.get('downloads') is not None:
-                stats.append(f"Downloads: {ext['downloads']:,}")
-            if ext.get('stars') is not None:
-                stats.append(f"Stars: {ext['stars']}")
+            downloads = ext.get('downloads')
+            if downloads is not None:
+                # Catalog fields are untrusted; a non-numeric ``downloads``
+                # (e.g. the JSON string "1500") would crash the ``:,`` format
+                # with "Cannot specify ',' with 's'". Only group-format numbers,
+                # and escape the fallback: the joined stats are rendered as Rich
+                # markup, so a value like "[/red]foo" would raise MarkupError
+                # (matching how every other catalog field here is escaped).
+                stats.append(
+                    f"Downloads: {downloads:,}"
+                    if isinstance(downloads, (int, float))
+                    else f"Downloads: {_escape_markup(str(downloads))}"
+                )
+            stars = ext.get('stars')
+            if stars is not None:
+                # Same untrusted-value/Rich-markup hazard as `downloads` above,
+                # in the same joined string.
+                stats.append(f"Stars: {_escape_markup(str(stars))}")
             if stats:
                 console.print(f"  [dim]{' | '.join(stats)}[/dim]")
 
@@ -866,9 +901,30 @@ def extension_info(
             console.print()
 
             if ext_manifest.commands:
+                # Print each command the way the active agent registers it.
+                # Cline and Forge hyphenate command names (e.g. Forge invokes
+                # `/speckit-jira-sync`, not the manifest's dotted
+                # `speckit.jira.sync`), so mirror the same formatting used by
+                # `extension add`'s "Provided commands" listing — otherwise the
+                # names shown here don't match what the user actually types.
+                selected_ai = load_init_options(project_root).get("ai")
+                if selected_ai == "cline":
+                    from specify_cli.integrations.cline import (
+                        format_cline_command_name as _format_command_name,
+                    )
+                elif selected_ai == "forge":
+                    from specify_cli.integrations.forge import (
+                        format_forge_command_name as _format_command_name,
+                    )
+                else:
+                    _format_command_name = None
+
                 console.print("[bold]Commands:[/bold]")
                 for cmd in ext_manifest.commands:
-                    console.print(f"  • {_escape_markup(str(cmd['name']))}: {_escape_markup(str(cmd.get('description', '')))}")
+                    cmd_name = cmd['name']
+                    if _format_command_name is not None:
+                        cmd_name = _format_command_name(cmd_name)
+                    console.print(f"  • {_escape_markup(str(cmd_name))}: {_escape_markup(str(cmd.get('description', '')))}")
                 console.print()
 
         # Show catalog status
@@ -958,10 +1014,24 @@ def _print_extension_info(ext_info: dict, manager):
 
     # Statistics
     stats = []
-    if ext_info.get('downloads') is not None:
-        stats.append(f"Downloads: {ext_info['downloads']:,}")
-    if ext_info.get('stars') is not None:
-        stats.append(f"Stars: {ext_info['stars']}")
+    downloads = ext_info.get('downloads')
+    if downloads is not None:
+        # Catalog fields are untrusted; a non-numeric ``downloads`` (e.g. the
+        # JSON string "1500") would crash the ``:,`` format with "Cannot
+        # specify ',' with 's'". Only group-format numbers, and escape the
+        # fallback: the joined stats are rendered as Rich markup, so a value
+        # like "[/red]foo" would raise MarkupError (matching how every other
+        # catalog field here is escaped).
+        stats.append(
+            f"Downloads: {downloads:,}"
+            if isinstance(downloads, (int, float))
+            else f"Downloads: {_escape_markup(str(downloads))}"
+        )
+    stars = ext_info.get('stars')
+    if stars is not None:
+        # Same untrusted-value/Rich-markup hazard as `downloads` above, in the
+        # same joined string.
+        stats.append(f"Stars: {_escape_markup(str(stars))}")
     if stats:
         console.print(f"[bold]Statistics:[/bold] {' | '.join(stats)}")
         console.print()

@@ -686,6 +686,28 @@ class TestExpressions:
         ):
             evaluate_expression("{{ inputs.tags | map }}", ctx)
 
+    def test_filter_call_with_trailing_tokens_fails_loudly(self):
+        # A trailing operator/token after a filter's closing paren must not be
+        # silently discarded (the parser used an unanchored regex). It must
+        # fall through to the "unsupported form" ValueError, like the from_json
+        # branch's strict trailing-token handling.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        # A comparison after a filter (binds looser than the pipe) was dropped,
+        # so `default('7') > '5'` silently returned '7'.
+        with pytest.raises(ValueError, match="unsupported form"):
+            evaluate_expression(
+                "{{ inputs.missing | default('7') > '5' }}", StepContext(inputs={})
+            )
+        # Trailing garbage after a valid filter call.
+        with pytest.raises(ValueError, match="unsupported form"):
+            evaluate_expression(
+                "{{ inputs.tags | join(',') extra }}",
+                StepContext(inputs={"tags": ["a", "b"]}),
+            )
+
     def test_chained_filters_apply_left_to_right(self):
         # Filters chain: each filter's result feeds the next. `map` yields a
         # list and `join` is the only filter that renders a list to a string,
@@ -1935,6 +1957,14 @@ def _force_gate_stdin(monkeypatch, *, tty: bool):
 class TestInitStep:
     """Test the init step type."""
 
+    def test_docstring_lists_every_valid_script_type(self):
+        # The `script` field docstring must not contradict the step's own
+        # VALID_SCRIPT_TYPES (which includes 'py'); validate() accepts all three.
+        from specify_cli.workflows.steps.init import InitStep, VALID_SCRIPT_TYPES
+
+        for script_type in VALID_SCRIPT_TYPES:
+            assert f"``{script_type}``" in InitStep.__doc__
+
     def test_builds_here_argv_and_bootstraps(self, tmp_path):
         from specify_cli.workflows.steps.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus
@@ -2099,6 +2129,15 @@ class TestInitStep:
 
 class TestGateStep:
     """Test the gate step type."""
+
+    def test_docstring_lists_every_on_reject_behaviour(self):
+        # The docstring must not contradict validate()/execute(): on_reject
+        # accepts 'abort', 'skip', AND 'retry' (execute() has a dedicated
+        # retry -> PAUSED branch), but the summary omitted 'retry'.
+        from specify_cli.workflows.steps.gate import GateStep
+
+        for behaviour in ("abort", "skip", "retry"):
+            assert behaviour in GateStep.__doc__
 
     @pytest.fixture(autouse=True)
     def _non_tty_stdin_by_default(self, monkeypatch):
@@ -3572,6 +3611,48 @@ class TestWorkflowDefinition:
         definition = WorkflowDefinition.from_string(sample_workflow_yaml)
         assert definition.id == "test-workflow"
         assert len(definition.inputs) == 2
+
+    @pytest.mark.parametrize(
+        "block",
+        [
+            "workflow:\n  id: w\n  name: W\nsteps: []\ninputs: []\n",   # list
+            "workflow:\n  id: w\n  name: W\nsteps: []\ninputs:\n",       # null
+        ],
+    )
+    def test_resolve_inputs_tolerates_non_mapping_inputs(self, block):
+        # execute()/resume() run UNVALIDATED definitions; a non-mapping `inputs:`
+        # block (list/null) is stored raw and would crash _resolve_inputs at
+        # `.items()`. It must be treated as "no inputs" instead.
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        definition = WorkflowDefinition.from_string(block)
+        resolved = WorkflowEngine()._resolve_inputs(definition, {})  # must not raise
+        assert resolved == {}
+
+    @pytest.mark.parametrize(
+        "block", ["workflow:\nsteps: []\n", "workflow: hi\nsteps: []\n", "workflow: [a]\nsteps: []\n"]
+    )
+    def test_non_mapping_workflow_block_parses_then_validates(self, block):
+        # A present-but-non-mapping `workflow:` block must not crash construction
+        # with AttributeError; it should parse to an empty header so
+        # validate_workflow reports the missing id/name (it reads the parsed
+        # attributes, not the raw block).
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string(block)  # must not raise
+        assert definition.id == ""
+        errors = validate_workflow(definition)
+        assert any("workflow.id" in e for e in errors)
+        # The RAW malformed value is preserved on .data (the guard only
+        # normalizes the local var, not self.data) — .data is what gets written
+        # back out when a definition is serialized. Assert it was NOT replaced
+        # with {} by comparing against the original parse and confirming it is
+        # still a non-mapping.
+        import yaml
+
+        raw_workflow = yaml.safe_load(block).get("workflow")
+        assert definition.data["workflow"] == raw_workflow
+        assert not isinstance(definition.data["workflow"], dict)
 
     def test_from_string_invalid(self):
         from specify_cli.workflows.engine import WorkflowDefinition
@@ -7843,6 +7924,143 @@ class TestWorkflowAddCaseInsensitiveSuffix:
         assert "installed" in result.output
 
 
+class TestWorkflowInfoStepGraph:
+    """`workflow info` must render each step as `→ <id> [<type>]` with LITERAL
+    brackets. Rich parses an unescaped `[<type>]` as a style tag and silently
+    swallows it, so the step type would vanish from the output."""
+
+    def test_step_type_rendered_in_literal_brackets(self, temp_dir, monkeypatch):
+        import types
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+
+        fake = types.SimpleNamespace(
+            name="My WF", id="my-wf", version="1.0.0", author="", description="",
+            default_integration=None, inputs={},
+            steps=[{"id": "step-one", "type": "gate"}],
+        )
+        monkeypatch.setattr(WorkflowEngine, "load_workflow", lambda self, wid: fake)
+        monkeypatch.chdir(temp_dir)
+
+        result = CliRunner().invoke(app, ["workflow", "info", "my-wf"])
+
+        assert result.exit_code == 0, result.output
+        assert "step-one" in result.output
+        # The step type must survive as a literal bracketed token, not be eaten
+        # by Rich as an unknown style tag.
+        assert "[gate]" in result.output
+
+    def test_definition_metadata_fields_escaped(self, temp_dir, monkeypatch):
+        """Every metadata field printed from the workflow definition (name,
+        description, author, integration, input name/type) is untrusted
+        workflow.yml content. An unescaped `[...]` in any of them would be
+        parsed as a Rich style tag and silently swallowed, so bracketed text
+        must survive literally in the output."""
+        import types
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+
+        fake = types.SimpleNamespace(
+            name="My [WF]",
+            id="my-wf",
+            version="1.0.0 [beta]",
+            author="Jane [Doe]",
+            description="Does [stuff] nicely",
+            default_integration="claude [code]",
+            inputs={"in [put]": {"type": "str [ing]", "required": True}},
+            steps=[],
+        )
+        monkeypatch.setattr(WorkflowEngine, "load_workflow", lambda self, wid: fake)
+        monkeypatch.chdir(temp_dir)
+
+        result = CliRunner().invoke(app, ["workflow", "info", "my-wf"])
+
+        assert result.exit_code == 0, result.output
+        # Each bracketed token must render literally rather than be consumed as
+        # an unknown Rich style tag.
+        assert "My [WF]" in result.output
+        assert "1.0.0 [beta]" in result.output
+        assert "Jane [Doe]" in result.output
+        assert "Does [stuff] nicely" in result.output
+        assert "claude [code]" in result.output
+        assert "in [put]" in result.output
+        assert "str [ing]" in result.output
+
+    def test_catalog_metadata_fields_escaped(self, temp_dir, monkeypatch):
+        """When the workflow is only found in the catalog (not on disk), its
+        catalog-derived fields (name, description, tags) are untrusted too and
+        must be escaped so bracketed content renders literally."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.engine import WorkflowEngine
+        from specify_cli.workflows import catalog as catalog_mod
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+
+        def _not_on_disk(self, wid):
+            raise FileNotFoundError(wid)
+
+        monkeypatch.setattr(WorkflowEngine, "load_workflow", _not_on_disk)
+        monkeypatch.setattr(
+            catalog_mod.WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "name": "Cat [WF]",
+                "version": "2.0.0 [rc]",
+                "description": "From [catalog]",
+                "tags": ["a [b]", "c [d]"],
+            },
+        )
+        monkeypatch.chdir(temp_dir)
+
+        result = CliRunner().invoke(app, ["workflow", "info", "cat-wf"])
+
+        assert result.exit_code == 0, result.output
+        assert "Cat [WF]" in result.output
+        assert "2.0.0 [rc]" in result.output
+        assert "From [catalog]" in result.output
+        assert "a [b]" in result.output
+        assert "c [d]" in result.output
+
+    def test_not_found_id_escaped(self, temp_dir, monkeypatch):
+        """When the workflow is neither on disk nor in the catalog, the
+        not-found error echoes the requested ID. That ID is user input, so a
+        bracketed value must render literally instead of being parsed (and
+        swallowed) as a Rich style tag."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.engine import WorkflowEngine
+        from specify_cli.workflows import catalog as catalog_mod
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+
+        def _not_on_disk(self, wid):
+            raise FileNotFoundError(wid)
+
+        monkeypatch.setattr(WorkflowEngine, "load_workflow", _not_on_disk)
+        monkeypatch.setattr(
+            catalog_mod.WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: None,
+        )
+        monkeypatch.chdir(temp_dir)
+
+        result = CliRunner().invoke(app, ["workflow", "info", "ghost [wf]"])
+
+        assert result.exit_code == 1, result.output
+        assert "not found" in result.output
+        # The bracketed ID must survive literally, not be eaten as markup.
+        assert "ghost [wf]" in result.output
+
+
 class TestWorkflowAddSymlinkGuard:
     def test_add_malformed_ipv6_url_exits_cleanly(self, temp_dir, monkeypatch):
         """A malformed IPv6 URL must produce a clean error, not a ValueError traceback."""
@@ -9965,6 +10183,60 @@ steps:
         assert "desc [with] brackets" in result.output
         assert "tag[1]" in result.output
 
+    def test_catalog_list_escapes_rich_markup(self, project_dir, monkeypatch):
+        """User-editable catalog name/url/description must not be parsed as Rich markup."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        monkeypatch.chdir(project_dir)
+        configs = [
+            {
+                "name": "Bracket [Catalog]",
+                "url": "https://example.com/[cat].json",
+                "description": "desc [with] brackets",
+                "install_allowed": True,
+            },
+        ]
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_catalog_configs",
+            lambda self: [dict(c) for c in configs],
+        )
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "catalog", "list"])
+        assert result.exit_code == 0, result.output
+        assert "Bracket [Catalog]" in result.output
+        assert "https://example.com/[cat].json" in result.output
+        assert "desc [with] brackets" in result.output
+
+    def test_step_catalog_list_escapes_rich_markup(self, project_dir, monkeypatch):
+        """User-editable step-catalog name/url/description must not be parsed as Rich markup."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepCatalog
+
+        monkeypatch.chdir(project_dir)
+        configs = [
+            {
+                "name": "Bracket [Step]",
+                "url": "https://example.com/[step].json",
+                "description": "step [with] brackets",
+                "install_allowed": True,
+            },
+        ]
+        monkeypatch.setattr(
+            StepCatalog,
+            "get_catalog_configs",
+            lambda self: [dict(c) for c in configs],
+        )
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "catalog", "list"])
+        assert result.exit_code == 0, result.output
+        assert "Bracket [Step]" in result.output
+        assert "https://example.com/[step].json" in result.output
+        assert "step [with] brackets" in result.output
+
     # -- update ----------------------------------------------------------
 
     def test_update_no_workflows_installed(self, project_dir, monkeypatch):
@@ -11736,6 +12008,10 @@ steps:
             _reject_insecure_download_redirect(
                 "https://example.com/wf.yml", "http://localhost:8000/wf.yml"
             )
+        with pytest.raises(urllib.error.URLError):
+            _reject_insecure_download_redirect(
+                "https://example.com/wf.yml", "https://127.0.0.2/wf.yml"
+            )
         # Allowed: HTTPS anywhere, or loopback HTTP that stays on loopback HTTP.
         _reject_insecure_download_redirect(
             "https://example.com/wf.yml", "https://cdn.example.com/wf.yml"
@@ -11745,6 +12021,9 @@ steps:
         )
         _reject_insecure_download_redirect(
             "http://127.0.0.1/source.yml", "http://127.0.0.1/wf.yml"
+        )
+        _reject_insecure_download_redirect(
+            "http://127.0.0.2/source.yml", "http://127.255.255.254/wf.yml"
         )
 
     def test_add_from_url_passes_redirect_validator(self, project_dir, monkeypatch):

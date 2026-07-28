@@ -392,8 +392,14 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
             )
         return _filter_from_json(value)
 
-    # Parse filter name and argument
-    filter_match = re.match(r"(\w+)\((.+)\)", filter_expr)
+    # Parse filter name and argument. Use fullmatch (not match) so trailing
+    # tokens after the closing paren — e.g. a comparison/boolean operator that
+    # binds looser than the pipe, as in ``count | default(0) > 5`` — are not
+    # silently discarded but fall through to the "unsupported form" ValueError
+    # below, mirroring the strict trailing-token handling of the from_json
+    # branch above. The greedy ``.+`` still handles literal ``)`` and ``|``
+    # inside quoted args.
+    filter_match = re.fullmatch(r"(\w+)\((.+)\)", filter_expr)
     if filter_match:
         fname = filter_match.group(1)
         farg = _evaluate_simple_expression(filter_match.group(2).strip(), namespace)

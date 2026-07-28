@@ -292,6 +292,23 @@ class TestResolveGitHubReleaseAssetApiUrl:
         assert result is None
         assert called == []
 
+    def test_returns_none_on_malformed_host(self):
+        """A malformed authority (e.g. an invalid bracketed IPv6 host) returns
+        None, not a ValueError (contract: resolve or return None, never raise)."""
+        called = []
+
+        def open_never(url, timeout=None, extra_headers=None):
+            called.append(url)
+            raise AssertionError("open_url_fn must not be called")
+
+        result = resolve_github_release_asset_api_url(
+            "https://[not-an-ip]/o/r/releases/download/v1/ext.zip",
+            open_never,
+            github_hosts=("ghes.example",),
+        )
+        assert result is None
+        assert called == []
+
     def test_passthrough_for_unlisted_ghes_api_asset_url(self):
         """A direct GHES /api/v3 asset URL passes through even when the host is
         not allowlisted: passthrough issues no API request, and the download

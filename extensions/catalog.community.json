@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-21T00:00:00Z",
+  "updated_at": "2026-07-27T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -290,8 +290,8 @@
       "id": "architecture-guard",
       "description": "Framework-agnostic architecture review extension for validating implementation against governance and architecture constitutions, detecting architectural drift, and generating non-blocking refactor tasks.",
       "author": "DyanGalih",
-      "version": "1.8.17",
-      "download_url": "https://github.com/DyanGalih/spec-kit-architecture-guard/archive/refs/tags/v1.8.17.zip",
+      "version": "1.13.1",
+      "download_url": "https://github.com/DyanGalih/spec-kit-architecture-guard/archive/refs/tags/v1.13.1.zip",
       "repository": "https://github.com/DyanGalih/spec-kit-architecture-guard",
       "homepage": "https://github.com/DyanGalih/spec-kit-architecture-guard",
       "documentation": "https://github.com/DyanGalih/spec-kit-architecture-guard/blob/main/docs/architecture-overview.md",
@@ -303,7 +303,7 @@
         "speckit_version": ">=0.1.0"
       },
       "provides": {
-        "commands": 10,
+        "commands": 14,
         "hooks": 3
       },
       "tags": [
@@ -313,13 +313,14 @@
         "refactor",
         "workflow",
         "governance",
-        "guardrails"
+        "guardrails",
+        "hygiene"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-05T07:26:00Z",
-      "updated_at": "2026-06-08T00:00:00Z"
+      "updated_at": "2026-07-24T00:00:00Z"
     },
     "archive": {
       "name": "Archive Extension",
@@ -488,6 +489,46 @@
       "stars": 0,
       "created_at": "2026-04-17T00:00:00Z",
       "updated_at": "2026-04-17T00:00:00Z"
+    },
+    "blueprint-index": {
+      "name": "Blueprint Index — Living Architecture Map",
+      "id": "blueprint-index",
+      "description": "Living architecture map for brownfield and greenfield projects, with a deterministic CI gate that blocks contradictions between the map, specs, and code while warning on non-blocking drift.",
+      "author": "ogil109",
+      "version": "0.2.0",
+      "download_url": "https://github.com/ogil109/spec-kit-blueprint/releases/download/v0.2.0/blueprint.zip",
+      "repository": "https://github.com/ogil109/spec-kit-blueprint",
+      "homepage": "https://github.com/ogil109/spec-kit-blueprint/tree/main",
+      "documentation": "https://github.com/ogil109/spec-kit-blueprint/blob/main/README.md",
+      "changelog": "https://github.com/ogil109/spec-kit-blueprint/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.10.0",
+        "tools": [
+          { "name": "bash", "required": false },
+          { "name": "git", "required": false }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 0
+      },
+      "tags": [
+        "blueprint",
+        "architecture",
+        "coherence",
+        "drift",
+        "brownfield",
+        "autonomous",
+        "ci"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-24T00:00:00Z",
+      "updated_at": "2026-07-24T00:00:00Z"
     },
     "branch-convention": {
       "name": "Branch Convention",
@@ -1578,8 +1619,8 @@
       "id": "gates",
       "description": "Deterministic quality enforcement for Spec Kit across agent hooks, git checks, and CI pipelines with one policy file and one verify entrypoint for identical results at every boundary.",
       "author": "schwichtgit",
-      "version": "0.3.2",
-      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.3.2/gates-0.3.2.zip",
+      "version": "0.3.3",
+      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.3.3/gates-0.3.3.zip",
       "repository": "https://github.com/schwichtgit/spec-gates",
       "homepage": "https://github.com/schwichtgit/spec-gates",
       "documentation": "https://github.com/schwichtgit/spec-gates/blob/main/docs/how-it-works.md",
@@ -1623,7 +1664,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-09T00:00:00Z",
-      "updated_at": "2026-07-15T00:00:00Z"
+      "updated_at": "2026-07-27T00:00:00Z"
     },
     "github-issues": {
       "name": "GitHub Issues Integration 1",
@@ -2034,11 +2075,11 @@
       "id": "linear-weave",
       "description": "Weave Spec Kit into Linear: pull requirements, mirror tasks.md into sub-issues, sync statuses.",
       "author": "Tony Woodhouse",
-      "version": "1.0.0",
-      "download_url": "https://github.com/tonydwoodhouse/spec-kit-linear-weave/archive/refs/tags/v1.0.0.zip",
+      "version": "1.0.1",
+      "download_url": "https://github.com/tonydwoodhouse/spec-kit-linear-weave/archive/refs/tags/v1.0.1.zip",
       "repository": "https://github.com/tonydwoodhouse/spec-kit-linear-weave",
       "homepage": "https://github.com/tonydwoodhouse/spec-kit-linear-weave",
-      "documentation": "https://github.com/tonydwoodhouse/spec-kit-linear-weave#readme",
+      "documentation": "https://github.com/tonydwoodhouse/spec-kit-linear-weave/blob/main/README.md",
       "changelog": "https://github.com/tonydwoodhouse/spec-kit-linear-weave/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "integration",
@@ -2061,7 +2102,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-21T00:00:00Z",
-      "updated_at": "2026-07-21T00:00:00Z"
+      "updated_at": "2026-07-27T00:00:00Z"
     },
     "loop": {
       "name": "Loop Engineering",
@@ -4777,36 +4818,40 @@
     "verify-review-ship": {
       "name": "Verify Review Ship",
       "id": "verify-review-ship",
-      "description": "Adds post-implementation verify, review, and ship readiness gates to Spec Kit workflows.",
+      "description": "Post-convergence operational verification, technical review, learning governance, and transactional delivery.",
       "author": "Carlos Eduardo Gevaerd Araujo",
-      "version": "0.1.0",
-      "download_url": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/archive/refs/tags/v0.1.0.zip",
+      "version": "0.4.1",
+      "download_url": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/archive/refs/tags/v0.4.1.zip",
+      "sha256": "cfa89b405fcf4857745653e923dfab92f101fbdda15e1e8757ad9f2ea55ae5e2",
       "repository": "https://github.com/cadugevaerd/spec-kit-verify-review-ship",
       "homepage": "https://github.com/cadugevaerd/spec-kit-verify-review-ship",
       "documentation": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/blob/main/README.md",
       "changelog": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "process",
-      "effect": "read-only",
+      "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=0.11.2"
       },
       "provides": {
         "commands": 3,
-        "hooks": 1
+        "hooks": 0
       },
       "tags": [
         "quality",
         "review",
         "shipping",
-        "workflow",
-        "testing"
+        "merge",
+        "cleanup",
+        "learning",
+        "governance",
+        "agent-skills"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-10T00:00:00Z",
-      "updated_at": "2026-07-10T00:00:00Z"
+      "updated_at": "2026-07-27T00:00:00Z"
     },
     "verify-tasks": {
       "name": "Verify Tasks Extension",

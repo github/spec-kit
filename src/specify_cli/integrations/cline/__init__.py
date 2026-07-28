@@ -138,8 +138,14 @@ class ClineIntegration(MarkdownIntegration):
             content,
         )
 
-    def post_process_content(self, content: str) -> str:
-        """Apply Cline-specific transformations to command content."""
+    def post_process_command_content(self, content: str) -> str:
+        """Apply Cline-specific transformations to command content.
+
+        Overrides the ``IntegrationBase`` hook of the same name so that
+        ``CommandRegistrar.register_commands()`` (which dispatches to
+        ``post_process_command_content``) applies these transforms to
+        extension/preset command files too, not just core commands.
+        """
         updated = self._inject_hook_command_note(content)
         updated = self._rewrite_handoff_references(updated)
         return updated
@@ -169,7 +175,7 @@ class ClineIntegration(MarkdownIntegration):
             content_bytes = path.read_bytes()
             content = content_bytes.decode("utf-8")
 
-            updated = self.post_process_content(content)
+            updated = self.post_process_command_content(content)
 
             if updated != content:
                 path.write_bytes(updated.encode("utf-8"))

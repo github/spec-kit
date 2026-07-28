@@ -2,6 +2,81 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.14.2] - 2026-07-24
+
+### Changed
+
+- Update Intake Review Governance preset to v0.1.1 (#3729)
+- Update Verify Review Ship extension to v0.3.0 (#3728)
+- Update Architecture Guard extension to v1.13.1 (#3724)
+- docs(upgrade): Claude Code files live in .claude/skills, not .claude/commands (#3708)
+- fix(kilocode): install commands under .kilo/commands (#3672)
+- fix(auth): normalize whitespace in auth-config env-var/id references at store time (#3691)
+- fix(workflows): guard non-mapping 'inputs:' block in engine._resolve_inputs (#3696)
+- Update Intake Authoring Governance preset to v0.2.0 (#3721)
+- docs: clarify shell-step interpolation safety (#3719)
+- [extension] Add Blueprint Index — Living Architecture Map extension to community catalog (#3718)
+- fix(github-http): return None on malformed host in resolve_github_release_asset_api_url (#3715)
+- fix(integrations): declare PiIntegration multi_install_safe (#3652)
+- harden: remove shell parameter from run_command() (#3716)
+- chore(deps): bump github/codeql-action/init from 4.37.1 to 4.37.3 (#3699)
+- fix: auto-correct conflicting feature prefixes (#1829)
+- chore(deps): bump actions/checkout from 6.0.3 to 7.0.1 (#3703)
+- chore(deps): bump DavidAnson/markdownlint-cli2-action (#3702)
+- chore(deps): bump actions/setup-node from 6.4.0 to 7.0.0 (#3701)
+- chore(deps): bump astral-sh/setup-uv from 8.3.2 to 9.0.0 (#3700)
+- chore: release 0.14.1, begin 0.14.2.dev0 development (#3698)
+
+## [0.14.1] - 2026-07-23
+
+### Changed
+
+- Update Agent Parity Governance preset to v0.4.0 (#3697)
+- fix(bundler): InstallResult.changed counts uninstalled as a change (#3692)
+- [preset] Update Cross-Platform Governance preset to v0.2.1 (#3695)
+- Update A11Y Governance preset to v0.4.1 (#3693)
+- fix(workflows): escape step-graph brackets in `workflow info` so the type shows (#3690)
+- fix(workflows): filter parser rejects trailing tokens (fullmatch, not match) (#3689)
+- Update iSAQB Architecture Governance preset to v0.2.1 (#3687)
+- fix(extensions): parse SKILL.md on the --- delimiter line during removal (#3634)
+- fix(cli): guard lazy .hostname ValueError in extension/preset add --from (#3651)
+- Update Architecture Governance preset to v0.5.1 (#3686)
+- fix(bundler): reject a top-level non-mapping bundle-catalogs.yml in _merge_config (#3659)
+- Update Security Governance preset to v0.6.1 (#3685)
+- fix(integrations): declare OmpIntegration multi_install_safe (#3650)
+- feat(git-extension): add configurable Conventional Commit support (#3390) (#3413)
+- fix(extensions): hyphenate command names in the Forge post-install listing (#3669)
+- fix(bundler): reject falsy non-mapping requires/provides in CatalogEntry.from_dict (#3667)
+- fix(bundler): reject falsy non-list bundles/contributed_components in records (#3666)
+- Update Intake Authoring Governance preset to v0.1.1 (#3678)
+- docs(extensions): clarify agent-context README and add config examples (#3389)
+- chore: release 0.14.0, begin 0.14.1.dev0 development (#3677)
+
+## [0.14.0] - 2026-07-23
+
+### Changed
+
+- docs: add spec-kit-copilot to community friends (#3675)
+- fix(integrations): recompute invoke_separator from retained parsed_options (#3664)
+- fix(workflows): preserve intra-overlay order for multiple insert_after edits (#3662)
+- fix(bundler): reject falsy non-mapping requires/provides in manifest from_dict (#3661)
+- fix(bundler): dump_yaml writes literal UTF-8 (allow_unicode=True) (#3660)
+- fix(integrations): declare kiro-cli multi-install safe (#3477)
+- fix(git-extension): trim trailing whitespace before stripping commit-message quotes (#3673)
+- fix(bundler): order bundle members by canonical POSIX arcname (reproducible builds) (#3658)
+- fix(integrations): Cline overrides post_process_command_content (correct hook name) (#3657)
+- docs(workflows): gate step docstring lists the 'retry' on_reject behaviour (#3656)
+- fix: harden bounded reads and redirect validation (#3671)
+- fix(packaging): bundle scripts/python into the wheel core_pack (#3665) (#3670)
+- fix: bundle scripts/python in wheel so --script py works (#3665) (#3668)
+- docs(workflows): init step docstring lists the 'py' script type (#3655)
+- fix(integrations): declare LingmaIntegration multi_install_safe (#3654)
+- fix: guard constitution command against feature execution (#3646)
+- Fix duplicate step numbering in specify command (#3647)
+- docs(scripts): document the 'py' script type and sh/ps migration plan (#3284) (#3653)
+- harden: bound HTTP reads and enforce strict redirects (#3140)
+- chore: release 0.13.4, begin 0.13.5.dev0 development (#3649)
+
 ## [0.13.4] - 2026-07-22
 
 ### Changed
