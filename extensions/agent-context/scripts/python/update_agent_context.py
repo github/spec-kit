@@ -11,8 +11,8 @@ Usage: update_agent_context.py [plan_path]
 
 When ``plan_path`` is omitted, the script derives it from
 ``.specify/feature.json`` (written by /speckit-specify). Falls back to the most
-recently modified ``plan.md`` anywhere under ``specs/`` (including nested scoped
-layouts such as ``specs/<scope>/<feature>/plan.md``) only when feature.json is
+recently modified ``plan.md`` found anywhere under ``specs/`` — scoped layouts
+nest it as ``specs/<scope>/<feature>/plan.md`` — only when feature.json is
 absent or its plan does not exist yet.
 """
 
