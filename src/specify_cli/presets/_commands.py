@@ -292,8 +292,13 @@ def preset_search(
 
     console.print(f"\n[bold cyan]Presets ({len(results)} found):[/bold cyan]\n")
     for pack in results:
-        console.print(f"  [bold]{pack.get('name', pack['id'])}[/bold] ({pack['id']}) v{pack.get('version', '?')}")
-        console.print(f"    {pack.get('description', '')}")
+        name = _escape_markup(str(pack.get("name", pack["id"])))
+        pack_id = _escape_markup(str(pack["id"]))
+        version = _escape_markup(str(pack.get("version", "?")))
+        console.print(f"  [bold]{name}[/bold] ({pack_id}) v{version}")
+        console.print(
+            f"    {_escape_markup(str(pack.get('description', '')))}"
+        )
         tags = pack.get("tags", [])
         if isinstance(tags, list) and tags:
             tags_str = _escape_markup(", ".join(str(t) for t in tags))
@@ -375,6 +380,7 @@ def preset_info(
     from . import PresetCatalog, PresetManager, PresetError
 
     project_root = _require_specify_project()
+    safe_preset_id = _escape_markup(str(preset_id))
     # Check if installed locally first
     manager = PresetManager(project_root)
     local_pack = manager.get_pack(preset_id)
@@ -417,21 +423,32 @@ def preset_info(
         console.print(f"[red]Error:[/red] Preset '{preset_id}' not found (not installed and not in catalog)")
         raise typer.Exit(1)
 
-    console.print(f"\n[bold cyan]Preset: {pack_info.get('name', preset_id)}[/bold cyan]\n")
-    console.print(f"  ID:          {pack_info['id']}")
-    console.print(f"  Version:     {pack_info.get('version', '?')}")
-    console.print(f"  Description: {pack_info.get('description', '')}")
+    name = _escape_markup(str(pack_info.get("name", preset_id)))
+    console.print(f"\n[bold cyan]Preset: {name}[/bold cyan]\n")
+    console.print(f"  ID:          {_escape_markup(str(pack_info['id']))}")
+    console.print(
+        f"  Version:     {_escape_markup(str(pack_info.get('version', '?')))}"
+    )
+    console.print(
+        f"  Description: {_escape_markup(str(pack_info.get('description', '')))}"
+    )
     if pack_info.get("author"):
-        console.print(f"  Author:      {pack_info['author']}")
+        console.print(
+            f"  Author:      {_escape_markup(str(pack_info['author']))}"
+        )
     catalog_tags = pack_info.get("tags", [])
     if isinstance(catalog_tags, list) and catalog_tags:
         console.print(f"  Tags:        {', '.join(str(t) for t in catalog_tags)}")
     if pack_info.get("repository"):
-        console.print(f"  Repository:  {pack_info['repository']}")
+        console.print(
+            f"  Repository:  {_escape_markup(str(pack_info['repository']))}"
+        )
     if pack_info.get("license"):
-        console.print(f"  License:     {pack_info['license']}")
+        console.print(
+            f"  License:     {_escape_markup(str(pack_info['license']))}"
+        )
     console.print("\n  [yellow]Status: not installed[/yellow]")
-    console.print(f"  Install with: [cyan]specify preset add {preset_id}[/cyan]")
+    console.print(f"  Install with: [cyan]specify preset add {safe_preset_id}[/cyan]")
     console.print()
 
 
