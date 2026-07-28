@@ -571,16 +571,20 @@
     "parallel-autonomous-run-governance": {
       "name": "Parallel Autonomous Run Governance",
       "id": "parallel-autonomous-run-governance",
-      "version": "0.2.3",
-      "description": "Coordinates isolated autonomous Spec Kit campaigns with bounded concurrency, mixed agents, resumable consolidation, governed post-merge closeout, schema 1.2, and an optional current intake-review gate before worker scheduling.",
+      "version": "0.2.4",
+      "description": "Coordinates permission-bounded autonomous campaigns while preserving the project's learner and accessibility contract across workers and consolidation.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance/archive/refs/tags/v0.2.3.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance/archive/refs/tags/v0.2.4.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance/blob/v0.2.3/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance/blob/v0.2.4/README.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=0.8.3"
+        "speckit_version": ">=0.8.3",
+        "extensions": [
+          "autonomous-run-governance >=0.2.2",
+          "intake-review-governance >=0.1.0"
+        ]
       },
       "provides": {
         "templates": 9,
@@ -591,12 +595,11 @@
         "parallel",
         "autonomous",
         "governance",
-        "orchestration",
-        "resume",
-        "intake-review"
+        "accessibility",
+        "orchestration"
       ],
       "created_at": "2026-07-22T00:00:00Z",
-      "updated_at": "2026-07-22T00:00:00Z"
+      "updated_at": "2026-07-28T00:00:00Z"
     },
     "pirate": {
       "name": "Pirate Speak (Full)",
