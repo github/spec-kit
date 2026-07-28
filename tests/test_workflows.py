@@ -9584,6 +9584,92 @@ steps:
         assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
 
 
+class TestWorkflowStepStartProgressLine:
+    """The `run`/`resume` step-progress line must render the step id literally.
+
+    The line is built as `  ▸ [<id>] <label> …`, so Rich parsed the bracketed id
+    as a style tag: it silently swallowed the id (the only identifying content
+    on the line), applied it as formatting when the id happened to be a real
+    style like `bold`, and raised MarkupError — failing the whole run — when the
+    id formed a closing tag such as `/`. `validate_workflow` places no charset
+    restriction on step ids, so all of these are accepted workflows.
+    """
+
+    def _write(self, tmp_path, step_id):
+        path = tmp_path / "wf.yml"
+        path.write_text(
+            'schema_version: "1.0"\n'
+            "workflow:\n"
+            '  id: "probe-wf"\n'
+            '  name: "Probe"\n'
+            '  version: "1.0.0"\n'
+            "steps:\n"
+            f'  - id: "{step_id}"\n'
+            "    type: shell\n"
+            '    run: "exit 0"\n',
+            encoding="utf-8",
+        )
+        return path
+
+    @pytest.mark.parametrize("step_id", ["greet", "bold", "a]b"])
+    def test_progress_line_shows_step_id(self, tmp_path, monkeypatch, step_id):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(
+            app, ["workflow", "run", str(self._write(tmp_path, step_id))]
+        )
+        assert result.exit_code == 0, result.stdout
+        assert f"[{step_id}]" in result.stdout
+
+    def test_step_id_forming_a_closing_tag_does_not_fail_the_run(
+        self, tmp_path, monkeypatch
+    ):
+        """`id: "/"` raised MarkupError from inside the progress callback, which
+        surfaced as a failed run with no step results."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(
+            app, ["workflow", "run", str(self._write(tmp_path, "/"))]
+        )
+        assert result.exit_code == 0, result.stdout
+        assert "Status: completed" in result.stdout
+        assert "[/]" in result.stdout
+
+    def test_resume_progress_line_shows_step_id(self, tmp_path, monkeypatch):
+        """`workflow resume` installs its own copy of the same callback, so it
+        needs independent coverage — a one-line fix would miss the twin."""
+        import json as _json
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        path = tmp_path / "wf.yml"
+        path.write_text(
+            'schema_version: "1.0"\n'
+            "workflow:\n"
+            '  id: "probe-resume"\n'
+            '  name: "Probe"\n'
+            '  version: "1.0.0"\n'
+            "steps:\n"
+            "  - id: boom\n"
+            "    type: shell\n"
+            '    run: "exit 1"\n',
+            encoding="utf-8",
+        )
+        runner = CliRunner()
+        first = runner.invoke(app, ["workflow", "run", str(path), "--json"])
+        run_id = _json.loads(first.stdout).get("run_id")
+        assert run_id
+
+        resumed = runner.invoke(app, ["workflow", "resume", run_id])
+        assert "[boom]" in resumed.stdout
+
+
 class TestWorkflowRunExitCodes:
     """CLI-level tests for the run/resume process exit codes."""
 

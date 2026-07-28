@@ -1054,7 +1054,18 @@ def workflow_run(
     load_custom_steps(project_root)
     engine = WorkflowEngine(project_root)
     if not json_output:
-        engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
+        # Escape the literal bracket (\[) so Rich renders `[<step id>]` instead
+        # of parsing it as a style tag named after the step id -- which it
+        # silently swallows (losing the only identifying content on the line),
+        # applies as formatting when the id happens to be a real style such as
+        # `bold`, or raises MarkupError when the id forms a closing tag (`/`),
+        # failing the whole run. Escape the interpolated values too, since both
+        # come from workflow YAML. Mirrors the `\[<type>]` step-graph precedent
+        # in workflow_info below.
+        engine.on_step_start = lambda sid, label: console.print(
+            f"  \u25b8 \\[{_escape_markup(str(sid))}] "
+            f"{_escape_markup(str(label))} \u2026"
+        )
 
     err = _error_console(json_output)
 
@@ -1176,7 +1187,18 @@ def workflow_resume(
     load_custom_steps(project_root)
     engine = WorkflowEngine(project_root)
     if not json_output:
-        engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
+        # Escape the literal bracket (\[) so Rich renders `[<step id>]` instead
+        # of parsing it as a style tag named after the step id -- which it
+        # silently swallows (losing the only identifying content on the line),
+        # applies as formatting when the id happens to be a real style such as
+        # `bold`, or raises MarkupError when the id forms a closing tag (`/`),
+        # failing the whole run. Escape the interpolated values too, since both
+        # come from workflow YAML. Mirrors the `\[<type>]` step-graph precedent
+        # in workflow_info below.
+        engine.on_step_start = lambda sid, label: console.print(
+            f"  \u25b8 \\[{_escape_markup(str(sid))}] "
+            f"{_escape_markup(str(label))} \u2026"
+        )
 
     inputs = _parse_input_values(input_values, json_output=json_output)
     err = _error_console(json_output)
