@@ -33,6 +33,13 @@ You **MUST** consider the user input before proceeding (if not empty).
   - Level `5` models are reserved for very few cases (the manager role and rare exceptionally hard tasks).
 - If the file exists but cannot be parsed as JSON, or is missing `manager` or `by_complexity`, STOP and tell the user to re-run `__SPECKIT_COMMAND_MODELS__` to regenerate it.
 
+**Orchestrator dispatch (MANDATORY — applies to every phase below)**:
+- You are the `manager` (communicator) for the whole flow. You never produce artifacts yourself; every phase runs through its own orchestrator dispatch block.
+- When you execute a phase, apply that phase command's dispatch rules: classify each substantive step's level (`5` critical → `1` trivial), look it up in `by_complexity`, and dispatch it to the first candidate through its `executors` entry.
+- Dispatch is optimistic: a failed invocation falls through to the next candidate in that level's list. If every candidate fails, report the attempts and only then continue in-session.
+- Keep in the manager only: phase sequencing, gates, classification, user questions, merging worker output, and reporting.
+- Report per phase which levels were dispatched and to which models, so the user can see the orchestrator working.
+
 **Flag parsing**: extract flags from the user input before using the rest as the feature description:
 
 - `--bypass` — skip the implementation gate ONLY (no stop before implement). It does NOT suppress user questions: every phase still asks the user whatever it needs.

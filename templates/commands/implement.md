@@ -37,6 +37,12 @@ You **MUST** consider the user input before proceeding (if not empty).
   - Level `5` models are reserved for very few cases (manager role, exceptional tasks) — never assign them to routine work.
 - If the file exists but cannot be parsed as JSON, or is missing `manager` or `by_complexity`, STOP and tell the user to re-run `__SPECKIT_COMMAND_MODELS__` to regenerate it.
 
+**Orchestrator dispatch (MANDATORY — applies to every step below)**:
+- You are the `manager` (communicator). You do **not** implement tasks yourself. Every task carries a `[C:n<level>->model]` label; dispatch it to the first candidate of that level in `by_complexity` through its `executors` entry, per the detailed dispatch rules in the execution section.
+- Steps that are not tasks (parsing tasks.md, setup checks, progress reporting) stay in the manager. Any substantive non-task work is classified and dispatched like a task.
+- Dispatch is optimistic: a failed invocation falls through to the next candidate in that level's list. If every candidate fails, report the attempts and only then continue in-session.
+- Report which levels were dispatched and to which models, so the user can see the orchestrator working.
+
 **Check for extension hooks (before implementation)**:
 - Check if `.specify/extensions.yml` exists in the project root.
 - If it exists, read it and look for entries under the `hooks.before_implement` key
