@@ -207,7 +207,7 @@ class IntegrationCatalog(CatalogStackBase):
                         max_bytes=MAX_JSON_METADATA_BYTES,
                         error_type=IntegrationCatalogError,
                         label=f"catalog from {entry.url}",
-                    )
+                    ).decode("utf-8")
                 )
 
             shape_error = _catalog_shape_error(catalog_data)
