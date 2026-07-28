@@ -598,7 +598,7 @@ class CommandRegistrar:
         source_dir: Path,
         project_root: Path,
         context_note: Optional[str] = None,
-        _resolved_dir: Path = None,
+        _resolved_dir: Optional[Path] = None,
         link_outputs: bool = False,
         extension_id: Optional[str] = None,
     ) -> List[str]:
