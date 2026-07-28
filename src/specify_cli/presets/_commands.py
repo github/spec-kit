@@ -60,8 +60,9 @@ def preset_list():
         pri = pack.get('priority', 10)
         console.print(f"  [bold]{pack['name']}[/bold] ({pack['id']}) v{pack['version']} — {status} — priority {pri}")
         console.print(f"    {pack['description']}")
-        if pack.get("tags"):
-            tags_str = _escape_markup(", ".join(str(t) for t in pack["tags"]))
+        tags = pack.get("tags", [])
+        if isinstance(tags, list) and tags:
+            tags_str = _escape_markup(", ".join(str(t) for t in tags))
             console.print(f"    [dim]Tags: {tags_str}[/dim]")
         console.print(f"    [dim]Templates: {pack['template_count']}[/dim]")
         console.print()
@@ -287,8 +288,9 @@ def preset_search(
     for pack in results:
         console.print(f"  [bold]{pack.get('name', pack['id'])}[/bold] ({pack['id']}) v{pack.get('version', '?')}")
         console.print(f"    {pack.get('description', '')}")
-        if pack.get("tags"):
-            tags_str = ", ".join(str(t) for t in pack["tags"])
+        tags = pack.get("tags", [])
+        if isinstance(tags, list) and tags:
+            tags_str = _escape_markup(", ".join(str(t) for t in tags))
             console.print(f"    [dim]Tags: {tags_str}[/dim]")
         console.print()
 
@@ -378,8 +380,9 @@ def preset_info(
         console.print(f"  Description: {local_pack.description}")
         if local_pack.author:
             console.print(f"  Author:      {local_pack.author}")
-        if local_pack.tags:
-            console.print(f"  Tags:        {', '.join(str(t) for t in local_pack.tags)}")
+        local_tags = local_pack.tags
+        if isinstance(local_tags, list) and local_tags:
+            console.print(f"  Tags:        {', '.join(str(t) for t in local_tags)}")
         console.print(f"  Templates:   {len(local_pack.templates)}")
         for tmpl in local_pack.templates:
             console.print(f"    - {tmpl['name']} ({tmpl['type']}): {tmpl.get('description', '')}")
@@ -414,8 +417,9 @@ def preset_info(
     console.print(f"  Description: {pack_info.get('description', '')}")
     if pack_info.get("author"):
         console.print(f"  Author:      {pack_info['author']}")
-    if pack_info.get("tags"):
-        console.print(f"  Tags:        {', '.join(str(t) for t in pack_info['tags'])}")
+    catalog_tags = pack_info.get("tags", [])
+    if isinstance(catalog_tags, list) and catalog_tags:
+        console.print(f"  Tags:        {', '.join(str(t) for t in catalog_tags)}")
     if pack_info.get("repository"):
         console.print(f"  Repository:  {pack_info['repository']}")
     if pack_info.get("license"):

@@ -4500,23 +4500,34 @@ class PresetCatalog:
         results = []
 
         for pack_id, pack_data in packs.items():
-            if author and pack_data.get("author", "").lower() != author.lower():
-                continue
+            if author:
+                author_val = pack_data.get("author", "")
+                if not isinstance(author_val, str):
+                    author_val = str(author_val) if author_val is not None else ""
+                if author_val.lower() != author.lower():
+                    continue
 
-            if tag and tag.lower() not in [
-                str(t).lower() for t in pack_data.get("tags", [])
-            ]:
-                continue
+            if tag:
+                raw_tags = pack_data.get("tags", [])
+                tags_list = raw_tags if isinstance(raw_tags, list) else []
+                if tag.lower() not in [
+                    str(t).lower() for t in tags_list
+                ]:
+                    continue
 
             if query:
                 query_lower = query.lower()
+                raw_tags = pack_data.get("tags", [])
+                tags_list = raw_tags if isinstance(raw_tags, list) else []
+                name_val = pack_data.get("name", "")
+                desc_val = pack_data.get("description", "")
                 searchable_text = " ".join(
                     [
-                        pack_data.get("name", ""),
-                        pack_data.get("description", ""),
+                        str(name_val) if name_val else "",
+                        str(desc_val) if desc_val else "",
                         pack_id,
                     ]
-                    + [str(t) for t in pack_data.get("tags", [])]
+                    + [str(t) for t in tags_list]
                 ).lower()
 
                 if query_lower not in searchable_text:
