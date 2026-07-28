@@ -2,7 +2,6 @@
   "schema_version": "1.0",
   "updated_at": "2026-07-28T00:00:00Z",
 
-
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
