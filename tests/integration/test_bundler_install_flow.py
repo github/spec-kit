@@ -491,3 +491,16 @@ def test_update_keeps_component_still_needed_by_sibling_bundle(tmp_path: Path):
     assert ("extensions", "ext-b") not in {
         (c.kind, c.id) for c in rec.contributed_components
     }
+
+
+def test_install_result_changed_reports_uninstalled():
+    # A `bundle update` that only DROPS components (new manifest reduces
+    # provides) populates uninstalled with nothing installed/refreshed; that is
+    # still a mutating change, so `changed` must be True — not a false no-op.
+    from specify_cli.bundler.services.installer import InstallResult
+    from specify_cli.bundler.models.manifest import ComponentRef
+
+    result = InstallResult(bundle_id="x")
+    assert result.changed is False  # empty == no change
+    result.uninstalled.append(ComponentRef(kind="presets", id="p1"))
+    assert result.changed is True

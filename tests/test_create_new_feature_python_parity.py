@@ -53,6 +53,60 @@ def repo_pair(tmp_path: Path) -> tuple[Path, Path]:
     return _setup_repo(tmp_path, "proj-a"), _setup_repo(tmp_path, "proj-b")
 
 
+def _run_all_variants_allow_existing(
+    repo: Path, *, number: str, short_name: str
+):
+    """Run each create-new-feature variant with the allow-existing options."""
+    common_args = (
+        "--json",
+        "--dry-run",
+        "--number",
+        number,
+        "--allow-existing-branch",
+        "--short-name",
+        short_name,
+        "x",
+    )
+    bash = run(bash_cmd(repo, SCRIPT, *common_args), repo)
+    py = run(py_cmd(repo, SCRIPT, *common_args), repo)
+    ps = run(
+        ps_cmd(
+            repo,
+            SCRIPT,
+            "-Json",
+            "-DryRun",
+            "-Number",
+            number,
+            "-AllowExistingBranch",
+            "-ShortName",
+            short_name,
+            "x",
+        ),
+        repo,
+    )
+    return bash, ps, py
+
+
+def test_python_prefix_scan_tolerates_permission_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Python matches shell variants when a spec directory cannot be listed."""
+    specs_dir = tmp_path / "specs"
+    specs_dir.mkdir()
+
+    def deny_listing(_path: Path):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(Path, "iterdir", deny_listing)
+
+    assert not create_new_feature._has_spec_prefix_conflict(
+        specs_dir,
+        "001",
+        specs_dir / "001-x",
+        allow_existing=False,
+    )
+
+
 @requires_bash
 @pytest.mark.parametrize(
     "description",
@@ -355,7 +409,7 @@ def test_python_missing_template_warning_matches_bash(
 
 
 @requires_bash
-def test_python_existing_directory_error_matches_bash(
+def test_python_existing_prefix_auto_correct_matches_bash(
     repo_pair: tuple[Path, Path],
 ) -> None:
     repo_a, repo_b = repo_pair
@@ -377,8 +431,8 @@ def test_python_existing_directory_error_matches_bash(
     bash = run(bash_cmd(repo_a, SCRIPT, "--json", "--number", "1", description), repo_a)
     py = run(py_cmd(repo_b, SCRIPT, "--json", "--number", "1", description), repo_b)
 
-    assert py.returncode == bash.returncode == 1
-    assert py.stdout == bash.stdout == ""
+    assert py.returncode == bash.returncode == 0
+    assert json_stdout(py)["FEATURE_NUM"] == json_stdout(bash)["FEATURE_NUM"] == "002"
     assert normalize_repo_paths(py.stderr, repo_b) == normalize_repo_paths(
         bash.stderr, repo_a
     )
@@ -531,6 +585,11 @@ def test_all_variants_reject_signed_number(repo: Path, number: str) -> None:
 def test_all_variants_treat_empty_number_as_omitted(
     repo: Path, timestamp: bool
 ) -> None:
+    if not timestamp:
+        specs_dir = repo / "specs"
+        (specs_dir / "20260318-sequential").mkdir(parents=True)
+        (specs_dir / "20260319-143022-timestamp").mkdir()
+
     bash_args = ["--json", "--dry-run", "--number", ""]
     ps_args = ["-Json", "-DryRun", "-Number", ""]
     py_args = ["--json", "--dry-run", "--number", ""]
@@ -819,19 +878,92 @@ def test_all_variants_allow_existing_branch(repo: Path) -> None:
 
 @requires_bash
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
-def test_all_variants_existing_directory_failure_diagnostics(repo: Path) -> None:
-    (repo / "specs" / "001-x").mkdir(parents=True)
-    expected = (
-        "Error: Feature directory '<REPO>/specs/001-x' already exists. "
-        "Please use a different feature name or specify a different number "
-        "with --number."
+def test_all_variants_allow_existing_prefers_exact_dir_over_sibling(
+    repo: Path,
+) -> None:
+    """Allow-existing preserves exact reuse even when a sibling shares its prefix."""
+    (repo / "specs" / "004-pre-exist").mkdir(parents=True)
+    (repo / "specs" / "004-other").mkdir()
+
+    bash, ps, py = _run_all_variants_allow_existing(
+        repo, number="4", short_name="pre-exist"
     )
 
-    bash = run(bash_cmd(repo, SCRIPT, "--json", "--number", "1", "x"), repo)
-    ps = run(ps_cmd(repo, SCRIPT, "-Json", "-Number", "1", "x"), repo)
-    py = run(py_cmd(repo, SCRIPT, "--json", "--number", "1", "x"), repo)
+    assert bash.returncode == ps.returncode == py.returncode == 0
+    assert json_stdout(bash) == json_stdout(ps) == json_stdout(py)
+    assert json_stdout(py)["BRANCH_NAME"] == "004-pre-exist"
+    for result in (bash, ps, py):
+        assert "conflicts with an existing spec directory" not in result.stderr
 
-    assert bash.returncode == ps.returncode == py.returncode == 1
-    assert bash.stdout == ps.stdout == py.stdout == ""
+
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_all_variants_allow_existing_reuses_truncated_exact_dir(repo: Path) -> None:
+    """Allow-existing compares the canonical truncated feature directory name."""
+    short_name = "a" * 300
+    expected_branch = f"001-{'a' * 240}"
+    (repo / "specs" / expected_branch).mkdir(parents=True)
+
+    bash, ps, py = _run_all_variants_allow_existing(
+        repo, number="1", short_name=short_name
+    )
+
+    assert bash.returncode == ps.returncode == py.returncode == 0
+    assert json_stdout(bash) == json_stdout(ps) == json_stdout(py)
+    assert json_stdout(py)["BRANCH_NAME"] == expected_branch
+    for result in (bash, ps, py):
+        assert "conflicts with an existing spec directory" not in result.stderr
+
+
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_all_variants_existing_prefix_auto_correct_diagnostics(repo: Path) -> None:
+    (repo / "specs" / "001-x").mkdir(parents=True)
+    expected = "conflicts with an existing spec directory; using 002 instead"
+
+    bash = run(
+        bash_cmd(repo, SCRIPT, "--json", "--dry-run", "--number", "1", "x"),
+        repo,
+    )
+    ps = run(
+        ps_cmd(repo, SCRIPT, "-Json", "-DryRun", "-Number", "1", "x"),
+        repo,
+    )
+    py = run(
+        py_cmd(repo, SCRIPT, "--json", "--dry-run", "--number", "1", "x"),
+        repo,
+    )
+
+    assert bash.returncode == ps.returncode == py.returncode == 0
+    assert json_stdout(bash) == json_stdout(ps) == json_stdout(py)
     for result in (bash, ps, py):
         assert expected in _normalized_error_text(result.stderr, repo)
+
+
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_all_variants_corrected_prefix_skips_timestamp_collision(repo: Path) -> None:
+    """Auto-correction skips candidates owned by timestamp directories."""
+    specs_dir = repo / "specs"
+    (specs_dir / "001-existing").mkdir(parents=True)
+    (specs_dir / "20260318-sequential").mkdir()
+    (specs_dir / "20260319-143022-timestamp").mkdir()
+
+    bash = run(
+        bash_cmd(repo, SCRIPT, "--json", "--dry-run", "--number", "1", "x"),
+        repo,
+    )
+    ps = run(
+        ps_cmd(repo, SCRIPT, "-Json", "-DryRun", "-Number", "1", "x"),
+        repo,
+    )
+    py = run(
+        py_cmd(repo, SCRIPT, "--json", "--dry-run", "--number", "1", "x"),
+        repo,
+    )
+
+    assert bash.returncode == ps.returncode == py.returncode == 0
+    assert json_stdout(bash) == json_stdout(ps) == json_stdout(py)
+    assert json_stdout(py)["FEATURE_NUM"] == "20260320"
+    for result in (bash, ps, py):
+        assert "using 20260320 instead" in result.stderr

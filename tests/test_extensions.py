@@ -1103,6 +1103,52 @@ class TestExtensionManager:
         assert (ext_dir / "extension.yml").exists()
         assert (ext_dir / "commands" / "hello.md").exists()
 
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX execute bits are not meaningful on Windows"
+    )
+    def test_install_restores_execute_bit_on_shipped_scripts(
+        self, extension_dir, project_dir
+    ):
+        """Every install route restores execute bits on shipped POSIX scripts.
+
+        ``install_from_directory`` is the single sink all routes funnel through
+        (``install_from_zip`` delegates to it; ``extension add``, ``extension
+        update``, and bundle installs all call these two methods). copytree /
+        zipfile.extractall do not restore a stripped Unix mode, so a shipped
+        ``*.sh`` would land non-executable and a documented
+        ``.specify/extensions/<id>/scripts/...`` invocation would fail with
+        "Permission denied". Guards that every route restores the bit; fails
+        without the ensure_executable_scripts() call in install_from_directory.
+        """
+        import zipfile
+        import tempfile
+
+        scripts = extension_dir / "scripts"
+        scripts.mkdir()
+        script = scripts / "gate.sh"
+        script.write_text("#!/usr/bin/env bash\necho hi\n")
+        script.chmod(0o644)  # non-executable, as extractall/copytree may leave it
+
+        installed = (
+            project_dir / ".specify" / "extensions" / "test-ext" / "scripts" / "gate.sh"
+        )
+        manager = ExtensionManager(project_dir)
+
+        # Route 1 — install_from_directory (extension add --dev, bundle dir install)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+        assert os.access(installed, os.X_OK), "directory install left script non-executable"
+
+        # Route 2 — install_from_zip, force=True: the ZIP path (extension add --from,
+        # bundle zip) and the remove-then-reinstall shape of `extension update`.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zip_path = Path(tmpdir) / "test-ext.zip"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                for f in extension_dir.rglob("*"):
+                    if f.is_file():
+                        zf.write(f, f.relative_to(extension_dir))
+            manager.install_from_zip(zip_path, "0.1.0", force=True)
+        assert os.access(installed, os.X_OK), "zip/update install left script non-executable"
+
     def test_install_from_directory_explicitly_recovers_active_skills_dir(
         self, extension_dir, project_dir, monkeypatch
     ):
@@ -1151,6 +1197,7 @@ class TestExtensionManager:
             link_outputs=False,
             create_missing_active_skills_dir=False,
             extension_id=None,
+            only_agent=None,
         ):
             captured["create_missing_active_skills_dir"] = (
                 create_missing_active_skills_dir
@@ -4057,6 +4104,91 @@ class TestExtensionCatalog:
         results = catalog.search()
         assert len(results) == 2
 
+    @pytest.mark.parametrize(
+        "downloads",
+        [
+            "1500",          # plain string: crashed the ``:,`` format
+            "[/red]foo",      # unbalanced closing tag: raises MarkupError unescaped
+            "[bold]x[/bold]",  # balanced tags: would silently restyle the output
+        ],
+    )
+    def test_info_renders_non_numeric_downloads(self, downloads):
+        """A non-numeric ``downloads`` from an untrusted catalog must not crash the
+        info renderer — neither with 'Cannot specify ',' with 's'' (the ``:,``
+        format) nor with a Rich MarkupError (the joined stats are markup)."""
+        from unittest.mock import MagicMock
+        from specify_cli.extensions._commands import _print_extension_info
+
+        manager = MagicMock()
+        manager.registry.is_installed.return_value = False
+        ext_info = {
+            "name": "Jira", "id": "jira", "version": "1.0.0",
+            "description": "desc", "downloads": downloads,  # from catalog JSON
+        }
+        # Must not raise ValueError or rich.errors.MarkupError.
+        _print_extension_info(ext_info, manager)
+
+    def test_info_renders_markup_bearing_stars(self):
+        """``stars`` sits in the same joined stats string as ``downloads`` and is
+        equally catalog-controlled, so it must be escaped too."""
+        from unittest.mock import MagicMock
+        from specify_cli.extensions._commands import _print_extension_info
+
+        manager = MagicMock()
+        manager.registry.is_installed.return_value = False
+        ext_info = {
+            "name": "Jira", "id": "jira", "version": "1.0.0",
+            "description": "desc", "stars": "[/red]x",
+        }
+        _print_extension_info(ext_info, manager)  # must not raise MarkupError
+
+    @pytest.mark.parametrize("downloads", ["1500", "[/red]foo"])
+    def test_search_survives_non_numeric_downloads(self, temp_dir, downloads):
+        """`specify extension search` must not abort when a catalog entry's
+        ``downloads`` is a non-numeric string — not with a raw ValueError from the
+        ``:,`` format, nor with a Rich MarkupError from unescaped markup."""
+        import yaml as yaml_module
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        with open(config_path, "w") as f:
+            yaml_module.dump(
+                {"catalogs": [{
+                    "name": "test-catalog",
+                    "url": ExtensionCatalog.DEFAULT_CATALOG_URL,
+                    "priority": 1, "install_allowed": True,
+                }]}, f,
+            )
+
+        catalog = ExtensionCatalog(project_dir)
+        catalog_data = {
+            "schema_version": "1.0",
+            "extensions": {"jira": {
+                "name": "Jira", "id": "jira", "version": "1.0.0",
+                "description": "Jira integration", "author": "x",
+                "tags": ["jira"], "verified": True,
+                "downloads": downloads,  # non-numeric, straight from catalog JSON
+            }},
+        }
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog.cache_file.write_text(json.dumps(catalog_data))
+        catalog.cache_metadata_file.write_text(json.dumps({
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+            "catalog_url": "http://test.com",
+        }))
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "search"], catch_exceptions=True)
+        assert result.exit_code == 0, result.output
+        # Rendered literally (escaped), not interpreted as markup or dropped.
+        assert f"Downloads: {downloads}" in result.output
+
     def test_search_by_query(self, temp_dir):
         """Test searching by query text."""
         import yaml as yaml_module
@@ -4191,6 +4323,136 @@ class TestExtensionCatalog:
         results = catalog.search(tag="issue-tracking")
         assert len(results) == 2
         assert {r["id"] for r in results} == {"jira", "linear"}
+
+    def test_search_tolerates_non_string_tags(self, temp_dir):
+        """Non-string catalog tags must not crash tag/query search.
+
+        Catalog JSON is user-editable, so ``tags`` may contain non-strings
+        (e.g. ``tags: [1, 2]``). The tag filter (``t.lower()``) and the query
+        searchable-text ``" ".join(...)`` both assume strings; a numeric tag
+        must be skipped rather than raising AttributeError/TypeError.
+        """
+        import yaml as yaml_module
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        with open(config_path, "w") as f:
+            yaml_module.dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "test-catalog",
+                            "url": ExtensionCatalog.DEFAULT_CATALOG_URL,
+                            "priority": 1,
+                            "install_allowed": True,
+                        }
+                    ]
+                },
+                f,
+            )
+
+        catalog = ExtensionCatalog(project_dir)
+
+        # Mixed string / non-string tags, mirroring hand-edited catalog JSON.
+        catalog_data = {
+            "schema_version": "1.0",
+            "extensions": {
+                "jira": {
+                    "name": "Jira",
+                    "id": "jira",
+                    "version": "1.0.0",
+                    "description": "Jira",
+                    "tags": ["issue-tracking", 1, 2],
+                },
+            },
+        }
+
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog.cache_file.write_text(json.dumps(catalog_data))
+        catalog.cache_metadata_file.write_text(
+            json.dumps(
+                {
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                    "catalog_url": "http://test.com",
+                }
+            )
+        )
+
+        # Tag filter: numeric tags skipped, string tag still matches.
+        results = catalog.search(tag="issue-tracking")
+        assert {r["id"] for r in results} == {"jira"}
+
+        # Query search: numeric tags skipped, no crash, string fields match.
+        results = catalog.search(query="jira")
+        assert {r["id"] for r in results} == {"jira"}
+
+    def test_search_tolerates_non_string_author_and_name(self, temp_dir):
+        """Non-string catalog author/name must not crash author/query search.
+
+        Catalog JSON is user-editable, so ``author`` and ``name`` may be
+        non-strings. The author filter (``.lower()``) and the query
+        searchable-text ``" ".join(...)`` both assume strings; a numeric
+        value must be coerced rather than raising AttributeError/TypeError.
+        """
+        import yaml as yaml_module
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        with open(config_path, "w") as f:
+            yaml_module.dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "test-catalog",
+                            "url": ExtensionCatalog.DEFAULT_CATALOG_URL,
+                            "priority": 1,
+                            "install_allowed": True,
+                        }
+                    ]
+                },
+                f,
+            )
+
+        catalog = ExtensionCatalog(project_dir)
+
+        # Numeric author/name, mirroring hand-edited catalog JSON.
+        catalog_data = {
+            "schema_version": "1.0",
+            "extensions": {
+                "jira": {
+                    "name": 123,
+                    "id": "jira",
+                    "version": "1.0.0",
+                    "description": "Jira",
+                    "author": 456,
+                },
+            },
+        }
+
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog.cache_file.write_text(json.dumps(catalog_data))
+        catalog.cache_metadata_file.write_text(
+            json.dumps(
+                {
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                    "catalog_url": "http://test.com",
+                }
+            )
+        )
+
+        # Author filter: non-string author coerced, no AttributeError.
+        results = catalog.search(author="456")
+        assert {r["id"] for r in results} == {"jira"}
+
+        # Query search: non-string name coerced into searchable text.
+        results = catalog.search(query="123")
+        assert {r["id"] for r in results} == {"jira"}
 
     def test_search_verified_only(self, temp_dir):
         """Test searching verified extensions only."""
@@ -6340,6 +6602,50 @@ class TestExtensionAddCLI:
         else:
             assert not agent_file.is_symlink()
 
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX execute bits are not meaningful on Windows"
+    )
+    def test_add_makes_shipped_scripts_executable(self, extension_dir, project_dir):
+        """extension add must restore execute bits on bundled POSIX scripts.
+
+        Archives are unpacked with zipfile.extractall and --dev installs copy the
+        tree; neither restores a stripped Unix mode, so a shipped *.sh can land
+        non-executable and a documented `.specify/extensions/<id>/scripts/...`
+        invocation then fails with "Permission denied". init / migrate /
+        integration-install already call ensure_executable_scripts(); this guards
+        that `extension add` does too.
+        """
+        import stat
+
+        scripts_dir = extension_dir / "scripts"
+        scripts_dir.mkdir()
+        script = scripts_dir / "gate.sh"
+        script.write_text("#!/usr/bin/env bash\necho hi\n")
+        script.chmod(0o644)  # non-executable, as an unpacked/copied script may be
+        assert not os.access(script, os.X_OK)
+
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", str(extension_dir), "--dev"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        installed = (
+            project_dir / ".specify" / "extensions" / "test-ext" / "scripts" / "gate.sh"
+        )
+        assert installed.exists(), result.output
+        assert os.access(installed, os.X_OK), (
+            f"installed script not executable: mode="
+            f"{stat.S_IMODE(installed.stat().st_mode):o}"
+        )
+
     def test_add_dev_writes_codex_skills_as_files(self, extension_dir, project_dir):
         """Codex dev skills should be written as files so Codex can load them."""
         from typer.testing import CliRunner
@@ -6529,6 +6835,55 @@ class TestExtensionAddCLI:
             f"but was called with '{download_called_with[0]}'"
         )
 
+    def test_info_by_name_tolerates_non_string_catalog_name(self, tmp_path):
+        """Display-name resolution must not crash on a non-string catalog name.
+
+        Catalog JSON is user-editable, so ``catalog.search()`` may return an
+        entry whose ``name`` is a non-string (e.g. ``name: 123``). The
+        display-name filter calls ``.lower()`` on it; without coercion this
+        raises ``AttributeError`` and takes down ``extension info``/``add``.
+        The entry with the bad name must simply not match, yielding a clean
+        "not found" rather than a traceback.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch, MagicMock
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".specify" / "extensions").mkdir(parents=True)
+
+        # Catalog search returns an entry with a non-string name.
+        mock_catalog = MagicMock()
+        mock_catalog.get_extension_info.return_value = None  # ID lookup fails
+        mock_catalog.search.return_value = [
+            {
+                "id": "acme-thing",
+                "name": 123,
+                "version": "1.0.0",
+                "description": "A thing",
+                "_install_allowed": True,
+            }
+        ]
+
+        with patch("specify_cli.extensions.ExtensionCatalog", return_value=mock_catalog), \
+             patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "info", "Some Name"],
+                catch_exceptions=True,
+            )
+
+        # Must not crash with AttributeError; the bad-named entry just doesn't
+        # match, so resolution ends as a clean not-found error exit.
+        assert not isinstance(result.exception, AttributeError), (
+            f"non-string catalog name crashed resolution: {result.exception!r}"
+        )
+        assert result.exit_code != 0
+
     def test_add_bundled_extension_not_found_gives_clear_error(self, tmp_path):
         """extension add should give a clear error when a bundled extension is not found locally."""
         from typer.testing import CliRunner
@@ -6629,6 +6984,80 @@ class TestExtensionAddCLI:
         assert result.exception is None or isinstance(result.exception, SystemExit)
         plain = strip_ansi(result.output)
         assert "Invalid URL" in plain
+
+    def test_add_from_bracketed_non_ip_url_exits_cleanly(self, tmp_path):
+        """A bracketed-but-invalid IPv6 host must produce a clean error, not a
+        ValueError traceback. "https://[not-an-ip]/ext.zip" is a malformed
+        authority that raises ValueError during URL validation; the try/except
+        guard around parsing and the .hostname read must turn that into a clean
+        "Invalid URL" message.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "my-ext", "--from", "https://[not-an-ip]/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        plain = strip_ansi(result.output)
+        assert "Invalid URL" in plain
+
+    def test_add_from_url_lazy_hostname_valueerror_exits_cleanly(self, tmp_path, monkeypatch):
+        """Synthetic defensive coverage: monkeypatch urlparse() to return an
+        object whose .hostname raises ValueError lazily. This does not reproduce
+        any specific CPython behavior -- it just exercises the case where the
+        ValueError surfaces on the .hostname read rather than at parse time, so a
+        raw ValueError would leak if .hostname were read outside the try/except.
+        """
+        import urllib.parse
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        real_urlparse = urllib.parse.urlparse
+
+        class _LazyHostnameRaiser:
+            def __init__(self, parsed):
+                self._parsed = parsed
+
+            @property
+            def hostname(self):
+                raise ValueError("simulated lazy IPv6 hostname failure")
+
+            def __getattr__(self, name):
+                return getattr(self._parsed, name)
+
+        def _fake_urlparse(url, *args, **kwargs):
+            return _LazyHostnameRaiser(real_urlparse(url, *args, **kwargs))
+
+        monkeypatch.setattr(urllib.parse, "urlparse", _fake_urlparse)
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "my-ext", "--from", "https://example.com/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Invalid URL" in strip_ansi(result.output)
 
     def test_add_status_escapes_extension_markup(self, tmp_path):
         """User-controlled extension names must not be parsed as Rich markup."""
@@ -8668,7 +9097,7 @@ $ARGUMENTS
         from specify_cli import app
         from specify_cli.agents import CommandRegistrar
 
-        project_dir, ext_dir, claude_commands_dir = self._setup_mock_extension(tmp_path, "claude")
+        project_dir, ext_dir, agents_commands_dir = self._setup_mock_extension(tmp_path, "amp")
 
         # 3. Run specify extension add
         runner = CliRunner()
@@ -8685,8 +9114,8 @@ $ARGUMENTS
         assert "speckit-mock-ext-hello" not in result.output
 
         # Verify on-disk command names are dotted
-        hello_file = claude_commands_dir / "speckit.mock-ext.hello.md"
-        greet_file = claude_commands_dir / "speckit.mock-ext.greet.md"
+        hello_file = agents_commands_dir / "speckit.mock-ext.hello.md"
+        greet_file = agents_commands_dir / "speckit.mock-ext.greet.md"
 
         assert hello_file.exists()
         assert greet_file.exists()
@@ -9033,3 +9462,87 @@ class TestConfigManagerCrossExtensionEnvLeak:
         # Must not raise; must fall back to the "no siblings" path.
         cfg = ConfigManager(tmp_path, "testext")._get_env_config()
         assert cfg == {"url": "v"}
+
+
+def test_forge_extension_install_listing_hyphenates_command_names(
+    extension_dir, project_dir
+):
+    """The post-install 'Provided commands' listing must show hyphenated
+    /speckit-<name> command names for a Forge project (Forge registers
+    hyphenated names), mirroring the existing Cline handling."""
+    import json
+    import os
+
+    from typer.testing import CliRunner
+
+    from specify_cli import app
+
+    init_options = project_dir / ".specify" / "init-options.json"
+    init_options.write_text(json.dumps({"ai": "forge", "script": "sh"}))
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project_dir)
+        result = CliRunner().invoke(
+            app, ["extension", "add", str(extension_dir), "--dev"]
+        )
+    finally:
+        os.chdir(old_cwd)
+
+    assert result.exit_code == 0, result.output
+    # Forge registers hyphenated command names, so the summary must match.
+    assert "speckit-test-ext-hello" in result.output
+    assert "speckit.test-ext.hello" not in result.output
+
+
+def test_forge_extension_info_hyphenates_command_names(
+    extension_dir, project_dir, monkeypatch
+):
+    """`extension info` for an installed extension must show hyphenated
+    /speckit-<name> command names on a Forge project, matching the names Forge
+    actually registers — the same parity `extension add`'s listing already has.
+    """
+    import io
+    import json
+    import os
+
+    from rich.console import Console
+
+    from specify_cli.extensions import _commands
+
+    init_options = project_dir / ".specify" / "init-options.json"
+    init_options.write_text(json.dumps({"ai": "forge", "script": "sh"}))
+
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(
+        extension_dir, "1.0.0", register_commands=False
+    )
+
+    # Force the "installed locally, not in catalog" branch (the one that prints
+    # the local manifest's Commands section) and avoid any network catalog
+    # lookup.
+    monkeypatch.setattr(
+        _commands, "_resolve_catalog_extension", lambda *a, **k: (None, None)
+    )
+
+    # Call the handler directly against a plain captured Console. (Driving it
+    # through CliRunner reformats output via Rich's live console, which
+    # recurses under pytest's captured stdout — unrelated to this code path.)
+    buf = io.StringIO()
+    original_console = _commands.console
+    _commands.console = Console(file=buf, force_terminal=False, width=200)
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project_dir)
+        _commands.extension_info("test-ext")
+    except SystemExit:
+        pass
+    finally:
+        os.chdir(old_cwd)
+        _commands.console = original_console
+
+    output = buf.getvalue()
+    # The Commands section must render the hyphenated form Forge registers,
+    # not the manifest's dotted name.
+    assert "speckit-test-ext-hello" in output, output
+    assert "speckit.test-ext.hello" not in output, output

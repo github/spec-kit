@@ -134,3 +134,34 @@ def test_string_integration_rejected_not_silently_dropped():
     data["integration"] = "copilot"
     with pytest.raises(BundlerError, match="'integration' must be a mapping when present"):
         BundleManifest.from_dict(data)
+
+
+@pytest.mark.parametrize("bad", [[], "", 0, False, "extensions"])
+def test_non_mapping_provides_rejected_including_falsy(bad):
+    # `data.get("provides") or {}` coerced a FALSY non-mapping ([], '', 0, False)
+    # to {} before the type check, so a malformed manifest passed validation as
+    # a bundle that provides nothing. Only an absent/None value means "empty".
+    data = valid_manifest_dict()
+    data["provides"] = bad
+    with pytest.raises(BundlerError, match="'provides' must be a mapping when present"):
+        BundleManifest.from_dict(data)
+
+
+@pytest.mark.parametrize("bad", [[], "", 0, False, "speckit>=0.1"])
+def test_non_mapping_requires_rejected_including_falsy(bad):
+    # Same falsy-coercion hole for `requires`.
+    data = valid_manifest_dict()
+    data["requires"] = bad
+    with pytest.raises(BundlerError, match="'requires' must be a mapping when present"):
+        BundleManifest.from_dict(data)
+
+
+def test_absent_provides_and_requires_do_not_raise_mapping_error():
+    # Absent (None) optional mappings default to empty and must NOT trigger the
+    # "must be a mapping when present" guard — that is reserved for present
+    # non-mappings. (Structural completeness, e.g. requires.speckit_version, is
+    # a separate concern checked by structural_errors().)
+    data = valid_manifest_dict()
+    data.pop("provides", None)
+    data.pop("requires", None)
+    BundleManifest.from_dict(data)  # does not raise BundlerError

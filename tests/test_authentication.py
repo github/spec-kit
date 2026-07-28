@@ -92,6 +92,27 @@ class TestLoadAuthConfig:
         assert entries[0].auth == "bearer"
         assert entries[0].token_env == "GH_TOKEN"
 
+    def test_padded_token_env_is_normalized_and_resolves(self, tmp_path, monkeypatch):
+        # token_env is validated on its stripped form but was stored raw, so a
+        # padded env-var name passed validation yet broke the verbatim
+        # os.environ.get() lookup — resolve_token silently returned None.
+        monkeypatch.setenv("GH_TOKEN", "secret-tok")
+        cfg = tmp_path / "auth.json"
+        cfg.write_text(json.dumps({
+            "providers": [{
+                "hosts": ["github.com"],
+                "provider": "github",
+                "auth": "bearer",
+                "token_env": "  GH_TOKEN  ",
+            }]
+        }))
+        entries = load_auth_config(cfg)
+        assert len(entries) == 1
+        # Stored normalized (matching how hosts are normalized), ...
+        assert entries[0].token_env == "GH_TOKEN"
+        # ... so the env lookup finds the token instead of returning None.
+        assert GitHubAuth().resolve_token(entries[0]) == "secret-tok"
+
     def test_valid_ado_config(self, tmp_path):
         cfg = tmp_path / "auth.json"
         cfg.write_text(json.dumps({
@@ -135,6 +156,26 @@ class TestLoadAuthConfig:
         entries = load_auth_config(cfg)
         assert entries[0].auth == "azure-ad"
         assert entries[0].tenant_id == "tid"
+
+    def test_padded_azure_ad_refs_are_normalized(self, tmp_path):
+        # The normalization also covers tenant_id / client_id / client_secret_env
+        # (used verbatim in the OAuth token URL/body and os.environ.get). Padded
+        # values were validated on their stripped form but stored raw.
+        cfg = tmp_path / "auth.json"
+        cfg.write_text(json.dumps({
+            "providers": [{
+                "hosts": ["dev.azure.com"],
+                "provider": "azure-devops",
+                "auth": "azure-ad",
+                "tenant_id": "  tid  ",
+                "client_id": "  cid  ",
+                "client_secret_env": "  SECRET  ",
+            }]
+        }))
+        entries = load_auth_config(cfg)
+        assert entries[0].tenant_id == "tid"
+        assert entries[0].client_id == "cid"
+        assert entries[0].client_secret_env == "SECRET"
 
     def test_azure_cli_config(self, tmp_path):
         cfg = tmp_path / "auth.json"

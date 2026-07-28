@@ -18,6 +18,7 @@ from ._commands import integration_app, integration_catalog_app
 from ._helpers import (
     _read_integration_json,
     _register_extensions_for_agent,
+    _register_presets_for_agent,
     _resolve_integration_options,
     _set_default_integration_or_exit,
 )
@@ -247,6 +248,11 @@ def integration_use(
         project_root,
         key,
         continuing="The integration was selected, but installed extensions may need re-registration.",
+    )
+    _register_presets_for_agent(
+        project_root,
+        key,
+        continuing="The integration was selected, but installed presets may need re-registration.",
     )
     console.print(f"[green]✓[/green] Default integration set to [bold]{key}[/bold].")
 
@@ -489,13 +495,14 @@ def integration_catalog_list():
         display_name = str(raw_name).strip() if raw_name is not None else ""
         if not display_name:
             display_name = f"catalog-{i + 1}"
+        safe_name = _rich_escape(display_name)
         if env_override or project_configs is None:
-            console.print(f"  - [bold]{display_name}[/bold] — {install_status}")
+            console.print(f"  - [bold]{safe_name}[/bold] — {install_status}")
         else:
-            console.print(f"  [{i}] [bold]{display_name}[/bold] — {install_status}")
-        console.print(f"      {cfg.get('url', '')}")
+            console.print(f"  [{i}] [bold]{safe_name}[/bold] — {install_status}")
+        console.print(f"      {_rich_escape(str(cfg.get('url', '')))}")
         if cfg.get("description"):
-            console.print(f"      [dim]{cfg['description']}[/dim]")
+            console.print(f"      [dim]{_rich_escape(str(cfg['description']))}[/dim]")
         console.print()
 
 

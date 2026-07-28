@@ -13,6 +13,7 @@ import stat
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 
@@ -51,6 +52,19 @@ def _is_valid_host_pattern(pattern: str) -> bool:
         return True  # exact hostname — already validated as non-empty
     # Only *.suffix is allowed; no other wildcard positions
     return pattern.startswith("*.") and "*" not in pattern[2:]
+
+
+def _norm(value: Any) -> Any:
+    """Strip surrounding whitespace from a whitespace-insignificant string
+    config reference (env-var names, tenant/client ids) before it is stored.
+
+    These fields are validated on their ``.strip()``ed form, so an accidentally
+    padded value passes validation but then silently breaks the verbatim
+    ``os.environ.get(...)`` / URL lookups downstream. Normalizing at store time
+    mirrors how ``hosts`` is already handled (``h.strip().lower()``). Non-string
+    values (e.g. ``None``) pass through unchanged.
+    """
+    return value.strip() if isinstance(value, str) else value
 
 
 def load_auth_config(
@@ -182,10 +196,10 @@ def load_auth_config(
                 provider=provider,
                 auth=auth,
                 token=token,
-                token_env=token_env,
-                tenant_id=entry_raw.get("tenant_id"),
-                client_id=entry_raw.get("client_id"),
-                client_secret_env=entry_raw.get("client_secret_env"),
+                token_env=_norm(token_env),
+                tenant_id=_norm(entry_raw.get("tenant_id")),
+                client_id=_norm(entry_raw.get("client_id")),
+                client_secret_env=_norm(entry_raw.get("client_secret_env")),
             )
         )
 

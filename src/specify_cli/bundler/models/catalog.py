@@ -15,6 +15,11 @@ from .. import BundlerError
 from ..lib.yamlio import ensure_within, load_yaml
 
 CONFIG_FILENAME = "bundle-catalogs.yml"
+# Supported bundle-catalogs.yml schema (major version). Both readers of the
+# file — this module's _merge_config and commands_impl/catalog_config._read —
+# reject an unsupported major version so a file written by a newer/incompatible
+# Spec Kit fails fast instead of being parsed under the wrong assumptions.
+CONFIG_SCHEMA_VERSION = "1.0"
 
 
 class InstallPolicy(str, Enum):
@@ -152,14 +157,21 @@ class CatalogEntry:
         if not isinstance(data, dict):
             raise BundlerError("Each catalog entry must be a mapping.")
         entry_id = str(data.get("id", "")).strip()
-        requires = data.get("requires") or {}
-        if not isinstance(requires, dict):
+        # `or {}` would coerce a FALSY non-mapping (0, '', False, []) to {} before
+        # the isinstance guard, silently accepting a corrupt catalog entry; only
+        # an absent/None value means "not present".
+        requires = data.get("requires")
+        if requires is None:
+            requires = {}
+        elif not isinstance(requires, dict):
             raise BundlerError(
                 f"Catalog entry '{entry_id or '<unknown>'}': 'requires' must be a "
                 "mapping when present."
             )
-        provides_raw = data.get("provides") or {}
-        if not isinstance(provides_raw, dict):
+        provides_raw = data.get("provides")
+        if provides_raw is None:
+            provides_raw = {}
+        elif not isinstance(provides_raw, dict):
             raise BundlerError(
                 f"Catalog entry '{entry_id or '<unknown>'}': 'provides' must be a "
                 "mapping when present."
@@ -249,8 +261,35 @@ def load_source_stack(project_root: Path, user_config_dir: Path | None = None) -
 def _merge_config(by_id: dict[str, CatalogSource], config_path: Path, scope: Scope) -> None:
     if not config_path.exists():
         return
+    # ``load_yaml`` returns ``{}`` only for an empty document and the raw parse
+    # otherwise, so a non-mapping top level (a YAML list or scalar, including
+    # the falsy ``[]``/``false``/``0``/``''``) is caught here and raised —
+    # matching the sibling reader commands_impl/catalog_config._read. #3623
+    # aligned the inner non-list ``catalogs`` value between the two readers.
     data = load_yaml(config_path)
-    catalogs = data.get("catalogs") if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        raise BundlerError(
+            f"Malformed catalog config at {config_path}: expected a mapping at "
+            f"the top level, got {type(data).__name__}."
+        )
+    # Reject an unsupported major schema version, matching the sibling reader
+    # commands_impl/catalog_config._read. Without this, a file written by a
+    # newer/incompatible Spec Kit was silently parsed under v1 assumptions on
+    # the resolution path (bundle search/install), while the other reader
+    # rejected it — the two readers disagreed. An absent schema_version stays
+    # valid (backward compatible with configs that omit it).
+    schema_version = data.get("schema_version")
+    if schema_version is not None and (
+        str(schema_version).strip().split(".")[0]
+        != CONFIG_SCHEMA_VERSION.split(".")[0]
+    ):
+        raise BundlerError(
+            f"Unsupported catalog config schema version "
+            f"'{str(schema_version).strip()}' at {config_path}; this Spec Kit "
+            f"understands version {CONFIG_SCHEMA_VERSION}. The file may have been "
+            "written by a newer version or is corrupt."
+        )
+    catalogs = data.get("catalogs")
     if catalogs is None:
         return
     if not isinstance(catalogs, list):

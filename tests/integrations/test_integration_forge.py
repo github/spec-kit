@@ -422,7 +422,12 @@ class TestForgeCommandRegistrar:
 
         # Kilo Code uses standard markdown format without name injection.
         # The format_name callback should not be invoked for non-Forge agents.
-        kilocode_cmd = tmp_path / ".kilocode" / "workflows" / "speckit.my-extension.example.md"
+        kilocode_cmd = (
+            tmp_path
+            / ".kilo"
+            / "commands"
+            / "speckit.my-extension.example.md"
+        )
         assert kilocode_cmd.exists()
 
         content = kilocode_cmd.read_text(encoding="utf-8")

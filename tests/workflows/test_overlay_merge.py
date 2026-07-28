@@ -162,6 +162,23 @@ class TestMergeSteps:
             ComposedStep("low-step", "project:low"),
         ]
 
+    def test_merge_steps_multiple_insert_after_same_overlay_preserves_order(self):
+        # Two insert_after edits from ONE overlay on the same anchor must keep
+        # their declared order (a, x, y, b) — mirroring insert_before. The old
+        # reversed(edits) over the flat list flipped them to (a, y, x, b).
+        base = [_step("a"), _step("b")]
+        overlay = Overlay(
+            id="ov1",
+            extends="wf",
+            priority=10,
+            edits=[
+                OverlayEdit("insert_after", "a", _step("x")),
+                OverlayEdit("insert_after", "a", _step("y")),
+            ],
+        )
+        steps, _ = merge_steps(base, [_layer(overlay, "project:ov1")])
+        assert [s["id"] for s in steps] == ["a", "x", "y", "b"]
+
     def test_merge_steps_replace_wins_over_insert(self):
         """Overlays apply to the original tree only; targeting an overlay-introduced step raises."""
         base = [_step("a")]

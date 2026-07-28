@@ -61,7 +61,7 @@ def preset_list():
         console.print(f"  [bold]{pack['name']}[/bold] ({pack['id']}) v{pack['version']} — {status} — priority {pri}")
         console.print(f"    {pack['description']}")
         if pack.get("tags"):
-            tags_str = ", ".join(pack["tags"])
+            tags_str = _escape_markup(", ".join(str(t) for t in pack["tags"]))
             console.print(f"    [dim]Tags: {tags_str}[/dim]")
         console.print(f"    [dim]Templates: {pack['template_count']}[/dim]")
         console.print()
@@ -288,7 +288,7 @@ def preset_search(
         console.print(f"  [bold]{pack.get('name', pack['id'])}[/bold] ({pack['id']}) v{pack.get('version', '?')}")
         console.print(f"    {pack.get('description', '')}")
         if pack.get("tags"):
-            tags_str = ", ".join(pack["tags"])
+            tags_str = ", ".join(str(t) for t in pack["tags"])
             console.print(f"    [dim]Tags: {tags_str}[/dim]")
         console.print()
 
@@ -379,7 +379,7 @@ def preset_info(
         if local_pack.author:
             console.print(f"  Author:      {local_pack.author}")
         if local_pack.tags:
-            console.print(f"  Tags:        {', '.join(local_pack.tags)}")
+            console.print(f"  Tags:        {', '.join(str(t) for t in local_pack.tags)}")
         console.print(f"  Templates:   {len(local_pack.templates)}")
         for tmpl in local_pack.templates:
             console.print(f"    - {tmpl['name']} ({tmpl['type']}): {tmpl.get('description', '')}")
@@ -415,7 +415,7 @@ def preset_info(
     if pack_info.get("author"):
         console.print(f"  Author:      {pack_info['author']}")
     if pack_info.get("tags"):
-        console.print(f"  Tags:        {', '.join(pack_info['tags'])}")
+        console.print(f"  Tags:        {', '.join(str(t) for t in pack_info['tags'])}")
     if pack_info.get("repository"):
         console.print(f"  Repository:  {pack_info['repository']}")
     if pack_info.get("license"):
@@ -580,10 +580,10 @@ def preset_catalog_list():
             if entry.install_allowed
             else "[yellow]discovery only[/yellow]"
         )
-        console.print(f"  [bold]{entry.name}[/bold] (priority {entry.priority})")
+        console.print(f"  [bold]{_escape_markup(str(entry.name))}[/bold] (priority {entry.priority})")
         if entry.description:
-            console.print(f"     {entry.description}")
-        console.print(f"     URL: {entry.url}")
+            console.print(f"     {_escape_markup(str(entry.description))}")
+        console.print(f"     URL: {_escape_markup(str(entry.url))}")
         console.print(f"     Install: {install_str}")
         console.print()
 
