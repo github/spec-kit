@@ -59,8 +59,11 @@ def preset_list():
     for pack in installed:
         status = "[green]enabled[/green]" if pack.get("enabled", True) else "[red]disabled[/red]"
         pri = pack.get('priority', 10)
-        console.print(f"  [bold]{pack['name']}[/bold] ({pack['id']}) v{pack['version']} — {status} — priority {pri}")
-        console.print(f"    {pack['description']}")
+        name = _escape_markup(str(pack['name']))
+        pack_id = _escape_markup(str(pack['id']))
+        version = _escape_markup(str(pack['version']))
+        console.print(f"  [bold]{name}[/bold] ({pack_id}) v{version} — {status} — priority {pri}")
+        console.print(f"    {_escape_markup(str(pack['description']))}")
         tags = pack.get("tags", [])
         if isinstance(tags, list) and tags:
             tags_str = _escape_markup(", ".join(str(t) for t in tags))
@@ -317,13 +320,20 @@ def preset_resolve(
     project_root = _require_specify_project()
     resolver = PresetResolver(project_root)
     layers = resolver.collect_all_layers(template_name)
+    safe_template_name = _escape_markup(str(template_name))
 
     if layers:
         # Use the highest-priority layer for display because the final output
         # may be composed and may not map to resolve_with_source()'s single path.
         display_layer = layers[0]
-        console.print(f"  [bold]{template_name}[/bold]: {display_layer['path']}")
-        console.print(f"    [dim](top layer from: {display_layer['source']})[/dim]")
+        console.print(
+            f"  [bold]{safe_template_name}[/bold]: "
+            f"{_escape_markup(str(display_layer['path']))}"
+        )
+        console.print(
+            f"    [dim](top layer from: "
+            f"{_escape_markup(str(display_layer['source']))})[/dim]"
+        )
 
         has_composition = (
             layers[0]["strategy"] != "replace"
@@ -335,7 +345,10 @@ def preset_resolve(
                 composed = resolver.resolve_content(template_name)
             except Exception as exc:
                 composed = None
-                console.print(f"    [yellow]Warning: composition error: {exc}[/yellow]")
+                console.print(
+                    f"    [yellow]Warning: composition error: "
+                    f"{_escape_markup(str(exc))}[/yellow]"
+                )
             if composed is None:
                 console.print("    [yellow]Warning: composition cannot produce output (no base layer with 'replace' strategy)[/yellow]")
             else:
@@ -358,15 +371,27 @@ def preset_resolve(
                 strategy_label = layer["strategy"]
                 if strategy_label == "replace" and i == 0:
                     strategy_label = "base"
-                console.print(f"    {i + 1}. [{strategy_label}] {layer['source']} → {layer['path']}")
+                # Escape the literal bracket (\[) so Rich renders `[<strategy>]`
+                # instead of parsing it as a style tag and swallowing the label,
+                # mirroring `workflow info`'s step-graph line.
+                console.print(
+                    f"    {i + 1}. \\[{_escape_markup(str(strategy_label))}] "
+                    f"{_escape_markup(str(layer['source']))} → "
+                    f"{_escape_markup(str(layer['path']))}"
+                )
     else:
         # No layers found — fall back to resolve_with_source for non-composition cases
         result = resolver.resolve_with_source(template_name)
         if result:
-            console.print(f"  [bold]{template_name}[/bold]: {result['path']}")
-            console.print(f"    [dim](from: {result['source']})[/dim]")
+            console.print(
+                f"  [bold]{safe_template_name}[/bold]: "
+                f"{_escape_markup(str(result['path']))}"
+            )
+            console.print(
+                f"    [dim](from: {_escape_markup(str(result['source']))})[/dim]"
+            )
         else:
-            console.print(f"  [yellow]{template_name}[/yellow]: not found")
+            console.print(f"  [yellow]{safe_template_name}[/yellow]: not found")
             console.print("    [dim]No template with this name exists in the resolution stack[/dim]")
 
 
@@ -386,24 +411,32 @@ def preset_info(
     local_pack = manager.get_pack(preset_id)
 
     if local_pack:
-        console.print(f"\n[bold cyan]Preset: {local_pack.name}[/bold cyan]\n")
-        console.print(f"  ID:          {local_pack.id}")
-        console.print(f"  Version:     {local_pack.version}")
-        console.print(f"  Description: {local_pack.description}")
+        console.print(
+            f"\n[bold cyan]Preset: {_escape_markup(str(local_pack.name))}[/bold cyan]\n"
+        )
+        console.print(f"  ID:          {_escape_markup(str(local_pack.id))}")
+        console.print(f"  Version:     {_escape_markup(str(local_pack.version))}")
+        console.print(
+            f"  Description: {_escape_markup(str(local_pack.description))}"
+        )
         if local_pack.author:
-            console.print(f"  Author:      {local_pack.author}")
+            console.print(f"  Author:      {_escape_markup(str(local_pack.author))}")
         local_tags = local_pack.tags
         if isinstance(local_tags, list) and local_tags:
-            console.print(f"  Tags:        {', '.join(str(t) for t in local_tags)}")
+            tags_str = _escape_markup(", ".join(str(t) for t in local_tags))
+            console.print(f"  Tags:        {tags_str}")
         console.print(f"  Templates:   {len(local_pack.templates)}")
         for tmpl in local_pack.templates:
-            console.print(f"    - {tmpl['name']} ({tmpl['type']}): {tmpl.get('description', '')}")
+            tmpl_name = _escape_markup(str(tmpl['name']))
+            tmpl_type = _escape_markup(str(tmpl['type']))
+            tmpl_desc = _escape_markup(str(tmpl.get('description', '')))
+            console.print(f"    - {tmpl_name} ({tmpl_type}): {tmpl_desc}")
         repo = local_pack.data.get("preset", {}).get("repository")
         if repo:
-            console.print(f"  Repository:  {repo}")
+            console.print(f"  Repository:  {_escape_markup(str(repo))}")
         license_val = local_pack.data.get("preset", {}).get("license")
         if license_val:
-            console.print(f"  License:     {license_val}")
+            console.print(f"  License:     {_escape_markup(str(license_val))}")
         console.print("\n  [green]Status: installed[/green]")
         # Get priority from registry
         pack_metadata = manager.registry.get(preset_id)
@@ -438,7 +471,8 @@ def preset_info(
         )
     catalog_tags = pack_info.get("tags", [])
     if isinstance(catalog_tags, list) and catalog_tags:
-        console.print(f"  Tags:        {', '.join(str(t) for t in catalog_tags)}")
+        catalog_tags_str = _escape_markup(", ".join(str(t) for t in catalog_tags))
+        console.print(f"  Tags:        {catalog_tags_str}")
     if pack_info.get("repository"):
         console.print(
             f"  Repository:  {_escape_markup(str(pack_info['repository']))}"

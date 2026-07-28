@@ -12170,3 +12170,133 @@ class TestPresetCatalogRichMarkup:
         ):
             value = self.MARKUP_PRESET[field]
             assert value in output
+
+
+class TestInstalledPresetRichMarkup:
+    """Locally installed preset metadata must render as literal text.
+
+    ``preset.yml`` is user-editable, so its fields can contain ``[...]``.
+    ``TestPresetCatalogRichMarkup`` covers the catalog branch of these
+    commands; the installed-preset branch of ``preset list``/``preset info``
+    and all of ``preset resolve`` were left unescaped, so a field like
+    ``Does [stuff] nicely`` silently rendered as ``Does  nicely`` and an
+    unbalanced tag such as ``[/red]`` raised ``rich.errors.MarkupError``,
+    aborting the command with a traceback.
+    """
+
+    MARKUP_FIELDS = {
+        "name": "[green]Markup Name[/green]",
+        "version": "1.0.0",
+        "description": "[yellow]Markup Description[/yellow]",
+        "author": "[magenta]Markup Author[/magenta]",
+        "repository": "[bold]Markup Repository[/bold]",
+        "license": "[cyan]Markup License[/cyan]",
+    }
+
+    def _install(self, temp_dir, project_dir, preset_overrides=None, strategy=None,
+                 pack_id="markup-pack", priority=10, tmpl_description=None):
+        """Install a preset from a directory built with the given manifest fields."""
+        from specify_cli.presets import PresetManager
+
+        src = temp_dir / f"src-{pack_id}"
+        (src / "templates").mkdir(parents=True)
+        (src / "templates" / "spec-template.md").write_text("# tmpl\n")
+
+        preset_section = {
+            "id": pack_id,
+            "name": pack_id,
+            "version": "1.0.0",
+            "description": "plain description",
+        }
+        preset_section.update(preset_overrides or {})
+        tmpl = {
+            "type": "template",
+            "name": "spec-template",
+            "file": "templates/spec-template.md",
+        }
+        if tmpl_description is not None:
+            tmpl["description"] = tmpl_description
+        if strategy:
+            tmpl["strategy"] = strategy
+        (src / "preset.yml").write_text(yaml.dump({
+            "schema_version": "1.0",
+            "preset": preset_section,
+            "requires": {"speckit_version": ">=0.0.1"},
+            "provides": {"templates": [tmpl]},
+            "tags": ["[italic]markup-tag[/italic]"],
+        }))
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(src, "9.9.9", priority)
+        return manager
+
+    def _invoke(self, project_dir, args):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            return CliRunner().invoke(app, args)
+
+    def test_list_and_info_escape_installed_markup(self, temp_dir, project_dir):
+        """Every ``preset.yml`` field must survive verbatim in list/info output."""
+        self._install(temp_dir, project_dir, preset_overrides=self.MARKUP_FIELDS)
+
+        for args in (["preset", "list"], ["preset", "info", "markup-pack"]):
+            result = self._invoke(project_dir, args)
+            assert result.exit_code == 0, result.output
+            output = " ".join(strip_ansi(result.output).split())
+            # `preset list` does not render repository/license.
+            fields = ("name", "description") if args[1] == "list" else self.MARKUP_FIELDS
+            for field in fields:
+                assert self.MARKUP_FIELDS[field] in output, (field, args, output)
+            assert "[italic]markup-tag[/italic]" in output, (args, output)
+
+    def test_info_does_not_swallow_template_description(self, temp_dir, project_dir):
+        """The per-template line in ``preset info`` must escape the template description.
+
+        ``name``/``type`` are format-restricted by manifest validation, but
+        ``description`` is free-form, so it is the field that can carry markup.
+        """
+        self._install(
+            temp_dir,
+            project_dir,
+            tmpl_description="Template [desc] here",
+        )
+        result = self._invoke(project_dir, ["preset", "info", "markup-pack"])
+        assert result.exit_code == 0, result.output
+        output = " ".join(strip_ansi(result.output).split())
+        assert "spec-template (template): Template [desc] here" in output, output
+
+    def test_unbalanced_markup_does_not_crash_list_or_info(self, temp_dir, project_dir):
+        """An unbalanced tag must not raise MarkupError and abort the command."""
+        self._install(
+            temp_dir,
+            project_dir,
+            preset_overrides={"description": "Broken [/red] tag"},
+        )
+
+        for args in (["preset", "list"], ["preset", "info", "markup-pack"]):
+            result = self._invoke(project_dir, args)
+            assert result.exit_code == 0, (args, result.output, result.exception)
+            assert "Broken [/red] tag" in strip_ansi(result.output)
+
+    def test_resolve_escapes_template_name(self, project_dir):
+        """``preset resolve`` echoes its argument; an unbalanced tag must not crash."""
+        result = self._invoke(project_dir, ["preset", "resolve", "no[/red]such"])
+        assert result.exit_code == 0, (result.output, result.exception)
+        assert "no[/red]such" in strip_ansi(result.output)
+
+    def test_resolve_renders_composition_strategy_labels(self, temp_dir, project_dir):
+        """The composition chain's ``[<strategy>]`` label must not be eaten as a tag."""
+        self._install(temp_dir, project_dir, strategy="replace",
+                      pack_id="base-pack", priority=20)
+        self._install(temp_dir, project_dir, strategy="append",
+                      pack_id="app-pack", priority=5)
+
+        result = self._invoke(project_dir, ["preset", "resolve", "spec-template"])
+        assert result.exit_code == 0, (result.output, result.exception)
+        output = strip_ansi(result.output)
+        assert "Composition chain" in output, output
+        assert "[base]" in output, output
+        assert "[append]" in output, output
