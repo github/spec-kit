@@ -23,6 +23,7 @@ from rich.table import Table
 
 from .._console import console
 from .._assets import get_speckit_version
+from .._download_security import MAX_DOWNLOAD_BYTES, read_response_limited
 
 extension_app = typer.Typer(
     name="extension",
@@ -533,7 +534,7 @@ def extension_add(
                     with dl_catalog._open_url(
                         download_url, timeout=60, extra_headers=extra_headers
                     ) as response:
-                        zip_data = response.read()
+                        zip_data = read_response_limited(response, max_bytes=MAX_DOWNLOAD_BYTES)
 
                     if not zipfile.is_zipfile(io.BytesIO(zip_data)):
                         console.print(
