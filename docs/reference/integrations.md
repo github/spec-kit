@@ -6,6 +6,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 
 | Agent                                                                                | Key              | Notes                                                                                                                                     |
 | ------------------------------------------------------------------------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| [Alquimia AI](https://docs.alquimia.ai)                                              | `alquimia`       | Skills-based integration; installs skills into `.alquimia/skills` and invokes them as `/speckit-<command>`                                |
 | [Amp](https://ampcode.com/)                                                          | `amp`            |                                                                                                                                           |
 | [Antigravity (agy)](https://antigravity.google/)                                     | `agy`            | Skills-based integration; skills are installed automatically                                                                               |
 | [Auggie CLI](https://docs.augmentcode.com/cli/overview)                              | `auggie`         |                                                                                                                                           |
@@ -94,6 +95,8 @@ Installs the specified integration into the current project. If another integrat
 
 Installing an additional integration does not change the default integration. Use `specify integration use <key>` to change the default.
 
+Installed extensions and presets are not registered for a non-default integration at install time — they follow the currently active (default) integration only. `specify integration use <key>` (or `switch <key>`) is what rescaffolds them for the newly active integration.
+
 > **Note:** All integration management commands require a project already initialized with `specify init`. To start a new project with a specific agent, use `specify init <project> --integration <key>` instead.
 
 **Version note:** Controlled multi-install support was introduced in Spec Kit 0.8.5. If `specify integration install <key>` says another integration is already installed and only suggests `switch` or `uninstall`, check your local CLI with `specify version` and upgrade it. Running a one-shot command such as `uvx --from git+https://github.com/github/spec-kit.git specify ...` uses a temporary copy for that command only; it does not update the persistent `specify` executable on your `PATH`.
@@ -127,7 +130,7 @@ specify integration switch <key>
 | `--refresh-shared-infra` | Also overwrite shared infrastructure files even if you customized them (otherwise customizations are preserved) |
 | `--integration-options`  | Options for the target integration when it is not already installed      |
 
-If the target integration is not already installed, equivalent to running `uninstall` followed by `install` in a single step. In this mode, `--force` controls whether modified files from the removed integration are deleted. If the target integration is already installed, `switch` only changes the default integration, like `use`; in this mode, `--force` controls whether managed shared templates are overwritten while the default changes. `--integration-options` is rejected for already-installed targets because changing integration options requires reinstalling managed files; run `upgrade <key> --integration-options ...` first, then `use <key>`.
+If the target integration is not already installed, equivalent to running `uninstall` followed by `install` in a single step. In this mode, `--force` controls whether modified files from the removed integration are deleted. If the target integration is already installed, `switch` only changes the default integration, like `use`; in this mode, `--force` controls whether managed shared templates are overwritten while the default changes. `--integration-options` is rejected for already-installed targets because changing integration options requires reinstalling managed files; run `upgrade <key> --integration-options ...` first, then `use <key>`. Like `use`, `switch` rescaffolds installed extensions and presets for the target integration once it becomes the default.
 
 ## Use an Installed Integration
 
@@ -140,6 +143,8 @@ specify integration use <key>
 | `--force` | Overwrite managed shared templates while changing the default |
 
 Sets the default integration without uninstalling any other installed integrations. This also refreshes managed shared templates so command references match the new default integration's invocation style. Modified or untracked shared templates are preserved unless `--force` is used.
+
+`use` is also the activation point for installed extensions and presets: it re-registers every enabled extension's and preset's command overrides (and skills, for skills-mode agents) for the newly active integration, so artifacts installed while a different integration was active are rescaffolded here rather than at install time.
 
 ## Upgrade an Integration
 
@@ -154,6 +159,10 @@ specify integration upgrade [<key>]
 | `--integration-options`  | Options for the integration                                              |
 
 Reinstalls an installed integration with updated templates and commands (e.g., after upgrading Spec Kit). Defaults to the default integration; if a key is provided, it must be one of the installed integrations. Detects locally modified files and blocks the upgrade unless `--force` is used. Stale files from the previous install that are no longer needed are removed automatically. Shared templates stay aligned with the default integration even when upgrading a non-default integration.
+
+Enabled extensions and presets are re-registered only when upgrading the currently active (default) integration. A non-default upgrade still refreshes that integration's core commands, but does not re-register its extension or preset layers — `use`/`switch` that integration afterward to rescaffold them.
+
+If an upgrade would change an integration between command and skills layouts while preset artifacts are registered for it, the upgrade is rejected before changing files. Remove the affected presets, run the layout-changing upgrade, then reinstall them.
 
 ## Report Integration Status
 
@@ -263,6 +272,7 @@ The currently declared multi-install safe integrations are:
 
 | Key | Command directory |
 | --- | ----------------- |
+| `alquimia` | `.alquimia/skills` |
 | `auggie` | `.augment/commands` |
 | `claude` | `.claude/skills` |
 | `cline` | `.clinerules/workflows` |
@@ -303,3 +313,7 @@ CLI-based integrations (like Claude Code, Gemini CLI) require the tool to be ins
 ### When should I use `upgrade` vs `switch`?
 
 Use `upgrade` when you've upgraded Spec Kit and want to refresh an installed integration's managed files. Use `switch` when you want to replace the current default with another integration; if the target is already installed, `switch` behaves like `use`.
+
+### Do extensions and presets I install apply to every installed integration?
+
+No. Extensions (`specify extension add`) and presets (`specify preset add`) register their command overrides for the currently active (default) integration only, even if other integrations are installed. A non-default integration does not receive those artifacts until it becomes the default: `specify integration use <key>` (or `switch <key>`) rescaffolds every enabled extension and preset for the newly active integration. `specify integration upgrade` follows the same rule — it only re-registers extensions and presets when upgrading the active integration.
