@@ -75,13 +75,20 @@ class TestGenericIntegration:
             GenericIntegration._resolve_commands_dir({}, {"raw_options": raw})
 
     @pytest.mark.parametrize("padded", ["  .myagent/cmds  ", "\t.myagent/cmds"])
-    def test_resolve_commands_dir_strips_padding(self, padded):
-        """A padded but real value is normalized rather than rejected."""
+    def test_resolve_commands_dir_returns_padded_value_verbatim(self, padded):
+        """A padded but non-blank value is accepted and returned UNCHANGED: the
+        blankness test uses strip(), but rewriting the value would silently
+        retarget a directory the user asked for by name."""
         from specify_cli.integrations.generic import GenericIntegration
 
         assert GenericIntegration._resolve_commands_dir(
             {"commands_dir": padded}, {}
-        ) == ".myagent/cmds"
+        ) == padded
+        # Quoted in raw_options, since shlex.split() would otherwise consume the
+        # surrounding whitespace before this code ever sees it.
+        assert GenericIntegration._resolve_commands_dir(
+            {}, {"raw_options": f"--commands-dir='{padded}'"}
+        ) == padded
 
     @pytest.mark.parametrize("raw", ["--commands-dir=", "--commands-dir ''", '--commands-dir ""'])
     def test_resolve_commands_dir_rejects_empty_raw_value(self, raw):
