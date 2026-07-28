@@ -12,7 +12,7 @@ You **MUST** consider the user input before proceeding (if not empty). Supported
 
 ## Goal
 
-Create a `models.json` containing only models that the agent hosting **this conversation** can select now, plus a verified execution route for each assigned model. Classify every discovered model into one of **5 complexity levels** using live OpenRouter data (never a static table — recalculate every run), and assign an ordered candidate chain to every level: the first model is the primary executor and the remaining models are alternatives used when a model is unavailable, rate-limited, out of usage/tokens, or exceeds its context limit.
+Create a `models.json` containing only models that the agent hosting **this conversation** can select now, plus an execution route for each assigned model. Classify every discovered model into one of **5 complexity levels** using live OpenRouter data (never a static table — recalculate every run), and assign an ordered candidate chain to every level: the first model is the primary executor and the remaining models are alternatives used when a model is unavailable, rate-limited, out of usage/tokens, or exceeds its context limit.
 
 - Project file: `.specify/models.json` (default and highest precedence)
 - User file: `~/.specify/models.json` (with `--global`; fallback for other commands)
@@ -114,7 +114,7 @@ Assignment rules:
 
 Before writing, show the detected environment, discovery evidence, catalog, proposed manager, and ordered candidates for each level (N1-N5), including the benchmark percentile, blended price, and cost-benefit behind each classification. Ask the user to confirm or adjust the assignments. Skip this confirmation only when the user already supplied complete explicit assignments for `manager`, `n5`, `n4`, `n3`, `n2`, and `n1`.
 
-### 4. Resolve and verify an executor for every assigned model
+### 4. Resolve an executor for every assigned model
 
 Discover execution capabilities from the **runtime**, not from the product name. Inspect the task/subagent tool schemas and agent configuration already loaded by the host. Never assume that a model picker implies programmatic per-task model selection.
 
@@ -124,7 +124,7 @@ Each assigned model must resolve to one of these executor modes:
 
 - `native_subagent`: the runtime can invoke a named subagent whose loaded configuration pins the exact model.
 - `current_session`: the current conversation is already running that exact model, but cannot select it for a separate worker.
-- `manual`: no verified programmatic route exists; the user must switch/select the model and continue manually.
+- `manual`: no programmatic route exists; the user must switch/select the model and continue manually.
 
 When the runtime supports named agents whose configuration pins an exact model (agent definition files, JSON agent entries, or an equivalent mechanism), you MUST propose creating them for every assigned model that lacks a matching agent. `manual` is allowed only when no such configuration mechanism exists or the user explicitly declines creation. Marking every executor `manual` while a pinned-agent mechanism exists violates this contract: it silently disables autonomous dispatch and the ordered fallback chain.
 
@@ -135,7 +135,7 @@ Use the following runtime-specific procedure. These are verification branches, n
 1. Read the merged OpenCode configuration and inspect project/global agents. A subagent is selectable only when its definition has `mode: subagent` (or `all`) and `model: <exact provider/model-id>`.
 2. Inspect the task tool schema exposed to this conversation. If it accepts only `subagent_type` and not `model`, select a configured agent name; do not claim direct model selection.
 3. For each candidate without a matching agent, you MUST propose a stable agent such as `speckit-n3-1` or `speckit-n5-1` in `.opencode/agents/<name>.md`, with `mode: subagent`, the exact `model`, a concise description, and only the permissions needed for implementation. Do not skip this step and record `manual` instead; `manual` is only acceptable here when the user explicitly declines agent creation.
-4. Ask before creating or updating OpenCode agent files. Preserve unrelated configuration. After writing, mark the executor `pending_restart`; OpenCode loads configuration at startup, so tell the user to restart and rerun `__SPECKIT_COMMAND_MODELS__` to verify it before marking it `verified`.
+4. Ask before creating or updating OpenCode agent files. Preserve unrelated configuration. OpenCode loads agent files at startup, so tell the user to restart for the new agents to become dispatchable. Do not gate dispatch on this: if a worker agent is not loaded yet when invoked, the fallback chain simply moves to the next candidate.
 
 #### Claude Code
 
@@ -164,7 +164,7 @@ Use the following runtime-specific procedure. These are verification branches, n
 #### IDE-only or unknown agents
 
 1. Inspect the runtime's actual subagent/task interface and project agent configuration.
-2. If there is no verified per-task selector, do not create guessed config files or commands. Use `current_session` only for the exact active model and `manual` for other picker entries.
+2. If there is no per-task selector, do not create guessed config files or commands. Use `current_session` only for the exact active model and `manual` for other picker entries.
 3. Ask the user for vendor-specific instructions only when they want automation that the runtime cannot demonstrate.
 
 #### Coverage of built-in Spec Kit integrations
@@ -178,9 +178,8 @@ Apply the branches above to every built-in integration. The registry's `requires
 
 Verification and safety rules:
 
-- Ask before creating agent configuration or running a native verification task that may consume paid quota.
-- Verification prompts must be minimal, read-only, and contain no project secrets.
-- `verified: true` requires a successful probe in the current environment. Configuration written during this run but not loaded yet is `verified: false` with `status: pending_restart`.
+- Ask before creating agent configuration or running a native probe task that may consume paid quota.
+- Probe prompts must be minimal, read-only, and contain no project secrets.
 - A `manual` executor is valid but cannot be used for autonomous fallback.
 - Every model appearing in `by_complexity` must have an executor entry, even when its mode is `manual`.
 
@@ -226,15 +225,11 @@ Write `.specify/models.json`, or `~/.specify/models.json` with `--global`, creat
   "executors": {
     "<model id>": {
       "mode": "native_subagent",
-      "agent": "speckit-high-1",
-      "verified": true,
-      "status": "ready"
+      "agent": "speckit-n3-1"
     },
     "<other model id>": {
       "mode": "manual",
-      "instructions": "Select <other model id> in this host's native model picker, then continue with the saved handoff.",
-      "verified": true,
-      "status": "manual_only"
+      "instructions": "Select <other model id> in this host's native model picker, then continue with the saved handoff."
     }
   }
 }
@@ -250,9 +245,9 @@ Validate before writing:
 - `manager` and every ID in `by_complexity` exist in `catalog`.
 - `5`, `4`, `3`, `2`, and `1` each contain at least one model and no duplicate IDs. When the catalog is too small to fill every level with a distinct model, reuse capable models across levels rather than leaving a level empty.
 - Every assigned ID has exactly one `executors` entry with mode `native_subagent`, `current_session`, or `manual`.
-- A `native_subagent` executor has a non-empty `agent` and is not autonomous unless `verified` is true and `status` is `ready`.
+- A `native_subagent` executor has a non-empty `agent`. No verification state is stored: dispatch is optimistic and a failed invocation falls through to the next candidate.
 - A `current_session` executor matches the model currently hosting the conversation.
-- A `manual` executor has non-empty native picker/switch instructions and uses `status: manual_only`.
+- A `manual` executor has non-empty native picker/switch instructions.
 - The target contains valid JSON after writing.
 
 ### 6. Fallback contract used by implementation
@@ -261,7 +256,7 @@ The list order is the complete dispatch policy; no separate load-balancing strat
 
 1. The manager (communicator) classifies each task/step's level (1-5) using the level criteria, then looks up that level's ordered list.
 2. Start each task with the first candidate for its level.
-3. Resolve the candidate's executor. Dispatch automatically only when it is `native_subagent` with `verified: true` and `status: ready`, or when it is the matching `current_session` executor.
+3. Resolve the candidate's executor and dispatch immediately when it is `native_subagent` or the matching `current_session` executor. There is no verification gate: if the invocation itself fails (agent not loaded yet, unknown agent name, model unavailable), treat it as an availability failure and continue with the next candidate.
 4. On a model-level availability failure (connection failure, usage/token exhaustion, rate limit, unavailable model, provider outage, or context limit), preserve the task state and retry with the next candidate that has a ready executor.
 5. Pass the next candidate the original task plus the latest verified progress, changed files, test results, and remaining work so it continues rather than blindly restarting.
 6. Never retry the same failed candidate in a loop. If the next candidate is `manual`, pause with exact switch/continuation instructions. Stop after the ordered list is exhausted and report every attempted model and failure.
@@ -277,6 +272,6 @@ Report:
 - Number of models discovered
 - Manager (communicator) and rationale
 - Primary and ordered alternatives for every level N1-N5, with the benchmark percentile and cost-benefit behind each classification
-- Executor mode and verification state for every assigned model
-- Configuration files created, restart requirements, and any manual-only fallback
+- Executor mode for every assigned model
+- Configuration files created, restart reminder for hosts that load agents at startup, and any manual-only fallback
 - Reminder to rerun `__SPECKIT_COMMAND_MODELS__` whenever agent configuration or model availability changes (benchmark percentiles are relative — classification must be recalculated, never cached as a static table)

@@ -40,10 +40,10 @@ def test_models_command_defines_ordered_fallback_candidates():
     assert "round_robin" not in content
 
 
-def test_models_command_requires_verified_executor_for_every_assignment():
+def test_models_command_requires_executor_for_every_assignment():
     content = MODELS_TEMPLATE.read_text(encoding="utf-8")
 
-    assert "Resolve and verify an executor for every assigned model" in content
+    assert "Resolve an executor for every assigned model" in content
     assert "native_subagent" in content
     assert '"executors"' in content
     assert "Every model appearing in `by_complexity` must have an executor entry" in content
@@ -53,6 +53,15 @@ def test_models_command_requires_verified_executor_for_every_assignment():
     assert '"argv"' not in content
 
 
+def test_models_command_dispatches_without_a_verification_gate():
+    content = MODELS_TEMPLATE.read_text(encoding="utf-8")
+
+    assert "There is no verification gate" in content
+    assert "No verification state is stored" in content
+    assert '"verified"' not in content
+    assert "pending_restart" not in content
+
+
 def test_models_command_configures_opencode_agents_without_claiming_hot_reload():
     content = MODELS_TEMPLATE.read_text(encoding="utf-8")
 
@@ -60,8 +69,8 @@ def test_models_command_configures_opencode_agents_without_claiming_hot_reload()
     assert "select a configured agent name; do not claim direct model selection" in content
     assert ".opencode/agents/<name>.md" in content
     assert "Ask before creating or updating OpenCode agent files" in content
-    assert "pending_restart" in content
     assert "tell the user to restart" in content
+    assert "the fallback chain simply moves to the next candidate" in content
 
 
 def test_models_command_mandates_agent_creation_when_runtime_supports_pinned_models():
@@ -99,6 +108,7 @@ def test_implement_command_continues_with_ordered_fallback_state():
 
     assert "remaining models are ordered fallbacks, not load-balancing targets" in content
     assert "preserve verified progress and retry with the next candidate" in content
+    assert "There is no verification gate" in content
     assert "changed files, test results, completed work, and remaining work" in content
     assert "Do not switch models merely to mask an ordinary code or test failure" in content
     assert "Resolve the candidate in `executors`" in content

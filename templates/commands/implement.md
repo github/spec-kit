@@ -174,18 +174,18 @@ You **MUST** consider the user input before proceeding (if not empty).
      - Look up the task's level in `by_complexity`. The ordered list is the source of truth.
      - Start with the first model. The remaining models are ordered fallbacks, not load-balancing targets.
    - **Executor dispatch**: Resolve the candidate in `executors`:
-     - `native_subagent`: invoke the exact named agent only when `verified: true` and `status: ready`.
+     - `native_subagent`: invoke the exact named agent directly. There is no verification gate — if the invocation fails (agent not loaded yet, unknown agent name, model unavailable), treat it as an availability failure and fall through to the next candidate.
      - `current_session`: execute in this conversation only when the recorded model matches the current runtime model.
      - `manual`: pause and provide the recorded model-switch/continuation instructions; never claim automatic dispatch.
      - Never launch an agent CLI or a second process of the current host to execute a task. Every automatic worker must be native to the agent/CLI hosting this conversation.
-   - **Availability fallback**: If the selected model fails because of usage/token exhaustion, rate limiting, model unavailability, provider outage, or context limits, preserve verified progress and retry with the next candidate that has a ready executor. Include the original task, changed files, test results, completed work, and remaining work so the fallback continues safely. Never retry a failed candidate in a loop. If the next executor is manual or pending restart, pause with exact instructions. If all candidates fail, stop and report every attempt. Do not switch models merely to mask an ordinary code or test failure.
+   - **Availability fallback**: If the selected model fails because the agent could not be invoked, usage/token exhaustion, rate limiting, model unavailability, provider outage, or context limits, preserve verified progress and retry with the next candidate in the list. Include the original task, changed files, test results, completed work, and remaining work so the fallback continues safely. Never retry a failed candidate in a loop. If the next executor is manual, pause with exact instructions. If all candidates fail, stop and report every attempt. Do not switch models merely to mask an ordinary code or test failure.
    - **Tasks missing a `[C:...]` label** default to level `3` (moderate, the workhorse).
    - **The `manager` model normally never executes tasks** — it orchestrates. It may also appear in a candidate list only when the discovered catalog is too small to reserve it or the user explicitly assigns it.
    - **Phase-by-phase execution**: Complete each phase before moving to the next
    - **Respect dependencies**: Run sequential tasks in order; tasks marked [P] can run together
    - **Parallel execution (MANDATORY when supported)**: If the agent can run subagents/tasks concurrently, you MUST parallelize [P] tasks instead of running them one by one:
      - Within the current phase, group ready [P] tasks (dependencies met) into a batch. Exclude from the same batch any two tasks that touch the same file.
-     - Dispatch the whole batch concurrently only when every selected candidate has a ready executor that supports independent execution. Each worker starts with the first candidate from its `by_complexity` list and receives only the context it needs.
+     - Dispatch the whole batch concurrently when the selected candidates have executors that support independent execution (`native_subagent`). Each worker starts with the first candidate from its `by_complexity` list and receives only the context it needs; any worker whose invocation fails falls through to its next candidate.
      - Wait for the entire batch to finish before dispatching tasks that depend on it. Then form the next batch.
      - Sequential tasks (no [P]) always run one at a time in order.
      - If the agent has NO concurrency support, run [P] tasks sequentially and note it in the completion report.
