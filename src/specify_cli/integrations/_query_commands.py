@@ -318,22 +318,26 @@ def integration_search(
 
     console.print(f"\n[green]Found {len(results)} integration(s):[/green]\n")
     for integ in sorted(results, key=lambda e: e.get("id", "")):
-        iid = integ.get("id", "?")
-        name = integ.get("name", iid)
-        version = integ.get("version", "?")
+        iid_value = str(integ.get("id", "?"))
+        iid = _rich_escape(iid_value)
+        name = _rich_escape(str(integ.get("name", iid_value)))
+        version = _rich_escape(str(integ.get("version", "?")))
         console.print(f"[bold]{name}[/bold] ({iid}) v{version}")
         desc = integ.get("description", "")
         if desc:
-            console.print(f"  {desc}")
+            console.print(f"  {_rich_escape(str(desc))}")
 
-        console.print(f"\n  [dim]Author:[/dim] {integ.get('author', 'Unknown')}")
+        author_value = _rich_escape(str(integ.get("author", "Unknown")))
+        console.print(f"\n  [dim]Author:[/dim] {author_value}")
         tags = integ.get("tags", [])
         if isinstance(tags, list) and tags:
-            console.print(f"  [dim]Tags:[/dim] {', '.join(str(t) for t in tags)}")
+            safe_tags = _rich_escape(", ".join(str(t) for t in tags))
+            console.print(f"  [dim]Tags:[/dim] {safe_tags}")
 
-        cat_name = integ.get("_catalog_name", "")
+        cat_name_value = integ.get("_catalog_name", "")
+        cat_name = _rich_escape(str(cat_name_value))
         install_allowed = integ.get("_install_allowed", True)
-        if cat_name:
+        if cat_name_value:
             if install_allowed:
                 console.print(f"  [dim]Catalog:[/dim] {cat_name}")
             else:
@@ -342,9 +346,9 @@ def integration_search(
                     "[yellow](discovery only — not installable)[/yellow]"
                 )
 
-        if iid == installed_key:
+        if iid_value == installed_key:
             console.print("\n  [green]✓ Installed[/green] (currently active)")
-        elif iid in INTEGRATION_REGISTRY:
+        elif iid_value in INTEGRATION_REGISTRY:
             console.print(f"\n  [cyan]Install:[/cyan] specify integration install {iid}")
         elif install_allowed:
             console.print(
@@ -374,6 +378,7 @@ def integration_info(
     project_root = _require_specify_project()
     catalog = IntegrationCatalog(project_root)
     installed_key = _default_integration_key(_read_integration_json(project_root))
+    safe_integration_id = _rich_escape(str(integration_id))
 
     try:
         info = catalog.get_integration_info(integration_id)
@@ -386,29 +391,38 @@ def integration_info(
         catalog_error = None
 
     if info:
-        name = info.get("name", integration_id)
-        version = info.get("version", "?")
-        console.print(f"\n[bold cyan]{name}[/bold cyan] ({integration_id}) v{version}")
+        name = _rich_escape(str(info.get("name", integration_id)))
+        version = _rich_escape(str(info.get("version", "?")))
+        console.print(
+            f"\n[bold cyan]{name}[/bold cyan] ({safe_integration_id}) v{version}"
+        )
         if info.get("description"):
-            console.print(f"  {info['description']}")
+            console.print(f"  {_rich_escape(str(info['description']))}")
         console.print()
 
-        console.print(f"  [dim]Author:[/dim] {info.get('author', 'Unknown')}")
+        author_value = _rich_escape(str(info.get("author", "Unknown")))
+        console.print(f"  [dim]Author:[/dim] {author_value}")
         if info.get("license"):
-            console.print(f"  [dim]License:[/dim] {info['license']}")
+            console.print(
+                f"  [dim]License:[/dim] {_rich_escape(str(info['license']))}"
+            )
 
         tags = info.get("tags", [])
         if isinstance(tags, list) and tags:
-            console.print(f"  [dim]Tags:[/dim] {', '.join(str(t) for t in tags)}")
+            safe_tags = _rich_escape(", ".join(str(t) for t in tags))
+            console.print(f"  [dim]Tags:[/dim] {safe_tags}")
 
-        cat_name = info.get("_catalog_name", "")
+        cat_name_value = info.get("_catalog_name", "")
+        cat_name = _rich_escape(str(cat_name_value))
         install_allowed = info.get("_install_allowed", True)
-        if cat_name:
+        if cat_name_value:
             install_note = "" if install_allowed else " [yellow](discovery only)[/yellow]"
             console.print(f"  [dim]Source catalog:[/dim] {cat_name}{install_note}")
 
         if info.get("repository"):
-            console.print(f"  [dim]Repository:[/dim] {info['repository']}")
+            console.print(
+                f"  [dim]Repository:[/dim] {_rich_escape(str(info['repository']))}"
+            )
 
         if integration_id == installed_key:
             console.print("\n  [green]✓ Installed[/green] (currently active)")
@@ -444,7 +458,7 @@ def integration_info(
         else:
             console.print("\nTry again when online, or use a built-in integration ID directly.")
     else:
-        console.print(f"[red]Error:[/red] Integration '{integration_id}' not found")
+        console.print(f"[red]Error:[/red] Integration '{safe_integration_id}' not found")
         console.print("\nTry: specify integration search")
     raise typer.Exit(1)
 
