@@ -17,8 +17,10 @@ from rich.markup import escape as _escape_markup
 
 from .._console import console
 from .._download_security import (
+    MAX_DOWNLOAD_BYTES,
     is_https_or_localhost_http,
     is_safe_download_redirect,
+    read_response_limited,
 )
 
 preset_app = typer.Typer(
@@ -169,7 +171,9 @@ def preset_add(
                             try:
                                 shutil.copyfileobj(response, output)
                             except TypeError:
-                                output.write(response.read())
+                                output.write(
+                                    read_response_limited(response, max_bytes=MAX_DOWNLOAD_BYTES)
+                                )
                 except urllib.error.URLError as e:
                     console.print(f"[red]Error:[/red] Failed to download: {_escape_markup(str(e))}")
                     raise typer.Exit(1)
