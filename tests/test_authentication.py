@@ -542,19 +542,25 @@ class TestAzureDevOpsAuth:
         entry = AuthConfigEntry(
             hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
         )
+        # Build the absolute path with the HOST's rules: the production code
+        # calls os.path.isabs(), so a hardcoded Windows path would read as
+        # RELATIVE on POSIX runners and silently exercise the fallback branch
+        # instead of the one under test.
+        resolved_path = os.path.join(os.path.abspath(os.sep), "opt", "az", "az.CMD")
+        assert os.path.isabs(resolved_path)
         result = MagicMock()
         result.returncode = 0
         result.stdout = '{"accessToken": "tok"}'
         with patch(
             "specify_cli.authentication.azure_devops.shutil.which",
-            return_value=r"C:\Program Files\az\wbin\az.CMD",
+            return_value=resolved_path,
         ), patch(
             "specify_cli.authentication.azure_devops.subprocess.run",
             return_value=result,
         ) as run:
             assert AzureDevOpsAuth().resolve_token(entry) == "tok"
         argv = run.call_args.args[0]
-        assert argv[0] == r"C:\Program Files\az\wbin\az.CMD"
+        assert argv[0] == resolved_path
         assert argv[1:4] == ["account", "get-access-token", "--resource"]
 
     @pytest.mark.parametrize("which_result", [None, r".\az.CMD", "az.cmd", "./az"])
