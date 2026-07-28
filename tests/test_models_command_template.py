@@ -26,7 +26,7 @@ def test_models_command_requires_first_party_catalog_evidence():
     assert "Never create `models.json` from guesses" in content
     assert '"discovery"' in content
     assert '"mechanism"' in content
-    assert '"tier": "<max | high | medium | low>"' in content
+    assert '"tier": "<5 | 4 | 3 | 2 | 1>"' in content
 
 
 def test_models_command_defines_ordered_fallback_candidates():
@@ -62,6 +62,15 @@ def test_models_command_configures_opencode_agents_without_claiming_hot_reload()
     assert "Ask before creating or updating OpenCode agent files" in content
     assert "pending_restart" in content
     assert "tell the user to restart" in content
+
+
+def test_models_command_mandates_agent_creation_when_runtime_supports_pinned_models():
+    content = MODELS_TEMPLATE.read_text(encoding="utf-8")
+
+    assert "MUST propose creating them for every assigned model that lacks a matching agent" in content
+    assert "violates this contract" in content
+    assert "you MUST propose a stable agent" in content
+    assert "Do not skip this step and record `manual` instead" in content
 
 
 def test_models_command_keeps_execution_inside_the_current_host():

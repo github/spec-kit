@@ -32,9 +32,9 @@ You **MUST** consider the user input before proceeding (if not empty).
   ```
 
 - If a file exists, read it (project file wins) and keep it in context for this command:
-  - `manager` is the only model that defines specs/plans/main ideas; it does not implement tasks.
-  - `by_complexity` maps task complexity (`high` | `medium` | `low`, plus optional specialized keys) to the models that should execute such tasks.
-  - Models with `tier: "max"` are reserved for very few cases (manager role, exceptional tasks) — never assign them to routine work.
+  - `manager` is the communicator/orchestrator: it classifies each task/step's level (1-5) and delegates; it never implements tasks.
+  - `by_complexity` maps task complexity levels (`5` = critical, `4` = complex, `3` = moderate/workhorse, `2` = simple, `1` = trivial, plus optional specialized keys) to the models that should execute such tasks.
+  - Level `5` models are reserved for very few cases (manager role, exceptional tasks) — never assign them to routine work.
 - If the file exists but cannot be parsed as JSON, or is missing `manager` or `by_complexity`, STOP and tell the user to re-run `__SPECKIT_COMMAND_MODELS__` to regenerate it.
 
 **Check for extension hooks (before analysis)**:

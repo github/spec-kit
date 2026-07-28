@@ -41,8 +41,8 @@ You **MUST** consider the user input before proceeding (if not empty).
   ```
 
 - If a file exists, read it (project file wins) and keep it in context for this command:
-  - `manager` is the only model that defines specs/plans/main ideas; it does not implement tasks.
-  - `by_complexity` maps task complexity (`high` | `medium` | `low`, plus optional specialized keys) to an **ordered list** of models that can execute such tasks. The first model is the primary; the rest are alternatives used in order if the primary is unavailable, rate-limited, or runs out of usage/tokens/context. `executors` records whether each model can run through a verified subagent native to the current host, only in the current session, or manually.
+  - `manager` is the communicator/orchestrator: it classifies each task/step's level (1-5) and delegates; it never implements tasks.
+  - `by_complexity` maps task complexity levels (`5` = critical, `4` = complex, `3` = moderate/workhorse, `2` = simple, `1` = trivial, plus optional specialized keys) to an **ordered list** of models that can execute such tasks. The first model is the primary; the rest are alternatives used in order if the primary is unavailable, rate-limited, or runs out of usage/tokens/context. `executors` records whether each model can run through a verified subagent native to the current host, only in the current session, or manually.
   - The `manager` model is reserved for planning and orchestration when the catalog has enough alternatives; assign it to implementation only for an exceptionally hard task, a small catalog, or an explicit user override.
 - If the file exists but cannot be parsed as JSON, or is missing `manager` or `by_complexity`, STOP and tell the user to re-run `__SPECKIT_COMMAND_MODELS__` to regenerate it.
 
@@ -172,7 +172,7 @@ The tasks.md should be immediately executable - each task must be specific enoug
 Every task MUST strictly follow this format:
 
 ```text
-- [ ] [TaskID] [P?] [Story?] [C:complexity->model] Description with file path
+- [ ] [TaskID] [P?] [Story?] [C:n<level>->model] Description with file path
 ```
 
 **Format Components**:
@@ -186,21 +186,23 @@ Every task MUST strictly follow this format:
    - Foundational phase: NO story label
    - User Story phases: MUST have story label
    - Polish phase: NO story label
-5. **[C:...] complexity/model label**: REQUIRED for every task. Format: `[C:high->model-id]`, `[C:medium->model-id]`, `[C:low->model-id]`
-   - Assess each task's complexity as the manager model:
-     - `high` — complex logic, architectural decisions, large refactors, tricky concurrency/security
-     - `medium` — standard implementation, code edits, typical tests
-     - `low` — docs, renames, config, mechanical/boilerplate work
-   - Then map the complexity to a model id from the `by_complexity` section of the loaded `models.json` (pick the first listed model for that level, or a specialized key when it clearly fits, e.g. `review`)
-   - Use the first model listed for the selected complexity. Do not substitute the manager unless it appears in that candidate list.
+5. **[C:...] complexity/model label**: REQUIRED for every task. Format: `[C:n5->model-id]`, `[C:n3->model-id]`, `[C:n1->model-id]`
+   - Assess each task's complexity as the manager (communicator) model, using the 5-level scale:
+     - `n5` — full architecture, irreversible decisions, security (rare)
+     - `n4` — design decisions, large features, non-obvious debugging
+     - `n3` — standard implementation, code edits, typical tests (the workhorse; most tasks land here)
+     - `n2` — single-file changes, obvious bugs, mechanical edits
+     - `n1` — docs, renames, config, formatting, boilerplate
+   - Then map the level to a model id from the `by_complexity` section of the loaded `models.json` (pick the first listed model for that level, or a specialized key when it clearly fits, e.g. `review`)
+   - Use the first model listed for the selected level. Do not substitute the manager unless it appears in that candidate list.
 6. **Description**: Clear action with exact file path
 
 **Examples**:
 
-- ✅ CORRECT: `- [ ] T001 [C:low->haiku-4-5] Create project structure per implementation plan`
-- ✅ CORRECT: `- [ ] T005 [P] [C:medium->sonnet-5] Implement authentication middleware in src/middleware/auth.py`
-- ✅ CORRECT: `- [ ] T012 [P] [US1] [C:medium->sonnet-5] Create User model in src/models/user.py`
-- ✅ CORRECT: `- [ ] T014 [US1] [C:high->opus-4-8] Implement UserService in src/services/user_service.py`
+- ✅ CORRECT: `- [ ] T001 [C:n1->flash-lite] Create project structure per implementation plan`
+- ✅ CORRECT: `- [ ] T005 [P] [C:n3->sonnet-5] Implement authentication middleware in src/middleware/auth.py`
+- ✅ CORRECT: `- [ ] T012 [P] [US1] [C:n3->sonnet-5] Create User model in src/models/user.py`
+- ✅ CORRECT: `- [ ] T014 [US1] [C:n4->opus-4-8] Implement UserService in src/services/user_service.py`
 - ❌ WRONG: `- [ ] Create User model` (missing ID and Story label)
 - ❌ WRONG: `T001 [US1] Create model` (missing checkbox)
 - ❌ WRONG: `- [ ] [US1] Create User model` (missing Task ID)

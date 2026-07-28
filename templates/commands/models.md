@@ -1,5 +1,5 @@
 ---
-description: Detect the agent hosting this conversation, discover its actually configured models from first-party runtime evidence, assign primary and fallback models by task difficulty, and write models.json.
+description: Detect the agent hosting this conversation, discover its actually configured models from first-party runtime evidence, classify them into 5 complexity levels using live OpenRouter data (benchmark, speed, cost, context), and write models.json.
 ---
 
 ## User Input
@@ -8,11 +8,11 @@ description: Detect the agent hosting this conversation, discover its actually c
 $ARGUMENTS
 ```
 
-You **MUST** consider the user input before proceeding (if not empty). Supported overrides include `--global`, pasted model-picker output, a manual model list, and explicit assignments such as `manager=X`, `high=X,Y`, `medium=A,B`, or `low=C,D`.
+You **MUST** consider the user input before proceeding (if not empty). Supported overrides include `--global`, pasted model-picker output, a manual model list, and explicit assignments such as `manager=X`, `n5=X,Y`, `n4=A,B`, `n3=C,D`, `n2=E,F`, or `n1=G,H`.
 
 ## Goal
 
-Create a `models.json` containing only models that the agent hosting **this conversation** can select now, plus a verified execution route for each assigned model. Assign an ordered candidate chain to every difficulty: the first model is the primary executor and the remaining models are alternatives used when a model is unavailable, rate-limited, out of usage/tokens, or exceeds its context limit.
+Create a `models.json` containing only models that the agent hosting **this conversation** can select now, plus a verified execution route for each assigned model. Classify every discovered model into one of **5 complexity levels** using live OpenRouter data (never a static table — recalculate every run), and assign an ordered candidate chain to every level: the first model is the primary executor and the remaining models are alternatives used when a model is unavailable, rate-limited, out of usage/tokens, or exceeds its context limit.
 
 - Project file: `.specify/models.json` (default and highest precedence)
 - User file: `~/.specify/models.json` (with `--global`; fallback for other commands)
@@ -60,27 +60,59 @@ For each discovered model, record only supported facts:
 - `reasoning`: reasoning/thinking capability when shown
 - `availability`: relevant usage, quota, or access restriction when shown
 - `note`: selectable variant or specialization shown by the source
-- `tier`: derived implementation capability (`max`, `high`, `medium`, or `low`) assigned in the next step; this is an assessment, not discovery evidence
+- `tier`: derived level (`5`, `4`, `3`, `2`, or `1`) assigned in the next step; this is an assessment, not discovery evidence
 
-### 3. Assess difficulty suitability
+### 3. Classify models into 5 levels with OpenRouter data
 
-Classify every discovered model for `high`, `medium`, and `low` work. Use model metadata returned by discovery, reliable capability information available in the runtime, and explicit user guidance. Consider reasoning strength, coding capability, context size, speed, cost, quota, and specialization.
+Classify every discovered model into 5 complexity levels using **live data from OpenRouter**. Never use a static table, never rank from model names alone — recalculate every run. This classification is CLI-agnostic; the incorporation into each CLI happens in step 4.
 
-Do not rank opaque or unfamiliar model IDs from their names alone. Ask the user for guidance when the available evidence cannot support a meaningful ranking.
+**3.1 Fetch model data (3 lightweight JSON calls, no browser, no scraping):**
+
+| Data | Endpoint | Field used |
+|---|---|---|
+| Price + context | `https://openrouter.ai/api/v1/models` | `pricing.prompt` / `pricing.completion`, `context_length` |
+| Intelligence | `https://openrouter.ai/api/frontend/v1/rankings/benchmarks` | `data.aaData.percentilesBySlug[slug].intelligence` (Artificial Analysis percentile 0-100) |
+| Speed | `https://openrouter.ai/api/frontend/v1/rankings/performance` | `p50_throughput` (tok/s), `p50_latency` (ms) |
+
+If an endpoint is unreachable, fall back to model metadata from discovery plus explicit user guidance, and record that data-driven classification was degraded.
+
+**3.2 Match each discovered model to its OpenRouter slug:**
+
+- Normalize: strip provider prefixes, variant suffixes (`-review`, `-highspeed`, `-thinking`, `-free`), date suffixes (`-20251001`), and leading `~`.
+- Variants inherit the base model's data.
+- Keep a small manual alias table for slugs that differ (e.g. `kimi-latest` → the current flagship slug it points to).
+- Do not rank opaque or unfamiliar model IDs from their names alone. If a model has no OpenRouter match and no benchmark, apply the unmeasured rule below; ask the user when evidence cannot support any classification.
+
+**3.3 Compute per model:**
+
+- `intel`: intelligence percentile (0-100). It is **relative** — it drops as newer better models appear.
+- `speed`: best `p50_throughput` across providers.
+- `price blend`: `0.75 × input price + 0.25 × output price` (agentic usage is input-dominated).
+- `cost-benefit`: `intel ÷ max(blend, 0.05)`.
+
+**3.4 Assign the level by benchmark** (capability defines the ceiling of what the model can solve):
+
+- **N5 (critical)**: intel ≥ 94 — full architecture, irreversible decisions, security. Used rarely.
+- **N4 (complex)**: intel 85–93 — design decisions, large features, non-obvious debugging.
+- **N3 (moderate)**: intel 60–84 — the workhorse; most real work lands here.
+- **N2 (simple)**: intel 40–59 — single-file changes, obvious bugs, mechanical work.
+- **N1 (trivial)**: intel < 40 — direct questions, lookups, formatting.
+- **Unmeasured models** (no benchmark): price ≤ $0.30/M → N1; fast (>100 tok/s) and < $1/M → N2; otherwise N3.
+
+**3.5 Order each level's list:**
+
+- Order candidates within a level by cost-benefit, preferring ~1M context. Beware high cost-benefit with low benchmark: cheap does not help if the model cannot solve the task.
+- Prefer alternatives with an independent provider/quota route when capability is adequate, so exhausting one model's allowance does not exhaust every fallback.
+- Keep each fallback capable of completing that level. Never add a weak model merely to make the list longer.
 
 Assignment rules:
 
-- `manager`: the strongest model for specification, planning, decomposition, and orchestration. It does not normally implement tasks.
-- `high`: architecture, difficult debugging, security-sensitive logic, broad refactors, and tasks requiring deep reasoning or large context.
-- `medium`: normal feature implementation, localized refactors, and substantive tests.
-- `low`: documentation, configuration, renames, formatting, and mechanical edits.
-- Each difficulty maps to an **ordered non-empty list**: primary first, then alternatives in fallback order.
-- Prefer alternatives with an independent provider/quota route when capability is adequate, so exhausting one model's allowance does not exhaust every fallback.
-- Keep each fallback capable of completing that difficulty. Never add a weak model merely to make the list longer.
-- Reserve the manager from implementation when enough other models exist. Small catalogs may reuse the same model across roles and difficulties.
+- `manager`: the communicator/orchestrator model — the single entry point. It receives every command, classifies each task/step's level (1-5) itself, and delegates. It NEVER implements; classifying is part of its communicator role. Choose the strongest model for specification, planning, decomposition, and orchestration.
+- Each level maps to an **ordered non-empty list**: primary first, then alternatives in fallback order.
+- Reserve the manager from implementation when enough other models exist. Small catalogs may reuse the same model across roles and levels.
 - Apply explicit user assignments after validating that every assigned ID exists in the discovered catalog.
 
-Before writing, show the detected environment, discovery evidence, catalog, proposed manager, and ordered candidates for each difficulty. Ask the user to confirm or adjust the assignments. Skip this confirmation only when the user already supplied complete explicit assignments for `manager`, `high`, `medium`, and `low`.
+Before writing, show the detected environment, discovery evidence, catalog, proposed manager, and ordered candidates for each level (N1-N5), including the benchmark percentile, blended price, and cost-benefit behind each classification. Ask the user to confirm or adjust the assignments. Skip this confirmation only when the user already supplied complete explicit assignments for `manager`, `n5`, `n4`, `n3`, `n2`, and `n1`.
 
 ### 4. Resolve and verify an executor for every assigned model
 
@@ -94,13 +126,15 @@ Each assigned model must resolve to one of these executor modes:
 - `current_session`: the current conversation is already running that exact model, but cannot select it for a separate worker.
 - `manual`: no verified programmatic route exists; the user must switch/select the model and continue manually.
 
+When the runtime supports named agents whose configuration pins an exact model (agent definition files, JSON agent entries, or an equivalent mechanism), you MUST propose creating them for every assigned model that lacks a matching agent. `manual` is allowed only when no such configuration mechanism exists or the user explicitly declines creation. Marking every executor `manual` while a pinned-agent mechanism exists violates this contract: it silently disables autonomous dispatch and the ordered fallback chain.
+
 Use the following runtime-specific procedure. These are verification branches, not claims that every installed version supports the feature:
 
 #### OpenCode
 
 1. Read the merged OpenCode configuration and inspect project/global agents. A subagent is selectable only when its definition has `mode: subagent` (or `all`) and `model: <exact provider/model-id>`.
 2. Inspect the task tool schema exposed to this conversation. If it accepts only `subagent_type` and not `model`, select a configured agent name; do not claim direct model selection.
-3. For each candidate without a matching agent, propose a stable agent such as `speckit-high-1` or `speckit-medium-2` in `.opencode/agents/<name>.md`, with `mode: subagent`, the exact `model`, a concise description, and only the permissions needed for implementation.
+3. For each candidate without a matching agent, you MUST propose a stable agent such as `speckit-n3-1` or `speckit-n5-1` in `.opencode/agents/<name>.md`, with `mode: subagent`, the exact `model`, a concise description, and only the permissions needed for implementation. Do not skip this step and record `manual` instead; `manual` is only acceptable here when the user explicitly declines agent creation.
 4. Ask before creating or updating OpenCode agent files. Preserve unrelated configuration. After writing, mark the executor `pending_restart`; OpenCode loads configuration at startup, so tell the user to restart and rerun `__SPECKIT_COMMAND_MODELS__` to verify it before marking it `verified`.
 
 #### Claude Code
@@ -174,16 +208,20 @@ Write `.specify/models.json`, or `~/.specify/models.json` with `--global`, creat
       "provider": "<provider if known>",
       "context": "<context if known>",
       "reasoning": true,
-      "tier": "<max | high | medium | low>",
+      "tier": "<5 | 4 | 3 | 2 | 1>",
+      "intel": "<benchmark percentile 0-100 or null>",
+      "blend_price": "<0.75*input + 0.25*output $/M or null>",
       "availability": "<restriction if known>",
       "note": "<variant or specialization if known>"
     }
   ],
   "manager": "<model id>",
   "by_complexity": {
-    "high": ["<primary>", "<fallback 1>", "<fallback 2>"],
-    "medium": ["<primary>", "<fallback 1>"],
-    "low": ["<primary>", "<fallback 1>"]
+    "5": ["<primary>", "<fallback 1>", "<fallback 2>"],
+    "4": ["<primary>", "<fallback 1>"],
+    "3": ["<primary>", "<fallback 1>"],
+    "2": ["<primary>", "<fallback 1>"],
+    "1": ["<primary>", "<fallback 1>"]
   },
   "executors": {
     "<model id>": {
@@ -208,9 +246,9 @@ Validate before writing:
 
 - `runtime.agent`, `discovery.source`, and `discovery.mechanism` are non-empty.
 - `catalog` is non-empty and contains unique exact IDs.
-- Every catalog entry has one valid `tier`: `max`, `high`, `medium`, or `low`.
+- Every catalog entry has one valid `tier`: `5`, `4`, `3`, `2`, or `1`.
 - `manager` and every ID in `by_complexity` exist in `catalog`.
-- `high`, `medium`, and `low` each contain at least one model and no duplicate IDs.
+- `5`, `4`, `3`, `2`, and `1` each contain at least one model and no duplicate IDs. When the catalog is too small to fill every level with a distinct model, reuse capable models across levels rather than leaving a level empty.
 - Every assigned ID has exactly one `executors` entry with mode `native_subagent`, `current_session`, or `manual`.
 - A `native_subagent` executor has a non-empty `agent` and is not autonomous unless `verified` is true and `status` is `ready`.
 - A `current_session` executor matches the model currently hosting the conversation.
@@ -221,12 +259,13 @@ Validate before writing:
 
 The list order is the complete dispatch policy; no separate load-balancing strategy is implied.
 
-1. Start each task with the first candidate for its difficulty.
-2. Resolve the candidate's executor. Dispatch automatically only when it is `native_subagent` with `verified: true` and `status: ready`, or when it is the matching `current_session` executor.
-3. On a model-level availability failure (usage/token exhaustion, rate limit, unavailable model, provider outage, or context limit), preserve the task state and retry with the next candidate that has a ready executor.
-4. Pass the next candidate the original task plus the latest verified progress, changed files, test results, and remaining work so it continues rather than blindly restarting.
-5. Never retry the same failed candidate in a loop. If the next candidate is `manual`, pause with exact switch/continuation instructions. Stop after the ordered list is exhausted and report every attempted model and failure.
-6. Do not hide code/test failures by switching models. Diagnose ordinary implementation failures normally; fallback is for model availability/capacity failures.
+1. The manager (communicator) classifies each task/step's level (1-5) using the level criteria, then looks up that level's ordered list.
+2. Start each task with the first candidate for its level.
+3. Resolve the candidate's executor. Dispatch automatically only when it is `native_subagent` with `verified: true` and `status: ready`, or when it is the matching `current_session` executor.
+4. On a model-level availability failure (connection failure, usage/token exhaustion, rate limit, unavailable model, provider outage, or context limit), preserve the task state and retry with the next candidate that has a ready executor.
+5. Pass the next candidate the original task plus the latest verified progress, changed files, test results, and remaining work so it continues rather than blindly restarting.
+6. Never retry the same failed candidate in a loop. If the next candidate is `manual`, pause with exact switch/continuation instructions. Stop after the ordered list is exhausted and report every attempted model and failure.
+7. Do not hide code/test failures by switching models. Diagnose ordinary implementation failures normally; fallback is for model availability/capacity failures.
 
 ### 7. Completion report
 
@@ -236,8 +275,8 @@ Report:
 - Runtime agent, installed integration, and any mismatch
 - Discovery source and mechanism
 - Number of models discovered
-- Manager and rationale
-- Primary and ordered alternatives for `high`, `medium`, and `low`
+- Manager (communicator) and rationale
+- Primary and ordered alternatives for every level N1-N5, with the benchmark percentile and cost-benefit behind each classification
 - Executor mode and verification state for every assigned model
 - Configuration files created, restart requirements, and any manual-only fallback
-- Reminder to rerun `__SPECKIT_COMMAND_MODELS__` whenever agent configuration or model availability changes
+- Reminder to rerun `__SPECKIT_COMMAND_MODELS__` whenever agent configuration or model availability changes (benchmark percentiles are relative — classification must be recalculated, never cached as a static table)
