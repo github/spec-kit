@@ -25,6 +25,7 @@ import re
 
 import yaml
 from packaging import version as pkg_version
+from .._download_security import MAX_DOWNLOAD_BYTES, MAX_JSON_METADATA_BYTES, read_response_limited
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
@@ -4270,7 +4271,9 @@ class PresetCatalog:
                 final_url = response.geturl()
                 if final_url != entry.url:
                     self._validate_catalog_url(final_url)
-                catalog_data = json.loads(response.read())
+                catalog_data = json.loads(
+                    read_response_limited(response, max_bytes=MAX_JSON_METADATA_BYTES).decode("utf-8")
+                )
 
             self._validate_catalog_payload(catalog_data, entry.url)
 
@@ -4432,7 +4435,9 @@ class PresetCatalog:
                 final_url = response.geturl()
                 if final_url != catalog_url:
                     self._validate_catalog_url(final_url)
-                catalog_data = json.loads(response.read())
+                catalog_data = json.loads(
+                    read_response_limited(response, max_bytes=MAX_JSON_METADATA_BYTES).decode("utf-8")
+                )
 
             # Validate catalog structure. Reuses the same helper as
             # ``_fetch_single_catalog`` so all three branches (root type,
@@ -4633,7 +4638,7 @@ class PresetCatalog:
 
         try:
             with self._open_url(download_url, timeout=60, extra_headers=extra_headers) as response:
-                zip_data = response.read()
+                zip_data = read_response_limited(response, max_bytes=MAX_DOWNLOAD_BYTES)
 
             verify_archive_sha256(
                 zip_data, pack_info.get("sha256"), pack_id, PresetError
