@@ -2787,6 +2787,80 @@ class TestPresetCatalogMultiCatalog:
         assert "https://example.com/[cat].json" in result.output
         assert "desc [with] brackets" in result.output
 
+    def test_catalog_add_escapes_rich_markup(self, project_dir):
+        """`preset catalog add` must not parse the name/url as Rich markup.
+
+        An unbalanced closing tag raised MarkupError *after* the entry was
+        already written to preset-catalogs.yml, so the user saw a traceback
+        and no confirmation for a catalog that had in fact been added.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        name = "[/red]my-catalog"
+        url = "https://example.com/[bold]c.json"
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app, ["preset", "catalog", "add", url, "--name", name]
+            )
+        assert result.exit_code == 0, result.output
+        # Rendered verbatim, not swallowed as markup.
+        assert name in result.output
+        assert url in result.output
+        # Only rendering is escaped: the raw values still round-trip to disk.
+        config = yaml.safe_load(
+            (project_dir / ".specify" / "preset-catalogs.yml").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert config["catalogs"][0]["name"] == name
+        assert config["catalogs"][0]["url"] == url
+
+    def test_catalog_remove_escapes_rich_markup(self, project_dir):
+        """`preset catalog remove` must not parse the name as Rich markup."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        name = "[/red]my-catalog"
+        (project_dir / ".specify" / "preset-catalogs.yml").write_text(
+            yaml.dump({
+                "catalogs": [
+                    {
+                        "name": name,
+                        "url": "https://example.com/c.json",
+                        "priority": 1,
+                        "install_allowed": False,
+                    }
+                ]
+            }),
+            encoding="utf-8",
+        )
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "catalog", "remove", name])
+        assert result.exit_code == 0, result.output
+        assert name in result.output
+
+    def test_catalog_remove_escapes_markup_in_not_found_error(self, project_dir):
+        """The not-found error path renders the name too."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        (project_dir / ".specify" / "preset-catalogs.yml").write_text(
+            yaml.dump({"catalogs": []}), encoding="utf-8"
+        )
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app, ["preset", "catalog", "remove", "[/red]absent"]
+            )
+        assert result.exit_code == 1
+        assert "[/red]absent" in result.output
+
     def test_env_var_overrides_catalogs(self, project_dir, monkeypatch):
         """Test that SPECKIT_PRESET_CATALOG_URL env var overrides defaults."""
         monkeypatch.setenv(
