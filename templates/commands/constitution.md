@@ -1,5 +1,5 @@
 ---
-description: Create or update the project constitution from interactive or provided principle inputs, ensuring all dependent templates stay in sync.
+description: Create or update the project constitution from interactive or provided principle inputs.
 handoffs:
   - label: Build Specification
     agent: speckit.specify
@@ -16,8 +16,8 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Scope Guard
 
-This command's own work is limited to updating the project constitution and propagating
-constitution-driven changes to the dependent artifacts identified in this command.
+This command's own work is limited to updating the project constitution itself. Dependent templates
+and commands read the constitution at runtime and are not modified here.
 
 - Classify every part of the user input as either constitution content or a separate,
   non-governance intent.
@@ -25,7 +25,7 @@ constitution-driven changes to the dependent artifacts identified in this comman
   deployment requests, you **MUST NOT** execute them. Extract them as deferred intents instead.
 - You **MUST NOT** create, modify, or delete application source files, feature routes,
   components, tests, deployment files, or other artifacts unrelated to the constitution
-  workflow and its required propagation.
+  workflow.
 - If it is unclear whether an instruction is constitution content, ask for clarification before
   making changes.
 - After completing the constitution update, include a `Next Actions` section for each deferred
@@ -70,7 +70,7 @@ constitution-driven changes to the dependent artifacts identified in this comman
 
 ## Outline
 
-You are updating the project constitution at `.specify/memory/constitution.md`. This file is a TEMPLATE containing placeholder tokens in square brackets (e.g. `[PROJECT_NAME]`, `[PRINCIPLE_1_NAME]`). Your job is to (a) collect/derive concrete values, (b) fill the template precisely, and (c) propagate any amendments across dependent artifacts.
+You are updating the project constitution at `.specify/memory/constitution.md`. This file is a TEMPLATE containing placeholder tokens in square brackets (e.g. `[PROJECT_NAME]`, `[PRINCIPLE_1_NAME]`). Your job is to (a) collect/derive concrete values and (b) fill the template precisely.
 
 **Note**: If `.specify/memory/constitution.md` does not exist yet, it should have been initialized from `.specify/templates/constitution-template.md` during project setup. If it's missing, copy the template first.
 
@@ -96,32 +96,24 @@ Follow this execution flow:
    - Ensure each Principle section: succinct name line, paragraph (or bullet list) capturing non‑negotiable rules, explicit rationale if not obvious.
    - Ensure Governance section lists amendment procedure, versioning policy, and compliance review expectations.
 
-4. Consistency propagation checklist (convert prior checklist into active validations):
-   - Read `.specify/templates/plan-template.md` and ensure any "Constitution Check" or rules align with updated principles.
-   - Read `.specify/templates/spec-template.md` for scope/requirements alignment—update if constitution adds/removes mandatory sections or constraints.
-   - Read `.specify/templates/tasks-template.md` and ensure task categorization reflects new or removed principle-driven task types (e.g., observability, versioning, testing discipline).
-   - Read each installed Spec Kit command file for your agent (including this one) — named `speckit.*` or `speckit-*` (dot or hyphen depending on the agent), or laid out as `speckit-<name>/SKILL.md` for skills-based integrations, e.g. in `.github/agents/`, `.github/skills/`, `.claude/skills/`, or your agent's equivalent commands directory — to verify no outdated references (CLAUDE-only or other agent-specific names) remain when generic guidance is required.
-   - Read any runtime guidance docs (e.g., `README.md`, `docs/quickstart.md`, or agent-specific guidance files if present). Update references to principles changed.
-
-5. Produce a Sync Impact Report (prepend as an HTML comment at top of the constitution file after update):
+4. Produce a Sync Impact Report (prepend as an HTML comment at top of the constitution file after update):
    - Version change: old → new
    - List of modified principles (old title → new title if renamed)
    - Added sections
    - Removed sections
-   - Templates requiring updates (✅ updated / ⚠ pending) with file paths
    - Follow-up TODOs if any placeholders intentionally deferred.
 
-6. Validation before final output:
+5. Validation before final output:
    - No remaining unexplained bracket tokens.
    - Version line matches report.
    - Dates ISO format YYYY-MM-DD.
    - Principles are declarative, testable, and free of vague language ("should" → replace with MUST/SHOULD rationale where appropriate).
 
-7. Write the completed constitution back to `.specify/memory/constitution.md` (overwrite).
+6. Write the completed constitution back to `.specify/memory/constitution.md` (overwrite).
 
-8. Output a final summary to the user with:
+7. Output a final summary to the user with:
    - New version and bump rationale.
-   - Any files flagged for manual follow-up.
+   - Any TODO placeholders or deferred items requiring manual follow-up.
    - Suggested commit message (e.g., `docs: amend constitution to vX.Y.Z (principle additions + governance update)`).
    - A `Next Actions` section for any deferred non-governance intents.
 

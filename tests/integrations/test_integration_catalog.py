@@ -220,6 +220,33 @@ class TestActiveCatalogs:
 # ---------------------------------------------------------------------------
 
 
+class _OversizedResponse:
+    """Response stub that supports bounded streaming reads for oversized-catalog tests."""
+
+    def __init__(self, data, url=""):
+        self._data = json.dumps(data).encode()
+        self._url = url if isinstance(url, str) else url.full_url
+        self._pos = 0
+
+    def read(self, n=-1):
+        if n < 0:
+            chunk = self._data[self._pos:]
+            self._pos = len(self._data)
+            return chunk
+        chunk = self._data[self._pos : self._pos + n]
+        self._pos += len(chunk)
+        return chunk
+
+    def geturl(self):
+        return self._url
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        pass
+
+
 class TestCatalogFetch:
     """Tests that use a local HTTP server stub via monkeypatch."""
 
@@ -230,9 +257,16 @@ class TestCatalogFetch:
             def __init__(self, data, url=""):
                 self._data = json.dumps(data).encode()
                 self._url = url if isinstance(url, str) else url.full_url
+                self._pos = 0
 
-            def read(self):
-                return self._data
+            def read(self, n=-1):
+                if n < 0:
+                    chunk = self._data[self._pos:]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos:self._pos + n]
+                self._pos += len(chunk)
+                return chunk
 
             def geturl(self):
                 return self._url
@@ -394,6 +428,90 @@ class TestCatalogFetch:
 
         with pytest.raises(IntegrationCatalogError, match="Failed to fetch any integration catalog"):
             cat.search()
+
+    def test_oversized_catalog_response_rejected(self, tmp_path, monkeypatch):
+        """Response exceeding MAX_JSON_METADATA_BYTES is caught as IntegrationCatalogError.
+
+        The per-entry error is logged as a warning and skipped (not fatal).
+        When ALL catalogs are oversized, search() raises the aggregate error.
+        """
+        from specify_cli._download_security import MAX_JSON_METADATA_BYTES
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+        (tmp_path / ".specify").mkdir()
+        cat = IntegrationCatalog(tmp_path)
+
+        # Build a valid catalog dict whose JSON encoding exceeds the limit.
+        oversized = {
+            "schema_version": "1.0",
+            "integrations": {},
+            "padding": "x" * (MAX_JSON_METADATA_BYTES + 1),
+        }
+
+        import specify_cli.authentication.http as _auth_http
+
+        def _oversized_urlopen(req, timeout=10):
+            url = req if isinstance(req, str) else req.full_url
+            return _OversizedResponse(oversized, url)
+
+        monkeypatch.setattr(_auth_http.urllib.request, "urlopen", _oversized_urlopen)
+
+        # Both default + community catalogs are oversized → all fail → aggregate error.
+        # The per-entry IntegrationCatalogError (with "exceeds maximum size") is
+        # logged as a warning; the aggregate raise has a different message.
+        with pytest.raises(IntegrationCatalogError, match="Failed to fetch any integration catalog"):
+            cat.search()
+
+    def test_oversized_catalog_does_not_block_healthy_one(self, tmp_path, monkeypatch):
+        """When one catalog is oversized, the healthy catalog still returns results."""
+        from specify_cli._download_security import MAX_JSON_METADATA_BYTES
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+        specify = tmp_path / ".specify"
+        specify.mkdir()
+
+        healthy_catalog = {
+            "schema_version": "1.0",
+            "integrations": {
+                "good-agent": {
+                    "id": "good-agent",
+                    "name": "Good Agent",
+                    "version": "1.0.0",
+                    "description": "A healthy integration",
+                    "author": "test-org",
+                },
+            },
+        }
+        oversized_catalog = {
+            "schema_version": "1.0",
+            "integrations": {},
+            "padding": "x" * (MAX_JSON_METADATA_BYTES + 1),
+        }
+        cfg = specify / "integration-catalogs.yml"
+        cfg.write_text(yaml.dump({"catalogs": [
+            {"url": "https://healthy.example.com/catalog.json", "name": "healthy", "priority": 1, "install_allowed": True},
+            {"url": "https://oversized.example.com/catalog.json", "name": "oversized", "priority": 2, "install_allowed": True},
+        ]}))
+        cat = IntegrationCatalog(tmp_path)
+
+        import specify_cli.authentication.http as _auth_http
+
+        def _multi_catalog_urlopen(req, timeout=10):
+            url = req if isinstance(req, str) else req.full_url
+            if "oversized" in url:
+                return _OversizedResponse(oversized_catalog, url)
+            return _OversizedResponse(healthy_catalog, url)
+
+        monkeypatch.setattr(_auth_http.urllib.request, "urlopen", _multi_catalog_urlopen)
+
+        # The oversized catalog is skipped; the healthy catalog's integrations are returned.
+        results = cat.search()
+        ids = [r["id"] for r in results]
+        assert "good-agent" in ids
 
     def test_clear_cache(self, tmp_path):
         (tmp_path / ".specify").mkdir()
@@ -592,8 +710,15 @@ class TestIntegrationListCatalog:
             def __init__(self, data, url=""):
                 self._data = json.dumps(data).encode()
                 self._url = url if isinstance(url, str) else url.full_url
-            def read(self):
-                return self._data
+                self._pos = 0
+            def read(self, n=-1):
+                if n < 0:
+                    chunk = self._data[self._pos:]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos:self._pos + n]
+                self._pos += len(chunk)
+                return chunk
             def geturl(self):
                 return self._url
             def __enter__(self):

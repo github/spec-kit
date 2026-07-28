@@ -272,27 +272,56 @@ _BASH_FORMAT_COMMAND_RE = re.compile(
 _POWERSHELL_FORMAT_COMMAND_RE = re.compile(
     r"Format-SpecKitCommand\s+-CommandName\s+(['\"])([A-Za-z0-9_.-]+)\1(?:\s+-RepoRoot\s+[^\r\n]+)?"
 )
+_PYTHON_FORMAT_COMMAND_RETURN_RE = re.compile(
+    r'return f"/speckit\{separator\}\{name\}"'
+)
+_BASH_FORMATTER_RETURN_RE = re.compile(
+    r'''printf '/speckit%s%s\\n' "\$separator" "\$command_name"'''
+)
+_POWERSHELL_FORMATTER_RETURN_RE = re.compile(
+    r'return "/speckit\$separator\$name"'
+)
 
 
-def _format_speckit_command(command_name: str, separator: str) -> str:
+def _format_speckit_command(
+    command_name: str, separator: str, prefix: str = "/"
+) -> str:
     name = command_name.strip().lstrip("/")
     if name.startswith("speckit."):
         name = name[len("speckit.") :]
     elif name.startswith("speckit-"):
         name = name[len("speckit-") :]
     name = name.replace(".", separator)
-    return f"/speckit{separator}{name}"
+    return f"{prefix}speckit{separator}{name}"
 
 
-def _resolve_dynamic_command_refs(content: str, separator: str) -> str:
+def _resolve_dynamic_command_refs(
+    content: str, separator: str, prefix: str = "/"
+) -> str:
     """Render script runtime command helpers for managed shared infra copies."""
 
+    bash_prefix = r"\$" if prefix == "$" else prefix
     content = _BASH_FORMAT_COMMAND_RE.sub(
-        lambda match: _format_speckit_command(match.group(2), separator),
+        lambda match: _format_speckit_command(
+            match.group(2), separator, bash_prefix
+        ),
         content,
     )
-    return _POWERSHELL_FORMAT_COMMAND_RE.sub(
-        lambda match: f"'{_format_speckit_command(match.group(2), separator)}'",
+    content = _POWERSHELL_FORMAT_COMMAND_RE.sub(
+        lambda match: f"'{_format_speckit_command(match.group(2), separator, prefix)}'",
+        content,
+    )
+    content = _BASH_FORMATTER_RETURN_RE.sub(
+        f'''printf '{prefix}speckit%s%s\\\\n' "$separator" "$command_name"''',
+        content,
+    )
+    powershell_prefix = "`$" if prefix == "$" else prefix
+    content = _POWERSHELL_FORMATTER_RETURN_RE.sub(
+        f'return "{powershell_prefix}speckit$separator$name"',
+        content,
+    )
+    return _PYTHON_FORMAT_COMMAND_RETURN_RE.sub(
+        f'return f"{prefix}speckit{{separator}}{{name}}"',
         content,
     )
 
@@ -305,6 +334,7 @@ def refresh_shared_templates(
     repo_root: Path,
     console: Any,
     invoke_separator: str,
+    invoke_prefix: str = "/",
     force: bool = False,
 ) -> None:
     """Refresh default-sensitive shared templates without touching scripts."""
@@ -336,7 +366,9 @@ def refresh_shared_templates(
                 continue
 
         content = src.read_text(encoding="utf-8")
-        content = IntegrationBase.resolve_command_refs(content, invoke_separator)
+        content = IntegrationBase.resolve_command_refs(
+            content, invoke_separator, invoke_prefix
+        )
         planned_updates.append((dst, rel, content))
 
     for dst, rel, content in planned_updates:
@@ -363,6 +395,7 @@ def install_shared_infra(
     console: Any,
     force: bool = False,
     invoke_separator: str = ".",
+    invoke_prefix: str = "/",
     refresh_managed: bool = False,
     refresh_hint: str | None = None,
 ) -> bool:
@@ -516,8 +549,12 @@ def install_shared_infra(
                     if not _ensure_or_bucket_dir(dst_path.parent):
                         continue
                     content = src_path.read_text(encoding="utf-8")
-                    content = IntegrationBase.resolve_command_refs(content, invoke_separator)
-                    content = _resolve_dynamic_command_refs(content, invoke_separator)
+                    content = IntegrationBase.resolve_command_refs(
+                        content, invoke_separator, invoke_prefix
+                    )
+                    content = _resolve_dynamic_command_refs(
+                        content, invoke_separator, invoke_prefix
+                    )
                     planned_copies.append(
                         (
                             dst_path,
@@ -566,7 +603,9 @@ def install_shared_infra(
                     continue
 
                 content = src.read_text(encoding="utf-8")
-                content = IntegrationBase.resolve_command_refs(content, invoke_separator)
+                content = IntegrationBase.resolve_command_refs(
+                    content, invoke_separator, invoke_prefix
+                )
                 planned_templates.append((dst, rel, content))
 
     for dst_path, rel, content, mode in planned_copies:
