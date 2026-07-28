@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-27T00:00:00Z",
+  "updated_at": "2026-07-28T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -4820,9 +4820,9 @@
       "id": "verify-review-ship",
       "description": "Post-convergence operational verification, technical review, learning governance, and transactional delivery.",
       "author": "Carlos Eduardo Gevaerd Araujo",
-      "version": "0.4.1",
-      "download_url": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/archive/refs/tags/v0.4.1.zip",
-      "sha256": "cfa89b405fcf4857745653e923dfab92f101fbdda15e1e8757ad9f2ea55ae5e2",
+      "version": "0.4.2",
+      "download_url": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/archive/refs/tags/v0.4.2.zip",
+      "sha256": "71dceef5bf81d7ac54faa26bb5cf279554815a4928ee8d0c8e9bfb4c3e2bb0ab",
       "repository": "https://github.com/cadugevaerd/spec-kit-verify-review-ship",
       "homepage": "https://github.com/cadugevaerd/spec-kit-verify-review-ship",
       "documentation": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/blob/main/README.md",
@@ -4851,7 +4851,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-10T00:00:00Z",
-      "updated_at": "2026-07-27T00:00:00Z"
+      "updated_at": "2026-07-28T00:00:00Z"
     },
     "verify-tasks": {
       "name": "Verify Tasks Extension",

@@ -6,6 +6,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 
 | Agent                                                                                | Key              | Notes                                                                                                                                     |
 | ------------------------------------------------------------------------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| [Alquimia AI](https://docs.alquimia.ai)                                              | `alquimia`       | Skills-based integration; installs skills into `.alquimia/skills` and invokes them as `/speckit-<command>`                                |
 | [Amp](https://ampcode.com/)                                                          | `amp`            |                                                                                                                                           |
 | [Antigravity (agy)](https://antigravity.google/)                                     | `agy`            | Skills-based integration; skills are installed automatically                                                                               |
 | [Auggie CLI](https://docs.augmentcode.com/cli/overview)                              | `auggie`         |                                                                                                                                           |
@@ -271,6 +272,7 @@ The currently declared multi-install safe integrations are:
 
 | Key | Command directory |
 | --- | ----------------- |
+| `alquimia` | `.alquimia/skills` |
 | `auggie` | `.augment/commands` |
 | `claude` | `.claude/skills` |
 | `cline` | `.clinerules/workflows` |

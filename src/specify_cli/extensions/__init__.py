@@ -17,7 +17,6 @@ import re
 import shutil
 import stat
 import tempfile
-import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,7 +28,13 @@ from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from .._assets import _locate_core_pack, _repo_root
-from .._download_security import MAX_DOWNLOAD_BYTES, MAX_JSON_METADATA_BYTES, read_response_limited
+from .._download_security import (
+    MAX_JSON_CATALOG_BYTES,
+    build_safe_download_path,
+    is_https_or_localhost_http,
+    read_response_limited,
+    safe_extract_zip,
+)
 from .._init_options import is_ai_skills_enabled
 from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
 from .._utils import dump_frontmatter, relative_extension_path_violation, version_satisfies
@@ -398,6 +403,12 @@ class ExtensionManifest:
                 if not isinstance(alias, str):
                     raise ValidationError(
                         f"Aliases for command '{cmd['name']}' must be strings"
+                    )
+                alias_reason = relative_extension_path_violation(alias)
+                if alias_reason:
+                    raise ValidationError(
+                        f"Invalid alias {alias!r} for command "
+                        f"'{cmd['name']}': {alias_reason}"
                     )
 
         # Rewrite any hook command references that pointed at a renamed command or
@@ -805,7 +816,7 @@ class ExtensionManager:
         - primary commands must use this extension's namespace
         - command namespaces must not shadow core commands
         - duplicate command/alias names inside one manifest are rejected
-        - aliases are validated for type and uniqueness only (no pattern enforcement)
+        - aliases are free-form but must remain safe relative output paths
 
         Args:
             manifest: Parsed extension manifest
@@ -840,6 +851,12 @@ class ExtensionManager:
                 if not isinstance(name, str):
                     raise ValidationError(
                         f"{kind.capitalize()} for command '{primary_name}' must be a string"
+                    )
+
+                path_reason = relative_extension_path_violation(name)
+                if path_reason:
+                    raise ValidationError(
+                        f"Invalid {kind} {name!r}: {path_reason}"
                     )
 
                 # Enforce canonical pattern only for primary command names;
@@ -1007,18 +1024,21 @@ class ExtensionManager:
 
         return _ignore
 
-    def _get_skills_dir(self) -> Optional[Path]:
+    def _get_skills_dir(self, *, create: bool = True) -> Optional[Path]:
         """Return the active skills directory for extension skill registration.
 
         Delegates to :func:`resolve_active_skills_dir` which reads
         init-options, applies the Kimi native-skills fallback, and
-        safely creates the directory when ``ai_skills`` is enabled.
+        safely creates the directory when ``ai_skills`` is enabled and
+        ``create`` is true. Read-only callers can pass ``create=False`` to
+        resolve the configured target without changing the filesystem.
 
         Returns ``None`` (instead of raising) when the directory cannot
         be created due to symlink, containment, or permission issues so
         that callers can fall back gracefully.
         """
         from .. import (
+            _get_skills_dir as resolve_configured_skills_dir,
             _print_cli_warning,
             load_init_options,
             resolve_active_skills_dir,
@@ -1040,6 +1060,41 @@ class ExtensionManager:
                 return None
             return skills_dir
 
+        opts = load_init_options(self.project_root)
+        if not isinstance(opts, dict):
+            return None
+        selected_ai = opts.get("ai")
+        if not isinstance(selected_ai, str) or not selected_ai:
+            return None
+
+        from ..agents import CommandRegistrar
+
+        registrar = CommandRegistrar()
+        agent_config = registrar.AGENT_CONFIGS.get(selected_ai)
+        ai_skills_enabled = is_ai_skills_enabled(opts)
+        if not create:
+            if not ai_skills_enabled and selected_ai != "kimi":
+                return None
+            configured_skills_dir = resolve_configured_skills_dir(
+                self.project_root, selected_ai
+            )
+            from ..shared_infra import _validate_safe_shared_directory
+
+            try:
+                _validate_safe_shared_directory(
+                    self.project_root, configured_skills_dir
+                )
+            except (OSError, ValueError):
+                return None
+            skills_dir = configured_skills_dir
+            if agent_config and agent_config.get("extension") == "/SKILL.md":
+                skills_dir = registrar._resolve_agent_dir(
+                    selected_ai, agent_config, self.project_root
+                )
+            if ai_skills_enabled:
+                return skills_dir
+            return skills_dir if skills_dir.is_dir() else None
+
         try:
             skills_dir = resolve_active_skills_dir(self.project_root)
         except (ValueError, OSError) as exc:
@@ -1054,23 +1109,95 @@ class ExtensionManager:
         if skills_dir is None:
             return None
 
-        opts = load_init_options(self.project_root)
-        if not isinstance(opts, dict):
-            return _ensure_usable(skills_dir)
-        selected_ai = opts.get("ai")
-        if not isinstance(selected_ai, str) or not selected_ai:
-            return _ensure_usable(skills_dir)
-
-        from ..agents import CommandRegistrar
-
-        registrar = CommandRegistrar()
-        agent_config = registrar.AGENT_CONFIGS.get(selected_ai)
         if agent_config and agent_config.get("extension") == "/SKILL.md":
-            agent_skills_dir = registrar._resolve_agent_dir(
+            skills_dir = registrar._resolve_agent_dir(
                 selected_ai, agent_config, self.project_root
             )
-            return _ensure_usable(agent_skills_dir)
         return _ensure_usable(skills_dir)
+
+    @staticmethod
+    def _skill_name_for_command(command_name: str) -> str:
+        """Return the generated skill directory name for an extension command."""
+        short_name = command_name
+        if short_name.startswith("speckit."):
+            short_name = short_name[len("speckit.") :]
+        return f"speckit-{short_name.replace('.', '-')}"
+
+    def _active_command_registration_scope(self) -> Optional[set[str]]:
+        """Return the agents a new extension install may render commands for.
+
+        ``None`` means legacy detection-based registration when init-options
+        is absent. An empty set means registration must fail closed.
+        """
+        from .. import load_init_options
+        from .._init_options import (
+            MISSING_INIT_OPTIONS_FILE,
+            resolve_active_agent_for_registration,
+        )
+
+        active_agent = resolve_active_agent_for_registration(self.project_root)
+        if active_agent is MISSING_INIT_OPTIONS_FILE:
+            return None
+        if active_agent is None:
+            return set()
+
+        from ..agents import CommandRegistrar as AgentRegistrar
+
+        agent_config = AgentRegistrar().AGENT_CONFIGS.get(active_agent)
+        if (
+            agent_config
+            and is_ai_skills_enabled(load_init_options(self.project_root))
+            and agent_config.get("extension") != "/SKILL.md"
+        ):
+            # Command-backed integrations render extension artifacts through
+            # _register_extension_skills while their skills mode is active.
+            return set()
+        return {active_agent}
+
+    def _command_registration_targets(self) -> Dict[str, Path]:
+        """Return current or recoverable command roots for a new install."""
+        from ..agents import CommandRegistrar as AgentRegistrar
+
+        registrar = AgentRegistrar()
+        agent_scope = self._active_command_registration_scope()
+        active_skills_agent = registrar._active_skills_agent(self.project_root)
+        recoverable_active_skills_dir = (
+            self._get_skills_dir(create=False)
+            if active_skills_agent is not None
+            else None
+        )
+        targets: Dict[str, Path] = {}
+
+        for agent_name, agent_config in registrar.AGENT_CONFIGS.items():
+            if agent_scope is not None and agent_name not in agent_scope:
+                continue
+
+            active_skills_output = (
+                agent_name == active_skills_agent
+                and agent_config.get("extension") == "/SKILL.md"
+            )
+            commands_dir = registrar._resolve_agent_dir(
+                agent_name, agent_config, self.project_root
+            )
+            active_output_is_recoverable = (
+                active_skills_output
+                and recoverable_active_skills_dir is not None
+                and registrar._same_lexical_path(
+                    commands_dir, recoverable_active_skills_dir
+                )
+            )
+            detect_dir = agent_config.get("detect_dir")
+            if (
+                detect_dir
+                and not (self.project_root / detect_dir).is_dir()
+                and not active_output_is_recoverable
+            ):
+                continue
+
+            if commands_dir.is_dir() or active_output_is_recoverable:
+                targets[agent_name] = commands_dir
+
+        return targets
 
     def _register_commands_for_active_agent(
         self,
@@ -1104,16 +1231,10 @@ class ExtensionManager:
             Mapping of agent name to registered command names, matching the
             ``registered_commands`` registry shape.
         """
-        from .. import load_init_options
-        from .._init_options import (
-            MISSING_INIT_OPTIONS_FILE,
-            resolve_active_agent_for_registration,
-        )
-
         registrar = CommandRegistrar()
-        active_agent = resolve_active_agent_for_registration(self.project_root)
+        agent_scope = self._active_command_registration_scope()
 
-        if active_agent is MISSING_INIT_OPTIONS_FILE:
+        if agent_scope is None:
             return registrar.register_commands_for_all_agents(
                 manifest,
                 extension_dir,
@@ -1122,30 +1243,13 @@ class ExtensionManager:
                 create_missing_active_skills_dir=True,
             )
 
-        if active_agent is None:
+        if not agent_scope:
             # init-options.json exists but could not provide a valid active
-            # agent (corrupted/unreadable/non-object JSON, or a malformed
-            # "ai" value). Fail closed instead of falling back to all agents
-            # or passing a non-string key into AGENT_CONFIGS.get() below,
-            # which would raise TypeError for unhashable values like a list.
+            # agent, or the active command-backed integration is in skills
+            # mode. Fail closed instead of falling back to all agents.
             return {}
 
-        init_options = load_init_options(self.project_root)
-
-        # A recorded active key with no registrar config (e.g. "generic",
-        # deliberately excluded from AGENT_CONFIGS) has nothing to register
-        # through this path, but it is still an active integration. Passing
-        # it as only_agent below naturally yields no matches instead of
-        # falling back to registering every detected agent.
-        agent_config = registrar.AGENT_CONFIGS.get(active_agent)
-        if (
-            agent_config
-            and is_ai_skills_enabled(init_options)
-            and agent_config.get("extension") != "/SKILL.md"
-        ):
-            # Active agent runs skills mode: extension artifacts render as
-            # skills via _register_extension_skills, not as command files.
-            return {}
+        active_agent = next(iter(agent_scope))
 
         # Route through the all-agents pass restricted to the active agent so
         # detection and missing-skills-dir recovery safeguards still apply.
@@ -1245,10 +1349,7 @@ class ExtensionManager:
 
             # Derive skill name from command name using the same hyphenated
             # convention as hook rendering and preset skill registration.
-            short_name_raw = cmd_name
-            if short_name_raw.startswith("speckit."):
-                short_name_raw = short_name_raw[len("speckit.") :]
-            skill_name = f"speckit-{short_name_raw.replace('.', '-')}"
+            skill_name = self._skill_name_for_command(cmd_name)
 
             # Check if skill already exists before creating the directory
             skill_subdir = skills_dir / skill_name
@@ -1256,6 +1357,9 @@ class ExtensionManager:
             cache_root = extension_dir / ".specify-dev" / "extension-skills"
             cache_file = cache_root / skill_name / "SKILL.md"
             use_dev_symlink = link_outputs and not agent_config.get("dev_no_symlink")
+            skill_dir_preexists = (
+                skill_subdir.exists() or skill_subdir.is_symlink()
+            )
             CommandRegistrar._ensure_inside(cache_file, cache_root)
             if skill_file.exists() or skill_file.is_symlink():
                 is_expected_dev_symlink = self._is_expected_dev_symlink(
@@ -1266,6 +1370,11 @@ class ExtensionManager:
                 # to be refreshed on a subsequent dev install.
                 if not is_expected_dev_symlink:
                     continue
+            elif skill_dir_preexists:
+                # Never add files to a pre-existing user directory. Without a
+                # verifiable SKILL.md ownership marker, rollback/removal cannot
+                # distinguish our output from unrelated user artifacts.
+                continue
 
             # Create skill directory; track whether we created it so we can clean
             # up safely if reading the source file subsequently fails.
@@ -1358,6 +1467,97 @@ class ExtensionManager:
         except OSError:
             return False
 
+    def _find_extension_skill_dirs(
+        self,
+        skill_names: List[str],
+        extension_id: str,
+        skills_dir: Optional[Path] = None,
+        *,
+        create_skills_dir: bool = True,
+    ) -> List[Path]:
+        """Return owned skill directories that removal is allowed to delete.
+
+        This is the single discovery path used by both update backups and
+        unregistration. Keeping the ownership and containment checks shared
+        prevents rollback from backing up a different set of artifacts than
+        ``remove()`` later deletes.
+        """
+        if not skill_names:
+            return []
+
+        requested_skills_dir = skills_dir
+
+        project_root = Path(os.path.abspath(self.project_root))
+        fallback_candidates = {
+            candidate: trusted_root
+            for candidate, trusted_root in self._extension_skill_candidate_dirs().items()
+            if trusted_root == project_root
+        }
+        if requested_skills_dir is None:
+            candidate_dirs = dict(fallback_candidates)
+        elif skills_dir:
+            candidate = Path(os.path.abspath(skills_dir))
+            trusted_root = self._extension_skill_trusted_root(candidate)
+            candidate_dirs = (
+                {candidate: trusted_root} if trusted_root is not None else {}
+            )
+        else:
+            candidate_dirs = {}
+
+        from ..shared_infra import _validate_safe_shared_directory
+
+        owned_dirs: List[Path] = []
+        seen_dirs: set[Path] = set()
+        for skills_candidate, trusted_root in candidate_dirs.items():
+            try:
+                # Validate roots lexically before resolving them. Otherwise a
+                # symlinked root resolves to its target and makes descendants
+                # appear contained within itself. Explicit configured roots can
+                # legitimately be global (for example Hermes), while fallback
+                # roots remain restricted to this project.
+                _validate_safe_shared_directory(trusted_root, skills_candidate)
+            except (OSError, ValueError):
+                continue
+            if not skills_candidate.is_dir():
+                continue
+            for skill_name in skill_names:
+                # Guard against path traversal from a corrupted registry entry.
+                sn_path = Path(skill_name)
+                if sn_path.is_absolute() or len(sn_path.parts) != 1:
+                    continue
+                skill_subdir = skills_candidate / skill_name
+                try:
+                    _validate_safe_shared_directory(trusted_root, skill_subdir)
+                    resolved_skill_dir = skill_subdir.resolve()
+                except (OSError, ValueError):
+                    continue
+                if resolved_skill_dir in seen_dirs or not skill_subdir.is_dir():
+                    continue
+
+                skill_md = skill_subdir / "SKILL.md"
+                if not skill_md.is_file():
+                    continue
+                try:
+                    from ..agents import CommandRegistrar as _Registrar
+
+                    raw = skill_md.read_text(encoding="utf-8")
+                    fm, _ = _Registrar.parse_frontmatter(raw)
+                    source = (
+                        fm.get("metadata", {}).get("source", "")
+                        if isinstance(fm, dict)
+                        else ""
+                    )
+                    if source != f"extension:{extension_id}":
+                        continue
+                except Exception:
+                    # If ownership cannot be verified, preserve the directory.
+                    continue
+
+                seen_dirs.add(resolved_skill_dir)
+                owned_dirs.append(resolved_skill_dir)
+
+        return owned_dirs
+
     def _extension_skill_trusted_root(self, candidate: Path) -> Optional[Path]:
         """Return the project or home root allowed to contain *candidate*."""
         candidate = Path(os.path.abspath(candidate))
@@ -1429,157 +1629,10 @@ class ExtensionManager:
                 every configured agent's skills directory is scanned
                 instead of resolving just the currently active one.
         """
-        if not skill_names:
-            return
-
-        from ..shared_infra import _validate_safe_shared_directory
-
-        if skills_dir:
-            # Reject the candidate directory itself (any path component,
-            # including the final one) if it's a symlink escaping the
-            # trusted project/home root, before probing or deleting anything
-            # inside it.
-            # A caller-supplied skills_dir (e.g. a specific agent's
-            # directory resolved without side effects) could have been
-            # replaced with a symlink between registration and removal;
-            # resolving it and only checking children relative to the
-            # already-resolved candidate (the previous approach) would
-            # silently follow the symlink instead of rejecting it.
-            trusted_root = self._extension_skill_trusted_root(skills_dir)
-            if trusted_root is None:
-                return
-            try:
-                _validate_safe_shared_directory(trusted_root, skills_dir)
-            except (ValueError, OSError):
-                return
-
-            # Fast path: we know the exact skills directory
-            for skill_name in skill_names:
-                # Guard against path traversal from a corrupted registry entry:
-                # reject names that are absolute, contain path separators, or
-                # resolve to a path outside the skills directory.
-                sn_path = Path(skill_name)
-                if sn_path.is_absolute() or len(sn_path.parts) != 1:
-                    continue
-                skill_subdir = skills_dir / skill_name
-                # Validate every path component down to the skill's own
-                # subdirectory, not just the already-validated parent
-                # skills_dir: a per-skill child can itself be a symlink to
-                # another directory whose *resolved* target still lands
-                # inside this same (safe) skills root, which the previous
-                # resolve()+relative_to() containment check alone would
-                # not catch. Reject the symlink outright rather than
-                # following it, even when the target is otherwise
-                # in-bounds (#2948).
-                try:
-                    _validate_safe_shared_directory(trusted_root, skill_subdir)
-                except (ValueError, OSError):
-                    continue
-                if not skill_subdir.is_dir():
-                    continue
-                # Safety check: only delete if SKILL.md exists and its
-                # metadata.source matches exactly this extension — mirroring
-                # the fallback branch — so a corrupted registry entry cannot
-                # delete an unrelated user skill.
-                skill_md = skill_subdir / "SKILL.md"
-                if not skill_md.is_file():
-                    continue
-                try:
-                    from ..agents import CommandRegistrar as _Registrar
-
-                    raw = skill_md.read_text(encoding="utf-8")
-                    # Parse on the ``---`` delimiter *line*, not any ``---``
-                    # substring: a description containing ``---`` would trip a
-                    # raw ``split("---", 2)`` and hide metadata.source, so this
-                    # extension's own skill would look unrelated and be left
-                    # orphaned. Mirrors the #3590 parse_frontmatter fix.
-                    fm, _ = _Registrar.parse_frontmatter(raw)
-                    source = (
-                        fm.get("metadata", {}).get("source", "")
-                        if isinstance(fm, dict)
-                        else ""
-                    )
-                    if source != f"extension:{extension_id}":
-                        continue
-                except (OSError, UnicodeDecodeError, Exception):
-                    continue
-                shutil.rmtree(skill_subdir)
-        else:
-            # Fallback: scan all possible agent skills directories
-            for (
-                skills_candidate,
-                trusted_root,
-            ) in self._extension_skill_candidate_dirs().items():
-                # Only project-local skills directories are eligible: the
-                # flat (non-agent-scoped) registered_skills provenance
-                # cannot prove a home-directory skill belongs to this
-                # project, so deleting there could remove another
-                # project's files. Revisit if registry entries ever record
-                # the owning project/agent.
-                if trusted_root != Path(os.path.abspath(self.project_root)):
-                    continue
-                if not skills_candidate.is_dir():
-                    continue
-                # Reject the candidate directory itself (any path
-                # component) if it's a symlink escaping the project
-                # root, before probing or deleting anything inside it —
-                # same guard as the fast path above.
-                try:
-                    _validate_safe_shared_directory(
-                        trusted_root, skills_candidate
-                    )
-                except (ValueError, OSError):
-                    continue
-                for skill_name in skill_names:
-                    # Same path-traversal guard as the fast path above
-                    sn_path = Path(skill_name)
-                    if sn_path.is_absolute() or len(sn_path.parts) != 1:
-                        continue
-                    skill_subdir = skills_candidate / skill_name
-                    # Validate every path component down to the skill's
-                    # own subdirectory, not just the already-validated
-                    # candidate parent: a per-skill child can itself be a
-                    # symlink to another directory whose resolved target
-                    # still lands inside this same candidate, which the
-                    # previous resolve()+relative_to() containment check
-                    # alone would not catch (#2948).
-                    try:
-                        _validate_safe_shared_directory(
-                            trusted_root, skill_subdir
-                        )
-                    except (ValueError, OSError):
-                        continue
-                    if not skill_subdir.is_dir():
-                        continue
-                    # Safety check: only delete if SKILL.md exists and its
-                    # metadata.source matches exactly this extension.  If the
-                    # file is missing or unreadable we skip to avoid deleting
-                    # unrelated user-created directories.
-                    skill_md = skill_subdir / "SKILL.md"
-                    if not skill_md.is_file():
-                        continue
-                    try:
-                        from ..agents import CommandRegistrar as _Registrar
-
-                        raw = skill_md.read_text(encoding="utf-8")
-                        # Parse on the ``---`` delimiter *line*, not any ``---``
-                        # substring: a description containing ``---`` would trip
-                        # a raw ``split("---", 2)`` and hide metadata.source, so
-                        # this extension's own skill would look unrelated and be
-                        # left orphaned. Mirrors the #3590 parse_frontmatter fix.
-                        fm, _ = _Registrar.parse_frontmatter(raw)
-                        source = (
-                            fm.get("metadata", {}).get("source", "")
-                            if isinstance(fm, dict)
-                            else ""
-                        )
-                        # Only remove skills explicitly created by this extension
-                        if source != f"extension:{extension_id}":
-                            continue
-                    except (OSError, UnicodeDecodeError, Exception):
-                        # If we can't verify, skip to avoid accidental deletion
-                        continue
-                    shutil.rmtree(skill_subdir)
+        for skill_subdir in self._find_extension_skill_dirs(
+            skill_names, extension_id, skills_dir=skills_dir
+        ):
+            shutil.rmtree(skill_subdir)
 
     def _extension_owned_skill_names(
         self, skill_names: List[str], extension_id: str
@@ -2330,21 +2383,7 @@ class ExtensionManager:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
 
-            # Extract ZIP safely (prevent Zip Slip attack)
-            with zipfile.ZipFile(zip_path, "r") as zf:
-                # Validate all paths first before extracting anything
-                temp_path_resolved = temp_path.resolve()
-                for member in zf.namelist():
-                    member_path = (temp_path / member).resolve()
-                    # Use is_relative_to for safe path containment check
-                    try:
-                        member_path.relative_to(temp_path_resolved)
-                    except ValueError:
-                        raise ValidationError(
-                            f"Unsafe path in ZIP archive: {member} (potential path traversal)"
-                        )
-                # Only extract after all paths are validated
-                zf.extractall(temp_path)
+            safe_extract_zip(zip_path, temp_path, error_type=ValidationError)
 
             # Find extension directory (may be nested)
             extension_dir = temp_path
@@ -3353,7 +3392,12 @@ class ExtensionCatalog(CatalogStackBase):
                 if final_url != entry.url:
                     self._validate_catalog_url(final_url)
                 catalog_data = json.loads(
-                    read_response_limited(response, max_bytes=MAX_JSON_METADATA_BYTES, error_type=ExtensionError)
+                    read_response_limited(
+                        response,
+                        max_bytes=MAX_JSON_CATALOG_BYTES,
+                        error_type=ExtensionError,
+                        label=f"extension catalog {entry.url}",
+                    )
                 )
 
             self._validate_catalog_payload(catalog_data, entry.url)
@@ -3543,7 +3587,12 @@ class ExtensionCatalog(CatalogStackBase):
                 if final_url != catalog_url:
                     self._validate_catalog_url(final_url)
                 catalog_data = json.loads(
-                    read_response_limited(response, max_bytes=MAX_JSON_METADATA_BYTES, error_type=ExtensionError)
+                    read_response_limited(
+                        response,
+                        max_bytes=MAX_JSON_CATALOG_BYTES,
+                        error_type=ExtensionError,
+                        label=f"extension catalog {catalog_url}",
+                    )
                 )
 
             # Validate catalog structure. Reuses the same helper as
@@ -3702,6 +3751,10 @@ class ExtensionCatalog(CatalogStackBase):
         download_url = ext_info.get("download_url")
         if not download_url:
             raise ExtensionError(f"Extension '{extension_id}' has no download URL")
+        if not isinstance(download_url, str):
+            raise ExtensionError(
+                f"Extension download URL is malformed: {download_url}"
+            )
 
         # Validate download URL requires HTTPS (prevent man-in-the-middle attacks)
         from urllib.parse import urlparse
@@ -3715,12 +3768,16 @@ class ExtensionCatalog(CatalogStackBase):
         try:
             parsed = urlparse(download_url)
             hostname = parsed.hostname
+            parsed.port
         except ValueError:
             raise ExtensionError(
                 f"Extension download URL is malformed: {download_url}"
             ) from None
-        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
-        if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+        if not hostname:
+            raise ExtensionError(
+                f"Extension download URL is malformed: {download_url}"
+            )
+        if not is_https_or_localhost_http(download_url):
             raise ExtensionError(
                 f"Extension download URL must use HTTPS: {download_url}"
             )
@@ -3728,11 +3785,16 @@ class ExtensionCatalog(CatalogStackBase):
         # Determine target path
         if target_dir is None:
             target_dir = self.cache_dir / "downloads"
-        target_dir.mkdir(parents=True, exist_ok=True)
-
+        target_dir = Path(target_dir)
         version = ext_info.get("version", "unknown")
-        zip_filename = f"{extension_id}-{version}.zip"
-        zip_path = target_dir / zip_filename
+        zip_path = build_safe_download_path(
+            target_dir,
+            extension_id,
+            version,
+            error_type=ExtensionError,
+            label="extension",
+        )
+        target_dir.mkdir(parents=True, exist_ok=True)
 
         extra_headers = None
         resolved_download_url = self._resolve_github_release_asset_api_url(download_url)
@@ -3745,7 +3807,11 @@ class ExtensionCatalog(CatalogStackBase):
             with self._open_url(
                 download_url, timeout=60, extra_headers=extra_headers
             ) as response:
-                zip_data = read_response_limited(response, max_bytes=MAX_DOWNLOAD_BYTES, error_type=ExtensionError)
+                zip_data = read_response_limited(
+                    response,
+                    error_type=ExtensionError,
+                    label=f"extension '{extension_id}' download",
+                )
 
             verify_archive_sha256(
                 zip_data, ext_info.get("sha256"), extension_id, ExtensionError
