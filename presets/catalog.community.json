@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-27T00:00:00Z",
+  "updated_at": "2026-07-28T00:00:00Z",
 
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
@@ -368,42 +368,42 @@
     "intake-authoring-governance": {
       "name": "Intake Authoring Governance",
       "id": "intake-authoring-governance",
-      "version": "0.2.0",
-      "description": "Governs traceable intake CRUD, bounded public HTTPS sources, and explicitly approved single or series authoring without granting execution authority.",
+      "version": "0.3.0",
+      "description": "Governs traceable intake CRUD and language-aware requirements collections with atomic migrations, rollback evidence, and safe series authoring.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/archive/refs/tags/v0.2.0.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/archive/refs/tags/v0.3.0.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/blob/v0.2.0/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/blob/v0.3.0/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
       },
       "provides": {
-        "templates": 10,
+        "templates": 12,
         "commands": 5,
-        "scripts": 4
+        "scripts": 7
       },
       "tags": [
         "intake",
         "authoring",
         "governance",
-        "provenance",
-        "requirements"
+        "requirements",
+        "migration"
       ],
       "created_at": "2026-07-22T00:00:00Z",
-      "updated_at": "2026-07-24T00:00:00Z"
+      "updated_at": "2026-07-28T00:00:00Z"
     },
     "intake-review-governance": {
       "name": "Intake Review Governance",
       "id": "intake-review-governance",
-      "version": "0.1.1",
-      "description": "Reviews single, series, and campaign intake files before Spec Kit execution and binds accepted outcomes to normalized content hashes.",
+      "version": "0.2.0",
+      "description": "Reviews single, series, campaign, and language-aware requirements collections before Spec Kit execution.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-intake-review-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/archive/refs/tags/v0.1.1.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/archive/refs/tags/v0.2.0.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-review-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/blob/v0.1.1/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/blob/v0.2.0/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
@@ -411,36 +411,36 @@
       "provides": {
         "templates": 8,
         "commands": 3,
-        "scripts": 2
+        "scripts": 4
       },
       "tags": [
         "intake",
         "review",
         "governance",
-        "quality-gate",
-        "autonomous"
+        "requirements",
+        "quality-gate"
       ],
       "created_at": "2026-07-21T00:00:00Z",
-      "updated_at": "2026-07-24T00:00:00Z"
+      "updated_at": "2026-07-28T00:00:00Z"
     },
     "intake-sequencing-governance": {
       "name": "Intake Sequencing Governance",
       "id": "intake-sequencing-governance",
-      "version": "0.1.0",
-      "description": "Manages traceable intake-series order, typed dependencies, lifecycle, and safe next-candidate selection without executing downstream workflows.",
+      "version": "0.2.2",
+      "description": "Manages language-aware intake-series order, typed dependencies, lifecycle, and authority-neutral next-candidate selection.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/archive/refs/tags/v0.1.0.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/archive/refs/tags/v0.2.2.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/blob/v0.1.0/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/blob/v0.2.2/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
       },
       "provides": {
-        "templates": 10,
+        "templates": 11,
         "commands": 6,
-        "scripts": 5
+        "scripts": 8
       },
       "tags": [
         "intake",
@@ -450,7 +450,7 @@
         "lifecycle"
       ],
       "created_at": "2026-07-27T00:00:00Z",
-      "updated_at": "2026-07-27T00:00:00Z"
+      "updated_at": "2026-07-28T00:00:00Z"
     },
     "isaqb-architecture-governance": {
       "name": "iSAQB Architecture Governance",

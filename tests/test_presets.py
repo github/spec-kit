@@ -654,6 +654,28 @@ class TestPresetManager:
         with pytest.raises(PresetValidationError, match="No preset.yml found"):
             manager.install_from_zip(zip_path, "0.1.5")
 
+    def test_install_from_zip_rejects_symlink_entry(
+        self, project_dir, pack_dir, temp_dir
+    ):
+        """Preset ZIPs delegate to the shared symlink-safe extractor."""
+        import stat
+
+        zip_path = temp_dir / "symlink-preset.zip"
+        link = zipfile.ZipInfo("templates/escape")
+        link.create_system = 3
+        link.external_attr = (stat.S_IFLNK | 0o777) << 16
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            for file_path in pack_dir.rglob("*"):
+                if file_path.is_file():
+                    zf.write(file_path, file_path.relative_to(pack_dir))
+            zf.writestr(link, "../../outside")
+
+        manager = PresetManager(project_dir)
+        with pytest.raises(PresetValidationError, match="Unsafe symlink"):
+            manager.install_from_zip(zip_path, "0.1.5")
+
+        assert not manager.registry.is_installed("test-pack")
+
     def test_remove(self, project_dir, pack_dir):
         """Test removing a preset."""
         manager = PresetManager(project_dir)
@@ -1740,7 +1762,7 @@ class TestPresetCatalog:
 
         catalog_data = {"schema_version": "1.0", "presets": {}}
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(catalog_data).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(catalog_data).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://raw.githubusercontent.com/org/repo/main/presets/catalog.json"
@@ -1893,7 +1915,7 @@ class TestPresetCatalog:
         catalog = PresetCatalog(project_dir)
 
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         # A real urllib response reports the final URL (== request URL with no
@@ -1965,7 +1987,7 @@ class TestPresetCatalog:
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = catalog.DEFAULT_CATALOG_URL
@@ -2013,7 +2035,7 @@ class TestPresetCatalog:
 
         catalog = PresetCatalog(project_dir)
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"
@@ -2055,7 +2077,7 @@ class TestPresetCatalog:
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"
@@ -2094,7 +2116,7 @@ class TestPresetCatalog:
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"
@@ -2165,7 +2187,7 @@ class TestPresetCatalog:
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode("utf-8")
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode("utf-8")).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"
@@ -2214,11 +2236,13 @@ class TestPresetCatalog:
             "schema_version": "1.0",
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
-        mock_response.geturl.return_value = catalog.DEFAULT_CATALOG_URL
+        def make_response():
+            mock_response = MagicMock()
+            mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            mock_response.geturl.return_value = catalog.DEFAULT_CATALOG_URL
+            return mock_response
 
         # Simulate an unwritable cache dir: every write_text under the
         # cache directory raises PermissionError (an OSError subclass).
@@ -2231,7 +2255,7 @@ class TestPresetCatalog:
 
         monkeypatch.setattr(_PathCls, "write_text", failing_write_text)
 
-        with patch.object(catalog, "_open_url", return_value=mock_response):
+        with patch.object(catalog, "_open_url", side_effect=lambda *a, **kw: make_response()):
             # Legacy single-catalog path.
             assert catalog.fetch_catalog(force_refresh=True) == valid
 
@@ -2268,7 +2292,7 @@ class TestPresetCatalog:
             },
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"
@@ -2361,12 +2385,108 @@ class TestPresetCatalog:
         zip_bytes = zip_buf.getvalue()
 
         resp = MagicMock()
-        resp.read.return_value = zip_bytes
+        resp.read.side_effect = io.BytesIO(zip_bytes).read
         # Configure the context-manager protocol explicitly so `with resp`
         # yields `resp` itself, independent of how the protocol is invoked.
         resp.__enter__.return_value = resp
         resp.__exit__.return_value = False
         return zip_bytes, resp
+
+    def test_fetch_single_catalog_rejects_oversized_body_without_cache(
+        self, project_dir, monkeypatch
+    ):
+        """Catalog bounds are enforced at the preset call site."""
+        import specify_cli.presets as preset_module
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        entry = PresetCatalogEntry(
+            url="https://example.com/catalog.json",
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+        body = b'{"schema_version":"1.0","presets":{}}'
+        response = MagicMock()
+        response.read.side_effect = io.BytesIO(body).read
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+        response.geturl.return_value = entry.url
+        monkeypatch.setattr(
+            preset_module,
+            "MAX_JSON_CATALOG_BYTES",
+            len(body) - 1,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=response):
+            with pytest.raises(PresetError, match="exceeds maximum size"):
+                catalog._fetch_single_catalog(entry, force_refresh=True)
+
+        assert not catalog.cache_dir.exists() or not any(catalog.cache_dir.iterdir())
+
+    def test_download_pack_rejects_oversized_body_without_output(
+        self, project_dir, monkeypatch
+    ):
+        """Package bounds fail before checksum verification or disk writes."""
+        import specify_cli.presets as preset_module
+        from unittest.mock import patch
+        from specify_cli._download_security import (
+            read_response_limited as real_read_response_limited,
+        )
+
+        catalog = PresetCatalog(project_dir)
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "_install_allowed": True,
+        }
+        response = MagicMock()
+        response.read.side_effect = io.BytesIO(b"12345").read
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+
+        def read_with_tiny_limit(stream, **kwargs):
+            kwargs.pop("max_bytes", None)
+            return real_read_response_limited(stream, max_bytes=4, **kwargs)
+
+        monkeypatch.setattr(
+            preset_module,
+            "read_response_limited",
+            read_with_tiny_limit,
+        )
+        with patch.object(preset_module, "verify_archive_sha256") as verify, \
+             patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=response):
+            with pytest.raises(PresetError, match="exceeds maximum size"):
+                catalog.download_pack("test-pack", target_dir=project_dir)
+
+        verify.assert_not_called()
+        assert not (project_dir / "test-pack-1.0.0.zip").exists()
+
+    def test_download_pack_rejects_unsafe_output_filename(self, project_dir):
+        """Catalog-controlled IDs cannot escape the requested target directory."""
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        outside_stem = project_dir.parent / "outside-preset"
+        pack_id = str(outside_stem)
+        pack_info = {
+            "id": pack_id,
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url") as open_url:
+            with pytest.raises(PresetError, match="filename"):
+                catalog.download_pack(pack_id, target_dir=project_dir)
+
+        open_url.assert_not_called()
+        assert not Path(f"{outside_stem}-1.0.0.zip").exists()
 
     def test_download_pack_accepts_matching_sha256(self, project_dir):
         """A catalog ``sha256`` that matches the preset archive is accepted."""
@@ -2420,7 +2540,13 @@ class TestPresetCatalog:
         from unittest.mock import patch
 
         catalog = PresetCatalog(project_dir)
-        for bad_url in ("https://[::1", "https://[not-an-ip]/x"):
+        for bad_url in (
+            "https://[::1",
+            "https://[not-an-ip]/x",
+            "https://example.com:65536/x",
+            "https:///x",
+            123,
+        ):
             pack_info = {
                 "id": "test-pack",
                 "name": "Test Pack",
@@ -2428,9 +2554,11 @@ class TestPresetCatalog:
                 "download_url": bad_url,
                 "_install_allowed": True,
             }
-            with patch.object(catalog, "get_pack_info", return_value=pack_info):
+            with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+                 patch.object(catalog, "_open_url") as open_url:
                 with pytest.raises(PresetError, match="malformed"):
                     catalog.download_pack("test-pack", target_dir=project_dir)
+                open_url.assert_not_called()
 
     def test_download_pack_without_sha256_skips_verification(self, project_dir):
         """A catalog entry with no ``sha256`` keeps working: verification is
@@ -2471,7 +2599,7 @@ class TestPresetCatalog:
         zip_bytes = zip_buf.getvalue()
 
         asset_response = MagicMock()
-        asset_response.read.return_value = zip_bytes
+        asset_response.read.side_effect = io.BytesIO(zip_bytes).read
         asset_response.__enter__ = lambda s: s
         asset_response.__exit__ = MagicMock(return_value=False)
 
@@ -4260,6 +4388,35 @@ class TestPresetSkills:
         content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
         assert "__SPECKIT_COMMAND_" not in content, "raw command token leaked on restore"
         assert "/speckit-plan" in content
+
+    def test_restore_skill_preserves_dollar_command_refs(self, project_dir, temp_dir):
+        """Dollar-style core refs remain native when a preset skill is removed."""
+        self._write_init_options(project_dir, ai="zcode")
+        skills_dir = project_dir / ".zcode" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        raw_core = (
+            "---\ndescription: Core specify\n---\n\n"
+            "Then run `__SPECKIT_COMMAND_PLAN__`.\n"
+        )
+        (core_cmds / "specify.md").write_text(raw_core)
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "dollar-cmdref-restore",
+            "speckit.specify",
+            "Override specify",
+            "Override body\n",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        manager.remove("dollar-cmdref-restore")
+
+        content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
+        assert "$speckit-plan" in content
+        assert "/speckit-plan" not in content
 
     def test_reconcile_override_skill_resolves_command_refs(self, project_dir, temp_dir):
         """Reconcile's project-override restore must resolve command tokens (issue #2717).
@@ -9791,8 +9948,8 @@ class TestBundledPresetLocator:
         assert "redirected to a disallowed URL" in output
         assert "must use HTTPS with a hostname" in output
 
-    def test_preset_add_from_url_streams_download_to_zip(self, project_dir, monkeypatch):
-        """URL installs stream response bytes to disk before installing the ZIP."""
+    def test_preset_add_from_url_reads_in_bounded_chunks(self, project_dir, monkeypatch):
+        """URL installs read the response in bounded chunks."""
         from specify_cli.presets._commands import preset_add
 
         class FakeResponse(io.BytesIO):
@@ -9839,6 +9996,65 @@ class TestBundledPresetLocator:
             "speckit_version": "0.6.0",
             "priority": 7,
         }
+
+    def test_preset_add_from_url_rejects_oversized_download(
+        self, project_dir, monkeypatch, capsys
+    ):
+        """An oversized direct download fails before preset installation."""
+        import typer
+        from specify_cli._download_security import (
+            read_response_limited as real_read_response_limited,
+        )
+        from specify_cli.presets import _commands as preset_commands
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def geturl(self):
+                return "https://example.com/preset.zip"
+
+        def read_with_tiny_limit(response, **kwargs):
+            kwargs.pop("max_bytes", None)
+            return real_read_response_limited(response, max_bytes=4, **kwargs)
+
+        installed = False
+
+        def fake_install_from_zip(*_args, **_kwargs):
+            nonlocal installed
+            installed = True
+
+        monkeypatch.setattr(
+            preset_commands,
+            "read_response_limited",
+            read_with_tiny_limit,
+        )
+        monkeypatch.setattr(
+            "specify_cli._require_specify_project",
+            lambda: project_dir,
+        )
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.6.0")
+        monkeypatch.setattr(
+            "specify_cli.authentication.http.open_url",
+            lambda *_args, **_kwargs: FakeResponse(b"12345"),
+        )
+        monkeypatch.setattr(PresetManager, "install_from_zip", fake_install_from_zip)
+
+        with pytest.raises(typer.Exit) as exc_info:
+            preset_commands.preset_add(
+                preset_id=None,
+                from_url="https://example.com/preset.zip",
+                dev=None,
+                priority=10,
+            )
+
+        assert exc_info.value.exit_code == 1
+        output = " ".join(strip_ansi(capsys.readouterr().out).split())
+        assert "exceeds maximum size of 4 bytes" in output
+        assert installed is False
 
     def test_bundled_preset_in_catalog(self):
         """Verify the lean preset is listed in catalog.json with bundled marker."""
@@ -11717,18 +11933,21 @@ class TestPresetTagsNonString:
     this with ``str(t) for t in ...`` — presets must match.
     """
 
-    def _seed_catalog(self, project_dir, tags):
+    def _seed_catalog(self, project_dir, tags, extra=None):
         catalog = PresetCatalog(project_dir)
         catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        pack = {
+            "name": "Numeric Tags",
+            "description": "Preset with non-string tags",
+            "version": "1.0.0",
+            "tags": tags,
+        }
+        if extra:
+            pack.update(extra)
         catalog_data = {
             "schema_version": "1.0",
             "presets": {
-                "numeric-tags": {
-                    "name": "Numeric Tags",
-                    "description": "Preset with non-string tags",
-                    "version": "1.0.0",
-                    "tags": tags,
-                },
+                "numeric-tags": pack,
             },
         }
         catalog.cache_file.write_text(json.dumps(catalog_data))
@@ -11772,6 +11991,119 @@ class TestPresetTagsNonString:
         assert result.exit_code == 0, result.output
         plain = strip_ansi(result.output)
         assert "Tags:        1, 2" in plain
+
+    def _default_only(self, catalog):
+        return [PresetCatalogEntry(
+            url=catalog.DEFAULT_CATALOG_URL, name="default", priority=1, install_allowed=True
+        )]
+
+    def test_search_by_author_tolerates_non_string_author(self, project_dir):
+        """``--author`` must not crash on a numeric catalog ``author``.
+
+        ``PresetCatalog.search`` called ``.lower()`` straight on the raw value,
+        raising ``AttributeError: 'int' object has no attribute 'lower'``. The
+        sibling extension/integration catalogs coerce with ``str(...)`` first.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        catalog = self._seed_catalog(project_dir, ["ci"], extra={"author": 789})
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+                patch.object(PresetCatalog, "get_active_catalogs",
+                             return_value=self._default_only(catalog)):
+            result = CliRunner().invoke(app, ["preset", "search", "--author", "789"])
+
+        assert result.exit_code == 0, result.output
+        assert "Numeric Tags" in strip_ansi(result.output)
+
+    def test_search_query_tolerates_non_string_name_and_description(self, project_dir):
+        """A query search must not crash on numeric ``name``/``description``.
+
+        The searchable-text join passed the raw values through, raising
+        ``TypeError: sequence item 0: expected str instance, int found``.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        catalog = self._seed_catalog(
+            project_dir, ["ci"], extra={"name": 123, "description": 456}
+        )
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+                patch.object(PresetCatalog, "get_active_catalogs",
+                             return_value=self._default_only(catalog)):
+            result = CliRunner().invoke(app, ["preset", "search", "123"])
+
+        assert result.exit_code == 0, result.output
+        assert "numeric-tags" in strip_ansi(result.output)
+
+    def test_search_tolerates_non_list_tags(self, project_dir):
+        """A scalar ``tags:`` value must not crash the tag filter or display.
+
+        ``tags: 5`` is truthy but not iterable, so both the ``--tag`` filter and
+        the result-display join raised ``TypeError: 'int' object is not
+        iterable``. Siblings guard with ``isinstance(raw_tags, list)``.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        catalog = self._seed_catalog(project_dir, 5)
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+                patch.object(PresetCatalog, "get_active_catalogs",
+                             return_value=self._default_only(catalog)):
+            filtered = CliRunner().invoke(app, ["preset", "search", "--tag", "ci"])
+            displayed = CliRunner().invoke(app, ["preset", "search", "Numeric"])
+
+        assert filtered.exit_code == 0, filtered.output
+        assert "No presets found" in strip_ansi(filtered.output)
+
+        assert displayed.exit_code == 0, displayed.output
+        plain = strip_ansi(displayed.output)
+        assert "Numeric Tags" in plain
+        assert "Tags:" not in plain
+
+    def test_info_tolerates_non_list_tags(self, project_dir):
+        """``preset info`` must not crash rendering a scalar ``tags:`` value."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        catalog = self._seed_catalog(project_dir, 5)
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+                patch.object(PresetCatalog, "get_active_catalogs",
+                             return_value=self._default_only(catalog)):
+            result = CliRunner().invoke(app, ["preset", "info", "numeric-tags"])
+
+        assert result.exit_code == 0, result.output
+        plain = strip_ansi(result.output)
+        assert "numeric-tags" in plain
+        assert "Tags:" not in plain
+
+    def test_search_escapes_rich_markup_in_tags(self, project_dir):
+        """Bracketed tag text must survive Rich markup parsing.
+
+        ``preset search`` printed tags unescaped, so a tag like ``[bold]`` was
+        swallowed as a style tag. ``preset list`` already escaped this.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        catalog = self._seed_catalog(project_dir, ["[bold]ci"])
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+                patch.object(PresetCatalog, "get_active_catalogs",
+                             return_value=self._default_only(catalog)):
+            result = CliRunner().invoke(app, ["preset", "search", "Numeric"])
+
+        assert result.exit_code == 0, result.output
+        assert "[bold]ci" in strip_ansi(result.output)
 
 
 class TestPresetCatalogRichMarkup:
