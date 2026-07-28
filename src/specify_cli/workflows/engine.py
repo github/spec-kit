@@ -1586,7 +1586,9 @@ class WorkflowEngine:
                 try:
                     with open(state_path, encoding="utf-8") as f:
                         state_data = json.load(f)
-                except (json.JSONDecodeError, OSError):
+                except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+                    continue
+                if not isinstance(state_data, dict) or "run_id" not in state_data:
                     continue
                 runs.append(state_data)
         return runs
