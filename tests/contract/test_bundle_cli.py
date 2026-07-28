@@ -17,6 +17,7 @@ from typer.testing import CliRunner
 
 from specify_cli import app
 from specify_cli.bundler.services.packager import build_bundle
+from tests.conftest import strip_ansi
 from tests.bundler_helpers import (
     catalog_entry_dict,
     valid_manifest_dict,
@@ -24,6 +25,42 @@ from tests.bundler_helpers import (
 )
 
 runner = CliRunner()
+
+MARKUP_BUNDLE_ID = "[red]markup-id[/red]"
+MARKUP_SOURCE_ID = "[underline]markup-source[/underline]"
+
+
+def _configure_markup_catalog(project: Path, **overrides: object) -> dict:
+    entry = catalog_entry_dict(
+        MARKUP_BUNDLE_ID,
+        name="[green]Markup Name[/green]",
+        version="[blue]1.0.0[/blue]",
+        role="[magenta]Markup Role[/magenta]",
+        description="[yellow]Markup Description[/yellow]",
+        author="[cyan]Markup Author[/cyan]",
+        license="[bold]Markup License[/bold]",
+        download_url="https://example.com/markup-bundle.zip",
+        requires={"speckit_version": "[italic]>=0.1.0[/italic]"},
+        **overrides,
+    )
+    catalog = project / "markup-catalog.json"
+    write_catalog_file(catalog, {MARKUP_BUNDLE_ID: entry})
+    config = {
+        "schema_version": "1.0",
+        "catalogs": [
+            {
+                "id": MARKUP_SOURCE_ID,
+                "url": str(catalog),
+                "priority": 1,
+                "install_policy": "install-allowed",
+            }
+        ],
+    }
+    (project / ".specify" / "bundle-catalogs.yml").write_text(
+        yaml.safe_dump(config),
+        encoding="utf-8",
+    )
+    return entry
 
 
 @pytest.fixture()
@@ -122,6 +159,24 @@ def test_search_works_without_a_project(tmp_path: Path, monkeypatch):
     result = runner.invoke(app, ["bundle", "search", "--offline", "--json"])
     assert result.exit_code == 0, result.output
     assert result.output.strip().startswith("[")
+
+
+def test_search_escapes_catalog_markup(project: Path):
+    entry = _configure_markup_catalog(project)
+
+    result = runner.invoke(app, ["bundle", "search", "--offline"])
+
+    assert result.exit_code == 0, result.output
+    output = " ".join(strip_ansi(result.output).split())
+    for value in (
+        entry["id"],
+        entry["name"],
+        entry["version"],
+        entry["role"],
+        entry["description"],
+        MARKUP_SOURCE_ID,
+    ):
+        assert value in output
 
 
 def test_info_unknown_bundle_without_project_reports_not_found(tmp_path: Path, monkeypatch):
@@ -259,6 +314,83 @@ def test_info_expands_full_component_set(project: Path, monkeypatch):
     text = runner.invoke(app, ["bundle", "info", "demo-bundle", "--offline"])
     assert "preset-a v2.0.0" in text.output
     assert "Trust" in text.output
+
+
+def test_info_escapes_catalog_markup(project: Path, monkeypatch):
+    entry = _configure_markup_catalog(project)
+    bundle_dir = project / "markup-bundle"
+    bundle_dir.mkdir()
+    manifest_data = valid_manifest_dict()
+    manifest_data["bundle"]["id"] = MARKUP_BUNDLE_ID
+    manifest_data["integration"] = {
+        "id": "[conceal]markup-integration[/conceal]"
+    }
+    manifest_path = bundle_dir / "bundle.yml"
+    manifest_path.write_text(yaml.safe_dump(manifest_data), encoding="utf-8")
+    _mock_manifest_download(monkeypatch, manifest_path)
+    monkeypatch.setattr(
+        "specify_cli.commands.bundle._manifest_component_view",
+        lambda manifest: [
+            {
+                "kind": "extensions",
+                "id": "[reverse]markup-component[/reverse]",
+                "version": "[strike]2.0.0[/strike]",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "specify_cli.commands.bundle._bundle_overlaps",
+        lambda project_root, manifest, *, offline: [
+            "[blink]markup-overlap[/blink]"
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        ["bundle", "info", MARKUP_BUNDLE_ID, "--offline"],
+    )
+
+    assert result.exit_code == 0, result.output
+    output = " ".join(strip_ansi(result.output).split())
+    for value in (
+        entry["id"],
+        entry["name"],
+        entry["version"],
+        entry["role"],
+        entry["description"],
+        entry["author"],
+        entry["license"],
+        entry["requires"]["speckit_version"],
+        MARKUP_SOURCE_ID,
+        "[conceal]markup-integration[/conceal]",
+        "[reverse]markup-component[/reverse]",
+        "[strike]2.0.0[/strike]",
+        "[blink]markup-overlap[/blink]",
+    ):
+        assert value in output
+
+
+def test_info_escapes_catalog_provides_fallback_markup(project: Path, monkeypatch):
+    markup_count = "[bold]markup-count[/bold]"
+    _configure_markup_catalog(
+        project,
+        provides={"extensions": markup_count},
+    )
+    bundle_dir = project / "markup-bundle"
+    bundle_dir.mkdir()
+    manifest_data = valid_manifest_dict(provides={})
+    manifest_data["bundle"]["id"] = MARKUP_BUNDLE_ID
+    manifest_path = bundle_dir / "bundle.yml"
+    manifest_path.write_text(yaml.safe_dump(manifest_data), encoding="utf-8")
+    _mock_manifest_download(monkeypatch, manifest_path)
+
+    result = runner.invoke(
+        app,
+        ["bundle", "info", MARKUP_BUNDLE_ID, "--offline"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert markup_count in strip_ansi(result.output)
 
 
 def test_info_expands_discovery_only_bundle(project: Path, monkeypatch):

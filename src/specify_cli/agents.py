@@ -10,11 +10,12 @@ import os
 import re
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 import yaml
 
 from ._init_options import is_ai_skills_enabled, load_init_options
+from ._invocation_style import get_invocation_prefix
 from ._toml_string import escape_toml_basic as _escape_toml_basic
 from ._toml_string import has_illegal_toml_control as _has_illegal_toml_control
 from ._utils import relative_extension_path_violation
@@ -270,7 +271,7 @@ class CommandRegistrar:
         return text
 
     def render_markdown_command(
-        self, frontmatter: dict, body: str, source_id: str, context_note: str = None
+        self, frontmatter: dict, body: str, source_id: str, context_note: Optional[str] = None
     ) -> str:
         """Render command in Markdown format.
 
@@ -597,8 +598,8 @@ class CommandRegistrar:
         source_id: str,
         source_dir: Path,
         project_root: Path,
-        context_note: str = None,
-        _resolved_dir: Path = None,
+        context_note: Optional[str] = None,
+        _resolved_dir: Optional[Path] = None,
         link_outputs: bool = False,
         extension_id: Optional[str] = None,
     ) -> List[str]:
@@ -659,22 +660,38 @@ class CommandRegistrar:
         # correct when a stale ``.bob/skills`` directory coexists with
         # ``.bob/commands``.
         _sep = agent_config.get("invoke_separator", ".")
+        registrar_writes_skills = agent_config.get("extension") == "/SKILL.md"
         try:
             from specify_cli.integrations import get_integration  # noqa: PLC0415
 
             _integ = get_integration(agent_name)
             if _integ is not None:
-                registrar_writes_skills = (
-                    agent_config.get("extension") == "/SKILL.md"
-                )
                 _sep = _integ.invoke_separator_for_mode(registrar_writes_skills)
         except Exception:
             pass
+        _prefix = get_invocation_prefix(agent_name, registrar_writes_skills)
 
         for cmd_info in commands:
             cmd_name = cmd_info["name"]
             aliases = cmd_info.get("aliases", [])
             cmd_file = cmd_info["file"]
+            name_reason = relative_extension_path_violation(cmd_name)
+            if name_reason:
+                raise ValueError(
+                    f"Invalid command name {cmd_name!r}: {name_reason}"
+                )
+            if aliases is None:
+                aliases = []
+            if not isinstance(aliases, list):
+                raise ValueError(
+                    f"Aliases for command {cmd_name!r} must be a list"
+                )
+            for alias in aliases:
+                alias_reason = relative_extension_path_violation(alias)
+                if alias_reason:
+                    raise ValueError(
+                        f"Invalid command alias {alias!r}: {alias_reason}"
+                    )
 
             # Guard against path traversal using the single shared policy in
             # relative_extension_path_violation(), so the runtime guard stays
@@ -755,7 +772,7 @@ class CommandRegistrar:
             # (base.py itself imports CommandRegistrar lazily).
             from specify_cli.integrations.base import IntegrationBase  # noqa: PLC0415
 
-            body = IntegrationBase.resolve_command_refs(body, _sep)
+            body = IntegrationBase.resolve_command_refs(body, _sep, _prefix)
 
             output_name = self._compute_output_name(agent_name, cmd_name, agent_config)
 
@@ -957,10 +974,16 @@ class CommandRegistrar:
             project_root: Path to project root
             cmd_name: Command name (e.g. 'speckit.my-ext.example')
         """
+        name_reason = relative_extension_path_violation(cmd_name)
+        if name_reason:
+            raise ValueError(
+                f"Invalid Copilot prompt name {cmd_name!r}: {name_reason}"
+            )
         prompts_dir = project_root / ".github" / "prompts"
         prompts_dir.mkdir(parents=True, exist_ok=True)
         prompt_file = prompts_dir / f"{cmd_name}.prompt.md"
         CommandRegistrar._ensure_inside(prompt_file, prompts_dir)
+        prompt_file.parent.mkdir(parents=True, exist_ok=True)
         prompt_file.write_text(f"---\nagent: {cmd_name}\n---\n", encoding="utf-8")
 
     @staticmethod
@@ -1016,10 +1039,11 @@ class CommandRegistrar:
         source_id: str,
         source_dir: Path,
         project_root: Path,
-        context_note: str = None,
+        context_note: Optional[str] = None,
         link_outputs: bool = False,
         create_missing_active_skills_dir: bool = False,
         extension_id: Optional[str] = None,
+        only_agent: Optional[str] = None,
     ) -> Dict[str, List[str]]:
         """Register commands for all detected agents in the project.
 
@@ -1037,6 +1061,8 @@ class CommandRegistrar:
                 skills directory) and is skipped when safe resolution or
                 creation fails.
             extension_id: Extension id when rendering extension-owned commands.
+            only_agent: If set, restrict registration to this single agent
+                while keeping all detection and recovery safeguards (#2948).
 
         Returns:
             Dictionary mapping agent names to list of registered commands
@@ -1060,6 +1086,8 @@ class CommandRegistrar:
                 )
         active_created_skills_dir: Optional[Path] = None
         for agent_name, agent_config in self.AGENT_CONFIGS.items():
+            if only_agent is not None and agent_name != only_agent:
+                continue
             active_skills_output = (
                 agent_name == active_skills_agent
                 and agent_config.get("extension") == "/SKILL.md"
@@ -1165,6 +1193,8 @@ class CommandRegistrar:
         context_note: Optional[str] = None,
         link_outputs: bool = False,
         extension_id: Optional[str] = None,
+        only_agent: Optional[str] = None,
+        extra_agents: Optional[Iterable[str]] = None,
     ) -> Dict[str, List[str]]:
         """Register commands for all non-skill agents in the project.
 
@@ -1181,13 +1211,29 @@ class CommandRegistrar:
             link_outputs: If True, create dev-mode symlinks for rendered
                 command files when supported by the OS.
             extension_id: Extension id when rendering extension-owned commands.
+            only_agent: If set, restrict registration to this single agent
+                (#2948). An agent name that matches no configured agent
+                (e.g. an empty string) yields no registrations at all.
+            extra_agents: Additional agent names to register for besides
+                ``only_agent``. Used by post-removal reconciliation to also
+                restore surviving content into historical agent directories
+                a just-removed preset actually wrote to, not only the
+                currently active agent (#2948). Ignored when ``only_agent``
+                is ``None`` (already unrestricted).
 
         Returns:
             Dictionary mapping agent names to list of registered commands
         """
         results = {}
         self._ensure_configs()
+        extra_agents_set = frozenset(extra_agents) if extra_agents else frozenset()
         for agent_name, agent_config in self.AGENT_CONFIGS.items():
+            if (
+                only_agent is not None
+                and agent_name != only_agent
+                and agent_name not in extra_agents_set
+            ):
+                continue
             if agent_config.get("extension") == "/SKILL.md":
                 continue
             detect_dir_str = agent_config.get("detect_dir")

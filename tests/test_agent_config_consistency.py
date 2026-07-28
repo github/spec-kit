@@ -2,15 +2,18 @@
 
 import re
 from pathlib import Path
+from typing import get_args, get_type_hints
 
 import yaml
 
 from specify_cli import AGENT_CONFIG
+from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
 from specify_cli.extensions import CommandRegistrar
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 ISSUE_TEMPLATE_AGENT_KEYS = [
+    "alquimia",
     "amp",
     "agy",
     "auggie",
@@ -102,6 +105,14 @@ def _supported_agent_names_from_agent_request_template() -> list[str]:
 
 class TestAgentConfigConsistency:
     """Ensure agent configuration stays synchronized across key surfaces."""
+
+    def test_register_commands_resolved_dir_annotation_accepts_none(self):
+        """The internal resolved-directory override defaults to None."""
+        resolved_dir_type = get_type_hints(
+            AgentCommandRegistrar.register_commands
+        )["_resolved_dir"]
+
+        assert type(None) in get_args(resolved_dir_type)
 
     def test_issue_template_agent_lists_match_runtime_integrations(self):
         """GitHub issue templates should list all concrete built-in agents."""

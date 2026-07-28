@@ -29,6 +29,9 @@ CONDITIONAL_SLASH_AGENTS: frozenset[str] = frozenset(
     }
 )
 
+# Agents that render /skill:<name> (skill-colon invocation) when in skills mode.
+SKILL_COLON_AGENTS: frozenset[str] = frozenset({"kimi"})
+
 
 def is_dollar_skills_agent(selected_ai: str | None, ai_skills_enabled: bool) -> bool:
     """Return ``True`` if *selected_ai* uses ``$speckit-<name>`` invocations.
@@ -39,6 +42,21 @@ def is_dollar_skills_agent(selected_ai: str | None, ai_skills_enabled: bool) -> 
     if not isinstance(selected_ai, str):
         return False
     return selected_ai in DOLLAR_SKILLS_AGENTS and ai_skills_enabled
+
+
+def get_invocation_prefix(selected_ai: str | None, ai_skills_enabled: bool) -> str:
+    """Return the native invocation prefix for *selected_ai* in skills mode.
+
+    Returns ``"$"`` for dollar-skills agents (Codex, ZCode),
+    ``"/skill:"`` for skill-colon agents (Kimi), and ``"/"`` for all others.
+    """
+    if not isinstance(selected_ai, str):
+        return "/"
+    if selected_ai in DOLLAR_SKILLS_AGENTS and ai_skills_enabled:
+        return "$"
+    if selected_ai in SKILL_COLON_AGENTS and ai_skills_enabled:
+        return "/skill:"
+    return "/"
 
 
 def is_slash_skills_agent(selected_ai: str | None, ai_skills_enabled: bool) -> bool:
