@@ -1486,6 +1486,41 @@ class TestPromptStep:
         assert result.output["dispatched"] is True
         assert result.output["exit_code"] == 0
 
+    def test_try_dispatch_executes_the_resolved_executable(self, tmp_path):
+        """argv[0] must be the shutil.which-resolved path, not the bare name.
+
+        On Windows subprocess.run calls CreateProcess, which ignores PATHEXT, so
+        a bare `claude` installed as `claude.cmd` (the usual npm shim) raises
+        WinError 2. That OSError is swallowed and reported as "CLI not found or
+        not installed" even though the preflight which() just found it, while
+        the `command` step -- which goes through
+        IntegrationBase.dispatch_command -- resolves argv[0] and works.
+        """
+        from unittest.mock import patch, MagicMock
+        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = PromptStep()
+        ctx = StepContext(default_integration="claude", project_root=str(tmp_path))
+        config = {"id": "test", "type": "prompt", "prompt": "hello"}
+
+        resolved = r"C:\tools\claude.CMD"
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+
+        with patch(
+            "specify_cli.workflows.steps.prompt.shutil.which",
+            lambda name: resolved,
+        ), patch("subprocess.run", return_value=mock_result) as run:
+            result = step.execute(config, ctx)
+
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["dispatched"] is True
+        argv = run.call_args.args[0]
+        assert argv[0] == resolved, argv
+
     def test_dispatch_with_mock_cli(self, tmp_path):
         from unittest.mock import patch, MagicMock
         from specify_cli.workflows.steps.prompt import PromptStep

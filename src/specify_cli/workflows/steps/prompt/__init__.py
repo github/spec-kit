@@ -167,6 +167,17 @@ class PromptStep(StepBase):
         if not exec_args:
             return None
 
+        # Windows: ``subprocess.run`` calls ``CreateProcess``, which does not
+        # consult ``PATHEXT``, so a bare command name like ``claude`` installed
+        # as ``claude.cmd`` (the usual npm shim layout) fails with
+        # ``WinError 2``. That OSError is swallowed below and reported as "CLI
+        # not found or not installed" -- even though the preflight above just
+        # found it. Reuse the already-resolved path so the shim is executed,
+        # mirroring ``IntegrationBase.dispatch_command``, which the ``command``
+        # step already goes through. On POSIX this is the same executable.
+        if fallback_cli_path:
+            exec_args = [fallback_cli_path, *exec_args[1:]]
+
         import subprocess
 
         project_root = (
