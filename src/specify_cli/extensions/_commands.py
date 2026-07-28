@@ -534,7 +534,7 @@ def extension_add(
                     with dl_catalog._open_url(
                         download_url, timeout=60, extra_headers=extra_headers
                     ) as response:
-                        zip_data = read_response_limited(response, max_bytes=MAX_DOWNLOAD_BYTES)
+                        zip_data = read_response_limited(response, max_bytes=MAX_DOWNLOAD_BYTES, error_type=ExtensionError)
 
                     if not zipfile.is_zipfile(io.BytesIO(zip_data)):
                         console.print(
