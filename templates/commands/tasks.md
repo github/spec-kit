@@ -42,7 +42,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 - If a file exists, read it (project file wins) and keep it in context for this command:
   - `manager` is the communicator/orchestrator: it classifies each task/step's level (1-5) and delegates; it never implements tasks.
-  - `by_complexity` maps task complexity levels (`5` = critical, `4` = complex, `3` = moderate/workhorse, `2` = simple, `1` = trivial, plus optional specialized keys) to an **ordered list** of models that can execute such tasks. The first model is the primary; the rest are alternatives used in order if the primary is unavailable, rate-limited, or runs out of usage/tokens/context. `executors` records whether each model can run through a verified subagent native to the current host, only in the current session, or manually.
+  - `by_complexity` maps task complexity levels (`5` = critical, `4` = complex, `3` = moderate/workhorse, `2` = simple, `1` = trivial, plus optional specialized keys) to an **ordered list** of models that can execute such tasks. The first model is the primary; the rest are alternatives used in order if the primary is unavailable, rate-limited, or runs out of usage/tokens/context. `executors` records whether each model can run through a subagent native to the current host, only in the current session, or manually.
   - The `manager` model is reserved for planning and orchestration when the catalog has enough alternatives; assign it to implementation only for an exceptionally hard task, a small catalog, or an explicit user override.
 - If the file exists but cannot be parsed as JSON, or is missing `manager` or `by_complexity`, STOP and tell the user to re-run `__SPECKIT_COMMAND_MODELS__` to regenerate it.
 
