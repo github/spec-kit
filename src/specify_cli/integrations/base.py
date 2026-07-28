@@ -260,6 +260,41 @@ class IntegrationBase(ABC):
         override = os.environ.get(env_name, "").strip()
         return override if override else self.key
 
+    @property
+    def cli_executable(self) -> str:
+        """Executable name used to detect this integration's CLI tool.
+
+        Defaults to whatever ``_resolve_executable()`` returns (the
+        ``SPECKIT_INTEGRATION_<KEY>_EXECUTABLE`` override, else ``self.key``),
+        so integrations whose executable differs from their key only need to
+        override ``_resolve_executable()`` — as ``RovodevIntegration`` already
+        does for ``acli`` — to get correct CLI detection for free.
+
+        Integrations that need to accept more than one candidate binary name,
+        or check non-``PATH`` install locations, should override
+        ``is_cli_available()`` instead of (or in addition to) this property.
+
+        See issue #2558.
+        """
+        return self._resolve_executable()
+
+    def is_cli_available(self) -> bool:
+        """Return whether this integration's CLI tool is installed.
+
+        The default implementation checks ``shutil.which(self.cli_executable)``.
+        Detection call sites (``check_tool()``, workflow command/prompt
+        dispatch) should call this instead of hardcoding
+        ``shutil.which(self.key)`` or maintaining a per-agent special case.
+
+        Override for agents whose detection can't be expressed as a single
+        executable name — e.g. ``KiroCliIntegration`` accepts either
+        ``kiro-cli`` or the legacy ``kiro`` binary, and Claude Code also
+        checks non-``PATH`` local install locations.
+
+        See issue #2558.
+        """
+        return shutil.which(self.cli_executable) is not None
+
     def _apply_extra_args_env_var(self, args: list[str]) -> None:
         """Append `SPECKIT_INTEGRATION_<KEY>_EXTRA_ARGS` env-var value to *args*.
 

@@ -189,6 +189,22 @@ class CodexIntegration(SkillsIntegration):
 
 **Key design rule:** For CLI-based integrations (`requires_cli: True`), `key` must be the actual executable name (e.g., `"cursor-agent"` not `"cursor"`). This ensures `shutil.which(key)` works for CLI-tool checks without special-case mappings. IDE-based integrations (`requires_cli: False`) should use their canonical identifier (e.g., `"kilocode"`, `"copilot"`).
 
+**When `key` and the CLI executable genuinely differ** (issue [#2558](https://github.com/github/spec-kit/issues/2558)): sometimes the executable name legitimately cannot match `key` — e.g. RovoDev's `key` is `"rovodev"` but it's invoked via the `acli` binary (`acli rovodev …`). Don't hack around this — override `IntegrationBase`'s `cli_executable` property (or its underlying `_resolve_executable()` hook) instead:
+
+```python
+class RovodevIntegration(SkillsIntegration):
+    key = "rovodev"
+    ...
+
+    def _resolve_executable(self) -> str:
+        # cli_executable delegates here by default; override the fallback
+        # instead of self.key while still honoring SPECKIT_INTEGRATION_ROVODEV_EXECUTABLE.
+        env_name = f"SPECKIT_INTEGRATION_{self.key.upper().replace('-', '_')}_EXECUTABLE"
+        return os.environ.get(env_name, "").strip() or "acli"
+```
+
+`check_tool()` in `_utils.py` detects installed CLIs by calling `get_integration(tool).is_cli_available()`, which defaults to `shutil.which(self.cli_executable) is not None`. Override `is_cli_available()` directly (rather than just `cli_executable`) when detection needs more than a single PATH lookup — e.g. `ClaudeIntegration` also checks local install paths (`~/.claude/local/claude`, npm-local), and `KiroCliIntegration` accepts both `kiro-cli` and the legacy `kiro` binary name. Tools with no registered integration (e.g. `"git"`) fall back to a plain `shutil.which(tool)` check.
+
 ### 3. Register it
 
 In `src/specify_cli/integrations/__init__.py`, add one import and one `_register()` call inside `_register_builtins()`. Both lists are alphabetical:
@@ -540,7 +556,7 @@ Disclosure is **continuous**, not a one-time event. A single AI-disclosure parag
 
 ## Common Pitfalls
 
-1. **Using shorthand keys for CLI-based integrations**: For CLI-based integrations (`requires_cli: True`), the `key` must match the executable name (e.g., `"cursor-agent"` not `"cursor"`). `shutil.which(key)` is used for CLI tool checks — mismatches require special-case mappings. IDE-based integrations (`requires_cli: False`) are not subject to this constraint.
+1. **Using shorthand keys for CLI-based integrations**: For CLI-based integrations (`requires_cli: True`), the `key` must match the executable name (e.g., `"cursor-agent"` not `"cursor"`) whenever possible. `shutil.which(key)` is used for CLI tool checks by default. If the executable genuinely can't match `key` (e.g. RovoDev's `key="rovodev"` but binary is `acli`), override `cli_executable` / `_resolve_executable()` — or `is_cli_available()` for multi-path detection — instead of adding a hardcoded special case to `check_tool()` (see [#2558](https://github.com/github/spec-kit/issues/2558)). IDE-based integrations (`requires_cli: False`) are not subject to this constraint.
 2. **Reintroducing context handling into the CLI**: The opt-in `agent-context` extension owns everything about context files — including the per-agent default mapping in `agent-context-defaults.json`. Integration classes must **not** declare a `context_file`, and no CLI code should read, write, resolve, or migrate context files. All context-file logic lives in `.specify/extensions/agent-context/` and its bundled scripts.
 3. **Incorrect `requires_cli` value**: Set to `True` only for agents that have a CLI tool; set to `False` for IDE-based agents.
 4. **Wrong argument format**: Use `$ARGUMENTS` for Markdown agents, `{{args}}` for TOML agents.

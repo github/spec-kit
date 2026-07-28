@@ -3,6 +3,7 @@
 import shlex
 import sys
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -95,6 +96,42 @@ class TestIntegrationBase:
         removed, skipped = i.uninstall(tmp_path, manifest)
         assert removed == []
         assert skipped == []
+
+
+class TestCliExecutableDetection:
+    """cli_executable / is_cli_available() — issue #2558."""
+
+    def test_cli_executable_defaults_to_key(self):
+        i = StubIntegration()
+        assert i.cli_executable == "stub"
+
+    def test_cli_executable_honors_executable_env_override(self, monkeypatch):
+        monkeypatch.setenv("SPECKIT_INTEGRATION_STUB_EXECUTABLE", "stub-bin")
+        i = StubIntegration()
+        assert i.cli_executable == "stub-bin"
+
+    def test_is_cli_available_true_when_executable_on_path(self):
+        i = StubIntegration()
+        with patch("specify_cli.integrations.base.shutil.which", return_value="/usr/bin/stub"):
+            assert i.is_cli_available() is True
+
+    def test_is_cli_available_false_when_not_on_path(self):
+        i = StubIntegration()
+        with patch("specify_cli.integrations.base.shutil.which", return_value=None):
+            assert i.is_cli_available() is False
+
+    def test_is_cli_available_uses_cli_executable_not_key(self, monkeypatch):
+        """An integration overriding cli_executable should be detected by
+        that name, not by ``self.key`` (mirrors RovoDev: key='rovodev',
+        executable='acli')."""
+        monkeypatch.setenv("SPECKIT_INTEGRATION_STUB_EXECUTABLE", "stub-bin")
+        i = StubIntegration()
+
+        def fake_which(name):
+            return "/usr/bin/stub-bin" if name == "stub-bin" else None
+
+        with patch("specify_cli.integrations.base.shutil.which", side_effect=fake_which):
+            assert i.is_cli_available() is True
 
 
 class TestMarkdownIntegration:
