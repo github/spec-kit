@@ -4366,6 +4366,44 @@ class TestExtensionCatalog:
         results = catalog.search(query="jira")
         assert {r["id"] for r in results} == {"jira"}
 
+    def test_search_and_info_tolerate_non_list_tags(self, temp_dir):
+        """A scalar ``tags:`` value must not crash the search/info display.
+
+        ``ExtensionCatalog.search`` guards its tag *filter* with
+        ``isinstance(raw_tags, list)``, but the ``extension search`` and
+        ``extension info`` display paths only tested truthiness before
+        iterating. ``tags: 5`` is truthy and not iterable, so both raised
+        ``TypeError: 'int' object is not iterable``.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        merged = [{
+            "id": "jira",
+            "name": "Jira",
+            "version": "1.0.0",
+            "description": "Jira",
+            "tags": 5,
+        }]
+
+        with patch.object(ExtensionCatalog, "_get_merged_extensions", return_value=merged), \
+                patch("specify_cli.extensions._commands._require_specify_project",
+                      return_value=project_dir):
+            searched = CliRunner().invoke(app, ["extension", "search", "Jira"])
+            info = CliRunner().invoke(app, ["extension", "info", "jira"])
+
+        assert searched.exit_code == 0, searched.output
+        assert "Jira" in searched.output
+        assert "Tags:" not in searched.output
+
+        assert info.exit_code == 0, info.output
+        assert "Tags:" not in info.output
+
     def test_search_tolerates_non_string_author_and_name(self, temp_dir):
         """Non-string catalog author/name must not crash author/query search.
 

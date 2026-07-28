@@ -783,8 +783,9 @@ def extension_search(
 
             # Metadata
             console.print(f"\n  [dim]Author:[/dim] {_escape_markup(str(ext.get('author', 'Unknown')))}")
-            if ext.get('tags'):
-                tags_str = ", ".join(str(t) for t in ext['tags'])
+            ext_tags = ext.get('tags', [])
+            if isinstance(ext_tags, list) and ext_tags:
+                tags_str = ", ".join(str(t) for t in ext_tags)
                 console.print(f"  [dim]Tags:[/dim] {_escape_markup(tags_str)}")
 
             # Source catalog
@@ -1007,8 +1008,9 @@ def _print_extension_info(ext_info: dict, manager):
         console.print()
 
     # Tags
-    if ext_info.get('tags'):
-        tags_str = ", ".join(str(t) for t in ext_info['tags'])
+    info_tags = ext_info.get('tags', [])
+    if isinstance(info_tags, list) and info_tags:
+        tags_str = ", ".join(str(t) for t in info_tags)
         console.print(f"[bold]Tags:[/bold] {_escape_markup(tags_str)}")
         console.print()
 

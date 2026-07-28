@@ -2320,7 +2320,7 @@ def workflow_search(
         if desc:
             console.print(f"    {_escape_markup(str(desc))}")
         tags = wf.get("tags", [])
-        if tags:
+        if isinstance(tags, list) and tags:
             safe_tags = _escape_markup(", ".join(str(t) for t in tags))
             console.print(f"    [dim]Tags: {safe_tags}[/dim]")
         console.print()
@@ -2418,8 +2418,9 @@ def workflow_info(
         console.print(f"  Version:     {_escape_markup(str(info.get('version', '?')))}")
         if info.get("description"):
             console.print(f"  Description: {_escape_markup(str(info['description']))}")
-        if info.get("tags"):
-            safe_tags = _escape_markup(", ".join(str(t) for t in info["tags"]))
+        info_tags = info.get("tags", [])
+        if isinstance(info_tags, list) and info_tags:
+            safe_tags = _escape_markup(", ".join(str(t) for t in info_tags))
             console.print(f"  Tags:        {safe_tags}")
         console.print("  [yellow]Not installed[/yellow]")
     else:
