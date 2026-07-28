@@ -12104,3 +12104,69 @@ class TestPresetTagsNonString:
 
         assert result.exit_code == 0, result.output
         assert "[bold]ci" in strip_ansi(result.output)
+
+
+class TestPresetCatalogRichMarkup:
+    """Catalog metadata must render as literal text in Rich output."""
+
+    MARKUP_PRESET = {
+        "id": "[red]markup-id[/red]",
+        "name": "[green]Markup Name[/green]",
+        "version": "[blue]1.0.0[/blue]",
+        "description": "[yellow]Markup Description[/yellow]",
+        "author": "[magenta]Markup Author[/magenta]",
+        "tags": ["[italic]markup-tag[/italic]"],
+        "repository": "[bold]Markup Repository[/bold]",
+        "license": "[cyan]Markup License[/cyan]",
+    }
+
+    def test_search_escapes_catalog_markup(self, project_dir):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        with patch.object(Path, "cwd", return_value=project_dir), patch.object(
+            PresetCatalog,
+            "search",
+            return_value=[self.MARKUP_PRESET],
+        ):
+            result = CliRunner().invoke(app, ["preset", "search"])
+
+        assert result.exit_code == 0, result.output
+        output = " ".join(strip_ansi(result.output).split())
+        for value in (
+            self.MARKUP_PRESET["id"],
+            self.MARKUP_PRESET["name"],
+            self.MARKUP_PRESET["version"],
+            self.MARKUP_PRESET["description"],
+        ):
+            assert value in output
+
+    def test_info_escapes_catalog_markup(self, project_dir):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        with patch.object(Path, "cwd", return_value=project_dir), patch.object(
+            PresetCatalog,
+            "get_pack_info",
+            return_value=self.MARKUP_PRESET,
+        ):
+            result = CliRunner().invoke(
+                app,
+                ["preset", "info", self.MARKUP_PRESET["id"]],
+            )
+
+        assert result.exit_code == 0, result.output
+        output = " ".join(strip_ansi(result.output).split())
+        for field in (
+            "id",
+            "name",
+            "version",
+            "description",
+            "author",
+            "repository",
+            "license",
+        ):
+            value = self.MARKUP_PRESET[field]
+            assert value in output
