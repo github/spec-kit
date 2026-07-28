@@ -97,9 +97,10 @@ Follow this execution flow:
    - Ensure Governance section lists amendment procedure, versioning policy, and compliance review expectations.
 
 4. Consistency propagation checklist (convert prior checklist into active validations):
-   - Read `.specify/templates/plan-template.md` and ensure any "Constitution Check" or rules align with updated principles.
-   - Read `.specify/templates/spec-template.md` for scope/requirements alignment—update if constitution adds/removes mandatory sections or constraints.
-   - Read `.specify/templates/tasks-template.md` and ensure task categorization reflects new or removed principle-driven task types (e.g., observability, versioning, testing discipline).
+   - Resolve each dependent template through the Spec Kit preset/template resolution stack before reading it (equivalent to `specify preset resolve <template-name>`). A project override, an enabled preset, or an extension can supply the active `plan-template`, `spec-template`, or `tasks-template`; when one does, `.specify/templates/<template-name>.md` is NOT the file the other Spec Kit commands read. Propagate the updated guidance to every layer the stack reports — the active provider plus the built-in `.specify/templates/<template-name>.md` fallback — preserving each provider's specialized content and structure rather than overwriting it.
+   - Read the resolved `plan-template` and ensure any "Constitution Check" or rules align with updated principles.
+   - Read the resolved `spec-template` for scope/requirements alignment—update if constitution adds/removes mandatory sections or constraints.
+   - Read the resolved `tasks-template` and ensure task categorization reflects new or removed principle-driven task types (e.g., observability, versioning, testing discipline).
    - Read each installed Spec Kit command file for your agent (including this one) — named `speckit.*` or `speckit-*` (dot or hyphen depending on the agent), or laid out as `speckit-<name>/SKILL.md` for skills-based integrations, e.g. in `.github/agents/`, `.github/skills/`, `.claude/skills/`, or your agent's equivalent commands directory — to verify no outdated references (CLAUDE-only or other agent-specific names) remain when generic guidance is required.
    - Read any runtime guidance docs (e.g., `README.md`, `docs/quickstart.md`, or agent-specific guidance files if present). Update references to principles changed.
 
@@ -108,7 +109,7 @@ Follow this execution flow:
    - List of modified principles (old title → new title if renamed)
    - Added sections
    - Removed sections
-   - Templates requiring updates (✅ updated / ⚠ pending) with file paths
+   - Templates requiring updates (✅ updated / ⚠ pending) with file paths — list every layer the resolution stack reported for each template (project override, preset, extension, built-in), and mark a file ✅ updated only if it was actually read and changed
    - Follow-up TODOs if any placeholders intentionally deferred.
 
 6. Validation before final output:

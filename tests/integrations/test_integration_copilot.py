@@ -188,6 +188,29 @@ class TestCopilotIntegration:
         assert "Copy `.specify/templates/spec-template.md`" not in content
         assert "Load `.specify/templates/spec-template.md`" not in content
 
+    def test_constitution_agent_resolves_dependent_templates(self, tmp_path):
+        """Generated constitution agent must resolve each dependent template
+        through the preset stack instead of hardcoding the core paths.
+
+        A replace-strategy preset supplies the active `tasks-template`, so the
+        hardcoded `.specify/templates/tasks-template.md` is not the file the
+        other Spec Kit commands read — the preset copy was left stale (#3737).
+        """
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        m = IntegrationManifest("copilot", tmp_path)
+        copilot.setup(tmp_path, m)
+
+        content = (
+            tmp_path / ".github" / "agents" / "speckit.constitution.agent.md"
+        ).read_text(encoding="utf-8")
+
+        assert "specify preset resolve <template-name>" in content
+        for name in ("plan-template", "spec-template", "tasks-template"):
+            assert f"Read the resolved `{name}`" in content
+            assert f"Read `.specify/templates/{name}.md` and ensure" not in content
+            assert f"Read `.specify/templates/{name}.md` for" not in content
+
     def test_plan_command_has_no_context_placeholder(self, tmp_path):
         """The core plan command must not carry a context-file placeholder —
         agent context files are owned by the opt-in agent-context extension."""
