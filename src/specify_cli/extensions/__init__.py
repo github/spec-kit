@@ -3758,10 +3758,8 @@ class ExtensionCatalog(CatalogStackBase):
 
     def clear_cache(self):
         """Clear the catalog cache (both legacy and URL-hash-based files)."""
-        if self.cache_file.exists():
-            self.cache_file.unlink()
-        if self.cache_metadata_file.exists():
-            self.cache_metadata_file.unlink()
+        self.cache_file.unlink(missing_ok=True)
+        self.cache_metadata_file.unlink(missing_ok=True)
         # Also clear any per-URL hash-based cache files
         if self.cache_dir.exists():
             for extra_cache in self.cache_dir.glob("catalog-*.json"):
