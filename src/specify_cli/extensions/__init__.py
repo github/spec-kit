@@ -3353,7 +3353,7 @@ class ExtensionCatalog(CatalogStackBase):
                 if final_url != entry.url:
                     self._validate_catalog_url(final_url)
                 catalog_data = json.loads(
-                    read_response_limited(response, max_bytes=MAX_JSON_METADATA_BYTES, error_type=ExtensionError).decode("utf-8")
+                    read_response_limited(response, max_bytes=MAX_JSON_METADATA_BYTES, error_type=ExtensionError)
                 )
 
             self._validate_catalog_payload(catalog_data, entry.url)
@@ -3543,7 +3543,7 @@ class ExtensionCatalog(CatalogStackBase):
                 if final_url != catalog_url:
                     self._validate_catalog_url(final_url)
                 catalog_data = json.loads(
-                    read_response_limited(response, max_bytes=MAX_JSON_METADATA_BYTES, error_type=ExtensionError).decode("utf-8")
+                    read_response_limited(response, max_bytes=MAX_JSON_METADATA_BYTES, error_type=ExtensionError)
                 )
 
             # Validate catalog structure. Reuses the same helper as
