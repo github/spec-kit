@@ -13,11 +13,11 @@ description: "Task list template for feature implementation"
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
-## Format: `[ID] [P?] [Story] [C:complexity->model] Description`
+## Format: `[ID] [P?] [Story] [C:n<level>->model] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)
 - **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3)
-- **[C:complexity->model]**: Task complexity (`high` | `medium` | `low`) and the model assigned to execute it, taken from `models.json` (`by_complexity`)
+- **[C:n<level>->model]**: Task complexity level (`n5` critical | `n4` complex | `n3` moderate | `n2` simple | `n1` trivial) and the model assigned to execute it, taken from `models.json` (`by_complexity`)
 - Include exact file paths in descriptions
 
 ## Path Conventions

@@ -32,9 +32,9 @@ You **MUST** consider the user input before proceeding (if not empty).
   ```
 
 - If a file exists, read it (project file wins) and keep it in context for this command:
-  - `manager` is the only model that defines specs/plans/main ideas; it does not implement tasks.
-  - `by_complexity` maps task complexity (`high` | `medium` | `low`, plus optional specialized keys) to the models that should execute such tasks.
-  - Models with `tier: "max"` are reserved for very few cases (manager role, exceptional tasks) — never assign them to routine work.
+  - `manager` is the communicator/orchestrator: it classifies each task/step's level (1-5) and delegates; it never implements tasks.
+  - `by_complexity` maps task complexity levels (`5` = critical, `4` = complex, `3` = moderate/workhorse, `2` = simple, `1` = trivial, plus optional specialized keys) to the models that should execute such tasks.
+  - Level `5` models are reserved for very few cases (manager role, exceptional tasks) — never assign them to routine work.
 - If the file exists but cannot be parsed as JSON, or is missing `manager` or `by_complexity`, STOP and tell the user to re-run `__SPECKIT_COMMAND_MODELS__` to regenerate it.
 
 **Check for extension hooks (before implementation)**:
@@ -162,16 +162,16 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Task phases**: Setup, Tests, Core, Integration, Polish
    - **Task dependencies**: Sequential vs parallel execution rules
    - **Task details**: ID, description, file paths, parallel markers [P]
-   - **Complexity/model labels**: `[C:complexity->model]` markers assigning each task a complexity level and an executor model from `models.json`
+   - **Complexity/model labels**: `[C:n<level>->model]` markers assigning each task a complexity level (1-5) and an executor model from `models.json`
    - **Execution flow**: Order and dependency requirements
 
 6. Execute implementation following the task plan:
    - **Read models.json and resolve candidates**: Load `.specify/models.json` (or `~/.specify/models.json`). Extract:
-     - `manager` id (never executes tasks)
-     - `by_complexity` ordered model lists for each complexity level
+     - `manager` id (the communicator; never executes tasks)
+     - `by_complexity` ordered model lists for each level (`1`-`5`)
      - `executors` map describing how each model can actually be selected
-   - **Model-aware dispatch (per task)**: Each task carries a `[C:complexity->model]` label. The right-hand side of the label is the preferred model recorded when tasks were generated; if it is not the first available candidate for that complexity, use the current ordered list from `models.json` as the source of truth. Resolve the executor as follows:
-     - Look up the task's complexity in `by_complexity`. The ordered list is the source of truth.
+   - **Model-aware dispatch (per task)**: Each task carries a `[C:n<level>->model]` label. The right-hand side of the label is the preferred model recorded when tasks were generated; if it is not the first available candidate for that level, use the current ordered list from `models.json` as the source of truth. Resolve the executor as follows:
+     - Look up the task's level in `by_complexity`. The ordered list is the source of truth.
      - Start with the first model. The remaining models are ordered fallbacks, not load-balancing targets.
    - **Executor dispatch**: Resolve the candidate in `executors`:
      - `native_subagent`: invoke the exact named agent only when `verified: true` and `status: ready`.
@@ -179,7 +179,7 @@ You **MUST** consider the user input before proceeding (if not empty).
      - `manual`: pause and provide the recorded model-switch/continuation instructions; never claim automatic dispatch.
      - Never launch an agent CLI or a second process of the current host to execute a task. Every automatic worker must be native to the agent/CLI hosting this conversation.
    - **Availability fallback**: If the selected model fails because of usage/token exhaustion, rate limiting, model unavailability, provider outage, or context limits, preserve verified progress and retry with the next candidate that has a ready executor. Include the original task, changed files, test results, completed work, and remaining work so the fallback continues safely. Never retry a failed candidate in a loop. If the next executor is manual or pending restart, pause with exact instructions. If all candidates fail, stop and report every attempt. Do not switch models merely to mask an ordinary code or test failure.
-   - **Tasks missing a `[C:...]` label** default to `medium` complexity.
+   - **Tasks missing a `[C:...]` label** default to level `3` (moderate, the workhorse).
    - **The `manager` model normally never executes tasks** — it orchestrates. It may also appear in a candidate list only when the discovered catalog is too small to reserve it or the user explicitly assigns it.
    - **Phase-by-phase execution**: Complete each phase before moving to the next
    - **Respect dependencies**: Run sequential tasks in order; tasks marked [P] can run together
