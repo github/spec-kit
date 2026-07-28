@@ -23,6 +23,7 @@ from packaging import version as pkg_version
 
 from .._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
 from ..catalogs import CatalogEntry, CatalogStackBase
+from .._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +208,7 @@ class IntegrationCatalog(CatalogStackBase):
                         max_bytes=MAX_JSON_METADATA_BYTES,
                         error_type=IntegrationCatalogError,
                         label=f"catalog from {entry.url}",
-                    )
+                    ).decode("utf-8")
                 )
 
             shape_error = _catalog_shape_error(catalog_data)
