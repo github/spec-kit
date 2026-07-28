@@ -15,6 +15,11 @@
     <a href="https://github.github.io/spec-kit/"><img src="https://img.shields.io/badge/docs-GitHub_Pages-blue" alt="Documentation"/></a>
 </p>
 
+<p align="center">
+    <strong>English</strong> ·
+    <a href="./README.zh-CN.md">简体中文</a>
+</p>
+
 ---
 
 ## Table of Contents

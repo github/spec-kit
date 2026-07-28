@@ -89,8 +89,9 @@ class PromptStep(StepBase):
             )
 
         # Attempt CLI dispatch
+        timeout = config.get("timeout", 300)
         dispatch_result = self._try_dispatch(
-            prompt, integration, model, context
+            prompt, integration, model, context, timeout=timeout
         )
 
         output: dict[str, Any] = {
@@ -136,6 +137,7 @@ class PromptStep(StepBase):
         integration_key: str | None,
         model: str | None,
         context: StepContext,
+        timeout: int = 300,
     ) -> dict[str, Any] | None:
         """Dispatch *prompt* directly through the integration CLI."""
         if not integration_key or not isinstance(integration_key, str) or not prompt:
@@ -178,6 +180,7 @@ class PromptStep(StepBase):
                 exec_args,
                 text=True,
                 cwd=str(project_root),
+                timeout=timeout,
             )
             return {
                 "exit_code": result.returncode,
@@ -189,6 +192,12 @@ class PromptStep(StepBase):
                 "exit_code": 130,
                 "stdout": "",
                 "stderr": "Interrupted by user",
+            }
+        except subprocess.TimeoutExpired:
+            return {
+                "exit_code": -1,
+                "stdout": "",
+                "stderr": f"Prompt timed out after {timeout} seconds.",
             }
         except OSError:
             return None

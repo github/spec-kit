@@ -12,8 +12,10 @@ import re
 from pathlib import Path
 
 import typer
+from rich.markup import escape as _escape_markup
 
 from ..._console import console, err_console
+from ..._download_security import MAX_DOWNLOAD_BYTES, read_response_limited
 from ...bundler import BundlerError
 from ...bundler.lib.project import (
     active_integration,
@@ -184,11 +186,16 @@ def bundle_search(
             else ""
         )
         console.print(
-            f"  [bold]{r.entry.id}[/bold] v{r.entry.version} — {r.entry.name} "
-            f"[dim]({r.entry.role})[/dim] {_trust_badge(r.entry.verified)} {policy}"
+            f"  [bold]{_escape_markup(str(r.entry.id))}[/bold] "
+            f"v{_escape_markup(str(r.entry.version))} — "
+            f"{_escape_markup(str(r.entry.name))} "
+            f"[dim]({_escape_markup(str(r.entry.role))})[/dim] "
+            f"{_trust_badge(r.entry.verified)} {policy}"
         )
-        console.print(f"    {r.entry.description}")
-        console.print(f"    [dim]source: {r.source.id}[/dim]")
+        console.print(f"    {_escape_markup(str(r.entry.description))}")
+        console.print(
+            f"    [dim]source: {_escape_markup(str(r.source.id))}[/dim]"
+        )
 
 
 @bundle_app.command("info")
@@ -241,16 +248,31 @@ def bundle_info(
         print(_json.dumps(payload, indent=2))
         return
 
-    console.print(f"\n[bold cyan]{entry.id}[/bold cyan] v{entry.version} — {entry.name}")
-    console.print(f"  Role: {entry.role}")
-    console.print(f"  {entry.description}")
-    console.print(f"  Author: {entry.author}   License: {entry.license}")
-    console.print(f"  Source: {resolved.source.id} ({resolved.source.install_policy.value})")
+    console.print(
+        f"\n[bold cyan]{_escape_markup(str(entry.id))}[/bold cyan] "
+        f"v{_escape_markup(str(entry.version))} — "
+        f"{_escape_markup(str(entry.name))}"
+    )
+    console.print(f"  Role: {_escape_markup(str(entry.role))}")
+    console.print(f"  {_escape_markup(str(entry.description))}")
+    console.print(
+        f"  Author: {_escape_markup(str(entry.author))}   "
+        f"License: {_escape_markup(str(entry.license))}"
+    )
+    console.print(
+        f"  Source: {_escape_markup(str(resolved.source.id))} "
+        f"({resolved.source.install_policy.value})"
+    )
     console.print(f"  Trust: {_trust_badge(entry.verified)}")
     if entry.requires_speckit_version:
-        console.print(f"  Requires Spec Kit: {entry.requires_speckit_version}")
+        console.print(
+            f"  Requires Spec Kit: "
+            f"{_escape_markup(str(entry.requires_speckit_version))}"
+        )
     if manifest and manifest.integration:
-        console.print(f"  Integration: {manifest.integration.id}")
+        console.print(
+            f"  Integration: {_escape_markup(str(manifest.integration.id))}"
+        )
 
     if components:
         console.print("\n  [bold]Components[/bold] (added on install):")
@@ -260,18 +282,22 @@ def bundle_info(
                 continue
             console.print(f"    [bold]{kind}:[/bold]")
             for item in items:
-                console.print(f"      - {_format_component(item)}")
+                console.print(
+                    f"      - {_escape_markup(_format_component(item))}"
+                )
     else:
         console.print("\n  [bold]Provides:[/bold]")
         for kind in ("extensions", "presets", "steps", "workflows"):
             count = entry.provides.get(kind, 0)
             if count:
-                console.print(f"    {kind}: {count}")
+                console.print(f"    {kind}: {_escape_markup(str(count))}")
 
     if overlaps:
         console.print("\n  [yellow]Overlaps with already-installed bundles:[/yellow]")
         for overlap in overlaps:
-            console.print(f"    [yellow]-[/yellow] {overlap}")
+            console.print(
+                f"    [yellow]-[/yellow] {_escape_markup(str(overlap))}"
+            )
 
     if not resolved.install_allowed:
         console.print(
@@ -337,6 +363,10 @@ def bundle_install(
         local_manifest = _local_manifest_source(bundle_id)
         if local_manifest is not None:
             manifest = local_manifest
+            _validate_manifest_structure(
+                manifest,
+                source=f"Local bundle source {bundle_id!r}",
+            )
         else:
             stack = _build_stack(project_root or Path.cwd(), offline=offline)
             resolved = stack.resolve(bundle_id)
@@ -350,6 +380,16 @@ def bundle_install(
 
         if project_root is None:
             init_integration = _resolve_init_integration(integration, manifest)
+            # Resolve all hard compatibility gates before ``specify init``.
+            # Otherwise an incompatible but structurally valid bundle would
+            # initialize a project and only then fail its version/integration
+            # checks, leaving state behind after a failed install.
+            resolve_install_plan(
+                manifest,
+                speckit_version=_speckit_version(),
+                active_integration=init_integration,
+                integration_explicit=True,
+            )
             console.print(
                 f"[cyan]No Spec Kit project here; initializing with integration "
                 f"'{init_integration}'…[/cyan]"
@@ -711,17 +751,24 @@ def _local_manifest_source(arg: str):
 
     if candidate.suffix == ".zip":
         import io
-        import zipfile
 
         import yaml as _yaml
 
-        with zipfile.ZipFile(candidate) as archive:
+        from ..._download_security import open_zip_bounded, read_zip_member_limited
+
+        with open_zip_bounded(candidate, error_type=BundlerError) as archive:
             try:
-                raw = archive.read("bundle.yml")
+                archive.getinfo("bundle.yml")
             except KeyError as exc:
                 raise BundlerError(
                     f"Artifact '{candidate}' does not contain a bundle.yml."
                 ) from exc
+            raw = read_zip_member_limited(
+                archive,
+                "bundle.yml",
+                error_type=BundlerError,
+                label="bundle manifest",
+            )
         data = _yaml.safe_load(io.BytesIO(raw))
         return BundleManifest.from_dict(data)
 
@@ -805,7 +852,13 @@ def _download_manifest(resolved, *, offline: bool):
             f"Network access disabled; cannot download bundle '{resolved.entry.id}' "
             f"from {url}."
         )
-    return _download_remote_manifest(resolved.entry.id, url)
+    manifest = _download_remote_manifest(
+        resolved.entry.id,
+        url,
+        expected_sha256=getattr(resolved.entry, "sha256", None),
+    )
+    _validate_catalog_manifest(resolved.entry, manifest)
+    return manifest
 
 
 def _require_https(label: str, url: str) -> None:
@@ -817,6 +870,8 @@ def _require_https(label: str, url: str) -> None:
     try:
         parsed = urlparse(url)
         hostname = parsed.hostname
+        # Accessing ``port`` performs urllib's syntax/range validation.
+        _ = parsed.port
     except ValueError:
         raise BundlerError(
             f"Refusing to download {label}: URL is malformed: {url}"
@@ -830,7 +885,12 @@ def _require_https(label: str, url: str) -> None:
         raise BundlerError(f"Refusing to download {label} from URL with no host: {url}")
 
 
-def _download_remote_manifest(entry_id: str, url: str):
+def _download_remote_manifest(
+    entry_id: str,
+    url: str,
+    *,
+    expected_sha256: str | None = None,
+):
     """Fetch a remote bundle artifact over HTTPS and extract its manifest."""
     import io
     import tempfile
@@ -842,6 +902,7 @@ def _download_remote_manifest(entry_id: str, url: str):
     from ...authentication.http import github_provider_hosts, open_url
     from ..._github_http import resolve_github_release_asset_api_url
     from ...bundler.models.manifest import BundleManifest
+    from ...shared_infra import verify_archive_sha256
 
     def _validate_redirect(old_url: str, new_url: str) -> None:
         _require_https(f"bundle '{entry_id}'", new_url)
@@ -879,7 +940,18 @@ def _download_remote_manifest(entry_id: str, url: str):
             extra_headers=extra_headers,
         ) as resp:
             _require_https(f"bundle '{entry_id}'", resp.geturl())
-            raw = resp.read()
+            raw = read_response_limited(
+                resp,
+                max_bytes=MAX_DOWNLOAD_BYTES,
+                error_type=BundlerError,
+                label=f"bundle '{entry_id}' download",
+            )
+        verify_archive_sha256(
+            raw,
+            expected_sha256,
+            entry_id,
+            BundlerError,
+        )
     except BundlerError:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -938,6 +1010,38 @@ def _download_remote_manifest(entry_id: str, url: str):
             f"Failed to parse downloaded bundle '{entry_id}' from "
             f"{_source_desc}: {exc}"
         ) from exc
+
+
+def _validate_manifest_structure(manifest, *, source: str) -> None:
+    """Reject a malformed manifest before any project mutation can occur."""
+    from ...bundler.services.validator import validate_manifest
+
+    report = validate_manifest(manifest)
+    if report.ok:
+        return
+    raise BundlerError(
+        f"{source} contains an invalid bundle manifest:\n  - "
+        + "\n  - ".join(report.errors)
+    )
+
+
+def _validate_catalog_manifest(entry, manifest) -> None:
+    """Bind a downloaded manifest to the catalog identity that selected it."""
+    if manifest.bundle.id != entry.id:
+        raise BundlerError(
+            f"Downloaded bundle id mismatch: catalog entry {entry.id!r} points to "
+            f"a manifest for {manifest.bundle.id!r}."
+        )
+    if manifest.bundle.version != entry.version:
+        raise BundlerError(
+            f"Downloaded bundle version mismatch for {entry.id!r}: catalog declares "
+            f"{entry.version!r}, but the manifest declares "
+            f"{manifest.bundle.version!r}."
+        )
+    _validate_manifest_structure(
+        manifest,
+        source=f"Downloaded bundle {entry.id!r}",
+    )
 
 
 def register(app: typer.Typer) -> None:

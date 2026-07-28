@@ -183,6 +183,7 @@ def register(app: typer.Typer) -> None:
             save_init_options,
         )
         from ..integration_runtime import (
+            invoke_prefix_for_integration as _invoke_prefix_for_integration,
             with_integration_setting as _with_integration_setting,
         )
         from ..integrations._commands import (
@@ -480,6 +481,12 @@ def register(app: typer.Typer) -> None:
                     force=force,
                     invoke_separator=resolved_integration.effective_invoke_separator(
                         integration_parsed_options, project_root=project_path
+                    ),
+                    invoke_prefix=_invoke_prefix_for_integration(
+                        resolved_integration,
+                        resolved_integration.key,
+                        integration_parsed_options,
+                        project_path,
                     ),
                 )
                 tracker.complete(
