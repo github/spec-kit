@@ -60,8 +60,12 @@ function Resolve-SpecifyInitDir {
     # matching note further below). TrimEnd is a no-op on a path with no trailing
     # separator; the one difference is a bare drive root (`C:\` -> `C:`), so keep
     # that separator to preserve a valid rooted path.
+    # A filesystem root is all separator: trimming it would leave an empty (or
+    # drive-only) string and break the Join-Path below. Covers the Windows
+    # drive root (`C:\` -> `C:`) and the POSIX root (`/` -> ``), which
+    # PowerShell on Linux/macOS can return.
     $initRoot = $resolved.Path.TrimEnd('/', '\')
-    if ($initRoot -match '^[A-Za-z]:$') {
+    if (-not $initRoot -or $initRoot -match '^[A-Za-z]:$') {
         $initRoot = $resolved.Path
     }
     if (-not (Test-Path -LiteralPath (Join-Path $initRoot '.specify') -PathType Container)) {
