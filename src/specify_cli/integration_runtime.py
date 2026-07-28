@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from ._invocation_style import is_dollar_skills_agent
+from ._invocation_style import get_invocation_prefix
 from .integration_state import integration_setting, integration_settings
 
 
@@ -103,4 +103,4 @@ def invoke_prefix_for_integration(
 ) -> str:
     """Resolve the native invocation prefix for an integration's output mode."""
     skills_mode = integration.is_skills_mode(parsed_options, project_root)
-    return "$" if is_dollar_skills_agent(key, skills_mode) else "/"
+    return get_invocation_prefix(key, skills_mode)

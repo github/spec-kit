@@ -4092,8 +4092,6 @@ class TestPresetSkills:
 
     def test_restore_skill_preserves_dollar_command_refs(self, project_dir, temp_dir):
         """Dollar-style core refs remain native when a preset skill is removed."""
-        from specify_cli.integrations.base import IntegrationBase
-
         self._write_init_options(project_dir, ai="zcode")
         skills_dir = project_dir / ".zcode" / "skills"
         self._create_skill(skills_dir, "speckit-specify")
@@ -4104,9 +4102,7 @@ class TestPresetSkills:
             "---\ndescription: Core specify\n---\n\n"
             "Then run `__SPECKIT_COMMAND_PLAN__`.\n"
         )
-        (core_cmds / "specify.md").write_text(
-            IntegrationBase.resolve_command_refs(raw_core, "-", "$")
-        )
+        (core_cmds / "specify.md").write_text(raw_core)
 
         preset_dir = self._create_command_preset(
             temp_dir,
