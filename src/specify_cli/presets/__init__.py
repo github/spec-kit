@@ -4523,8 +4523,8 @@ class PresetCatalog:
                 desc_val = pack_data.get("description", "")
                 searchable_text = " ".join(
                     [
-                        str(name_val) if name_val else "",
-                        str(desc_val) if desc_val else "",
+                        str(name_val) if name_val is not None else "",
+                        str(desc_val) if desc_val is not None else "",
                         pack_id,
                     ]
                     + [str(t) for t in tags_list]
