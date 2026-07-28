@@ -565,6 +565,39 @@ def test_executable_env_var_devin_integration(monkeypatch):
     assert args[0] == "/opt/devin"
 
 
+def test_goose_integration_honours_extra_args(monkeypatch):
+    """Goose gained ``build_exec_args()`` (the Goose item in #2416), so it must
+    honour the shared extra-args hook like every other dispatching integration."""
+    from specify_cli.integrations.goose import GooseIntegration
+
+    monkeypatch.setenv("SPECKIT_INTEGRATION_GOOSE_EXTRA_ARGS", "--debug")
+    args = GooseIntegration().build_exec_args("hi", output_json=False)
+    assert args == ["goose", "run", "--debug", "-t", "hi"]
+
+
+def test_goose_extra_args_cannot_clobber_prompt_derived_recipe(monkeypatch):
+    """Operator-injected extra args must appear BEFORE the prompt-derived
+    ``--recipe`` so Spec Kit's command selection wins under repeated-flag CLI
+    semantics (mirrors the opencode ``--command`` guarantee above)."""
+    from specify_cli.integrations.goose import GooseIntegration
+
+    monkeypatch.setenv("SPECKIT_INTEGRATION_GOOSE_EXTRA_ARGS", "--recipe evil.yaml")
+    args = GooseIntegration().build_exec_args("/speckit.specify", output_json=False)
+    assert args.index("evil.yaml") < args.index(
+        ".goose/recipes/speckit.specify.yaml"
+    )
+
+
+def test_executable_env_var_goose_integration(monkeypatch):
+    """GooseIntegration honours the executable env var."""
+    from specify_cli.integrations.goose import GooseIntegration
+
+    monkeypatch.setenv("SPECKIT_INTEGRATION_GOOSE_EXECUTABLE", "/opt/goose")
+    args = GooseIntegration().build_exec_args("hi")
+    assert args[0] == "/opt/goose"
+    assert args[1] == "run"
+
+
 def test_executable_env_var_opencode_integration(monkeypatch):
     """OpencodeIntegration honours the executable env var."""
     from specify_cli.integrations.opencode import OpencodeIntegration

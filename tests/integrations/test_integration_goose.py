@@ -83,3 +83,65 @@ class TestGooseCommandPlaceholderResolution:
         assert "{SCRIPT}" not in prompt
         assert "__AGENT__" not in prompt
         assert "$ARGUMENTS" not in prompt
+
+
+class TestGooseCliDispatch:
+    """`goose` must produce argv for non-interactive dispatch.
+
+    `YamlIntegration` never overrode `build_exec_args()`, so Goose inherited the
+    `IntegrationBase` no-op returning `None`. Callers read `None` as "CLI
+    unavailable", so a workflow command/prompt step targeting Goose reported
+    "CLI not found or not installed" even with `goose` on PATH — the Goose item
+    in issue #2416. `goose run` supports `-t/--text`, `--recipe`,
+    `--params KEY=VALUE`, `--model` and `--output-format`.
+    """
+
+    def test_build_exec_args_is_not_none(self):
+        integration = get_integration("goose")
+        assert integration.build_exec_args("/speckit.specify") is not None
+
+    def test_slash_command_maps_to_recipe(self):
+        integration = get_integration("goose")
+        args = integration.build_exec_args("/speckit.specify", output_json=False)
+        assert args[1] == "run"
+        assert "--recipe" in args
+        assert args[args.index("--recipe") + 1] == ".goose/recipes/speckit.specify.yaml"
+        # No trailing args -> no --params
+        assert "--params" not in args
+
+    def test_slash_command_arguments_map_to_params(self):
+        integration = get_integration("goose")
+        args = integration.build_exec_args("/speckit.specify add auth", output_json=False)
+        assert args[args.index("--params") + 1] == "args=add auth"
+
+    def test_dotted_extension_command_maps_to_recipe(self):
+        integration = get_integration("goose")
+        args = integration.build_exec_args("/speckit.git.commit msg", output_json=False)
+        assert args[args.index("--recipe") + 1] == (
+            ".goose/recipes/speckit.git.commit.yaml"
+        )
+
+    def test_free_form_prompt_uses_text_flag(self):
+        """goose has no `-p`; free-form text goes to `-t/--text`."""
+        integration = get_integration("goose")
+        args = integration.build_exec_args("just do it", output_json=False)
+        assert args[-2:] == ["-t", "just do it"]
+        assert "--recipe" not in args
+
+    def test_model_and_output_format_flags(self):
+        integration = get_integration("goose")
+        args = integration.build_exec_args("hi", model="gpt-4o", output_json=True)
+        assert args[args.index("--model") + 1] == "gpt-4o"
+        assert args[args.index("--output-format") + 1] == "json"
+
+    def test_recipe_target_matches_what_setup_writes(self, tmp_path):
+        """Anti-drift: the dispatched `--recipe` path must be the file `setup()`
+        actually installed, so the two cannot diverge."""
+        integration = get_integration("goose")
+        manifest = IntegrationManifest("goose", tmp_path)
+        created = integration.setup(tmp_path, manifest, script_type="sh")
+        assert created
+
+        args = integration.build_exec_args("/speckit.specify hello")
+        recipe = args[args.index("--recipe") + 1]
+        assert (tmp_path / recipe).is_file(), f"{recipe} was not installed by setup()"
