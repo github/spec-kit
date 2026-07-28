@@ -741,19 +741,21 @@ def _local_manifest_source(arg: str):
         )
         _ZIP_READ_ERRORS = _ZIP_OPEN_ERRORS + (zlib.error, EOFError, RuntimeError)
 
-        # The messages below escape the interpolated EXCEPTION text: it reaches
-        # the user through _fail(), which renders Rich markup, and zipfile
-        # embeds raw bytes from the archive in some messages -- e.g.
-        # BadZipFile("File name in directory 'bundle.yml' and header
-        # b'[/red]abcd' differ."). Unescaped, a crafted member name would raise
-        # MarkupError instead of reporting the corruption. (``candidate`` is the
-        # user's own typed path and stays as-is, matching the other messages in
-        # this module.)
+        # The messages below escape BOTH interpolated values, because they reach
+        # the user through _fail(), which renders Rich markup:
+        #   * the exception text -- zipfile embeds raw bytes from the archive in
+        #     some messages, e.g. BadZipFile("File name in directory
+        #     'bundle.yml' and header b'[/red]abcd' differ.")
+        #   * the path -- a file reachable as ``.../[/red].zip`` (a directory
+        #     named ``[``) puts an unmatched closing tag in the message
+        # Unescaped, either would raise MarkupError instead of reporting the
+        # actual corruption.
+        safe_path = _escape_markup(str(candidate))
         try:
             archive = zipfile.ZipFile(candidate)
         except _ZIP_OPEN_ERRORS as exc:
             raise BundlerError(
-                f"Artifact '{candidate}' is not a valid .zip bundle: "
+                f"Artifact '{safe_path}' is not a valid .zip bundle: "
                 f"{_escape_markup(str(exc))}"
             ) from exc
         try:
@@ -761,11 +763,11 @@ def _local_manifest_source(arg: str):
                 raw = archive.read("bundle.yml")
         except KeyError as exc:
             raise BundlerError(
-                f"Artifact '{candidate}' does not contain a bundle.yml."
+                f"Artifact '{safe_path}' does not contain a bundle.yml."
             ) from exc
         except _ZIP_READ_ERRORS as exc:
             raise BundlerError(
-                f"Artifact '{candidate}' is not a valid .zip bundle: "
+                f"Artifact '{safe_path}' is not a valid .zip bundle: "
                 f"{_escape_markup(str(exc))}"
             ) from exc
         try:
@@ -773,7 +775,7 @@ def _local_manifest_source(arg: str):
         except _yaml.YAMLError as exc:
             # Malformed embedded bundle.yml — same rationale as above.
             raise BundlerError(
-                f"Artifact '{candidate}' contains an invalid bundle.yml: "
+                f"Artifact '{safe_path}' contains an invalid bundle.yml: "
                 f"{_escape_markup(str(exc))}"
             ) from exc
         return BundleManifest.from_dict(data)

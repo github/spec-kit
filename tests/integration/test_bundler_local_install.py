@@ -167,6 +167,28 @@ def test_local_source_zip_error_message_escapes_archive_markup(tmp_path: Path):
     Console(file=io.StringIO()).print(f"[red]Error:[/red] {excinfo.value}")
 
 
+def test_local_source_zip_error_message_escapes_path_markup(tmp_path: Path):
+    """The ARTIFACT PATH is interpolated into the same message, so it needs the
+    same escaping: a file reachable as ``.../[/red].zip`` -- a directory named
+    ``[`` -- puts an unmatched closing tag in the text and would raise
+    MarkupError when _fail() renders it (POSIX keeps the forward slash; Windows
+    normalizes it to a backslash, which is inert)."""
+    from rich.console import Console
+
+    bracket_dir = tmp_path / "["
+    bracket_dir.mkdir()
+    artifact = bracket_dir / "red].zip"
+    artifact.write_text("this is not a zip", encoding="utf-8")
+
+    # Pass the path with forward slashes so the message carries "[/red].zip"
+    # exactly as a POSIX caller would produce it.
+    posix_style = f"{bracket_dir.as_posix()}/red].zip"
+    with pytest.raises(BundlerError, match="not a valid .zip bundle") as excinfo:
+        _local_manifest_source(posix_style)
+
+    Console(file=io.StringIO()).print(f"[red]Error:[/red] {excinfo.value}")
+
+
 def test_local_source_rejects_unknown_file(tmp_path: Path):
     weird = tmp_path / "thing.txt"
     weird.write_text("nope", encoding="utf-8")
