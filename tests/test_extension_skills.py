@@ -3029,9 +3029,7 @@ class TestRegisterExtensionSkillsForceFlag:
 
         manager = ExtensionManager(project_dir)
         # Install extension so it is in the registry
-        ext_manifest = manager.install_from_directory(
-            ext_dir, "0.1.0", register_commands=False
-        )
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
         # Simulate a freshly-regenerated core-template SKILL.md (as setup() would write)
         skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
