@@ -53,3 +53,9 @@ The `/speckit.*` slash commands that drive the core Spec-Driven Development proc
 The bundled **bug** extension adds a three-step bug triage process — assess, fix, and validate — with each bug tracked in its own directory under `.specify/bugs/`. Install it with `specify extension add bug`.
 
 [Agentic Bug Fix reference →](agentic-bugfix.md)
+
+### Agentic Intent Reconciliation
+
+The bundled **reconcile** extension adds mandatory human checkpoints around implementation. It establishes a compact intent artifact, captures implementation-discovered decisions in an append-only ledger, and prevents code from silently redefining the feature. Install it with `specify extension add reconcile`.
+
+[Agentic Intent Reconciliation reference →](agentic-reconciliation.md)

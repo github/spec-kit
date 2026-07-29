@@ -1,0 +1,45 @@
+schema_version: "1.0"
+
+extension:
+  id: reconcile
+  name: "Intent Reconciliation"
+  version: "1.0.0"
+  description: "Keep intent, specifications, plans, tests, tasks, and code aligned by capturing implementation-discovered decisions at mandatory human checkpoints"
+  category: "process"
+  effect: "read-write"
+  author: spec-kit-core
+  repository: https://github.com/github/spec-kit
+  license: MIT
+
+requires:
+  speckit_version: ">=0.12.0"
+  commands:
+    - "speckit.implement"
+
+provides:
+  commands:
+    - name: speckit.reconcile.intent
+      file: commands/speckit.reconcile.intent.md
+      description: "Establish or confirm the feature intent and refuse implementation while decision proposals remain unresolved"
+    - name: speckit.reconcile.decisions
+      file: commands/speckit.reconcile.decisions.md
+      description: "Classify implementation-discovered decisions, require human resolution, and propagate only accepted decisions"
+
+hooks:
+  before_implement:
+    command: speckit.reconcile.intent
+    priority: 1
+    optional: false
+    description: "Confirm approved intent and resolve pending decisions before implementation"
+  after_implement:
+    command: speckit.reconcile.decisions
+    priority: 1
+    optional: false
+    description: "Capture and reconcile decisions discovered during implementation"
+
+tags:
+  - "intent"
+  - "decisions"
+  - "reconciliation"
+  - "drift"
+  - "workflow"
