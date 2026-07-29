@@ -886,6 +886,7 @@ def integration_upgrade(
         _register_extensions_for_agent(
             project_root,
             key,
+            force=True,
             continuing="The integration was upgraded, but installed extensions may need re-registration.",
         )
         _register_presets_for_agent(

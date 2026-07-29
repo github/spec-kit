@@ -395,6 +395,7 @@ def _register_extensions_for_agent(
     agent_key: str,
     *,
     continuing: str,
+    force: bool = False,
 ) -> None:
     """Register all enabled extensions' commands/skills for ``agent_key``.
 
@@ -408,6 +409,11 @@ def _register_extensions_for_agent(
     before registering), so extension *skill* rendering — which is scoped to
     the active ``ai`` / ``ai_skills`` init-options — matches ``agent_key``.
 
+    When ``force=True``, existing skill files are overwritten even when they
+    are not dev-mode symlinks. Pass ``force=True`` in the upgrade path so that
+    extension content is layered on top of the core-template files that
+    ``setup()`` just regenerated (fixes the skip-guard bug for skills mode).
+
     Best-effort: never aborts the surrounding integration operation. Callers
     invoke it *after* the use/upgrade/switch transaction has committed so a
     failure here cannot trigger a rollback.
@@ -415,7 +421,7 @@ def _register_extensions_for_agent(
     _best_effort_extension_op(
         project_root,
         agent_key,
-        lambda mgr, key: mgr.register_enabled_extensions_for_agent(key),
+        lambda mgr, key: mgr.register_enabled_extensions_for_agent(key, force=force),
         phase="register extension artifacts for",
         continuing=continuing,
     )
