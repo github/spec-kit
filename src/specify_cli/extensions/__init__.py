@@ -509,8 +509,11 @@ class ExtensionManifest:
 
     def get_hash(self) -> str:
         """Calculate SHA256 hash of manifest file."""
+        h = hashlib.sha256()
         with open(self.path, "rb") as f:
-            return f"sha256:{hashlib.sha256(f.read()).hexdigest()}"
+            for chunk in iter(lambda: f.read(8192), b""):
+                h.update(chunk)
+        return f"sha256:{h.hexdigest()}"
 
 
 class ExtensionRegistry:
