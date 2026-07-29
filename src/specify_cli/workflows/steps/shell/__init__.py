@@ -121,12 +121,20 @@ class ShellStep(StepBase):
         if "timeout" not in config:
             return None
         timeout = config["timeout"]
-        if (
-            isinstance(timeout, bool)
-            or not isinstance(timeout, (int, float))
-            or not math.isfinite(timeout)
-            or timeout <= 0
-        ):
+        try:
+            invalid_timeout = (
+                isinstance(timeout, bool)
+                or not isinstance(timeout, (int, float))
+                or not math.isfinite(timeout)
+                or timeout <= 0
+            )
+        except OverflowError:
+            # An int too large to convert to float (e.g. a 400-digit YAML
+            # scalar) is not a bool and *is* an int, so it clears every clause
+            # before ``isfinite()`` and raises there — and would raise the same
+            # from subprocess.run(timeout=...). Mirrors the prompt step.
+            invalid_timeout = True
+        if invalid_timeout:
             return (
                 f"Shell step {config.get('id', '?')!r}: 'timeout' must be a "
                 f"positive number of seconds, got {timeout!r}."
