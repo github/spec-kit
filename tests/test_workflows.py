@@ -8713,6 +8713,106 @@ steps:
         assert "symlinked .specify/workflows/runs" in result.output
 
 
+class TestWorkflowStepRichMarkup:
+    """Step discovery commands render metadata as literal text."""
+
+    METADATA = {
+        "id": "[magenta]step-id[/magenta]",
+        "name": "[red]Step Name[/red]",
+        "version": "[green]1.0.0[/green]",
+        "author": "[yellow]Author[/yellow]",
+        "description": "[blue]Description[/blue]",
+    }
+
+    def test_search_escapes_catalog_metadata(
+        self, project_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepCatalog
+
+        metadata = dict(self.METADATA)
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(
+            StepCatalog, "search", lambda _catalog, query=None: [metadata]
+        )
+
+        result = CliRunner().invoke(app, ["workflow", "step", "search"])
+
+        assert result.exit_code == 0, result.output
+        assert metadata["name"] in result.output
+        assert metadata["id"] in result.output
+        assert metadata["version"] in result.output
+        assert metadata["description"] in result.output
+
+    def test_info_escapes_catalog_metadata(
+        self, project_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepCatalog, StepRegistry
+
+        metadata = dict(self.METADATA)
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(StepRegistry, "get", lambda _registry, step_id: None)
+        monkeypatch.setattr(
+            StepCatalog,
+            "get_step_info",
+            lambda _catalog, step_id: metadata,
+        )
+
+        result = CliRunner().invoke(
+            app, ["workflow", "step", "info", metadata["id"]]
+        )
+
+        assert result.exit_code == 0, result.output
+        for value in metadata.values():
+            assert value in result.output
+
+    def test_info_escapes_missing_step_id(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepCatalog, StepRegistry
+
+        step_id = "[red]missing[/red]"
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(StepRegistry, "get", lambda _registry, step_id: None)
+        monkeypatch.setattr(
+            StepCatalog,
+            "get_step_info",
+            lambda _catalog, step_id: None,
+        )
+
+        result = CliRunner().invoke(
+            app, ["workflow", "step", "info", step_id]
+        )
+
+        assert result.exit_code == 1, result.output
+        assert step_id in result.output
+
+    def test_list_escapes_installed_metadata(
+        self, project_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepRegistry
+
+        metadata = dict(self.METADATA)
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(
+            StepRegistry,
+            "list",
+            lambda _registry: {metadata["id"]: metadata},
+        )
+
+        result = CliRunner().invoke(app, ["workflow", "step", "list"])
+
+        assert result.exit_code == 0, result.output
+        assert metadata["name"] in result.output
+        assert metadata["id"] in result.output
+        assert metadata["version"] in result.output
+
+
 class TestWorkflowStepAddCLI:
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_add_rejects_symlinked_steps_base_dir(self, project_dir, monkeypatch):
