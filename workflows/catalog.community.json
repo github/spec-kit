@@ -35,7 +35,7 @@
       "changelog": "https://github.com/clintcparker/speckit-addons/blob/yolo-v0.1.0/workflows/yolo/CHANGELOG.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=0.8.5"
+        "speckit_version": ">=0.8.12"
       },
       "tags": [
         "sdd",
