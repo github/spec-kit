@@ -6482,6 +6482,67 @@ class TestWorkflowRegistry:
 class TestWorkflowCatalog:
     """Test WorkflowCatalog catalog resolution."""
 
+    @pytest.mark.parametrize("catalog_type", ["workflow", "step"])
+    def test_non_mapping_cache_metadata_is_invalid(
+        self, project_dir, catalog_type
+    ):
+        from specify_cli.workflows.catalog import StepCatalog, WorkflowCatalog
+
+        catalog_cls = WorkflowCatalog if catalog_type == "workflow" else StepCatalog
+        catalog = catalog_cls(project_dir)
+        _, metadata_path = catalog._get_cache_paths(
+            f"https://example.com/{catalog_type}.json"
+        )
+        metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        metadata_path.write_text("[]", encoding="utf-8")
+
+        assert catalog._is_url_cache_valid(
+            f"https://example.com/{catalog_type}.json"
+        ) is False
+
+    def test_non_mapping_cached_workflow_catalog_is_refetched(
+        self, project_dir, monkeypatch
+    ):
+        import io
+
+        from specify_cli.authentication import http as auth_http
+        from specify_cli.workflows.catalog import (
+            WorkflowCatalog,
+            WorkflowCatalogEntry,
+        )
+
+        url = "https://example.com/workflows.json"
+        catalog = WorkflowCatalog(project_dir)
+        cache_path, metadata_path = catalog._get_cache_paths(url)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text("[]", encoding="utf-8")
+        metadata_path.write_text(
+            json.dumps({"fetched_at": 4_102_444_800}),
+            encoding="utf-8",
+        )
+
+        payload = {"schema_version": "1.0", "workflows": {}}
+
+        class _FakeResponse(io.BytesIO):
+            def geturl(self):
+                return url
+
+        monkeypatch.setattr(
+            auth_http,
+            "open_url",
+            lambda url, timeout=30, redirect_validator=None: _FakeResponse(
+                json.dumps(payload).encode("utf-8")
+            ),
+        )
+        entry = WorkflowCatalogEntry(
+            url=url,
+            name="test",
+            priority=1,
+            install_allowed=True,
+        )
+
+        assert catalog._fetch_single_catalog(entry) == payload
+
     def test_search_with_non_string_fields(self, project_dir, monkeypatch):
         """Non-string workflow fields (null/int name/description) must not
         raise TypeError in search — StepCatalog.search already coerces these."""
