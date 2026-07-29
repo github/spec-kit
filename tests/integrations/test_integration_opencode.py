@@ -12,8 +12,8 @@ from .test_integration_base_markdown import MarkdownIntegrationTests
 class TestOpencodeIntegration(MarkdownIntegrationTests):
     KEY = "opencode"
     FOLDER = ".opencode/"
-    COMMANDS_SUBDIR = "commands"
-    REGISTRAR_DIR = ".opencode/commands"
+    COMMANDS_SUBDIR = "command"
+    REGISTRAR_DIR = ".opencode/command"
 
     def test_build_exec_args_uses_run_command_dispatch(self):
         integration = get_integration(self.KEY)
@@ -63,12 +63,12 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
 
     def test_registrar_config_has_legacy_dir(self):
         integration = get_integration(self.KEY)
-        assert integration.registrar_config["legacy_dir"] == ".opencode/command"
+        assert integration.registrar_config["legacy_dir"] == ".opencode/commands"
 
     def test_legacy_dir_extension_registration(self, tmp_path):
-        """Extensions register in legacy .opencode/command/ with a warning."""
+        """Extensions register in legacy .opencode/commands/ with a warning."""
         # Seed a legacy project with only .opencode/command/
-        legacy_dir = tmp_path / ".opencode" / "command"
+        legacy_dir = tmp_path / ".opencode" / "commands"
         legacy_dir.mkdir(parents=True)
         (legacy_dir / "speckit.specify.md").write_text("# existing", encoding="utf-8")
 
@@ -92,7 +92,7 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         assert "opencode" in results
         assert (legacy_dir / "speckit.myext.md").exists()
         # Canonical directory should NOT have been created
-        assert not (tmp_path / ".opencode" / "commands").exists()
+        assert not (tmp_path / ".opencode" / "command").exists()
         # Should have emitted a deprecation warning
         opencode_warnings = [
             w for w in caught
@@ -104,8 +104,8 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         assert "specify integration upgrade" in str(opencode_warnings[0].message)
 
     def test_legacy_dir_unregister(self, tmp_path):
-        """Unregister finds commands in legacy .opencode/command/ dir."""
-        legacy_dir = tmp_path / ".opencode" / "command"
+        """Unregister finds commands in legacy .opencode/commands/ dir."""
+        legacy_dir = tmp_path / ".opencode" / "commands"
         legacy_dir.mkdir(parents=True)
         cmd_file = legacy_dir / "speckit.myext.md"
         cmd_file.write_text("# ext command", encoding="utf-8")
@@ -123,9 +123,9 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
     def test_unregister_cleans_legacy_when_both_dirs_exist(self, tmp_path):
         """Unregister removes files from legacy dir even when canonical exists."""
         # Set up both canonical and legacy dirs
-        canonical_dir = tmp_path / ".opencode" / "commands"
+        canonical_dir = tmp_path / ".opencode" / "command"
         canonical_dir.mkdir(parents=True)
-        legacy_dir = tmp_path / ".opencode" / "command"
+        legacy_dir = tmp_path / ".opencode" / "commands"
         legacy_dir.mkdir(parents=True)
 
         # Place a command file in the legacy dir (orphaned after upgrade)
@@ -153,9 +153,9 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
 
     def test_canonical_dir_preferred_over_legacy(self, tmp_path):
         """When both dirs exist, canonical .opencode/commands/ is used."""
-        legacy_dir = tmp_path / ".opencode" / "command"
+        legacy_dir = tmp_path / ".opencode" / "commands"
         legacy_dir.mkdir(parents=True)
-        canonical_dir = tmp_path / ".opencode" / "commands"
+        canonical_dir = tmp_path / ".opencode" / "command"
         canonical_dir.mkdir(parents=True)
         (canonical_dir / "speckit.specify.md").write_text("# cmd", encoding="utf-8")
 
@@ -192,8 +192,8 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         manifest = IntegrationManifest(self.KEY, tmp_path)
         integration.setup(tmp_path, manifest)
 
-        canonical = tmp_path / ".opencode" / "commands"
-        legacy = tmp_path / ".opencode" / "command"
+        canonical = tmp_path / ".opencode" / "command"
+        legacy = tmp_path / ".opencode" / "commands"
         assert canonical.is_dir()
         assert not legacy.exists()
         assert any(canonical.glob("speckit.*.md"))

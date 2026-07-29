@@ -76,7 +76,7 @@ class TestMarkdownAgentPostProcess:
             "opencode", commands, "test-ext", ext, tmp_path
         )
 
-        cmd_output = tmp_path / ".opencode" / "commands" / "speckit.test.review.md"
+        cmd_output = tmp_path / ".opencode" / "command" / "speckit.test.review.md"
         assert cmd_output.exists()
         content = cmd_output.read_text(encoding="utf-8")
         assert marker in content
@@ -223,7 +223,7 @@ class TestRegressionPlainTemplate:
         "agent,path_pattern",
         [
             ("claude", ".claude/skills/speckit-test-plain/SKILL.md"),
-            ("opencode", ".opencode/commands/speckit.test.plain.md"),
+            ("opencode", ".opencode/command/speckit.test.plain.md"),
         ],
         ids=["skills", "markdown"],
     )

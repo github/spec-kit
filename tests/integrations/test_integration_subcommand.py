@@ -1895,7 +1895,7 @@ class TestIntegrationSwitch:
         assert result.exit_code == 0, result.output
 
         # Git extension commands should exist for opencode
-        opencode_git_feature = project / ".opencode" / "commands" / "speckit.git.feature.md"
+        opencode_git_feature = project / ".opencode" / "command" / "speckit.git.feature.md"
         assert opencode_git_feature.exists(), "Git extension command should exist for opencode"
 
         # Old kimi extension skills should be removed
@@ -2003,7 +2003,7 @@ class TestIntegrationSwitch:
         ])
         assert result.exit_code == 0, result.output
 
-        opencode_git_feature = project / ".opencode" / "commands" / "speckit.git.feature.md"
+        opencode_git_feature = project / ".opencode" / "command" / "speckit.git.feature.md"
         assert opencode_git_feature.exists(), "Git extension command should exist for opencode"
         assert not copilot_git_feature.exists(), "Old Copilot extension skill should be removed"
 
@@ -2024,7 +2024,7 @@ class TestIntegrationSwitch:
         result = _run_in_project(project, ["extension", "disable", "git"])
         assert result.exit_code == 0, result.output
 
-        opencode_git_feature = project / ".opencode" / "commands" / "speckit.git.feature.md"
+        opencode_git_feature = project / ".opencode" / "command" / "speckit.git.feature.md"
         assert opencode_git_feature.exists(), "Disabled extension command remains until integration switch"
 
         result = _run_in_project(project, [
@@ -2466,23 +2466,26 @@ class TestIntegrationUpgrade:
         assert "/speckit-plan" not in script.read_text(encoding="utf-8")
 
     def test_upgrade_migrates_opencode_legacy_dir(self, tmp_path):
-        """Upgrade moves OpenCode commands from .opencode/command/ to .opencode/commands/."""
+        """Upgrade moves OpenCode commands from the legacy .opencode/commands/
+        (plural) to the canonical .opencode/command/ (singular)."""
         project = _init_project(tmp_path, "opencode")
 
-        # Simulate a legacy project: rename commands/ back to command/
-        canonical = project / ".opencode" / "commands"
-        legacy = project / ".opencode" / "command"
-        assert canonical.is_dir(), "init should have created .opencode/commands/"
+        # Canonical is the singular `command/`; the legacy layout used the
+        # plural `commands/` (which OpenCode silently ignores).
+        canonical = project / ".opencode" / "command"
+        legacy = project / ".opencode" / "commands"
+        assert canonical.is_dir(), "init should have created .opencode/command/"
+        # Simulate a legacy project: rename command/ back to the plural commands/
         canonical.rename(legacy)
         assert legacy.is_dir()
         assert not canonical.exists()
 
-        # Patch the manifest to reflect old paths (command/ not commands/)
+        # Patch the manifest to reflect old paths (commands/ not command/)
         manifest_path = project / ".specify" / "integrations" / "opencode.manifest.json"
         manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
         patched_files = {}
         for path, info in manifest_data.get("files", {}).items():
-            patched_files[path.replace(".opencode/commands/", ".opencode/command/")] = info
+            patched_files[path.replace(".opencode/command/", ".opencode/commands/")] = info
         manifest_data["files"] = patched_files
         manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
 
@@ -2497,9 +2500,9 @@ class TestIntegrationUpgrade:
         assert result.exit_code == 0, f"upgrade failed: {result.output}"
 
         # New commands in canonical dir
-        assert canonical.is_dir(), ".opencode/commands/ should exist after upgrade"
+        assert canonical.is_dir(), ".opencode/command/ should exist after upgrade"
         new_commands = sorted(canonical.glob("speckit.*.md"))
-        assert len(new_commands) > 0, "Commands should exist in .opencode/commands/"
+        assert len(new_commands) > 0, "Commands should exist in .opencode/command/"
 
         # Stale files removed from legacy dir (extension-installed commands
         # like agent-context.update may still appear — only check the original
@@ -2509,7 +2512,7 @@ class TestIntegrationUpgrade:
             if "agent-context" not in f.name
         ]
         assert len(core_remaining) == 0, (
-            f"Legacy .opencode/command/ should have no core speckit files after upgrade, "
+            f"Legacy .opencode/commands/ should have no core speckit files after upgrade, "
             f"found: {[f.name for f in core_remaining]}"
         )
 

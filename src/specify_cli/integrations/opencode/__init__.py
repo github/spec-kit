@@ -1,6 +1,7 @@
 """opencode integration."""
 
 from ..base import MarkdownIntegration
+from ..dispatch_blocks import OPENCODE_DISPATCH_BLOCK, OPENCODE_EXECUTOR_BLOCK
 
 
 class OpencodeIntegration(MarkdownIntegration):
@@ -8,17 +9,32 @@ class OpencodeIntegration(MarkdownIntegration):
     config = {
         "name": "opencode",
         "folder": ".opencode/",
-        "commands_subdir": "commands",
+        # opencode loads commands from `command/` (singular). A plural
+        # `commands/` directory is silently ignored, so the commands install
+        # but never appear in the CLI.
+        "commands_subdir": "command",
         "install_url": "https://opencode.ai",
         "requires_cli": True,
     }
     registrar_config = {
-        "dir": ".opencode/commands",
-        "legacy_dir": ".opencode/command",
+        "dir": ".opencode/command",
+        "legacy_dir": ".opencode/commands",
         "format": "markdown",
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
+
+    def dispatch_block(self) -> str:
+        """OpenCode pins a model per task by dispatching to a named subagent.
+
+        The block speaks only OpenCode's mechanism (``subagent_type``); it makes
+        no mention of CLI subprocesses or other hosts.
+        """
+        return OPENCODE_DISPATCH_BLOCK
+
+    def executor_block(self) -> str:
+        """The `models` command documents only OpenCode's named-subagent route."""
+        return OPENCODE_EXECUTOR_BLOCK
 
     def build_exec_args(
         self,

@@ -147,6 +147,8 @@ class ForgeIntegration(MarkdownIntegration):
                 raw, self.key, script_type, arg_placeholder,
                 invoke_separator=self.invoke_separator,
                 project_root=project_root,
+                dispatch_block=self.dispatch_block(),
+                executor_block=self.executor_block(),
             )
 
             # FORGE-SPECIFIC: Ensure any remaining $ARGUMENTS placeholders are

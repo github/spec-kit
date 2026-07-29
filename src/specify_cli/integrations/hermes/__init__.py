@@ -19,6 +19,7 @@ from typing import Any
 import yaml
 
 from ..base import IntegrationOption, SkillsIntegration, yaml_quote
+from ..dispatch_blocks import HERMES_DISPATCH_BLOCK, HERMES_EXECUTOR_BLOCK
 from ..manifest import IntegrationManifest
 
 
@@ -70,6 +71,27 @@ class HermesIntegration(SkillsIntegration):
                 help="Install as agent skills (default for Hermes Agent)",
             ),
         ]
+
+    # -- Orchestrator dispatch --------------------------------------------
+
+    def dispatch_block(self) -> str:
+        """Hermes has no in-session per-task model selector.
+
+        The native way to run a task on a specific model is to spawn the Hermes
+        CLI itself with the model pinned by ``-m`` (``hermes chat -q -m <id>``).
+        This block speaks only that mechanism — no ``subagent_type``, no agent
+        files, nothing about OpenCode — so the skills written to
+        ``~/.hermes/skills/`` are dedicated to Hermes.
+        """
+        return HERMES_DISPATCH_BLOCK
+
+    def executor_block(self) -> str:
+        """The `models` command documents only the Hermes executor route.
+
+        No `subagent_type`, no OpenCode agent files — just the
+        ``hermes chat -q -m`` cli_subprocess mechanism.
+        """
+        return HERMES_EXECUTOR_BLOCK
 
     # -- Setup -------------------------------------------------------------
 
@@ -141,6 +163,8 @@ class HermesIntegration(SkillsIntegration):
                 arg_placeholder,
                 invoke_separator=self.invoke_separator,
                 project_root=project_root,
+                dispatch_block=self.dispatch_block(),
+                executor_block=self.executor_block(),
             )
             # Strip the processed frontmatter — we rebuild it for skills.
             if processed_body.startswith("---"):

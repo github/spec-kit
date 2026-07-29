@@ -17,9 +17,9 @@ You **MUST** consider the user input before proceeding (if not empty).
 ## Pre-Execution Checks
 
 **Model configuration gate (MANDATORY — before anything else)**:
-- Check for a model configuration file, in this order:
-  1. `.specify/models.json` in the project root
-  2. `~/.specify/models.json` (user-level fallback)
+- Read `.specify/models.json` in the project root **first**. If that read succeeds, this is the configuration: use it and move on. Do **not** read, stat, or mention any other path.
+- Only when the project file does not exist, try `~/.specify/models.json`. That path is outside the project, so the host may deny access: a permission denial or any read error there means "not found" - never abort the command because of it.
+- Never abort this command because a configuration read failed while another configuration source already succeeded.
 - If NEITHER file exists, **STOP immediately**. Do not proceed with any other step. Output:
 
   ```
@@ -37,11 +37,15 @@ You **MUST** consider the user input before proceeding (if not empty).
   - Level `5` models are reserved for very few cases (manager role, exceptional tasks) — never assign them to routine work.
 - If the file exists but cannot be parsed as JSON, or is missing `manager` or `by_complexity`, STOP and tell the user to re-run `__SPECKIT_COMMAND_MODELS__` to regenerate it.
 
-**Orchestrator dispatch (MANDATORY — applies to every step below)**:
-- You are the `manager` (communicator). You do **not** implement tasks yourself. Every task carries a `[C:n<level>->model]` label; dispatch it to the first candidate of that level in `by_complexity` through its `executors` entry, per the detailed dispatch rules in the execution section.
-- Steps that are not tasks (parsing tasks.md, setup checks, progress reporting) stay in the manager. Any substantive non-task work is classified and dispatched like a task.
-- Dispatch is optimistic: a failed invocation falls through to the next candidate in that level's list. If every candidate fails, report the attempts and only then continue in-session.
-- Report which levels were dispatched and to which models, so the user can see the orchestrator working.
+**Orchestrator dispatch (MANDATORY - this is a procedure you execute, not advice)**:
+
+You are the `manager` (communicator). **You have no permission to create or edit project artifacts in this command.** Every substantive step is performed by a worker agent that you dispatch.
+
+__SPECKIT_DISPATCH_BLOCK__
+
+**Self-check before every `write`/`edit` call**: if you are about to create or modify a project file and you did not print a `DISPATCH` line for it, you are violating this command. Stop and dispatch instead. Reading files, running the prerequisite scripts, asking the user questions, merging worker output, and reporting are the only things you may do yourself.
+
+At the end of the command, list every `DISPATCH` line you emitted, so the user can see which levels and models did the work.
 
 **Check for extension hooks (before implementation)**:
 - Check if `.specify/extensions.yml` exists in the project root.
@@ -179,11 +183,10 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Model-aware dispatch (per task)**: Each task carries a `[C:n<level>->model]` label. The right-hand side of the label is the preferred model recorded when tasks were generated; if it is not the first available candidate for that level, use the current ordered list from `models.json` as the source of truth. Resolve the executor as follows:
      - Look up the task's level in `by_complexity`. The ordered list is the source of truth.
      - Start with the first model. The remaining models are ordered fallbacks, not load-balancing targets.
-   - **Executor dispatch**: Resolve the candidate in `executors`:
-     - `native_subagent`: invoke the exact named agent directly. There is no verification gate — if the invocation fails (agent not loaded yet, unknown agent name, model unavailable), treat it as an availability failure and fall through to the next candidate.
+   - **Executor dispatch**: Resolve the candidate in `executors` and dispatch it using the **orchestrator dispatch procedure defined at the top of this command** (that procedure is the single source of truth for how this CLI hands a task to a model). There is no verification gate — if the dispatch fails (the worker could not be invoked, or the model is unavailable), treat it as an availability failure and fall through to the next candidate in the level's list.
      - `current_session`: execute in this conversation only when the recorded model matches the current runtime model.
      - `manual`: pause and provide the recorded model-switch/continuation instructions; never claim automatic dispatch.
-     - Never launch an agent CLI or a second process of the current host to execute a task. Every automatic worker must be native to the agent/CLI hosting this conversation.
+     - Never launch a *different* vendor's agent CLI to execute a task. Every automatic worker must run on the agent/CLI hosting this conversation, using the mechanism the dispatch procedure specifies.
    - **Availability fallback**: If the selected model fails because the agent could not be invoked, usage/token exhaustion, rate limiting, model unavailability, provider outage, or context limits, preserve verified progress and retry with the next candidate in the list. Include the original task, changed files, test results, completed work, and remaining work so the fallback continues safely. Never retry a failed candidate in a loop. If the next executor is manual, pause with exact instructions. If all candidates fail, stop and report every attempt. Do not switch models merely to mask an ordinary code or test failure.
    - **Tasks missing a `[C:...]` label** default to level `3` (moderate, the workhorse).
    - **The `manager` model normally never executes tasks** — it orchestrates. It may also appear in a candidate list only when the discovered catalog is too small to reserve it or the user explicitly assigns it.

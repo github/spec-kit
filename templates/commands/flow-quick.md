@@ -13,9 +13,9 @@ You **MUST** consider the user input before proceeding (if not empty).
 ## Pre-Execution Checks
 
 **Model configuration gate (MANDATORY — before anything else)**:
-- Check for a model configuration file, in this order:
-  1. `.specify/models.json` in the project root
-  2. `~/.specify/models.json` (user-level fallback)
+- Read `.specify/models.json` in the project root **first**. If that read succeeds, this is the configuration: use it and move on. Do **not** read, stat, or mention any other path.
+- Only when the project file does not exist, try `~/.specify/models.json`. That path is outside the project, so the host may deny access: a permission denial or any read error there means "not found" - never abort the command because of it.
+- Never abort this command because a configuration read failed while another configuration source already succeeded.
 - If NEITHER file exists, **STOP immediately**. Do not proceed with any other step. Output:
 
   ```
@@ -33,12 +33,17 @@ You **MUST** consider the user input before proceeding (if not empty).
   - Level `5` models are reserved for very few cases (the manager role and rare exceptionally hard tasks).
 - If the file exists but cannot be parsed as JSON, or is missing `manager` or `by_complexity`, STOP and tell the user to re-run `__SPECKIT_COMMAND_MODELS__` to regenerate it.
 
-**Orchestrator dispatch (MANDATORY — applies to every phase below)**:
-- You are the `manager` (communicator) for the whole flow. You never produce artifacts yourself; every phase runs through its own orchestrator dispatch block.
-- When you execute a phase, apply that phase command's dispatch rules: classify each substantive step's level (`5` critical → `1` trivial), look it up in `by_complexity`, and dispatch it to the first candidate through its `executors` entry.
-- Dispatch is optimistic: a failed invocation falls through to the next candidate in that level's list. If every candidate fails, report the attempts and only then continue in-session.
-- Keep in the manager only: phase sequencing, gates, classification, user questions, merging worker output, and reporting.
-- Report per phase which levels were dispatched and to which models, so the user can see the orchestrator working.
+**Orchestrator dispatch (MANDATORY - this is a procedure you execute, not advice)**:
+
+You are the `manager` (communicator). **You have no permission to create or edit project artifacts in this command.** Every substantive step is performed by a worker agent that you dispatch.
+
+**Phases**: each phase applies its own command's dispatch procedure; classify every substantive step of the phase you are running.
+
+__SPECKIT_DISPATCH_BLOCK__
+
+**Self-check before every `write`/`edit` call**: if you are about to create or modify a project file and you did not print a `DISPATCH` line for it, you are violating this command. Stop and dispatch instead. Reading files, running the prerequisite scripts, asking the user questions, merging worker output, and reporting are the only things you may do yourself.
+
+At the end of the command, list every `DISPATCH` line you emitted, so the user can see which levels and models did the work.
 
 **Flag parsing**: extract flags from the user input before using the rest as the feature description:
 
