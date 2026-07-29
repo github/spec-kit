@@ -102,7 +102,10 @@ def load_auth_config(
         except OSError:
             pass  # stat failed — skip permission check
 
-    raw = json.loads(config_path.read_text(encoding="utf-8"))
+    try:
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{config_path} contains invalid JSON: {exc}") from exc
 
     if not isinstance(raw, dict):
         raise ValueError(f"auth.json must be a JSON object, got {type(raw).__name__}")
