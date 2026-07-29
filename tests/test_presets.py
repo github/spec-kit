@@ -12170,6 +12170,8 @@ class TestPresetCatalogRichMarkup:
         ):
             value = self.MARKUP_PRESET[field]
             assert value in output
+        # Tags are joined into a single line, so assert on the rendered join.
+        assert ", ".join(self.MARKUP_PRESET["tags"]) in output
 
 
 class TestInstalledPresetRichMarkup:
@@ -12286,6 +12288,84 @@ class TestInstalledPresetRichMarkup:
         result = self._invoke(project_dir, ["preset", "resolve", "no[/red]such"])
         assert result.exit_code == 0, (result.output, result.exception)
         assert "no[/red]such" in strip_ansi(result.output)
+
+    def test_resolve_escapes_layer_path_and_source(self, project_dir):
+        """The top-layer path/source lines must render markup literally.
+
+        A preset can be installed from any directory, so the resolved path can
+        contain ``[...]``; the layer source carries the pack id and version.
+        """
+        from unittest.mock import patch
+        from specify_cli.presets import PresetResolver
+
+        # A closing tag cannot live inside a path segment: `Path` treats its
+        # `/` as a separator on POSIX and rewrites it to `\` on Windows. The
+        # opening tag covers the swallowing case for the path; the unbalanced
+        # closing tag rides on `source`, which is a plain string.
+        layer = {
+            "path": Path("/tmp/[red]dir/spec-template.md"),
+            "source": "pack [/red] v1.0.0",
+            "strategy": "replace",
+        }
+        with patch.object(PresetResolver, "collect_all_layers", return_value=[layer]):
+            result = self._invoke(project_dir, ["preset", "resolve", "spec-template"])
+
+        assert result.exit_code == 0, (result.output, result.exception)
+        output = " ".join(strip_ansi(result.output).split())
+        assert "[red]dir" in output, output
+        assert "pack [/red] v1.0.0" in output, output
+
+    def test_resolve_escapes_fallback_path_and_source(self, project_dir):
+        """The no-layer fallback branch must escape ``resolve_with_source`` output."""
+        from unittest.mock import patch
+        from specify_cli.presets import PresetResolver
+
+        with patch.object(
+            PresetResolver, "collect_all_layers", return_value=[]
+        ), patch.object(
+            PresetResolver,
+            "resolve_with_source",
+            return_value={
+                "path": "/tmp/[blue]fallback[/blue]/spec-template.md",
+                "source": "fallback [/red] source",
+            },
+        ):
+            result = self._invoke(project_dir, ["preset", "resolve", "spec-template"])
+
+        assert result.exit_code == 0, (result.output, result.exception)
+        output = " ".join(strip_ansi(result.output).split())
+        assert "[blue]fallback[/blue]" in output, output
+        assert "fallback [/red] source" in output, output
+
+    def test_resolve_escapes_composition_error(self, project_dir):
+        """A composition exception message must not be parsed as markup."""
+        from unittest.mock import patch
+        from specify_cli.presets import PresetResolver
+
+        layers = [
+            {
+                "path": Path("/tmp/top/spec-template.md"),
+                "source": "top-pack v1.0.0",
+                "strategy": "append",
+            },
+            {
+                "path": Path("/tmp/base/spec-template.md"),
+                "source": "base-pack v1.0.0",
+                "strategy": "append",
+            },
+        ]
+        with patch.object(
+            PresetResolver, "collect_all_layers", return_value=layers
+        ), patch.object(
+            PresetResolver,
+            "resolve_content",
+            side_effect=RuntimeError("compose failed: [/red] bad layer"),
+        ):
+            result = self._invoke(project_dir, ["preset", "resolve", "spec-template"])
+
+        assert result.exit_code == 0, (result.output, result.exception)
+        output = " ".join(strip_ansi(result.output).split())
+        assert "compose failed: [/red] bad layer" in output, output
 
     def test_resolve_renders_composition_strategy_labels(self, temp_dir, project_dir):
         """The composition chain's ``[<strategy>]`` label must not be eaten as a tag."""
