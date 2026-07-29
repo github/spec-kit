@@ -157,12 +157,16 @@ class PromptStep(StepBase):
         if "timeout" not in config:
             return None
         timeout = config["timeout"]
-        if (
-            isinstance(timeout, bool)
-            or not isinstance(timeout, (int, float))
-            or not math.isfinite(timeout)
-            or timeout <= 0
-        ):
+        try:
+            valid_timeout = (
+                not isinstance(timeout, bool)
+                and isinstance(timeout, (int, float))
+                and timeout > 0
+                and math.isfinite(timeout)
+            )
+        except OverflowError:
+            valid_timeout = False
+        if not valid_timeout:
             return (
                 f"Prompt step {config.get('id', '?')!r}: 'timeout' must be a "
                 f"positive number of seconds, got {timeout!r}."
