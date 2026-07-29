@@ -165,6 +165,9 @@ class PromptStep(StepBase):
                 and math.isfinite(timeout)
             )
         except OverflowError:
+            # An int too large to convert to float (e.g. a 400-digit YAML
+            # scalar) clears every clause above and raises here — and would
+            # raise the same from subprocess.run(timeout=...).
             valid_timeout = False
         if not valid_timeout:
             return (

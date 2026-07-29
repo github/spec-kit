@@ -1706,7 +1706,7 @@ class TestPromptStep:
         assert "'model' must be a string" in (res.error or ""), falsey
 
     @pytest.mark.parametrize(
-        "bad", ["30", True, float("inf"), float("nan"), 0, -5, ["30"], None]
+        "bad", ["30", True, float("inf"), float("nan"), 0, -5, ["30"], None, 10**400]
     )
     def test_validate_rejects_invalid_timeout(self, bad):
         """'timeout' reaches subprocess.run(), so validate() must reject junk.
@@ -1714,6 +1714,11 @@ class TestPromptStep:
         The sibling shell step already rejects exactly these values; the
         prompt step gained a ``timeout`` without the matching guard, so a
         workflow that fails validation as a shell step passed as a prompt one.
+
+        ``10**400`` is an int too large to convert to float: it passes
+        ``isinstance``/``> 0`` but makes ``math.isfinite()`` — and later
+        ``subprocess.run()`` — raise ``OverflowError``, so the guard has to
+        catch that rather than let it escape as the crash it exists to stop.
         """
         from specify_cli.workflows.steps.prompt import PromptStep
 
@@ -1764,8 +1769,9 @@ class TestPromptStep:
         # A string/list raises TypeError and NaN raises ValueError inside
         # subprocess.run(); ``True`` would silently become a 1s timeout (bool
         # is an int subclass); a non-positive value reports an immediate
-        # TimeoutExpired for a command that never got the time to run.
-        for bad in ("30", True, float("nan"), 0, -5, ["30"]):
+        # TimeoutExpired for a command that never got the time to run; an int
+        # too large to convert to float raises OverflowError.
+        for bad in ("30", True, float("nan"), 0, -5, ["30"], 10**400):
             with patch(
                 "specify_cli.workflows.steps.prompt.shutil.which",
                 return_value="/opt/claude",
