@@ -437,6 +437,129 @@ def catalog_remove(
         console.print("\n[dim]No catalogs remain in config. Built-in defaults will be used.[/dim]")
 
 
+def _validate_safe_cache_dir(project_root: Path) -> Path:
+    """Create and validate the extension URL download cache one component at a time."""
+    download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
+
+    try:
+        project_root_resolved = project_root.resolve()
+        current = project_root
+        for part in (".specify", "extensions", ".cache", "downloads"):
+            current = current / part
+            if current.is_symlink():
+                console.print(
+                    "[red]Error:[/red] Refusing to use symlinked download cache directory"
+                )
+                raise typer.Exit(1)
+
+            if not current.exists():
+                try:
+                    current.mkdir()
+                except FileExistsError:
+                    pass
+
+            if current.is_symlink():
+                console.print(
+                    "[red]Error:[/red] Refusing to use symlinked download cache directory"
+                )
+                raise typer.Exit(1)
+            if not current.is_dir():
+                console.print(
+                    "[red]Error:[/red] Download cache path is not a directory: "
+                    f"{_escape_markup(str(current))}"
+                )
+                raise typer.Exit(1)
+
+            try:
+                current.resolve().relative_to(project_root_resolved)
+            except (OSError, ValueError):
+                console.print(
+                    "[red]Error:[/red] Download cache directory escapes project root"
+                )
+                raise typer.Exit(1)
+    except typer.Exit:
+        raise
+    except OSError as exc:
+        console.print(
+            "[red]Error:[/red] Could not prepare download cache directory: "
+            f"{_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
+
+    return download_dir
+
+
+def _safe_open_download_zip(
+    project_root: Path, download_dir: Path, zip_filename: str
+) -> int:
+    """Exclusively create a download ZIP through a no-follow directory walk."""
+    o_nofollow = getattr(os, "O_NOFOLLOW", 0)
+    o_directory = getattr(os, "O_DIRECTORY", 0)
+    if not o_nofollow or os.open not in os.supports_dir_fd:
+        raise NotImplementedError(
+            "URL-based extension installs require POSIX-style dir_fd and "
+            "O_NOFOLLOW support, which is unavailable on this platform. "
+            "Use --dev with a local directory or install from a catalog instead."
+        )
+
+    rel_parts = download_dir.relative_to(project_root).parts
+    parent_fd = os.open(project_root, os.O_RDONLY | o_directory)
+    try:
+        for part in rel_parts:
+            new_fd = os.open(
+                part,
+                os.O_RDONLY | o_directory | o_nofollow,
+                dir_fd=parent_fd,
+            )
+            os.close(parent_fd)
+            parent_fd = new_fd
+
+        return os.open(
+            zip_filename,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | o_nofollow,
+            0o600,
+            dir_fd=parent_fd,
+        )
+    finally:
+        os.close(parent_fd)
+
+
+def _safe_unlink_download_zip(
+    project_root: Path, download_dir: Path, zip_filename: str
+) -> None:
+    """Best-effort unlink through a no-follow directory walk."""
+    o_nofollow = getattr(os, "O_NOFOLLOW", 0)
+    o_directory = getattr(os, "O_DIRECTORY", 0)
+    if (
+        not o_nofollow
+        or os.open not in os.supports_dir_fd
+        or os.unlink not in os.supports_dir_fd
+    ):
+        return
+
+    parent_fd = -1
+    try:
+        rel_parts = download_dir.relative_to(project_root).parts
+        parent_fd = os.open(project_root, os.O_RDONLY | o_directory)
+        for part in rel_parts:
+            new_fd = os.open(
+                part,
+                os.O_RDONLY | o_directory | o_nofollow,
+                dir_fd=parent_fd,
+            )
+            os.close(parent_fd)
+            parent_fd = new_fd
+        os.unlink(zip_filename, dir_fd=parent_fd)
+    except (OSError, ValueError):
+        pass
+    finally:
+        if parent_fd >= 0:
+            try:
+                os.close(parent_fd)
+            except OSError:
+                pass
+
+
 @extension_app.command("add")
 def extension_add(
     extension: str = typer.Argument(help="Extension name or path"),
@@ -544,16 +667,9 @@ def extension_add(
 
                 console.print(f"Downloading from {safe_url}...")
 
-                # Download ZIP to temp location
-                download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
-                download_dir.mkdir(parents=True, exist_ok=True)
-                with tempfile.NamedTemporaryFile(
-                    prefix="extension-url-download-",
-                    suffix=".zip",
-                    dir=download_dir,
-                    delete=False,
-                ) as download_file:
-                    zip_path = Path(download_file.name)
+                download_dir = _validate_safe_cache_dir(project_root)
+                zip_filename = f"extension-url-download-{uuid4().hex}.zip"
+                zip_path = download_dir / zip_filename
 
                 try:
                     # Use the catalog's authenticated fetch so configured
@@ -587,7 +703,36 @@ def extension_add(
                         )
                         raise typer.Exit(1)
 
-                    zip_path.write_bytes(zip_data)
+                    download_fd = -1
+                    try:
+                        try:
+                            download_fd = _safe_open_download_zip(
+                                project_root, download_dir, zip_filename
+                            )
+                        except NotImplementedError as exc:
+                            console.print(
+                                f"[red]Error:[/red] {_escape_markup(str(exc))}"
+                            )
+                            raise typer.Exit(1)
+
+                        remaining = memoryview(zip_data)
+                        while remaining:
+                            written = os.write(download_fd, remaining)
+                            if written <= 0:
+                                raise OSError("Failed to write extension download")
+                            remaining = remaining[written:]
+                    except OSError as exc:
+                        console.print(
+                            "[red]Error:[/red] Could not safely write download file: "
+                            f"{_escape_markup(str(exc))}"
+                        )
+                        raise typer.Exit(1)
+                    finally:
+                        if download_fd >= 0:
+                            try:
+                                os.close(download_fd)
+                            except OSError:
+                                pass
 
                     # Install from downloaded ZIP
                     manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority, force=force)
@@ -598,9 +743,9 @@ def extension_add(
                     )
                     raise typer.Exit(1)
                 finally:
-                    # Clean up downloaded ZIP
-                    if zip_path.exists():
-                        zip_path.unlink()
+                    _safe_unlink_download_zip(
+                        project_root, download_dir, zip_filename
+                    )
 
             else:
                 # Try bundled extensions first (shipped with spec-kit)
