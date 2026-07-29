@@ -109,6 +109,21 @@ class TestCopilotIntegration:
         assert settings not in created
         assert not any("settings.json" in k for k in m.files)
 
+    def test_setup_preserves_non_utf8_vscode_settings(self, tmp_path, caplog):
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        vscode_dir = tmp_path / ".vscode"
+        vscode_dir.mkdir(parents=True)
+        settings = vscode_dir / "settings.json"
+        original = b'{"editor.fontSize": 14}\xff'
+        settings.write_bytes(original)
+        m = IntegrationManifest("copilot", tmp_path)
+
+        copilot.setup(tmp_path, m)
+
+        assert settings.read_bytes() == original
+        assert "Could not parse" in caplog.text
+
     def test_all_created_files_tracked_in_manifest(self, tmp_path):
         from specify_cli.integrations.copilot import CopilotIntegration
         copilot = CopilotIntegration()

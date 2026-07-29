@@ -497,7 +497,7 @@ class CopilotIntegration(IntegrationBase):
         """
         try:
             existing = json.loads(dst.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
             # Cannot parse existing file (likely JSONC with comments).
             # Skip merge to preserve the user's settings, but show
             # what they should add manually.
