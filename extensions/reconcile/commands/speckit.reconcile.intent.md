@@ -17,7 +17,7 @@ $ARGUMENTS
 1. Resolve the repository root.
 2. Resolve the active feature directory in this order:
    - `SPECIFY_FEATURE_DIRECTORY`, when set;
-   - the `feature_dir` value in `.specify/feature.json`;
+   - the `feature_directory` value in `.specify/feature.json`;
    - the single feature directory already established in the current conversation.
 3. If the feature directory cannot be resolved unambiguously, stop and ask the user to select it. Do not guess from the most recently modified directory.
 4. Resolve the real paths of the repository root, feature directory, `intent.md`, and `decisions.md`. Refuse to read or write through symlinks or any path that escapes the repository root.
