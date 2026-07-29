@@ -481,7 +481,7 @@ class PresetRegistry:
             }
 
         try:
-            with open(self.registry_path, 'r') as f:
+            with open(self.registry_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             # Validate loaded data is a dict (handles corrupted registry files)
             if not isinstance(data, dict):
@@ -502,7 +502,7 @@ class PresetRegistry:
     def _save(self):
         """Save registry to disk."""
         self.packs_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.registry_path, 'w') as f:
+        with open(self.registry_path, 'w', encoding='utf-8') as f:
             json.dump(self.data, f, indent=2)
 
     def add(self, pack_id: str, metadata: dict):
