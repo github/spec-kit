@@ -1424,10 +1424,10 @@ def workflow_run(
                 ),
             )
     except ValueError as exc:
-        err.print(f"[red]Error:[/red] {exc}")
+        err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
     except Exception as exc:
-        err.print(f"[red]Workflow failed:[/red] {exc}")
+        err.print(f"[red]Workflow failed:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     if json_output:
