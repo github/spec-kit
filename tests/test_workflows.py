@@ -6543,6 +6543,36 @@ class TestWorkflowCatalog:
 
         assert catalog._fetch_single_catalog(entry) == payload
 
+    def test_non_mapping_stale_workflow_catalog_is_rejected(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.authentication import http as auth_http
+        from specify_cli.workflows.catalog import (
+            WorkflowCatalog,
+            WorkflowCatalogEntry,
+            WorkflowCatalogError,
+        )
+
+        url = "https://example.com/workflows.json"
+        catalog = WorkflowCatalog(project_dir)
+        cache_path, _ = catalog._get_cache_paths(url)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text("[]", encoding="utf-8")
+
+        def _offline(url, timeout=30, redirect_validator=None):
+            raise OSError("offline")
+
+        monkeypatch.setattr(auth_http, "open_url", _offline)
+        entry = WorkflowCatalogEntry(
+            url=url,
+            name="test",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with pytest.raises(WorkflowCatalogError, match="Failed to fetch catalog"):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+
     def test_search_with_non_string_fields(self, project_dir, monkeypatch):
         """Non-string workflow fields (null/int name/description) must not
         raise TypeError in search — StepCatalog.search already coerces these."""
