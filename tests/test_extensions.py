@@ -658,18 +658,21 @@ class TestExtensionManifest:
     def test_empty_provides_and_no_hooks_keeps_its_own_message(
         self, temp_dir, valid_manifest_data
     ):
-        """...and with no hooks either, it keeps the pre-existing message rather
-        than the new shape error."""
+        """...and with no hooks (or events) either, it reports the "nothing
+        provided" message rather than the new shape error."""
         import yaml
 
         valid_manifest_data["provides"] = {}
         valid_manifest_data.pop("hooks", None)
+        valid_manifest_data.pop("events", None)
 
         manifest_path = temp_dir / "extension.yml"
         with open(manifest_path, 'w') as f:
             yaml.dump(valid_manifest_data, f)
 
-        with pytest.raises(ValidationError, match="at least one command or hook"):
+        with pytest.raises(
+            ValidationError, match="at least one command, hook, or event"
+        ):
             ExtensionManifest(manifest_path)
 
     def test_hooks_not_dict_rejected(self, temp_dir, valid_manifest_data):
