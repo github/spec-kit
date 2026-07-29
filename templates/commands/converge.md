@@ -203,7 +203,10 @@ Append to the **end** of `tasks.md`, per the append contract:
    (highest existing phase + 1).
 2. Write a single new section header `## Phase N: Convergence`.
 3. Emit one checklist item per actionable finding, ordered CRITICAL/HIGH first, assigning
-   zero-padded IDs `T{M+1:03d}, T{M+2:03d}, …`:
+   zero-padded IDs `T{M+1:03d}, T{M+2:03d}, …`. The `03d` width is a **minimum**, not a
+   cap: IDs are padded to three digits and grow beyond it once the task count passes 999
+   (`T999` → `T1000`). Downstream consumers must therefore match `\bT\d{3,}\b`, not
+   `\bT\d{3}\b`:
 
    ```markdown
    - [ ] T042 <imperative description> per <source-ref> (<gap-type>)
