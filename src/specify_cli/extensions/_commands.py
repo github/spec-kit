@@ -713,10 +713,11 @@ def extension_add(
 
         # Scaffold config templates automatically
         deployed, skipped, failed = manager.scaffold_config(manifest.id)
+        config_home = f".specify/extensions/{_escape_markup(str(manifest.id))}"
         if deployed:
             console.print("\n[bold cyan]Config scaffolded:[/bold cyan]")
             for cfg in deployed:
-                console.print(f"  • .specify/{_escape_markup(str(cfg))}")
+                console.print(f"  • {config_home}/{_escape_markup(str(cfg))}")
         if skipped:
             console.print(f"\n[dim]Config files already exist (preserved): {_escape_markup(', '.join(skipped))}[/dim]")
         if failed:
@@ -726,8 +727,13 @@ def extension_add(
                 "Verify the extension manifest and template files."
             )
 
-        console.print("\n[yellow]⚠[/yellow]  Configuration may be required")
-        console.print(f"   Check: .specify/extensions/{_escape_markup(str(manifest.id))}/")
+        # Only warn when configuration is actually unresolved. Scaffolding that
+        # deployed or preserved every template has already answered this, and an
+        # extension without provides.config has nothing to configure; the blanket
+        # warning contradicted the output directly above it.
+        if failed or not (deployed or skipped):
+            console.print("\n[yellow]⚠[/yellow]  Configuration may be required")
+            console.print(f"   Check: {config_home}/")
 
     except ValidationError as e:
         console.print(f"\n[red]Validation Error:[/red] {_escape_markup(str(e))}")

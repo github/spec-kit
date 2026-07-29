@@ -2478,6 +2478,31 @@ class ExtensionManager:
                 extension_dir, speckit_version, priority=priority, force=force
             )
 
+    def _config_root_is_contained(self, specify_dir: Path) -> bool:
+        """Report whether `.specify` is a real directory inside the project.
+
+        Checked component by component so a symlink anywhere on the path is
+        rejected before it becomes the containment root. A missing `.specify`
+        is fine: scaffolding creates it under the project root.
+        """
+        try:
+            root = self.project_root.resolve()
+        except OSError:
+            return False
+        current = self.project_root
+        for part in specify_dir.relative_to(self.project_root).parts:
+            current = current / part
+            if current.is_symlink():
+                return False
+            if not current.exists():
+                return True
+            try:
+                if current.resolve().relative_to(root) is None:
+                    return False
+            except (OSError, ValueError):
+                return False
+        return current.is_dir()
+
     def scaffold_config(self, extension_id: str) -> tuple[List[str], List[str], List[str]]:
         """Deploy config templates from an installed extension to the project.
 
@@ -2515,7 +2540,20 @@ class ExtensionManager:
             return deployed, skipped_existing, ["provides.config"]
 
         ext_dir_resolved = ext_dir.resolve()
-        specify_dir_resolved = (self.project_root / ".specify").resolve()
+        # Config is deployed beneath the extension's own directory because that
+        # is where it is read from: ConfigManager._get_project_config() loads
+        # `.specify/extensions/<id>/<id>-config.yml`, and the bundled scripts
+        # and READMEs use the same location. Writing to `.specify/<name>` put
+        # the file somewhere nothing ever looks.
+        config_dir = self.project_root / ".specify" / "extensions" / extension_id
+        # Resolving that directory and trusting the result as the containment
+        # root lets a symlinked component point outside the project: every
+        # target would then satisfy relative_to and copy2 would write
+        # externally. Refuse a symlinked component up front, matching the
+        # project safe-write path in shared_infra.
+        if not self._config_root_is_contained(config_dir):
+            return deployed, skipped_existing, ["provides.config"]
+        config_dir_resolved = config_dir.resolve()
 
         for config_entry in manifest.config:
             template_name = config_entry.get("template", "")
@@ -2530,10 +2568,10 @@ class ExtensionManager:
 
             template_candidate = ext_dir / template_name
             template_path = template_candidate.resolve()
-            target_path = (self.project_root / ".specify" / target_name).resolve()
+            target_path = (config_dir / target_name).resolve()
             try:
                 template_path.relative_to(ext_dir_resolved)
-                target_path.relative_to(specify_dir_resolved)
+                target_path.relative_to(config_dir_resolved)
             except ValueError:
                 failed.append(failure_name)
                 continue
@@ -2546,8 +2584,12 @@ class ExtensionManager:
                 skipped_existing.append(target_name)
                 continue
 
-            target_path.parent.mkdir(parents=True, exist_ok=True)
             try:
+                # mkdir belongs inside the handler: a nested target like
+                # foo/config.yml must land in `failed` when `.specify/foo` is a
+                # file or cannot be created, not raise out of scaffolding after
+                # `extension add` has already installed the extension.
+                target_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(template_path, target_path)
             except OSError:
                 failed.append(target_name)

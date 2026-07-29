@@ -10328,7 +10328,7 @@ class TestExtensionConfigScaffolding:
         return manifest
 
     def test_scaffold_config_deploys_template(self, tmp_path):
-        """Config template should be copied to .specify/ on scaffold."""
+        """Config template lands where ConfigManager reads it, not in .specify/ root."""
         from specify_cli.extensions import ExtensionManager
         project = tmp_path / "project"
         specify_dir = project / ".specify"
@@ -10348,8 +10348,13 @@ class TestExtensionConfigScaffolding:
         assert deployed == ["test-config.yml"]
         assert skipped == []
         assert failed == []
-        assert (specify_dir / "test-config.yml").exists()
-        assert (specify_dir / "test-config.yml").read_text() == "setting: default"
+        # ConfigManager._get_project_config() reads
+        # .specify/extensions/<id>/<name>, so that is where scaffolding must
+        # put it. Deploying to the .specify/ root left the file somewhere the
+        # extension never looks.
+        assert (ext_dir / "test-config.yml").exists()
+        assert (ext_dir / "test-config.yml").read_text() == "setting: default"
+        assert not (specify_dir / "test-config.yml").exists()
 
     def test_scaffold_config_preserves_existing(self, tmp_path):
         """Existing config files should never be overwritten."""
@@ -10357,7 +10362,6 @@ class TestExtensionConfigScaffolding:
         project = tmp_path / "project"
         specify_dir = project / ".specify"
         specify_dir.mkdir(parents=True)
-        (specify_dir / "test-config.yml").write_text("setting: custom")
         ext_dir = specify_dir / "extensions" / "test-ext"
         self._make_extension(ext_dir, config_entries=[{
             "name": "test-config.yml",
@@ -10366,6 +10370,7 @@ class TestExtensionConfigScaffolding:
             "required": True,
         }])
         (ext_dir / "config-template.yml").write_text("setting: default")
+        (ext_dir / "test-config.yml").write_text("setting: custom")
 
         manager = ExtensionManager(project)
         deployed, skipped, failed = manager.scaffold_config("test-ext")
@@ -10373,7 +10378,7 @@ class TestExtensionConfigScaffolding:
         assert deployed == []
         assert skipped == ["test-config.yml"]
         assert failed == []
-        assert (specify_dir / "test-config.yml").read_text() == "setting: custom"
+        assert (ext_dir / "test-config.yml").read_text() == "setting: custom"
 
     def test_scaffold_config_no_config_section(self, tmp_path):
         """Extensions without config section should return empty list."""
@@ -10506,3 +10511,61 @@ class TestExtensionConfigScaffolding:
         manager = ExtensionManager(project)
 
         assert manager.scaffold_config("missing") == ([], [], [])
+
+    def test_scaffold_config_rejects_symlinked_config_root(self, tmp_path):
+        """A symlinked .specify must not become the containment root.
+
+        Resolving .specify first and trusting the result lets a symlink point
+        anywhere: every target then satisfies relative_to and copy2 writes
+        outside the project.
+        """
+        from specify_cli.extensions import ExtensionManager
+        project = tmp_path / "project"
+        project.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (project / ".specify").symlink_to(outside, target_is_directory=True)
+
+        ext_dir = outside / "extensions" / "test-ext"
+        self._make_extension(ext_dir, config_entries=[{
+            "name": "test-config.yml",
+            "template": "config-template.yml",
+            "description": "Test config",
+            "required": True,
+        }])
+        (ext_dir / "config-template.yml").write_text("setting: default")
+
+        manager = ExtensionManager(project)
+        deployed, skipped, failed = manager.scaffold_config("test-ext")
+
+        assert deployed == []
+        assert skipped == []
+        assert failed == ["provides.config"]
+        assert not (outside / "extensions" / "test-ext" / "test-config.yml").exists()
+
+    def test_scaffold_config_reports_unwritable_nested_target(self, tmp_path):
+        """A nested target whose parent cannot be created is a failure, not a crash.
+
+        mkdir used to run outside the OSError handler, so this raised out of
+        scaffolding after `extension add` had already installed the extension.
+        """
+        from specify_cli.extensions import ExtensionManager
+        project = tmp_path / "project"
+        specify_dir = project / ".specify"
+        specify_dir.mkdir(parents=True)
+        ext_dir = specify_dir / "extensions" / "test-ext"
+        self._make_extension(ext_dir, config_entries=[{
+            "name": "nested/test-config.yml",
+            "template": "config-template.yml",
+            "description": "Test config",
+            "required": True,
+        }])
+        (ext_dir / "config-template.yml").write_text("setting: default")
+        # `nested` is a file, so creating it as a directory fails.
+        (ext_dir / "nested").write_text("not a directory")
+
+        manager = ExtensionManager(project)
+        deployed, skipped, failed = manager.scaffold_config("test-ext")
+
+        assert deployed == []
+        assert failed == ["nested/test-config.yml"]
