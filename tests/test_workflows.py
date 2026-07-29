@@ -1705,6 +1705,84 @@ class TestPromptStep:
         assert res.status is StepStatus.FAILED, falsey
         assert "'model' must be a string" in (res.error or ""), falsey
 
+    @pytest.mark.parametrize(
+        "bad", ["30", True, float("inf"), float("nan"), 0, -5, ["30"], None]
+    )
+    def test_validate_rejects_invalid_timeout(self, bad):
+        """'timeout' reaches subprocess.run(), so validate() must reject junk.
+
+        The sibling shell step already rejects exactly these values; the
+        prompt step gained a ``timeout`` without the matching guard, so a
+        workflow that fails validation as a shell step passed as a prompt one.
+        """
+        from specify_cli.workflows.steps.prompt import PromptStep
+
+        step = PromptStep()
+        errors = step.validate(
+            {"id": "p", "type": "prompt", "prompt": "hi", "timeout": bad}
+        )
+        assert any("'timeout' must be a positive number" in e for e in errors), (
+            bad,
+            errors,
+        )
+
+    @pytest.mark.parametrize("good", [300, 5, 0.5])
+    def test_validate_accepts_valid_timeout(self, good):
+        """A positive int/float timeout — and an absent one — stay valid."""
+        from specify_cli.workflows.steps.prompt import PromptStep
+
+        step = PromptStep()
+        for config in (
+            {"id": "p", "type": "prompt", "prompt": "hi", "timeout": good},
+            {"id": "p", "type": "prompt", "prompt": "hi"},
+        ):
+            errors = step.validate(config)
+            assert not any("'timeout'" in e for e in errors), (config, errors)
+
+    def test_execute_fails_cleanly_on_invalid_timeout(self, monkeypatch):
+        """execute() must fail the step, not raise, on an invalid timeout.
+
+        The engine does not auto-validate step config and re-raises anything a
+        step throws, so an unvalidated ``timeout`` reaching subprocess.run()
+        raised a raw ``TypeError: unsupported operand type(s) for +: 'float'
+        and 'str'`` (or ``ValueError`` for NaN) that aborted the entire run —
+        naming neither the step nor the field — after earlier steps had
+        already run their side effects.
+        """
+        import subprocess
+        from unittest.mock import patch
+
+        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        def fail_if_called(*args, **kwargs):
+            raise AssertionError("subprocess.run should not run on invalid timeout")
+
+        monkeypatch.setattr(subprocess, "run", fail_if_called)
+        step = PromptStep()
+        ctx = StepContext(inputs={}, default_integration="claude")
+        # A string/list raises TypeError and NaN raises ValueError inside
+        # subprocess.run(); ``True`` would silently become a 1s timeout (bool
+        # is an int subclass); a non-positive value reports an immediate
+        # TimeoutExpired for a command that never got the time to run.
+        for bad in ("30", True, float("nan"), 0, -5, ["30"]):
+            with patch(
+                "specify_cli.workflows.steps.prompt.shutil.which",
+                return_value="/opt/claude",
+            ):
+                result = step.execute(
+                    {
+                        "id": "p",
+                        "type": "prompt",
+                        "prompt": "hi",
+                        "integration": "claude",
+                        "timeout": bad,
+                    },
+                    ctx,
+                )
+            assert result.status is StepStatus.FAILED, bad
+            assert "'timeout' must be a positive number" in (result.error or ""), bad
+
 
 class TestShellStep:
     """Test the shell step type."""
