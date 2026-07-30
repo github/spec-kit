@@ -527,10 +527,22 @@ def _validate_safe_cache_dir(project_root: Path) -> Path:
 def _safe_open_download_zip(
     project_root: Path, download_dir: Path, zip_filename: str
 ) -> int:
-    """Exclusively create a download ZIP through a no-follow directory walk."""
+    """Exclusively create a download ZIP through a no-follow directory walk.
+
+    The leaf is unlinked immediately after it is created, while the same
+    downloads-directory descriptor is still held, so the returned fd refers
+    to an anonymous inode that never persists on disk. Installation then
+    proceeds entirely through that descriptor, which removes the whole
+    cleanup-walk TOCTOU class (no cache ancestor can be swapped between
+    validation and a later path-based unlink).
+    """
     o_nofollow = getattr(os, "O_NOFOLLOW", 0)
     o_directory = getattr(os, "O_DIRECTORY", 0)
-    if not o_nofollow or os.open not in os.supports_dir_fd:
+    if (
+        not o_nofollow
+        or os.open not in os.supports_dir_fd
+        or os.unlink not in os.supports_dir_fd
+    ):
         raise NotImplementedError(
             "URL-based extension installs require POSIX-style dir_fd and "
             "O_NOFOLLOW support, which is unavailable on this platform. "
@@ -549,50 +561,20 @@ def _safe_open_download_zip(
             os.close(parent_fd)
             parent_fd = new_fd
 
-        return os.open(
+        download_fd = os.open(
             zip_filename,
             os.O_RDWR | os.O_CREAT | os.O_EXCL | o_nofollow,
             0o600,
             dir_fd=parent_fd,
         )
+        try:
+            os.unlink(zip_filename, dir_fd=parent_fd)
+        except OSError:
+            os.close(download_fd)
+            raise
+        return download_fd
     finally:
         os.close(parent_fd)
-
-
-def _safe_unlink_download_zip(
-    project_root: Path, download_dir: Path, zip_filename: str
-) -> None:
-    """Best-effort unlink through a no-follow directory walk."""
-    o_nofollow = getattr(os, "O_NOFOLLOW", 0)
-    o_directory = getattr(os, "O_DIRECTORY", 0)
-    if (
-        not o_nofollow
-        or os.open not in os.supports_dir_fd
-        or os.unlink not in os.supports_dir_fd
-    ):
-        return
-
-    parent_fd = -1
-    try:
-        rel_parts = download_dir.relative_to(project_root).parts
-        parent_fd = os.open(project_root, os.O_RDONLY | o_directory | o_nofollow)
-        for part in rel_parts:
-            new_fd = os.open(
-                part,
-                os.O_RDONLY | o_directory | o_nofollow,
-                dir_fd=parent_fd,
-            )
-            os.close(parent_fd)
-            parent_fd = new_fd
-        os.unlink(zip_filename, dir_fd=parent_fd)
-    except (OSError, ValueError):
-        pass
-    finally:
-        if parent_fd >= 0:
-            try:
-                os.close(parent_fd)
-            except OSError:
-                pass
 
 
 @extension_app.command("add")
@@ -708,8 +690,10 @@ def extension_add(
                     console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
                     raise typer.Exit(1)
                 zip_filename = f"extension-url-download-{uuid4().hex}.zip"
+                # Only used for diagnostic messages: the real archive is an
+                # anonymous inode consumed via ``archive_file`` below, so this
+                # path is never opened again.
                 zip_path = download_dir / zip_filename
-                created_download_leaf = False
 
                 try:
                     # Use the catalog's authenticated fetch so configured
@@ -750,7 +734,6 @@ def extension_add(
                             download_fd = _safe_open_download_zip(
                                 project_root, download_dir, zip_filename
                             )
-                            created_download_leaf = True
                         except NotImplementedError as exc:
                             console.print(
                                 f"[red]Error:[/red] {_escape_markup(str(exc))}"
@@ -776,8 +759,8 @@ def extension_add(
                             )
                             raise typer.Exit(1)
 
-                        # Consume the inode reserved above rather than reopening
-                        # the mutable cache pathname during extraction.
+                        # Consume the anonymous inode reserved above rather
+                        # than reopening the cache pathname during extraction.
                         try:
                             manifest = manager.install_from_zip(
                                 zip_path,
@@ -809,11 +792,6 @@ def extension_add(
                         f"{_escape_markup(str(e))}"
                     )
                     raise typer.Exit(1)
-                finally:
-                    if created_download_leaf:
-                        _safe_unlink_download_zip(
-                            project_root, download_dir, zip_filename
-                        )
 
             else:
                 # Try bundled extensions first (shipped with spec-kit)

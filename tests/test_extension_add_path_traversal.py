@@ -148,35 +148,6 @@ def test_safe_open_refuses_symlinked_project_root(
         )
 
 
-def test_safe_unlink_refuses_swapped_cache_ancestor(
-    project_dir: Path, tmp_path: Path
-) -> None:
-    _require_secure_dir_fd()
-    if os.unlink not in os.supports_dir_fd:
-        pytest.skip("requires unlink dir_fd support")
-
-    download_dir = _commands._validate_safe_cache_dir(project_dir)
-    zip_filename = "extension-url-download-cleanup.zip"
-    zip_path = download_dir / zip_filename
-    zip_path.write_bytes(b"download")
-
-    cache_root = project_dir / ".specify" / "extensions" / ".cache"
-    original_cache = project_dir / ".specify" / "extensions" / ".cache-original"
-    cache_root.rename(original_cache)
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    outside_sentinel = outside / zip_filename
-    outside_sentinel.write_bytes(b"sentinel")
-    _symlink_directory(cache_root, outside)
-
-    _commands._safe_unlink_download_zip(
-        project_dir, download_dir, zip_filename
-    )
-
-    assert outside_sentinel.read_bytes() == b"sentinel"
-    assert (original_cache / "downloads" / zip_filename).read_bytes() == b"download"
-
-
 def test_safe_open_fails_closed_without_atomic_platform_support(
     project_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -244,9 +215,8 @@ def test_url_install_writes_and_cleans_up_secure_download(
         archive_file=None,
     ):
         captured["path"] = zip_path
-        captured["mode"] = zip_path.stat().st_mode & 0o777
-        zip_path.unlink()
-        zip_path.write_bytes(b"replacement")
+        captured["mode"] = os.fstat(archive_file.fileno()).st_mode & 0o777
+        captured["exists_during_install"] = zip_path.exists()
         captured["bytes"] = archive_file.read()
         archive_file.seek(0)
         return SimpleNamespace(
@@ -282,6 +252,9 @@ def test_url_install_writes_and_cleans_up_secure_download(
     assert result.exit_code == 0, result.output
     assert captured["bytes"] == _MINIMAL_ZIP_BYTES
     assert captured["mode"] == 0o600
+    # The archive is an anonymous inode: it is never visible on disk, even
+    # while installation consumes the open descriptor.
+    assert captured["exists_during_install"] is False
     zip_path = captured["path"]
     assert isinstance(zip_path, Path)
     assert zip_path.parent == (
@@ -291,11 +264,13 @@ def test_url_install_writes_and_cleans_up_secure_download(
     assert not zip_path.exists()
 
 
-def test_url_install_collision_does_not_unlink_unowned_leaf(
+def test_url_install_open_error_surfaces_as_controlled_exit(
     project_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A refused exclusive create must not trigger cleanup of the leaf it
-    never created (otherwise a pre-staged sentinel would be deleted)."""
+    """An ``OSError`` from the hardened create (e.g. an exclusive-leaf
+    collision or a swapped ancestor) must fail closed as ``typer.Exit(1)``
+    rather than escaping as an unhandled traceback, and installation must
+    not run."""
     download_dir = project_dir / ".specify" / "extensions" / ".cache" / "downloads"
 
     monkeypatch.setattr(typer, "confirm", lambda *args, **kwargs: True)
@@ -313,8 +288,6 @@ def test_url_install_collision_does_not_unlink_unowned_leaf(
         raise FileExistsError("leaf already exists")
 
     monkeypatch.setattr(_commands, "_safe_open_download_zip", _raise_collision)
-    unlink_spy = MagicMock()
-    monkeypatch.setattr(_commands, "_safe_unlink_download_zip", unlink_spy)
     install_spy = MagicMock()
     monkeypatch.setattr(ExtensionManager, "install_from_zip", install_spy)
 
@@ -330,5 +303,5 @@ def test_url_install_collision_does_not_unlink_unowned_leaf(
     )
 
     assert result.exit_code == 1
-    unlink_spy.assert_not_called()
+    assert "Could not safely create download file" in result.output
     install_spy.assert_not_called()

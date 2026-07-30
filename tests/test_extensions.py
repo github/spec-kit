@@ -50,20 +50,22 @@ _MINIMAL_ZIP_BYTES = b"PK\x05\x06" + b"\x00" * 18
 
 
 def _open_test_download_zip(project_root, download_dir, zip_filename):
-    """Cross-platform stand-in for the POSIX-only secure cache primitive."""
-    return os.open(
+    """Cross-platform stand-in for the POSIX-only secure cache primitive.
+
+    Mirrors production behavior by unlinking the leaf immediately after
+    creation, so the returned descriptor refers to an anonymous inode.
+    """
+    fd = os.open(
         download_dir / zip_filename,
         os.O_RDWR | os.O_CREAT | os.O_EXCL,
         0o600,
     )
-
-
-def _unlink_test_download_zip(project_root, download_dir, zip_filename):
-    """Cross-platform stand-in for the POSIX-only secure unlink primitive."""
     try:
         os.unlink(download_dir / zip_filename)
     except OSError:
-        pass
+        os.close(fd)
+        raise
+    return fd
 
 
 def _validate_safe_cache_dir_test_stand_in(project_root):
@@ -7784,7 +7786,6 @@ class TestExtensionAddCLI:
              patch("specify_cli.extensions._commands._validate_safe_cache_dir", side_effect=_validate_safe_cache_dir_test_stand_in), \
              patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(_MINIMAL_ZIP_BYTES)), \
              patch("specify_cli.extensions._commands._safe_open_download_zip", side_effect=_open_test_download_zip), \
-             patch("specify_cli.extensions._commands._safe_unlink_download_zip", side_effect=_unlink_test_download_zip), \
              patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip):
             result = runner.invoke(
                 app,
