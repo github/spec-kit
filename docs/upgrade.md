@@ -263,8 +263,11 @@ specify preset add constitution-sync
 ```
 
 It wraps the core `/constitution` command and re-adds the propagation pass. It does **not** edit
-versioned preset- or extension-provided templates (those are owned by their packages). See
-`presets/constitution-sync/README.md` for the tradeoffs.
+versioned preset- or extension-provided templates or command files (those are owned by their
+packages and are recomposed on reconciliation). Note that this edit-in-place propagation model
+conflicts with the composition model used by the rest of the SDD commands when they are
+preset/extension-managed — see the "Interaction with the resolution stack" section in
+`presets/constitution-sync/README.md` for the tradeoffs and when to prefer the default instead.
 
 ---
 

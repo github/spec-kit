@@ -36,7 +36,11 @@ so the dependent artifacts reflect the amended principles:
    `speckit-<name>/SKILL.md` for skills-based integrations, e.g. in `.github/agents/`,
    `.github/skills/`, `.claude/skills/`, or your agent's equivalent commands directory — to verify
    no outdated references (CLAUDE-only or other agent-specific names) remain when generic guidance
-   is required.
+   is required. **Only hand-edit a command file if it is a project-local file not managed by a
+   preset or extension.** Command files that are composed from the resolution stack (anything
+   provided or wrapped by a preset/extension) must be regenerated through the stack — do **not**
+   edit them in place, because reconciliation (`specify integration use`, `specify integration
+   upgrade`, or any preset/extension install/remove) will clobber the edits.
 5. Read any runtime guidance docs (e.g., `README.md`, `docs/quickstart.md`, or agent-specific
    guidance files if present) and update references to principles that changed.
 
@@ -44,7 +48,7 @@ Then extend the Sync Impact Report at the top of `.specify/memory/constitution.m
 
 - Templates requiring updates (✅ updated / ⚠ pending) with file paths.
 
-**Do not edit versioned preset- or extension-provided template files directly.** Those artifacts
-are owned by their packages and are recomposed on the package's next update — hand edits are
-clobbered. Limit propagation to the project's own `.specify/templates/` scaffolds and installed
-command files.
+**Do not edit versioned preset- or extension-provided template or command files directly.** Those
+artifacts are owned by their packages and are recomposed on the package's next update or on stack
+reconciliation — hand edits are clobbered. Limit propagation to the project's own
+`.specify/templates/` scaffolds and to command files that are not managed by a preset or extension.

@@ -12536,7 +12536,7 @@ class TestConstitutionSyncPreset:
         assert "spec-template.md" in body
         assert "tasks-template.md" in body
         # Must not mutate versioned preset/extension artifacts.
-        assert "Do not edit versioned preset- or extension-provided template files" in body
+        assert "Do not edit versioned preset- or extension-provided template or command files" in body
 
     def test_catalog_lists_bundled_preset(self):
         manifest = yaml.safe_load((self.PRESET_DIR / "preset.yml").read_text())
