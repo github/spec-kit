@@ -55,9 +55,17 @@ function Resolve-SpecifyInitDir {
     }
     # Resolve-Path echoes back any trailing separator from the input; trim it so
     # the returned root matches the bash resolver, whose `cd && pwd` never yields
-    # one. TrimEndingDirectorySeparator is a no-op on a bare root and on a path
-    # that already has no trailing separator.
-    $initRoot = [System.IO.Path]::TrimEndingDirectorySeparator($resolved.Path)
+    # one. TrimEnd (not [Path]::TrimEndingDirectorySeparator, which is .NET Core
+    # only) keeps this working on Windows PowerShell 5.1 / .NET Framework, as
+    # Get-FeaturePathsEnv already does below. Unlike a bare TrimEnd, the
+    # GetPathRoot check preserves a path that *is* its own root ('C:\' must not
+    # become 'C:', which every later API re-resolves against the current
+    # directory instead of the drive root). No-op on a path with no trailing
+    # separator.
+    $initRoot = $resolved.Path.TrimEnd('/', '\')
+    if ($initRoot.Length -lt [System.IO.Path]::GetPathRoot($resolved.Path).Length) {
+        $initRoot = $resolved.Path
+    }
     if (-not (Test-Path -LiteralPath (Join-Path $initRoot '.specify') -PathType Container)) {
         [Console]::Error.WriteLine("ERROR: SPECIFY_INIT_DIR is not a Spec Kit project (no .specify/ directory): $initRoot")
         if ($ReturnNullOnError) { return $null }
