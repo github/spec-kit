@@ -12549,3 +12549,21 @@ class TestConstitutionSyncPreset:
         assert layers[0]["strategy"] == "wrap"
         assert any("constitution-sync" in str(layer["path"]) for layer in layers)
         assert layers[-1]["source"] == "core (bundled)"
+
+    def test_resolved_content_embeds_core_and_sync_pass(self, project_dir):
+        """resolve_content substitutes {CORE_TEMPLATE} so the effective command
+        contains both the bundled core body and the propagation pass."""
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(self.PRESET_DIR, "0.15.0")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("speckit.constitution", "command")
+        assert content is not None
+        # {CORE_TEMPLATE} must be replaced, not left literal.
+        assert "{CORE_TEMPLATE}" not in content
+        # Core body is present (distinctive core-only heading).
+        assert "## Scope Guard" in content
+        # The wrapper's propagation pass is present and supersedes the guard.
+        assert "## Constitution Template Sync" in content
+        assert "supersedes the \"Scope Guard\" above" in content
+        assert "plan-template.md" in content

@@ -11,6 +11,14 @@ handoffs:
 
 ## Constitution Template Sync
 
+> **This section supersedes the "Scope Guard" above for template and command propagation.**
+> The core Scope Guard states that dependent templates and commands "are not modified here" —
+> that restriction is intentionally lifted by this preset. Propagating amended guidance into the
+> project's own dependent scaffolds and installed command files (as described below) **is in
+> scope** whenever this preset is installed. The Scope Guard's other constraints still apply:
+> do not implement features, generate application code, or touch artifacts unrelated to the
+> constitution/template workflow.
+
 After you have written the updated constitution above, perform a consistency propagation pass
 so the dependent artifacts reflect the amended principles:
 
