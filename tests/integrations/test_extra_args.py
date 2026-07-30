@@ -575,17 +575,27 @@ def test_goose_integration_honours_extra_args(monkeypatch):
     assert args == ["goose", "run", "--debug", "-t", "hi"]
 
 
-def test_goose_extra_args_cannot_clobber_prompt_derived_recipe(monkeypatch):
-    """Operator-injected extra args must appear BEFORE the prompt-derived
-    ``--recipe`` so Spec Kit's command selection wins under repeated-flag CLI
-    semantics (mirrors the opencode ``--command`` guarantee above)."""
+def test_goose_extra_args_precede_canonical_flags(monkeypatch):
+    """Extra args are applied before Spec Kit's canonical flags, matching the
+    opencode / codex / cursor-agent ordering.
+
+    Ordering parity only. This deliberately does not assert that a duplicated
+    canonical flag gets overridden: ``goose run`` is clap-derive based, and its
+    ``--recipe`` / ``--model`` / ``--output-format`` are single-value args with
+    no ``args_override_self``, so duplicating one makes goose exit with "cannot
+    be used multiple times" regardless of which side wins the ordering.
+    """
     from specify_cli.integrations.goose import GooseIntegration
 
-    monkeypatch.setenv("SPECKIT_INTEGRATION_GOOSE_EXTRA_ARGS", "--recipe evil.yaml")
-    args = GooseIntegration().build_exec_args("/speckit.specify", output_json=False)
-    assert args.index("evil.yaml") < args.index(
-        ".goose/recipes/speckit.specify.yaml"
-    )
+    monkeypatch.setenv("SPECKIT_INTEGRATION_GOOSE_EXTRA_ARGS", "--debug")
+    args = GooseIntegration().build_exec_args("/speckit.specify", model="gpt-4o")
+    assert args[:3] == ["goose", "run", "--debug"]
+    assert args.index("--debug") < args.index("--model")
+    assert args.index("--debug") < args.index("--output-format")
+    assert args.index("--debug") < args.index("--recipe")
+    # Spec Kit itself must never emit a duplicate single-value flag.
+    for flag in ("--recipe", "--model", "--output-format"):
+        assert args.count(flag) == 1
 
 
 def test_executable_env_var_goose_integration(monkeypatch):
