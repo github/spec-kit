@@ -981,7 +981,21 @@ def _install_workflow_package(
         tempfile.mkdtemp(prefix=f".{definition.id}.installing-", dir=workflows_dir)
     )
     try:
-        shutil.copytree(package_dir, staged_dir, dirs_exist_ok=True)
+        package_root = package_dir.resolve()
+
+        def ignore_reserved_package_entries(
+            source: str, names: list[str]
+        ) -> set[str]:
+            if Path(source).resolve() == package_root and "overlays" in names:
+                return {"overlays"}
+            return set()
+
+        shutil.copytree(
+            package_dir,
+            staged_dir,
+            dirs_exist_ok=True,
+            ignore=ignore_reserved_package_entries,
+        )
     except OSError as exc:
         shutil.rmtree(staged_dir, ignore_errors=True)
         console.print(

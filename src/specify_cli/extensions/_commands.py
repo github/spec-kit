@@ -1871,12 +1871,59 @@ def extension_update(
                                 ) from exc
                             raise
                         manifest_root = extracted_root
-                        manifest_path = manifest_root / "extension.yml"
-                        if not manifest_path.exists():
-                            top_level = list(extracted_root.iterdir())
-                            if len(top_level) == 1 and top_level[0].is_dir():
-                                manifest_root = top_level[0]
-                                manifest_path = manifest_root / "extension.yml"
+                        top_level = list(extracted_root.iterdir())
+                        root_manifest_entries = [
+                            entry
+                            for entry in top_level
+                            if entry.name.casefold() == "extension.yml"
+                        ]
+                        if any(
+                            entry.name != "extension.yml"
+                            for entry in root_manifest_entries
+                        ):
+                            raise ValueError(
+                                "Archive must use canonical 'extension.yml' casing"
+                            )
+                        canonical_root_manifest = next(
+                            (
+                                entry
+                                for entry in root_manifest_entries
+                                if entry.name == "extension.yml"
+                            ),
+                            None,
+                        )
+                        if canonical_root_manifest is not None:
+                            manifest_path = canonical_root_manifest
+                        else:
+                            top_level_dirs = [
+                                entry for entry in top_level if entry.is_dir()
+                            ]
+                            if len(top_level_dirs) != 1:
+                                raise ValueError(
+                                    "Downloaded extension archive must contain exactly "
+                                    "one top-level directory"
+                                )
+                            manifest_root = top_level_dirs[0]
+                            nested_manifest_entries = [
+                                entry
+                                for entry in manifest_root.iterdir()
+                                if entry.name.casefold() == "extension.yml"
+                            ]
+                            if any(
+                                entry.name != "extension.yml"
+                                for entry in nested_manifest_entries
+                            ):
+                                raise ValueError(
+                                    "Archive must use canonical 'extension.yml' casing"
+                                )
+                            manifest_path = next(
+                                (
+                                    entry
+                                    for entry in nested_manifest_entries
+                                    if entry.name == "extension.yml"
+                                ),
+                                manifest_root / "extension.yml",
+                            )
                         if not manifest_path.is_file():
                             raise ValueError(
                                 "Downloaded extension archive is missing 'extension.yml'"

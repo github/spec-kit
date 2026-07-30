@@ -150,7 +150,16 @@ def detect_archive_format(
             archive_file.seek(0)
             is_zip = zipfile.is_zipfile(archive_file)
             archive_file.seek(0)
-            is_gzip = archive_file.read(2) == b"\x1f\x8b"
+            signature = archive_file.read(4)
+            # Let the bounded ZIP preflight report structural errors such as
+            # impossible entry counts. ``is_zipfile`` rejects those before the
+            # extractor can produce the established security diagnostic.
+            is_zip = is_zip or signature in {
+                b"PK\x03\x04",
+                b"PK\x05\x06",
+                b"PK\x07\x08",
+            }
+            is_gzip = signature[:2] == b"\x1f\x8b"
             archive_file.seek(0)
             is_tar_gz = False
             if is_gzip:
