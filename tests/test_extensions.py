@@ -2288,6 +2288,52 @@ class TestExtensionManager:
         assert manifest.id == "test-ext"
         assert manager.registry.is_installed("test-ext")
 
+    @pytest.mark.parametrize("suffix", [".tar.gz", ".tgz"])
+    @pytest.mark.parametrize("nested", [False, True])
+    def test_install_from_tar_archive(
+        self, extension_dir, project_dir, temp_dir, suffix, nested
+    ):
+        """Tar archives install with the same flat/nested behavior as ZIP."""
+        import tarfile
+
+        archive_path = temp_dir / f"test-ext{suffix}"
+        with tarfile.open(archive_path, "w:gz") as archive:
+            for file_path in extension_dir.rglob("*"):
+                if file_path.is_file():
+                    relative = file_path.relative_to(extension_dir)
+                    arcname = Path("test-ext-v1") / relative if nested else relative
+                    archive.add(file_path, arcname=arcname)
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_archive(archive_path, "0.1.0")
+
+        assert manifest.id == "test-ext"
+        assert manager.registry.is_installed("test-ext")
+
+    def test_install_from_tar_rejects_symlink_entry(
+        self, extension_dir, project_dir, temp_dir
+    ):
+        import tarfile
+
+        archive_path = temp_dir / "symlink-extension.tar.gz"
+        with tarfile.open(archive_path, "w:gz") as archive:
+            for file_path in extension_dir.rglob("*"):
+                if file_path.is_file():
+                    archive.add(
+                        file_path,
+                        arcname=file_path.relative_to(extension_dir),
+                    )
+            link = tarfile.TarInfo("templates/escape")
+            link.type = tarfile.SYMTYPE
+            link.linkname = "../../outside"
+            archive.addfile(link)
+
+        manager = ExtensionManager(project_dir)
+        with pytest.raises(ValidationError, match="Unsafe symlink"):
+            manager.install_from_archive(archive_path, "0.1.0")
+        assert not manager.registry.is_installed("test-ext")
+        assert not manager.registry.is_installed("test-ext")
+
     def test_install_duplicate_error_mentions_force(self, extension_dir, project_dir):
         """Test that duplicate install error message suggests --force."""
         manager = ExtensionManager(project_dir)
@@ -5765,6 +5811,35 @@ class TestExtensionCatalog:
         assert captured[0].get_header("Authorization") == "Bearer ghp_testtoken"
         assert captured[0].get_header("Accept") == "application/octet-stream"
 
+    @pytest.mark.parametrize("suffix", [".tar.gz", ".tgz"])
+    def test_download_extension_preserves_tar_archive_format(
+        self, temp_dir, suffix
+    ):
+        import tarfile
+        from unittest.mock import patch
+
+        archive_buffer = io.BytesIO()
+        with tarfile.open(fileobj=archive_buffer, mode="w:gz") as archive:
+            content = b"extension:\n  id: test-ext\n"
+            member = tarfile.TarInfo("extension.yml")
+            member.size = len(content)
+            archive.addfile(member, io.BytesIO(content))
+        archive_bytes = archive_buffer.getvalue()
+        catalog = self._make_catalog(temp_dir)
+        ext_info = {
+            "id": "test-ext",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "download_url": f"https://example.com/test-ext{suffix}",
+        }
+
+        with patch.object(catalog, "get_extension_info", return_value=ext_info), \
+             patch.object(catalog, "_open_url", return_value=self._mock_response(archive_bytes)):
+            archive_path = catalog.download_extension("test-ext", target_dir=temp_dir)
+
+        assert archive_path.name == "test-ext-1.0.0.tar.gz"
+        assert archive_path.read_bytes() == archive_bytes
+
 
 
 # ===== CatalogEntry Tests =====
@@ -7852,7 +7927,7 @@ class TestDownloadExtensionBundled:
         }
 
         mock_response = MagicMock()
-        mock_response.read.side_effect = io.BytesIO(b"fake zip data").read
+        mock_response.read.side_effect = io.BytesIO(_MINIMAL_ZIP_BYTES).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"

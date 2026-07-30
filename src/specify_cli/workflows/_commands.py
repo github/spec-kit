@@ -21,10 +21,17 @@ from rich.markup import escape as _escape_markup
 
 from .._console import console, err_console
 from .._download_security import (
+    archive_format_from_content_type,
+    archive_format_from_name,
+    archive_suffix,
+    detect_archive_format,
     is_https_or_localhost_http,
     is_safe_download_redirect,
+    read_response_limited,
+    safe_extract_archive,
 )
 from .._project import _resolve_init_dir_override
+from ..shared_infra import verify_archive_sha256
 
 workflow_app = typer.Typer(
     name="workflow",
@@ -879,6 +886,194 @@ def _discard_committed_backup_file(backup_file: Path | None) -> None:
         )
 
 
+def _workflow_package_root(extracted_root: Path) -> Path:
+    """Resolve a root-level or single-nested workflow package."""
+    if (extracted_root / "workflow.yml").is_file():
+        return extracted_root
+    entries = list(extracted_root.iterdir())
+    if (
+        len(entries) == 1
+        and entries[0].is_dir()
+        and not entries[0].is_symlink()
+        and (entries[0] / "workflow.yml").is_file()
+    ):
+        return entries[0]
+    raise ValueError(
+        "Archive must contain workflow.yml at its root or in exactly one "
+        "top-level directory"
+    )
+
+
+def _validate_local_workflow_package(package_dir: Path) -> None:
+    """Reject links and special files before copying a local package."""
+    import stat
+
+    for root, dirnames, filenames in os.walk(package_dir, followlinks=False):
+        root_path = Path(root)
+        for name in [*dirnames, *filenames]:
+            path = root_path / name
+            mode = path.lstat().st_mode
+            if stat.S_ISLNK(mode):
+                raise ValueError(f"Workflow package contains symlink: {path}")
+            if not stat.S_ISDIR(mode) and not stat.S_ISREG(mode):
+                raise ValueError(f"Workflow package contains unsupported file: {path}")
+
+
+def _workflow_package_has_companions(package_dir: Path) -> bool:
+    """Return whether a directory contains anything beyond workflow.yml."""
+    return any(path.name != "workflow.yml" for path in package_dir.iterdir())
+
+
+def _install_workflow_package(
+    project_root: Path,
+    workflows_dir: Path,
+    package_dir: Path,
+    source_label: str,
+    *,
+    expected_id: str | None = None,
+    expected_version: str | None = None,
+    expected_installed_version: str | None = None,
+    catalog_info: dict[str, Any] | None = None,
+) -> None:
+    """Validate and atomically install a complete workflow package directory."""
+    import shutil
+    import tempfile
+
+    from .engine import WorkflowDefinition, validate_workflow
+
+    workflow_file = package_dir / "workflow.yml"
+    try:
+        _validate_local_workflow_package(package_dir)
+        workflow_bytes = workflow_file.read_bytes()
+        definition = WorkflowDefinition.from_string(workflow_bytes.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError, yaml.YAMLError) as exc:
+        console.print(
+            f"[red]Error:[/red] Invalid workflow package: "
+            f"{_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
+
+    errors = validate_workflow(definition)
+    if errors:
+        console.print("[red]Error:[/red] Workflow validation failed:")
+        for error in errors:
+            console.print(f"  • {_escape_markup(str(error))}")
+        raise typer.Exit(1)
+    if not isinstance(definition.id, str) or not definition.id.strip():
+        console.print("[red]Error:[/red] Workflow definition has an empty or missing 'id'")
+        raise typer.Exit(1)
+    if expected_id is not None and definition.id != expected_id:
+        console.print(
+            f"[red]Error:[/red] Workflow ID in YAML "
+            f"({_escape_markup(repr(definition.id))}) does not match the requested "
+            f"workflow ID ({_escape_markup(repr(expected_id))})."
+        )
+        raise typer.Exit(1)
+    if expected_version is not None and str(definition.version) != expected_version:
+        console.print(
+            f"[red]Error:[/red] Downloaded workflow version "
+            f"({_escape_markup(str(definition.version))}) does not match the catalog "
+            f"version ({_escape_markup(expected_version)})."
+        )
+        raise typer.Exit(1)
+
+    dest_dir = _safe_workflow_id_dir(workflows_dir, definition.id)
+    staged_dir = Path(
+        tempfile.mkdtemp(prefix=f".{definition.id}.installing-", dir=workflows_dir)
+    )
+    try:
+        shutil.copytree(package_dir, staged_dir, dirs_exist_ok=True)
+    except OSError as exc:
+        shutil.rmtree(staged_dir, ignore_errors=True)
+        console.print(
+            f"[red]Error:[/red] Failed to stage workflow package: "
+            f"{_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
+
+    backup_dir: Path | None = None
+    try:
+        with _workflow_install_transaction(project_root):
+            registry = _open_workflow_registry(project_root)
+            existing = registry.get(definition.id)
+            if expected_installed_version is not None and (
+                not isinstance(existing, dict)
+                or existing.get("source") != "catalog"
+                or str(existing.get("version")) != expected_installed_version
+            ):
+                console.print(
+                    f"[yellow]Warning:[/yellow] Workflow "
+                    f"'{_escape_markup(definition.id)}' changed during update; "
+                    "rerun the command."
+                )
+                raise typer.Exit(1)
+            if dest_dir.exists():
+                backup_dir = Path(
+                    tempfile.mkdtemp(
+                        prefix=f".{definition.id}.backup-",
+                        dir=workflows_dir,
+                    )
+                )
+                backup_dir.rmdir()
+                os.replace(dest_dir, backup_dir)
+            try:
+                os.replace(staged_dir, dest_dir)
+            except BaseException:
+                if backup_dir is not None:
+                    os.replace(backup_dir, dest_dir)
+                    backup_dir = None
+                raise
+
+            entry = {
+                "name": definition.name,
+                "version": definition.version,
+                "description": definition.description,
+                "source": source_label,
+            }
+            if catalog_info is not None:
+                entry.update(
+                    {
+                        "source": "catalog",
+                        "catalog_name": catalog_info.get("_catalog_name", ""),
+                        "url": catalog_info.get("url", ""),
+                    }
+                )
+            if isinstance(existing, dict) and not existing.get("enabled", True):
+                entry["enabled"] = False
+            try:
+                registry.add(definition.id, entry)
+            except (OSError, TypeError, ValueError):
+                shutil.rmtree(dest_dir)
+                if backup_dir is not None:
+                    os.replace(backup_dir, dest_dir)
+                    backup_dir = None
+                raise
+    except typer.Exit:
+        raise
+    except (OSError, TypeError, ValueError) as exc:
+        console.print(
+            f"[red]Error:[/red] Failed to install workflow package: "
+            f"{_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
+    finally:
+        if staged_dir.exists():
+            shutil.rmtree(staged_dir, ignore_errors=True)
+
+    if backup_dir is not None:
+        try:
+            shutil.rmtree(backup_dir)
+        except OSError as exc:
+            console.print(
+                "[yellow]Warning:[/yellow] Workflow installed, but its backup "
+                f"directory could not be removed: {_escape_markup(str(exc))}"
+            )
+    console.print(
+        f"[green]✓[/green] Workflow '{_escape_markup(definition.name)}' "
+        f"({_escape_markup(definition.id)}) installed"
+    )
+
+
 # Root helper re-fetched at call time so test monkeypatching of
 # `specify_cli._require_specify_project` keeps working after the move.
 def _require_specify_project(*args, **kwargs):
@@ -1602,16 +1797,48 @@ def workflow_add(
         if dev_path.is_file() and dev_path.suffix.lower() in (".yml", ".yaml"):
             _validate_and_install_local(dev_path, str(dev_path))
             return
+        if dev_path.is_file() and archive_format_from_name(str(dev_path)) is not None:
+            import tempfile
+
+            with tempfile.TemporaryDirectory(
+                prefix="speckit-workflow-archive-"
+            ) as tmpdir:
+                extracted_root = Path(tmpdir)
+                try:
+                    safe_extract_archive(dev_path, extracted_root)
+                    package_root = _workflow_package_root(extracted_root)
+                except ValueError as exc:
+                    console.print(
+                        f"[red]Error:[/red] Invalid workflow archive: "
+                        f"{_escape_markup(str(exc))}"
+                    )
+                    raise typer.Exit(1)
+                _install_workflow_package(
+                    project_root,
+                    workflows_dir,
+                    package_root,
+                    str(dev_path),
+                )
+            return
         if dev_path.is_dir():
             dev_wf_file = dev_path / "workflow.yml"
             if not dev_wf_file.is_file():
                 console.print(f"[red]Error:[/red] No workflow.yml found in {_escape_markup(source)}")
                 raise typer.Exit(1)
-            _validate_and_install_local(dev_wf_file, str(dev_path))
+            if _workflow_package_has_companions(dev_path):
+                _install_workflow_package(
+                    project_root,
+                    workflows_dir,
+                    dev_path,
+                    str(dev_path),
+                )
+            else:
+                _validate_and_install_local(dev_wf_file, str(dev_path))
             return
         console.print(
-            "[red]Error:[/red] --dev source must be a workflow YAML file or a "
-            f"directory containing workflow.yml: {_escape_markup(source)}"
+            "[red]Error:[/red] --dev source must be a workflow YAML file, "
+            "supported archive, or directory containing workflow.yml: "
+            f"{_escape_markup(source)}"
         )
         raise typer.Exit(1)
 
@@ -1674,6 +1901,7 @@ def workflow_add(
 
         import tempfile
         tmp_path: Path | None = None
+        downloaded_archive_format = None
         try:
             with _open_url(
                 download_url,
@@ -1687,13 +1915,37 @@ def workflow_add(
                         f"[red]Error:[/red] URL redirected to non-HTTPS: {_escape_markup(final_url)}"
                     )
                     raise typer.Exit(1)
-                with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
+                content_type = (
+                    resp.getheader("Content-Type")
+                    if hasattr(resp, "getheader")
+                    else None
+                )
+                downloaded_archive_format = (
+                    archive_format_from_name(final_url)
+                    or archive_format_from_name(download_url)
+                    or archive_format_from_content_type(content_type)
+                )
+                suffix = (
+                    archive_suffix(downloaded_archive_format)
+                    if downloaded_archive_format is not None
+                    else ".yml"
+                )
+                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
                     # Assign tmp_path immediately: NamedTemporaryFile(delete=False)
                     # creates the file on disk right away, before any bytes are
                     # written, so a failure in the size-limited read below must
                     # still be able to find and remove it.
                     tmp_path = Path(tmp.name)
-                    tmp.write(_read_response_within_limit(resp))
+                    if downloaded_archive_format is None:
+                        tmp.write(_read_response_within_limit(resp))
+                    else:
+                        tmp.write(
+                            read_response_limited(
+                                resp,
+                                error_type=ValueError,
+                                label="workflow archive download",
+                            )
+                        )
         except typer.Exit:
             raise
         except Exception as exc:
@@ -1713,13 +1965,38 @@ def workflow_add(
             console.print(f"[red]Error:[/red] Failed to download workflow: {_escape_markup(str(exc))}")
             raise typer.Exit(1)
         try:
-            # When installed via --from, the positional argument names the
-            # workflow the user expects — enforce it like the catalog branch.
-            _validate_and_install_local(
-                tmp_path,
-                download_url,
-                expected_id=source if from_url else None,
-            )
+            if downloaded_archive_format is None:
+                _validate_and_install_local(
+                    tmp_path,
+                    download_url,
+                    expected_id=source if from_url else None,
+                )
+            else:
+                with tempfile.TemporaryDirectory(
+                    prefix="speckit-workflow-archive-"
+                ) as extract_dir:
+                    extracted_root = Path(extract_dir)
+                    try:
+                        safe_extract_archive(
+                            tmp_path,
+                            extracted_root,
+                            source_name=final_url,
+                            content_type=content_type,
+                        )
+                        package_root = _workflow_package_root(extracted_root)
+                    except ValueError as exc:
+                        console.print(
+                            f"[red]Error:[/red] Invalid workflow archive: "
+                            f"{_escape_markup(str(exc))}"
+                        )
+                        raise typer.Exit(1)
+                    _install_workflow_package(
+                        project_root,
+                        workflows_dir,
+                        package_root,
+                        download_url,
+                        expected_id=source if from_url else None,
+                    )
         finally:
             # Best-effort: _validate_and_install_local may already have
             # committed the file + registry entry (success) or already
@@ -1743,12 +2020,46 @@ def workflow_add(
         if source_path.is_file() and source_path.suffix.lower() in (".yml", ".yaml"):
             _validate_and_install_local(source_path, str(source_path))
             return
+        elif (
+            source_path.is_file()
+            and archive_format_from_name(str(source_path)) is not None
+        ):
+            import tempfile
+
+            with tempfile.TemporaryDirectory(
+                prefix="speckit-workflow-archive-"
+            ) as tmpdir:
+                extracted_root = Path(tmpdir)
+                try:
+                    safe_extract_archive(source_path, extracted_root)
+                    package_root = _workflow_package_root(extracted_root)
+                except ValueError as exc:
+                    console.print(
+                        f"[red]Error:[/red] Invalid workflow archive: "
+                        f"{_escape_markup(str(exc))}"
+                    )
+                    raise typer.Exit(1)
+                _install_workflow_package(
+                    project_root,
+                    workflows_dir,
+                    package_root,
+                    str(source_path),
+                )
+            return
         elif source_path.is_dir():
             wf_file = source_path / "workflow.yml"
             if not wf_file.is_file():
                 console.print(f"[red]Error:[/red] No workflow.yml found in {_escape_markup(source)}")
                 raise typer.Exit(1)
-            _validate_and_install_local(wf_file, str(source_path))
+            if _workflow_package_has_companions(source_path):
+                _install_workflow_package(
+                    project_root,
+                    workflows_dir,
+                    source_path,
+                    str(source_path),
+                )
+            else:
+                _validate_and_install_local(wf_file, str(source_path))
             return
 
     # Try from catalog
@@ -1853,6 +2164,9 @@ def _install_workflow_from_catalog(
         )
         raise typer.Exit(1)
 
+    original_workflow_url = workflow_url
+    downloaded_archive_format = None
+    archive_content_type = None
     try:
         from specify_cli.authentication.http import open_url as _open_url
         from specify_cli.authentication.http import github_provider_hosts as _github_provider_hosts
@@ -1884,10 +2198,27 @@ def _install_workflow_from_catalog(
                     f"[red]Error:[/red] Workflow '{safe_wf_id}' redirected to non-HTTPS URL: {_escape_markup(final_url)}"
                 )
                 raise typer.Exit(1)
+            archive_content_type = (
+                response.getheader("Content-Type")
+                if hasattr(response, "getheader")
+                else None
+            )
+            downloaded_archive_format = (
+                archive_format_from_name(final_url)
+                or archive_format_from_name(original_workflow_url)
+                or archive_format_from_content_type(archive_content_type)
+            )
             # Written to the staging file, never workflow_file directly, so a
             # reinstall's prior working copy is never touched until the
             # atomic commit below runs.
-            downloaded_content = _read_response_within_limit(response)
+            if downloaded_archive_format is None:
+                downloaded_content = _read_response_within_limit(response)
+            else:
+                downloaded_content = read_response_limited(
+                    response,
+                    error_type=ValueError,
+                    label=f"workflow '{workflow_id}' archive download",
+                )
             staged_file.write_bytes(downloaded_content)
     except typer.Exit:
         raise
@@ -1895,6 +2226,57 @@ def _install_workflow_from_catalog(
         _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
         console.print(f"[red]Error:[/red] Failed to install workflow '{safe_wf_id}' from catalog: {_escape_markup(str(exc))}")
         raise typer.Exit(1)
+
+    if downloaded_archive_format is not None:
+        try:
+            verify_archive_sha256(
+                downloaded_content,
+                info.get("sha256"),
+                workflow_id,
+                ValueError,
+            )
+            import tempfile
+
+            with tempfile.TemporaryDirectory(
+                prefix="speckit-workflow-archive-"
+            ) as extract_dir:
+                extracted_root = Path(extract_dir)
+                safe_extract_archive(
+                    staged_file.path,
+                    extracted_root,
+                    source_name=original_workflow_url,
+                    content_type=archive_content_type,
+                )
+                package_root = _workflow_package_root(extracted_root)
+                _safe_discard_staged_workflow_file(
+                    staged_file,
+                    workflow_dir,
+                    existed_before,
+                )
+                _install_workflow_package(
+                    project_root,
+                    workflows_dir,
+                    package_root,
+                    workflow_url,
+                    expected_id=workflow_id,
+                    expected_version=expected_version,
+                    expected_installed_version=expected_installed_version,
+                    catalog_info={**info, "url": workflow_url},
+                )
+        except typer.Exit:
+            raise
+        except (OSError, ValueError) as exc:
+            _safe_discard_staged_workflow_file(
+                staged_file,
+                workflow_dir,
+                existed_before,
+            )
+            console.print(
+                f"[red]Error:[/red] Invalid workflow archive: "
+                f"{_escape_markup(str(exc))}"
+            )
+            raise typer.Exit(1)
+        return
 
     # Validate the downloaded workflow (still staged, not yet committed)
     # before registering.

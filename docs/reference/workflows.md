@@ -103,10 +103,17 @@ specify workflow add <source>
 
 | Option          | Description                                            |
 | --------------- | ------------------------------------------------------ |
-| `--dev`         | Install from a local workflow YAML file or directory   |
+| `--dev`         | Install from a local YAML file, package directory, or archive |
 | `--from <url>`  | Install from a custom URL (`<source>` names the expected workflow ID) |
 
-Installs a workflow from the catalog, a URL (HTTPS required), a local YAML file, or a local directory containing `workflow.yml`.
+Installs a workflow from the catalog, an HTTPS URL, a local YAML file, a
+directory containing `workflow.yml`, or a `.zip`, `.tar.gz`, or `.tgz`
+archive. Archives may contain `workflow.yml` at the root or inside one
+top-level directory.
+
+Directory and archive installs preserve the complete workflow package,
+including scripts and other companion files. ZIP, `.tar.gz`, and `.tgz`
+archives follow the same validation and installation behavior.
 
 ## Workflow Overlays
 
@@ -281,7 +288,9 @@ Lower priority values have higher precedence. Change this overlay to `priority: 
 
 ### Interaction with Bundles and Updates
 
-`specify workflow add <local-directory>` installs `workflow.yml` from the local directory into `.specify/workflows/<id>/`.
+`specify workflow add <local-directory>` installs the complete local workflow
+package into `.specify/workflows/<id>/`. Archive installs preserve the same
+package contents.
 
 When an installed workflow is refreshed or reinstalled, project overlays in `.specify/workflows/overlays/<id>/` are preserved because they live outside the installed workflow directory.
 

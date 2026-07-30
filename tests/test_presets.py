@@ -14,6 +14,7 @@ import pytest
 import io
 import json
 import tempfile
+import tarfile
 import shutil
 import warnings
 import zipfile
@@ -712,6 +713,45 @@ class TestPresetManager:
         manager = PresetManager(project_dir)
         with pytest.raises(PresetValidationError, match="Unsafe symlink"):
             manager.install_from_zip(zip_path, "0.1.5")
+
+        assert not manager.registry.is_installed("test-pack")
+
+    @pytest.mark.parametrize("suffix", [".tar.gz", ".tgz"])
+    @pytest.mark.parametrize("nested", [False, True])
+    def test_install_from_tar_archive(
+        self, project_dir, pack_dir, temp_dir, suffix, nested
+    ):
+        """Tar archives install with the same flat/nested behavior as ZIP."""
+        archive_path = temp_dir / f"test-pack{suffix}"
+        with tarfile.open(archive_path, "w:gz") as archive:
+            for file_path in pack_dir.rglob("*"):
+                if file_path.is_file():
+                    relative = file_path.relative_to(pack_dir)
+                    arcname = Path("test-pack-v1") / relative if nested else relative
+                    archive.add(file_path, arcname=arcname)
+
+        manager = PresetManager(project_dir)
+        manifest = manager.install_from_archive(archive_path, "0.1.5")
+
+        assert manifest.id == "test-pack"
+        assert manager.registry.is_installed("test-pack")
+
+    def test_install_from_tar_rejects_symlink_entry(
+        self, project_dir, pack_dir, temp_dir
+    ):
+        archive_path = temp_dir / "symlink-preset.tar.gz"
+        with tarfile.open(archive_path, "w:gz") as archive:
+            for file_path in pack_dir.rglob("*"):
+                if file_path.is_file():
+                    archive.add(file_path, arcname=file_path.relative_to(pack_dir))
+            link = tarfile.TarInfo("templates/escape")
+            link.type = tarfile.SYMTYPE
+            link.linkname = "../../outside"
+            archive.addfile(link)
+
+        manager = PresetManager(project_dir)
+        with pytest.raises(PresetValidationError, match="Unsafe symlink"):
+            manager.install_from_archive(archive_path, "0.1.5")
 
         assert not manager.registry.is_installed("test-pack")
 
@@ -2667,6 +2707,39 @@ class TestPresetCatalog:
         assert captured[0].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
         assert captured[0].get_header("Authorization") == "Bearer ghp_testtoken"
         assert captured[0].get_header("Accept") == "application/octet-stream"
+
+    @pytest.mark.parametrize("suffix", [".tar.gz", ".tgz"])
+    def test_download_pack_preserves_tar_archive_format(
+        self, project_dir, suffix
+    ):
+        from unittest.mock import patch, MagicMock
+
+        archive_buffer = io.BytesIO()
+        with tarfile.open(fileobj=archive_buffer, mode="w:gz") as archive:
+            content = b"preset:\n  id: test-pack\n"
+            member = tarfile.TarInfo("preset.yml")
+            member.size = len(content)
+            archive.addfile(member, io.BytesIO(content))
+        archive_bytes = archive_buffer.getvalue()
+        response = MagicMock()
+        response.read.side_effect = io.BytesIO(archive_bytes).read
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+        catalog = PresetCatalog(project_dir)
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": f"https://example.com/test-pack{suffix}",
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=response):
+            archive_path = catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert archive_path.name == "test-pack-1.0.0.tar.gz"
+        assert archive_path.read_bytes() == archive_bytes
 
 
 # ===== Integration Tests =====
@@ -10084,7 +10157,7 @@ class TestBundledPresetLocator:
                 self.read_sizes.append(size)
                 return super().read(size)
 
-        response = FakeResponse(b"zip-bytes")
+        response = FakeResponse(b"PK\x05\x06" + b"\x00" * 18)
         installed = {}
 
         def fake_install_from_zip(self, zip_path, speckit_version, priority=10):
@@ -10105,7 +10178,7 @@ class TestBundledPresetLocator:
 
         assert response.read_sizes
         assert installed == {
-            "zip_bytes": b"zip-bytes",
+            "zip_bytes": b"PK\x05\x06" + b"\x00" * 18,
             "speckit_version": "0.6.0",
             "priority": 7,
         }
