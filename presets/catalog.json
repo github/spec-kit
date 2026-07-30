@@ -25,6 +25,29 @@
         "workflow",
         "core"
       ]
+    },
+    "constitution-sync": {
+      "name": "Constitution Template Sync",
+      "id": "constitution-sync",
+      "version": "1.0.0",
+      "description": "Opt-in: restores /constitution propagation of amended guidance into plan/spec/tasks templates and installed command files, for teams that treat materialized templates as reviewed artifacts.",
+      "author": "github",
+      "repository": "https://github.com/github/spec-kit",
+      "license": "MIT",
+      "bundled": true,
+      "requires": {
+        "speckit_version": ">=0.14.4"
+      },
+      "provides": {
+        "commands": 1,
+        "templates": 0
+      },
+      "tags": [
+        "constitution",
+        "governance",
+        "templates",
+        "compatibility"
+      ]
     }
   }
 }

@@ -208,6 +208,66 @@ Restart your IDE to refresh the command list.
 
 ---
 
+## Behavior change: `/constitution` no longer propagates into templates (0.14.4)
+
+Starting in **0.14.4** ([#3790](https://github.com/github/spec-kit/pull/3790)), the
+`/constitution` command is scoped to its own artifact. It updates
+`.specify/memory/constitution.md` and writes a Sync Impact Report, and **no longer edits**
+`plan-template.md`, `spec-template.md`, `tasks-template.md`, installed command files, or
+guidance docs.
+
+### Why
+
+Spec Kit uses **runtime resolution**: `plan`, `tasks`, and `analyze` read
+`.specify/memory/constitution.md` live on every run, and `analyze` is the dedicated drift
+checker. The governed templates carry a pointer, not a copy — `plan-template.md` ships
+`[Gates determined based on constitution file]`, and `/plan` fills that section from the live
+constitution each run. Propagation duplicated the single source of truth and fought the
+preset/override composition system (a `replace` preset shadows an edited core template).
+
+### Is this a breaking change for existing projects?
+
+**No — your workflow keeps working.** The templates are scaffolds, not authorities. When you
+run `/plan`, it copies the template into a per-feature `plan.md` and re-derives the Constitution
+Check from the live constitution; `/analyze` validates against it. Even if a previous
+`/constitution` run materialized concrete gate text into `.specify/templates/plan-template.md`,
+the live constitution remains the source of truth at runtime.
+
+On a **non-forced upgrade**, a materialized template is *preserved* (its hash diverges from the
+recorded managed copy, so the refresh treats it as a customization and does not overwrite it).
+Nothing regresses.
+
+### Optional cleanup — return to the runtime pointer
+
+A frozen, pre-filled Constitution Check is a slightly misleading scaffold and can bias the first
+`/plan` pass. To move fully back to runtime resolution, reset the section body in
+`.specify/templates/plan-template.md` to the pointer:
+
+```text
+## Constitution Check
+
+*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+
+[Gates determined based on constitution file]
+```
+
+Leave the rest of the file untouched. This is cleanup, not a required migration.
+
+### Keeping the old behavior (opt-in)
+
+If your team treats the materialized templates as **reviewed, committed artifacts** and wants
+`/constitution` to keep propagating, install the bundled **`constitution-sync`** preset:
+
+```bash
+specify preset add constitution-sync
+```
+
+It wraps the core `/constitution` command and re-adds the propagation pass. It does **not** edit
+versioned preset- or extension-provided templates (those are owned by their packages). See
+`presets/constitution-sync/README.md` for the tradeoffs.
+
+---
+
 ## Common Scenarios
 
 ### Scenario 1: "I just want new slash commands"

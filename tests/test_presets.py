@@ -12493,3 +12493,59 @@ class TestInstalledPresetRichMarkup:
         assert "Composition chain" in output, output
         assert "[base]" in output, output
         assert "[append]" in output, output
+
+
+class TestConstitutionSyncPreset:
+    """The bundled opt-in ``constitution-sync`` preset re-adds propagation.
+
+    Follow-up to #3790: core ``/constitution`` no longer propagates guidance
+    into templates. This preset restores that behavior for teams that treat
+    materialized templates as reviewed artifacts, delivered as a ``wrap`` of
+    the core command so it stays forward-compatible with core changes.
+    """
+
+    PRESET_DIR = Path(__file__).parent.parent / "presets" / "constitution-sync"
+
+    def test_manifest_provides_wrap_of_constitution(self):
+        manifest = yaml.safe_load((self.PRESET_DIR / "preset.yml").read_text())
+        assert manifest["preset"]["id"] == "constitution-sync"
+        entries = manifest["provides"]["templates"]
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["type"] == "command"
+        assert entry["name"] == "speckit.constitution"
+        assert entry["strategy"] == "wrap"
+        # Must target the post-#3790 baseline so propagation is not double-applied.
+        assert manifest["requires"]["speckit_version"] == ">=0.14.4"
+
+    def test_wrapper_uses_core_template_and_propagates(self):
+        text = (self.PRESET_DIR / "commands" / "speckit.constitution.md").read_text()
+        assert "strategy: wrap" in text
+        assert "{CORE_TEMPLATE}" in text
+        # The three governed scaffolds the old checklist propagated into.
+        assert "plan-template.md" in text
+        assert "spec-template.md" in text
+        assert "tasks-template.md" in text
+        # Must not mutate versioned preset/extension artifacts.
+        assert "Do not edit versioned preset- or extension-provided template files" in text
+
+    def test_catalog_lists_bundled_preset(self):
+        manifest = yaml.safe_load((self.PRESET_DIR / "preset.yml").read_text())
+        catalog = json.loads((self.PRESET_DIR.parent / "catalog.json").read_text())
+        entry = catalog["presets"]["constitution-sync"]
+        assert entry["bundled"] is True
+        assert entry["version"] == manifest["preset"]["version"]
+        assert entry["provides"]["commands"] == 1
+        assert entry["provides"]["templates"] == 0
+
+    def test_wrap_composes_over_core_constitution(self, project_dir):
+        """Installing the preset yields a wrap layer atop the bundled core."""
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(self.PRESET_DIR, "0.15.0")
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("speckit.constitution", "command")
+        assert len(layers) >= 2, "expected preset wrap layer plus a core base"
+        assert layers[0]["strategy"] == "wrap"
+        assert any("constitution-sync" in str(layer["path"]) for layer in layers)
+        assert layers[-1]["source"] == "core (bundled)"
