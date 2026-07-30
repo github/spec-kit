@@ -128,6 +128,42 @@ class TestGooseCliDispatch:
         assert args[-2:] == ["-t", "just do it"]
         assert "--recipe" not in args
 
+    def test_non_speckit_slash_prompt_is_not_treated_as_a_recipe(self):
+        """`/help` is a goose session command, not a Spec Kit recipe.
+
+        `PromptStep` passes arbitrary `prompt:` strings to `build_exec_args`,
+        and the recipe branch synthesizes a *file path*, so slash text outside
+        the `speckit.` namespace must not become
+        `--recipe .goose/recipes/speckit.help.yaml` — `setup()` only ever
+        writes `command_filename(stem)` = `speckit.<name>.yaml`.
+        """
+        integration = get_integration("goose")
+        args = integration.build_exec_args("/help", output_json=False)
+        assert "--recipe" not in args
+        assert "--params" not in args
+        assert args[-2:] == ["-t", "/help"]
+
+    def test_non_speckit_slash_prompt_is_not_promoted_to_a_recipe(self):
+        """`/plan` is goose's own command and must not run speckit.plan.
+
+        `command_filename()` re-adds the `speckit.` prefix, so the old
+        unconditional call silently promoted the free-form goose command
+        `/plan` into a real Spec Kit recipe run. Dispatch always spells
+        commands `/speckit.plan` (`IntegrationBase.build_command_invocation`),
+        so no reachable recipe is lost.
+        """
+        integration = get_integration("goose")
+        args = integration.build_exec_args("/plan the sprint", output_json=False)
+        assert "--recipe" not in args
+        assert args[-2:] == ["-t", "/plan the sprint"]
+
+    def test_bare_speckit_prefix_falls_through_to_text(self):
+        """`/speckit.` alone has no stem and must not yield `speckit..yaml`."""
+        integration = get_integration("goose")
+        args = integration.build_exec_args("/speckit.", output_json=False)
+        assert "--recipe" not in args
+        assert args[-2:] == ["-t", "/speckit."]
+
     def test_model_and_output_format_flags(self):
         integration = get_integration("goose")
         args = integration.build_exec_args("hi", model="gpt-4o", output_json=True)
