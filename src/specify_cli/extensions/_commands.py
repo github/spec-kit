@@ -503,7 +503,7 @@ def _safe_open_download_zip(
         )
 
     rel_parts = download_dir.relative_to(project_root).parts
-    parent_fd = os.open(project_root, os.O_RDONLY | o_directory)
+    parent_fd = os.open(project_root, os.O_RDONLY | o_directory | o_nofollow)
     try:
         for part in rel_parts:
             new_fd = os.open(
@@ -540,7 +540,7 @@ def _safe_unlink_download_zip(
     parent_fd = -1
     try:
         rel_parts = download_dir.relative_to(project_root).parts
-        parent_fd = os.open(project_root, os.O_RDONLY | o_directory)
+        parent_fd = os.open(project_root, os.O_RDONLY | o_directory | o_nofollow)
         for part in rel_parts:
             new_fd = os.open(
                 part,

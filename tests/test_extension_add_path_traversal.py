@@ -128,6 +128,22 @@ def test_safe_open_refuses_swapped_cache_ancestor(
     assert list(outside.iterdir()) == []
 
 
+def test_safe_open_refuses_symlinked_project_root(
+    project_dir: Path, tmp_path: Path
+) -> None:
+    _require_secure_dir_fd()
+    project_link = tmp_path / "project-link"
+    _symlink_directory(project_link, project_dir)
+    download_dir = project_link / ".specify" / "extensions" / ".cache" / "downloads"
+
+    with pytest.raises(OSError):
+        _commands._safe_open_download_zip(
+            project_link,
+            download_dir,
+            "extension-url-download-project-link.zip",
+        )
+
+
 def test_safe_unlink_refuses_swapped_cache_ancestor(
     project_dir: Path, tmp_path: Path
 ) -> None:
