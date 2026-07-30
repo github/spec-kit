@@ -751,27 +751,35 @@ def extension_add(
                             )
                             raise typer.Exit(1)
 
-                        download_file = os.fdopen(download_fd, "w+b")
-                        download_fd = -1
-                        download_file.write(zip_data)
-                        download_file.flush()
-                        download_file.seek(0)
+                        try:
+                            download_file = os.fdopen(download_fd, "w+b")
+                            download_fd = -1
+                            download_file.write(zip_data)
+                            download_file.flush()
+                            download_file.seek(0)
+                        except OSError as exc:
+                            console.print(
+                                "[red]Error:[/red] Could not safely write download file: "
+                                f"{_escape_markup(str(exc))}"
+                            )
+                            raise typer.Exit(1)
 
                         # Consume the inode reserved above rather than reopening
                         # the mutable cache pathname during extraction.
-                        manifest = manager.install_from_zip(
-                            zip_path,
-                            speckit_version,
-                            priority=priority,
-                            force=force,
-                            archive_file=download_file,
-                        )
-                    except OSError as exc:
-                        console.print(
-                            "[red]Error:[/red] Could not safely write download file: "
-                            f"{_escape_markup(str(exc))}"
-                        )
-                        raise typer.Exit(1)
+                        try:
+                            manifest = manager.install_from_zip(
+                                zip_path,
+                                speckit_version,
+                                priority=priority,
+                                force=force,
+                                archive_file=download_file,
+                            )
+                        except OSError as exc:
+                            console.print(
+                                "[red]Error:[/red] Could not install extension from downloaded archive: "
+                                f"{_escape_markup(str(exc))}"
+                            )
+                            raise typer.Exit(1)
                     finally:
                         if download_file is not None:
                             try:

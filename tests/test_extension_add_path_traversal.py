@@ -23,7 +23,11 @@ runner = CliRunner()
 
 
 def _require_secure_dir_fd() -> None:
-    if not getattr(os, "O_NOFOLLOW", 0) or os.open not in os.supports_dir_fd:
+    if (
+        not getattr(os, "O_NOFOLLOW", 0)
+        or os.open not in os.supports_dir_fd
+        or os.mkdir not in os.supports_dir_fd
+    ):
         pytest.skip("requires dir_fd and O_NOFOLLOW support")
 
 
