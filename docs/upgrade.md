@@ -225,9 +225,14 @@ checker. The governed templates carry a pointer, not a copy — `plan-template.m
 constitution each run. Propagation duplicated the single source of truth and fought the
 preset/override composition system (a `replace` preset shadows an edited core template).
 
+More broadly, presets and extensions — not in-place file edits — are how Spec Kit now governs
+shared assets. Composing policy through the resolution stack keeps it centrally owned, versioned,
+and auditable across repositories, instead of frozen into per-repo copies no core team can see.
+
 ### Is this a breaking change for existing projects?
 
-**No — your workflow keeps working.** The templates are scaffolds, not authorities. When you
+**No — your workflow keeps working.** You would only notice a difference if you relied on
+`/constitution` editing those files in place. The templates are scaffolds, not authorities. When you
 run `/plan`, it copies the template into a per-feature `plan.md` and re-derives the Constitution
 Check from the live constitution; `/analyze` validates against it. Even if a previous
 `/constitution` run materialized concrete gate text into `.specify/templates/plan-template.md`,
