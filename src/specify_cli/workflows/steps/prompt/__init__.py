@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import shutil
 from pathlib import Path
 from typing import Any
@@ -88,6 +89,15 @@ class PromptStep(StepBase):
                 ),
             )
 
+        # An invalid timeout reaches subprocess.run() and raises a raw
+        # TypeError ("unsupported operand type(s) for +: 'float' and 'str'")
+        # or ValueError, which the engine re-raises — taking down the whole
+        # run with a message that names neither the step nor 'timeout'. Fail
+        # this step cleanly instead, mirroring the shell step.
+        timeout_error = self._timeout_error(config)
+        if timeout_error is not None:
+            return StepResult(status=StepStatus.FAILED, error=timeout_error)
+
         # Attempt CLI dispatch
         timeout = config.get("timeout", 300)
         dispatch_result = self._try_dispatch(
@@ -130,6 +140,41 @@ class PromptStep(StepBase):
                     f"CLI not found or not installed."
                 ),
             )
+
+    @staticmethod
+    def _timeout_error(config: dict[str, Any]) -> str | None:
+        """Return an error message if ``config['timeout']`` is invalid, else None.
+
+        Shared by execute() and validate() so both paths reject the same
+        values with the same message, mirroring the shell step. An absent
+        ``timeout`` is valid (the default is used). bool is a subclass of int,
+        but ``timeout: true`` is a config error rather than a duration, so it
+        is rejected explicitly. Non-finite floats (YAML ``.inf``/``.nan``) pass
+        a plain ``> 0`` check but would raise in subprocess.run(), and a
+        non-positive timeout makes subprocess.run() report an immediate
+        TimeoutExpired, so both are rejected too.
+        """
+        if "timeout" not in config:
+            return None
+        timeout = config["timeout"]
+        try:
+            valid_timeout = (
+                not isinstance(timeout, bool)
+                and isinstance(timeout, (int, float))
+                and timeout > 0
+                and math.isfinite(timeout)
+            )
+        except OverflowError:
+            # An int too large to convert to float (e.g. a 400-digit YAML
+            # scalar) clears every clause above and raises here — and would
+            # raise the same from subprocess.run(timeout=...).
+            valid_timeout = False
+        if not valid_timeout:
+            return (
+                f"Prompt step {config.get('id', '?')!r}: 'timeout' must be a "
+                f"positive number of seconds, got {timeout!r}."
+            )
+        return None
 
     @staticmethod
     def _try_dispatch(
@@ -250,4 +295,7 @@ class PromptStep(StepBase):
                 f"Prompt step {config.get('id', '?')!r}: 'model' must be a "
                 f"string, got {type(model).__name__}."
             )
+        timeout_error = self._timeout_error(config)
+        if timeout_error is not None:
+            errors.append(timeout_error)
         return errors

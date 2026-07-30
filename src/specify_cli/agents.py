@@ -302,8 +302,20 @@ class CommandRegistrar:
         toml_lines = []
 
         if "description" in frontmatter:
+            # Frontmatter comes from ``yaml.safe_load``, so ``description`` can
+            # be any YAML type: ``description:`` with no value yields None,
+            # ``description: 2`` an int, an unquoted ``true`` a bool.
+            # ``_render_basic_toml_string`` iterates the value and calls ord()
+            # on each character, so a non-string raises a raw TypeError -- and a
+            # list of single-character items is silently concatenated into a
+            # wrong value (``["a", "b"]`` -> ``"ab"``). Coerce first, matching
+            # ``render_yaml_command`` below and ``TomlIntegration
+            # ._extract_description``, which both normalise it already.
+            description = frontmatter["description"]
+            if not isinstance(description, str):
+                description = str(description) if description is not None else ""
             toml_lines.append(
-                f"description = {self._render_basic_toml_string(frontmatter['description'])}"
+                f"description = {self._render_basic_toml_string(description)}"
             )
             toml_lines.append("")
 

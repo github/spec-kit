@@ -592,7 +592,7 @@ class ExtensionRegistry:
             return {"schema_version": self.SCHEMA_VERSION, "extensions": {}}
 
         try:
-            with open(self.registry_path, "r") as f:
+            with open(self.registry_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             # Validate loaded data is a dict (handles corrupted registry files)
             if not isinstance(data, dict):
@@ -608,7 +608,7 @@ class ExtensionRegistry:
     def _save(self):
         """Save registry to disk."""
         self.extensions_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.registry_path, "w") as f:
+        with open(self.registry_path, "w", encoding="utf-8") as f:
             json.dump(self.data, f, indent=2)
 
     def add(self, extension_id: str, metadata: dict):
@@ -1324,6 +1324,7 @@ class ExtensionManager:
         manifest: ExtensionManifest,
         extension_dir: Path,
         link_outputs: bool = False,
+        force: bool = False,
     ) -> List[str]:
         """Generate SKILL.md files for extension commands as agent skills.
 
@@ -1337,6 +1338,11 @@ class ExtensionManager:
             extension_dir: Installed extension directory.
             link_outputs: If True, create dev-mode symlinks for rendered
                 skill files when supported by the OS.
+            force: If True, overwrite existing SKILL.md files even when they
+                are not dev-mode symlinks.  Use in the upgrade path, where
+                ``setup()`` has just freshly regenerated core-template skill
+                files and the skip guard would otherwise prevent extension
+                content from being layered on top.
 
         Returns:
             List of skill names that were created (for registry storage).
@@ -1424,13 +1430,16 @@ class ExtensionManager:
                 )
                 # Do not overwrite user-customized skills, but allow dev-mode
                 # symlinks that point back to this extension's generated cache
-                # to be refreshed on a subsequent dev install.
-                if not is_expected_dev_symlink:
+                # to be refreshed on a subsequent dev install.  In the upgrade
+                # path (force=True) the file was just written by setup(), so
+                # overwriting it with the composed extension content is correct.
+                if not is_expected_dev_symlink and not force:
                     continue
-            elif skill_dir_preexists:
+            elif skill_dir_preexists and not force:
                 # Never add files to a pre-existing user directory. Without a
                 # verifiable SKILL.md ownership marker, rollback/removal cannot
                 # distinguish our output from unrelated user artifacts.
+                # Skipped when force=True (upgrade path).
                 continue
 
             # Create skill directory; track whether we created it so we can clean
@@ -2678,7 +2687,7 @@ class ExtensionManager:
             if updates:
                 self.registry.update(ext_id, updates)
 
-    def register_enabled_extensions_for_agent(self, agent_name: str) -> None:
+    def register_enabled_extensions_for_agent(self, agent_name: str, *, force: bool = False) -> None:
         """Register installed, enabled extensions for ``agent_name``.
 
         Command-file registration is scoped to the explicit ``agent_name``
@@ -2796,7 +2805,7 @@ class ExtensionManager:
                 if agent_name == active_agent:
                     try:
                         registered_skills = self._register_extension_skills(
-                            manifest, ext_dir
+                            manifest, ext_dir, force=force
                         )
                     except Exception as skills_err:
                         # Skills are a companion artifact.  If command registration
@@ -3895,10 +3904,8 @@ class ExtensionCatalog(CatalogStackBase):
 
     def clear_cache(self):
         """Clear the catalog cache (both legacy and URL-hash-based files)."""
-        if self.cache_file.exists():
-            self.cache_file.unlink()
-        if self.cache_metadata_file.exists():
-            self.cache_metadata_file.unlink()
+        self.cache_file.unlink(missing_ok=True)
+        self.cache_metadata_file.unlink(missing_ok=True)
         # Also clear any per-URL hash-based cache files
         if self.cache_dir.exists():
             for extra_cache in self.cache_dir.glob("catalog-*.json"):

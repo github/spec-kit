@@ -1705,6 +1705,90 @@ class TestPromptStep:
         assert res.status is StepStatus.FAILED, falsey
         assert "'model' must be a string" in (res.error or ""), falsey
 
+    @pytest.mark.parametrize(
+        "bad", ["30", True, float("inf"), float("nan"), 0, -5, ["30"], None, 10**400]
+    )
+    def test_validate_rejects_invalid_timeout(self, bad):
+        """'timeout' reaches subprocess.run(), so validate() must reject junk.
+
+        The sibling shell step already rejects exactly these values; the
+        prompt step gained a ``timeout`` without the matching guard, so a
+        workflow that fails validation as a shell step passed as a prompt one.
+
+        ``10**400`` is an int too large to convert to float: it passes
+        ``isinstance``/``> 0`` but makes ``math.isfinite()`` — and later
+        ``subprocess.run()`` — raise ``OverflowError``, so the guard has to
+        catch that rather than let it escape as the crash it exists to stop.
+        """
+        from specify_cli.workflows.steps.prompt import PromptStep
+
+        step = PromptStep()
+        errors = step.validate(
+            {"id": "p", "type": "prompt", "prompt": "hi", "timeout": bad}
+        )
+        assert any("'timeout' must be a positive number" in e for e in errors), (
+            bad,
+            errors,
+        )
+
+    @pytest.mark.parametrize("good", [300, 5, 0.5])
+    def test_validate_accepts_valid_timeout(self, good):
+        """A positive int/float timeout — and an absent one — stay valid."""
+        from specify_cli.workflows.steps.prompt import PromptStep
+
+        step = PromptStep()
+        for config in (
+            {"id": "p", "type": "prompt", "prompt": "hi", "timeout": good},
+            {"id": "p", "type": "prompt", "prompt": "hi"},
+        ):
+            errors = step.validate(config)
+            assert not any("'timeout'" in e for e in errors), (config, errors)
+
+    def test_execute_fails_cleanly_on_invalid_timeout(self, monkeypatch):
+        """execute() must fail the step, not raise, on an invalid timeout.
+
+        The engine does not auto-validate step config and re-raises anything a
+        step throws, so an unvalidated ``timeout`` reaching subprocess.run()
+        raised a raw ``TypeError: unsupported operand type(s) for +: 'float'
+        and 'str'`` (or ``ValueError`` for NaN) that aborted the entire run —
+        naming neither the step nor the field — after earlier steps had
+        already run their side effects.
+        """
+        import subprocess
+        from unittest.mock import patch
+
+        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        def fail_if_called(*args, **kwargs):
+            raise AssertionError("subprocess.run should not run on invalid timeout")
+
+        monkeypatch.setattr(subprocess, "run", fail_if_called)
+        step = PromptStep()
+        ctx = StepContext(inputs={}, default_integration="claude")
+        # A string/list raises TypeError and NaN raises ValueError inside
+        # subprocess.run(); ``True`` would silently become a 1s timeout (bool
+        # is an int subclass); a non-positive value reports an immediate
+        # TimeoutExpired for a command that never got the time to run; an int
+        # too large to convert to float raises OverflowError.
+        for bad in ("30", True, float("nan"), 0, -5, ["30"], 10**400):
+            with patch(
+                "specify_cli.workflows.steps.prompt.shutil.which",
+                return_value="/opt/claude",
+            ):
+                result = step.execute(
+                    {
+                        "id": "p",
+                        "type": "prompt",
+                        "prompt": "hi",
+                        "integration": "claude",
+                        "timeout": bad,
+                    },
+                    ctx,
+                )
+            assert result.status is StepStatus.FAILED, bad
+            assert "'timeout' must be a positive number" in (result.error or ""), bad
+
 
 class TestShellStep:
     """Test the shell step type."""
@@ -1942,6 +2026,75 @@ class TestShellStep:
         for bad in (float("inf"), float("-inf"), float("nan")):
             errors = step.validate({"id": "qa", "run": "echo hi", "timeout": bad})
             assert any("'timeout' must be a positive number" in e for e in errors)
+
+    def test_validate_rejects_huge_int_timeout(self):
+        """A too-large-to-convert int must be reported, not raise OverflowError.
+
+        ``math.isfinite(10**400)`` raises ``OverflowError: int too large to
+        convert to float``. Such a value is an ``int`` and is not a ``bool``,
+        so it clears every clause before ``isfinite()`` and raises there —
+        escaping ``validate()`` as the uncaught crash this guard exists to
+        prevent. ``specify workflow run`` then aborts with a bare traceback
+        instead of "Workflow validation failed". Both signs reach
+        ``isfinite()`` because it is checked before ``timeout <= 0``.
+        ``subprocess.run(timeout=...)`` raises the same OverflowError, so the
+        value is genuinely invalid rather than merely unrepresentable here.
+        The prompt step already catches this (PR #3847).
+        """
+        from specify_cli.workflows.steps.shell import ShellStep
+
+        step = ShellStep()
+        for bad in (10**400, -(10**400)):
+            errors = step.validate({"id": "qa", "run": "echo hi", "timeout": bad})
+            assert any(
+                "'timeout' must be a positive number" in e for e in errors
+            ), (bad, errors)
+
+    def test_validate_workflow_reports_huge_int_timeout(self):
+        """The huge-int timeout surfaces as a validation error end to end.
+
+        ``specify workflow run`` calls ``engine.validate()`` before executing
+        any step; an OverflowError escaping the shell step's ``validate()``
+        propagates out of ``validate_workflow`` and kills the command with a
+        traceback, so pin the whole path, not just the helper.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition(
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "demo", "name": "Demo", "version": "1.0.0"},
+                "steps": [
+                    {"id": "qa", "type": "shell", "run": "echo hi", "timeout": 10**400}
+                ],
+            }
+        )
+        errors = validate_workflow(definition)
+        assert any("'timeout' must be a positive number" in e for e in errors), errors
+
+    def test_execute_fails_cleanly_on_huge_int_timeout(self, monkeypatch):
+        """execute() must fail just this step on a huge-int timeout.
+
+        The engine does not auto-validate step config and re-raises anything a
+        step throws, so on an unvalidated run the OverflowError would abort the
+        whole workflow after earlier steps had already run their side effects.
+        """
+        import subprocess
+
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        def fail_if_called(*args, **kwargs):
+            raise AssertionError("subprocess.run should not run on invalid timeout")
+
+        monkeypatch.setattr(subprocess, "run", fail_if_called)
+        step = ShellStep()
+        for bad in (10**400, -(10**400)):
+            result = step.execute(
+                {"id": "qa", "run": "echo hi", "timeout": bad}, StepContext()
+            )
+            assert result.status == StepStatus.FAILED, bad
+            assert "'timeout' must be a positive number" in (result.error or ""), bad
 
     def test_validate_accepts_positive_numeric_timeout(self):
         from specify_cli.workflows.steps.shell import ShellStep
@@ -2526,7 +2679,7 @@ class TestIfThenStep:
         assert any("missing 'condition'" in e for e in errors)
 
     @pytest.mark.parametrize("bad", [["a", "b"], {"k": "v"}, 5, 1.5])
-    def test_validate_rejects_non_string_condition(self, bad):
+    def test_validate_rejects_non_string_non_bool_condition(self, bad):
         # A list/dict/number condition is returned unchanged by
         # evaluate_expression, and evaluate_condition then bool()-coerces it, so
         # it silently resolves to its truthiness (e.g. [1, 2] is always True)
@@ -2943,7 +3096,7 @@ class TestWhileStep:
         # max_iterations is optional (defaults to 10)
 
     @pytest.mark.parametrize("bad", [["a", "b"], {"k": "v"}, 5, 1.5])
-    def test_validate_rejects_non_string_condition(self, bad):
+    def test_validate_rejects_non_string_non_bool_condition(self, bad):
         from specify_cli.workflows.steps.while_loop import WhileStep
 
         step = WhileStep()
@@ -3075,7 +3228,7 @@ class TestDoWhileStep:
         # max_iterations is optional (defaults to 10)
 
     @pytest.mark.parametrize("bad", [["a", "b"], {"k": "v"}, 5, 1.5])
-    def test_validate_rejects_non_string_condition(self, bad):
+    def test_validate_rejects_non_string_non_bool_condition(self, bad):
         from specify_cli.workflows.steps.do_while import DoWhileStep
 
         step = DoWhileStep()

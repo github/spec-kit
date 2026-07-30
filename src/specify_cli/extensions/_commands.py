@@ -478,6 +478,10 @@ def _validate_safe_cache_dir(project_root: Path) -> Path:
                 try:
                     current_path.resolve().relative_to(project_root_resolved)
                 except (OSError, ValueError):
+                    try:
+                        os.close(child_fd)
+                    except OSError:
+                        pass
                     console.print(
                         "[red]Error:[/red] Download cache directory escapes project root"
                     )
@@ -705,6 +709,7 @@ def extension_add(
                     raise typer.Exit(1)
                 zip_filename = f"extension-url-download-{uuid4().hex}.zip"
                 zip_path = download_dir / zip_filename
+                created_download_leaf = False
 
                 try:
                     # Use the catalog's authenticated fetch so configured
@@ -745,9 +750,16 @@ def extension_add(
                             download_fd = _safe_open_download_zip(
                                 project_root, download_dir, zip_filename
                             )
+                            created_download_leaf = True
                         except NotImplementedError as exc:
                             console.print(
                                 f"[red]Error:[/red] {_escape_markup(str(exc))}"
+                            )
+                            raise typer.Exit(1)
+                        except OSError as exc:
+                            console.print(
+                                "[red]Error:[/red] Could not safely create download file: "
+                                f"{_escape_markup(str(exc))}"
                             )
                             raise typer.Exit(1)
 
@@ -798,9 +810,10 @@ def extension_add(
                     )
                     raise typer.Exit(1)
                 finally:
-                    _safe_unlink_download_zip(
-                        project_root, download_dir, zip_filename
-                    )
+                    if created_download_leaf:
+                        _safe_unlink_download_zip(
+                            project_root, download_dir, zip_filename
+                        )
 
             else:
                 # Try bundled extensions first (shipped with spec-kit)

@@ -289,3 +289,46 @@ def test_url_install_writes_and_cleans_up_secure_download(
     )
     assert zip_path.name.startswith("extension-url-download-")
     assert not zip_path.exists()
+
+
+def test_url_install_collision_does_not_unlink_unowned_leaf(
+    project_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refused exclusive create must not trigger cleanup of the leaf it
+    never created (otherwise a pre-staged sentinel would be deleted)."""
+    download_dir = project_dir / ".specify" / "extensions" / ".cache" / "downloads"
+
+    monkeypatch.setattr(typer, "confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "_open_url",
+        lambda *args, **kwargs: io.BytesIO(_MINIMAL_ZIP_BYTES),
+    )
+    monkeypatch.setattr(
+        _commands, "_validate_safe_cache_dir", lambda root: download_dir
+    )
+    download_dir.mkdir(parents=True, exist_ok=True)
+
+    def _raise_collision(project_root, dir_, zip_filename):
+        raise FileExistsError("leaf already exists")
+
+    monkeypatch.setattr(_commands, "_safe_open_download_zip", _raise_collision)
+    unlink_spy = MagicMock()
+    monkeypatch.setattr(_commands, "_safe_unlink_download_zip", unlink_spy)
+    install_spy = MagicMock()
+    monkeypatch.setattr(ExtensionManager, "install_from_zip", install_spy)
+
+    result = runner.invoke(
+        app,
+        [
+            "extension",
+            "add",
+            "test-ext",
+            "--from",
+            "https://example.com/test-ext.zip",
+        ],
+    )
+
+    assert result.exit_code == 1
+    unlink_spy.assert_not_called()
+    install_spy.assert_not_called()

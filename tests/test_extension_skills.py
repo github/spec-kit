@@ -2943,6 +2943,135 @@ class TestExtensionSkillRegistration:
         assert "speckit-early-ext-world" in metadata["registered_skills"]
 
 
+
+# ===== Regression test: upgrade-overwrites-copilot-skills (#3849) =====
+
+class TestRegisterExtensionSkillsForceFlag:
+    """Regression tests for the ``force`` flag on ``_register_extension_skills``.
+
+    Issue #3849: ``integration upgrade --force`` called ``setup()`` which
+    regenerated all core-template SKILL.md files, then called
+    ``register_enabled_extensions_for_agent()``.  The skip-guard in
+    ``_register_extension_skills`` treated the freshly-written core files as
+    existing user content and skipped every extension skill, leaving only core
+    template content on disk.
+
+    The fix introduces ``force=True`` in the upgrade path so the guard does not
+    fire for core-template files that setup() just wrote.
+    """
+
+    def test_force_false_skips_existing_skill(self, project_dir, temp_dir):
+        """Without force=True the skip guard must still protect existing files."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+        ext_dir = _create_extension_dir(temp_dir)
+
+        # Manually pre-create a SKILL.md as if setup() had already written it
+        skill_subdir = skills_dir / "speckit-test-ext-hello"
+        skill_subdir.mkdir(parents=True, exist_ok=True)
+        skill_file = skill_subdir / "SKILL.md"
+        skill_file.write_text("core-template content only", encoding="utf-8")
+
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+
+        # Default (force=False): existing file must not be overwritten
+        written = manager._register_extension_skills(manifest, ext_dir, force=False)
+        assert "speckit-test-ext-hello" not in written
+        assert skill_file.read_text(encoding="utf-8") == "core-template content only"
+
+    def test_force_true_overwrites_existing_skill(self, project_dir, temp_dir):
+        """With force=True the function must overwrite the existing SKILL.md.
+
+        This is the core regression test for #3849: calling
+        ``_register_extension_skills(force=True)`` after ``setup()`` has
+        written a fresh core-template SKILL.md must replace it with the
+        composed extension content.
+        """
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+        ext_dir = _create_extension_dir(temp_dir)
+
+        # Simulate what setup() writes: a bare core-template SKILL.md
+        skill_subdir = skills_dir / "speckit-test-ext-hello"
+        skill_subdir.mkdir(parents=True, exist_ok=True)
+        skill_file = skill_subdir / "SKILL.md"
+        skill_file.write_text("core-template content only", encoding="utf-8")
+
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+
+        # Upgrade path (force=True): extension content should replace the core file
+        written = manager._register_extension_skills(manifest, ext_dir, force=True)
+        assert "speckit-test-ext-hello" in written, (
+            "force=True should overwrite the core-template file and return the skill name"
+        )
+        content = skill_file.read_text(encoding="utf-8")
+        assert "Run this to say hello." in content, (
+            "Extension command body must appear in the overwritten SKILL.md"
+        )
+        assert "core-template content only" not in content, (
+            "Core-template placeholder must have been replaced by extension content"
+        )
+
+    def test_register_enabled_extensions_for_agent_force_flag_threads_through(
+        self, project_dir, temp_dir
+    ):
+        """force=True on register_enabled_extensions_for_agent must reach _register_extension_skills.
+
+        End-to-end check: after an upgrade writes a fresh core-template SKILL.md,
+        ``register_enabled_extensions_for_agent(force=True)`` must produce a
+        SKILL.md that contains the extension content.
+        """
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+        ext_dir = _create_extension_dir(temp_dir)
+
+        manager = ExtensionManager(project_dir)
+        # Install extension so it is in the registry
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        # Simulate a freshly-regenerated core-template SKILL.md (as setup() would write)
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        skill_file.write_text("core-template content only", encoding="utf-8")
+
+        # Re-register with force=True (upgrade path)
+        manager.register_enabled_extensions_for_agent("claude", force=True)
+
+        content = skill_file.read_text(encoding="utf-8")
+        assert "Run this to say hello." in content, (
+            "After register_enabled_extensions_for_agent(force=True), the SKILL.md "
+            "must contain the extension body, not just the core-template stub."
+        )
+
+    def test_force_true_with_preexisting_dir_but_no_skill_file(
+        self, project_dir, temp_dir
+    ):
+        """force=True must write into a pre-existing directory with no SKILL.md.
+
+        The second skip guard (``elif skill_dir_preexists``) should also be
+        bypassed by force=True so an upgrade can create a missing SKILL.md
+        even when the skill sub-directory already exists.
+        """
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+        ext_dir = _create_extension_dir(temp_dir)
+
+        # Create the skill directory without the SKILL.md file
+        skill_subdir = skills_dir / "speckit-test-ext-hello"
+        skill_subdir.mkdir(parents=True, exist_ok=True)
+        skill_file = skill_subdir / "SKILL.md"
+        assert not skill_file.exists()
+
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+
+        written = manager._register_extension_skills(manifest, ext_dir, force=True)
+        assert "speckit-test-ext-hello" in written
+        assert skill_file.exists()
+        assert "Run this to say hello." in skill_file.read_text(encoding="utf-8")
+
+
 # ===== Extension Skill Unregistration Tests =====
 
 class TestExtensionSkillUnregistration:

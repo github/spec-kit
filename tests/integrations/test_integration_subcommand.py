@@ -3831,6 +3831,68 @@ class TestIntegrationUpgrade:
             "upgrade of the active integration re-registers extension commands"
         )
 
+    def test_upgrade_copilot_skills_restores_extension_skill_over_regenerated_dir(
+        self, tmp_path
+    ):
+        """End-to-end regression for #3849 (upgrade-overwrites-copilot-skills).
+
+        In Copilot skills mode, ``integration upgrade`` runs ``setup()`` — which
+        regenerates the core-template skill directories — *before* re-registering
+        installed extensions. The extension re-registration then hits the
+        ``skill_dir_preexists`` guard in ``_register_extension_skills`` (the skill
+        sub-directory exists, courtesy of ``setup()``, but its ``SKILL.md`` has
+        not been rewritten with extension content), so pre-fix the extension
+        skill was silently left missing — its command content lost even though the
+        extension remained installed and registered.
+
+        The fix threads ``force=True`` from ``integration_upgrade()`` down to
+        ``_register_extension_skills`` so the guard is bypassed and the extension
+        content is re-composed on top of the just-regenerated directory. This test
+        exercises the full ``specify integration upgrade`` command path and fails
+        without the fix (the skill is never recreated).
+        """
+        project = _init_project(
+            tmp_path, "copilot", integration_options="--skills"
+        )
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        skill_dir = project / ".github" / "skills" / "speckit-git-feature"
+        skill_file = skill_dir / "SKILL.md"
+        assert skill_file.exists(), (
+            "precondition: git extension renders as a Copilot skill"
+        )
+        original = skill_file.read_text(encoding="utf-8")
+        assert "source: extension:git" in original, (
+            "precondition: skill carries the git extension ownership marker"
+        )
+
+        # Simulate the exact pre-condition the bug depends on: the skill file is
+        # gone but its directory survives (as it does once setup() regenerates the
+        # core-template layout during upgrade), triggering the skill_dir_preexists
+        # skip guard on re-registration.
+        skill_file.unlink()
+        assert skill_dir.exists() and not skill_file.exists()
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "copilot",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        assert skill_file.exists(), (
+            "upgrade must restore the extension skill even when its directory "
+            "already exists (regression #3849)"
+        )
+        restored = skill_file.read_text(encoding="utf-8")
+        assert "source: extension:git" in restored, (
+            "restored skill must contain the git extension content, not a bare "
+            "core-template stub"
+        )
+        assert "# Git Feature Skill" in restored
+
     def test_upgrade_active_integration_reregisters_presets(self, tmp_path):
         """Upgrading the active integration restores missing preset artifacts."""
         import yaml

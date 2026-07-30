@@ -58,6 +58,14 @@ def _open_test_download_zip(project_root, download_dir, zip_filename):
     )
 
 
+def _unlink_test_download_zip(project_root, download_dir, zip_filename):
+    """Cross-platform stand-in for the POSIX-only secure unlink primitive."""
+    try:
+        os.unlink(download_dir / zip_filename)
+    except OSError:
+        pass
+
+
 def _validate_safe_cache_dir_test_stand_in(project_root):
     """Cross-platform stand-in for the secure cache validator."""
     download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
@@ -674,20 +682,20 @@ class TestExtensionManifest:
     def test_empty_provides_and_no_hooks_keeps_its_own_message(
         self, temp_dir, valid_manifest_data
     ):
-        """...and with no hooks either, it keeps the pre-existing message rather
-        than the new shape error."""
+        """...and with no hooks (or events) either, it reports the "nothing
+        provided" message rather than the new shape error."""
         import yaml
 
         valid_manifest_data["provides"] = {}
         valid_manifest_data.pop("hooks", None)
+        valid_manifest_data.pop("events", None)
 
         manifest_path = temp_dir / "extension.yml"
         with open(manifest_path, 'w') as f:
             yaml.dump(valid_manifest_data, f)
 
         with pytest.raises(
-            ValidationError,
-            match=r"at least one command(?:, hook, or event| or hook)",
+            ValidationError, match="at least one command, hook, or event"
         ):
             ExtensionManifest(manifest_path)
 
@@ -2765,6 +2773,36 @@ Real body starts here.
         parsed = tomllib.loads(output)
 
         assert parsed["description"] == "first line\nsecond line\n"
+
+    @pytest.mark.parametrize(
+        ("description", "expected"),
+        [
+            (None, ""),                    # "description:" with no value
+            (42, "42"),                    # unquoted number
+            (True, "True"),                # unquoted boolean
+            (["a", "b"], "['a', 'b']"),    # was silently concatenated to "ab"
+        ],
+    )
+    def test_render_toml_command_coerces_non_string_description(
+        self, description, expected
+    ):
+        """Frontmatter comes from yaml.safe_load, so description can be any type.
+
+        _render_basic_toml_string iterates the value and calls ord() per
+        character, so a non-string raised a raw TypeError and a list of
+        single-character items was silently concatenated into a wrong value.
+        render_yaml_command (same class) already coerces; this brings the TOML
+        branch to parity.
+        """
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        registrar = AgentCommandRegistrar()
+        output = registrar.render_toml_command(
+            {"description": description}, "body", "extension:test-ext"
+        )
+
+        parsed = tomllib.loads(output)
+        assert parsed["description"] == expected
 
     def test_render_toml_command_escapes_control_characters(self):
         """Control characters and a lone CR must be escaped so the TOML parses.
@@ -7746,6 +7784,7 @@ class TestExtensionAddCLI:
              patch("specify_cli.extensions._commands._validate_safe_cache_dir", side_effect=_validate_safe_cache_dir_test_stand_in), \
              patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(_MINIMAL_ZIP_BYTES)), \
              patch("specify_cli.extensions._commands._safe_open_download_zip", side_effect=_open_test_download_zip), \
+             patch("specify_cli.extensions._commands._safe_unlink_download_zip", side_effect=_unlink_test_download_zip), \
              patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip):
             result = runner.invoke(
                 app,

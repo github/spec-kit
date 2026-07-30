@@ -717,10 +717,15 @@ def preset_catalog_add(
         console.print("[red]Error:[/red] Invalid catalog config: 'catalogs' must be a list.")
         raise typer.Exit(1)
 
+    # Only rendering is escaped — the raw values are what get persisted and
+    # compared below, so a name containing markup still round-trips exactly.
+    safe_name = _escape_markup(str(name))
+    safe_url = _escape_markup(str(url))
+
     # Check for duplicate name
     for existing in catalogs:
         if isinstance(existing, dict) and existing.get("name") == name:
-            console.print(f"[yellow]Warning:[/yellow] A catalog named '{name}' already exists.")
+            console.print(f"[yellow]Warning:[/yellow] A catalog named '{safe_name}' already exists.")
             console.print("Use 'specify preset catalog remove' first, or choose a different name.")
             raise typer.Exit(1)
 
@@ -736,10 +741,11 @@ def preset_catalog_add(
     config_path.write_text(yaml.safe_dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
     install_label = "install allowed" if install_allowed else "discovery only"
-    console.print(f"\n[green]✓[/green] Added catalog '[bold]{name}[/bold]' ({install_label})")
-    console.print(f"  URL: {url}")
+    console.print(f"\n[green]✓[/green] Added catalog '[bold]{safe_name}[/bold]' ({install_label})")
+    console.print(f"  URL: {safe_url}")
     console.print(f"  Priority: {priority}")
-    console.print(f"\nConfig saved to {_display_project_path(project_root, config_path)}")
+    config_label = _escape_markup(str(_display_project_path(project_root, config_path)))
+    console.print(f"\nConfig saved to {config_label}")
 
 
 @preset_catalog_app.command("remove")
@@ -767,17 +773,20 @@ def preset_catalog_remove(
     if not isinstance(catalogs, list):
         console.print("[red]Error:[/red] Invalid catalog config: 'catalogs' must be a list.")
         raise typer.Exit(1)
+    # Rendering only — the raw name drives the comparison below.
+    safe_name = _escape_markup(str(name))
+
     original_count = len(catalogs)
     catalogs = [c for c in catalogs if isinstance(c, dict) and c.get("name") != name]
 
     if len(catalogs) == original_count:
-        console.print(f"[red]Error:[/red] Catalog '{name}' not found.")
+        console.print(f"[red]Error:[/red] Catalog '{safe_name}' not found.")
         raise typer.Exit(1)
 
     config["catalogs"] = catalogs
     config_path.write_text(yaml.safe_dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
-    console.print(f"[green]✓[/green] Removed catalog '{name}'")
+    console.print(f"[green]✓[/green] Removed catalog '{safe_name}'")
     if not catalogs:
         console.print("\n[dim]No catalogs remain in config. Built-in defaults will be used.[/dim]")
 
