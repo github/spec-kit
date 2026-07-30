@@ -11978,6 +11978,41 @@ steps:
         assert (installed / "assets" / "remote.txt").read_text() == "remote\n"
 
     @pytest.mark.parametrize("suffix", [".zip", ".tar.gz", ".tgz"])
+    def test_add_from_suffixless_url_sniffs_archive(
+        self, project_dir, monkeypatch, suffix
+    ):
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        source = self._write_workflow_dir(project_dir)
+        (source / "assets").mkdir()
+        (source / "assets" / "sniffed.txt").write_text("sniffed\n")
+        archive_path = project_dir / f"remote{suffix}"
+        self._archive_workflow_dir(source, archive_path)
+        data = archive_path.read_bytes()
+        url = "https://example.com/assets/12345"
+
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda *_args, **_kwargs: self._FakeResponse(
+                data,
+                url,
+                {"Content-Type": "application/octet-stream"},
+            ),
+        ):
+            result = CliRunner().invoke(
+                app,
+                ["workflow", "add", "align-wf", "--from", url],
+                input="y\n",
+            )
+
+        assert result.exit_code == 0, result.output
+        installed = project_dir / ".specify" / "workflows" / "align-wf"
+        assert (installed / "assets" / "sniffed.txt").read_text() == "sniffed\n"
+
+    @pytest.mark.parametrize("suffix", [".zip", ".tar.gz", ".tgz"])
     def test_add_catalog_installs_complete_archive_package_and_sha(
         self, project_dir, monkeypatch, suffix
     ):
@@ -12018,6 +12053,100 @@ steps:
         assert result.exit_code == 0, result.output
         installed = project_dir / ".specify" / "workflows" / "align-wf"
         assert (installed / "assets" / "catalog.txt").read_text() == "catalog\n"
+
+    @pytest.mark.parametrize("suffix", [".zip", ".tar.gz", ".tgz"])
+    def test_add_catalog_sniffs_suffixless_archive(
+        self, project_dir, monkeypatch, suffix
+    ):
+        import hashlib
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        monkeypatch.chdir(project_dir)
+        source = self._write_workflow_dir(project_dir)
+        (source / "assets").mkdir()
+        (source / "assets" / "sniffed.txt").write_text("catalog sniffed\n")
+        archive_path = project_dir / f"catalog{suffix}"
+        self._archive_workflow_dir(source, archive_path, nested=True)
+        data = archive_path.read_bytes()
+        url = "https://example.com/assets/67890"
+        info = {
+            "id": "align-wf",
+            "name": "Align Workflow",
+            "version": "1.0.0",
+            "url": url,
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "_install_allowed": True,
+            "_catalog_name": "test",
+        }
+
+        with patch.object(
+            WorkflowCatalog,
+            "get_workflow_info",
+            return_value=info,
+        ), patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda *_args, **_kwargs: self._FakeResponse(
+                data,
+                url,
+                {"Content-Type": "application/octet-stream"},
+            ),
+        ):
+            result = CliRunner().invoke(app, ["workflow", "add", "align-wf"])
+
+        assert result.exit_code == 0, result.output
+        installed = project_dir / ".specify" / "workflows" / "align-wf"
+        assert (
+            installed / "assets" / "sniffed.txt"
+        ).read_text() == "catalog sniffed\n"
+
+    def test_package_registry_failure_restores_before_failed_cleanup(
+        self, project_dir, monkeypatch
+    ):
+        import shutil
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        source = self._write_workflow_dir(project_dir, version="1.0.0")
+        (source / "assets").mkdir()
+        (source / "assets" / "version.txt").write_text("old\n")
+        runner = CliRunner()
+        first = runner.invoke(app, ["workflow", "add", str(source)])
+        assert first.exit_code == 0, first.output
+
+        (source / "workflow.yml").write_text(
+            self.WORKFLOW_YAML.format(version="2.0.0"),
+            encoding="utf-8",
+        )
+        (source / "assets" / "version.txt").write_text("new\n")
+        real_rmtree = shutil.rmtree
+
+        def fail_failed_package_cleanup(path, *args, **kwargs):
+            if ".failed-" in Path(path).name:
+                raise OSError("cleanup denied")
+            return real_rmtree(path, *args, **kwargs)
+
+        with patch.object(
+            WorkflowRegistry,
+            "add",
+            side_effect=OSError("registry save failed"),
+        ), patch(
+            "shutil.rmtree",
+            side_effect=fail_failed_package_cleanup,
+        ):
+            result = runner.invoke(app, ["workflow", "add", str(source)])
+
+        assert result.exit_code == 1, result.output
+        installed = project_dir / ".specify" / "workflows" / "align-wf"
+        assert "1.0.0" in (installed / "workflow.yml").read_text()
+        assert (installed / "assets" / "version.txt").read_text() == "old\n"
+        assert "registry save failed" in result.output
+        assert "cleanup denied" in result.output
 
     def test_add_from_url_temp_cleanup_failure_after_success_still_exits_zero(
         self, project_dir, monkeypatch

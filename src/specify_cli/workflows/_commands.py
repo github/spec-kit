@@ -24,6 +24,7 @@ from .._download_security import (
     archive_format_from_content_type,
     archive_format_from_name,
     archive_suffix,
+    detect_archive_format,
     is_https_or_localhost_http,
     is_safe_download_redirect,
     read_response_limited,
@@ -459,6 +460,42 @@ def _read_response_within_limit(response, max_bytes: int | None = None) -> bytes
             raise ValueError(f"response exceeds the {max_bytes}-byte workflow size limit")
         chunks.append(chunk)
     return b"".join(chunks)
+
+
+def _workflow_yaml_is_declared(
+    source_name: str, content_type: str | None
+) -> bool:
+    """Return whether response metadata explicitly identifies workflow YAML."""
+    from urllib.parse import urlparse
+
+    path = urlparse(source_name).path.casefold()
+    media_type = (content_type or "").split(";", 1)[0].strip().casefold()
+    return path.endswith((".yml", ".yaml")) or media_type in {
+        "application/yaml",
+        "application/x-yaml",
+        "text/yaml",
+        "text/x-yaml",
+    }
+
+
+def _sniff_workflow_archive_format(data: bytes):
+    """Return a supported archive format when suffixless response bytes match."""
+    from io import BytesIO
+
+    try:
+        return detect_archive_format(
+            Path("workflow-download"),
+            archive_file=BytesIO(data),
+        )
+    except ValueError:
+        return None
+
+
+def _enforce_workflow_yaml_size(data: bytes) -> None:
+    if len(data) > _MAX_WORKFLOW_YAML_BYTES:
+        raise ValueError(
+            f"response exceeds the {_MAX_WORKFLOW_YAML_BYTES}-byte workflow size limit"
+        )
 
 
 def _validate_workflow_id_or_exit(workflow_id: str) -> None:
@@ -1056,10 +1093,33 @@ def _install_workflow_package(
             try:
                 registry.add(definition.id, entry)
             except (OSError, TypeError, ValueError):
-                shutil.rmtree(dest_dir)
-                if backup_dir is not None:
-                    os.replace(backup_dir, dest_dir)
-                    backup_dir = None
+                failed_dir: Path | None = None
+                try:
+                    failed_dir = Path(
+                        tempfile.mkdtemp(
+                            prefix=f".{definition.id}.failed-",
+                            dir=workflows_dir,
+                        )
+                    )
+                    failed_dir.rmdir()
+                    os.replace(dest_dir, failed_dir)
+                    if backup_dir is not None:
+                        os.replace(backup_dir, dest_dir)
+                        backup_dir = None
+                except OSError as rollback_exc:
+                    console.print(
+                        "[yellow]Warning:[/yellow] Failed to fully restore the prior "
+                        f"workflow package: {_escape_markup(str(rollback_exc))}"
+                    )
+                finally:
+                    if failed_dir is not None and failed_dir.exists():
+                        try:
+                            shutil.rmtree(failed_dir)
+                        except OSError as cleanup_exc:
+                            console.print(
+                                "[yellow]Warning:[/yellow] Could not remove failed "
+                                f"workflow package: {_escape_markup(str(cleanup_exc))}"
+                            )
                 raise
     except typer.Exit:
         raise
@@ -1938,10 +1998,11 @@ def workflow_add(
                     or archive_format_from_name(download_url)
                     or archive_format_from_content_type(content_type)
                 )
+                declared_yaml = _workflow_yaml_is_declared(final_url, content_type)
                 suffix = (
                     archive_suffix(downloaded_archive_format)
                     if downloaded_archive_format is not None
-                    else ".yml"
+                    else ".yml" if declared_yaml else ".download"
                 )
                 with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
                     # Assign tmp_path immediately: NamedTemporaryFile(delete=False)
@@ -1949,16 +2010,26 @@ def workflow_add(
                     # written, so a failure in the size-limited read below must
                     # still be able to find and remove it.
                     tmp_path = Path(tmp.name)
-                    if downloaded_archive_format is None:
-                        tmp.write(_read_response_within_limit(resp))
-                    else:
-                        tmp.write(
-                            read_response_limited(
-                                resp,
-                                error_type=ValueError,
-                                label="workflow archive download",
-                            )
+                    if downloaded_archive_format is not None:
+                        downloaded_content = read_response_limited(
+                            resp,
+                            error_type=ValueError,
+                            label="workflow archive download",
                         )
+                    elif declared_yaml:
+                        downloaded_content = _read_response_within_limit(resp)
+                    else:
+                        downloaded_content = read_response_limited(
+                            resp,
+                            error_type=ValueError,
+                            label="workflow download",
+                        )
+                        downloaded_archive_format = (
+                            _sniff_workflow_archive_format(downloaded_content)
+                        )
+                        if downloaded_archive_format is None:
+                            _enforce_workflow_yaml_size(downloaded_content)
+                    tmp.write(downloaded_content)
         except typer.Exit:
             raise
         except Exception as exc:
@@ -2224,14 +2295,25 @@ def _install_workflow_from_catalog(
             # Written to the staging file, never workflow_file directly, so a
             # reinstall's prior working copy is never touched until the
             # atomic commit below runs.
-            if downloaded_archive_format is None:
-                downloaded_content = _read_response_within_limit(response)
-            else:
+            if downloaded_archive_format is not None:
                 downloaded_content = read_response_limited(
                     response,
                     error_type=ValueError,
                     label=f"workflow '{workflow_id}' archive download",
                 )
+            elif _workflow_yaml_is_declared(final_url, archive_content_type):
+                downloaded_content = _read_response_within_limit(response)
+            else:
+                downloaded_content = read_response_limited(
+                    response,
+                    error_type=ValueError,
+                    label=f"workflow '{workflow_id}' download",
+                )
+                downloaded_archive_format = _sniff_workflow_archive_format(
+                    downloaded_content
+                )
+                if downloaded_archive_format is None:
+                    _enforce_workflow_yaml_size(downloaded_content)
             staged_file.write_bytes(downloaded_content)
     except typer.Exit:
         raise

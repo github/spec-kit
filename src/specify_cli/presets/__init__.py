@@ -3593,9 +3593,15 @@ class PresetManager:
         zip_path: Path,
         speckit_version: str,
         priority: int = 10,
+        force: bool = False,
     ) -> PresetManifest:
         """Backward-compatible wrapper for archive installation."""
-        return self.install_from_archive(zip_path, speckit_version, priority)
+        return self.install_from_archive(
+            zip_path,
+            speckit_version,
+            priority,
+            force=force,
+        )
 
     def remove(self, pack_id: str) -> bool:
         """Remove an installed preset.

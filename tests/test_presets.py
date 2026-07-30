@@ -671,6 +671,27 @@ class TestPresetManager:
         assert manifest.id == "test-pack"
         assert manager.registry.is_installed("test-pack")
 
+    def test_install_from_zip_forwards_force(
+        self, project_dir, pack_dir, temp_dir
+    ):
+        """The compatibility wrapper must retain forced reinstall behavior."""
+        zip_path = temp_dir / "test-pack.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            for file_path in pack_dir.rglob("*"):
+                if file_path.is_file():
+                    zf.write(file_path, file_path.relative_to(pack_dir))
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+        manifest = manager.install_from_zip(
+            zip_path,
+            "0.1.5",
+            force=True,
+        )
+
+        assert manifest.id == "test-pack"
+        assert manager.registry.is_installed("test-pack")
+
     def test_install_from_zip_nested(self, project_dir, pack_dir, temp_dir):
         """Test installing from ZIP with nested directory."""
         zip_path = temp_dir / "test-pack.zip"
