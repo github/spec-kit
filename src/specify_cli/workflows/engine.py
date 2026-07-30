@@ -619,6 +619,7 @@ class RunState:
         self.created_at = datetime.now(timezone.utc).isoformat()
         self.updated_at = self.created_at
         self.log_entries: list[dict[str, Any]] = []
+        self.error: str | None = None
 
     @property
     def runs_dir(self) -> Path:
@@ -673,6 +674,7 @@ class RunState:
                 "workflow_dir": self.workflow_dir,
                 "created_at": self.created_at,
                 "updated_at": self.updated_at,
+                "error": self.error,
             }
             self._atomic_write_json(runs_dir / "state.json", state_data)
             self._atomic_write_json(runs_dir / "inputs.json", {"inputs": self.inputs})
@@ -766,6 +768,7 @@ class RunState:
         state.workflow_dir = state_data.get("workflow_dir")
         state.created_at = state_data.get("created_at", "")
         state.updated_at = state_data.get("updated_at", "")
+        state.error = state_data.get("error")
 
         inputs_path = runs_dir / "inputs.json"
         if inputs_path.exists():
@@ -960,6 +963,7 @@ class WorkflowEngine:
             return state
         except Exception as exc:
             state.status = RunStatus.FAILED
+            state.error = str(exc)
             state.append_log({"event": "workflow_failed", "error": str(exc)})
             state.save()
             raise
@@ -1018,6 +1022,7 @@ class WorkflowEngine:
 
         from . import STEP_REGISTRY
 
+        state.error = None
         state.status = RunStatus.RUNNING
         state.save()
 
@@ -1038,6 +1043,7 @@ class WorkflowEngine:
             return state
         except Exception as exc:
             state.status = RunStatus.FAILED
+            state.error = str(exc)
             state.append_log({"event": "resume_failed", "error": str(exc)})
             state.save()
             raise
@@ -1097,6 +1103,7 @@ class WorkflowEngine:
             step_impl = registry.get(step_type)
             if not step_impl:
                 state.status = RunStatus.FAILED
+                state.error = f"Unknown step type: {step_type!r}"
                 state.append_log(
                     {
                         "event": "step_failed",
@@ -1150,6 +1157,7 @@ class WorkflowEngine:
                 # is for transient/expected step failures only.
                 if result.output.get("aborted"):
                     state.status = RunStatus.ABORTED
+                    state.error = result.error
                     state.append_log(
                         {
                             "event": "workflow_aborted",
@@ -1192,6 +1200,7 @@ class WorkflowEngine:
                     continue
 
                 state.status = RunStatus.FAILED
+                state.error = result.error
                 state.append_log(
                     {
                         "event": "step_failed",
@@ -1475,6 +1484,16 @@ class WorkflowEngine:
             # pool joined; restore the halting item's own outcome so the final run
             # status matches the sequential semantics.
             state.status = halted_status
+            # Restore the halting item's error so it matches the terminal
+            # status — a concurrent item may have overwritten state.error
+            # before the pool joined. Assign unconditionally when a record
+            # exists (even when the halting item's own error is falsy) so a
+            # third-party step returning FAILED with no message never inherits
+            # an unrelated concurrent item's error; this mirrors the sequential
+            # path, which sets state.error = result.error verbatim.
+            halt_rec = context.steps.get(item_id(halted_at))
+            if isinstance(halt_rec, dict):
+                state.error = halt_rec.get("error")
             return slots[: halted_at + 1]
         return slots[:collected]
 

@@ -3633,6 +3633,56 @@ class TestFanOutConcurrency:
         assert results == [{"seen": 0}, {"seen": 1}, {"seen": 2}]
         assert state.status == RunStatus.FAILED
 
+    def test_concurrent_restores_halting_item_error(self, tmp_path):
+        # After a concurrent fan-out halts, the run-level error must be the first
+        # halting item's own error (parity with the sequential path), even when a
+        # later concurrent item failed with a different error AND the halting
+        # item's error is falsy. Covers the pool-join restore branch, which must
+        # assign unconditionally rather than skip a falsy value.
+        from specify_cli.workflows.base import (
+            RunStatus,
+            StepBase,
+            StepResult,
+            StepStatus,
+        )
+
+        class _ErrorProbe(StepBase):
+            type_key = "err-probe"
+
+            def execute(self, config, context):
+                item = context.item
+                if item == "halt":
+                    # First failing item in item order; empty (falsy) error.
+                    return StepResult(
+                        status=StepStatus.FAILED, error="", output={}
+                    )
+                if item == "leak":
+                    return StepResult(
+                        status=StepStatus.FAILED,
+                        error="leaked-error",
+                        output={},
+                    )
+                return StepResult(
+                    status=StepStatus.COMPLETED, output={"seen": item}
+                )
+
+        engine, context, state, _registry, _template = self._build(tmp_path)
+        engine._run_fan_out(
+            ["ok0", "halt", "ok2", "leak"],
+            {"id": "impl", "type": "err-probe"},
+            "fan",
+            context,
+            state,
+            {"err-probe": _ErrorProbe()},
+            4,
+        )
+
+        assert state.status == RunStatus.FAILED
+        # Halt is attributed to "halt" (index 1). Its empty error must win over
+        # the later "leak" item's error — the restore assigns the halting item's
+        # error verbatim, even when falsy.
+        assert state.error == ""
+
     def test_continue_on_error_item_does_not_halt_concurrent(self, tmp_path):
         # A failing item whose template sets continue_on_error must NOT truncate
         # the fan-out: every item still runs and is returned in order.
@@ -6361,6 +6411,74 @@ steps:
         assert state.status == RunStatus.FAILED
         assert "should-not-run" not in state.step_results
 
+    def test_continue_on_error_failure_not_surfaced_as_terminal_error(
+        self, project_dir
+    ):
+        """A continue_on_error step's error must not be reported as the
+        terminal run error when a later step fails for a different reason.
+
+        Regression test: the engine sets state.error only at terminal
+        branches, not in the continue_on_error branch. A handled failure
+        must not leak into the run-level error.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "coe-leak"
+  name: "COE Leak"
+  version: "1.0.0"
+steps:
+  - id: handled-failure
+    type: shell
+    run: "exit 42"
+    continue_on_error: true
+  - id: terminal-failure
+    type: shell
+    run: "exit 7"
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.FAILED
+        # The terminal error must be from the terminal-failure step, not
+        # the handled-failure step.
+        assert state.error is not None
+        assert "42" not in (state.error or "")
+        # The handled step's per-step error is still preserved.
+        assert state.step_results["handled-failure"]["status"] == "failed"
+        assert state.step_results["handled-failure"].get("error") is not None
+
+    def test_unknown_step_type_sets_run_error(self, project_dir):
+        """An unregistered step type fails the run with a descriptive
+        run-level error persisted on state.error.
+
+        The engine sets state.error at the unknown-step-type terminal
+        branch, mirroring the other terminal failure paths.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        # execute() bypasses validate_workflow(), which is what would
+        # otherwise reject the unknown type up front.
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "unknown-type"
+  name: "Unknown Type"
+  version: "1.0.0"
+steps:
+  - id: mystery
+    type: definitely-not-a-real-step
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.FAILED
+        assert state.error == "Unknown step type: 'definitely-not-a-real-step'"
+
 
 # ===== State Persistence Tests =====
 
@@ -6555,6 +6673,67 @@ class TestRunState:
         entry = json.loads(lines[0])
         assert entry["event"] == "test_event"
         assert "timestamp" in entry
+
+    def test_error_persists_across_save_and_load(self, project_dir):
+        """Run-level error survives a save/load round trip."""
+        from specify_cli.workflows.engine import RunState
+        from specify_cli.workflows.base import RunStatus
+
+        state = RunState(
+            run_id="err-run",
+            workflow_id="test-wf",
+            project_root=project_dir,
+        )
+        state.status = RunStatus.FAILED
+        state.error = "Something went wrong"
+        state.save()
+
+        loaded = RunState.load("err-run", project_dir)
+        assert loaded.error == "Something went wrong"
+
+    def test_error_defaults_none_for_legacy_state(self, project_dir):
+        """Old state.json files without an error field load with error=None."""
+        from specify_cli.workflows.engine import RunState
+
+        state = RunState(
+            run_id="legacy-run",
+            workflow_id="test-wf",
+            project_root=project_dir,
+        )
+        state.save()
+
+        # Manually strip the error field to simulate a legacy state file.
+        state_path = state.runs_dir / "state.json"
+        data = json.loads(state_path.read_text())
+        data.pop("error", None)
+        state_path.write_text(json.dumps(data), encoding="utf-8")
+
+        loaded = RunState.load("legacy-run", project_dir)
+        assert loaded.error is None
+
+    def test_resume_clears_stale_error(self, project_dir):
+        """A resumed run starts with state.error = None."""
+        from specify_cli.workflows.engine import RunState
+        from specify_cli.workflows.base import RunStatus
+
+        state = RunState(
+            run_id="resume-err",
+            workflow_id="test-wf",
+            project_root=project_dir,
+        )
+        state.status = RunStatus.FAILED
+        state.error = "Previous failure"
+        state.save()
+
+        loaded = RunState.load("resume-err", project_dir)
+        assert loaded.error == "Previous failure"
+
+        loaded.error = None
+        loaded.status = RunStatus.RUNNING
+        loaded.save()
+
+        reloaded = RunState.load("resume-err", project_dir)
+        assert reloaded.error is None
 
 
 class TestListRuns:
@@ -9861,6 +10040,29 @@ steps:
         assert result.exit_code == 1
         assert "Status: aborted" in result.stdout
         assert "Gate rejected by user" in result.stdout
+
+    def test_run_gate_abort_json_includes_error(self, tmp_path, monkeypatch):
+        """Gate abort --json includes the rejection message in the error field."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            app,
+            [
+                "workflow",
+                "run",
+                str(self._write(tmp_path, self._WF_GATE_ABORT)),
+                "--input",
+                "review_verdict=reject",
+                "--json",
+            ],
+        )
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["status"] == "aborted"
+        assert "Gate rejected by user" in (payload.get("error") or "")
 
 
 class TestWorkflowRunGateOutcomeJson:

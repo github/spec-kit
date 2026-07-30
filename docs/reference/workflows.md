@@ -39,6 +39,21 @@ specify workflow run my-pipeline.yml --json
 
 `workflow_id` is the `workflow.id` declared inside the YAML, not the file name. The object is printed exactly as shown — pretty-printed with two-space indentation, on plain stdout with no Rich markup — so it always parses. While the workflow runs under `--json`, any progress a step would print (for example a gate prompt, or output from a prompt step's CLI subprocess) is redirected to stderr, so stdout carries only the JSON object. Read the object from stdout; leave stderr attached to the terminal or capture it separately.
 
+For `failed` and `aborted` runs, the payload includes an `error` field carrying the terminal step's error message:
+
+```json
+{
+  "run_id": "662bf791",
+  "workflow_id": "build-and-review",
+  "status": "failed",
+  "current_step_id": "boom",
+  "current_step_index": 0,
+  "error": "Command exited with code 3"
+}
+```
+
+`completed` and `paused` runs omit the `error` field. The error is persisted in the run's `state.json`, so `specify workflow status <run_id> --json` surfaces the same message after the fact.
+
 > **Note:** Most workflow commands require a project already initialized with `specify init`. The exception is `specify workflow run <local-file.{yml,yaml}>`, which can run outside a project; in that case, run state is stored under the current directory's `.specify/workflows/runs/<run_id>/`.
 
 ## Resume a Workflow
