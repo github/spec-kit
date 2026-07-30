@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -168,6 +170,25 @@ def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_ve
     finally:
         zip_path.unlink(missing_ok=True)
     return f"{manifest.name} v{manifest.version} installed"
+
+
+def _shell_quote_arg(value: str) -> str:
+    """Quote *value* as one argument for the shells of the host OS.
+
+    The Next Steps ``cd`` line is copy-pasted into whichever shell ran
+    ``specify init``, so it is quoted for the host the same way
+    ``_version._render_argv`` renders its copy-pasteable installer command:
+    ``list2cmdline`` on Windows, ``shlex.quote`` elsewhere. The Windows branch
+    must emit double quotes -- ``cd 'my project'`` is a path-not-found in
+    cmd.exe, while ``cd "my project"`` is accepted by cmd.exe, PowerShell and
+    Git Bash alike. A value needing no quoting is returned unchanged.
+
+    Whitespace only. PowerShell also glob-expands ``[``/``]`` and expands
+    ``$``/backtick inside double quotes, so such a name still needs
+    ``Set-Location -LiteralPath`` there -- syntax invalid in cmd.exe and sh, so
+    this shell-neutral line cannot cover it.
+    """
+    return subprocess.list2cmdline([value]) if os.name == "nt" else shlex.quote(value)
 
 
 def ensure_constitution_from_template(
@@ -936,7 +957,7 @@ def register(app: typer.Typer) -> None:
         steps_lines = []
         if not here:
             steps_lines.append(
-                f"1. Go to the project folder: [cyan]cd {_escape_markup(str(project_name))}[/cyan]"
+                f"1. Go to the project folder: [cyan]cd {_escape_markup(_shell_quote_arg(str(project_name)))}[/cyan]"
             )
             step_num = 2
         else:
