@@ -5,12 +5,12 @@ templates and command files. After you update the constitution, it aligns
 `plan-template.md`, `spec-template.md`, `tasks-template.md`, project-local command files, and
 guidance docs so they reflect the current principles.
 
-By default Spec Kit does **not** do this. The default model is **runtime resolution**: `plan`,
-`tasks`, and `analyze` read `.specify/memory/constitution.md` live on every run, so templates carry
-a pointer (`[Gates determined based on constitution file]`) rather than a frozen copy. Add this
-preset only if you specifically want the guidance materialized into reviewed, committed artifacts —
-and read the [caveats](#caveats-you-take-on) first, because propagation and the preset composition
-stack pull in opposite directions.
+The current version of Spec Kit does **not** do this by default. Its default model is **runtime
+resolution**: `plan`, `tasks`, and `analyze` read `.specify/memory/constitution.md` live on every
+run, so templates carry a pointer (`[Gates determined based on constitution file]`) rather than a
+frozen copy. Add this preset only if you specifically want the guidance materialized into reviewed,
+committed artifacts — and read the [caveats](#caveats-you-take-on) first, because propagation and
+the preset composition stack pull in opposite directions.
 
 ## What it does
 
