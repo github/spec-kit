@@ -74,6 +74,38 @@ def test_symlinked_cache_ancestor_is_refused(
     assert list(outside.iterdir()) == []
 
 
+@pytest.mark.parametrize(
+    "ancestor_parts",
+    [
+        ("extensions",),
+        ("extensions", ".cache"),
+        ("extensions", ".cache", "downloads"),
+    ],
+)
+def test_symlinked_cache_ancestor_is_refused_without_dir_fd(
+    project_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    ancestor_parts: tuple[str, ...],
+) -> None:
+    """The portable (Windows) validation path must also refuse a symlinked
+    cache ancestor and never create anything under the symlink target."""
+    monkeypatch.setattr(os, "supports_dir_fd", set())
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    parent = project_dir / ".specify"
+    for part in ancestor_parts[:-1]:
+        parent = parent / part
+        parent.mkdir()
+    _symlink_directory(parent / ancestor_parts[-1], outside)
+
+    with pytest.raises(typer.Exit):
+        _commands._validate_safe_cache_dir(project_dir)
+
+    assert list(outside.iterdir()) == []
+
+
 def test_cache_ancestor_resolving_outside_project_is_refused(
     project_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -150,36 +182,94 @@ def test_safe_open_refuses_symlinked_project_root(
         )
 
 
-def test_safe_open_fails_closed_without_atomic_platform_support(
+def test_safe_open_succeeds_without_dir_fd_support(
     project_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Build the cache dir directly: on a platform without dir_fd support the
-    # validator itself fails closed, so we must exercise the leaf-open gate
-    # in isolation rather than going through _validate_safe_cache_dir().
-    download_dir = project_dir / ".specify" / "extensions" / ".cache" / "downloads"
-    download_dir.mkdir(parents=True, exist_ok=True)
+    """On a platform without dir_fd (e.g. Windows) the portable path must
+    still hand back a usable, exclusively-created descriptor rather than
+    failing closed."""
     monkeypatch.setattr(os, "supports_dir_fd", set())
 
-    with pytest.raises(NotImplementedError, match=r"--dev"):
-        _commands._safe_open_download_zip(
-            project_dir,
-            download_dir,
-            "extension-url-download-unsupported.zip",
+    download_dir = _commands._validate_safe_cache_dir(project_dir)
+    assert download_dir == (
+        project_dir / ".specify" / "extensions" / ".cache" / "downloads"
+    )
+
+    fd = _commands._safe_open_download_zip(
+        project_dir, download_dir, "extension-url-download-portable.zip"
+    )
+    try:
+        os.write(fd, b"payload")
+        os.lseek(fd, 0, os.SEEK_SET)
+        assert os.read(fd, 7) == b"payload"
+    finally:
+        os.close(fd)
+
+
+def test_safe_open_without_dir_fd_refuses_symlinked_leaf(
+    project_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The portable path must refuse a leaf pre-staged as a symlink so an
+    attacker cannot redirect the exclusive create outside the project."""
+    monkeypatch.setattr(os, "supports_dir_fd", set())
+    download_dir = _commands._validate_safe_cache_dir(project_dir)
+    outside = tmp_path / "outside.zip"
+    zip_filename = "extension-url-download-symlink-leaf.zip"
+    try:
+        (download_dir / zip_filename).symlink_to(outside)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks are unavailable: {exc}")
+
+    with pytest.raises(OSError):
+        _commands._safe_open_download_zip(project_dir, download_dir, zip_filename)
+
+    assert not outside.exists()
+
+
+def test_url_install_succeeds_without_dir_fd_support(
+    project_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A full ``--from`` install must work on platforms without dir_fd rather
+    than failing closed, exercising the portable hardened download path."""
+    captured: dict[str, object] = {}
+
+    class FakeResponse(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def fake_install(
+        self,
+        zip_path: Path,
+        speckit_version: str,
+        priority: int = 10,
+        force: bool = False,
+        *,
+        archive_file=None,
+    ):
+        captured["bytes"] = archive_file.read()
+        archive_file.seek(0)
+        return SimpleNamespace(
+            id="test-ext",
+            name="Test Extension",
+            version="1.0.0",
+            description="",
+            warnings=[],
+            commands=[],
         )
 
-
-def test_url_install_surfaces_fail_closed_platform_error(
-    project_dir: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(typer, "confirm", lambda *args, **kwargs: True)
     monkeypatch.setattr(os, "supports_dir_fd", set())
+    monkeypatch.setattr(typer, "confirm", lambda *args, **kwargs: True)
     monkeypatch.setattr(
         ExtensionCatalog,
         "_open_url",
-        lambda *args, **kwargs: io.BytesIO(_MINIMAL_ZIP_BYTES),
+        lambda *args, **kwargs: FakeResponse(_MINIMAL_ZIP_BYTES),
     )
-    install_spy = MagicMock()
-    monkeypatch.setattr(ExtensionManager, "install_from_zip", install_spy)
+    monkeypatch.setattr(ExtensionManager, "install_from_zip", fake_install)
+    monkeypatch.setattr(_commands, "_refresh_events_and_warn", lambda root: None)
+    monkeypatch.setattr(_commands, "load_init_options", lambda root: {})
 
     result = runner.invoke(
         app,
@@ -192,10 +282,8 @@ def test_url_install_surfaces_fail_closed_platform_error(
         ],
     )
 
-    assert result.exit_code == 1
-    assert "--dev" in result.output
-    assert "install from a catalog instead" not in result.output
-    install_spy.assert_not_called()
+    assert result.exit_code == 0, result.output
+    assert captured["bytes"] == _MINIMAL_ZIP_BYTES
 
 
 def test_url_install_writes_and_cleans_up_secure_download(

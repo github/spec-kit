@@ -8,9 +8,11 @@ which re-fetch from the parent package at call time so test monkeypatching of
 """
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import shutil
+import stat
 import tempfile
 import zipfile
 from pathlib import Path
@@ -437,80 +439,76 @@ def catalog_remove(
         console.print("\n[dim]No catalogs remain in config. Built-in defaults will be used.[/dim]")
 
 
+# Relative path, below the project root, of the extension URL download cache.
+_CACHE_REL_PARTS = (".specify", "extensions", ".cache", "downloads")
+
+
+def _has_secure_dir_fd() -> bool:
+    """Whether this platform supports the strongest (POSIX) hardening path.
+
+    The descriptor-anchored walk needs ``O_NOFOLLOW`` plus ``dir_fd`` support
+    for ``os.open``/``os.mkdir``/``os.unlink``. When any of those is missing
+    (notably on Windows) the caller falls back to the portable path-wise walk,
+    which reproduces the same guarantees using symlink/reparse-point rejection,
+    resolve-under-root containment checks, and post-open inode-identity
+    verification instead of file descriptors.
+    """
+    return bool(
+        getattr(os, "O_NOFOLLOW", 0)
+        and os.open in os.supports_dir_fd
+        and os.mkdir in os.supports_dir_fd
+        and os.unlink in os.supports_dir_fd
+    )
+
+
+def _is_symlink_refusal_errno(exc: OSError) -> bool:
+    """Whether an ``os.open``/``os.mkdir`` error means a component is a symlink.
+
+    Opening an ``O_NOFOLLOW`` path whose final component is a symlink raises
+    ``ELOOP`` on Linux and ``EMLINK`` on some BSDs, while a symlinked component
+    that no longer resolves to a directory surfaces as ``ENOTDIR``.
+    """
+    return exc.errno in (errno.ELOOP, errno.ENOTDIR, getattr(errno, "EMLINK", -1))
+
+
+def _verify_leaf_identity(fd: int, path: Path) -> None:
+    """Confirm ``fd`` still refers to the regular file at ``path``.
+
+    Mirrors the workflow installer's staged-file check: comparing the open
+    descriptor's ``fstat`` against a ``lstat`` of the pathname detects a leaf
+    that was swapped for a symlink/reparse point between creation and use, so
+    the portable (dir_fd-less) path is not vulnerable to an ancestor swap race.
+    """
+    path_stat = path.stat(follow_symlinks=False)
+    open_stat = os.fstat(fd)
+    if (
+        not stat.S_ISREG(path_stat.st_mode)
+        or path_stat.st_dev != open_stat.st_dev
+        or path_stat.st_ino != open_stat.st_ino
+    ):
+        raise OSError(
+            errno.ENOTDIR, "Download file changed between creation and open"
+        )
+
+
 def _validate_safe_cache_dir(project_root: Path) -> Path:
-    """Create and validate the extension URL download cache one component at a time."""
-    download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
-    o_nofollow = getattr(os, "O_NOFOLLOW", 0)
-    o_directory = getattr(os, "O_DIRECTORY", 0)
-
-    if not o_nofollow or os.open not in os.supports_dir_fd or os.mkdir not in os.supports_dir_fd:
-        raise NotImplementedError(
-            "URL-based extension installs require POSIX-style dir_fd and "
-            "O_NOFOLLOW support, which is unavailable on this platform. "
-            "Use --dev with a local directory instead."
-        )
-
+    """Create and validate the extension URL download cache one component at a
+    time, refusing symlinked/junctioned components on every supported platform."""
+    download_dir = project_root.joinpath(*_CACHE_REL_PARTS)
     try:
-        project_root_resolved = project_root.resolve()
-        parent_fd = os.open(project_root, os.O_RDONLY | o_directory | o_nofollow)
-        current_path = project_root
-        try:
-            for part in (".specify", "extensions", ".cache", "downloads"):
-                current_path = current_path / part
-
-                try:
-                    child_fd = os.open(
-                        part,
-                        os.O_RDONLY | o_directory | o_nofollow,
-                        dir_fd=parent_fd,
-                    )
-                except FileNotFoundError:
-                    try:
-                        os.mkdir(part, dir_fd=parent_fd)
-                    except FileExistsError:
-                        pass
-                    child_fd = os.open(
-                        part,
-                        os.O_RDONLY | o_directory | o_nofollow,
-                        dir_fd=parent_fd,
-                    )
-
-                try:
-                    current_path.resolve().relative_to(project_root_resolved)
-                except (OSError, ValueError):
-                    try:
-                        os.close(child_fd)
-                    except OSError:
-                        pass
-                    console.print(
-                        "[red]Error:[/red] Download cache directory escapes project root"
-                    )
-                    raise typer.Exit(1)
-
-                os.close(parent_fd)
-                parent_fd = child_fd
-        finally:
-            if parent_fd >= 0:
-                try:
-                    os.close(parent_fd)
-                except OSError:
-                    pass
-    except FileNotFoundError as exc:
-        console.print(
-            "[red]Error:[/red] Could not prepare download cache directory: "
-            f"{_escape_markup(str(exc))}"
-        )
-        raise typer.Exit(1)
-    except PermissionError as exc:
-        console.print(
-            "[red]Error:[/red] Could not prepare download cache directory: "
-            f"{_escape_markup(str(exc))}"
-        )
-        raise typer.Exit(1)
+        if _has_secure_dir_fd():
+            _validate_cache_dir_via_dir_fd(project_root, download_dir)
+        else:
+            _validate_cache_dir_via_paths(project_root, download_dir)
     except typer.Exit:
         raise
+    except FileExistsError:
+        console.print(
+            "[red]Error:[/red] Refusing to use symlinked download cache directory"
+        )
+        raise typer.Exit(1)
     except OSError as exc:
-        if isinstance(exc, FileExistsError):
+        if _is_symlink_refusal_errno(exc):
             console.print(
                 "[red]Error:[/red] Refusing to use symlinked download cache directory"
             )
@@ -524,46 +522,132 @@ def _validate_safe_cache_dir(project_root: Path) -> Path:
     return download_dir
 
 
+def _validate_cache_dir_via_dir_fd(project_root: Path, download_dir: Path) -> None:
+    """POSIX cache-dir walk anchored on ``dir_fd`` + ``O_NOFOLLOW`` descriptors."""
+    o_nofollow = getattr(os, "O_NOFOLLOW", 0)
+    o_directory = getattr(os, "O_DIRECTORY", 0)
+    o_cloexec = getattr(os, "O_CLOEXEC", 0)
+    walk_flags = os.O_RDONLY | o_directory | o_nofollow | o_cloexec
+
+    project_root_resolved = project_root.resolve()
+    parent_fd = os.open(project_root, walk_flags)
+    current_path = project_root
+    try:
+        for part in _CACHE_REL_PARTS:
+            current_path = current_path / part
+
+            try:
+                child_fd = os.open(part, walk_flags, dir_fd=parent_fd)
+            except FileNotFoundError:
+                try:
+                    os.mkdir(part, dir_fd=parent_fd)
+                except FileExistsError:
+                    pass
+                child_fd = os.open(part, walk_flags, dir_fd=parent_fd)
+
+            try:
+                current_path.resolve().relative_to(project_root_resolved)
+            except (OSError, ValueError):
+                try:
+                    os.close(child_fd)
+                except OSError:
+                    pass
+                console.print(
+                    "[red]Error:[/red] Download cache directory escapes project root"
+                )
+                raise typer.Exit(1)
+
+            os.close(parent_fd)
+            parent_fd = child_fd
+    finally:
+        if parent_fd >= 0:
+            try:
+                os.close(parent_fd)
+            except OSError:
+                pass
+
+
+def _validate_cache_dir_via_paths(project_root: Path, download_dir: Path) -> None:
+    """Portable cache-dir walk for platforms without ``dir_fd`` (e.g. Windows).
+
+    Each component is created individually while a symlink/junction is rejected
+    both before and after creation, and every component is required to resolve
+    back under the project root so a mount-point alias or reparse point cannot
+    redirect the cache outside the project.
+    """
+    project_root_resolved = project_root.resolve()
+    current_path = project_root
+    for part in _CACHE_REL_PARTS:
+        current_path = current_path / part
+
+        if current_path.is_symlink():
+            console.print(
+                "[red]Error:[/red] Refusing to use symlinked download cache directory"
+            )
+            raise typer.Exit(1)
+
+        try:
+            current_path.mkdir()
+        except FileExistsError:
+            pass
+
+        # Re-check after creation: a component swapped for a symlink/junction
+        # (or an existing non-directory) between the check and mkdir is caught
+        # here before the walk descends into it.
+        if current_path.is_symlink() or not current_path.is_dir():
+            console.print(
+                "[red]Error:[/red] Refusing to use symlinked download cache directory"
+            )
+            raise typer.Exit(1)
+
+        try:
+            current_path.resolve().relative_to(project_root_resolved)
+        except (OSError, ValueError):
+            console.print(
+                "[red]Error:[/red] Download cache directory escapes project root"
+            )
+            raise typer.Exit(1)
+
+
 def _safe_open_download_zip(
     project_root: Path, download_dir: Path, zip_filename: str
 ) -> int:
-    """Exclusively create a download ZIP through a no-follow directory walk.
+    """Exclusively create a download ZIP and return an owned descriptor.
 
-    The leaf is unlinked immediately after it is created, while the same
-    downloads-directory descriptor is still held, so the returned fd refers
-    to an anonymous inode that never persists on disk. Installation then
-    proceeds entirely through that descriptor, which removes the whole
-    cleanup-walk TOCTOU class (no cache ancestor can be swapped between
-    validation and a later path-based unlink).
+    The archive never persists as a nameable on-disk file: the POSIX path
+    unlinks the leaf immediately after exclusive creation (anonymous inode),
+    while the portable path opens it with ``O_TEMPORARY`` so the OS deletes it
+    when the last handle closes. Installation proceeds entirely through the
+    returned descriptor, removing the pathname-reopen and cleanup-walk TOCTOU
+    classes on every supported platform.
     """
+    if _has_secure_dir_fd():
+        return _open_download_zip_via_dir_fd(
+            project_root, download_dir, zip_filename
+        )
+    return _open_download_zip_via_paths(project_root, download_dir, zip_filename)
+
+
+def _open_download_zip_via_dir_fd(
+    project_root: Path, download_dir: Path, zip_filename: str
+) -> int:
+    """POSIX leaf create: descriptor walk, ``O_EXCL`` create, immediate unlink."""
     o_nofollow = getattr(os, "O_NOFOLLOW", 0)
     o_directory = getattr(os, "O_DIRECTORY", 0)
-    if (
-        not o_nofollow
-        or os.open not in os.supports_dir_fd
-        or os.unlink not in os.supports_dir_fd
-    ):
-        raise NotImplementedError(
-            "URL-based extension installs require POSIX-style dir_fd and "
-            "O_NOFOLLOW support, which is unavailable on this platform. "
-            "Use --dev with a local directory instead."
-        )
+    o_cloexec = getattr(os, "O_CLOEXEC", 0)
+    walk_flags = os.O_RDONLY | o_directory | o_nofollow | o_cloexec
 
     rel_parts = download_dir.relative_to(project_root).parts
-    parent_fd = os.open(project_root, os.O_RDONLY | o_directory | o_nofollow)
+    parent_fd = os.open(project_root, walk_flags)
     try:
         for part in rel_parts:
-            new_fd = os.open(
-                part,
-                os.O_RDONLY | o_directory | o_nofollow,
-                dir_fd=parent_fd,
-            )
+            new_fd = os.open(part, walk_flags, dir_fd=parent_fd)
             os.close(parent_fd)
             parent_fd = new_fd
 
         download_fd = os.open(
             zip_filename,
-            os.O_RDWR | os.O_CREAT | os.O_EXCL | o_nofollow,
+            os.O_RDWR | os.O_CREAT | os.O_EXCL | o_nofollow | o_cloexec,
             0o600,
             dir_fd=parent_fd,
         )
@@ -575,6 +659,56 @@ def _safe_open_download_zip(
         return download_fd
     finally:
         os.close(parent_fd)
+
+
+def _open_download_zip_via_paths(
+    project_root: Path, download_dir: Path, zip_filename: str
+) -> int:
+    """Portable leaf create for platforms without ``dir_fd`` (e.g. Windows).
+
+    The cache directory is re-validated (real directory, under the project
+    root) immediately before an exclusive create. ``O_EXCL`` guarantees an
+    attacker cannot pre-stage the leaf as a symlink/junction, ``O_TEMPORARY``
+    makes the OS delete it on close, and a post-open inode-identity check
+    detects a leaf swapped underneath us. The returned descriptor is the only
+    handle installation ever uses, so the cache pathname is never reopened.
+    """
+    zip_path = download_dir / zip_filename
+    project_root_resolved = project_root.resolve()
+
+    if download_dir.is_symlink() or not download_dir.is_dir():
+        raise OSError(
+            errno.ENOTDIR, "Download cache directory is not a real directory"
+        )
+    try:
+        download_dir.resolve().relative_to(project_root_resolved)
+    except (OSError, ValueError):
+        raise OSError(errno.ENOTDIR, "Download cache directory escapes project root")
+    if zip_path.is_symlink():
+        raise OSError(errno.ELOOP, "Refusing to write through a symlinked download file")
+
+    flags = os.O_RDWR | os.O_CREAT | os.O_EXCL
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_BINARY", 0)
+    o_temporary = getattr(os, "O_TEMPORARY", 0)
+    flags |= o_temporary
+
+    download_fd = os.open(zip_path, flags, 0o600)
+    try:
+        _verify_leaf_identity(download_fd, zip_path)
+    except OSError:
+        os.close(download_fd)
+        # Without O_TEMPORARY the leaf is not auto-deleted, so remove the file
+        # we just exclusively created (best effort, never through a symlink).
+        if not o_temporary:
+            try:
+                if not zip_path.is_symlink():
+                    zip_path.unlink()
+            except OSError:
+                pass
+        raise
+    return download_fd
 
 
 @extension_app.command("add")
@@ -684,15 +818,12 @@ def extension_add(
 
                 console.print(f"Downloading from {safe_url}...")
 
-                try:
-                    download_dir = _validate_safe_cache_dir(project_root)
-                except NotImplementedError as exc:
-                    console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
-                    raise typer.Exit(1)
+                download_dir = _validate_safe_cache_dir(project_root)
                 zip_filename = f"extension-url-download-{uuid4().hex}.zip"
-                # Only used for diagnostic messages: the real archive is an
-                # anonymous inode consumed via ``archive_file`` below, so this
-                # path is never opened again.
+                # Only used for diagnostic messages: the real archive is a
+                # transient inode (unlinked on POSIX, O_TEMPORARY on Windows)
+                # consumed via ``archive_file`` below, so this path is never
+                # opened again.
                 zip_path = download_dir / zip_filename
 
                 try:
@@ -734,11 +865,6 @@ def extension_add(
                             download_fd = _safe_open_download_zip(
                                 project_root, download_dir, zip_filename
                             )
-                        except NotImplementedError as exc:
-                            console.print(
-                                f"[red]Error:[/red] {_escape_markup(str(exc))}"
-                            )
-                            raise typer.Exit(1)
                         except OSError as exc:
                             console.print(
                                 "[red]Error:[/red] Could not safely create download file: "
@@ -759,7 +885,7 @@ def extension_add(
                             )
                             raise typer.Exit(1)
 
-                        # Consume the anonymous inode reserved above rather
+                        # Consume the transient inode reserved above rather
                         # than reopening the cache pathname during extraction.
                         try:
                             manifest = manager.install_from_zip(
