@@ -685,7 +685,10 @@ class TestExtensionManifest:
         with open(manifest_path, 'w') as f:
             yaml.dump(valid_manifest_data, f)
 
-        with pytest.raises(ValidationError, match="at least one command or hook"):
+        with pytest.raises(
+            ValidationError,
+            match=r"at least one command(?:, hook, or event| or hook)",
+        ):
             ExtensionManifest(manifest_path)
 
     def test_hooks_not_dict_rejected(self, temp_dir, valid_manifest_data):
