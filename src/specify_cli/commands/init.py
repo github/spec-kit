@@ -30,6 +30,104 @@ def _stdin_is_interactive() -> bool:
     return sys.stdin.isatty()
 
 
+def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_version: str) -> str:
+    """Install a single extension during ``specify init``.
+
+    Handles bundled extension names, local directory paths, and HTTPS URLs.
+    Returns a short status message on success.
+    Raises ``ValueError`` on failure so the caller can convert it to a
+    tracker error without aborting the entire init.
+    """
+    from urllib.parse import urlparse
+
+    from .._assets import _locate_bundled_extension
+    from ..extensions import ExtensionCatalog, ExtensionManager
+    from ..extensions._commands import _resolve_catalog_extension
+
+    manager = ExtensionManager(project_path)
+
+    # --- URL ---
+    parsed = urlparse(ext_spec)
+    if parsed.scheme in ("http", "https"):
+        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+            raise ValueError("URL must use HTTPS (HTTP is only allowed for localhost)")
+
+        import re as _re
+        import urllib.error as _urllib_error
+        import urllib.request
+
+        download_dir = project_path / ".specify" / "extensions" / ".cache" / "downloads"
+        download_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = _re.sub(r"[^a-z0-9-]", "-", (parsed.path.split("/")[-1] or "download").lower())[:64]
+        zip_path = download_dir / f"{safe_name}-init-download.zip"
+        try:
+            with urllib.request.urlopen(ext_spec, timeout=60) as _resp:
+                zip_path.write_bytes(_resp.read())
+            manifest = manager.install_from_zip(zip_path, speckit_version)
+        except _urllib_error.URLError as exc:
+            raise ValueError(f"Failed to download from {ext_spec}: {exc}") from exc
+        finally:
+            zip_path.unlink(missing_ok=True)
+        return f"{manifest.name} v{manifest.version} installed"
+
+    # --- Local path ---
+    if ext_spec.startswith(("./", "../", "/", "~/", ".\\", "..\\")) or Path(ext_spec).is_absolute():
+        source_path = Path(ext_spec).expanduser().resolve()
+        if not source_path.exists():
+            raise ValueError(f"Directory not found: {source_path}")
+        if not (source_path / "extension.yml").exists():
+            raise ValueError(f"No extension.yml found in {source_path}")
+        manifest = manager.install_from_directory(source_path, speckit_version)
+        return f"{manifest.name} v{manifest.version} installed"
+
+    # --- Bundled extension name or catalog ID ---
+    bundled_path = _locate_bundled_extension(ext_spec)
+    if bundled_path is not None:
+        if manager.registry.is_installed(ext_spec):
+            return "already installed"
+        manifest = manager.install_from_directory(bundled_path, speckit_version)
+        return f"{manifest.name} v{manifest.version} installed"
+
+    # Fall back to catalog
+    catalog = ExtensionCatalog(project_path)
+    ext_info, catalog_error = _resolve_catalog_extension(ext_spec, catalog, "add")
+    if catalog_error:
+        raise ValueError(f"Could not query extension catalog: {catalog_error}")
+    if not ext_info:
+        raise ValueError(f"Extension '{ext_spec}' not found in bundled extensions or catalog")
+
+    resolved_id = ext_info["id"]
+    if resolved_id != ext_spec:
+        bundled_path = _locate_bundled_extension(resolved_id)
+        if bundled_path is not None:
+            if manager.registry.is_installed(resolved_id):
+                return "already installed"
+            manifest = manager.install_from_directory(bundled_path, speckit_version)
+            return f"{manifest.name} v{manifest.version} installed"
+
+    if ext_info.get("bundled") and not ext_info.get("download_url"):
+        from ..extensions import REINSTALL_COMMAND
+
+        raise ValueError(
+            f"Extension '{resolved_id}' is bundled with spec-kit but not found in the installed package. "
+            f"Try reinstalling spec-kit: {REINSTALL_COMMAND}"
+        )
+
+    if not ext_info.get("_install_allowed", True):
+        catalog_name = ext_info.get("_catalog_name", "community")
+        raise ValueError(
+            f"Extension '{ext_spec}' is in the '{catalog_name}' catalog but installation is not allowed from that catalog"
+        )
+
+    zip_path = catalog.download_extension(resolved_id)
+    try:
+        manifest = manager.install_from_zip(zip_path, speckit_version)
+    finally:
+        zip_path.unlink(missing_ok=True)
+    return f"{manifest.name} v{manifest.version} installed"
+
+
 def ensure_constitution_from_template(
     project_path: Path, tracker: StepTracker | None = None
 ) -> None:
@@ -142,6 +240,11 @@ def register(app: typer.Typer) -> None:
             "--integration-options",
             help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")',
         ),
+        extensions: list[str] | None = typer.Option(
+            None,
+            "--extension",
+            help="Install an extension during initialization (bundled name, local path, or HTTPS URL). Repeatable.",
+        ),
     ):
         """
         Initialize a new Specify project.
@@ -174,6 +277,10 @@ def register(app: typer.Typer) -> None:
             specify init --here --integration gemini
             specify init my-project --integration generic --integration-options="--commands-dir .myagent/commands/"  # Bring your own agent; requires --commands-dir
             specify init my-project --integration claude --preset healthcare-compliance  # With preset
+            specify init my-project --integration copilot --extension git  # With bundled extension
+            specify init my-project --extension git --extension selftest  # Multiple extensions
+            specify init my-project --extension ./my-extensions/custom-ext  # Local path extension
+            specify init my-project --extension https://example.com/extensions/my-ext.zip  # URL extension
         """
         # Lazy imports to avoid circular dependency — __init__.py imports this module
         from .. import (
@@ -413,9 +520,14 @@ def register(app: typer.Typer) -> None:
             ("chmod", "Ensure scripts executable"),
             ("constitution", "Constitution setup"),
             ("workflow", "Install bundled workflow"),
-            ("final", "Finalize"),
         ]:
             tracker.add(key, label)
+
+        if extensions:
+            for i, ext_spec in enumerate(extensions):
+                tracker.add(f"extension-{i}", f"Install extension: {ext_spec}")
+
+        tracker.add("final", "Finalize")
 
         # Disable transient mode on Windows: PowerShell 5.1's legacy console
         # hangs when Rich tries to restore cursor state via VT escape sequences.
@@ -625,6 +737,20 @@ def register(app: typer.Typer) -> None:
                             preset_err,
                             continuing="Continuing without the optional preset.",
                         )
+
+                # Install extensions specified via --extension
+                if extensions:
+                    speckit_ver = get_speckit_version()
+                    for i, ext_spec in enumerate(extensions):
+                        tracker.start(f"extension-{i}")
+                        try:
+                            status_msg = _install_extension_during_init(
+                                project_path, ext_spec, speckit_ver
+                            )
+                            tracker.complete(f"extension-{i}", status_msg)
+                        except Exception as ext_err:
+                            sanitized_ext = str(ext_err).replace("\n", " ").strip()
+                            tracker.error(f"extension-{i}", f"failed: {sanitized_ext[:120]}")
 
                 # Seed the constitution AFTER preset installation so that a
                 # preset-provided constitution-template (resolved via the
