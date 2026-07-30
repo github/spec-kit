@@ -5,12 +5,12 @@ templates and command files. After you update the constitution, it aligns
 `plan-template.md`, `spec-template.md`, `tasks-template.md`, project-local command files, and
 guidance docs so they reflect the current principles.
 
-The current version of Spec Kit does **not** do this by default. Its default model is **runtime
-resolution**: `plan`, `tasks`, and `analyze` read `.specify/memory/constitution.md` live on every
-run, so templates carry a pointer (`[Gates determined based on constitution file]`) rather than a
-frozen copy. Add this preset only if you specifically want the guidance materialized into reviewed,
-committed artifacts — and read the [caveats](#caveats-you-take-on) first, because propagation and
-the preset composition stack pull in opposite directions.
+The current version of Spec Kit does **not** do this by default. Its default model is
+**runtime resolution**: `plan`, `tasks`, and `analyze` read `.specify/memory/constitution.md` live
+on every run, so templates carry a pointer (`[Gates determined based on constitution file]`) rather
+than a frozen copy. Add this preset only if you specifically want the guidance materialized into
+reviewed, committed artifacts — and read the [caveats](#caveats-you-take-on) first, because
+propagation and the preset composition stack pull in opposite directions.
 
 ## What it does
 
@@ -36,9 +36,9 @@ appends a propagation pass that, after the constitution is written:
 
 ## When to use it
 
-Install it **only** if your team treats the materialized templates and commands as **reviewed,
-committed artifacts** — for example, if `plan-template.md`'s Constitution Check is read in PRs as
-"here are our current gates" and is expected to track the constitution.
+Install it **only** if your team treats the materialized templates and commands as
+**reviewed, committed artifacts** — for example, if `plan-template.md`'s Constitution Check is
+read in PRs as "here are our current gates" and is expected to track the constitution.
 
 If you rely on the default runtime-resolution model, you do **not** need this preset: the live
 constitution is already the single source of truth and there is nothing to sync.
