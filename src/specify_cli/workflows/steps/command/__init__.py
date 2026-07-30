@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -205,15 +204,11 @@ class CommandStep(StepBase):
         if impl is None:
             return None
 
-        # Build sample args for fallback executable detection when impl.key is not executable.
-        exec_args = impl.build_exec_args("test")
-
-        # Check if the CLI tool is actually installed.
-        # Try the integration key first (covers most agents), then fall back
-        # to exec_args[0] for agents whose executable differs.
-        cli_path = shutil.which(impl.key)
-        fallback_cli_path = shutil.which(exec_args[0]) if exec_args else None
-        if cli_path is None and fallback_cli_path is None:
+        # Check if the CLI tool is actually installed. Delegate to the
+        # integration's own detection contract (see issue #2558) so
+        # overrides such as Claude's non-PATH local installs or Kiro's
+        # legacy binary name are honored here too.
+        if not impl.is_cli_available():
             return None
 
         project_root = Path(context.project_root) if context.project_root else None

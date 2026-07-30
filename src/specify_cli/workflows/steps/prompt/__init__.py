@@ -202,12 +202,11 @@ class PromptStep(StepBase):
 
         exec_args = impl.build_exec_args(prompt, model=model, output_json=False)
 
-        # Check if the CLI tool is actually installed.
-        # Try the integration key first (covers most agents), then fall back
-        # to exec_args[0] for agents whose executable differs.
-        cli_path = shutil.which(impl.key)
-        fallback_cli_path = shutil.which(exec_args[0]) if exec_args else None
-        if cli_path is None and fallback_cli_path is None:
+        # Check if the CLI tool is actually installed. Delegate to the
+        # integration's own detection contract (see issue #2558) so
+        # overrides such as Claude's non-PATH local installs or Kiro's
+        # legacy binary name are honored here too.
+        if not impl.is_cli_available():
             return None
 
         # Prompt dispatch executes exec_args directly; require a non-empty argv.
@@ -219,11 +218,18 @@ class PromptStep(StepBase):
         # as ``claude.cmd`` (the usual npm shim layout) fails with
         # ``WinError 2``. That OSError is swallowed below and reported as "CLI
         # not found or not installed" -- even though the preflight above just
-        # found it. Reuse the already-resolved path so the shim is executed,
-        # mirroring ``IntegrationBase.dispatch_command``, which the ``command``
-        # step already goes through. On POSIX this is the same executable.
-        if fallback_cli_path:
-            exec_args = [fallback_cli_path, *exec_args[1:]]
+        # found it. Resolve argv[0] here so the shim is executed, mirroring
+        # ``IntegrationBase.dispatch_command``, which the ``command`` step
+        # already goes through. On POSIX this is the same executable.
+        #
+        # This resolution is deliberately separate from the availability
+        # preflight above: detection is the integration's contract
+        # (``is_cli_available()``), while this only rewrites argv[0] for
+        # execution and is skipped when the name is not on ``PATH`` (e.g. an
+        # integration detected via a non-``PATH`` local install).
+        resolved_executable = shutil.which(exec_args[0])
+        if resolved_executable:
+            exec_args = [resolved_executable, *exec_args[1:]]
 
         import subprocess
 
