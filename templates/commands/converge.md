@@ -185,17 +185,39 @@ Before appending anything, output a compact, severity-graded summary (no file wr
 |----|----------|----------|--------|----------|----------------|
 | F1 | missing  | HIGH     | FR-008 | Example: no append-only guard detected in path/to/module.py when writing tasks.md | Add append-only enforcement |
 
-**Summary metrics:**
+**Summary metrics** (all denominators derived from the inventory built in Step 3, not from model memory):
 
-- Requirements / acceptance criteria checked
-- Plan decisions checked
-- Constitution principles checked (or "skipped — template")
+- Functional Requirements (FR-###): `<checked>/<total>` checked
+- Success Criteria (SC-###): `<checked>/<total>` checked
+- User-story acceptance scenarios (US#/AC#): `<checked>/<total>` checked
+- Plan decisions: `<checked>/<total>` checked
+- Constitution principles: `<checked>/<total>` checked (or "skipped — template")
 - Findings by gap type (missing / partial / contradicts / unrequested)
 - Findings by severity
 
-### 7. Append Convergence Tasks (or report converged)
+**Coverage ledger** (one row per inventory key — include every key from Step 3):
 
-**If there are one or more actionable findings** (`tasks_appended` outcome):
+| Key | Status | Finding |
+|-----|--------|---------|
+| FR-001 | ✅ satisfied | — |
+| SC-002 | ⚠️ gap | → F1 |
+| US1/AC2 | — unassessed | — |
+
+Status values: `✅ satisfied`, `⚠️ gap → Finding Fxx`, `— unassessed`.
+
+> **Fail-closed rule**: if any inventory key carries `— unassessed` status, the command
+> MUST use the `incomplete_assessment` outcome (Step 7) and MUST NOT emit `converged` or
+> append tasks.
+
+### 7. Append Convergence Tasks (or report incomplete / converged)
+
+**If any inventory key is unassessed** (`incomplete_assessment` outcome):
+
+- Do **not** modify `tasks.md` at all.
+- Report: **"⚠️ Incomplete assessment — N inventory key(s) were not assessed. Re-run `/speckit.converge` after addressing the coverage gaps, or verify that the spec artifacts contain all required identifiers."**
+- List the unassessed keys by category so the operator knows exactly what was skipped.
+
+**If there are one or more actionable findings and all inventory keys are assessed** (`tasks_appended` outcome):
 
 Append to the **end** of `tasks.md`, per the append contract:
 
@@ -219,14 +241,17 @@ Append to the **end** of `tasks.md`, per the append contract:
 4. Never reuse or renumber existing IDs. If a prior Convergence phase exists, add a new,
    separately-numbered one below it — do not touch the old one.
 
-**If there are no actionable findings** (`converged` outcome):
+**If there are no actionable findings and all inventory keys are assessed** (`converged` outcome):
 
 - Do **not** modify `tasks.md` at all — no empty phase header.
 - Report: **"✅ Converged — the implementation satisfies the spec, plan, and tasks."**
-- Include the summary counts of what was checked.
+- Include the per-category `checked/total` summary counts.
 
 ### 8. Provide Next Actions (Handoff)
 
+- On `incomplete_assessment`: explain that N key(s) were not assessed (list them), and
+  instruct the operator to re-run `/speckit.converge` after ensuring the agent reads all
+  relevant source files or after resolving any ambiguities in the spec artifacts.
 - On `tasks_appended`: state how many tasks were appended under which phase, and recommend
   running `__SPECKIT_COMMAND_IMPLEMENT__` to complete them; note that a follow-up converge
   run will find fewer or no remaining items.
@@ -243,7 +268,7 @@ After producing the result, check if `.specify/extensions.yml` exists in the pro
 - For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:
   - If the hook has no `condition` field, or it is null/empty, treat the hook as executable
   - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
-- Report the convergence outcome (`converged` or `tasks_appended`) in-session before listing
+- Report the convergence outcome (`converged`, `tasks_appended`, or `incomplete_assessment`) in-session before listing
   any hooks, so users can decide whether to run optional follow-up commands.
 - For each executable hook, output the following based on its `optional` flag:
   - **Optional hook** (`optional: true`):
