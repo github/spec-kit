@@ -12520,14 +12520,23 @@ class TestConstitutionSyncPreset:
 
     def test_wrapper_uses_core_template_and_propagates(self):
         text = (self.PRESET_DIR / "commands" / "speckit.constitution.md").read_text()
-        assert "strategy: wrap" in text
-        assert "{CORE_TEMPLATE}" in text
+
+        # Parse the Markdown frontmatter as YAML rather than substring-matching,
+        # so `strategy: wrap` is asserted structurally (not as text that could
+        # appear in the body) and {CORE_TEMPLATE} is asserted in the body only.
+        assert text.startswith("---\n")
+        _, frontmatter_block, body = text.split("---", 2)
+        frontmatter = yaml.safe_load(frontmatter_block)
+        assert frontmatter["strategy"] == "wrap"
+
+        assert "{CORE_TEMPLATE}" in body
+        assert "strategy: wrap" not in body  # only in frontmatter
         # The three governed scaffolds the old checklist propagated into.
-        assert "plan-template.md" in text
-        assert "spec-template.md" in text
-        assert "tasks-template.md" in text
+        assert "plan-template.md" in body
+        assert "spec-template.md" in body
+        assert "tasks-template.md" in body
         # Must not mutate versioned preset/extension artifacts.
-        assert "Do not edit versioned preset- or extension-provided template files" in text
+        assert "Do not edit versioned preset- or extension-provided template files" in body
 
     def test_catalog_lists_bundled_preset(self):
         manifest = yaml.safe_load((self.PRESET_DIR / "preset.yml").read_text())
