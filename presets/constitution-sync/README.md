@@ -1,16 +1,30 @@
 # Constitution Template Sync
 
-An **opt-in** preset that makes `/constitution` propagate amended guidance into your project's own
-templates and command files. After you update the constitution, it aligns
+An **opt-in** preset that restores `/constitution`'s ability to propagate amended guidance into your
+project's own templates and command files. After you update the constitution, it aligns
 `plan-template.md`, `spec-template.md`, `tasks-template.md`, project-local command files, and
 guidance docs so they reflect the current principles.
 
-The current version of Spec Kit does **not** do this by default. Its default model is
-**runtime resolution**: `plan`, `tasks`, and `analyze` read `.specify/memory/constitution.md` live
-on every run, so templates carry a pointer (`[Gates determined based on constitution file]`) rather
-than a frozen copy. Add this preset only if you specifically want the guidance materialized into
-reviewed, committed artifacts — and read the [caveats](#caveats-you-take-on) first, because
-propagation and the preset composition stack pull in opposite directions.
+This propagation used to be built into `/constitution`; it was dropped when the command moved to the
+preset model. Installing this preset opts you back into it: you get the guidance materialized into
+reviewed, committed artifacts instead of relying on runtime resolution alone.
+
+> **What you're opting into.** Propagation was removed deliberately — it duplicates the constitution
+> as the source of truth and can fight the composition stack (materialized edits get shadowed or
+> clobbered on the next recompose). This preset knowingly **reintroduces** that behavior, and those
+> tradeoffs, for teams that want it. Read the [caveats](#caveats-you-take-on) before installing.
+
+For most projects the default composable stack is the **recommended** approach, and at organization
+scale it is usually the stronger governance model. Runtime resolution keeps the live constitution as
+the single source of truth (nothing to re-sync, so nothing drifts), and the stack composes the
+**entire** Spec Kit ecosystem — not just the SDD commands, but every command, template, script and
+extension — with explicit priority levels, strategies, and independent versioning. It is a
+capability, not automatic governance: a core team authors its own organizational presets and
+extensions, then owns, versions, and audits that policy in one place and rolls it across many
+repositories, instead of scattering frozen, per-repo copies no central team can see. This preset is
+a supported escape hatch for teams whose workflow depends on reviewing materialized artifacts
+directly — useful as a bridge, though for org-wide policy the better long-term path is usually a
+versioned preset a core team maintains.
 
 ## What it does
 
@@ -19,7 +33,7 @@ current core command (via `{CORE_TEMPLATE}`), so it stays forward-compatible wit
 appends a propagation pass that, after the constitution is written:
 
 - Aligns `plan/spec/tasks-template.md` in `.specify/templates/` with the updated principles.
-- Updates **project-local** command files and guidance docs for stale references.
+- Updates **project-local** command files and guidance docs to correct stale references.
 - Extends the Sync Impact Report in `.specify/memory/constitution.md` with the files it touched.
 
 ## What it does not do
@@ -27,7 +41,7 @@ appends a propagation pass that, after the constitution is written:
 - It does **not** change behavior for anyone who does not install it — the default runtime
   resolution model is untouched.
 - It does **not** disable runtime resolution. `plan`, `tasks`, and `analyze` still read the live
-  constitution every run; this preset adds materialized copies on top, it does not replace the
+  constitution every run; this preset adds materialized copies on top — it does not replace the
   source of truth.
 - It does **not** edit versioned, package-owned files — templates or command files provided or
   wrapped by another preset or extension. Those are recomposed from the resolution stack, so it
