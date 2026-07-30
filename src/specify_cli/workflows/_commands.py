@@ -2254,12 +2254,14 @@ def _install_workflow_from_catalog(
                 prefix="speckit-workflow-archive-"
             ) as extract_dir:
                 extracted_root = Path(extract_dir)
-                safe_extract_archive(
-                    staged_file.path,
-                    extracted_root,
-                    source_name=original_workflow_url,
-                    content_type=archive_content_type,
-                )
+                with os.fdopen(os.dup(staged_file.fd), "rb") as archive_file:
+                    safe_extract_archive(
+                        staged_file.path,
+                        extracted_root,
+                        archive_file=archive_file,
+                        source_name=original_workflow_url,
+                        content_type=archive_content_type,
+                    )
                 package_root = _workflow_package_root(extracted_root)
                 _safe_discard_staged_workflow_file(
                     staged_file,
