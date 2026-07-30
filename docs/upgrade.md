@@ -208,10 +208,10 @@ Restart your IDE to refresh the command list.
 
 ---
 
-## Behavior change: `/constitution` no longer propagates into templates (0.14.4)
+## Behavior change: `/constitution` no longer propagates into templates
 
-Starting in **0.14.4** ([#3790](https://github.com/github/spec-kit/pull/3790)), the
-`/constitution` command is scoped to its own artifact. It updates
+The `/constitution` command ([#3790](https://github.com/github/spec-kit/pull/3790)) is scoped to
+its own artifact. It updates
 `.specify/memory/constitution.md` and writes a Sync Impact Report, and **no longer edits**
 `plan-template.md`, `spec-template.md`, `tasks-template.md`, installed command files, or
 guidance docs.
