@@ -76,8 +76,10 @@ class CatalogStackBase:
             hostname = parsed.hostname
             # Accessing ``port`` performs urllib's syntax/range validation;
             # ``hostname`` alone does not, so a non-numeric or out-of-range
-            # port would otherwise pass validation here and escape as a raw
-            # http.client.InvalidURL at fetch time.
+            # port would otherwise pass validation here and only fail later,
+            # at fetch time, as an error this module does not translate --
+            # a raw http.client.InvalidURL for a non-numeric port, and a
+            # socket-layer failure for one that is merely out of range.
             _ = parsed.port
         except ValueError:
             raise cls._error(f"Catalog URL is malformed: {url}") from None
