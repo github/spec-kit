@@ -2,6 +2,34 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.15.0] - 2026-07-30
+
+### Changed
+
+- Add yolo to community workflow catalog (#3864)
+- fix(workflows): guard the shell step's timeout check against OverflowError (#3865)
+- Add Intent Reconciliation extension to community catalog (#3858)
+- fix(workflows): validate prompt step 'timeout' like the shell step (#3847)
+- fix: add utf-8 encoding to registry file open calls (#3816)
+- fix: eliminate TOCTOU race in file unlink calls (#3815)
+- test(workflows): name the condition-rejection tests for the real boundary (#3808)
+- fix: eliminate TOCTOU race in file unlink calls (#3811)
+- fix(presets): escape user-supplied catalog name/URL in add/remove output (#3806)
+- fix: add missing utf-8 encoding to registry file open calls (#3810)
+- [bug-fix] Fix upgrade-overwrites-copilot-skills: pass force=True to extension skill re-registration after upgrade (#3853)
+- fix(integrations): don't abort uninstall when the manifest can't be deleted (#3805)
+- test(extensions): update stale manifest validation message assertion (#3859)
+- fix(agents): coerce a non-string description in TOML command rendering (#3799)
+- fix(workflows): make security requirements sync deterministic (#3832)
+- fix(cli): render the literal [suffix] in --tag help and rejection message (#3800)
+- fix(integrations): preserve non-UTF-8 VS Code settings (#3833)
+- fix(bundler): treat an explicit-null manifest field as missing, not the text "None" (#3798)
+- feat: first-class agent-native runtime hooks for integrations (#3704)
+- fix(extensions): guard the required manifest sections so one bad extension cannot break `extension list` (#3797)
+- fix(presets): escape installed preset metadata in Rich output (#3826)
+- fix(workflows): dispatch prompt steps via the resolved executable (#3793)
+- chore: release 0.14.4, begin 0.14.5.dev0 development (#3850)
+
 ## [0.14.4] - 2026-07-29
 
 ### Changed
