@@ -27,14 +27,16 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from .._invocation_style import get_invocation_prefix, is_dollar_skills_agent
 from .._toml_string import escape_toml_basic as _escape_toml_basic
 from .._toml_string import has_illegal_toml_control as _has_illegal_toml_control
+from ..events import install_integration_events, remove_integration_events
 
 if TYPE_CHECKING:
     from .manifest import IntegrationManifest
 
 _HOOK_COMMAND_NOTE = (
-    "- When constructing slash commands from hook command names, "
+    "- When constructing command invocations from hook command names, "
     "replace dots (`.`) with hyphens (`-`). "
     "For example, `speckit.git.commit` → `/speckit-git-commit`.\n"
 )
@@ -158,7 +160,17 @@ class IntegrationBase(ABC):
     @classmethod
     def options(cls) -> list[IntegrationOption]:
         """Return options this integration accepts. Default: none."""
-        return []
+        opts = []
+        if bool(getattr(cls, "CANONICAL_TO_NATIVE", None) and getattr(cls, "events_config_file", None)):
+            opts.append(
+                IntegrationOption(
+                    "--events",
+                    is_flag=False,
+                    default="true",
+                    help="Enable/disable runtime events (true|false, default: true)",
+                )
+            )
+        return opts
 
     def effective_invoke_separator(
         self,
@@ -479,7 +491,11 @@ class IntegrationBase(ABC):
         tracking) would otherwise be deleted even though they are still
         managed.  Subclasses list such paths here to protect them.
         """
-        return set()
+        exclusions = set()
+        if self.supports_events():
+            from ..events import events_stale_exclusions
+            exclusions.update(events_stale_exclusions(self.key))
+        return exclusions
 
     def commands_dest(self, project_root: Path) -> Path:
         """Return the absolute path to the commands output directory.
@@ -601,7 +617,9 @@ class IntegrationBase(ABC):
         return created
 
     @staticmethod
-    def resolve_command_refs(content: str, separator: str = ".") -> str:
+    def resolve_command_refs(
+        content: str, separator: str = ".", prefix: str = "/"
+    ) -> str:
         """Replace ``__SPECKIT_COMMAND_<NAME>__`` placeholders with invocations.
 
         Each placeholder encodes a command name in upper-case with
@@ -611,10 +629,16 @@ class IntegrationBase(ABC):
 
         * ``separator="."`` → ``/speckit.plan``, ``/speckit.git.commit``
         * ``separator="-"`` → ``/speckit-plan``, ``/speckit-git-commit``
+
+        *prefix* defaults to ``"/"`` but may be ``"$"`` for agents whose
+        native skills invocation uses dollar-prefixed chat commands.
         """
         return re.sub(
             r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_]*)__",
-            lambda m: "/speckit" + separator + m.group(1).lower().replace("_", separator),
+            lambda m: prefix
+            + "speckit"
+            + separator
+            + m.group(1).lower().replace("_", separator),
             content,
         )
 
@@ -838,7 +862,12 @@ class IntegrationBase(ABC):
         content = CommandRegistrar.rewrite_project_relative_paths(content)
 
         # 8. Replace __SPECKIT_COMMAND_<NAME>__ with invocation strings
-        content = IntegrationBase.resolve_command_refs(content, invoke_separator)
+        invocation_prefix = get_invocation_prefix(
+            agent_name, invoke_separator == "-"
+        )
+        content = IntegrationBase.resolve_command_refs(
+            content, invoke_separator, invocation_prefix
+        )
 
         return content
 
@@ -902,7 +931,31 @@ class IntegrationBase(ABC):
 
         Returns ``(removed, skipped)`` file lists.
         """
+        self.remove_events(project_root, manifest)
         return manifest.uninstall(project_root, force=force)
+
+    def emit_events(
+        self,
+        project_root: Path,
+        manifest: IntegrationManifest,
+        events: dict[str, dict[str, Any]] | None = None,
+        parsed_options: dict[str, Any] | None = None,
+        **opts: Any,
+    ) -> list[Path]:
+        """Emit native event configuration for this integration."""
+        return install_integration_events(self, project_root, manifest, events or {})
+
+    def remove_events(
+        self,
+        project_root: Path,
+        manifest: IntegrationManifest,
+    ) -> None:
+        """Remove Specify-authored event entries from native config."""
+        remove_integration_events(self, project_root, manifest)
+
+    def supports_events(self) -> bool:
+        """Return True if this integration supports agent-native events."""
+        return bool(getattr(self, "CANONICAL_TO_NATIVE", None) and getattr(self, "events_config_file", None))
 
     # -- Convenience helpers for subclasses -------------------------------
 
@@ -1007,6 +1060,12 @@ class MarkdownIntegration(IntegrationBase):
             )
             created.append(dst_file)
 
+
+        # Install agent runtime events
+        event_files = self.emit_events(
+            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options
+        )
+        created.extend(event_files)
 
         return created
 
@@ -1214,6 +1273,12 @@ class TomlIntegration(IntegrationBase):
             )
             created.append(dst_file)
 
+
+        # Install agent runtime events
+        event_files = self.emit_events(
+            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options
+        )
+        created.extend(event_files)
 
         return created
 
@@ -1451,6 +1516,12 @@ class YamlIntegration(IntegrationBase):
             created.append(dst_file)
 
 
+        # Install agent runtime events
+        event_files = self.emit_events(
+            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options
+        )
+        created.extend(event_files)
+
         return created
 
 
@@ -1520,18 +1591,21 @@ class SkillsIntegration(IntegrationBase):
         return project_root / folder / subdir
 
     def build_command_invocation(self, command_name: str, args: str = "") -> str:
-        """Skills use ``/speckit-<stem>`` (hyphenated directory name)."""
+        """Build the agent's native invocation for a hyphenated skill name."""
         stem = command_name
         if stem.startswith("speckit."):
             stem = stem[len("speckit."):]
 
-        invocation = "/speckit-" + stem.replace(".", "-")
+        prefix = "$" if is_dollar_skills_agent(self.key, True) else "/"
+        invocation = prefix + "speckit-" + stem.replace(".", "-")
         if args:
             invocation = f"{invocation} {args}"
         return invocation
 
     @staticmethod
-    def _inject_hook_command_note(content: str) -> str:
+    def _inject_hook_command_note(
+        content: str, invocation_prefix: str = "/"
+    ) -> str:
         """Insert a dot-to-hyphen note before each hook output instruction.
 
         Targets the line ``- For each executable hook, output the following``
@@ -1540,6 +1614,11 @@ class SkillsIntegration(IntegrationBase):
         above them.
         """
         note = _HOOK_COMMAND_NOTE.rstrip("\n")
+        if invocation_prefix != "/":
+            note = note.replace(
+                "`/speckit-git-commit`",
+                f"`{invocation_prefix}speckit-git-commit`",
+            )
 
         def repl(m: re.Match[str]) -> str:
             indent = m.group(1)
@@ -1573,10 +1652,13 @@ class SkillsIntegration(IntegrationBase):
         Called by external skill generators (presets, extensions) to let
         the integration inject agent-specific frontmatter or body
         transformations.  The base implementation injects shared skills
-        guidance for converting dotted hook command names to hyphenated
-        slash commands.  Subclasses may override — see ``ClaudeIntegration``.
+        guidance for converting dotted hook command names to the agent-native
+        hyphenated command invocation (e.g. ``/speckit-git-commit`` or
+        ``$speckit-git-commit``).  Subclasses may override -- see
+        ``ClaudeIntegration``.
         """
-        return self._inject_hook_command_note(content)
+        invocation_prefix = get_invocation_prefix(self.key, True)
+        return self._inject_hook_command_note(content, invocation_prefix)
 
     def setup(
         self,
@@ -1627,13 +1709,27 @@ class SkillsIntegration(IntegrationBase):
             command_name = src_file.stem  # e.g. "plan"
             skill_name = f"speckit-{command_name.replace('.', '-')}"
 
-            # Parse frontmatter for description
+            # Parse frontmatter for description. Locate the closing ``---`` on
+            # its own line rather than with ``raw.split("---", 2)`` — a bare
+            # substring split stops at the first ``---`` *anywhere*, including
+            # one inside a value such as ``description: Separate sections
+            # with ---``, which truncates the frontmatter and drops later keys.
+            # The block between the delimiters is parsed unstripped so trailing
+            # newlines in literal (``|``) block scalars survive.
             frontmatter: dict[str, Any] = {}
             if raw.startswith("---"):
-                parts = raw.split("---", 2)
-                if len(parts) >= 3:
+                fm_lines = raw.splitlines(keepends=True)
+                fm_close = next(
+                    (
+                        i
+                        for i in range(1, len(fm_lines))
+                        if fm_lines[i].rstrip() == "---"
+                    ),
+                    None,
+                )
+                if fm_close is not None:
                     try:
-                        fm = yaml.safe_load(parts[1])
+                        fm = yaml.safe_load("".join(fm_lines[1:fm_close]))
                         if isinstance(fm, dict):
                             frontmatter = fm
                     except yaml.YAMLError:
@@ -1648,11 +1744,27 @@ class SkillsIntegration(IntegrationBase):
             # Strip the processed frontmatter — we rebuild it for skills.
             # Preserve leading whitespace in the body to match release ZIP
             # output byte-for-byte (the template body starts with \n after
-            # the closing ---).
+            # the closing ---). Scan for the closing ``---`` on its own line
+            # rather than ``split("---", 2)`` so a ``---`` embedded in a value
+            # does not truncate the frontmatter and spill it into the body.
             if processed_body.startswith("---"):
-                parts = processed_body.split("---", 2)
-                if len(parts) >= 3:
-                    processed_body = parts[2]
+                body_lines = processed_body.splitlines(keepends=True)
+                close_idx = next(
+                    (
+                        i
+                        for i in range(1, len(body_lines))
+                        if body_lines[i].rstrip() == "---"
+                    ),
+                    None,
+                )
+                if close_idx is not None:
+                    # Keep whatever trails the ``---`` marker on the closing
+                    # line (normally just the newline) so the body stays
+                    # byte-for-byte identical to ``split("---", 2)[2]``. The
+                    # line-anchored check guarantees ``---`` sits at index 0.
+                    processed_body = body_lines[close_idx][3:] + "".join(
+                        body_lines[close_idx + 1 :]
+                    )
 
             # Select description — use the original template description
             # to stay byte-for-byte identical with release ZIP output.
@@ -1685,5 +1797,11 @@ class SkillsIntegration(IntegrationBase):
             )
             created.append(dst)
 
+
+        # Install agent runtime events
+        event_files = self.emit_events(
+            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options
+        )
+        created.extend(event_files)
 
         return created

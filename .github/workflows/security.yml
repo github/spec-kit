@@ -34,7 +34,7 @@ jobs:
       - name: Check committed audit requirements are current
         env:
           DEPENDENCY_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
-          DEPENDENCY_DIFF_HEAD: ${{ github.sha }}
+          DEPENDENCY_DIFF_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
           GENERATED_REQUIREMENTS: ${{ runner.temp }}/security-audit-requirements.txt
         run: python .github/scripts/check_security_requirements.py
 

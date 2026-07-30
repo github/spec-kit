@@ -1,14 +1,14 @@
-"""Claude Code integration."""
+"""Alquimia AI integration."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from ..base import SkillsIntegration
 from ..._utils import dump_frontmatter
+from ..base import SkillsIntegration
 
 # Mapping of command template stem → argument-hint text shown inline
-# when a user invokes the slash command in Claude Code.
+# when a user invokes the slash command in Alquimia AI.
 ARGUMENT_HINTS: dict[str, str] = {
     "specify": "Describe the feature you want to specify",
     "plan": "Optional guidance for the planning phase",
@@ -21,49 +21,47 @@ ARGUMENT_HINTS: dict[str, str] = {
     "taskstoissues": "Optional filter or label for GitHub issues",
 }
 
-# Per-command frontmatter overrides for skills that should run in a forked
-# subagent context. See https://code.claude.com/docs/en/skills#run-skills-in-a-subagent
-#
-# This is intentionally empty. ``analyze`` was previously forked (added in
-# #2511) on the assumption that its heavy reads collapse to a short summary,
-# but in practice ``/speckit-analyze`` returns a 300-500 line report that is
-# injected back into the main conversation. In long sessions each subsequent
-# fork inherits that growing context, compounding overhead until the chat
-# freezes (#3185). Until a command genuinely returns a compact result, no
-# command opts into ``context: fork``. The injection mechanism below stays in
-# place so a future command can be added here when that holds true.
-FORK_CONTEXT_COMMANDS: dict[str, dict[str, str]] = {}
 
+class AlquimiaAIIntegration(SkillsIntegration):
+    """Integration for Alquimia AI skills."""
 
-class ClaudeIntegration(SkillsIntegration):
-    """Integration for Claude Code skills."""
-
-    key = "claude"
+    key = "alquimia"
     config = {
-        "name": "Claude Code",
-        "folder": ".claude/",
+        "name": "Alquimia AI",
+        "folder": ".alquimia/",
         "commands_subdir": "skills",
-        "install_url": "https://docs.anthropic.com/en/docs/claude-code/setup",
+        "install_url": "https://docs.alquimia.ai",
         "requires_cli": True,
     }
     registrar_config = {
-        "dir": ".claude/skills",
+        "dir": ".alquimia/skills",
         "format": "markdown",
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
     multi_install_safe = True
 
-    CANONICAL_TO_NATIVE = {
-        "session_start": "SessionStart",
-        "pre_tool_use": "PreToolUse",
-        "post_tool_use": "PostToolUse",
-        "session_end": "SessionEnd",
-        "user_prompt_submit": "UserPromptSubmit",
-        "stop": "Stop",
-    }
-    events_config_file = ".claude/settings.json"
-    events_format = "json-nested"
+    def _render_skill(
+        self, template_name: str, frontmatter: dict[str, Any], body: str
+    ) -> str:
+        """Render a processed command template as an Alquimia skill."""
+        skill_name = f"speckit-{template_name.replace('.', '-')}"
+        description = frontmatter.get(
+            "description",
+            f"Spec-kit workflow command: {template_name}",
+        )
+        skill_frontmatter = self._build_skill_fm(
+            skill_name, description, f"templates/commands/{template_name}.md"
+        )
+        frontmatter_text = dump_frontmatter(skill_frontmatter)
+        return f"---\n{frontmatter_text}\n---\n\n{body.strip()}\n"
+
+    def _build_skill_fm(self, name: str, description: str, source: str) -> dict:
+        from specify_cli.agents import CommandRegistrar
+
+        return CommandRegistrar.build_skill_frontmatter(
+            self.key, name, description, source
+        )
 
     @staticmethod
     def inject_argument_hint(content: str, hint: str) -> str:
@@ -113,25 +111,6 @@ class ClaudeIntegration(SkillsIntegration):
             out.append(line)
         return "".join(out)
 
-    def _render_skill(self, template_name: str, frontmatter: dict[str, Any], body: str) -> str:
-        """Render a processed command template as a Claude skill."""
-        skill_name = f"speckit-{template_name.replace('.', '-')}"
-        description = frontmatter.get(
-            "description",
-            f"Spec-kit workflow command: {template_name}",
-        )
-        skill_frontmatter = self._build_skill_fm(
-            skill_name, description, f"templates/commands/{template_name}.md"
-        )
-        frontmatter_text = dump_frontmatter(skill_frontmatter)
-        return f"---\n{frontmatter_text}\n---\n\n{body.strip()}\n"
-
-    def _build_skill_fm(self, name: str, description: str, source: str) -> dict:
-        from specify_cli.agents import CommandRegistrar
-        return CommandRegistrar.build_skill_frontmatter(
-            self.key, name, description, source
-        )
-
     @staticmethod
     def _inject_frontmatter_flag(content: str, key: str, value: str = "true") -> str:
         """Insert ``key: value`` before the closing ``---`` if not already present."""
@@ -169,47 +148,18 @@ class ClaudeIntegration(SkillsIntegration):
             out.append(line)
         return "".join(out)
 
-    @staticmethod
-    def _skill_stem_from_content(content: str) -> str | None:
-        """Derive the command stem (e.g. ``analyze``) from a skill's frontmatter.
-
-        Reads the ``name:`` field of the first frontmatter block and strips
-        the ``speckit-`` prefix. Returns ``None`` when no name is present.
-        """
-        dash_count = 0
-        for line in content.splitlines():
-            stripped = line.rstrip("\r\n")
-            if stripped == "---":
-                dash_count += 1
-                if dash_count == 2:
-                    break
-                continue
-            if dash_count == 1 and stripped.startswith("name:"):
-                name = stripped[len("name:"):].strip().strip('"').strip("'")
-                if name.startswith("speckit-"):
-                    return name[len("speckit-"):]
-                return name or None
-        return None
-
     def post_process_skill_content(self, content: str) -> str:
-        """Inject Claude-specific frontmatter flags, hook notes, and any
-        per-command frontmatter.
-
-        Applied by every skill-generation path (setup, presets, extensions),
-        so command-specific frontmatter (argument-hint, fork context) stays
-        consistent however the SKILL.md was produced.
-        """
+        """Inject Alquimia-specific frontmatter flags, hints and hook notes."""
         updated = super().post_process_skill_content(content)
         updated = self._inject_frontmatter_flag(updated, "user-invocable")
-        updated = self._inject_frontmatter_flag(updated, "disable-model-invocation", "false")
-
-        stem = self._skill_stem_from_content(updated)
-        if stem:
-            hint = ARGUMENT_HINTS.get(stem, "")
-            if hint:
-                updated = self.inject_argument_hint(updated, hint)
-            fork_config = FORK_CONTEXT_COMMANDS.get(stem)
-            if fork_config:
-                for key, value in fork_config.items():
-                    updated = self._inject_frontmatter_flag(updated, key, value)
+        updated = self._inject_frontmatter_flag(
+            updated, "disable-model-invocation", "false"
+        )
+        for line in updated.splitlines():
+            if line.startswith("name:"):
+                name = line.removeprefix("name:").strip().strip("\"'")
+                hint = ARGUMENT_HINTS.get(name.removeprefix("speckit-"))
+                if hint:
+                    updated = self.inject_argument_hint(updated, hint)
+                break
         return updated

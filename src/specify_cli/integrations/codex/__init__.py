@@ -29,6 +29,17 @@ class CodexIntegration(SkillsIntegration):
     dev_no_symlink = True
     multi_install_safe = True
 
+    CANONICAL_TO_NATIVE = {
+        "session_start": "SessionStart",
+        "pre_tool_use": "PreToolUse",
+        "post_tool_use": "PostToolUse",
+        "session_end": "SessionEnd",
+        "user_prompt_submit": "UserPromptSubmit",
+        "stop": "Stop",
+    }
+    events_config_file = ".codex/config.toml"
+    events_format = "toml"
+
     def build_exec_args(
         self,
         prompt: str,
@@ -49,11 +60,13 @@ class CodexIntegration(SkillsIntegration):
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
-        return [
+        opts = super().options()
+        opts.append(
             IntegrationOption(
                 "--skills",
                 is_flag=True,
                 default=True,
                 help="Install as agent skills (default for Codex)",
-            ),
-        ]
+            )
+        )
+        return opts

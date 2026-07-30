@@ -535,6 +535,57 @@ class TestAzureDevOpsAuth:
         with patch("specify_cli.authentication.azure_devops.subprocess.run", return_value=result):
             assert AzureDevOpsAuth().resolve_token(entry) is None
 
+    def test_resolve_token_azure_cli_resolves_executable(self):
+        """The az executable is resolved via shutil.which before invocation, so
+        the .cmd/.bat shim on Windows (CreateProcess ignores PATHEXT) is used."""
+        from unittest.mock import patch, MagicMock
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
+        )
+        # Build the absolute path with the HOST's rules: the production code
+        # calls os.path.isabs(), so a hardcoded Windows path would read as
+        # RELATIVE on POSIX runners and silently exercise the fallback branch
+        # instead of the one under test.
+        resolved_path = os.path.join(os.path.abspath(os.sep), "opt", "az", "az.CMD")
+        assert os.path.isabs(resolved_path)
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = '{"accessToken": "tok"}'
+        with patch(
+            "specify_cli.authentication.azure_devops.shutil.which",
+            return_value=resolved_path,
+        ), patch(
+            "specify_cli.authentication.azure_devops.subprocess.run",
+            return_value=result,
+        ) as run:
+            assert AzureDevOpsAuth().resolve_token(entry) == "tok"
+        argv = run.call_args.args[0]
+        assert argv[0] == resolved_path
+        assert argv[1:4] == ["account", "get-access-token", "--resource"]
+
+    @pytest.mark.parametrize("which_result", [None, r".\az.CMD", "az.cmd", "./az"])
+    def test_resolve_token_azure_cli_falls_back_to_bare_az(self, which_result):
+        """Fall back to the bare "az" when shutil.which finds nothing OR returns a
+        NON-ABSOLUTE path. On Windows shutil.which searches the current directory
+        first, so a stray .\\az.cmd must never be executed for a credential
+        operation; the bare name also preserves the not-installed OSError path."""
+        from unittest.mock import patch, MagicMock
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
+        )
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = '{"accessToken": "tok"}'
+        with patch(
+            "specify_cli.authentication.azure_devops.shutil.which",
+            return_value=which_result,
+        ), patch(
+            "specify_cli.authentication.azure_devops.subprocess.run",
+            return_value=result,
+        ) as run:
+            assert AzureDevOpsAuth().resolve_token(entry) == "tok"
+        assert run.call_args.args[0][0] == "az", which_result
+
     def test_resolve_token_azure_cli_not_installed_returns_none(self):
         """azure-cli returns None when az is not installed."""
         from unittest.mock import patch

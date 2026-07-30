@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import runpy
 
 import pytest
 import yaml
@@ -1180,6 +1181,23 @@ class TestSharedInfraCommandRefs:
         assert "__SPECKIT_COMMAND_" not in content
         assert "/speckit-tasks" in content
 
+    def test_dollar_prefix_in_page_templates(self, tmp_path):
+        """Dollar-style skills agents get $speckit-<name> in page templates."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "dollar-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        _install_shared_infra(
+            project, "sh", invoke_separator="-", invoke_prefix="$"
+        )
+
+        plan = project / ".specify" / "templates" / "plan-template.md"
+        content = plan.read_text(encoding="utf-8")
+        assert "$speckit-plan" in content
+        assert "/speckit-plan" not in content
+
     @pytest.mark.parametrize("script_type", ["sh", "ps"])
     def test_dot_separator_in_shared_scripts(self, tmp_path, script_type):
         """Markdown agents get /speckit.<name> in shared script hints."""
@@ -1219,6 +1237,48 @@ class TestSharedInfraCommandRefs:
         assert "/speckit.specify" not in content
         assert "/speckit.plan" not in content
         assert "/speckit.tasks" not in content
+
+    @pytest.mark.parametrize("script_type", ["sh", "ps", "py"])
+    def test_dollar_prefix_in_shared_scripts(self, tmp_path, script_type):
+        """Dollar-style skills agents get native prefixes in shared script hints."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / f"dollar-script-{script_type}"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        _install_shared_infra(
+            project, script_type, invoke_separator="-", invoke_prefix="$"
+        )
+
+        if script_type == "py":
+            state = {
+                "integration": "codex",
+                "integration_settings": {
+                    "codex": {"invoke_separator": "-"},
+                },
+            }
+            (project / ".specify" / "integration.json").write_text(
+                json.dumps(state), encoding="utf-8"
+            )
+            common = project / ".specify" / "scripts" / "python" / "common.py"
+            namespace = runpy.run_path(str(common))
+            assert namespace["format_speckit_command"]("plan", project) == (
+                "$speckit-plan"
+            )
+            return
+
+        content = self._combined_script_content(project, script_type)
+        assert "$speckit-specify" in content
+        assert "$speckit-plan" in content
+        assert "$speckit-tasks" in content
+        assert "/speckit-specify" not in content
+        assert "/speckit-plan" not in content
+        assert "/speckit-tasks" not in content
+        if script_type == "sh":
+            assert r"\$speckit-specify" in content
+            assert r"\$speckit-plan" in content
+            assert r"\$speckit-tasks" in content
 
     def test_full_init_claude_resolves_page_templates(self, tmp_path):
         """Full CLI init with Claude (skills agent) produces hyphen refs in page templates."""
@@ -1343,6 +1403,18 @@ class TestIntegrationCatalogDiscoveryCLI:
             "_install_allowed": True,
         },
     ]
+    MARKUP_INTEGRATION = {
+        "id": "[red]markup-id[/red]",
+        "name": "[green]Markup Name[/green]",
+        "version": "[blue]1.0.0[/blue]",
+        "description": "[yellow]Markup Description[/yellow]",
+        "author": "[magenta]Markup Author[/magenta]",
+        "license": "[cyan]Markup License[/cyan]",
+        "repository": "[bold]Markup Repository[/bold]",
+        "tags": ["[italic]markup-tag[/italic]"],
+        "_catalog_name": "[underline]markup-catalog[/underline]",
+        "_install_allowed": False,
+    }
 
     def _make_project(self, tmp_path):
         project = tmp_path / "proj"
@@ -1806,6 +1878,25 @@ class TestIntegrationCatalogDiscoveryCLI:
         # acme-coder is flagged _install_allowed=False, so we should warn
         assert "Not directly installable" in result.output
 
+    def test_search_escapes_catalog_markup(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch, integrations=[self.MARKUP_INTEGRATION])
+
+        result = self._invoke(["integration", "search"], project)
+
+        assert result.exit_code == 0, result.output
+        output = _normalize_cli_output(result.output)
+        for value in (
+            self.MARKUP_INTEGRATION["id"],
+            self.MARKUP_INTEGRATION["name"],
+            self.MARKUP_INTEGRATION["version"],
+            self.MARKUP_INTEGRATION["description"],
+            self.MARKUP_INTEGRATION["author"],
+            self.MARKUP_INTEGRATION["tags"][0],
+            self.MARKUP_INTEGRATION["_catalog_name"],
+        ):
+            assert value in output
+
     # -- info --------------------------------------------------------------
 
     def test_info_found(self, tmp_path, monkeypatch):
@@ -1828,6 +1919,19 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert result.exit_code == 1
         assert "not found" in result.output
 
+    def test_info_not_found_escapes_query_markup(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch)
+        integration_id = "[red]does-not-exist[/red]"
+
+        result = self._invoke(
+            ["integration", "info", integration_id],
+            project,
+        )
+
+        assert result.exit_code == 1
+        assert integration_id in _normalize_cli_output(result.output)
+
     def test_info_builtin_not_in_catalog(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)
         # Empty catalog, but copilot is a registered built-in.
@@ -1835,6 +1939,30 @@ class TestIntegrationCatalogDiscoveryCLI:
         result = self._invoke(["integration", "info", "copilot"], project)
         assert result.exit_code == 0, result.output
         assert "Built-in integration" in result.output
+
+    def test_info_escapes_catalog_markup(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch, integrations=[self.MARKUP_INTEGRATION])
+
+        result = self._invoke(
+            ["integration", "info", self.MARKUP_INTEGRATION["id"]],
+            project,
+        )
+
+        assert result.exit_code == 0, result.output
+        output = _normalize_cli_output(result.output)
+        for value in (
+            self.MARKUP_INTEGRATION["id"],
+            self.MARKUP_INTEGRATION["name"],
+            self.MARKUP_INTEGRATION["version"],
+            self.MARKUP_INTEGRATION["description"],
+            self.MARKUP_INTEGRATION["author"],
+            self.MARKUP_INTEGRATION["license"],
+            self.MARKUP_INTEGRATION["repository"],
+            self.MARKUP_INTEGRATION["tags"][0],
+            self.MARKUP_INTEGRATION["_catalog_name"],
+        ):
+            assert value in output
 
     # -- validation vs network guidance ------------------------------------
 

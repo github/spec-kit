@@ -58,7 +58,12 @@ def load_yaml(path: Path) -> Any:
         raise BundlerError(f"File not found: {path}")
     try:
         text = path.read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:
+        # A non-UTF-8 file raises UnicodeDecodeError, which is a ValueError --
+        # NOT an OSError -- so it escaped this module's "IO failures degrade
+        # into actionable BundlerError" contract as a raw traceback. Realistic
+        # on Windows, where PowerShell 5.1's `Out-File`/`>` default to UTF-16.
+        # Matches the sibling catalog readers (catalogs.py, workflows/catalog.py).
         raise BundlerError(f"Could not read {path}: {exc}") from exc
     try:
         has_node = yaml.compose(text) is not None
@@ -98,9 +103,15 @@ def load_json(path: Path) -> Any:
     try:
         with path.open("r", encoding="utf-8") as handle:
             return json.load(handle)
+    # JSONDecodeError stays FIRST: it and UnicodeDecodeError are sibling
+    # ValueError subclasses (neither subsumes the other), so malformed-but-
+    # decodable JSON keeps its more specific "Invalid JSON" message while a
+    # decode failure falls through to the read-error clause below.
     except json.JSONDecodeError as exc:
         raise BundlerError(f"Invalid JSON in {path}: {exc}") from exc
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:
+        # See load_yaml: a non-UTF-8 file raises UnicodeDecodeError, which is
+        # not an OSError, and previously escaped as a raw traceback.
         raise BundlerError(f"Could not read {path}: {exc}") from exc
 
 

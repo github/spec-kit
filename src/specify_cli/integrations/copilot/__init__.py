@@ -118,6 +118,19 @@ class CopilotIntegration(IntegrationBase):
         "extension": ".agent.md",
     }
 
+    CANONICAL_TO_NATIVE = {
+        "session_start": "sessionStart",
+        "pre_tool_use": "preToolUse",
+        "post_tool_use": "postToolUse",
+        "session_end": "sessionEnd",
+        "user_prompt_submit": "userPromptSubmitted",
+        # Copilot CLI supports the canonical per-turn stop lifecycle as native
+        # agentStop (U3); mapping it so an extension's stop handler fires.
+        "stop": "agentStop",
+    }
+    events_config_file = ".github/hooks/speckit.json"
+    events_format = "copilot-json"
+
     # Mutable flag set by setup() — indicates the active scaffolding mode.
     _skills_mode: bool = False
 
@@ -162,14 +175,19 @@ class CopilotIntegration(IntegrationBase):
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
-        return [
+        # Compose with super() so the base class declares --events for this
+        # event-capable integration; otherwise --integration-options
+        # "--events false" is rejected as unknown (#9).
+        opts = super().options()
+        opts.append(
             IntegrationOption(
                 "--skills",
                 is_flag=True,
                 default=False,
                 help="Scaffold commands as agent skills (speckit-<name>/SKILL.md) instead of .agent.md files",
             ),
-        ]
+        )
+        return opts
 
     def _resolve_executable(self) -> str:
         """Return the Copilot CLI executable, respecting the env-var override.
@@ -328,7 +346,9 @@ class CopilotIntegration(IntegrationBase):
         be flagged stale and deleted, destroying user settings (and the file
         the integration still manages).
         """
-        return {".vscode/settings.json"}
+        exclusions = super().stale_cleanup_exclusions()
+        exclusions.add(".vscode/settings.json")
+        return exclusions
 
     def post_process_skill_content(self, content: str) -> str:
         """Inject shared hook guidance into Copilot skill content.
@@ -355,10 +375,18 @@ class CopilotIntegration(IntegrationBase):
         parsed_options = parsed_options or {}
         self._skills_mode = bool(parsed_options.get("skills"))
         if self._skills_mode:
-            return self._setup_skills(project_root, manifest, parsed_options, **opts)
-        if "skills" not in parsed_options:
-            _warn_legacy_markdown_default()
-        return self._setup_default(project_root, manifest, parsed_options, **opts)
+            created = self._setup_skills(project_root, manifest, parsed_options, **opts)
+        else:
+            if "skills" not in parsed_options:
+                _warn_legacy_markdown_default()
+            created = self._setup_default(project_root, manifest, parsed_options, **opts)
+
+        # Install agent runtime events
+        event_files = self.emit_events(
+            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options
+        )
+        created.extend(event_files)
+        return created
 
     def _setup_default(
         self,
@@ -379,6 +407,10 @@ class CopilotIntegration(IntegrationBase):
         if not templates:
             return []
 
+        from ...presets import PresetResolver
+
+        preset_resolver = PresetResolver(project_root_resolved)
+
         dest = self.commands_dest(project_root)
         dest_resolved = dest.resolve()
         try:
@@ -396,7 +428,11 @@ class CopilotIntegration(IntegrationBase):
 
         # 1. Process and write command files as .agent.md
         for src_file in templates:
-            raw = src_file.read_text(encoding="utf-8")
+            resolved_template = preset_resolver.resolve(
+                f"speckit.{src_file.stem}", template_type="command"
+            )
+            source_path = resolved_template or src_file
+            raw = source_path.read_text(encoding="utf-8")
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
                 project_root=project_root,
@@ -489,7 +525,7 @@ class CopilotIntegration(IntegrationBase):
         """
         try:
             existing = json.loads(dst.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
             # Cannot parse existing file (likely JSONC with comments).
             # Skip merge to preserve the user's settings, but show
             # what they should add manually.

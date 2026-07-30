@@ -8,6 +8,7 @@ import typer
 from .._console import console
 from .._utils import _display_project_path
 from ..integration_runtime import (
+    invoke_prefix_for_integration as _invoke_prefix_for_integration,
     invoke_separator_for_integration as _invoke_separator_for_integration,
     with_integration_setting as _with_integration_setting,
 )
@@ -130,6 +131,9 @@ def integration_install(
             infra_integration, current, infra_key, infra_parsed,
             project_root=project_root,
         ),
+        invoke_prefix=_invoke_prefix_for_integration(
+            infra_integration, infra_key, infra_parsed, project_root
+        ),
     )
     if os.name != "nt":
         from .. import ensure_executable_scripts
@@ -139,12 +143,21 @@ def integration_install(
         integration.key, project_root, version=_get_speckit_version()
     )
 
+    from ..events import resolve_events
+    events_map = resolve_events(
+        integration.key,
+        integration.config,
+        project_root,
+        parsed_options,
+    )
+
     try:
         integration.setup(
             project_root, manifest,
             parsed_options=parsed_options,
             script_type=selected_script,
             raw_options=raw_options,
+            events=events_map,
         )
         manifest.save()
         new_installed = _dedupe_integration_keys([*installed_keys, integration.key])

@@ -29,12 +29,20 @@ def _dependency_diff_refs() -> tuple[str, str]:
 def _dependency_inputs_changed() -> bool:
     base_ref, head_ref = _dependency_diff_refs()
     try:
+        merge_base = subprocess.run(
+            ["git", "merge-base", base_ref, head_ref],
+            check=True,
+            cwd=REPO_ROOT,
+            stderr=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+        ).stdout.strip()
         result = subprocess.run(
             [
                 "git",
                 "diff",
                 "--name-only",
-                base_ref,
+                merge_base,
                 head_ref,
                 "--",
                 *DEPENDENCY_INPUTS,
@@ -77,6 +85,7 @@ def main() -> int:
 
     generated_requirements = Path(generated_requirements_env)
     generated_requirements.parent.mkdir(parents=True, exist_ok=True)
+    generated_requirements.write_bytes(COMMITTED_REQUIREMENTS.read_bytes())
 
     subprocess.run(
         [
@@ -87,7 +96,6 @@ def main() -> int:
             "--extra",
             "test",
             "--universal",
-            "--upgrade",
             "--generate-hashes",
             "--quiet",
             "--no-header",

@@ -38,6 +38,17 @@ class CursorAgentIntegration(SkillsIntegration):
 
     multi_install_safe = True
 
+    CANONICAL_TO_NATIVE = {
+        "session_start": "sessionStart",
+        "pre_tool_use": "preToolUse",
+        "post_tool_use": "postToolUse",
+        "session_end": "sessionEnd",
+        "user_prompt_submit": "beforeSubmitPrompt",
+        "stop": "stop",
+    }
+    events_config_file = ".cursor/hooks.json"
+    events_format = "json-flat"
+
     def build_exec_args(
         self,
         prompt: str,
@@ -92,11 +103,13 @@ class CursorAgentIntegration(SkillsIntegration):
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
-        return [
+        opts = super().options()
+        opts.append(
             IntegrationOption(
                 "--skills",
                 is_flag=True,
                 default=True,
                 help="Install as agent skills (recommended for Cursor)",
-            ),
-        ]
+            )
+        )
+        return opts

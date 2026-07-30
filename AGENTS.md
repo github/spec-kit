@@ -10,6 +10,20 @@ The toolkit supports multiple AI coding assistants, allowing teams to use their 
 
 ---
 
+## Quickstart — Add a New Integration in 5 Steps
+
+If you are new to the codebase and want to add support for a new AI agent, here is the shortest path from zero to a working integration:
+
+1. **Choose a base class** — most agents only need `MarkdownIntegration`. See [Choose a base class](#1-choose-a-base-class).
+2. **Create a subpackage** — add `src/specify_cli/integrations/<package_dir>/__init__.py` with the required `key`, `config`, and `registrar_config` fields.
+3. **Register it** — add one import and one `_register()` call in `src/specify_cli/integrations/__init__.py` (both alphabetical).
+4. **Write a test file** — create `tests/integrations/test_integration_<key>.py` (hyphens in the key become underscores in the filename).
+5. **Run and verify** — use `specify init --integration <key>` to exercise the full install/uninstall cycle.
+
+Each step is expanded under [Adding a New Integration](#adding-a-new-integration). Note that agent **context files** (`CLAUDE.md`, `AGENTS.md`, …) are **not** handled by the integration — that is owned by the opt-in `agent-context` extension; see [Context file behavior](#4-context-file-behavior).
+
+---
+
 ## Integration Architecture
 
 Each AI agent is a self-contained **integration subpackage** under `src/specify_cli/integrations/<key>/`. The subpackage exposes a single class that declares all metadata and inherits setup/teardown logic from a base class. Built-in integrations are then instantiated and added to the global `INTEGRATION_REGISTRY` by `src/specify_cli/integrations/__init__.py` via `_register_builtins()`.
@@ -31,6 +45,30 @@ src/specify_cli/integrations/
 ```
 
 The registry is the **single source of truth for Python integration metadata**. Supported agents, their directories, formats, capabilities, and context files are derived from the integration classes for the Python integration layer.
+
+---
+
+## IntegrationManifest — File Tracking
+
+`manifest.py` provides the `IntegrationManifest` class, which records every file an integration installs. This record is what makes uninstall reliable and safe.
+
+### How it works
+
+`setup()` receives an `IntegrationManifest` and writes files through it rather than touching the filesystem directly:
+
+```python
+# Produce a new file and record its hash for later verification.
+manifest.record_file("commands/speckit.plan.md", processed_content)
+
+# Adopt a pre-existing file the integration is now responsible for.
+manifest.record_existing(".vscode/settings.json")
+```
+
+The manifest is persisted at `.specify/integrations/<key>.manifest.json` (one per integration, keyed by `key`) and stores a SHA-256 hash per file. When the user runs `specify integration uninstall <key>`, `teardown()` delegates to `manifest.uninstall()`, which removes only files whose current hash still matches the recorded value — so files the user later edited by hand are skipped, not clobbered (use `specify integration uninstall <key> --force` to remove modified tracked files anyway).
+
+### Why this matters
+
+Without hash-tracked manifests, uninstall would either remove files it should not (destructive) or leave orphans behind (messy). If you write a custom `setup()`, route **every** file you create through `manifest.record_file(...)` (or `record_existing(...)` for files you adopt) so uninstall can reason about them.
 
 ---
 
@@ -508,6 +546,56 @@ Disclosure is **continuous**, not a one-time event. A single AI-disclosure parag
 4. **Wrong argument format**: Use `$ARGUMENTS` for Markdown agents, `{{args}}` for TOML agents.
 5. **Skipping registration**: The import and `_register()` call in `_register_builtins()` must both be added.
 6. **Running tests against the wrong environment**: Always run the suite inside this working tree's own virtualenv (`uv sync --extra test` then `.venv/bin/python -m pytest`, or activate the venv first). A bare `uv run pytest` can resolve to an ambient/global interpreter whose editable `.pth` points at a *different* worktree. The failure is sneaky: test collection still imports `specify_cli` successfully, but newly-added subpackages (e.g. a fresh `specify_cli/bundler/`) resolve as a stale namespace package and raise `ModuleNotFoundError`. If a brand-new subpackage imports under `python -c` but not under pytest, suspect environment contamination, not your code.
+
+---
+
+## Error Handling and Debugging
+
+### Common Errors and Fixes
+
+| Symptom | Likely Cause | Fix |
+|---|---|---|
+| `Integration '<key>' not found` | Missing `_register()` call | Add `_register(<Name>Integration())` inside `_register_builtins()` |
+| `NameError: name '<Name>Integration' is not defined` at startup | Missing import | Add `from .<package_dir> import <Name>Integration` inside `_register_builtins()` |
+| CLI check fails for a `requires_cli: True` agent | `key` does not match the executable name | Set `key` to the exact name `shutil.which(key)` must resolve (e.g. `"cursor-agent"`, not `"cursor"`) |
+| Command files have the wrong argument syntax | Wrong `args` value in `registrar_config` | Use `$ARGUMENTS` for Markdown agents, `{{args}}` for TOML/YAML agents, or the agent's custom placeholder |
+| `ModuleNotFoundError` on a brand-new subpackage under pytest only | Ambient interpreter with a stale editable `.pth` | Run inside this tree's own venv (see Common Pitfall 6) |
+| Uninstall leaves files behind, or skips files you expected removed | Files not recorded via the manifest, or their hash changed after install | Route every created file through `manifest.record_file(...)`; user-edited files are intentionally skipped unless `force=True` |
+| Context file (`CLAUDE.md`, etc.) not updated | Expecting the CLI to manage it | Context files are owned by the opt-in `agent-context` extension, not the integration — see [Context file behavior](#4-context-file-behavior) |
+
+### Debugging Tips
+
+**Inspect the manifest** to see what an installed integration tracks:
+
+```bash
+cat .specify/integrations/<key>.manifest.json
+```
+
+**Verify a CLI tool is detected** before debugging a `requires_cli` agent:
+
+```bash
+which <key>        # Should print the executable path if installed
+```
+
+**Verify the installed output structure** after `specify init`:
+
+```bash
+find my-project/<folder> -type f
+```
+
+---
+
+## Contribution Checklist
+
+Before opening or merging an integration PR, confirm the following:
+
+- [ ] Added the integration subpackage under `src/specify_cli/integrations/<package_dir>/`.
+- [ ] Registered it (import **and** `_register()`) in `src/specify_cli/integrations/__init__.py`, both alphabetical.
+- [ ] Added or updated tests in `tests/integrations/test_integration_<key>.py`.
+- [ ] Verified the install/uninstall flow with `specify init --integration <key>`.
+- [ ] Did **not** add `context_file` handling to the CLI (that belongs to the `agent-context` extension).
+- [ ] Updated devcontainer files if the agent needs a VS Code extension or CLI install step.
+- [ ] Updated this guide or other relevant docs if the integration has special setup or limitations.
 
 ---
 

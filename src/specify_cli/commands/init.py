@@ -183,6 +183,7 @@ def register(app: typer.Typer) -> None:
             save_init_options,
         )
         from ..integration_runtime import (
+            invoke_prefix_for_integration as _invoke_prefix_for_integration,
             with_integration_setting as _with_integration_setting,
         )
         from ..integrations._commands import (
@@ -442,12 +443,20 @@ def register(app: typer.Typer) -> None:
                     if extra:
                         integration_parsed_options.update(extra)
 
+                from ..events import resolve_events
+                events_map = resolve_events(
+                    resolved_integration.key,
+                    resolved_integration.config,
+                    project_path,
+                    integration_parsed_options or None,
+                )
                 resolved_integration.setup(
                     project_path,
                     manifest,
                     parsed_options=integration_parsed_options or None,
                     script_type=selected_script,
                     raw_options=integration_options,
+                    events=events_map,
                 )
                 manifest.save()
 
@@ -480,6 +489,12 @@ def register(app: typer.Typer) -> None:
                     force=force,
                     invoke_separator=resolved_integration.effective_invoke_separator(
                         integration_parsed_options, project_root=project_path
+                    ),
+                    invoke_prefix=_invoke_prefix_for_integration(
+                        resolved_integration,
+                        resolved_integration.key,
+                        integration_parsed_options,
+                        project_path,
                     ),
                 )
                 tracker.complete(

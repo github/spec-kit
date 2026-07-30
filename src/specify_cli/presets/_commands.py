@@ -19,6 +19,7 @@ from .._console import console
 from .._download_security import (
     is_https_or_localhost_http,
     is_safe_download_redirect,
+    read_response_limited,
 )
 
 preset_app = typer.Typer(
@@ -58,10 +59,14 @@ def preset_list():
     for pack in installed:
         status = "[green]enabled[/green]" if pack.get("enabled", True) else "[red]disabled[/red]"
         pri = pack.get('priority', 10)
-        console.print(f"  [bold]{pack['name']}[/bold] ({pack['id']}) v{pack['version']} — {status} — priority {pri}")
-        console.print(f"    {pack['description']}")
-        if pack.get("tags"):
-            tags_str = ", ".join(pack["tags"])
+        name = _escape_markup(str(pack['name']))
+        pack_id = _escape_markup(str(pack['id']))
+        version = _escape_markup(str(pack['version']))
+        console.print(f"  [bold]{name}[/bold] ({pack_id}) v{version} — {status} — priority {pri}")
+        console.print(f"    {_escape_markup(str(pack['description']))}")
+        tags = pack.get("tags", [])
+        if isinstance(tags, list) and tags:
+            tags_str = _escape_markup(", ".join(str(t) for t in tags))
             console.print(f"    [dim]Tags: {tags_str}[/dim]")
         console.print(f"    [dim]Templates: {pack['template_count']}[/dim]")
         console.print()
@@ -126,15 +131,15 @@ def preset_add(
 
             if not is_https_or_localhost_http(from_url):
                 console.print(
-                    "[red]Error:[/red] URL must use HTTPS with a hostname, "
-                    "or HTTP for localhost/loopback."
+                    "[red]Error:[/red] URL must use HTTPS with a hostname and be "
+                    "a valid URL with a host. HTTP is only allowed for localhost, "
+                    "127.0.0.1, and ::1."
                 )
                 raise typer.Exit(1)
 
             console.print(f"Installing preset from [cyan]{_escape_markup(from_url)}[/cyan]...")
             import urllib.error
             import tempfile
-            import shutil
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 zip_path = Path(tmpdir) / "preset.zip"
@@ -162,16 +167,21 @@ def preset_add(
                             console.print(
                                 "[red]Error:[/red] Preset URL redirected to a disallowed URL: "
                                 f"{final_url}. Redirect targets must use HTTPS with a hostname, "
-                                "or HTTP for localhost/loopback."
+                                "or HTTP for localhost (127.0.0.1, ::1)."
                             )
                             raise typer.Exit(1)
-                        with zip_path.open("wb") as output:
-                            try:
-                                shutil.copyfileobj(response, output)
-                            except TypeError:
-                                output.write(response.read())
-                except urllib.error.URLError as e:
-                    console.print(f"[red]Error:[/red] Failed to download: {_escape_markup(str(e))}")
+                        zip_path.write_bytes(
+                            read_response_limited(
+                                response,
+                                error_type=PresetError,
+                                label=f"preset {from_url}",
+                            )
+                        )
+                except (urllib.error.URLError, PresetError) as e:
+                    console.print(
+                        f"[red]Error:[/red] Failed to download: "
+                        f"{_escape_markup(str(e))}"
+                    )
                     raise typer.Exit(1)
 
                 manifest = manager.install_from_zip(zip_path, speckit_version, priority)
@@ -285,10 +295,16 @@ def preset_search(
 
     console.print(f"\n[bold cyan]Presets ({len(results)} found):[/bold cyan]\n")
     for pack in results:
-        console.print(f"  [bold]{pack.get('name', pack['id'])}[/bold] ({pack['id']}) v{pack.get('version', '?')}")
-        console.print(f"    {pack.get('description', '')}")
-        if pack.get("tags"):
-            tags_str = ", ".join(pack["tags"])
+        name = _escape_markup(str(pack.get("name", pack["id"])))
+        pack_id = _escape_markup(str(pack["id"]))
+        version = _escape_markup(str(pack.get("version", "?")))
+        console.print(f"  [bold]{name}[/bold] ({pack_id}) v{version}")
+        console.print(
+            f"    {_escape_markup(str(pack.get('description', '')))}"
+        )
+        tags = pack.get("tags", [])
+        if isinstance(tags, list) and tags:
+            tags_str = _escape_markup(", ".join(str(t) for t in tags))
             console.print(f"    [dim]Tags: {tags_str}[/dim]")
         console.print()
 
@@ -304,13 +320,20 @@ def preset_resolve(
     project_root = _require_specify_project()
     resolver = PresetResolver(project_root)
     layers = resolver.collect_all_layers(template_name)
+    safe_template_name = _escape_markup(str(template_name))
 
     if layers:
         # Use the highest-priority layer for display because the final output
         # may be composed and may not map to resolve_with_source()'s single path.
         display_layer = layers[0]
-        console.print(f"  [bold]{template_name}[/bold]: {display_layer['path']}")
-        console.print(f"    [dim](top layer from: {display_layer['source']})[/dim]")
+        console.print(
+            f"  [bold]{safe_template_name}[/bold]: "
+            f"{_escape_markup(str(display_layer['path']))}"
+        )
+        console.print(
+            f"    [dim](top layer from: "
+            f"{_escape_markup(str(display_layer['source']))})[/dim]"
+        )
 
         has_composition = (
             layers[0]["strategy"] != "replace"
@@ -322,7 +345,10 @@ def preset_resolve(
                 composed = resolver.resolve_content(template_name)
             except Exception as exc:
                 composed = None
-                console.print(f"    [yellow]Warning: composition error: {exc}[/yellow]")
+                console.print(
+                    f"    [yellow]Warning: composition error: "
+                    f"{_escape_markup(str(exc))}[/yellow]"
+                )
             if composed is None:
                 console.print("    [yellow]Warning: composition cannot produce output (no base layer with 'replace' strategy)[/yellow]")
             else:
@@ -345,15 +371,27 @@ def preset_resolve(
                 strategy_label = layer["strategy"]
                 if strategy_label == "replace" and i == 0:
                     strategy_label = "base"
-                console.print(f"    {i + 1}. [{strategy_label}] {layer['source']} → {layer['path']}")
+                # Escape the literal bracket (\[) so Rich renders `[<strategy>]`
+                # instead of parsing it as a style tag and swallowing the label,
+                # mirroring `workflow info`'s step-graph line.
+                console.print(
+                    f"    {i + 1}. \\[{_escape_markup(str(strategy_label))}] "
+                    f"{_escape_markup(str(layer['source']))} → "
+                    f"{_escape_markup(str(layer['path']))}"
+                )
     else:
         # No layers found — fall back to resolve_with_source for non-composition cases
         result = resolver.resolve_with_source(template_name)
         if result:
-            console.print(f"  [bold]{template_name}[/bold]: {result['path']}")
-            console.print(f"    [dim](from: {result['source']})[/dim]")
+            console.print(
+                f"  [bold]{safe_template_name}[/bold]: "
+                f"{_escape_markup(str(result['path']))}"
+            )
+            console.print(
+                f"    [dim](from: {_escape_markup(str(result['source']))})[/dim]"
+            )
         else:
-            console.print(f"  [yellow]{template_name}[/yellow]: not found")
+            console.print(f"  [yellow]{safe_template_name}[/yellow]: not found")
             console.print("    [dim]No template with this name exists in the resolution stack[/dim]")
 
 
@@ -367,28 +405,38 @@ def preset_info(
     from . import PresetCatalog, PresetManager, PresetError
 
     project_root = _require_specify_project()
+    safe_preset_id = _escape_markup(str(preset_id))
     # Check if installed locally first
     manager = PresetManager(project_root)
     local_pack = manager.get_pack(preset_id)
 
     if local_pack:
-        console.print(f"\n[bold cyan]Preset: {local_pack.name}[/bold cyan]\n")
-        console.print(f"  ID:          {local_pack.id}")
-        console.print(f"  Version:     {local_pack.version}")
-        console.print(f"  Description: {local_pack.description}")
+        console.print(
+            f"\n[bold cyan]Preset: {_escape_markup(str(local_pack.name))}[/bold cyan]\n"
+        )
+        console.print(f"  ID:          {_escape_markup(str(local_pack.id))}")
+        console.print(f"  Version:     {_escape_markup(str(local_pack.version))}")
+        console.print(
+            f"  Description: {_escape_markup(str(local_pack.description))}"
+        )
         if local_pack.author:
-            console.print(f"  Author:      {local_pack.author}")
-        if local_pack.tags:
-            console.print(f"  Tags:        {', '.join(local_pack.tags)}")
+            console.print(f"  Author:      {_escape_markup(str(local_pack.author))}")
+        local_tags = local_pack.tags
+        if isinstance(local_tags, list) and local_tags:
+            tags_str = _escape_markup(", ".join(str(t) for t in local_tags))
+            console.print(f"  Tags:        {tags_str}")
         console.print(f"  Templates:   {len(local_pack.templates)}")
         for tmpl in local_pack.templates:
-            console.print(f"    - {tmpl['name']} ({tmpl['type']}): {tmpl.get('description', '')}")
+            tmpl_name = _escape_markup(str(tmpl['name']))
+            tmpl_type = _escape_markup(str(tmpl['type']))
+            tmpl_desc = _escape_markup(str(tmpl.get('description', '')))
+            console.print(f"    - {tmpl_name} ({tmpl_type}): {tmpl_desc}")
         repo = local_pack.data.get("preset", {}).get("repository")
         if repo:
-            console.print(f"  Repository:  {repo}")
+            console.print(f"  Repository:  {_escape_markup(str(repo))}")
         license_val = local_pack.data.get("preset", {}).get("license")
         if license_val:
-            console.print(f"  License:     {license_val}")
+            console.print(f"  License:     {_escape_markup(str(license_val))}")
         console.print("\n  [green]Status: installed[/green]")
         # Get priority from registry
         pack_metadata = manager.registry.get(preset_id)
@@ -408,20 +456,33 @@ def preset_info(
         console.print(f"[red]Error:[/red] Preset '{preset_id}' not found (not installed and not in catalog)")
         raise typer.Exit(1)
 
-    console.print(f"\n[bold cyan]Preset: {pack_info.get('name', preset_id)}[/bold cyan]\n")
-    console.print(f"  ID:          {pack_info['id']}")
-    console.print(f"  Version:     {pack_info.get('version', '?')}")
-    console.print(f"  Description: {pack_info.get('description', '')}")
+    name = _escape_markup(str(pack_info.get("name", preset_id)))
+    console.print(f"\n[bold cyan]Preset: {name}[/bold cyan]\n")
+    console.print(f"  ID:          {_escape_markup(str(pack_info['id']))}")
+    console.print(
+        f"  Version:     {_escape_markup(str(pack_info.get('version', '?')))}"
+    )
+    console.print(
+        f"  Description: {_escape_markup(str(pack_info.get('description', '')))}"
+    )
     if pack_info.get("author"):
-        console.print(f"  Author:      {pack_info['author']}")
-    if pack_info.get("tags"):
-        console.print(f"  Tags:        {', '.join(pack_info['tags'])}")
+        console.print(
+            f"  Author:      {_escape_markup(str(pack_info['author']))}"
+        )
+    catalog_tags = pack_info.get("tags", [])
+    if isinstance(catalog_tags, list) and catalog_tags:
+        catalog_tags_str = _escape_markup(", ".join(str(t) for t in catalog_tags))
+        console.print(f"  Tags:        {catalog_tags_str}")
     if pack_info.get("repository"):
-        console.print(f"  Repository:  {pack_info['repository']}")
+        console.print(
+            f"  Repository:  {_escape_markup(str(pack_info['repository']))}"
+        )
     if pack_info.get("license"):
-        console.print(f"  License:     {pack_info['license']}")
+        console.print(
+            f"  License:     {_escape_markup(str(pack_info['license']))}"
+        )
     console.print("\n  [yellow]Status: not installed[/yellow]")
-    console.print(f"  Install with: [cyan]specify preset add {preset_id}[/cyan]")
+    console.print(f"  Install with: [cyan]specify preset add {safe_preset_id}[/cyan]")
     console.print()
 
 
@@ -656,10 +717,15 @@ def preset_catalog_add(
         console.print("[red]Error:[/red] Invalid catalog config: 'catalogs' must be a list.")
         raise typer.Exit(1)
 
+    # Only rendering is escaped — the raw values are what get persisted and
+    # compared below, so a name containing markup still round-trips exactly.
+    safe_name = _escape_markup(str(name))
+    safe_url = _escape_markup(str(url))
+
     # Check for duplicate name
     for existing in catalogs:
         if isinstance(existing, dict) and existing.get("name") == name:
-            console.print(f"[yellow]Warning:[/yellow] A catalog named '{name}' already exists.")
+            console.print(f"[yellow]Warning:[/yellow] A catalog named '{safe_name}' already exists.")
             console.print("Use 'specify preset catalog remove' first, or choose a different name.")
             raise typer.Exit(1)
 
@@ -675,10 +741,11 @@ def preset_catalog_add(
     config_path.write_text(yaml.safe_dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
     install_label = "install allowed" if install_allowed else "discovery only"
-    console.print(f"\n[green]✓[/green] Added catalog '[bold]{name}[/bold]' ({install_label})")
-    console.print(f"  URL: {url}")
+    console.print(f"\n[green]✓[/green] Added catalog '[bold]{safe_name}[/bold]' ({install_label})")
+    console.print(f"  URL: {safe_url}")
     console.print(f"  Priority: {priority}")
-    console.print(f"\nConfig saved to {_display_project_path(project_root, config_path)}")
+    config_label = _escape_markup(str(_display_project_path(project_root, config_path)))
+    console.print(f"\nConfig saved to {config_label}")
 
 
 @preset_catalog_app.command("remove")
@@ -706,17 +773,20 @@ def preset_catalog_remove(
     if not isinstance(catalogs, list):
         console.print("[red]Error:[/red] Invalid catalog config: 'catalogs' must be a list.")
         raise typer.Exit(1)
+    # Rendering only — the raw name drives the comparison below.
+    safe_name = _escape_markup(str(name))
+
     original_count = len(catalogs)
     catalogs = [c for c in catalogs if isinstance(c, dict) and c.get("name") != name]
 
     if len(catalogs) == original_count:
-        console.print(f"[red]Error:[/red] Catalog '{name}' not found.")
+        console.print(f"[red]Error:[/red] Catalog '{safe_name}' not found.")
         raise typer.Exit(1)
 
     config["catalogs"] = catalogs
     config_path.write_text(yaml.safe_dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
-    console.print(f"[green]✓[/green] Removed catalog '{name}'")
+    console.print(f"[green]✓[/green] Removed catalog '{safe_name}'")
     if not catalogs:
         console.print("\n[dim]No catalogs remain in config. Built-in defaults will be used.[/dim]")
 
