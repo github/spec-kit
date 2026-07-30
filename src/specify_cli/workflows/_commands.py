@@ -24,7 +24,6 @@ from .._download_security import (
     archive_format_from_content_type,
     archive_format_from_name,
     archive_suffix,
-    detect_archive_format,
     is_https_or_localhost_http,
     is_safe_download_redirect,
     read_response_limited,
