@@ -440,46 +440,77 @@ def catalog_remove(
 def _validate_safe_cache_dir(project_root: Path) -> Path:
     """Create and validate the extension URL download cache one component at a time."""
     download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
+    o_nofollow = getattr(os, "O_NOFOLLOW", 0)
+    o_directory = getattr(os, "O_DIRECTORY", 0)
+
+    if not o_nofollow or os.open not in os.supports_dir_fd or os.mkdir not in os.supports_dir_fd:
+        raise NotImplementedError(
+            "URL-based extension installs require POSIX-style dir_fd and "
+            "O_NOFOLLOW support, which is unavailable on this platform. "
+            "Use --dev with a local directory instead."
+        )
 
     try:
         project_root_resolved = project_root.resolve()
-        current = project_root
-        for part in (".specify", "extensions", ".cache", "downloads"):
-            current = current / part
-            if current.is_symlink():
-                console.print(
-                    "[red]Error:[/red] Refusing to use symlinked download cache directory"
-                )
-                raise typer.Exit(1)
+        parent_fd = os.open(project_root, os.O_RDONLY | o_directory | o_nofollow)
+        current_path = project_root
+        try:
+            for part in (".specify", "extensions", ".cache", "downloads"):
+                current_path = current_path / part
 
-            if not current.exists():
                 try:
-                    current.mkdir()
-                except FileExistsError:
+                    child_fd = os.open(
+                        part,
+                        os.O_RDONLY | o_directory | o_nofollow,
+                        dir_fd=parent_fd,
+                    )
+                except FileNotFoundError:
+                    try:
+                        os.mkdir(part, dir_fd=parent_fd)
+                    except FileExistsError:
+                        pass
+                    child_fd = os.open(
+                        part,
+                        os.O_RDONLY | o_directory | o_nofollow,
+                        dir_fd=parent_fd,
+                    )
+
+                try:
+                    current_path.resolve().relative_to(project_root_resolved)
+                except (OSError, ValueError):
+                    console.print(
+                        "[red]Error:[/red] Download cache directory escapes project root"
+                    )
+                    raise typer.Exit(1)
+
+                os.close(parent_fd)
+                parent_fd = child_fd
+        finally:
+            if parent_fd >= 0:
+                try:
+                    os.close(parent_fd)
+                except OSError:
                     pass
-
-            if current.is_symlink():
-                console.print(
-                    "[red]Error:[/red] Refusing to use symlinked download cache directory"
-                )
-                raise typer.Exit(1)
-            if not current.is_dir():
-                console.print(
-                    "[red]Error:[/red] Download cache path is not a directory: "
-                    f"{_escape_markup(str(current))}"
-                )
-                raise typer.Exit(1)
-
-            try:
-                current.resolve().relative_to(project_root_resolved)
-            except (OSError, ValueError):
-                console.print(
-                    "[red]Error:[/red] Download cache directory escapes project root"
-                )
-                raise typer.Exit(1)
+    except FileNotFoundError as exc:
+        console.print(
+            "[red]Error:[/red] Could not prepare download cache directory: "
+            f"{_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
+    except PermissionError as exc:
+        console.print(
+            "[red]Error:[/red] Could not prepare download cache directory: "
+            f"{_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
     except typer.Exit:
         raise
     except OSError as exc:
+        if isinstance(exc, FileExistsError):
+            console.print(
+                "[red]Error:[/red] Refusing to use symlinked download cache directory"
+            )
+            raise typer.Exit(1)
         console.print(
             "[red]Error:[/red] Could not prepare download cache directory: "
             f"{_escape_markup(str(exc))}"
@@ -667,7 +698,11 @@ def extension_add(
 
                 console.print(f"Downloading from {safe_url}...")
 
-                download_dir = _validate_safe_cache_dir(project_root)
+                try:
+                    download_dir = _validate_safe_cache_dir(project_root)
+                except NotImplementedError as exc:
+                    console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+                    raise typer.Exit(1)
                 zip_filename = f"extension-url-download-{uuid4().hex}.zip"
                 zip_path = download_dir / zip_filename
 
