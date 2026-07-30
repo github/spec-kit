@@ -259,7 +259,7 @@ def get_invoke_separator(repo_root: Path) -> str:
     if not integration_json.is_file():
         return "."
     # Split the parse out of the lookup and guard the top-level shape, matching
-    # read_feature_json_feature_directory below and the bash/PowerShell twins,
+    # read_feature_json_feature_directory above and the bash/PowerShell twins,
     # which both fall back to "." for any unusable integration.json:
     #   * a non-mapping top level ([], "forge", 42, null) is valid JSON, so
     #     json.JSONDecodeError never fires and state.get(...) raised
