@@ -14,7 +14,7 @@ from contextlib import ExitStack, contextmanager
 from ipaddress import IPv4Address, IPv6Address, ip_address
 from itertools import pairwise
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import NoReturn, TypeVar
+from typing import BinaryIO, NoReturn, TypeVar
 from urllib.parse import ParseResult, urlparse
 
 
@@ -705,6 +705,7 @@ def _preflight_zip_central_directory(
 def open_zip_bounded(
     zip_path: Path,
     *,
+    archive_file: BinaryIO | None = None,
     error_type: type[ErrorT] = ValueError,
     max_entries: int = MAX_ZIP_ENTRIES,
 ) -> Iterator[zipfile.ZipFile]:
@@ -712,10 +713,11 @@ def open_zip_bounded(
     _validate_non_negative_int(max_entries, "max_entries")
     zip_path = Path(zip_path)
     with ExitStack() as stack:
-        try:
-            archive_file = stack.enter_context(zip_path.open("rb"))
-        except OSError as exc:
-            _raise_from(error_type, f"Invalid ZIP archive: {zip_path}", exc)
+        if archive_file is None:
+            try:
+                archive_file = stack.enter_context(zip_path.open("rb"))
+            except OSError as exc:
+                _raise_from(error_type, f"Invalid ZIP archive: {zip_path}", exc)
         try:
             _preflight_zip_central_directory(
                 archive_file,
@@ -737,6 +739,7 @@ def safe_extract_zip(
     zip_path: Path,
     target_dir: Path,
     *,
+    archive_file: BinaryIO | None = None,
     error_type: type[ErrorT] = ValueError,
     max_entries: int = MAX_ZIP_ENTRIES,
     max_member_bytes: int = MAX_ZIP_MEMBER_BYTES,
@@ -752,6 +755,7 @@ def safe_extract_zip(
 
     with open_zip_bounded(
         zip_path,
+        archive_file=archive_file,
         error_type=error_type,
         max_entries=max_entries,
     ) as zf:

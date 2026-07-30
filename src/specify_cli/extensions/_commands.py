@@ -499,7 +499,7 @@ def _safe_open_download_zip(
         raise NotImplementedError(
             "URL-based extension installs require POSIX-style dir_fd and "
             "O_NOFOLLOW support, which is unavailable on this platform. "
-            "Use --dev with a local directory or install from a catalog instead."
+            "Use --dev with a local directory instead."
         )
 
     rel_parts = download_dir.relative_to(project_root).parts
@@ -516,7 +516,7 @@ def _safe_open_download_zip(
 
         return os.open(
             zip_filename,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | o_nofollow,
+            os.O_RDWR | os.O_CREAT | os.O_EXCL | o_nofollow,
             0o600,
             dir_fd=parent_fd,
         )
@@ -704,6 +704,7 @@ def extension_add(
                         raise typer.Exit(1)
 
                     download_fd = -1
+                    download_file = None
                     try:
                         try:
                             download_fd = _safe_open_download_zip(
@@ -715,12 +716,21 @@ def extension_add(
                             )
                             raise typer.Exit(1)
 
-                        remaining = memoryview(zip_data)
-                        while remaining:
-                            written = os.write(download_fd, remaining)
-                            if written <= 0:
-                                raise OSError("Failed to write extension download")
-                            remaining = remaining[written:]
+                        download_file = os.fdopen(download_fd, "w+b")
+                        download_fd = -1
+                        download_file.write(zip_data)
+                        download_file.flush()
+                        download_file.seek(0)
+
+                        # Consume the inode reserved above rather than reopening
+                        # the mutable cache pathname during extraction.
+                        manifest = manager.install_from_zip(
+                            zip_path,
+                            speckit_version,
+                            priority=priority,
+                            force=force,
+                            archive_file=download_file,
+                        )
                     except OSError as exc:
                         console.print(
                             "[red]Error:[/red] Could not safely write download file: "
@@ -728,14 +738,16 @@ def extension_add(
                         )
                         raise typer.Exit(1)
                     finally:
-                        if download_fd >= 0:
+                        if download_file is not None:
+                            try:
+                                download_file.close()
+                            except OSError:
+                                pass
+                        elif download_fd >= 0:
                             try:
                                 os.close(download_fd)
                             except OSError:
                                 pass
-
-                    # Install from downloaded ZIP
-                    manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority, force=force)
                 except urllib.error.URLError as e:
                     console.print(
                         f"[red]Error:[/red] Failed to download from {safe_url}: "

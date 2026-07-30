@@ -163,7 +163,7 @@ def test_safe_open_fails_closed_without_atomic_platform_support(
     download_dir = _commands._validate_safe_cache_dir(project_dir)
     monkeypatch.setattr(os, "supports_dir_fd", set())
 
-    with pytest.raises(NotImplementedError, match=r"--dev.*catalog"):
+    with pytest.raises(NotImplementedError, match=r"--dev"):
         _commands._safe_open_download_zip(
             project_dir,
             download_dir,
@@ -197,7 +197,7 @@ def test_url_install_surfaces_fail_closed_platform_error(
 
     assert result.exit_code == 1
     assert "--dev" in result.output
-    assert "catalog" in result.output
+    assert "install from a catalog instead" not in result.output
     install_spy.assert_not_called()
 
 
@@ -220,10 +220,15 @@ def test_url_install_writes_and_cleans_up_secure_download(
         speckit_version: str,
         priority: int = 10,
         force: bool = False,
+        *,
+        archive_file=None,
     ):
         captured["path"] = zip_path
-        captured["bytes"] = zip_path.read_bytes()
         captured["mode"] = zip_path.stat().st_mode & 0o777
+        zip_path.unlink()
+        zip_path.write_bytes(b"replacement")
+        captured["bytes"] = archive_file.read()
+        archive_file.seek(0)
         return SimpleNamespace(
             id="test-ext",
             name="Test Extension",
