@@ -58,6 +58,7 @@ def project_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_symlinked_cache_ancestor_is_refused(
     project_dir: Path, tmp_path: Path, ancestor_parts: tuple[str, ...]
 ) -> None:
+    _require_secure_dir_fd()
     outside = tmp_path / "outside"
     outside.mkdir()
 
@@ -76,6 +77,7 @@ def test_symlinked_cache_ancestor_is_refused(
 def test_cache_ancestor_resolving_outside_project_is_refused(
     project_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _require_secure_dir_fd()
     cache_root = project_dir / ".specify" / "extensions" / ".cache"
     cache_root.mkdir(parents=True)
     outside = tmp_path / "outside"
@@ -151,7 +153,11 @@ def test_safe_open_refuses_symlinked_project_root(
 def test_safe_open_fails_closed_without_atomic_platform_support(
     project_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    download_dir = _commands._validate_safe_cache_dir(project_dir)
+    # Build the cache dir directly: on a platform without dir_fd support the
+    # validator itself fails closed, so we must exercise the leaf-open gate
+    # in isolation rather than going through _validate_safe_cache_dir().
+    download_dir = project_dir / ".specify" / "extensions" / ".cache" / "downloads"
+    download_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(os, "supports_dir_fd", set())
 
     with pytest.raises(NotImplementedError, match=r"--dev"):

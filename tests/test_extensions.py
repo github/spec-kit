@@ -52,16 +52,22 @@ _MINIMAL_ZIP_BYTES = b"PK\x05\x06" + b"\x00" * 18
 def _open_test_download_zip(project_root, download_dir, zip_filename):
     """Cross-platform stand-in for the POSIX-only secure cache primitive.
 
-    Mirrors production behavior by unlinking the leaf immediately after
-    creation, so the returned descriptor refers to an anonymous inode.
+    Mirrors production behavior by making the leaf disappear from disk while
+    the descriptor stays open. On POSIX the file is unlinked immediately; on
+    Windows an in-use file cannot be unlinked, so it is opened with
+    ``O_TEMPORARY`` and removed automatically when the descriptor closes.
     """
-    fd = os.open(
-        download_dir / zip_filename,
-        os.O_RDWR | os.O_CREAT | os.O_EXCL,
-        0o600,
-    )
+    target = download_dir / zip_filename
+    o_temporary = getattr(os, "O_TEMPORARY", 0)
+    if o_temporary:
+        return os.open(
+            target,
+            os.O_RDWR | os.O_CREAT | os.O_EXCL | o_temporary,
+            0o600,
+        )
+    fd = os.open(target, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
     try:
-        os.unlink(download_dir / zip_filename)
+        os.unlink(target)
     except OSError:
         os.close(fd)
         raise
