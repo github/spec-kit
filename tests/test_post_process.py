@@ -274,3 +274,29 @@ class TestClineRealPostProcess:
         # _rewrite_handoff_references rewrote the dotted agent handoff
         assert "agent: speckit-foo" in content
         assert "agent: speckit.foo" not in content
+
+
+def test_register_commands_propagates_programming_errors(tmp_path):
+    """Regression: narrowed exception must not swallow TypeError/AttributeError.
+
+    The invoke separator resolution narrowed from bare 'except Exception' to
+    'except (ImportError, ValueError, KeyError)'. Programming errors like
+    TypeError must propagate instead of being silently swallowed.
+    """
+    registrar = CommandRegistrar()
+    commands = [{"name": "test.cmd", "file": "commands/test.md"}]
+
+    ext_dir = tmp_path / "ext"
+    ext_dir.mkdir()
+
+    def _broken_get_integration(name):
+        raise TypeError("intentional programming error")
+
+    import specify_cli.integrations as integ_mod
+    original = integ_mod.get_integration
+    integ_mod.get_integration = _broken_get_integration
+    try:
+        with pytest.raises(TypeError, match="intentional programming error"):
+            registrar.register_commands("bob", commands, "ext", ext_dir, tmp_path)
+    finally:
+        integ_mod.get_integration = original
