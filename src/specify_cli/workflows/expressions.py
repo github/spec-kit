@@ -671,8 +671,20 @@ def evaluate_condition(condition: str, context: Any) -> bool:
     result = evaluate_expression(condition, context)
     # Treat plain "false"/"true" strings as booleans so that
     # condition: "false" (without {{ }}) behaves as expected.
+    #
+    # Strip before matching: the string a condition resolves to is most often
+    # captured command output, and a ``shell`` step stores ``proc.stdout``
+    # verbatim, so ``run: echo false`` resolves to ``"false\n"``. Without the
+    # strip that trailing newline matches neither branch and falls through to
+    # ``bool("false\n")`` -> True, silently taking an ``if`` step's ``then``
+    # branch (and keeping a ``while``/``do-while`` looping) on a step that
+    # printed "false". A workflow cannot strip it itself -- the registered
+    # filters are default/join/map/contains/from_json, there is no ``trim``.
+    # ``InitStep._resolve_bool`` and the catalog readers already strip before
+    # matching boolean text. ``bool(result)`` below still sees the raw string,
+    # so no non-boolean text changes truthiness.
     if isinstance(result, str):
-        lower = result.lower()
+        lower = result.strip().lower()
         if lower == "false":
             return False
         if lower == "true":
