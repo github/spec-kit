@@ -465,7 +465,27 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     pipe_idx = _find_top_level(expr, "|")
     if pipe_idx != -1:
         segments = _split_top_level(expr, "|")
-        value = _evaluate_simple_expression(segments[0].strip(), namespace)
+        # The pipe is detected before the operators below, so a filter written on
+        # the right-hand operand of a comparison was applied to the comparison's
+        # BOOLEAN RESULT instead: `count > limit | default(5)` evaluated
+        # `count > limit` first and then `default` on the bool, which is a no-op,
+        # so the expression silently returned the comparison against the
+        # *unfiltered* operand. This is the mirror of a filter followed by a
+        # comparison (`default('7') > '5'`), which this module already refuses
+        # rather than guessing at the intended precedence. Refuse both the same
+        # way, so an ambiguous expression is reported instead of quietly
+        # producing the answer the author did not ask for.
+        head = segments[0].strip()
+        for _op in ("!=", "==", ">=", "<=", ">", "<", " not in ", " in ",
+                    " or ", " and "):
+            if _find_top_level(head, _op) != -1:
+                raise ValueError(
+                    f"ambiguous filter precedence in '{expr}': "
+                    f"'| {segments[1].strip()}' would apply to the result of "
+                    f"'{head}', not to an operand of '{_op.strip()}'. Filter the "
+                    f"operand in its own expression instead."
+                )
+        value = _evaluate_simple_expression(head, namespace)
         for segment in segments[1:]:
             value = _apply_filter(value, segment.strip(), namespace)
         return value
