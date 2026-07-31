@@ -16,7 +16,6 @@ from rich.markup import escape as _escape_markup
 
 from ..._download_security import MAX_DOWNLOAD_BYTES, read_response_limited
 from ..._console import console, err_console
-from ..._download_security import MAX_DOWNLOAD_BYTES, read_response_limited
 from ...bundler import BundlerError
 from ...bundler.lib.project import (
     active_integration,
