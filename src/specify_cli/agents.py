@@ -683,7 +683,7 @@ class CommandRegistrar:
             _integ = get_integration(agent_name)
             if _integ is not None:
                 _sep = _integ.invoke_separator_for_mode(registrar_writes_skills)
-        except (ImportError, ValueError, KeyError):
+        except (ImportError, KeyError, ValueError):
             pass
         _prefix = get_invocation_prefix(agent_name, registrar_writes_skills)
 
