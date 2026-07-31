@@ -82,7 +82,19 @@ def active_integration(project_root: Path) -> str | None:
     except BundlerError:
         return None
     if isinstance(data, dict):
-        value = data.get("integration") or data.get("id") or data.get("active")
+        # ``default_integration`` first: that is the key the CLI actually
+        # writes (``integration_state.set_default_integration``), and the
+        # canonical reader orders it the same way --
+        # ``state.get("default_integration") or state.get("integration")``.
+        # ``integration``/``id``/``active`` are legacy aliases kept for
+        # projects initialised by older versions, so reading only those made
+        # every current project look like it had no active integration.
+        value = (
+            data.get("default_integration")
+            or data.get("integration")
+            or data.get("id")
+            or data.get("active")
+        )
         if isinstance(value, str) and value:
             return value
     return None

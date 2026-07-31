@@ -126,6 +126,49 @@ def test_active_integration_refuses_symlinked_specify_escape(tmp_path: Path):
     assert active_integration(project) is None
 
 
+def _write_marker(tmp_path: Path, payload: str) -> Path:
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    (project / ".specify" / "integration.json").write_text(
+        payload, encoding="utf-8"
+    )
+    return project
+
+
+def test_active_integration_reads_default_integration(tmp_path: Path):
+    """``default_integration`` is the key the CLI writes, so it must be read.
+
+    ``integration_state.set_default_integration`` persists
+    ``data["default_integration"] = integration_key``, and the canonical
+    reader is ``state.get("default_integration") or state.get("integration")``.
+    Reading only the legacy aliases made every current project look as though
+    it had no active integration.
+    """
+    from specify_cli.bundler.lib.project import active_integration
+
+    project = _write_marker(tmp_path, '{"default_integration": "copilot"}')
+    assert active_integration(project) == "copilot"
+
+
+def test_active_integration_prefers_default_over_legacy_alias(tmp_path: Path):
+    """When both are present the authoritative field wins, matching
+    ``integration_state``'s own ordering."""
+    from specify_cli.bundler.lib.project import active_integration
+
+    project = _write_marker(
+        tmp_path, '{"integration": "stale", "default_integration": "copilot"}'
+    )
+    assert active_integration(project) == "copilot"
+
+
+def test_active_integration_still_reads_legacy_alias(tmp_path: Path):
+    """Projects initialised by older versions carry only ``integration``."""
+    from specify_cli.bundler.lib.project import active_integration
+
+    project = _write_marker(tmp_path, '{"integration": "copilot"}')
+    assert active_integration(project) == "copilot"
+
+
 def test_read_catalog_config_refuses_symlinked_specify_escape(tmp_path: Path):
     from specify_cli.bundler.commands_impl import catalog_config as cc
 
