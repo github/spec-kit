@@ -152,11 +152,19 @@ class ProjectOverlaySource:
             if path.is_symlink():
                 raise OverlayLoadError(path, ["Symlinked overlay files are not allowed"])
             try:
-                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+                data = yaml.safe_load(path.read_text(encoding="utf-8"))
             except yaml.YAMLError as exc:
                 raise OverlayLoadError(path, [f"Invalid YAML: {exc}"]) from exc
             except (OSError, UnicodeDecodeError) as exc:
                 raise OverlayLoadError(path, [f"Cannot load overlay: {exc}"]) from exc
+            # Only an empty document (``None``) becomes an empty mapping, so the
+            # missing-field errors are reported. ``or {}`` also masked the FALSY
+            # non-mappings (``[]``, ``false``, ``0``, ``''``), which must be
+            # reported as the wrong manifest shape like their truthy twins
+            # (``- a``, ``hello``) already are. The sibling reader for these same
+            # files, ``_read_overlay`` in overlays/_commands.py, does not coerce.
+            if data is None:
+                data = {}
             if (
                 not include_disabled
                 and isinstance(data, dict)

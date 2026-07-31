@@ -30,6 +30,53 @@ def _write_overlay_file(project_dir: Path, workflow_id: str, overlay_id: str, da
     return path
 
 
+class TestProjectOverlaySourceManifestShape:
+    """A non-mapping overlay manifest is reported as a shape error."""
+
+    @pytest.mark.parametrize("content", ["[]", "false", "0", "''"])
+    def test_falsy_non_mapping_manifest_reports_shape_error(
+        self, project_dir: Path, content: str
+    ) -> None:
+        """`or {}` masked the falsy non-mappings.
+
+        `validate_overlay_yaml` opens with a `isinstance(data, dict)` check, so a
+        truthy non-mapping (`- a`, `hello`) correctly reports "Overlay manifest
+        must be a mapping." But `yaml.safe_load(...) or {}` replaced `[]`,
+        `false`, `0` and `''` with an empty mapping first, so those files were
+        reported as three bogus missing-field errors instead of the wrong shape.
+        The sibling reader for these same files, `_read_overlay` in
+        `overlays/_commands.py`, does not coerce.
+        """
+        ov_dir = project_dir / ".specify" / "workflows" / "overlays" / "wf"
+        ov_dir.mkdir(parents=True, exist_ok=True)
+        (ov_dir / "ov.yml").write_text(content, encoding="utf-8")
+
+        source = ProjectOverlaySource(project_dir)
+        with pytest.raises(OverlayLoadError) as exc_info:
+            source.collect("wf")
+
+        assert exc_info.value.errors == ["Overlay manifest must be a mapping."], (
+            exc_info.value.errors
+        )
+
+    def test_empty_document_still_reports_missing_fields(
+        self, project_dir: Path
+    ) -> None:
+        """An empty document is not a wrong shape — it is a mapping with no keys,
+        so the missing-field errors must still be what is reported."""
+        ov_dir = project_dir / ".specify" / "workflows" / "overlays" / "wf"
+        ov_dir.mkdir(parents=True, exist_ok=True)
+        (ov_dir / "ov.yml").write_text("", encoding="utf-8")
+
+        source = ProjectOverlaySource(project_dir)
+        with pytest.raises(OverlayLoadError) as exc_info:
+            source.collect("wf")
+
+        assert any("is required" in err for err in exc_info.value.errors), (
+            exc_info.value.errors
+        )
+
+
 class TestProjectOverlaySourceFileReadErrors:
     """File-read errors must be wrapped in OverlayLoadError, not leaked as raw tracebacks."""
 
