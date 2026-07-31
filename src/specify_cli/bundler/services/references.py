@@ -40,8 +40,17 @@ def _resolved_locally(root: Path, component: ComponentRef) -> bool:
                 return True
             return WorkflowRegistry(root).is_installed(component.id)
         if kind == "steps":
+            from ...workflows import STEP_REGISTRY
             from ...workflows.catalog import StepRegistry
 
+            # Step types ship with Spec Kit as built-ins (shell, gate, if, ...)
+            # rather than as an on-disk asset directory, so there is no
+            # ``_locate_bundled_step`` to mirror the three lookups above.
+            # ``STEP_REGISTRY`` is the bundled-with-Spec-Kit check for this kind
+            # -- it is what ``specify workflow step info`` reports as
+            # "built-in". Without it every built-in step type looked unresolved.
+            if component.id in STEP_REGISTRY:
+                return True
             return StepRegistry(root).is_installed(component.id)
     except Exception:  # noqa: BLE001 - resolution is best-effort
         return False
