@@ -320,18 +320,31 @@ class CopilotIntegration(IntegrationBase):
                 "stderr": "",
             }
 
-        result = subprocess.run(
-            cli_args,
-            capture_output=True,
-            text=True,
-            cwd=cwd,
-            timeout=timeout,
-        )
-        return {
-            "exit_code": result.returncode,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-        }
+        try:
+            result = subprocess.run(
+                cli_args,
+                capture_output=True,
+                text=True,
+                cwd=cwd,
+                timeout=timeout,
+            )
+            return {
+                "exit_code": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+            }
+        except subprocess.TimeoutExpired:
+            return {
+                "exit_code": 124,
+                "stdout": "",
+                "stderr": f"Command timed out after {timeout}s",
+            }
+        except OSError as exc:
+            return {
+                "exit_code": 1,
+                "stdout": "",
+                "stderr": f"Failed to execute command: {exc}",
+            }
 
     def command_filename(self, template_name: str) -> str:
         """Copilot commands use ``.agent.md`` extension."""
