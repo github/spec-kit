@@ -2173,6 +2173,59 @@ class TestInitStep:
         assert "--ignore-agent-tools" in argv
         assert (tmp_path / ".specify").is_dir()
 
+    def test_explicit_null_ignore_agent_tools_keeps_documented_default(
+        self, tmp_path
+    ):
+        """A bare ``ignore_agent_tools:`` must keep the documented default.
+
+        The class docstring says "Because workflows run unattended, the step
+        defaults to ``--ignore-agent-tools``" and the field docs say "defaults to
+        ``true``". But ``config.get(key, True)`` applies the default only when the
+        key is ABSENT — a bare ``ignore_agent_tools:`` in YAML parses to None,
+        which ``_resolve_bool`` turned into False, dropping the flag and
+        re-enabling the agent-CLI presence check for an unattended run.
+        """
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        result = step.execute(
+            {
+                "id": "bootstrap",
+                "here": True,
+                "script": "sh",
+                "ignore_agent_tools": None,
+            },
+            ctx,
+        )
+
+        assert result.status == StepStatus.COMPLETED
+        assert "--ignore-agent-tools" in result.output["argv"]
+
+    def test_explicit_false_ignore_agent_tools_is_honoured(self, tmp_path):
+        """An explicit ``false`` must still opt in to the agent-CLI check."""
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        result = step.execute(
+            {
+                "id": "bootstrap",
+                "here": True,
+                "script": "sh",
+                "ignore_agent_tools": False,
+            },
+            ctx,
+        )
+
+        assert "--ignore-agent-tools" not in result.output["argv"]
+
     def test_default_integration_falls_back_to_workflow_default(self, tmp_path):
         from specify_cli.workflows.steps.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus
