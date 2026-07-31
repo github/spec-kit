@@ -642,6 +642,10 @@ class TestIntegrationDescriptor:
         desc = IntegrationDescriptor(p)
         h = desc.get_hash()
         assert h.startswith("sha256:")
+        import hashlib
+        content = p.read_bytes()
+        expected = f"sha256:{hashlib.sha256(content).hexdigest()}"
+        assert h == expected
 
     def test_tools_accessor(self, tmp_path):
         data = {**VALID_DESCRIPTOR, "requires": {
