@@ -7,6 +7,7 @@ from typing import Any
 
 import typer
 import yaml
+from rich.markup import escape as _escape_markup
 
 from ..._console import console, err_console
 from ...extensions import normalize_priority
@@ -412,14 +413,23 @@ def workflow_resolve(project_root: Path, workflow_id: str) -> dict[str, Any] | N
         priority = (
             "n/a" if layer.tier == "base" else str(normalize_priority(layer.priority))
         )
+        # Escape the literal bracket (\[) so Rich renders `[<tier>]` instead of
+        # parsing it as a style tag: `[base]` and `[project-overlay]` were
+        # silently swallowed, so the tier column vanished from the output
+        # entirely. Layer sources and step ids are user-controlled paths/ids,
+        # so escape those values too.
         console.print(
-            f"  \u2022 [{layer.tier}] {layer.source} "
+            f"  \u2022 \\[{_escape_markup(str(layer.tier))}] "
+            f"{_escape_markup(str(layer.source))} "
             f"(priority={priority})"
         )
 
     console.print("Step attribution:")
     for composed in attribution:
-        console.print(f"  \u2022 {composed.step_id}: {composed.source}")
+        console.print(
+            f"  \u2022 {_escape_markup(str(composed.step_id))}: "
+            f"{_escape_markup(str(composed.source))}"
+        )
 
     return {
         "workflow_id": workflow_id,

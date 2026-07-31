@@ -509,6 +509,51 @@ class TestOverlayCli:
         assert payload["layers"][-1]["tier"] == "base"
         assert payload["layers"][-1]["priority"] is None
 
+    def test_workflow_resolve_prints_the_tier_column(self, project_dir, monkeypatch):
+        """The `[<tier>]` column must survive Rich rendering.
+
+        The layer line interpolated a literal `[{layer.tier}]`, so Rich parsed
+        `[base]` / `[project-overlay]` as style tags and swallowed them — the
+        tier column disappeared from every `workflow resolve` run. A bare
+        `"base" in result.output` does not catch this, because the
+        step-attribution section prints the same word as a source; the tier has
+        to be asserted in bracket form on the layers line itself.
+        """
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "echo"}],
+            },
+        )
+        _write_overlay(
+            project_dir,
+            "wf",
+            "ov1",
+            {
+                "id": "ov1",
+                "extends": "wf",
+                "priority": 10,
+                "edits": [{"remove": "a"}],
+            },
+        )
+
+        result = runner.invoke(app, ["workflow", "resolve", "wf"])
+        assert result.exit_code == 0, result.output
+
+        layer_lines = [
+            line
+            for line in result.output.splitlines()
+            if "priority=" in line
+        ]
+        assert layer_lines, result.output
+        joined = "\n".join(layer_lines)
+        assert "[base]" in joined, joined
+        assert "[project-overlay]" in joined, joined
+
     def test_workflow_resolve_equal_priority_layers_sort_by_source(self, project_dir, monkeypatch):
         """Equal-priority overlays are listed alphabetically by source."""
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
