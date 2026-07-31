@@ -732,6 +732,11 @@ class RunState:
                 "Invalid run state: missing required field(s): "
                 + ", ".join(missing_fields)
             )
+        if state_data["run_id"] != run_id:
+            raise ValueError(
+                f"Invalid run state: stored run_id {state_data['run_id']!r} "
+                f"does not match requested run_id {run_id!r}"
+            )
 
         workflow_id = state_data["workflow_id"]
         if not isinstance(workflow_id, str) or not _ID_PATTERN.fullmatch(

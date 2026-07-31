@@ -6768,6 +6768,35 @@ class TestRunState:
         with pytest.raises(FileNotFoundError):
             RunState.load("nonexistent", project_dir)
 
+    def test_load_rejects_stored_run_id_mismatch(self, project_dir):
+        """The state payload cannot redirect later writes to another run."""
+        from specify_cli.workflows.engine import RunState
+
+        run_dir = (
+            project_dir
+            / ".specify"
+            / "workflows"
+            / "runs"
+            / "requested-run"
+        )
+        run_dir.mkdir(parents=True)
+        (run_dir / "state.json").write_text(
+            json.dumps(
+                {
+                    "run_id": "other-run",
+                    "workflow_id": "test-workflow",
+                    "status": "created",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="stored run_id 'other-run' does not match requested run_id 'requested-run'",
+        ):
+            RunState.load("requested-run", project_dir)
+
     @pytest.mark.parametrize(
         ("installed_workflow_id", "installed_registry_root"),
         [
