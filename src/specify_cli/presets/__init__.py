@@ -2231,7 +2231,7 @@ class PresetManager:
                         )
                     ):
                         reconciled_skill_commands.add(cmd_name)
-                except Exception:
+                except OSError:
                     pass  # best-effort override skill restoration
 
             # Register skills only for the specific commands being
