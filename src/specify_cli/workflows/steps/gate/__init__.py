@@ -75,6 +75,31 @@ class GateStep(StepBase):
                 },
             )
 
+        # ``validate`` rejects an ``on_reject`` outside abort/skip/retry, but the
+        # engine does not auto-validate before ``execute``. The reject branch
+        # below handles only "abort" and "retry" and then falls through to its
+        # ``on_reject == "skip"`` case, so on an unvalidated run any other value
+        # makes a REJECTED gate report COMPLETED and the run walks straight past
+        # the review the gate exists to enforce. Reachable by a capitalisation
+        # slip ("Abort"), a guessed verb ("fail", "stop"), a non-string, or the
+        # ``None`` that a bare ``on_reject:`` yields -- note ``config.get(k,
+        # default)`` does NOT substitute the default for an explicit null. Fail
+        # loudly instead, mirroring the ``options``/``verdict_input`` guards here.
+        if on_reject not in ("abort", "skip", "retry"):
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Gate step {config.get('id', '?')!r}: 'on_reject' must be "
+                    f"'abort', 'skip', or 'retry', got {on_reject!r}."
+                ),
+                output={
+                    "message": message,
+                    "options": options,
+                    "on_reject": on_reject,
+                    "choice": None,
+                },
+            )
+
         if has_verdict_input and (
             not isinstance(verdict_input, str) or not verdict_input
         ):

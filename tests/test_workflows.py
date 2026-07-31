@@ -2549,6 +2549,36 @@ steps:
         })
         assert any("on_reject" in e for e in errors)
 
+    @pytest.mark.parametrize(
+        "bad_on_reject", ["Abort", "fail", "stop", "SKIP", None, 5, ["abort"]]
+    )
+    def test_execute_invalid_on_reject_fails_loudly(self, bad_on_reject):
+        """An unrecognised ``on_reject`` must not silently complete a rejection.
+
+        ``validate`` rejects anything outside abort/skip/retry, but the engine
+        does not auto-validate before ``execute``. The reject branch handles only
+        "abort" and "retry", then falls through to its ``"skip"`` case — so a
+        REJECTED gate reported COMPLETED and the run continued past the review
+        the gate exists to enforce. Reachable by a capitalisation slip, a guessed
+        verb, a non-string, or a bare ``on_reject:`` (which yields None, since
+        ``config.get(k, default)`` does not replace an explicit null).
+        """
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        result = GateStep().execute(
+            {
+                "id": "review",
+                "message": "Review the spec.",
+                "options": ["approve", "reject"],
+                "on_reject": bad_on_reject,
+                "verdict_input": "spec_verdict",
+            },
+            StepContext(inputs={"spec_verdict": "reject"}),
+        )
+        assert result.status == StepStatus.FAILED
+        assert "'on_reject' must be" in (result.error or "")
+
     def test_validate_non_string_options_does_not_raise(self):
         """Non-string options with on_reject=abort/retry must be REPORTED as an
         error, not crash: the reject-choice check calls o.lower() on each option,
