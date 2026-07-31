@@ -11513,6 +11513,24 @@ class TestResolveContent:
 class TestCollectAllLayers:
     """Test PresetResolver.collect_all_layers() method."""
 
+    def test_non_utf8_legacy_command_keeps_replace_strategy(self, project_dir):
+        presets_dir = project_dir / ".specify" / "presets"
+        command_path = (
+            presets_dir / "legacy-pack" / "commands" / "speckit.legacy.md"
+        )
+        command_path.parent.mkdir(parents=True)
+        command_path.write_bytes(b"\xff\xfe")
+        PresetRegistry(presets_dir).add(
+            "legacy-pack", {"version": "1.0.0", "priority": 10}
+        )
+
+        layers = PresetResolver(project_dir).collect_all_layers(
+            "speckit.legacy", "command"
+        )
+
+        assert layers[0]["path"] == command_path
+        assert layers[0]["strategy"] == "replace"
+
     def test_single_core_layer(self, project_dir):
         """Test collecting layers with only core template."""
         resolver = PresetResolver(project_dir)
