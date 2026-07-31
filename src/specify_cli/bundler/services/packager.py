@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .. import BundlerError
+from ..._download_security import MAX_ZIP_MEMBER_BYTES
 from ..lib.yamlio import ensure_within
 from ..models.manifest import BundleManifest
 from .validator import validate_manifest
@@ -95,6 +96,11 @@ def build_bundle(
             # inputs yield a byte-for-byte identical artifact.
             mode = 0o755 if file_path.stat().st_mode & 0o111 else 0o644
             info.external_attr = mode << 16
+            file_size = file_path.stat().st_size
+            if file_size > MAX_ZIP_MEMBER_BYTES:
+                raise BundlerError(
+                    f"Bundle file {arcname} exceeds {MAX_ZIP_MEMBER_BYTES}-byte limit"
+                )
             archive.writestr(info, file_path.read_bytes())
 
     return BuildResult(artifact_path=artifact_path, file_count=len(files))
