@@ -143,15 +143,17 @@ def make_catalog_fetcher(*, allow_network: bool = True):
 
         if scheme == "file":
             path = _file_url_to_path(parsed)
-            if not path.exists():
-                raise BundlerError(f"Catalog file not found: {path}")
-            return loads_json(path.read_text(encoding="utf-8"), origin=str(path))
+            try:
+                return loads_json(path.read_text(encoding="utf-8"), origin=str(path))
+            except FileNotFoundError:
+                raise BundlerError(f"Catalog file not found: {path}") from None
 
         if scheme == "" or _is_windows_drive_path(url):
             path = Path(url)
-            if not path.exists():
-                raise BundlerError(f"Catalog file not found: {path}")
-            return loads_json(path.read_text(encoding="utf-8"), origin=str(path))
+            try:
+                return loads_json(path.read_text(encoding="utf-8"), origin=str(path))
+            except FileNotFoundError:
+                raise BundlerError(f"Catalog file not found: {path}") from None
 
         if scheme in ("http", "https"):
             if not allow_network:
