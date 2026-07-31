@@ -77,6 +77,16 @@ def resolve_install_plan(
 
     # FR-019: integration-compatibility — a bundle that pins a different
     # integration than the project's active one halts (no silent change).
+    #
+    # A blank integration arrives as ``""``, not ``None`` — which is not a usable
+    # integration id but satisfied NEITHER guard below (the first is a truthiness
+    # test, the second an ``is None`` test), so a pinned bundle was silently
+    # adopted: precisely the outcome this guard exists to prevent. Treat blank as
+    # indeterminate, and strip first like the writer
+    # (``integration_state.clean_integration_key``) so a padded value is not
+    # reported as clashing with itself.
+    if active_integration is not None:
+        active_integration = active_integration.strip() or None
     effective_integration = active_integration
     if manifest.integration is not None:
         required = manifest.integration.id
