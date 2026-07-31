@@ -207,4 +207,30 @@ def test_executable_bit_preserved_in_artifact(tmp_path: Path):
         }
     # Executable source -> 0755; plain text files -> 0644.
     assert modes["scripts/hook.sh"] == 0o755
+
+
+def test_toctou_stat_read_consistency(tmp_path: Path):
+    """Regression: stat() and read() must use the same file descriptor.
+
+    The old implementation called file_path.stat() then file_path.read_bytes()
+    as separate syscalls. Between the two, another process could replace the
+    file. The fix opens the file once and uses os.fstat() + fh.read() on the
+    same handle. This test verifies the archived bytes and mode are consistent.
+    """
+    bundle = _make_bundle(tmp_path / "b")
+    target = bundle / "assets" / "data.bin"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"\x00\x01\x02\x03")
+    target.chmod(0o644)
+
+    result = build_bundle(bundle, output_dir=tmp_path / "out")
+    with zipfile.ZipFile(result.artifact_path) as archive:
+        content = archive.read("assets/data.bin")
+        modes = {
+            info.filename: (info.external_attr >> 16) & 0o777
+            for info in archive.infolist()
+        }
+
+    assert content == b"\x00\x01\x02\x03"
+    assert modes["assets/data.bin"] == 0o644
     assert modes["README.md"] == 0o644
