@@ -205,3 +205,28 @@ def test_missing_template_error_matches_all_variants(repo: Path) -> None:
     assert bash.returncode == ps.returncode == py.returncode == 1
     assert bash.stdout == ps.stdout == py.stdout == ""
     assert bash.stderr == ps.stderr == py.stderr
+
+
+def test_python_text_output_survives_a_legacy_stdout_code_page(repo: Path) -> None:
+    """Text mode must not crash when stdout cannot encode the status glyphs.
+
+    On Windows sys.stdout falls back to the ANSI code page whenever it is not a
+    console — which is every time an agent or a workflow step captures the
+    output. U+2713 is unencodable in cp1252, so printing it raised
+    UnicodeEncodeError and truncated the document listing. The ASCII fallback is
+    the rendering these markers already have in-tree (Test-FileExists in
+    scripts/powershell/common.ps1, and normalize_status_text).
+    """
+    feature = repo / "specs" / "001-my-feature"
+    (feature / "research.md").write_text("# research\n", encoding="utf-8")
+    (feature / "contracts").mkdir()
+
+    env = clean_env()
+    env["PYTHONIOENCODING"] = "cp1252"
+    result = run(py_cmd(repo, SCRIPT), repo, env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert "UnicodeEncodeError" not in result.stderr
+    for doc in ("research.md", "data-model.md", "contracts/", "quickstart.md"):
+        assert doc in result.stdout, (doc, result.stdout)
+    assert "[OK] research.md" in normalize_status_text(result.stdout), result.stdout
