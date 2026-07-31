@@ -296,6 +296,12 @@ class PresetManifest:
                 f"(expected {self.SCHEMA_VERSION})"
             )
 
+        for section in ("preset", "requires", "provides"):
+            if not isinstance(self.data[section], dict):
+                raise PresetValidationError(
+                    f"Invalid {section}: expected a mapping"
+                )
+
         # Validate preset metadata
         pack = self.data["preset"]
         for field in ["id", "name", "version", "description"]:

@@ -197,6 +197,25 @@ class TestPresetManifest:
             with pytest.raises(PresetValidationError, match="YAML mapping"):
                 PresetManifest(manifest_path)
 
+    @pytest.mark.parametrize("section", ["preset", "requires", "provides"])
+    @pytest.mark.parametrize("bad_value", [None, [], "text"])
+    def test_required_section_not_mapping_raises_validation_error(
+        self, temp_dir, valid_pack_data, section, bad_value
+    ):
+        """Required manifest sections reject null, list, and scalar values."""
+        valid_pack_data[section] = bad_value
+        manifest_path = temp_dir / "preset.yml"
+        manifest_path.write_text(
+            yaml.safe_dump(valid_pack_data),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(
+            PresetValidationError,
+            match=rf"Invalid {section}: expected a mapping",
+        ):
+            PresetManifest(manifest_path)
+
     @pytest.mark.parametrize(
         "bad",
         [
