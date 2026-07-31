@@ -7,6 +7,7 @@ from typing import Any
 
 import typer
 import yaml
+from rich.markup import escape as _escape_markup
 
 from ..._console import console, err_console
 from ...extensions import normalize_priority
@@ -412,14 +413,23 @@ def workflow_resolve(project_root: Path, workflow_id: str) -> dict[str, Any] | N
         priority = (
             "n/a" if layer.tier == "base" else str(normalize_priority(layer.priority))
         )
+        # ``\[`` keeps the literal bracket: unescaped, Rich parses ``[base]`` /
+        # ``[project-overlay]`` as a style tag and swallows the tier label whole.
         console.print(
-            f"  \u2022 [{layer.tier}] {layer.source} "
+            f"  \u2022 \\[{_escape_markup(layer.tier)}] "
+            f"{_escape_markup(layer.source)} "
             f"(priority={priority})"
         )
 
     console.print("Step attribution:")
     for composed in attribution:
-        console.print(f"  \u2022 {composed.step_id}: {composed.source}")
+        # Step IDs come from base-workflow / overlay YAML, which only bans ``:``
+        # \u2014 brackets pass validation, so they reach Rich as markup. A balanced
+        # ``[stuff]`` is swallowed; an unbalanced ``[/red]`` raises MarkupError.
+        console.print(
+            f"  \u2022 {_escape_markup(composed.step_id)}: "
+            f"{_escape_markup(composed.source)}"
+        )
 
     return {
         "workflow_id": workflow_id,

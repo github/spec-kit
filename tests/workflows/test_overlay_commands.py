@@ -509,6 +509,86 @@ class TestOverlayCli:
         assert payload["layers"][-1]["tier"] == "base"
         assert payload["layers"][-1]["priority"] is None
 
+    def test_workflow_resolve_prints_tier_labels(self, project_dir, monkeypatch):
+        """Layer tiers render literally; an unescaped ``[base]`` is eaten as markup."""
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "echo"}],
+            },
+        )
+        _write_overlay(
+            project_dir,
+            "wf",
+            "ov1",
+            {
+                "id": "ov1",
+                "extends": "wf",
+                "priority": 10,
+                "edits": [
+                    {
+                        "operation": "insert_after",
+                        "anchor": "a",
+                        "step": {"id": "new", "type": "command", "command": "echo"},
+                    }
+                ],
+            },
+        )
+
+        result = runner.invoke(app, ["workflow", "resolve", "wf"])
+        assert result.exit_code == 0, result.output
+        assert "[base]" in result.output
+        assert "[project-overlay]" in result.output
+
+    @pytest.mark.parametrize(
+        "step_id",
+        [
+            # Balanced tag: silently swallowed, so the step vanishes from output.
+            "new[stuff]",
+            # Unbalanced closer: raises MarkupError -> traceback and exit 1.
+            "new[/red]",
+        ],
+    )
+    def test_workflow_resolve_escapes_rich_markup_in_step_id(
+        self, project_dir, monkeypatch, step_id
+    ):
+        """Step IDs are unvalidated for brackets, so they must be escaped."""
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "echo"}],
+            },
+        )
+        _write_overlay(
+            project_dir,
+            "wf",
+            "ov1",
+            {
+                "id": "ov1",
+                "extends": "wf",
+                "priority": 10,
+                "edits": [
+                    {
+                        "operation": "insert_after",
+                        "anchor": "a",
+                        "step": {"id": step_id, "type": "command", "command": "echo"},
+                    }
+                ],
+            },
+        )
+
+        result = runner.invoke(app, ["workflow", "resolve", "wf"])
+        assert result.exit_code == 0, result.output
+        assert step_id in result.output
+
     def test_workflow_resolve_equal_priority_layers_sort_by_source(self, project_dir, monkeypatch):
         """Equal-priority overlays are listed alphabetically by source."""
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
