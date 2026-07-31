@@ -4925,6 +4925,38 @@ class TestPresetSkills:
         assert "templates/commands/specify.md" in content, "Should reference core template"
         assert "disable-model-invocation: false" in content
 
+    def test_skill_restored_on_preset_remove_without_project_core_templates(self, project_dir):
+        """Removing a preset must restore core skills even when the project
+        has no ``.specify/templates/commands`` directory of its own — which
+        is the normal case, since ``specify init`` never populates it. The
+        real core commands live in the bundled core_pack/repo-root templates
+        tree, and restoration must fall back there instead of deleting the
+        skill outright (#3928).
+        """
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        # The project_dir fixture's commands dir is empty, matching a real
+        # project — specify init never populates project-local overrides
+        # for unmodified core commands.
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        assert core_cmds.exists() and not any(core_cmds.iterdir())
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:self-test" in skill_file.read_text()
+
+        manager.remove("self-test")
+
+        assert skill_file.exists(), "Core skill must be restored, not deleted"
+        content = skill_file.read_text()
+        assert "preset:self-test" not in content
+        assert "templates/commands/specify.md" in content
+        assert "Create or update the feature specification" in content
+
     def test_skill_restored_on_remove_resolves_script_placeholders(self, project_dir):
         """Core restore should resolve {SCRIPT}/{ARGS} placeholders like other skill paths."""
         self._write_init_options(project_dir, ai="claude", ai_skills=True, script="sh")
