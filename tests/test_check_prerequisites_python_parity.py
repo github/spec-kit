@@ -181,6 +181,45 @@ def test_python_text_output_matches_bash(prereq_repo: Path) -> None:
     assert _normalize_status_text(py.stdout) == _normalize_status_text(bash.stdout)
 
 
+def test_python_text_output_survives_a_legacy_stdout_code_page(
+    prereq_repo: Path,
+) -> None:
+    """Text mode must not crash when stdout cannot encode the status glyphs.
+
+    On Windows sys.stdout falls back to the ANSI code page whenever it is not a
+    console — which is every time an agent or a workflow step captures the
+    output. U+2713 is unencodable in cp1252, so printing it raised
+    UnicodeEncodeError and truncated the report right after "AVAILABLE_DOCS:".
+    The ASCII fallback is the rendering these markers already have in-tree
+    (Test-FileExists in scripts/powershell/common.ps1, and
+    normalize_status_text here).
+    """
+    feat = prereq_repo / "specs" / "001-my-feature"
+    feat.mkdir(parents=True)
+    (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
+    (feat / "contracts").mkdir()
+    _write_feature_json(prereq_repo)
+
+    env = _clean_env()
+    env["PYTHONIOENCODING"] = "cp1252"
+    result = _run(_py_cmd(prereq_repo, "--include-tasks"), prereq_repo, env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert "UnicodeEncodeError" not in result.stderr
+    assert "AVAILABLE_DOCS:" in result.stdout
+    # Every per-document line must still be there, not truncated away by the
+    # encode error, and rendered with the ASCII markers.
+    for doc in (
+        "research.md",
+        "data-model.md",
+        "contracts/",
+        "quickstart.md",
+        "tasks.md",
+    ):
+        assert doc in result.stdout, (doc, result.stdout)
+    assert "[OK]" in result.stdout or "[FAIL]" in result.stdout, result.stdout
+
+
 @requires_bash
 def test_python_help_output_matches_bash(prereq_repo: Path) -> None:
     bash = _run(_bash_cmd(prereq_repo, "--help"), prereq_repo)

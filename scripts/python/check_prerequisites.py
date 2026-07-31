@@ -130,14 +130,31 @@ def _print_paths_only(paths: FeaturePaths, json_mode: bool) -> None:
     print(f"TASKS: {paths.tasks}")
 
 
+def _status_marker(ok: bool) -> str:
+    """Return the status glyph, downgraded to ASCII when stdout cannot encode it.
+
+    On Windows sys.stdout falls back to the ANSI code page whenever it is not a
+    console - a pipe or a file redirect, which is how agents and workflow steps
+    invoke these scripts - and U+2713 is unencodable in cp1252, so printing it
+    raised UnicodeEncodeError and aborted the report right after
+    "AVAILABLE_DOCS:". "[OK]"/"[FAIL]" is the ASCII rendering these markers
+    already have in-tree: see Test-FileExists in scripts/powershell/common.ps1
+    and normalize_status_text in tests/parity_helpers.py.
+    """
+    glyph = "✓" if ok else "✗"
+    try:
+        glyph.encode(getattr(sys.stdout, "encoding", None) or "utf-8")
+    except (LookupError, UnicodeEncodeError):
+        return "[OK]" if ok else "[FAIL]"
+    return glyph
+
+
 def _check_file(path: Path, description: str) -> None:
-    marker = "✓" if path.is_file() else "✗"
-    print(f"  {marker} {description}")
+    print(f"  {_status_marker(path.is_file())} {description}")
 
 
 def _check_dir(path: Path, description: str) -> None:
-    marker = "✓" if _dir_has_entries(path) else "✗"
-    print(f"  {marker} {description}")
+    print(f"  {_status_marker(_dir_has_entries(path))} {description}")
 
 
 def _print_text_results(paths: FeaturePaths, include_tasks: bool) -> None:
