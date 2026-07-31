@@ -30,6 +30,58 @@ def _stdin_is_interactive() -> bool:
     return sys.stdin.isatty()
 
 
+def _ext_spec_is_url(ext_spec: str) -> bool:
+    """Return True when *ext_spec* is an http(s) URL rather than a name/path."""
+    from urllib.parse import urlparse
+
+    try:
+        return urlparse(ext_spec).scheme in ("http", "https")
+    except ValueError:
+        return False
+
+
+def _confirm_extension_url_trust(
+    url_specs: list[str], *, trust_override: bool
+) -> dict[str, bool]:
+    """Resolve trust for each URL-based extension before the Live display.
+
+    URL installs pull an arbitrary external extension, so they get the same
+    default-deny confirmation as ``extension add --from``. Returns a mapping of
+    ``url_spec -> approved``. With *trust_override* every URL is pre-approved.
+    In a non-interactive session without the override, every URL is denied
+    (the prompt cannot be answered), mirroring the default-deny posture.
+    """
+    from rich.markup import escape as _escape_markup
+    from rich.panel import Panel
+
+    approvals: dict[str, bool] = {}
+    interactive = _stdin_is_interactive()
+    for spec in url_specs:
+        if trust_override:
+            approvals[spec] = True
+            continue
+        if not interactive:
+            approvals[spec] = False
+            continue
+        console.print()
+        console.print(
+            Panel(
+                "[bold]You are installing an extension from an external URL that is not\n"
+                "listed in any of your configured extension catalogs.[/bold]\n\n"
+                f"URL: {_escape_markup(spec)}\n\n"
+                "Only install extensions from sources you trust.",
+                title="[bold yellow]⚠ Untrusted Source[/bold yellow]",
+                border_style="yellow",
+                padding=(1, 2),
+            )
+        )
+        console.print()
+        approvals[spec] = typer.confirm(
+            f"Install extension from {spec}?", default=False
+        )
+    return approvals
+
+
 def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_version: str) -> str:
     """Install a single extension during ``specify init``.
 
@@ -234,6 +286,11 @@ def register(app: typer.Typer) -> None:
             "--extension",
             help="Install an extension during initialization (bundled name, local path, or HTTPS URL). Repeatable.",
         ),
+        trust_extension_urls: bool = typer.Option(
+            False,
+            "--trust-extension-urls",
+            help="Pre-authorize installing extensions from external URLs without the interactive trust prompt (required for non-interactive URL installs).",
+        ),
     ):
         """
         Initialize a new Specify project.
@@ -269,7 +326,7 @@ def register(app: typer.Typer) -> None:
             specify init my-project --integration copilot --extension git  # With bundled extension
             specify init my-project --extension git --extension selftest  # Multiple extensions
             specify init my-project --extension ./my-extensions/custom-ext  # Local path extension
-            specify init my-project --extension https://example.com/extensions/my-ext.zip  # URL extension
+            specify init my-project --extension https://example.com/extensions/my-ext.zip --trust-extension-urls  # URL extension (non-interactive)
         """
         # Lazy imports to avoid circular dependency — __init__.py imports this module
         from .. import (
@@ -522,6 +579,18 @@ def register(app: typer.Typer) -> None:
 
         tracker.add("final", "Finalize")
 
+        # Resolve trust for URL-based extensions BEFORE entering the Live
+        # display: the confirmation prompt cannot be shown/answered underneath
+        # the Rich Live spinner. URL installs are default-deny unless the user
+        # confirms interactively or passes --trust-extension-urls.
+        extension_url_approvals: dict[str, bool] = {}
+        if extensions:
+            url_specs = [e for e in extensions if _ext_spec_is_url(e)]
+            if url_specs:
+                extension_url_approvals = _confirm_extension_url_trust(
+                    url_specs, trust_override=trust_extension_urls
+                )
+
         # Disable transient mode on Windows: PowerShell 5.1's legacy console
         # hangs when Rich tries to restore cursor state via VT escape sequences.
         _transient = sys.platform != "win32"
@@ -741,6 +810,17 @@ def register(app: typer.Typer) -> None:
                     any_extension_installed = False
                     for i, ext_spec in enumerate(extensions):
                         tracker.start(f"extension-{i}")
+                        # Skip URL extensions the user did not confirm as trusted
+                        # (default-deny; resolved before the Live display).
+                        if _ext_spec_is_url(ext_spec) and not extension_url_approvals.get(
+                            ext_spec, False
+                        ):
+                            tracker.error(
+                                f"extension-{i}",
+                                "skipped: untrusted URL not confirmed "
+                                "(use --trust-extension-urls)",
+                            )
+                            continue
                         try:
                             status_msg = _install_extension_during_init(
                                 project_path, ext_spec, speckit_ver

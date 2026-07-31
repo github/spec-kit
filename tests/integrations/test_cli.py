@@ -2495,7 +2495,7 @@ class TestExtensionFlag:
         """A non-HTTPS URL is rejected before any download; init is not aborted."""
         project, result = self._run_init(
             tmp_path,
-            ["--extension", "http://example.com/ext.zip"],
+            ["--extension", "http://example.com/ext.zip", "--trust-extension-urls"],
             project_name="ext-http",
         )
 
@@ -2504,6 +2504,86 @@ class TestExtensionFlag:
         assert "failed" in normalized.lower()
         # No extension directory should have been created for the bad URL.
         assert not (project / ".specify" / "extensions" / "ext").exists()
+
+    def test_url_extension_skipped_without_trust(self, tmp_path):
+        """Non-interactive URL install without --trust-extension-urls is denied."""
+        from unittest.mock import patch
+
+        with patch(
+            "specify_cli.commands.init._stdin_is_interactive", return_value=False
+        ), patch("specify_cli.authentication.http.open_url") as mock_open:
+            project, result = self._run_init(
+                tmp_path,
+                ["--extension", "https://example.com/git.zip"],
+                project_name="ext-url-denied",
+            )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+        # Default-deny: no download attempted, nothing installed.
+        mock_open.assert_not_called()
+        normalized = _normalize_cli_output(result.output)
+        assert "untrusted url" in normalized.lower()
+        assert not (project / ".specify" / "extensions" / "git").exists()
+
+    def test_url_extension_interactive_confirm_installs(self, tmp_path):
+        """An interactive 'yes' to the trust prompt allows the URL install."""
+        import io
+
+        from unittest.mock import patch
+
+        from specify_cli import _locate_bundled_extension
+
+        bundled_git = _locate_bundled_extension("git")
+        assert bundled_git is not None, "bundled git extension not found"
+        zip_bytes = self._zip_bytes_from_dir(bundled_git)
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def _cache_dir_stand_in(project_root):
+            d = project_root / ".specify" / "extensions" / ".cache" / "downloads"
+            d.mkdir(parents=True, exist_ok=True)
+            return d
+
+        def _open_download_zip(project_root, download_dir, zip_filename):
+            target = download_dir / zip_filename
+            o_temporary = getattr(os, "O_TEMPORARY", 0)
+            if o_temporary:
+                return os.open(
+                    target, os.O_RDWR | os.O_CREAT | os.O_EXCL | o_temporary, 0o600
+                )
+            fd = os.open(target, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                os.unlink(target)
+            except OSError:
+                os.close(fd)
+                raise
+            return fd
+
+        with patch(
+            "specify_cli.commands.init._stdin_is_interactive", return_value=True
+        ), patch("typer.confirm", return_value=True), patch(
+            "specify_cli.authentication.http.open_url",
+            return_value=FakeResponse(zip_bytes),
+        ), patch(
+            "specify_cli.extensions._commands._validate_safe_cache_dir",
+            side_effect=_cache_dir_stand_in,
+        ), patch(
+            "specify_cli.extensions._commands._safe_open_download_zip",
+            side_effect=_open_download_zip,
+        ):
+            project, result = self._run_init(
+                tmp_path,
+                ["--extension", "https://example.com/git.zip"],
+                project_name="ext-url-confirm",
+            )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+        assert (project / ".specify" / "extensions" / "git").exists()
 
     def test_url_extension_installs_zip(self, tmp_path):
         """A successful HTTPS ZIP download installs via the shared hardened path."""
@@ -2556,7 +2636,7 @@ class TestExtensionFlag:
         ):
             project, result = self._run_init(
                 tmp_path,
-                ["--extension", "https://example.com/git.zip"],
+                ["--extension", "https://example.com/git.zip", "--trust-extension-urls"],
                 project_name="ext-url",
             )
 
