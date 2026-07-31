@@ -20,9 +20,31 @@ class FanInStep(StepBase):
 
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
         wait_for = config.get("wait_for", [])
-        output_config = config.get("output") or {}
-        if not isinstance(output_config, dict):
+        output_config = config.get("output")
+        if output_config is None:
             output_config = {}
+        elif not isinstance(output_config, dict):
+            # ``validate`` rejects a non-mapping ``output`` and its comment says
+            # why: "execute() silently coerces a non-mapping output to {}, so the
+            # author's declared aggregation keys would vanish with no error."
+            # The engine does not auto-validate before ``execute``, so on an
+            # unvalidated run that is exactly what happened -- and ``x or {}``
+            # masked the falsy shapes ([], false, 0, '') before the isinstance
+            # check even ran. Every declared key vanished while the step still
+            # reported COMPLETED, so downstream ``steps.<id>.output.<key>``
+            # resolved to None and interpolated as "": the same "silent empty
+            # result + COMPLETED" wiring bug the ``wait_for`` guard below
+            # rejects. Fail loudly with validate()'s own message instead. An
+            # explicit ``output:`` (YAML null) stays valid, matching validate.
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Fan-in step {config.get('id', '?')!r}: 'output' must be a "
+                    f"mapping of key -> expression, got "
+                    f"{type(output_config).__name__}."
+                ),
+                output={"results": []},
+            )
 
         # The engine does not auto-validate step config, so an unvalidated run
         # with a non-list ``wait_for`` reaches here raw. Iterating it then
