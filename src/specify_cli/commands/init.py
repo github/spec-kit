@@ -41,34 +41,23 @@ def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_ve
     from urllib.parse import urlparse
 
     from .._assets import _locate_bundled_extension
-    from ..extensions import ExtensionCatalog, ExtensionManager
-    from ..extensions._commands import _resolve_catalog_extension
+    from ..extensions import ExtensionCatalog, ExtensionError, ExtensionManager
+    from ..extensions._commands import (
+        _resolve_catalog_extension,
+        install_extension_from_url,
+    )
 
     manager = ExtensionManager(project_path)
 
     # --- URL ---
     parsed = urlparse(ext_spec)
     if parsed.scheme in ("http", "https"):
-        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
-        if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
-            raise ValueError("URL must use HTTPS (HTTP is only allowed for localhost)")
-
-        import re as _re
-        import urllib.error as _urllib_error
-        import urllib.request
-
-        download_dir = project_path / ".specify" / "extensions" / ".cache" / "downloads"
-        download_dir.mkdir(parents=True, exist_ok=True)
-        safe_name = _re.sub(r"[^a-z0-9-]", "-", (parsed.path.split("/")[-1] or "download").lower())[:64]
-        zip_path = download_dir / f"{safe_name}-init-download.zip"
         try:
-            with urllib.request.urlopen(ext_spec, timeout=60) as _resp:
-                zip_path.write_bytes(_resp.read())
-            manifest = manager.install_from_zip(zip_path, speckit_version)
-        except _urllib_error.URLError as exc:
-            raise ValueError(f"Failed to download from {ext_spec}: {exc}") from exc
-        finally:
-            zip_path.unlink(missing_ok=True)
+            manifest = install_extension_from_url(
+                manager, project_path, ext_spec, speckit_version
+            )
+        except ExtensionError as exc:
+            raise ValueError(str(exc)) from exc
         return f"{manifest.name} v{manifest.version} installed"
 
     # --- Local path ---
@@ -524,8 +513,12 @@ def register(app: typer.Typer) -> None:
             tracker.add(key, label)
 
         if extensions:
+            from rich.markup import escape as _escape_markup
+
             for i, ext_spec in enumerate(extensions):
-                tracker.add(f"extension-{i}", f"Install extension: {ext_spec}")
+                tracker.add(
+                    f"extension-{i}", f"Install extension: {_escape_markup(ext_spec)}"
+                )
 
         tracker.add("final", "Finalize")
 
@@ -740,7 +733,12 @@ def register(app: typer.Typer) -> None:
 
                 # Install extensions specified via --extension
                 if extensions:
+                    from rich.markup import escape as _escape_markup
+
+                    from ..extensions._commands import _refresh_events_and_warn
+
                     speckit_ver = get_speckit_version()
+                    any_extension_installed = False
                     for i, ext_spec in enumerate(extensions):
                         tracker.start(f"extension-{i}")
                         try:
@@ -748,9 +746,19 @@ def register(app: typer.Typer) -> None:
                                 project_path, ext_spec, speckit_ver
                             )
                             tracker.complete(f"extension-{i}", status_msg)
+                            any_extension_installed = True
                         except Exception as ext_err:
                             sanitized_ext = str(ext_err).replace("\n", " ").strip()
-                            tracker.error(f"extension-{i}", f"failed: {sanitized_ext[:120]}")
+                            tracker.error(
+                                f"extension-{i}",
+                                f"failed: {_escape_markup(sanitized_ext[:120])}",
+                            )
+
+                    # Refresh native event configuration once after the batch so
+                    # that an extension declaring ``events:`` has its hooks
+                    # activated, mirroring the ``extension add`` path.
+                    if any_extension_installed:
+                        _refresh_events_and_warn(project_path)
 
                 # Seed the constitution AFTER preset installation so that a
                 # preset-provided constitution-template (resolved via the

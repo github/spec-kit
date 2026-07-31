@@ -95,6 +95,141 @@ def _refresh_events_and_warn(project_root: Path) -> None:
             console.print(f"    {key}: {_escape_markup(detail)}")
 
 
+def install_extension_from_url(
+    manager,
+    project_root: Path,
+    url: str,
+    speckit_version: str,
+    *,
+    priority: int = 10,
+    force: bool = False,
+):
+    """Download an archive from *url* and install it, reusing the hardened path.
+
+    Shares the same download hardening as ``extension add --from``:
+    HTTPS enforcement, the catalog's authenticated + redirect-guarded
+    ``_open_url`` fetch, a bounded (50 MiB) response read, archive-format
+    detection (ZIP or tar.gz/tgz), and a TOCTOU-safe transient download file
+    consumed directly by ``install_from_zip``.
+
+    Returns the installed manifest. Raises ``ExtensionError`` on any failure so
+    callers can present a uniform message without a second downloader.
+    """
+    import urllib.error
+
+    from . import ExtensionCatalog, ExtensionError
+
+    if not is_https_or_localhost_http(url):
+        raise ExtensionError(
+            "URL must use HTTPS (HTTP is only allowed for localhost)"
+        )
+
+    download_dir = _validate_safe_cache_dir(project_root)
+    archive_filename = f"extension-url-download-{uuid4().hex}.archive"
+    # Only used for diagnostic messages: the real archive is a transient inode
+    # (unlinked on POSIX, O_TEMPORARY on Windows) consumed via ``archive_file``
+    # below, so this path is never opened again.
+    archive_path = download_dir / archive_filename
+
+    try:
+        dl_catalog = ExtensionCatalog(project_root)
+        download_url = url
+        extra_headers = None
+        resolved_url = dl_catalog._resolve_github_release_asset_api_url(download_url)
+        if resolved_url:
+            download_url = resolved_url
+            extra_headers = {"Accept": "application/octet-stream"}
+
+        with dl_catalog._open_url(
+            download_url, timeout=60, extra_headers=extra_headers
+        ) as response:
+            archive_data = read_response_limited(
+                response,
+                error_type=ExtensionError,
+                label=f"extension {url}",
+            )
+            final_url = (
+                response.geturl() if hasattr(response, "geturl") else download_url
+            )
+            content_type = (
+                response.getheader("Content-Type")
+                if hasattr(response, "getheader")
+                else None
+            )
+    except urllib.error.URLError as exc:
+        raise ExtensionError(f"Failed to download from {url}: {exc}") from exc
+
+    download_fd = -1
+    download_file = None
+    try:
+        try:
+            download_fd = _safe_open_download_zip(
+                project_root, download_dir, archive_filename
+            )
+        except OSError as exc:
+            raise ExtensionError(
+                f"Could not safely create download file: {exc}"
+            ) from exc
+
+        try:
+            download_file = os.fdopen(download_fd, "w+b")
+            download_fd = -1
+            download_file.write(archive_data)
+            download_file.flush()
+            download_file.seek(0)
+        except OSError as exc:
+            raise ExtensionError(
+                f"Could not safely write download file: {exc}"
+            ) from exc
+
+        format_source = (
+            final_url
+            if archive_format_from_name(final_url) is not None
+            else url
+        )
+        try:
+            detect_archive_format(
+                archive_path,
+                archive_file=download_file,
+                source_name=format_source,
+                content_type=content_type,
+                error_type=ExtensionError,
+            )
+        except ExtensionError as exc:
+            raise ExtensionError(
+                f"{url} did not return a ZIP archive or tar.gz/tgz archive "
+                f"(got {len(archive_data)} bytes). This usually means the request "
+                "was not authenticated and a login/HTML page was returned. "
+                "Verify the URL and configured credentials."
+            ) from exc
+
+        # Consume the transient inode reserved above rather than reopening the
+        # cache pathname during extraction.
+        try:
+            return manager.install_from_zip(
+                archive_path,
+                speckit_version,
+                priority=priority,
+                force=force,
+                archive_file=download_file,
+            )
+        except OSError as exc:
+            raise ExtensionError(
+                f"Could not install extension from downloaded archive: {exc}"
+            ) from exc
+    finally:
+        if download_file is not None:
+            try:
+                download_file.close()
+            except OSError:
+                pass
+        elif download_fd >= 0:
+            try:
+                os.close(download_fd)
+            except OSError:
+                pass
+
+
 def _load_catalog_command_config(project_root: Path, config_path: Path) -> dict:
     """Load extension catalog CLI config with user-facing shape errors."""
     try:
@@ -810,134 +945,20 @@ def extension_add(
                 )
 
             elif from_url:
-                # Install from an archive URL.
-                import urllib.error
-
+                # Install from URL archive via the shared hardened downloader
+                # (HTTPS enforcement, authenticated redirect-guarded fetch,
+                # bounded read, archive-format detection, TOCTOU-safe transient
+                # archive). Same path used by ``specify init --extension <url>``.
                 console.print(f"Downloading from {safe_url}...")
+                manifest = install_extension_from_url(
+                    manager,
+                    project_root,
+                    from_url,
+                    speckit_version,
+                    priority=priority,
+                    force=force,
+                )
 
-                download_dir = _validate_safe_cache_dir(project_root)
-                archive_filename = f"extension-url-download-{uuid4().hex}.archive"
-                # Only used for diagnostic messages: the real archive is a
-                # transient inode (unlinked on POSIX, O_TEMPORARY on Windows)
-                # consumed via ``archive_file`` below, so this path is never
-                # opened again.
-                archive_path = download_dir / archive_filename
-
-                try:
-                    # Use the catalog's authenticated fetch so configured
-                    # credentials (incl. GitHub Enterprise Server) are applied
-                    # and GHES release-asset URLs resolve via /api/v3 — keeping
-                    # --from consistent with catalog-based installs.
-                    dl_catalog = ExtensionCatalog(project_root)
-                    download_url = from_url
-                    extra_headers = None
-                    resolved_url = dl_catalog._resolve_github_release_asset_api_url(download_url)
-                    if resolved_url:
-                        download_url = resolved_url
-                        extra_headers = {"Accept": "application/octet-stream"}
-
-                    with dl_catalog._open_url(
-                        download_url, timeout=60, extra_headers=extra_headers
-                    ) as response:
-                        archive_data = read_response_limited(
-                            response,
-                            error_type=ExtensionError,
-                            label=f"extension {from_url}",
-                        )
-                        final_url = (
-                            response.geturl()
-                            if hasattr(response, "geturl")
-                            else download_url
-                        )
-                        content_type = (
-                            response.getheader("Content-Type")
-                            if hasattr(response, "getheader")
-                            else None
-                        )
-
-                    download_fd = -1
-                    download_file = None
-                    try:
-                        try:
-                            download_fd = _safe_open_download_zip(
-                                project_root, download_dir, archive_filename
-                            )
-                        except OSError as exc:
-                            console.print(
-                                "[red]Error:[/red] Could not safely create download file: "
-                                f"{_escape_markup(str(exc))}"
-                            )
-                            raise typer.Exit(1)
-
-                        try:
-                            download_file = os.fdopen(download_fd, "w+b")
-                            download_fd = -1
-                            download_file.write(archive_data)
-                            download_file.flush()
-                            download_file.seek(0)
-                        except OSError as exc:
-                            console.print(
-                                "[red]Error:[/red] Could not safely write download file: "
-                                f"{_escape_markup(str(exc))}"
-                            )
-                            raise typer.Exit(1)
-
-                        format_source = (
-                            final_url
-                            if archive_format_from_name(final_url) is not None
-                            else from_url
-                        )
-                        try:
-                            detect_archive_format(
-                                archive_path,
-                                archive_file=download_file,
-                                source_name=format_source,
-                                content_type=content_type,
-                                error_type=ExtensionError,
-                            )
-                        except ExtensionError:
-                            console.print(
-                                f"[red]Error:[/red] {safe_url} did not return a ZIP archive "
-                                "or tar.gz/tgz archive "
-                                f"(got {len(archive_data)} bytes). This usually means "
-                                "the request was not authenticated and a login/HTML page was "
-                                "returned. Verify the URL and configured credentials."
-                            )
-                            raise typer.Exit(1)
-
-                        # Consume the transient inode reserved above rather
-                        # than reopening the cache pathname during extraction.
-                        try:
-                            manifest = manager.install_from_zip(
-                                archive_path,
-                                speckit_version,
-                                priority=priority,
-                                force=force,
-                                archive_file=download_file,
-                            )
-                        except OSError as exc:
-                            console.print(
-                                "[red]Error:[/red] Could not install extension from downloaded archive: "
-                                f"{_escape_markup(str(exc))}"
-                            )
-                            raise typer.Exit(1)
-                    finally:
-                        if download_file is not None:
-                            try:
-                                download_file.close()
-                            except OSError:
-                                pass
-                        elif download_fd >= 0:
-                            try:
-                                os.close(download_fd)
-                            except OSError:
-                                pass
-                except urllib.error.URLError as e:
-                    console.print(
-                        f"[red]Error:[/red] Failed to download from {safe_url}: "
-                        f"{_escape_markup(str(e))}"
-                    )
-                    raise typer.Exit(1)
             else:
                 # Try bundled extensions first (shipped with spec-kit)
                 bundled_path = _locate_bundled_extension(extension)

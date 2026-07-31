@@ -119,6 +119,7 @@ def _run_init(integration: str, *, script_type: str, offline: bool = False) -> N
             preset=None,
             integration=integration,
             integration_options=None,
+            extensions=None,
         )
     except typer.Exit as exc:
         if exc.exit_code:
