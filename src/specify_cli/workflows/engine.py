@@ -1676,9 +1676,12 @@ class WorkflowEngine:
                 continue
             state_path = run_dir / "state.json"
             if state_path.exists():
-                with open(state_path, encoding="utf-8") as f:
-                    state_data = json.load(f)
-                runs.append(state_data)
+                try:
+                    with open(state_path, encoding="utf-8") as f:
+                        state_data = json.load(f)
+                    runs.append(state_data)
+                except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+                    continue
         return runs
 
 
