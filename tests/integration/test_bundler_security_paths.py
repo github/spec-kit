@@ -136,13 +136,14 @@ def _write_marker(tmp_path: Path, payload: str) -> Path:
 
 
 def test_active_integration_reads_default_integration(tmp_path: Path):
-    """``default_integration`` is the key the CLI writes, so it must be read.
+    """A marker carrying only ``default_integration`` must resolve.
 
-    ``integration_state.set_default_integration`` persists
-    ``data["default_integration"] = integration_key``, and the canonical
-    reader is ``state.get("default_integration") or state.get("integration")``.
-    Reading only the legacy aliases made every current project look as though
-    it had no active integration.
+    ``write_integration_json`` writes both ``integration`` and
+    ``default_integration``, so a marker produced by the current CLI already
+    resolved through the alias. This covers the authoritative field on its own —
+    hand-edited, or written by anything that follows the shape of the canonical
+    reader (``integration_state`` line 199:
+    ``state.get("default_integration") or state.get("integration")``).
     """
     from specify_cli.bundler.lib.project import active_integration
 

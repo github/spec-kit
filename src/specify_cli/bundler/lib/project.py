@@ -82,13 +82,15 @@ def active_integration(project_root: Path) -> str | None:
     except BundlerError:
         return None
     if isinstance(data, dict):
-        # ``default_integration`` first: that is the key the CLI actually
-        # writes (``integration_state.set_default_integration``), and the
-        # canonical reader orders it the same way --
+        # ``default_integration`` first, matching the canonical reader in
+        # ``integration_state`` (line 199):
         # ``state.get("default_integration") or state.get("integration")``.
-        # ``integration``/``id``/``active`` are legacy aliases kept for
-        # projects initialised by older versions, so reading only those made
-        # every current project look like it had no active integration.
+        # ``write_integration_json`` writes both keys, so a marker produced by
+        # the current CLI already resolved through the ``integration`` alias --
+        # this is about which field is authoritative when they disagree, and
+        # about resolving a marker that carries only ``default_integration``
+        # (hand-edited, or written by anything that follows the canonical
+        # reader's shape). ``integration``/``id``/``active`` stay as fallbacks.
         value = (
             data.get("default_integration")
             or data.get("integration")
