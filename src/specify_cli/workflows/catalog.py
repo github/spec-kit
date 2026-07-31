@@ -514,7 +514,7 @@ class WorkflowCatalog:
                     cached = json.load(f)
                 if isinstance(cached, dict):
                     return cached
-            except (json.JSONDecodeError, OSError):
+            except (UnicodeDecodeError, json.JSONDecodeError, OSError):
                 # Ignore invalid/unreadable cache and fall back to fetching from source.
                 pass
 
@@ -1210,7 +1210,7 @@ class StepCatalog:
                     cached = json.load(f)
                 if isinstance(cached, dict):
                     return cached
-            except (json.JSONDecodeError, OSError):
+            except (UnicodeDecodeError, json.JSONDecodeError, OSError):
                 # Ignore invalid/unreadable cache and fall back to fetching from source.
                 pass
 

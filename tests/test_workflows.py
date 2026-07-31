@@ -7246,6 +7246,59 @@ class TestWorkflowCatalog:
 
         assert catalog._fetch_single_catalog(entry) == payload
 
+    @pytest.mark.parametrize("catalog_type", ["workflow", "step"])
+    def test_non_utf8_cached_catalog_is_refetched(
+        self, project_dir, monkeypatch, catalog_type
+    ):
+        import io
+
+        from specify_cli.authentication import http as auth_http
+        from specify_cli.workflows.catalog import (
+            StepCatalog,
+            StepCatalogEntry,
+            WorkflowCatalog,
+            WorkflowCatalogEntry,
+        )
+
+        catalog_cls = WorkflowCatalog if catalog_type == "workflow" else StepCatalog
+        entry_cls = (
+            WorkflowCatalogEntry
+            if catalog_type == "workflow"
+            else StepCatalogEntry
+        )
+        payload_key = "workflows" if catalog_type == "workflow" else "steps"
+        url = f"https://example.com/{catalog_type}.json"
+        catalog = catalog_cls(project_dir)
+        cache_path, metadata_path = catalog._get_cache_paths(url)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_bytes(b"\xff\xfe")
+        metadata_path.write_text(
+            json.dumps({"fetched_at": 4_102_444_800}),
+            encoding="utf-8",
+        )
+        payload = {"schema_version": "1.0", payload_key: {}}
+
+        class _FakeResponse(io.BytesIO):
+            def geturl(self):
+                return url
+
+        monkeypatch.setattr(
+            auth_http,
+            "open_url",
+            lambda url, timeout=30, redirect_validator=None: _FakeResponse(
+                json.dumps(payload).encode("utf-8")
+            ),
+        )
+        entry = entry_cls(
+            url=url,
+            name="test",
+            priority=1,
+            install_allowed=True,
+        )
+
+        assert catalog._fetch_single_catalog(entry) == payload
+        assert json.loads(cache_path.read_text(encoding="utf-8")) == payload
+
     def test_non_mapping_stale_workflow_catalog_is_rejected(
         self, project_dir, monkeypatch
     ):
