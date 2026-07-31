@@ -71,6 +71,14 @@ def _register_builtin_steps() -> None:
 
 _register_builtin_steps()
 
+# The step types Spec Kit ships, snapshotted before any community step can be
+# loaded. ``load_custom_steps`` adds project-installed ids to the process-global
+# ``STEP_REGISTRY`` and never removes them, so ``STEP_REGISTRY`` cannot answer
+# "is this bundled with Spec Kit?" in a long-lived process: a step loaded for one
+# project would look built-in for the next. Callers that need the immutable set
+# (e.g. the bundler's reference checker) must use this instead.
+BUILTIN_STEP_TYPES: frozenset[str] = frozenset(STEP_REGISTRY)
+
 
 def load_custom_steps(project_root: Path) -> list[str]:
     """Load community-installed custom step types into STEP_REGISTRY.
