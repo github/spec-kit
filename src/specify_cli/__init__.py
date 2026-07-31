@@ -2187,6 +2187,7 @@ def init(
     preset: str = typer.Option(None, "--preset", help="Install a preset during initialization (by preset ID)"),
     branch_numbering: str = typer.Option(None, "--branch-numbering", help="Branch numbering strategy: 'sequential' (001, 002, ...) or 'timestamp' (YYYYMMDD-HHMMSS)"),
     e2e: bool = typer.Option(False, "--e2e", help="Scaffold Playwright E2E testing infrastructure"),
+    worktree: bool = typer.Option(False, "--worktree", "-wt", help="Create each new feature in its own linked git worktree instead of checking the branch out in place"),
 ):
     """
     Initialize a new Specify project.
@@ -2612,6 +2613,7 @@ def init(
                 "offline": offline,
                 "script": selected_script,
                 "speckit_version": get_speckit_version(),
+                "worktree": worktree,
             })
 
             # Install preset if specified
@@ -2768,6 +2770,7 @@ def fork_init(
     force: bool = typer.Option(False, "--force", help="Force merge/overwrite when using --here"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output"),
     e2e: bool = typer.Option(False, "--e2e", help="Scaffold Playwright E2E testing infrastructure"),
+    worktree: bool = typer.Option(False, "--worktree", "-wt", help="Create each new feature in its own linked git worktree instead of checking the branch out in place"),
 ):
     """Initialize a project from the local spec-kit fork (no GitHub download).
 
@@ -2779,6 +2782,13 @@ def fork_init(
         specify fork-init my-project --ai claude --e2e
         specify fork-init . --ai claude --script sh
         specify fork-init --here --ai copilot
+        specify fork-init my-project --ai claude -wt
+
+    With -wt every later `/speckit.specify` creates the feature branch in a new
+    linked worktree instead of checking it out in place, so the directory the
+    command was run from keeps its own branch and its untracked local state. The
+    choice is recorded in .specify/init-options.json and applies from then on;
+    a single run can still override it with --worktree / --no-worktree.
     """
     # Derive the repo root from this file's location (editable install)
     # __file__ = .../spec-kit/src/specify_cli/__init__.py  →  repo root is 3 levels up
@@ -2807,6 +2817,7 @@ def fork_init(
         preset=None,
         branch_numbering=None,
         e2e=e2e,
+        worktree=worktree,
     )
 
 

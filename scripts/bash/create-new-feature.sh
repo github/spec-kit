@@ -7,6 +7,9 @@ ALLOW_EXISTING=false
 SHORT_NAME=""
 BRANCH_NUMBER=""
 USE_TIMESTAMP=false
+# Empty means "not stated on the command line" — resolved later from
+# .specify/init-options.json, which is where `specify init -wt` records it.
+WORKTREE_MODE=""
 ARGS=()
 i=1
 while [ $i -le $# ]; do
@@ -48,6 +51,12 @@ while [ $i -le $# ]; do
         --timestamp)
             USE_TIMESTAMP=true
             ;;
+        --worktree)
+            WORKTREE_MODE=true
+            ;;
+        --no-worktree)
+            WORKTREE_MODE=false
+            ;;
         --help|-h)
             echo "Usage: $0 [--json] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] <feature_description>"
             echo ""
@@ -57,6 +66,8 @@ while [ $i -le $# ]; do
             echo "  --short-name <name> Provide a custom short name (2-4 words) for the branch"
             echo "  --number N          Specify branch number manually (overrides auto-detection)"
             echo "  --timestamp         Use timestamp prefix (YYYYMMDD-HHMMSS) instead of sequential numbering"
+            echo "  --worktree          Create the branch in a NEW linked worktree instead of checking it out here"
+            echo "  --no-worktree       Force checkout-in-place even if the project was initialized with -wt"
             echo "  --help, -h          Show this help message"
             echo ""
             echo "Examples:"
@@ -120,8 +131,22 @@ get_highest_from_branches() {
     
     if [ -n "$branches" ]; then
         while IFS= read -r branch; do
-            # Clean branch name: remove leading markers and remote prefixes
-            clean_branch=$(echo "$branch" | sed 's/^[* ]*//; s|^remotes/[^/]*/||')
+            # Clean branch name: remove leading markers and remote prefixes.
+            #
+            # The marker class must include '+', not only '*'. `git branch` writes
+            # '*' for the branch checked out HERE and '+' for one checked out in a
+            # LINKED WORKTREE. Matching only '*' left every '+' line as
+            # "+ feature/JSE-023-x", which does not start with "feature/", so the
+            # prefix strip missed, the digit test failed, and the branch was
+            # skipped — silently, because a skipped branch merely fails to raise
+            # the maximum.
+            #
+            # The effect is that every in-flight feature is invisible to numbering
+            # exactly when features run in parallel, which is the only situation
+            # in which the number can collide at all. Measured on a live repo:
+            # highest 23 with '+' handled, 22 without, so the next feature was
+            # about to reuse a number already taken.
+            clean_branch=$(echo "$branch" | sed 's/^[*+ ]*//; s|^remotes/[^/]*/||')
             
             # Strip feature/ prefix if present
             clean_branch="${clean_branch#feature/}"
@@ -399,7 +424,64 @@ if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
     >&2 echo "[specify] Truncated to: $BRANCH_NAME (${#BRANCH_NAME} bytes)"
 fi
 
-if [ "$HAS_GIT" = true ]; then
+# Resolve worktree mode: an explicit flag wins, then SPECIFY_WORKTREE in the
+# environment, then what `specify init -wt` recorded in init-options.json. The
+# recorded value is the default so the agent flow needs no extra argument — the
+# choice was made once, at init, and does not have to be remembered per feature.
+if [ -z "$WORKTREE_MODE" ]; then
+    if [ -n "${SPECIFY_WORKTREE:-}" ]; then
+        case "$SPECIFY_WORKTREE" in
+            1|true|yes) WORKTREE_MODE=true ;;
+            *) WORKTREE_MODE=false ;;
+        esac
+    elif grep -q '"worktree"[[:space:]]*:[[:space:]]*true' "$REPO_ROOT/.specify/init-options.json" 2>/dev/null; then
+        WORKTREE_MODE=true
+    else
+        WORKTREE_MODE=false
+    fi
+fi
+
+if [ "$HAS_GIT" = true ] && [ "$WORKTREE_MODE" = true ]; then
+    # The worktree that holds the repository's shared state is the one containing
+    # the common git dir. It must not be moved off its branch: in a project laid
+    # out this way it owns the virtualenv, the data directories and everything the
+    # linked worktrees symlink into.
+    COMMON_DIR="$(git rev-parse --git-common-dir)"
+    case "$COMMON_DIR" in /*) ;; *) COMMON_DIR="$(cd "$COMMON_DIR" && pwd)" ;; esac
+    ANCHOR="$(dirname "$COMMON_DIR")"
+
+    WORKTREE_ROOT="${SPECIFY_WORKTREE_ROOT:-${ANCHOR}-worktrees}"
+    WORKTREE_DIR="$WORKTREE_ROOT/$(basename "$BRANCH_NAME")"
+
+    # Branch from the default branch, not from HEAD. HEAD here is whatever the
+    # caller happened to have open, and a feature silently based on another
+    # feature is a merge conflict that surfaces days later.
+    BASE_BRANCH=""
+    for candidate in main master; do
+        if git show-ref --verify --quiet "refs/heads/$candidate"; then
+            BASE_BRANCH="$candidate"
+            break
+        fi
+    done
+    [ -n "$BASE_BRANCH" ] || BASE_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+
+    if [ -e "$WORKTREE_DIR" ]; then
+        >&2 echo "Error: $WORKTREE_DIR already exists. Remove it or pick a different short name."
+        exit 1
+    fi
+
+    if ! git worktree add "$WORKTREE_DIR" -b "$BRANCH_NAME" "$BASE_BRANCH" >&2; then
+        >&2 echo "Error: Failed to create worktree for '$BRANCH_NAME'."
+        exit 1
+    fi
+
+    # Everything below writes the spec relative to REPO_ROOT/SPECS_DIR. Point both
+    # at the new worktree, or the spec lands in the anchor's working tree while the
+    # branch that is supposed to carry it lives somewhere else.
+    REPO_ROOT="$WORKTREE_DIR"
+    SPECS_DIR="$REPO_ROOT/specs"
+    mkdir -p "$SPECS_DIR"
+elif [ "$HAS_GIT" = true ]; then
     if ! git checkout -b "$BRANCH_NAME" 2>/dev/null; then
         # Check if branch already exists
         if git branch --list "$BRANCH_NAME" | grep -q .; then
@@ -444,6 +526,15 @@ fi
 # Inform the user how to persist the feature variable in their own shell
 printf '# To persist: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME" >&2
 
+# In worktree mode the branch is NOT checked out here, so every later step —
+# plan, tasks, implement — resolves the repository root from its own working
+# directory and would look for this spec in the wrong tree. Say so on stderr,
+# where it is visible whether or not the caller asked for JSON.
+if [ -n "${WORKTREE_DIR:-}" ]; then
+    >&2 echo "[specify] Branch $BRANCH_NAME lives in a new worktree; this directory is unchanged."
+    >&2 echo "[specify] Continue from: $WORKTREE_DIR"
+fi
+
 if $JSON_MODE; then
     if command -v jq >/dev/null 2>&1; then
         jq -cn \
@@ -451,14 +542,16 @@ if $JSON_MODE; then
             --arg spec_file "$SPEC_FILE" \
             --arg feature_num "$FEATURE_NUM" \
             --arg project_acronym "${PROJECT_ACRONYM:-}" \
-            '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num,PROJECT_ACRONYM:$project_acronym}'
+            --arg worktree_dir "${WORKTREE_DIR:-}" \
+            '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num,PROJECT_ACRONYM:$project_acronym,WORKTREE_DIR:$worktree_dir}'
     else
-        printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","PROJECT_ACRONYM":"%s"}\n' "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")" "$(json_escape "${PROJECT_ACRONYM:-}")"
+        printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","PROJECT_ACRONYM":"%s","WORKTREE_DIR":"%s"}\n' "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")" "$(json_escape "${PROJECT_ACRONYM:-}")" "$(json_escape "${WORKTREE_DIR:-}")"
     fi
 else
     echo "BRANCH_NAME: $BRANCH_NAME"
     echo "SPEC_FILE: $SPEC_FILE"
     echo "FEATURE_NUM: $FEATURE_NUM"
     echo "PROJECT_ACRONYM: ${PROJECT_ACRONYM:-}"
+    [ -n "${WORKTREE_DIR:-}" ] && echo "WORKTREE_DIR: $WORKTREE_DIR"
     printf '# To persist in your shell: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME"
 fi
