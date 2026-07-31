@@ -6,6 +6,23 @@ from pathlib import Path
 import sys
 import typer
 
+_MAX_STDIN_BYTES = 10 * 1024 * 1024  # 10 MiB
+
+
+def _read_stdin_bounded(max_bytes: int = _MAX_STDIN_BYTES) -> str:
+    """Read at most *max_bytes* from stdin to prevent unbounded memory use."""
+    if sys.stdin.isatty():
+        return "{}"
+    chunks: list[str] = []
+    total = 0
+    while total < max_bytes:
+        chunk = sys.stdin.read(min(max_bytes - total, 65536))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+    return "".join(chunks)
+
 event_app = typer.Typer(
     name="event",
     help="Manage and execute event-driven commands",
@@ -24,8 +41,8 @@ def event_run(
     """Resolve and run an event-driven command script with stdin payload."""
     from ..events import resolve_and_run_event_command
 
-    # Read payload from stdin if available
-    payload = sys.stdin.read() if not sys.stdin.isatty() else "{}"
+    # Read payload from stdin if available (bounded to prevent OOM)
+    payload = _read_stdin_bounded()
 
     # Run the event command
     project_root = Path.cwd()  # The agent runs events from project root
