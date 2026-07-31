@@ -87,7 +87,12 @@ def _parse_edit(edit_raw: dict[str, Any], idx: int) -> tuple[OverlayEdit | None,
     else:
         return None, f"Edit at index {idx} has no operation; expected one of {sorted(VALID_OPERATIONS)}."
 
-    if operation not in VALID_OPERATIONS:
+    # ``operation`` comes straight from hand-edited YAML, so it may be an
+    # unhashable mapping/sequence (``operation: {insert_after: a}`` when the
+    # shorthand form is nested by mistake). Membership-testing an unhashable
+    # value against the frozenset raises TypeError, which would escape this
+    # never-raising validator; check the type first, like 'anchor' below.
+    if not isinstance(operation, str) or operation not in VALID_OPERATIONS:
         return None, f"Edit at index {idx} has invalid operation {operation!r}."
 
     if not isinstance(anchor, str) or not anchor:

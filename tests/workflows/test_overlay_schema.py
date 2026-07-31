@@ -136,6 +136,44 @@ class TestShorthandEdits:
         assert overlay is None
         assert any("operation" in e.lower() for e in errors), errors
 
+    @pytest.mark.parametrize(
+        "operation",
+        [
+            {"insert_after": "a"},
+            ["insert_after"],
+        ],
+    )
+    def test_non_string_operation_rejected_without_raising(self, operation):
+        """An unhashable 'operation' must be reported, not raised.
+
+        `VALID_OPERATIONS` is a frozenset, so `operation not in ...` hashes the
+        value. Nesting the shorthand form under the explicit key by mistake
+        (`operation: {insert_after: a}`) therefore raised
+        `TypeError: unhashable type: 'dict'` out of a validator whose docstring
+        promises "validation never raises" — and nothing upstream catches
+        TypeError, so the CLI died with a raw traceback.
+        """
+        overlay, errors = validate_overlay_yaml(
+            {
+                "id": "ov",
+                "extends": "wf",
+                "priority": 10,
+                "edits": [
+                    {
+                        "operation": operation,
+                        "anchor": "a",
+                        "step": {
+                            "id": "b",
+                            "type": "command",
+                            "command": "echo",
+                        },
+                    }
+                ],
+            }
+        )
+        assert overlay is None
+        assert any("invalid operation" in err for err in errors), errors
+
     def test_shorthand_and_explicit_mixed_list(self):
         overlay, errors = validate_overlay_yaml(
             {
