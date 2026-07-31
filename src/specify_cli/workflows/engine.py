@@ -714,12 +714,12 @@ class RunState:
         cls._validate_run_id(run_id)
         runs_dir = project_root / ".specify" / "workflows" / "runs" / run_id
         state_path = runs_dir / "state.json"
-        if not state_path.exists():
+        try:
+            with open(state_path, encoding="utf-8") as f:
+                state_data = json.load(f)
+        except FileNotFoundError:
             msg = f"Run state not found: {state_path}"
-            raise FileNotFoundError(msg)
-
-        with open(state_path, encoding="utf-8") as f:
-            state_data = json.load(f)
+            raise FileNotFoundError(msg) from None
         if not isinstance(state_data, dict):
             raise ValueError("Invalid run state: expected a JSON object")
         missing_fields = [
