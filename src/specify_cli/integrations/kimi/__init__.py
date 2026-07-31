@@ -331,7 +331,7 @@ def _is_speckit_generated_skill(skill_dir: Path) -> bool:
         import yaml
 
         frontmatter = yaml.safe_load(parts[1])
-    except Exception:
+    except (ImportError, yaml.YAMLError):
         return False
 
     if not isinstance(frontmatter, dict):
