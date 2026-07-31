@@ -308,15 +308,16 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
         errors.append("Workflow has no steps defined.")
 
     seen_ids: set[str] = set()
-    # ``input_names`` is the set of declared workflow input names — used by
-    # ``_validate_steps`` to cross-reference gate ``verdict_input`` bindings.
-    # ``None`` means the inputs block itself is malformed (already reported
-    # above); the cross-check is then disabled so one authoring mistake does
-    # not cascade into N spurious "undeclared" errors.
-    input_names: set[str] | None = (
-        set(definition.inputs) if isinstance(definition.inputs, dict) else None
+    # ``input_defs`` maps declared workflow input names to their definitions —
+    # used by ``_validate_steps`` to cross-reference gate ``verdict_input``
+    # bindings (both that the name exists and that its ``enum`` permits the
+    # reset sentinel). ``None`` means the inputs block itself is malformed
+    # (already reported above); the cross-check is then disabled so one
+    # authoring mistake does not cascade into N spurious "undeclared" errors.
+    input_defs: dict[str, Any] | None = (
+        dict(definition.inputs) if isinstance(definition.inputs, dict) else None
     )
-    _validate_steps(definition.steps, seen_ids, errors, input_names)
+    _validate_steps(definition.steps, seen_ids, errors, input_defs)
 
     return errors
 
@@ -325,15 +326,15 @@ def _validate_steps(
     steps: list[dict[str, Any]],
     seen_ids: set[str],
     errors: list[str],
-    input_names: set[str] | None = None,
+    input_defs: dict[str, Any] | None = None,
     inside_fan_out: bool = False,
 ) -> None:
     """Recursively validate a list of steps.
 
-    ``input_names`` is the set of declared workflow input names (or ``None``
-    when the inputs block is malformed). ``inside_fan_out`` is threaded
-    through nested control-flow steps so gate verdict bindings can be rejected
-    anywhere inside a fan-out template.
+    ``input_defs`` maps declared workflow input names to their definitions (or
+    is ``None`` when the inputs block is malformed). ``inside_fan_out`` is
+    threaded through nested control-flow steps so gate verdict bindings can be
+    rejected anywhere inside a fan-out template.
     """
     from . import STEP_REGISTRY
 
@@ -440,11 +441,39 @@ def _validate_steps(
                         f"Gate step {step_id!r}: 'verdict_input' is not "
                         "supported inside fan-out templates."
                     )
-                elif input_names is not None and verdict_input not in input_names:
+                elif input_defs is not None and verdict_input not in input_defs:
                     errors.append(
                         f"Gate step {step_id!r}: 'verdict_input' references "
                         f"undeclared input {verdict_input!r}."
                     )
+                elif input_defs is not None:
+                    # ``on_reject: retry`` resets the bound input to "" before
+                    # pausing, and every later resume re-resolves the persisted
+                    # inputs through ``_coerce_input``. If the input declares an
+                    # ``enum`` that omits "", that reset value is instantly
+                    # illegal: the run pauses fine, but the next resume that
+                    # supplies any input raises "value '' not in allowed
+                    # values", and no verdict can be routed through the gate
+                    # again. Require the enum to admit the sentinel so the
+                    # retry cycle the field advertises is actually reachable.
+                    verdict_def = input_defs.get(verdict_input)
+                    enum_values = (
+                        verdict_def.get("enum")
+                        if isinstance(verdict_def, dict)
+                        else None
+                    )
+                    if (
+                        step_config.get("on_reject") == "retry"
+                        and isinstance(enum_values, list)
+                        and "" not in enum_values
+                    ):
+                        errors.append(
+                            f"Gate step {step_id!r}: on_reject='retry' resets "
+                            f"verdict input {verdict_input!r} to '' when the "
+                            f"gate is rejected, but that input's 'enum' does "
+                            f"not allow ''. Add '' to the enum or use "
+                            f"on_reject='abort'/'skip'."
+                        )
 
         # Recursively validate nested steps
         for nested_key in ("then", "else", "steps"):
@@ -454,7 +483,7 @@ def _validate_steps(
                     nested,
                     seen_ids,
                     errors,
-                    input_names,
+                    input_defs,
                     inside_fan_out=inside_fan_out,
                 )
 
@@ -467,7 +496,7 @@ def _validate_steps(
                         case_steps,
                         seen_ids,
                         errors,
-                        input_names,
+                        input_defs,
                         inside_fan_out=inside_fan_out,
                     )
 
@@ -478,7 +507,7 @@ def _validate_steps(
                 default,
                 seen_ids,
                 errors,
-                input_names,
+                input_defs,
                 inside_fan_out=inside_fan_out,
             )
 
@@ -491,7 +520,7 @@ def _validate_steps(
                 [fan_step],
                 set(),
                 fan_errors,
-                input_names,
+                input_defs,
                 inside_fan_out=True,
             )
             errors.extend(fan_errors)

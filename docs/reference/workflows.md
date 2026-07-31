@@ -623,6 +623,19 @@ pauses: the named stored input is reset to `""`. A later resume therefore
 prompts or pauses again until another verdict is supplied. Approve, abort, and
 skip outcomes leave the input unchanged.
 
+Because of that reset, a verdict input used with `on_reject: retry` must accept
+`""`. If it declares an `enum`, include the empty string — otherwise the reset
+value violates the input's own `enum` and the run can no longer be resumed with
+any input. `specify workflow add` reports this as a validation error.
+
+```yaml
+inputs:
+  spec_verdict:
+    type: string
+    enum: ["", approve, reject]
+    default: ""
+```
+
 ## FAQ
 
 ### What happens when a workflow hits a gate step?

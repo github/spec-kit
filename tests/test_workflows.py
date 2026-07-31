@@ -4673,6 +4673,149 @@ steps:
         # No undeclared-input error (123 is not a string, so cross-check skips)
         assert not any("undeclared input" in e for e in errors)
 
+    def test_retry_verdict_enum_must_allow_reset_sentinel(self):
+        # on_reject: retry resets the bound input to "" before pausing, and
+        # every resume re-resolves persisted inputs through _coerce_input. An
+        # enum that omits "" makes that reset value instantly illegal, so the
+        # next resume supplying any input dies with "value '' not in allowed
+        # values" and no verdict can reach the gate again.
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+inputs:
+  spec_verdict:
+    type: string
+    enum: [approve, reject]
+steps:
+  - id: review
+    type: gate
+    message: "Review?"
+    options: [approve, reject]
+    on_reject: retry
+    verdict_input: spec_verdict
+""")
+        assert any(
+            "on_reject='retry' resets verdict input 'spec_verdict'" in e
+            for e in errors
+        ), errors
+
+    def test_retry_verdict_enum_including_sentinel_passes(self):
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+inputs:
+  spec_verdict:
+    type: string
+    enum: ["", approve, reject]
+    default: ""
+steps:
+  - id: review
+    type: gate
+    message: "Review?"
+    options: [approve, reject]
+    on_reject: retry
+    verdict_input: spec_verdict
+""")
+        assert not any("on_reject='retry'" in e for e in errors), errors
+
+    def test_verdict_enum_without_sentinel_passes_when_not_retry(self):
+        # abort/skip never reset the input, so the enum need not admit "".
+        for on_reject in ("abort", "skip"):
+            errors = self._errors(f"""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+inputs:
+  spec_verdict:
+    type: string
+    enum: [approve, reject]
+steps:
+  - id: review
+    type: gate
+    message: "Review?"
+    options: [approve, reject]
+    on_reject: {on_reject}
+    verdict_input: spec_verdict
+""")
+            assert not any("on_reject='retry'" in e for e in errors), (
+                on_reject,
+                errors,
+            )
+
+    def test_retry_verdict_without_enum_passes(self):
+        # No enum means _coerce_input accepts "" — the documented shape.
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+inputs:
+  spec_verdict:
+    type: string
+    default: ""
+steps:
+  - id: review
+    type: gate
+    message: "Review?"
+    options: [approve, reject]
+    on_reject: retry
+    verdict_input: spec_verdict
+""")
+        assert not any("on_reject='retry'" in e for e in errors), errors
+
+    def test_retry_verdict_enum_wedge_is_reachable_end_to_end(self, tmp_path):
+        """The validation error above guards a real, unrecoverable run state.
+
+        Without the guard this workflow installs and runs fine, then wedges:
+        the retry reset writes "" into the persisted inputs, and the next
+        resume that supplies *any* input re-resolves them and dies on the
+        enum. Only a resume with no inputs at all still works, so the bound
+        verdict can never be delivered.
+        """
+        import pytest
+        import yaml as _yaml
+
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        definition_data = {
+            "schema_version": "1.0",
+            "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+            "inputs": {
+                "spec_verdict": {"type": "string", "enum": ["approve", "reject"]},
+                "note": {"type": "string", "default": "a"},
+            },
+            "steps": [
+                {
+                    "id": "review",
+                    "type": "gate",
+                    "message": "Review?",
+                    "options": ["approve", "reject"],
+                    "on_reject": "retry",
+                    "verdict_input": "spec_verdict",
+                }
+            ],
+        }
+        wf_dir = tmp_path / ".specify" / "workflows" / "wf"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "workflow.yml").write_text(
+            _yaml.safe_dump(definition_data), encoding="utf-8"
+        )
+
+        engine = WorkflowEngine(tmp_path)
+        definition = engine.load_workflow("wf")
+        state = engine.execute(definition, inputs={"spec_verdict": "reject"})
+        assert state.status.value == "paused"
+        # The retry reset persisted a value the input's own enum forbids.
+        assert state.inputs["spec_verdict"] == ""
+
+        with pytest.raises(ValueError, match="not in allowed values"):
+            engine.resume(state.run_id, inputs={"note": "b"})
+
     def test_verdict_input_in_switch_case(self):
         # Recursion coverage: bad reference inside a switch case must surface.
         errors = self._errors("""
