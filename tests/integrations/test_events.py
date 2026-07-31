@@ -128,6 +128,23 @@ class TestResolveEvents:
         )
         assert result == {}
 
+    def test_unreadable_yaml_override_keeps_prior_layers(self, tmp_path):
+        """An unreadable override is ignored like malformed YAML."""
+        override_file = tmp_path / ".specify" / "integration-events.yml"
+        override_file.parent.mkdir(parents=True, exist_ok=True)
+        override_file.write_bytes(b"\xff\xfe")
+
+        result = resolve_events(
+            "claude",
+            {"events": {"post_tool_use": {"command": "speckit.tdd.validate"}}},
+            tmp_path,
+            None,
+        )
+
+        assert result == {
+            "post_tool_use": [{"command": "speckit.tdd.validate"}]
+        }
+
     def test_no_config_no_events(self, tmp_path):
         """Safe fallback with empty config/options."""
         result = resolve_events("claude", None, tmp_path, None)
