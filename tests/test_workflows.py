@@ -708,6 +708,46 @@ class TestExpressions:
                 StepContext(inputs={"tags": ["a", "b"]}),
             )
 
+    def test_multi_argument_filter_call_fails_loudly(self):
+        """A second argument must be reported, not silently mis-evaluated.
+
+        The whole captured argument text was handed to
+        `_evaluate_simple_expression` as ONE expression. `"1, 2"` is not a valid
+        expression, so it evaluated to None — making `default(1, 2)` return None
+        (silently wrong) and `join(",", "extra")` raise a message blaming the
+        separator rather than the extra argument.
+        """
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        with pytest.raises(ValueError, match="unsupported form"):
+            evaluate_expression(
+                "{{ inputs.missing | default(1, 2) }}", StepContext(inputs={})
+            )
+        with pytest.raises(ValueError, match="unsupported form"):
+            evaluate_expression(
+                '{{ inputs.tags | join(",", "extra") }}',
+                StepContext(inputs={"tags": ["a", "b"]}),
+            )
+
+    def test_single_argument_containing_a_comma_still_works(self):
+        """The multi-argument check must be quote-aware.
+
+        `join(", ")` and `default("a, b")` are single arguments that happen to
+        contain a comma, so a plain split would reject valid expressions.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"tags": ["a", "b"]})
+        assert evaluate_expression('{{ inputs.tags | join(", ") }}', ctx) == "a, b"
+        assert evaluate_expression('{{ inputs.tags | join(",") }}', ctx) == "a,b"
+        assert (
+            evaluate_expression('{{ inputs.missing | default("a, b") }}', ctx)
+            == "a, b"
+        )
+
     def test_chained_filters_apply_left_to_right(self):
         # Filters chain: each filter's result feeds the next. `map` yields a
         # list and `join` is the only filter that renders a list to a string,

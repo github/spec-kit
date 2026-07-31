@@ -366,6 +366,25 @@ def _find_top_level(text: str, token: str) -> int:
     return -1
 
 
+def _has_top_level_comma(text: str) -> bool:
+    """True when *text* has a comma outside any quoted span.
+
+    Every filter in this subset takes exactly one argument, but that argument may
+    itself contain a comma -- ``join(", ")`` and ``default("a, b")`` are both
+    valid -- so the check has to be quote-aware rather than a plain ``split``.
+    """
+    quote = ""
+    for ch in text:
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch == ",":
+            return True
+    return False
+
+
 def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> Any:
     """Apply a single pipe filter segment to *value*.
 
@@ -400,6 +419,16 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
     # branch above. The greedy ``.+`` still handles literal ``)`` and ``|``
     # inside quoted args.
     filter_match = re.fullmatch(r"(\w+)\((.+)\)", filter_expr)
+    # A multi-argument call is not a supported form: every filter here takes
+    # exactly one argument, and the whole captured argument text was handed to
+    # ``_evaluate_simple_expression`` as ONE expression. "1, 2" is not a valid
+    # expression, so it evaluated to None -- making ``default(1, 2)`` return
+    # None (silently wrong) and ``join(",", "extra")`` raise a message blaming
+    # the separator rather than the extra argument. Fall through to the
+    # unsupported-form error below instead, which names the filter and lists
+    # the accepted forms. The check is quote-aware so ``join(", ")`` still works.
+    if filter_match and _has_top_level_comma(filter_match.group(2)):
+        filter_match = None
     if filter_match:
         fname = filter_match.group(1)
         farg = _evaluate_simple_expression(filter_match.group(2).strip(), namespace)
