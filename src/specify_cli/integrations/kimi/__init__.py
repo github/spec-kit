@@ -317,7 +317,7 @@ def _is_speckit_generated_skill(skill_dir: Path) -> bool:
 
     try:
         content = skill_file.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeError):
         return False
 
     if not content.startswith("---"):
