@@ -233,7 +233,7 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
                     with script.open("rb") as f:
                         if f.read(2) != b"#!":
                             continue
-                except Exception:
+                except (OSError, PermissionError):
                     continue
                 st = script.stat()
                 mode = st.st_mode
