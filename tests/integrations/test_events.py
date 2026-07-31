@@ -164,6 +164,13 @@ class TestCollectExtensionEvents:
         (ext_dir / "extension.yml").write_text("invalid: - - -", encoding="utf-8")
         assert collect_extension_events(tmp_path) == {}
 
+    def test_non_utf8_manifest_skipped(self, tmp_path):
+        ext_dir = tmp_path / ".specify" / "extensions" / "my-ext"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "extension.yml").write_bytes(b"\xff\xfe")
+
+        assert collect_extension_events(tmp_path) == {}
+
     def test_event_command_ref_canonicalized_via_manifest(self, tmp_path):
         """R1: events are read from a validated ExtensionManifest, so an
         obsolete command ref (e.g. my-ext.boot) is canonicalized
