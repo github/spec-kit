@@ -603,6 +603,7 @@ class RunState:
         installed_workflow_id: str | None = None,
         installed_registry_root: str | None = None,
         installed_origin_tracked: bool = True,
+        dry_run: bool = False,
     ) -> None:
         # ``run_id is None`` (omitted) → auto-generate. An explicit empty
         # string is *not* the same as "omitted" and must be validated like
@@ -617,6 +618,8 @@ class RunState:
         self._validate_installed_origin(
             installed_workflow_id, installed_registry_root
         )
+        if not isinstance(dry_run, bool):
+            raise ValueError("Invalid run state: 'dry_run' must be a boolean")
         self.workflow_id = workflow_id
         self.project_root = project_root or Path(".")
         # Identifies the installed workflow (if any) this run was started
@@ -630,10 +633,15 @@ class RunState:
         self.installed_workflow_id = installed_workflow_id
         self.installed_registry_root = installed_registry_root
         self.installed_origin_tracked = installed_origin_tracked
+        self.dry_run = dry_run
         self.status = RunStatus.CREATED
         self.current_step_index = 0
         self.current_step_id: str | None = None
         self.step_results: dict[str, dict[str, Any]] = {}
+        # Dry-run previews need an execution log separate from step_results:
+        # loop aliases overwrite prior results, and concurrent fan-out inserts
+        # results in completion order rather than declared item order.
+        self.dry_run_previews: list[dict[str, Any]] = []
         # Guards step_results mutation and save() so a concurrent fan-out cannot
         # mutate the dict while save() is serializing it (which would raise
         # "dictionary changed size during iteration").
@@ -676,6 +684,52 @@ class RunState:
             if step_id in self.step_results:
                 self.step_results[step_id]["output"] = output
 
+    def record_dry_run_preview(
+        self,
+        order: tuple[int, ...],
+        step_id: str,
+        step_type: str,
+        output: dict[str, Any],
+    ) -> None:
+        """Record one resolved preview with a deterministic workflow order.
+
+        Resuming a nested failure replays its top-level parent. Replace an
+        existing record at the same order so repeated resumes do not accumulate
+        duplicate previews for the same logical execution slot.
+        """
+        record = {
+            "order": list(order),
+            "step_id": step_id,
+            "type": step_type,
+            "output": output,
+        }
+        with self._lock:
+            for index, existing in enumerate(self.dry_run_previews):
+                if isinstance(existing, dict) and existing.get("order") == record["order"]:
+                    self.dry_run_previews[index] = record
+                    break
+            else:
+                self.dry_run_previews.append(record)
+
+    def discard_dry_run_previews(self, order_prefix: tuple[int, ...]) -> None:
+        """Drop previews below a workflow position before replaying it.
+
+        Resume may take a different control-flow branch after inputs change.
+        Clearing the replayed subtree prevents previews from the old branch
+        surviving merely because the new branch has fewer agent-facing steps.
+        """
+        prefix = list(order_prefix)
+        with self._lock:
+            self.dry_run_previews = [
+                record
+                for record in self.dry_run_previews
+                if not (
+                    isinstance(record, dict)
+                    and isinstance(record.get("order"), list)
+                    and record["order"][: len(prefix)] == prefix
+                )
+            ]
+
     def save(self) -> None:
         """Persist current state to disk.
 
@@ -696,10 +750,12 @@ class RunState:
                 "workflow_id": self.workflow_id,
                 "installed_workflow_id": self.installed_workflow_id,
                 "installed_registry_root": self.installed_registry_root,
+                "dry_run": self.dry_run,
                 "status": self.status.value,
                 "current_step_index": self.current_step_index,
                 "current_step_id": self.current_step_id,
                 "step_results": self.step_results,
+                "dry_run_previews": self.dry_run_previews,
                 "workflow_dir": self.workflow_dir,
                 "created_at": self.created_at,
                 "updated_at": self.updated_at,
@@ -781,6 +837,14 @@ class RunState:
 
         installed_workflow_id = state_data.get("installed_workflow_id")
         installed_registry_root = state_data.get("installed_registry_root")
+        dry_run = state_data.get("dry_run", False)
+        if not isinstance(dry_run, bool):
+            raise ValueError("Invalid run state: 'dry_run' must be a boolean")
+        dry_run_previews = state_data.get("dry_run_previews", [])
+        if not isinstance(dry_run_previews, list):
+            raise ValueError(
+                "Invalid run state: 'dry_run_previews' must be a list"
+            )
 
         state = cls(
             run_id=state_data["run_id"],
@@ -789,11 +853,13 @@ class RunState:
             installed_workflow_id=installed_workflow_id,
             installed_registry_root=installed_registry_root,
             installed_origin_tracked=has_installed_workflow_id,
+            dry_run=dry_run,
         )
         state.status = RunStatus(state_data["status"])
         state.current_step_index = state_data.get("current_step_index", 0)
         state.current_step_id = state_data.get("current_step_id")
         state.step_results = state_data.get("step_results", {})
+        state.dry_run_previews = dry_run_previews
         state.workflow_dir = state_data.get("workflow_dir")
         state.created_at = state_data.get("created_at", "")
         state.updated_at = state_data.get("updated_at", "")
@@ -908,6 +974,7 @@ class WorkflowEngine:
         run_id: str | None = None,
         installed_workflow_id: str | None = None,
         installed_registry_root: Path | None = None,
+        dry_run: bool = False,
     ) -> RunState:
         """Execute a workflow definition.
 
@@ -919,6 +986,10 @@ class WorkflowEngine:
             User-provided input values.
         run_id:
             Optional run ID (uses SPECKIT_WORKFLOW_RUN_ID when set, otherwise auto-generated).
+        dry_run:
+            Preview built-in command, prompt, and gate steps without dispatching
+            an integration CLI or waiting for gate input. Shell, init, and custom
+            steps keep their normal behavior. The flag is persisted for resume.
         installed_workflow_id, installed_registry_root:
             When the run was started from an installed workflow (as opposed
             to a direct/non-installed YAML source), identifies it and its
@@ -948,6 +1019,7 @@ class WorkflowEngine:
                 if installed_registry_root is not None
                 else None
             ),
+            dry_run=dry_run,
         )
 
         # Persist a copy of the workflow definition so resume can
@@ -980,6 +1052,7 @@ class WorkflowEngine:
             project_root=str(self.project_root),
             run_id=state.run_id,
             workflow_dir=workflow_dir,
+            dry_run=dry_run,
         )
 
         # Execute steps
@@ -995,6 +1068,13 @@ class WorkflowEngine:
             state.error = str(exc)
             state.append_log({"event": "workflow_failed", "error": str(exc)})
             state.save()
+            if state.dry_run:
+                try:
+                    setattr(exc, "_speckit_workflow_state", state)
+                except Exception:
+                    # A custom exception may forbid dynamic attributes. The
+                    # original failure must remain authoritative in that case.
+                    pass
             raise
 
         if state.status == RunStatus.RUNNING:
@@ -1047,12 +1127,17 @@ class WorkflowEngine:
             project_root=str(self.project_root),
             run_id=state.run_id,
             workflow_dir=state.workflow_dir,
+            dry_run=state.dry_run,
         )
 
         from . import STEP_REGISTRY
 
         state.error = None
         state.status = RunStatus.RUNNING
+        if state.dry_run:
+            # The current top-level step is replayed on resume. Its nested
+            # branch may differ when the caller supplies updated inputs.
+            state.discard_dry_run_previews((state.current_step_index,))
         state.save()
 
         # Resume from the current step — re-execute it so gates
@@ -1075,6 +1160,13 @@ class WorkflowEngine:
             state.error = str(exc)
             state.append_log({"event": "resume_failed", "error": str(exc)})
             state.save()
+            if state.dry_run:
+                try:
+                    setattr(exc, "_speckit_workflow_state", state)
+                except Exception:
+                    # Preserve the original exception when attaching diagnostic
+                    # state is not supported by a custom exception class.
+                    pass
             raise
 
         if state.status == RunStatus.RUNNING:
@@ -1107,11 +1199,17 @@ class WorkflowEngine:
         registry: dict[str, Any],
         *,
         step_offset: int = 0,
+        order_prefix: tuple[int, ...] = (),
     ) -> None:
         """Execute a list of steps sequentially."""
         for i, step_config in enumerate(steps):
             step_id = step_config.get("id", f"step-{i}")
             step_type = step_config.get("type", "command")
+            step_order = (
+                (*order_prefix, i)
+                if order_prefix
+                else (step_offset + i if step_offset >= 0 else i,)
+            )
 
             state.current_step_id = step_id
             if step_offset >= 0:
@@ -1163,6 +1261,10 @@ class WorkflowEngine:
                 "error": result.error,
             }
             self._record_result(context, state, step_id, step_data)
+            if context.dry_run and result.output.get("dry_run") is True:
+                state.record_dry_run_preview(
+                    step_order, str(step_id), str(step_type), result.output
+                )
 
             state.append_log(
                 {
@@ -1250,6 +1352,7 @@ class WorkflowEngine:
                 self._execute_steps(
                     result.next_steps, context, state, registry,
                     step_offset=-1,
+                    order_prefix=(*step_order, 0),
                 )
                 if state.status in (
                     RunStatus.PAUSED,
@@ -1292,6 +1395,11 @@ class WorkflowEngine:
                             self._execute_steps(
                                 [ns_copy], context, state, registry,
                                 step_offset=-1,
+                                order_prefix=(
+                                    *step_order,
+                                    _loop_iter + 1,
+                                    ns_idx,
+                                ),
                             )
                             if state.status in (
                                 RunStatus.PAUSED,
@@ -1317,6 +1425,7 @@ class WorkflowEngine:
                     fan_out_results = self._run_fan_out(
                         items, template, step_id, context, state, registry,
                         result.output.get("max_concurrency", 1),
+                        preview_order=step_order,
                     )
                     context.item = None
                     # Preserve original output and add collected results
@@ -1346,6 +1455,8 @@ class WorkflowEngine:
         state: RunState,
         registry: dict[str, Any],
         max_concurrency: Any,
+        *,
+        preview_order: tuple[int, ...] = (),
     ) -> list[Any]:
         """Run a fan-out template once per item; return per-item outputs in item order.
 
@@ -1394,6 +1505,7 @@ class WorkflowEngine:
             item_step["id"] = item_id(idx)
             self._execute_steps(
                 [item_step], item_ctx, state, registry, step_offset=-1,
+                order_prefix=(*preview_order, idx),
             )
             # Read back through the context that was actually executed against,
             # not the outer closure — clearer and robust if StepContext copying

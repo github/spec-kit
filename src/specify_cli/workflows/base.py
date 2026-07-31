@@ -80,6 +80,11 @@ class StepContext:
     #: Source directory of the workflow definition file.
     workflow_dir: str | None = None
 
+    #: Preview agent-facing command, prompt, and gate steps without dispatching
+    #: an integration CLI or waiting for interactive gate input. Other step
+    #: types keep their normal behavior.
+    dry_run: bool = False
+
 
 @dataclass
 class StepResult:

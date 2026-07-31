@@ -1169,7 +1169,9 @@ def _failed_step_error(state: Any) -> str | None:
     return getattr(state, "error", None)
 
 
-def _workflow_run_payload(state: Any) -> dict[str, Any]:
+def _workflow_run_payload(
+    state: Any, *, include_previews: bool = True
+) -> dict[str, Any]:
     """Machine-readable summary of a run/resume outcome."""
     payload = {
         "run_id": state.run_id,
@@ -1184,7 +1186,189 @@ def _workflow_run_payload(state: Any) -> dict[str, Any]:
     error = _failed_step_error(state)
     if error is not None:
         payload["error"] = error
+    if getattr(state, "dry_run", False):
+        payload["dry_run"] = True
+        if include_previews:
+            payload["previews"] = _dry_run_previews(state)
     return payload
+
+
+def _dry_run_previews(state: Any) -> list[dict[str, Any]]:
+    """Return stable, structured previews from dry-run-capable steps."""
+    previews: list[dict[str, Any]] = []
+    recorded = getattr(state, "dry_run_previews", None)
+    sources: list[tuple[Any, dict[str, Any]]] = []
+    if isinstance(recorded, list):
+        def order_key(record: Any) -> tuple[int, ...]:
+            if isinstance(record, dict):
+                order = record.get("order")
+                if isinstance(order, list) and all(
+                    isinstance(part, int) and not isinstance(part, bool)
+                    for part in order
+                ):
+                    return (0, *order)
+            return (1,)
+
+        for record in sorted(recorded, key=order_key):
+            if not isinstance(record, dict):
+                continue
+            sources.append(
+                (
+                    record.get("step_id", "?"),
+                    {
+                        "type": record.get("type", "command"),
+                        "output": record.get("output"),
+                    },
+                )
+            )
+    else:
+        # Legacy dry-run states predate the separate ordered preview log.
+        sources.extend((getattr(state, "step_results", None) or {}).items())
+
+    for step_id, step in sources:
+        if not isinstance(step, dict):
+            continue
+        output = step.get("output")
+        if not isinstance(output, dict) or output.get("dry_run") is not True:
+            continue
+        message = output.get("dry_run_message")
+        if not isinstance(message, str):
+            continue
+        structured = output.get("dry_run_preview")
+        if isinstance(structured, dict):
+            step_type = structured.get("type", step.get("type", "command"))
+            configuration = {
+                key: value for key, value in structured.items() if key != "type"
+            }
+        else:
+            # Persisted runs produced by an earlier dry-run implementation may
+            # only carry the human-readable message. Keep those resumable while
+            # exposing the strongest structure that remains available.
+            step_type = step.get("type", "command")
+            configuration = {}
+        previews.append(
+            {
+                "step_id": str(step_id),
+                "type": str(step_type),
+                "configuration": configuration,
+                "message": message,
+            }
+        )
+    return previews
+
+
+def _print_dry_run_previews(state: Any) -> None:
+    """Render dry-run previews for human output, if any were produced."""
+    previews = _dry_run_previews(state)
+    if not previews:
+        return
+    console.print("\n[bold cyan]Dry-run previews:[/bold cyan]")
+    for preview in previews:
+        console.print(
+            f"  \u25b8 \\[{_escape_markup(preview['step_id'])}] "
+            f"{_escape_markup(preview['message'])}"
+        )
+        configuration = preview.get("configuration")
+        if isinstance(configuration, dict) and configuration:
+            rendered = json.dumps(
+                configuration,
+                ensure_ascii=False,
+                separators=(",", ": "),
+            )
+            console.print(f"      configuration: {_escape_markup(rendered)}")
+
+
+def _print_dry_run_warning() -> None:
+    """Explain the deliberately limited side-effect boundary before execution."""
+    console.print(
+        "[yellow]DRY RUN:[/yellow] command, prompt, and gate steps "
+        "will not dispatch an agent; shell, init, and custom steps still execute.\n"
+    )
+
+
+def _exception_run_state(exc: Exception) -> Any:
+    """Return only the engine-owned state attached to a workflow exception."""
+    from .engine import RunState
+
+    try:
+        candidate = getattr(exc, "_speckit_workflow_state", None)
+    except Exception:
+        return None
+    return candidate if isinstance(candidate, RunState) else None
+
+
+def _workflow_exception_payload(
+    exc: Exception,
+    *,
+    workflow_id: str | None = None,
+    dry_run: bool = False,
+    fallback_state: Any = None,
+) -> dict[str, Any]:
+    """Build the one-object JSON failure contract for an engine exception."""
+    partial_state = _exception_run_state(exc) or fallback_state
+    if partial_state is not None:
+        payload = _workflow_run_payload(partial_state)
+        payload["status"] = "failed"
+        payload["error"] = str(exc)
+        return payload
+    payload: dict[str, Any] = {
+        "run_id": None,
+        "workflow_id": workflow_id,
+        "status": "failed",
+        "current_step_id": None,
+        "current_step_index": 0,
+        "error": str(exc),
+    }
+    if dry_run:
+        payload["dry_run"] = True
+        payload["previews"] = []
+    return payload
+
+
+@contextlib.contextmanager
+def _workflow_preflight_guard(
+    json_output: bool,
+    *,
+    error_message: str,
+    workflow_id: str | None = None,
+    run_id: str | None = None,
+    dry_run: bool = False,
+    fallback_state: Any = None,
+):
+    """Keep pre-execution output off JSON stdout and emit one failure object."""
+    try:
+        with _stdout_to_stderr_when(json_output):
+            yield
+    except typer.Exit:
+        if json_output:
+            exc = RuntimeError(error_message)
+            payload = _workflow_exception_payload(
+                exc,
+                workflow_id=workflow_id,
+                dry_run=dry_run,
+                fallback_state=fallback_state,
+            )
+            if run_id is not None and payload.get("run_id") is None:
+                payload["run_id"] = run_id
+            _emit_workflow_json(payload)
+        raise
+    except Exception as exc:
+        if json_output:
+            payload = _workflow_exception_payload(
+                exc,
+                workflow_id=workflow_id,
+                dry_run=dry_run,
+                fallback_state=fallback_state,
+            )
+            if run_id is not None and payload.get("run_id") is None:
+                payload["run_id"] = run_id
+            _emit_workflow_json(payload)
+        else:
+            console.print(
+                f"[red]Workflow preparation failed:[/red] "
+                f"{_escape_markup(str(exc))}"
+            )
+        raise typer.Exit(1)
 
 
 def _is_gate_step(step: dict[str, Any]) -> bool:
@@ -1316,6 +1500,14 @@ def workflow_run(
         "--json",
         help="Emit the run outcome as a single JSON object instead of formatted text.",
     ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help=(
+            "Preview command, prompt, and gate steps without agent dispatch. "
+            "Shell, init, and custom steps still execute normally."
+        ),
+    ),
 ):
     """Run a workflow from an installed ID or local YAML path."""
     from . import load_custom_steps
@@ -1324,18 +1516,26 @@ def workflow_run(
     source_path = Path(source).expanduser()
     is_file_source = source_path.suffix.lower() in (".yml", ".yaml") and source_path.is_file()
 
-    if is_file_source:
-        # When running a YAML file directly, use cwd as project root without
-        # requiring a .specify/ project directory — unless SPECIFY_INIT_DIR
-        # explicitly names a project, in which case the strict override applies.
-        override = _resolve_init_dir_override()
-        project_root = override if override is not None else Path.cwd()
-        _reject_unsafe_workflow_storage(project_root)
-    else:
-        project_root = _require_specify_project()
+    with _workflow_preflight_guard(
+        json_output and dry_run,
+        error_message="Workflow project preparation failed",
+        workflow_id=None if is_file_source else source,
+        dry_run=dry_run,
+    ):
+        if is_file_source:
+            # When running a YAML file directly, use cwd as project root without
+            # requiring a .specify/ project directory — unless SPECIFY_INIT_DIR
+            # explicitly names a project, in which case the strict override applies.
+            override = _resolve_init_dir_override()
+            project_root = override if override is not None else Path.cwd()
+            _reject_unsafe_workflow_storage(project_root)
+        else:
+            project_root = _require_specify_project()
 
-    load_custom_steps(project_root)
-    engine = WorkflowEngine(project_root)
+        # Custom modules are allowed to execute import-time code. Keep any
+        # incidental output on stderr so JSON stdout remains one object.
+        load_custom_steps(project_root)
+        engine = WorkflowEngine(project_root)
     if not json_output:
         # Escape the literal bracket (\[) so Rich renders `[<step id>]` instead
         # of parsing it as a style tag named after the step id -- which it
@@ -1352,54 +1552,68 @@ def workflow_run(
 
     err = _error_console(json_output)
 
-    registered_id: str | None = None
-    registry_root = project_root
-    if not is_file_source:
-        # Reject path-equivalent spellings ("align-wf/", "align-wf/.") that
-        # would miss the registry lookup yet still load the installed file,
-        # bypassing the disabled check below.
-        if source in _RESERVED_WORKFLOW_IDS or not _WORKFLOW_ID_PATTERN.fullmatch(source):
-            err.print(
-                f"[red]Error:[/red] Invalid workflow ID: {_escape_markup(repr(source))}"
-            )
+    with _workflow_preflight_guard(
+        json_output and dry_run,
+        error_message="Workflow source validation failed",
+        workflow_id=None if is_file_source else source,
+        dry_run=dry_run,
+    ):
+        registered_id: str | None = None
+        registry_root = project_root
+        if not is_file_source:
+            # Reject path-equivalent spellings ("align-wf/", "align-wf/.") that
+            # would miss the registry lookup yet still load the installed file,
+            # bypassing the disabled check below.
+            if source in _RESERVED_WORKFLOW_IDS or not _WORKFLOW_ID_PATTERN.fullmatch(source):
+                err.print(
+                    f"[red]Error:[/red] Invalid workflow ID: {_escape_markup(repr(source))}"
+                )
+                raise typer.Exit(1)
+            registered_id = source
+        else:
+            # A direct YAML path may still point at an installed workflow's own
+            # file (lexically, or via a symlinked alias pointing into installed
+            # storage); map it back to its owning project and ID so the
+            # disabled check below can't be silently bypassed.
+            owner_root, owner_id = _resolve_installed_workflow_ownership(source_path, err)
+            if owner_id is not None:
+                registry_root = owner_root
+                registered_id = owner_id
+
+        if registered_id is not None:
+            _require_enabled_workflow(registry_root, registered_id, err)
+
+    with _workflow_preflight_guard(
+        json_output and dry_run,
+        error_message="Workflow loading or validation failed",
+        workflow_id=registered_id or (None if is_file_source else source),
+        dry_run=dry_run,
+    ):
+        try:
+            definition = engine.load_workflow(source_path if is_file_source else source)
+        except FileNotFoundError:
+            err.print(f"[red]Error:[/red] Workflow not found: {_escape_markup(source)}")
             raise typer.Exit(1)
-        registered_id = source
-    else:
-        # A direct YAML path may still point at an installed workflow's own
-        # file (lexically, or via a symlinked alias pointing into installed
-        # storage); map it back to its owning project and ID so the
-        # disabled check below can't be silently bypassed.
-        owner_root, owner_id = _resolve_installed_workflow_ownership(source_path, err)
-        if owner_id is not None:
-            registry_root = owner_root
-            registered_id = owner_id
+        except ValueError as exc:
+            err.print(f"[red]Error:[/red] Invalid workflow: {_escape_markup(str(exc))}")
+            raise typer.Exit(1)
 
-    if registered_id is not None:
-        _require_enabled_workflow(registry_root, registered_id, err)
+        # Validate
+        errors = engine.validate(definition)
+        if errors:
+            err.print("[red]Workflow validation failed:[/red]")
+            for verr in errors:
+                err.print(f"  • {_escape_markup(str(verr))}")
+            raise typer.Exit(1)
 
-    try:
-        definition = engine.load_workflow(source_path if is_file_source else source)
-    except FileNotFoundError:
-        err.print(f"[red]Error:[/red] Workflow not found: {source}")
-        raise typer.Exit(1)
-    except ValueError as exc:
-        err.print(f"[red]Error:[/red] Invalid workflow: {exc}")
-        raise typer.Exit(1)
-
-    # Validate
-    errors = engine.validate(definition)
-    if errors:
-        err.print("[red]Workflow validation failed:[/red]")
-        for verr in errors:
-            err.print(f"  • {_escape_markup(str(verr))}")
-        raise typer.Exit(1)
-
-    # Parse inputs
-    inputs = _parse_input_values(input_values, json_output=json_output)
+        # Parse inputs
+        inputs = _parse_input_values(input_values, json_output=json_output)
 
     if not json_output:
         console.print(f"\n[bold cyan]Running workflow:[/bold cyan] {definition.name} ({definition.id})")
         console.print(f"[dim]Version: {definition.version}[/dim]\n")
+        if dry_run:
+            _print_dry_run_warning()
 
     try:
         with _stdout_to_stderr_when(json_output):
@@ -1422,17 +1636,41 @@ def workflow_run(
                     and not _same_existing_path(registry_root, project_root)
                     else None
                 ),
+                dry_run=dry_run,
             )
     except ValueError as exc:
-        err.print(f"[red]Error:[/red] {exc}")
+        partial_state = _exception_run_state(exc)
+        if json_output:
+            _emit_workflow_json(
+                _workflow_exception_payload(
+                    exc, workflow_id=definition.id, dry_run=dry_run
+                )
+            )
+        else:
+            if getattr(partial_state, "dry_run", False):
+                _print_dry_run_previews(partial_state)
+            err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
     except Exception as exc:
-        err.print(f"[red]Workflow failed:[/red] {exc}")
+        partial_state = _exception_run_state(exc)
+        if json_output:
+            _emit_workflow_json(
+                _workflow_exception_payload(
+                    exc, workflow_id=definition.id, dry_run=dry_run
+                )
+            )
+        else:
+            if getattr(partial_state, "dry_run", False):
+                _print_dry_run_previews(partial_state)
+            err.print(f"[red]Workflow failed:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     if json_output:
         _emit_workflow_json(_workflow_run_payload(state))
         raise typer.Exit(_run_outcome_exit_code(state.status.value))
+
+    if state.dry_run:
+        _print_dry_run_previews(state)
 
     status_colors = {
         "completed": "green",
@@ -1470,9 +1708,13 @@ def workflow_resume(
     from . import load_custom_steps
     from .engine import RunState, WorkflowEngine
 
-    project_root = _require_specify_project()
-    load_custom_steps(project_root)
-    engine = WorkflowEngine(project_root)
+    with _workflow_preflight_guard(
+        False,
+        error_message="Workflow resume project preparation failed",
+        run_id=run_id,
+    ):
+        project_root = _require_specify_project()
+        engine = WorkflowEngine(project_root)
     if not json_output:
         # Escape the literal bracket (\[) so Rich renders `[<step id>]` instead
         # of parsing it as a style tag named after the step id -- which it
@@ -1487,7 +1729,6 @@ def workflow_resume(
             f"{_escape_markup(str(label))} \u2026"
         )
 
-    inputs = _parse_input_values(input_values, json_output=json_output)
     err = _error_console(json_output)
 
     # Pre-load the persisted run state so a run started from an installed
@@ -1497,57 +1738,117 @@ def workflow_resume(
     # guard `workflow run` enforces. Runs without installed_workflow_id
     # (a direct/non-installed source, or a run persisted before this field
     # existed) are unaffected and resume exactly as before.
-    try:
-        pre_state = RunState.load(run_id, project_root)
-    except FileNotFoundError:
-        err.print(f"[red]Error:[/red] Run not found: {run_id}")
-        raise typer.Exit(1)
-    except ValueError as exc:
-        err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
-        raise typer.Exit(1)
-    except OSError as exc:
-        err.print(f"[red]Resume failed:[/red] {_escape_markup(str(exc))}")
-        raise typer.Exit(1)
-
-    if pre_state.installed_workflow_id is not None:
+    with _workflow_preflight_guard(
+        False,
+        error_message="Workflow run state could not be loaded",
+        run_id=run_id,
+    ):
         try:
-            owner_root = _resolve_run_owner_root(
-                pre_state.installed_registry_root, project_root
-            )
+            pre_state = RunState.load(run_id, project_root)
+        except FileNotFoundError:
+            err.print(f"[red]Error:[/red] Run not found: {_escape_markup(run_id)}")
+            raise typer.Exit(1)
         except ValueError as exc:
             err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
             raise typer.Exit(1)
-        _require_enabled_workflow(
-            owner_root, pre_state.installed_workflow_id, err
-        )
-    elif not pre_state.installed_origin_tracked:
-        if _require_enabled_workflow(
-            project_root, pre_state.workflow_id, err
-        ):
-            pre_state.installed_workflow_id = pre_state.workflow_id
-        pre_state.installed_origin_tracked = True
-        try:
-            pre_state.save()
         except OSError as exc:
             err.print(f"[red]Resume failed:[/red] {_escape_markup(str(exc))}")
             raise typer.Exit(1)
 
+    with _workflow_preflight_guard(
+        json_output and pre_state.dry_run,
+        error_message="Workflow resume validation failed",
+        workflow_id=pre_state.workflow_id,
+        run_id=run_id,
+        dry_run=pre_state.dry_run,
+        fallback_state=pre_state,
+    ):
+        # Once the persisted mode is known, dry-run JSON can safely isolate
+        # import-time output without widening the legacy non-dry error contract.
+        load_custom_steps(project_root)
+        if pre_state.installed_workflow_id is not None:
+            try:
+                owner_root = _resolve_run_owner_root(
+                    pre_state.installed_registry_root, project_root
+                )
+            except ValueError as exc:
+                err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+                raise typer.Exit(1)
+            _require_enabled_workflow(
+                owner_root, pre_state.installed_workflow_id, err
+            )
+        elif not pre_state.installed_origin_tracked:
+            if _require_enabled_workflow(
+                project_root, pre_state.workflow_id, err
+            ):
+                pre_state.installed_workflow_id = pre_state.workflow_id
+            pre_state.installed_origin_tracked = True
+            try:
+                pre_state.save()
+            except OSError as exc:
+                err.print(f"[red]Resume failed:[/red] {_escape_markup(str(exc))}")
+                raise typer.Exit(1)
+
+        inputs = _parse_input_values(input_values, json_output=json_output)
+
+    if pre_state.dry_run and not json_output:
+        _print_dry_run_warning()
+
     try:
         with _stdout_to_stderr_when(json_output):
             state = engine.resume(run_id, inputs or None)
-    except FileNotFoundError:
-        err.print(f"[red]Error:[/red] Run not found: {run_id}")
+    except FileNotFoundError as exc:
+        if json_output:
+            _emit_workflow_json(
+                _workflow_exception_payload(
+                    exc,
+                    workflow_id=pre_state.workflow_id,
+                    dry_run=pre_state.dry_run,
+                    fallback_state=pre_state,
+                )
+            )
+        else:
+            err.print(f"[red]Error:[/red] Run not found: {_escape_markup(run_id)}")
         raise typer.Exit(1)
     except ValueError as exc:
-        err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+        partial_state = _exception_run_state(exc) or pre_state
+        if json_output:
+            _emit_workflow_json(
+                _workflow_exception_payload(
+                    exc,
+                    workflow_id=pre_state.workflow_id,
+                    dry_run=pre_state.dry_run,
+                    fallback_state=pre_state,
+                )
+            )
+        else:
+            if getattr(partial_state, "dry_run", False):
+                _print_dry_run_previews(partial_state)
+            err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
     except Exception as exc:
-        err.print(f"[red]Resume failed:[/red] {_escape_markup(str(exc))}")
+        partial_state = _exception_run_state(exc) or pre_state
+        if json_output:
+            _emit_workflow_json(
+                _workflow_exception_payload(
+                    exc,
+                    workflow_id=pre_state.workflow_id,
+                    dry_run=pre_state.dry_run,
+                    fallback_state=pre_state,
+                )
+            )
+        else:
+            if getattr(partial_state, "dry_run", False):
+                _print_dry_run_previews(partial_state)
+            err.print(f"[red]Resume failed:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     if json_output:
         _emit_workflow_json(_workflow_run_payload(state))
         raise typer.Exit(_run_outcome_exit_code(state.status.value))
+
+    if state.dry_run:
+        _print_dry_run_previews(state)
 
     status_colors = {
         "completed": "green",
@@ -1599,7 +1900,7 @@ def workflow_status(
             # Build on the shared run/resume payload so the common fields
             # (including current_step_index) stay identical across commands.
             payload = {
-                **_workflow_run_payload(state),
+                **_workflow_run_payload(state, include_previews=False),
                 "created_at": state.created_at,
                 "updated_at": state.updated_at,
                 "steps": {

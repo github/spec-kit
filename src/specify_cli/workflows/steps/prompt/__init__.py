@@ -98,17 +98,41 @@ class PromptStep(StepBase):
         if timeout_error is not None:
             return StepResult(status=StepStatus.FAILED, error=timeout_error)
 
-        # Attempt CLI dispatch
         timeout = config.get("timeout", 300)
-        dispatch_result = self._try_dispatch(
-            prompt, integration, model, context, timeout=timeout
-        )
-
         output: dict[str, Any] = {
             "prompt": prompt,
             "integration": integration,
             "model": model,
         }
+
+        if context.dry_run:
+            preview = {
+                "type": "prompt",
+                "prompt": prompt,
+                "integration": integration,
+                "model": model,
+                "timeout": timeout,
+            }
+            output.update(
+                {
+                    "exit_code": 0,
+                    "stdout": "",
+                    "stderr": "",
+                    "dispatched": False,
+                    "dry_run": True,
+                    "dry_run_preview": preview,
+                    "dry_run_message": (
+                        f"[DRY RUN] prompt; integration={integration!r}; "
+                        f"model={model!r}; timeout={timeout!r}; content={prompt!r}"
+                    ),
+                }
+            )
+            return StepResult(status=StepStatus.COMPLETED, output=output)
+
+        # Attempt CLI dispatch only after validation and expression resolution.
+        dispatch_result = self._try_dispatch(
+            prompt, integration, model, context, timeout=timeout
+        )
 
         if dispatch_result is not None:
             output["exit_code"] = dispatch_result["exit_code"]

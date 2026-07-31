@@ -158,6 +158,7 @@ class TestBaseClasses:
         assert ctx.item is None
         assert ctx.fan_in == {}
         assert ctx.default_integration is None
+        assert ctx.dry_run is False
 
     def test_step_context_with_data(self):
         from specify_cli.workflows.base import StepContext
@@ -997,6 +998,43 @@ class TestCommandStep:
         assert result.output["integration"] == "claude"
         assert result.output["input"]["args"] == "login"
 
+    def test_dry_run_resolves_input_without_dispatch(self, monkeypatch):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.steps.command import CommandStep
+
+        def fail_dispatch(*_args, **_kwargs):
+            pytest.fail("CommandStep attempted agent dispatch during a dry run")
+
+        monkeypatch.setattr(CommandStep, "_try_dispatch", fail_dispatch)
+        result = CommandStep().execute(
+            {
+                "id": "specify",
+                "command": "speckit.specify",
+                "input": {"args": "{{ inputs.feature }}"},
+            },
+            StepContext(
+                inputs={"feature": "add login"},
+                default_integration="claude",
+                dry_run=True,
+            ),
+        )
+
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["input"]["args"] == "add login"
+        assert result.output["exit_code"] == 0
+        assert result.output["dispatched"] is False
+        assert result.output["dry_run"] is True
+        assert "speckit.specify" in result.output["dry_run_message"]
+        assert "add login" in result.output["dry_run_message"]
+        assert result.output["dry_run_preview"] == {
+            "type": "command",
+            "command": "speckit.specify",
+            "integration": "claude",
+            "model": None,
+            "options": {},
+            "input": {"args": "add login"},
+        }
+
     def test_try_dispatch_resolves_rovodev_via_acli(self, tmp_path):
         """When acli is installed, rovodev dispatch succeeds via acli."""
         from unittest.mock import patch, MagicMock
@@ -1409,6 +1447,41 @@ class TestPromptStep:
         assert result.output["prompt"] == "Review auth.py for security issues"
         assert result.output["integration"] == "claude"
         assert result.output["dispatched"] is False
+
+    def test_dry_run_resolves_prompt_without_dispatch(self, monkeypatch):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.steps.prompt import PromptStep
+
+        def fail_dispatch(*_args, **_kwargs):
+            pytest.fail("PromptStep attempted agent dispatch during a dry run")
+
+        monkeypatch.setattr(PromptStep, "_try_dispatch", fail_dispatch)
+        result = PromptStep().execute(
+            {
+                "id": "review",
+                "type": "prompt",
+                "prompt": "Review {{ inputs.file }} [literally]",
+            },
+            StepContext(
+                inputs={"file": "auth.py"},
+                default_integration="claude",
+                dry_run=True,
+            ),
+        )
+
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["prompt"] == "Review auth.py [literally]"
+        assert result.output["exit_code"] == 0
+        assert result.output["dispatched"] is False
+        assert result.output["dry_run"] is True
+        assert "Review auth.py [literally]" in result.output["dry_run_message"]
+        assert result.output["dry_run_preview"] == {
+            "type": "prompt",
+            "prompt": "Review auth.py [literally]",
+            "integration": "claude",
+            "model": None,
+            "timeout": 300,
+        }
 
     def test_execute_non_string_integration_fails_cleanly(self):
         """A non-string integration must FAIL the step cleanly, not crash with
@@ -2209,6 +2282,31 @@ class TestInitStep:
         assert result.status == StepStatus.COMPLETED
         assert (tmp_path / "demo" / ".specify").is_dir()
 
+    def test_dry_run_does_not_short_circuit_init(self, tmp_path, monkeypatch):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.steps.init import InitStep
+
+        calls = []
+
+        def fake_run_init(argv, context):
+            calls.append((argv, context.dry_run))
+            return 0, "initialized", ""
+
+        monkeypatch.setattr(InitStep, "_run_init", staticmethod(fake_run_init))
+        result = InitStep().execute(
+            {
+                "id": "bootstrap",
+                "project": "demo",
+                "integration": "copilot",
+                "script": "py",
+            },
+            StepContext(project_root=str(tmp_path), dry_run=True),
+        )
+
+        assert result.status == StepStatus.COMPLETED
+        assert calls == [(result.output["argv"], True)]
+        assert result.output["stdout"] == "initialized"
+
     def test_invalid_integration_fails(self, tmp_path):
         from specify_cli.workflows.steps.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus
@@ -2354,6 +2452,44 @@ class TestGateStep:
         assert result.status == StepStatus.PAUSED
         assert result.output["message"] == "Review the spec."
         assert result.output["options"] == ["approve", "reject"]
+
+    def test_dry_run_skips_prompt_and_chooses_non_reject_option(
+        self, monkeypatch
+    ):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.steps.gate import GateStep
+
+        monkeypatch.setattr(
+            GateStep,
+            "_prompt",
+            lambda *_args, **_kwargs: pytest.fail(
+                "GateStep prompted for input during a dry run"
+            ),
+        )
+        result = GateStep().execute(
+            {
+                "id": "review",
+                "message": "Review [the spec].",
+                "options": [" Reject ", "Approve", "abort"],
+                "on_reject": "abort",
+            },
+            StepContext(dry_run=True),
+        )
+
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["message"] == "Review [the spec]."
+        assert result.output["choice"] == "Approve"
+        assert result.output["dry_run"] is True
+        assert "Approve" in result.output["dry_run_message"]
+        assert result.output["dry_run_preview"] == {
+            "type": "gate",
+            "message": "Review [the spec].",
+            "options": [" Reject ", "Approve", "abort"],
+            "on_reject": "abort",
+            "show_file": None,
+            "verdict_input": None,
+            "choice": "Approve",
+        }
 
     @pytest.mark.parametrize(
         "inputs", [{}, {"spec_verdict": None}, {"spec_verdict": ""}]
@@ -4204,7 +4340,10 @@ class TestWorkflowDefinition:
         # execute()/resume() run UNVALIDATED definitions; a non-mapping `inputs:`
         # block (list/null) is stored raw and would crash _resolve_inputs at
         # `.items()`. It must be treated as "no inputs" instead.
-        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.engine import (
+            WorkflowDefinition,
+            WorkflowEngine,
+        )
 
         definition = WorkflowDefinition.from_string(block)
         resolved = WorkflowEngine()._resolve_inputs(definition, {})  # must not raise
@@ -5090,6 +5229,322 @@ steps:
         assert "step-one" in state.step_results
         assert state.step_results["step-one"]["output"]["command"] == "speckit.specify"
         assert state.step_results["step-one"]["output"]["input"]["args"] == "login"
+
+    def test_execute_dry_run_propagates_to_agent_steps(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.steps.prompt import PromptStep
+
+        def fail_dispatch(*_args, **_kwargs):
+            pytest.fail("Workflow engine attempted agent dispatch during a dry run")
+
+        monkeypatch.setattr(CommandStep, "_try_dispatch", fail_dispatch)
+        monkeypatch.setattr(PromptStep, "_try_dispatch", fail_dispatch)
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "dry-run-engine"
+  name: "Dry Run Engine"
+  version: "1.0.0"
+  integration: claude
+inputs:
+  feature:
+    type: string
+    default: "add login"
+steps:
+  - id: specify
+    command: speckit.specify
+    input:
+      args: "{{ inputs.feature }}"
+  - id: review
+    type: prompt
+    prompt: "Review {{ inputs.feature }}"
+  - id: approve
+    type: gate
+    message: "Approve the plan?"
+    options: [approve, reject]
+""")
+
+        state = WorkflowEngine(project_dir).execute(
+            definition, dry_run=True, run_id="dry-run-engine"
+        )
+
+        assert state.status == RunStatus.COMPLETED
+        assert state.dry_run is True
+        assert all(
+            step["output"]["dry_run"] is True
+            for step in state.step_results.values()
+        )
+
+    def test_dry_run_keeps_shell_step_behavior_unchanged(self, project_dir):
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "dry-run-shell"
+  name: "Dry Run Shell"
+  version: "1.0.0"
+steps:
+  - id: shell
+    type: shell
+    run: "echo shell-still-runs"
+""")
+
+        state = WorkflowEngine(project_dir).execute(
+            definition, dry_run=True, run_id="dry-run-shell"
+        )
+
+        assert state.status == RunStatus.COMPLETED
+        assert "shell-still-runs" in state.step_results["shell"]["output"]["stdout"]
+
+    def test_dry_run_records_each_loop_preview_without_alias_duplicates(
+        self, project_dir
+    ):
+        from specify_cli.workflows._commands import _dry_run_previews
+        from specify_cli.workflows.engine import (
+            RunState,
+            WorkflowDefinition,
+            WorkflowEngine,
+        )
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "dry-run-loop-order"
+  name: "Dry Run Loop Order"
+  version: "1.0.0"
+  integration: claude
+steps:
+  - id: loop
+    type: while
+    condition: true
+    max_iterations: 3
+    steps:
+      - id: work
+        command: speckit.specify
+        input:
+          args: loop-call
+""")
+
+        state = WorkflowEngine(project_dir).execute(
+            definition, dry_run=True, run_id="dry-loop"
+        )
+
+        assert [preview["step_id"] for preview in _dry_run_previews(state)] == [
+            "work",
+            "loop:work:1",
+            "loop:work:2",
+        ]
+        reloaded = RunState.load(state.run_id, project_dir)
+        assert [preview["step_id"] for preview in _dry_run_previews(reloaded)] == [
+            "work",
+            "loop:work:1",
+            "loop:work:2",
+        ]
+
+    def test_concurrent_fan_out_previews_follow_item_order(
+        self, project_dir, monkeypatch
+    ):
+        import time
+
+        from specify_cli.workflows._commands import _dry_run_previews
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.steps.command import CommandStep
+
+        original_execute = CommandStep.execute
+
+        def delayed_execute(self, config, context):
+            time.sleep((3 - int(context.item)) * 0.03)
+            return original_execute(self, config, context)
+
+        monkeypatch.setattr(CommandStep, "execute", delayed_execute)
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "dry-run-fan-out-order"
+  name: "Dry Run Fan Out Order"
+  version: "1.0.0"
+  integration: claude
+steps:
+  - id: fan
+    type: fan-out
+    items: [0, 1, 2, 3]
+    max_concurrency: 4
+    step:
+      id: work
+      command: speckit.specify
+      input:
+        args: "{{ item }}"
+""")
+
+        state = WorkflowEngine(project_dir).execute(
+            definition, dry_run=True, run_id="dry-fan"
+        )
+        previews = _dry_run_previews(state)
+
+        assert [preview["step_id"] for preview in previews] == [
+            "fan:work:0",
+            "fan:work:1",
+            "fan:work:2",
+            "fan:work:3",
+        ]
+        assert [preview["configuration"]["input"]["args"] for preview in previews] == [
+            0,
+            1,
+            2,
+            3,
+        ]
+
+    def test_resume_restores_persisted_dry_run_without_dispatch(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import (
+            RunState,
+            WorkflowDefinition,
+            WorkflowEngine,
+        )
+        from specify_cli.workflows.steps.command import CommandStep
+
+        workflow_text = """
+schema_version: "1.0"
+workflow:
+  id: "dry-run-resume"
+  name: "Dry Run Resume"
+  version: "1.0.0"
+  integration: claude
+steps:
+  - id: specify
+    command: speckit.specify
+    input:
+      args: "resume preview"
+"""
+        definition = WorkflowDefinition.from_string(workflow_text)
+        state = RunState(
+            run_id="dry-run-resume",
+            workflow_id=definition.id,
+            project_root=project_dir,
+            dry_run=True,
+        )
+        state.status = RunStatus.PAUSED
+        state.save()
+        (state.runs_dir / "workflow.yml").write_text(workflow_text, encoding="utf-8")
+
+        def fail_dispatch(*_args, **_kwargs):
+            pytest.fail("Resumed dry run attempted agent dispatch")
+
+        monkeypatch.setattr(CommandStep, "_try_dispatch", fail_dispatch)
+        resumed = WorkflowEngine(project_dir).resume(state.run_id)
+
+        assert resumed.status == RunStatus.COMPLETED
+        assert resumed.dry_run is True
+        assert resumed.step_results["specify"]["output"]["dry_run"] is True
+        assert "resume preview" in resumed.step_results["specify"]["output"][
+            "dry_run_message"
+        ]
+
+    def test_resume_replaces_replayed_nested_preview(self, project_dir):
+        from specify_cli.workflows._commands import _dry_run_previews
+        from specify_cli.workflows.engine import (
+            RunState,
+            WorkflowDefinition,
+            WorkflowEngine,
+        )
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "dry-run-nested-resume"
+  name: "Dry Run Nested Resume"
+  version: "1.0.0"
+  integration: claude
+steps:
+  - id: parent
+    type: if
+    condition: true
+    then:
+      - id: preview
+        command: speckit.specify
+        input:
+          args: nested-preview
+      - id: fail
+        type: prompt
+        prompt: "{{ steps.preview.output.stdout | from_json }}"
+""")
+        engine = WorkflowEngine(project_dir)
+
+        with pytest.raises(ValueError, match="from_json"):
+            engine.execute(definition, dry_run=True, run_id="dry-nested")
+        first = RunState.load("dry-nested", project_dir)
+        assert [item["step_id"] for item in _dry_run_previews(first)] == [
+            "preview"
+        ]
+
+        with pytest.raises(ValueError, match="from_json"):
+            engine.resume("dry-nested")
+        resumed = RunState.load("dry-nested", project_dir)
+        assert [item["step_id"] for item in _dry_run_previews(resumed)] == [
+            "preview"
+        ]
+
+    def test_resume_discards_previews_from_previous_nested_branch(
+        self, project_dir
+    ):
+        from specify_cli.workflows._commands import _dry_run_previews
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "dry-run-changed-branch"
+  name: "Dry Run Changed Branch"
+  version: "1.0.0"
+  integration: claude
+inputs:
+  branch:
+    type: string
+steps:
+  - id: parent
+    type: if
+    condition: "{{ inputs.branch == 'old' }}"
+    then:
+      - id: first-preview
+        command: speckit.specify
+      - id: second-preview
+        command: speckit.plan
+      - id: fail-old
+        type: prompt
+        prompt: stop
+        timeout: invalid
+    else:
+      - id: fail-new
+        type: prompt
+        prompt: stop
+        timeout: invalid
+""")
+        engine = WorkflowEngine(project_dir)
+
+        first = engine.execute(
+            definition,
+            {"branch": "old"},
+            dry_run=True,
+            run_id="dry-changed-branch",
+        )
+        assert first.status == RunStatus.FAILED
+        assert [item["step_id"] for item in _dry_run_previews(first)] == [
+            "first-preview",
+            "second-preview",
+        ]
+
+        resumed = engine.resume("dry-changed-branch", {"branch": "new"})
+        assert resumed.status == RunStatus.FAILED
+        assert _dry_run_previews(resumed) == []
 
     def test_execute_rejects_invalid_origin_before_creating_run_state(
         self, project_dir
@@ -6958,6 +7413,7 @@ class TestRunState:
             run_id="test-run",
             workflow_id="test-workflow",
             project_root=project_dir,
+            dry_run=True,
         )
         state.status = RunStatus.RUNNING
         state.inputs = {"name": "login"}
@@ -6975,6 +7431,43 @@ class TestRunState:
         assert loaded.status == RunStatus.RUNNING
         assert loaded.inputs == {"name": "login"}
         assert "step-one" in loaded.step_results
+        assert loaded.dry_run is True
+
+    def test_load_legacy_state_defaults_dry_run_to_false(self, project_dir):
+        from specify_cli.workflows.engine import RunState
+
+        state = RunState(
+            run_id="legacy-run",
+            workflow_id="test-workflow",
+            project_root=project_dir,
+        )
+        state.save()
+        state_path = state.runs_dir / "state.json"
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+        payload.pop("dry_run", None)
+        state_path.write_text(json.dumps(payload), encoding="utf-8")
+
+        loaded = RunState.load(state.run_id, project_dir)
+
+        assert loaded.dry_run is False
+
+    @pytest.mark.parametrize("invalid", [None, 0, "false", []])
+    def test_load_rejects_non_boolean_dry_run(self, project_dir, invalid):
+        from specify_cli.workflows.engine import RunState
+
+        state = RunState(
+            run_id="invalid-dry-run",
+            workflow_id="test-workflow",
+            project_root=project_dir,
+        )
+        state.save()
+        state_path = state.runs_dir / "state.json"
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+        payload["dry_run"] = invalid
+        state_path.write_text(json.dumps(payload), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="dry_run.*boolean"):
+            RunState.load(state.run_id, project_dir)
 
     def test_load_not_found(self, project_dir):
         from specify_cli.workflows.engine import RunState
@@ -11203,6 +11696,387 @@ class TestWorkflowStepStartProgressLine:
 
         resumed = runner.invoke(app, ["workflow", "resume", run_id])
         assert "[boom]" in resumed.stdout
+
+
+class TestWorkflowDryRunCli:
+    """CLI contract for Issue #2661's workflow-only dry-run mode."""
+
+    _WF_AGENT_STEPS = """
+schema_version: "1.0"
+workflow:
+  id: "dry-run-cli"
+  name: "Dry Run CLI"
+  version: "1.0.0"
+  integration: claude
+inputs:
+  feature:
+    type: string
+    default: "add [literal] login"
+steps:
+  - id: specify
+    command: speckit.specify
+    options:
+      temperature: 0.2
+    input:
+      1: numeric-key
+      args: "{{ inputs.feature }}"
+      artifact: "{{ inputs.feature }}"
+  - id: review
+    type: prompt
+    prompt: "Review {{ inputs.feature }}"
+    timeout: 42
+  - id: approve
+    type: gate
+    message: "Approve {{ inputs.feature }}?"
+    options: [approve, reject]
+    on_reject: retry
+"""
+
+    _WF_SHELL_ONLY = """
+schema_version: "1.0"
+workflow:
+  id: "dry-run-shell-only"
+  name: "Dry Run Shell Only"
+  version: "1.0.0"
+steps:
+  - id: shell
+    type: shell
+    run: "echo shell-still-runs"
+"""
+
+    _WF_PARTIAL_FAILURE = """
+schema_version: "1.0"
+workflow:
+  id: dry-run-partial-failure
+  name: Dry Run Partial Failure
+  version: "1.0.0"
+  integration: claude
+inputs:
+  count:
+    type: number
+    default: 1
+steps:
+  - id: specify
+    command: speckit.specify
+    input:
+      args: "preview before failure"
+  - id: parse
+    type: prompt
+    prompt: "{{ steps.specify.output.stdout | from_json }}"
+"""
+
+    @staticmethod
+    def _write(tmp_path, content, name="dry-run.yml"):
+        path = tmp_path / name
+        path.write_text(content, encoding="utf-8")
+        return path
+
+    @staticmethod
+    def _forbid_agent_dispatch(monkeypatch):
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.steps.prompt import PromptStep
+
+        def fail_dispatch(*_args, **_kwargs):
+            pytest.fail("CLI dry run attempted agent dispatch")
+
+        monkeypatch.setattr(CommandStep, "_try_dispatch", fail_dispatch)
+        monkeypatch.setattr(PromptStep, "_try_dispatch", fail_dispatch)
+
+    def test_human_output_previews_agent_steps_and_escapes_markup(
+        self, tmp_path, monkeypatch
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        self._forbid_agent_dispatch(monkeypatch)
+        result = CliRunner().invoke(
+            app,
+            [
+                "workflow",
+                "run",
+                str(self._write(tmp_path, self._WF_AGENT_STEPS)),
+                "--dry-run",
+            ],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0
+        assert "DRY RUN" in result.stdout
+        assert "shell, init, and custom steps still execute" in " ".join(
+            result.stdout.split()
+        )
+        assert "Dry-run previews:" in result.stdout
+        assert "speckit.specify" in result.stdout
+        assert "add [literal] login" in result.stdout
+        normalized = " ".join(result.stdout.split())
+        assert '"options": ["approve","reject"]' in normalized
+        assert '"on_reject": "retry"' in normalized
+        assert "Status: completed" in result.stdout
+
+    def test_json_output_is_one_object_with_structured_previews(
+        self, tmp_path, monkeypatch
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        self._forbid_agent_dispatch(monkeypatch)
+        result = CliRunner().invoke(
+            app,
+            [
+                "workflow",
+                "run",
+                str(self._write(tmp_path, self._WF_AGENT_STEPS, "dry-run-json.yml")),
+                "--dry-run",
+                "--json",
+            ],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0
+        assert "\x1b" not in result.stdout
+        payload = json.loads(result.stdout)
+        assert payload["status"] == "completed"
+        assert payload["dry_run"] is True
+        assert [preview["step_id"] for preview in payload["previews"]] == [
+            "specify",
+            "review",
+            "approve",
+        ]
+        assert "add [literal] login" in payload["previews"][0]["message"]
+        assert payload["previews"][0]["type"] == "command"
+        assert payload["previews"][0]["configuration"] == {
+            "command": "speckit.specify",
+            "integration": "claude",
+            "model": None,
+            "options": {"temperature": 0.2},
+            "input": {
+                "1": "numeric-key",
+                "args": "add [literal] login",
+                "artifact": "add [literal] login",
+            },
+        }
+        assert payload["previews"][1]["configuration"]["timeout"] == 42
+        assert payload["previews"][2]["configuration"]["on_reject"] == "retry"
+
+    def test_shell_only_run_does_not_print_empty_preview_section(
+        self, tmp_path, monkeypatch
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(
+            app,
+            [
+                "workflow",
+                "run",
+                str(self._write(tmp_path, self._WF_SHELL_ONLY, "dry-run-shell.yml")),
+                "--dry-run",
+            ],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0
+        assert "Dry-run previews:" not in result.stdout
+
+    def test_json_preflight_failures_still_emit_one_object(
+        self, tmp_path, monkeypatch
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        invalid = tmp_path / "invalid.yml"
+        invalid.write_text("workflow: [", encoding="utf-8")
+        valid = self._write(
+            tmp_path, self._WF_SHELL_ONLY, "valid-for-errors.yml"
+        )
+        (tmp_path / ".specify").mkdir(exist_ok=True)
+        cases = [
+            ["workflow", "run", str(invalid), "--dry-run", "--json"],
+            [
+                "workflow",
+                "run",
+                str(valid),
+                "--input",
+                "missing-equals",
+                "--dry-run",
+                "--json",
+            ],
+            ["workflow", "run", "../invalid-id", "--dry-run", "--json"],
+        ]
+
+        for args in cases:
+            result = CliRunner().invoke(app, args, catch_exceptions=False)
+            assert result.exit_code == 1, args
+            assert "\x1b" not in result.stdout
+            payload = json.loads(result.stdout)
+            assert payload["status"] == "failed"
+            assert isinstance(payload["error"], str) and payload["error"]
+
+    def test_custom_step_import_output_does_not_pollute_json(
+        self, tmp_path, monkeypatch
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.workflows import STEP_REGISTRY
+
+        monkeypatch.chdir(tmp_path)
+        type_key = "dry-run-noisy-import"
+        step_dir = (
+            tmp_path / ".specify" / "workflows" / "steps" / type_key
+        )
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "schema_version: '1.0'\n"
+            "step:\n"
+            f"  type_key: {type_key}\n"
+            "  name: Noisy import\n"
+            "  version: '1.0.0'\n",
+            encoding="utf-8",
+        )
+        (step_dir / "__init__.py").write_text(
+            "print('CUSTOM-IMPORT-NOISE')\n"
+            "from specify_cli.workflows.base import StepBase, StepResult\n"
+            "class NoisyStep(StepBase):\n"
+            f"    type_key = {type_key!r}\n"
+            "    def execute(self, config, context):\n"
+            "        return StepResult()\n",
+            encoding="utf-8",
+        )
+
+        try:
+            result = CliRunner().invoke(
+                app,
+                [
+                    "workflow",
+                    "run",
+                    str(self._write(tmp_path, self._WF_SHELL_ONLY, "noisy.yml")),
+                    "--dry-run",
+                    "--json",
+                ],
+                catch_exceptions=False,
+            )
+        finally:
+            STEP_REGISTRY.pop(type_key, None)
+
+        assert result.exit_code == 0
+        assert "CUSTOM-IMPORT-NOISE" not in result.stdout
+        assert json.loads(result.stdout)["status"] == "completed"
+
+    def test_partial_previews_survive_engine_exception_in_human_and_json_modes(
+        self, tmp_path, monkeypatch
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        self._forbid_agent_dispatch(monkeypatch)
+        path = self._write(
+            tmp_path, self._WF_PARTIAL_FAILURE, "dry-run-partial.yml"
+        )
+        runner = CliRunner()
+
+        human = runner.invoke(
+            app,
+            ["workflow", "run", str(path), "--dry-run"],
+            catch_exceptions=False,
+        )
+        assert human.exit_code == 1
+        assert "Dry-run previews:" in human.stdout
+        assert "preview before failure" in human.stdout
+        assert "from_json" in human.stdout
+
+        machine = runner.invoke(
+            app,
+            ["workflow", "run", str(path), "--dry-run", "--json"],
+            catch_exceptions=False,
+        )
+        assert machine.exit_code == 1
+        assert "\x1b" not in machine.stdout
+        payload = json.loads(machine.stdout)
+        run_id = payload["run_id"]
+        assert payload["status"] == "failed"
+        assert payload["dry_run"] is True
+        assert payload["previews"][0]["step_id"] == "specify"
+
+        preflight_human = runner.invoke(
+            app,
+            ["workflow", "resume", run_id, "--input", "count=not-a-number"],
+            catch_exceptions=False,
+        )
+        assert preflight_human.exit_code == 1
+        assert "Dry-run previews:" in preflight_human.stdout
+        assert "preview before failure" in preflight_human.stdout
+
+        preflight_machine = runner.invoke(
+            app,
+            [
+                "workflow",
+                "resume",
+                run_id,
+                "--input",
+                "count=not-a-number",
+                "--json",
+            ],
+            catch_exceptions=False,
+        )
+        assert preflight_machine.exit_code == 1
+        preflight_payload = json.loads(preflight_machine.stdout)
+        assert preflight_payload["run_id"] == run_id
+        assert preflight_payload["current_step_id"] == "parse"
+        assert preflight_payload["previews"][0]["step_id"] == "specify"
+        assert "from_json" in payload["error"]
+
+    def test_resume_keeps_dry_run_warning_previews_and_json_contract(
+        self, tmp_path, monkeypatch
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        self._forbid_agent_dispatch(monkeypatch)
+        path = self._write(tmp_path, self._WF_PARTIAL_FAILURE, "dry-run-resume.yml")
+        runner = CliRunner()
+        first = runner.invoke(
+            app,
+            ["workflow", "run", str(path), "--dry-run", "--json"],
+            catch_exceptions=False,
+        )
+        run_id = json.loads(first.stdout)["run_id"]
+
+        human = runner.invoke(
+            app,
+            ["workflow", "resume", run_id],
+            catch_exceptions=False,
+        )
+        assert human.exit_code == 1
+        assert "DRY RUN" in human.stdout
+        assert "shell, init, and custom steps still execute" in " ".join(
+            human.stdout.split()
+        )
+        assert "Dry-run previews:" in human.stdout
+        assert "preview before failure" in human.stdout
+
+        machine = runner.invoke(
+            app,
+            ["workflow", "resume", run_id, "--json"],
+            catch_exceptions=False,
+        )
+        assert machine.exit_code == 1
+        payload = json.loads(machine.stdout)
+        assert payload["status"] == "failed"
+        assert payload["dry_run"] is True
+        assert payload["previews"][0]["step_id"] == "specify"
 
 
 class TestWorkflowRunExitCodes:

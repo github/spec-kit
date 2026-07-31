@@ -12,6 +12,7 @@ specify workflow run <source>
 | ------------------- | -------------------------------------------------------- |
 | `-i` / `--input`    | Pass input values as `key=value` (repeatable)            |
 | `--json`            | Emit the run outcome as a single JSON object             |
+| `--dry-run`         | Preview agent-facing steps without dispatching an agent  |
 
 Runs a workflow from a catalog ID, URL, or local file path. Inputs declared by the workflow can be provided via `--input` or will be prompted interactively.
 
@@ -20,6 +21,14 @@ Example:
 ```bash
 specify workflow run speckit -i spec="Build a kanban board with drag-and-drop task management" -i scope=full
 ```
+
+Use `--dry-run` to resolve and preview each built-in `command`, `prompt`, and `gate` step without invoking an integration CLI or waiting for gate input:
+
+```bash
+specify workflow run speckit --dry-run -i spec="Build a kanban board"
+```
+
+> **Warning:** Workflow dry-run is not a side-effect-free sandbox. Built-in `shell` and `init` steps, plus custom step types, keep their normal behavior and may execute commands or write files. Inspect the workflow before running it. The dry-run setting is stored in the run state, so `workflow resume` continues to preview command, prompt, and gate steps while retaining the same warning and side-effect boundary.
 
 With `--json`, a single machine-readable object is printed instead of formatted text (the default output is unchanged when the flag is omitted):
 
@@ -53,6 +62,37 @@ For `failed` and `aborted` runs, the payload includes an `error` field carrying 
 ```
 
 `completed` and `paused` runs omit the `error` field. The error is persisted in the run's `state.json`, so `specify workflow status <run_id> --json` surfaces the same message after the fact.
+
+Dry-run JSON adds `dry_run: true` and a `previews` array. Each preview contains the step ID and type, the resolved configuration, and the same human-readable message shown in formatted output:
+
+```json
+{
+  "run_id": "662bf791",
+  "workflow_id": "build-and-review",
+  "status": "completed",
+  "current_step_id": "review",
+  "current_step_index": 1,
+  "dry_run": true,
+  "previews": [
+    {
+      "step_id": "specify",
+      "type": "command",
+      "configuration": {
+        "command": "speckit.specify",
+        "integration": "copilot",
+        "model": null,
+        "options": {},
+        "input": {
+          "args": "Build a kanban board"
+        }
+      },
+      "message": "[DRY RUN] command='speckit.specify'; integration='copilot'; model=None; options={}; input={'args': 'Build a kanban board'}"
+    }
+  ]
+}
+```
+
+If execution raises after some previews have been resolved, `--json` still emits one failed object and includes those partial previews. Formatted output prints the same partial previews before the error.
 
 > **Note:** Most workflow commands require a project already initialized with `specify init`. The exception is `specify workflow run <local-file.{yml,yaml}>`, which can run outside a project; in that case, run state is stored under the current directory's `.specify/workflows/runs/<run_id>/`.
 

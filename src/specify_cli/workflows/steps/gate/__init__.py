@@ -138,6 +138,32 @@ class GateStep(StepBase):
             "choice": None,
         }
 
+        if context.dry_run:
+            choice = self._first_non_reject_option(options)
+            preview = {
+                "type": "gate",
+                "message": message,
+                "options": options,
+                "on_reject": on_reject,
+                "show_file": show_file,
+                "verdict_input": verdict_input,
+                "choice": choice,
+            }
+            output.update(
+                {
+                    "choice": choice,
+                    "dry_run": True,
+                    "dry_run_preview": preview,
+                    "dry_run_message": (
+                        f"[DRY RUN] gate skipped; would choose {choice!r}: "
+                        f"{message}"
+                        if choice is not None
+                        else f"[DRY RUN] gate skipped; no non-reject option: {message}"
+                    ),
+                }
+            )
+            return StepResult(status=StepStatus.COMPLETED, output=output)
+
         choice: str | None = None
         bound_verdict_input: str | None = None
         if verdict_input is not None:
@@ -206,6 +232,18 @@ class GateStep(StepBase):
             return StepResult(status=StepStatus.COMPLETED, output=output)
 
         return StepResult(status=StepStatus.COMPLETED, output=output)
+
+    @staticmethod
+    def _first_non_reject_option(options: list[str]) -> str | None:
+        """Choose a deterministic preview branch without selecting rejection."""
+        return next(
+            (
+                option
+                for option in options
+                if option.strip().casefold() not in {"reject", "abort"}
+            ),
+            None,
+        )
 
     @classmethod
     def _compose_prompt(cls, message: object, show_file: str | None) -> str:

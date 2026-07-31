@@ -128,12 +128,7 @@ class CommandStep(StepBase):
             )
         options.update(step_options)
 
-        # Attempt CLI dispatch
         args_str = str(resolved_input.get("args", ""))
-        dispatch_result = self._try_dispatch(
-            command, integration, model, args_str, context
-        )
-
         output: dict[str, Any] = {
             "command": command,
             "integration": integration,
@@ -141,6 +136,37 @@ class CommandStep(StepBase):
             "options": options,
             "input": resolved_input,
         }
+
+        if context.dry_run:
+            preview = {
+                "type": "command",
+                "command": command,
+                "integration": integration,
+                "model": model,
+                "options": options,
+                "input": resolved_input,
+            }
+            output.update(
+                {
+                    "exit_code": 0,
+                    "stdout": "",
+                    "stderr": "",
+                    "dispatched": False,
+                    "dry_run": True,
+                    "dry_run_preview": preview,
+                    "dry_run_message": (
+                        f"[DRY RUN] command={command!r}; "
+                        f"integration={integration!r}; model={model!r}; "
+                        f"options={options!r}; input={resolved_input!r}"
+                    ),
+                }
+            )
+            return StepResult(status=StepStatus.COMPLETED, output=output)
+
+        # Attempt CLI dispatch only after validation and expression resolution.
+        dispatch_result = self._try_dispatch(
+            command, integration, model, args_str, context
+        )
 
         if dispatch_result is not None:
             output["exit_code"] = dispatch_result["exit_code"]
