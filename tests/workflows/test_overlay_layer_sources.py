@@ -33,19 +33,27 @@ def _write_overlay_file(project_dir: Path, workflow_id: str, overlay_id: str, da
 class TestProjectOverlaySourceManifestShape:
     """A non-mapping overlay manifest is reported as a shape error."""
 
-    @pytest.mark.parametrize("content", ["[]", "false", "0", "''"])
+    @pytest.mark.parametrize(
+        "content", ["[]", "false", "0", "''", "null", "~", "NULL"]
+    )
     def test_falsy_non_mapping_manifest_reports_shape_error(
         self, project_dir: Path, content: str
     ) -> None:
-        """`or {}` masked the falsy non-mappings.
+        """Every non-mapping document reports the mapping-shape error.
 
-        `validate_overlay_yaml` opens with a `isinstance(data, dict)` check, so a
+        `validate_overlay_yaml` opens with an `isinstance(data, dict)` check, so a
         truthy non-mapping (`- a`, `hello`) correctly reports "Overlay manifest
-        must be a mapping." But `yaml.safe_load(...) or {}` replaced `[]`,
-        `false`, `0` and `''` with an empty mapping first, so those files were
-        reported as three bogus missing-field errors instead of the wrong shape.
-        The sibling reader for these same files, `_read_overlay` in
-        `overlays/_commands.py`, does not coerce.
+        must be a mapping." Two things masked that for other documents:
+
+        * `yaml.safe_load(...) or {}` replaced the falsy shapes `[]`, `false`,
+          `0` and `''` with an empty mapping.
+        * `safe_load` returns `None` for an explicit null scalar (`null`, `~`,
+          `NULL`) as well as for an empty document, so a `data is None` check
+          swallowed those too.
+
+        Both now reach the validator unchanged; only a genuinely empty document
+        is normalised to `{}` (pinned separately below), using `yaml.compose`,
+        which yields no node only for an empty document.
         """
         ov_dir = project_dir / ".specify" / "workflows" / "overlays" / "wf"
         ov_dir.mkdir(parents=True, exist_ok=True)

@@ -152,18 +152,26 @@ class ProjectOverlaySource:
             if path.is_symlink():
                 raise OverlayLoadError(path, ["Symlinked overlay files are not allowed"])
             try:
-                data = yaml.safe_load(path.read_text(encoding="utf-8"))
+                text = path.read_text(encoding="utf-8")
+                # ``safe_load`` returns None for BOTH an empty document and an
+                # explicit null scalar (``null``, ``~``, ``Null``, ``NULL``), so
+                # it cannot tell them apart on its own. ``compose`` yields no
+                # node only for a genuinely empty document.
+                is_empty_document = yaml.compose(text) is None
+                data = yaml.safe_load(text)
             except yaml.YAMLError as exc:
                 raise OverlayLoadError(path, [f"Invalid YAML: {exc}"]) from exc
             except (OSError, UnicodeDecodeError) as exc:
                 raise OverlayLoadError(path, [f"Cannot load overlay: {exc}"]) from exc
-            # Only an empty document (``None``) becomes an empty mapping, so the
-            # missing-field errors are reported. ``or {}`` also masked the FALSY
-            # non-mappings (``[]``, ``false``, ``0``, ``''``), which must be
-            # reported as the wrong manifest shape like their truthy twins
-            # (``- a``, ``hello``) already are. The sibling reader for these same
-            # files, ``_read_overlay`` in overlays/_commands.py, does not coerce.
-            if data is None:
+            # Only a genuinely EMPTY document becomes an empty mapping, so its
+            # missing-field errors are reported. Every non-mapping document --
+            # including an explicit ``null``/``~`` and the falsy shapes ``[]``,
+            # ``false``, ``0``, ``''`` that the previous ``or {}`` masked -- must
+            # reach ``validate_overlay_yaml`` unchanged so it reports the wrong
+            # manifest shape, like the truthy twins (``- a``, ``hello``) already
+            # do. The sibling reader for these same files, ``_read_overlay`` in
+            # overlays/_commands.py, does not coerce either.
+            if is_empty_document:
                 data = {}
             if (
                 not include_disabled
