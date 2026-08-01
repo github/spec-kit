@@ -10543,29 +10543,53 @@ class TestExtensionConfigScaffolding:
         assert failed == ["provides.config"]
         assert not (outside / "extensions" / "test-ext" / "test-config.yml").exists()
 
-    def test_scaffold_config_reports_unwritable_nested_target(self, tmp_path):
-        """A nested target whose parent cannot be created is a failure, not a crash.
+    def test_scaffold_config_rejects_targets_removal_would_not_preserve(self, tmp_path):
+        """Only top-level *-config.yml targets are scaffolded.
 
-        mkdir used to run outside the OSError handler, so this raised out of
-        scaffolding after `extension add` had already installed the extension.
+        remove(keep_config=True) rmtree's every subdirectory and keeps only
+        top-level -config.yml / -config.local.yml files, and the backup path
+        globs the same pattern. Scaffolding anything else would hand the user a
+        file that `extension add --force` silently replaces with the template
+        default.
         """
+        from specify_cli.extensions import ExtensionManager
+        for target in ("nested/test-config.yml", "settings.yml", "test-config.yaml"):
+            project = tmp_path / f"project-{target.replace('/', '_')}"
+            specify_dir = project / ".specify"
+            specify_dir.mkdir(parents=True)
+            ext_dir = specify_dir / "extensions" / "test-ext"
+            self._make_extension(ext_dir, config_entries=[{
+                "name": target,
+                "template": "config-template.yml",
+                "description": "Test config",
+                "required": True,
+            }])
+            (ext_dir / "config-template.yml").write_text("setting: default")
+
+            manager = ExtensionManager(project)
+            deployed, skipped, failed = manager.scaffold_config("test-ext")
+
+            assert deployed == [], target
+            assert skipped == [], target
+            assert failed == [target], target
+
+    def test_scaffold_config_accepts_local_override_name(self, tmp_path):
+        """*-config.local.yml is preserved by removal, so it may be scaffolded."""
         from specify_cli.extensions import ExtensionManager
         project = tmp_path / "project"
         specify_dir = project / ".specify"
         specify_dir.mkdir(parents=True)
         ext_dir = specify_dir / "extensions" / "test-ext"
         self._make_extension(ext_dir, config_entries=[{
-            "name": "nested/test-config.yml",
+            "name": "test-config.local.yml",
             "template": "config-template.yml",
             "description": "Test config",
             "required": True,
         }])
         (ext_dir / "config-template.yml").write_text("setting: default")
-        # `nested` is a file, so creating it as a directory fails.
-        (ext_dir / "nested").write_text("not a directory")
 
         manager = ExtensionManager(project)
         deployed, skipped, failed = manager.scaffold_config("test-ext")
 
-        assert deployed == []
-        assert failed == ["nested/test-config.yml"]
+        assert deployed == ["test-config.local.yml"]
+        assert failed == []

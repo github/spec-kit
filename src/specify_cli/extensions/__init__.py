@@ -2503,6 +2503,20 @@ class ExtensionManager:
                 return False
         return current.is_dir()
 
+    @staticmethod
+    def _target_follows_preserved_convention(target_name: str) -> bool:
+        """True when a scaffold target survives remove/backup/restore.
+
+        Those paths only handle top-level ``*-config.yml`` and
+        ``*-config.local.yml`` files, so anything nested or otherwise named is
+        not preserved across an update.
+        """
+        if "/" in target_name or "\\" in target_name:
+            return False
+        return target_name.endswith("-config.yml") or target_name.endswith(
+            "-config.local.yml"
+        )
+
     def scaffold_config(self, extension_id: str) -> tuple[List[str], List[str], List[str]]:
         """Deploy config templates from an installed extension to the project.
 
@@ -2563,6 +2577,15 @@ class ExtensionManager:
                 failed.append(failure_name)
                 continue
             if not isinstance(target_name, str) or not target_name:
+                failed.append(failure_name)
+                continue
+            # Only scaffold what removal actually preserves. remove(keep_config)
+            # keeps top-level files ending in -config.yml / -config.local.yml and
+            # rmtree's every subdirectory; the backup path globs the same
+            # top-level pattern. A nested or differently-named target would be
+            # silently destroyed by `extension add --force` and replaced with the
+            # template default, losing the user's customization.
+            if not self._target_follows_preserved_convention(target_name):
                 failed.append(failure_name)
                 continue
 
