@@ -46,7 +46,7 @@ def is_agent_skills_enabled(project_path: Path, agent_name: str, opts: Mapping[s
     ``init-options.json`` ``ai_skills`` flag only when *agent_name* is the
     active agent recorded there (pre-multi-install behaviour).
     """
-    from .integration_state import try_read_integration_json, integration_setting
+    from .integration_state import integration_setting, try_read_integration_json
 
     state, _error = try_read_integration_json(project_path)
     if state:

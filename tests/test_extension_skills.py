@@ -2073,3 +2073,41 @@ class TestNonActiveAgentSkillRegistration:
         assert not (
             copilot_skills_dir / "speckit-test-ext-hello"
         ).exists()
+
+    def test_unregister_agent_artifacts_does_not_touch_other_agents_skills(
+        self, project_dir, extension_dir
+    ):
+        """Cleaning up one agent's artifacts must not delete another agent's skills."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = _create_skills_dir(project_dir, ai="claude")
+        _create_integration_json(
+            project_dir,
+            default_agent="claude",
+            installed=["claude", "copilot"],
+            skills_by_agent={"copilot": True},
+        )
+        copilot_skills_dir = _create_skills_dir(project_dir, ai="copilot")
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        # Precondition: both agents got the skill rendered.
+        assert (
+            claude_skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        ).exists()
+        assert (
+            copilot_skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        ).exists()
+
+        # Simulate switching away from / uninstalling copilot only.
+        manager.unregister_agent_artifacts("copilot")
+
+        # Copilot's skill is gone, but claude's is untouched.
+        assert not (
+            copilot_skills_dir / "speckit-test-ext-hello"
+        ).exists()
+        assert (
+            claude_skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        ).exists()

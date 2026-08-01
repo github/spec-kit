@@ -29,7 +29,11 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from .._assets import _locate_core_pack, _repo_root
 from .._init_options import is_ai_skills_enabled
 from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
-from .._utils import dump_frontmatter, relative_extension_path_violation, version_satisfies
+from .._utils import (
+    dump_frontmatter,
+    relative_extension_path_violation,
+    version_satisfies,
+)
 from ..catalogs import CatalogEntry as BaseCatalogEntry
 from ..catalogs import CatalogStackBase
 from ..shared_infra import verify_archive_sha256
@@ -910,7 +914,7 @@ class ExtensionManager:
 
         return _ignore
 
-    def _get_skills_dir(self, agent_name: Optional[str] = None) -> Optional[Path]:
+    def _get_skills_dir(self, agent_name: str | None = None) -> Optional[Path]:
         """Return the skills directory for extension skill registration.
 
         When *agent_name* is given, resolves the skills directory and
@@ -929,12 +933,14 @@ class ExtensionManager:
         that callers can fall back gracefully.
         """
         from .. import (
+            _get_skills_dir as resolve_agent_skills_dir,
+        )
+        from .. import (
             _print_cli_warning,
             load_init_options,
             resolve_active_skills_dir,
         )
         from .._init_options import is_agent_skills_enabled
-        from .. import _get_skills_dir as resolve_agent_skills_dir
 
         def _ensure_usable(skills_dir: Path) -> Optional[Path]:
             try:
@@ -1024,7 +1030,7 @@ class ExtensionManager:
         manifest: ExtensionManifest,
         extension_dir: Path,
         link_outputs: bool = False,
-        agent_name: Optional[str] = None,
+        agent_name: str | None = None,
     ) -> List[str]:
         """Generate SKILL.md files for extension commands as agent skills.
 
@@ -1215,7 +1221,7 @@ class ExtensionManager:
         manifest: ExtensionManifest,
         extension_dir: Path,
         link_outputs: bool = False,
-    ) -> List[str]:
+    ) -> list[str]:
         """Render extension skills for every skills-mode agent detected.
 
         Used by paths (like ``extension add``) that register an extension
@@ -1228,15 +1234,15 @@ class ExtensionManager:
         """
         from .. import load_init_options
         from ..integration_state import (
-            try_read_integration_json,
             installed_integration_keys,
+            try_read_integration_json,
         )
 
         opts = load_init_options(self.project_root)
         if not isinstance(opts, dict):
             opts = {}
 
-        candidate_agents: List[str] = []
+        candidate_agents: list[str] = []
         active_agent = opts.get("ai")
         if isinstance(active_agent, str) and active_agent:
             candidate_agents.append(active_agent)
@@ -1247,7 +1253,7 @@ class ExtensionManager:
                 if key not in candidate_agents:
                     candidate_agents.append(key)
 
-        combined: List[str] = []
+        combined: list[str] = []
         seen = set()
         for agent_name in candidate_agents:
             try:
@@ -1257,7 +1263,7 @@ class ExtensionManager:
                     link_outputs=link_outputs,
                     agent_name=agent_name,
                 )
-            except Exception as skills_err:
+            except Exception as skills_err:  # noqa: BLE001 -- best-effort per-agent registration
                 from .. import _print_cli_warning
                 _print_cli_warning(
                     "register extension skills for",
@@ -1293,20 +1299,24 @@ class ExtensionManager:
         skill_names: List[str],
         extension_id: str,
         skills_dir: Optional[Path] = None,
+        scan_all_agents: bool = False,
     ) -> None:
         """Remove SKILL.md directories for extension skills.
 
         Called during extension removal to clean up skill files that
         were created by ``_register_extension_skills()``.
 
-        Skills may have been rendered for more than one agent (#2948),
-        so this always scans every known agent skills directory (plus
-        *skills_dir* or the resolved active-agent directory, if any)
-        rather than only a single resolved directory, to avoid orphaning
-        skills registered for a non-active agent. Each candidate
-        directory is verified against the SKILL.md ``metadata.source``
-        field before removal to avoid accidentally deleting user-created
-        skills with the same name.
+        By default this is agent-scoped: it only touches *skills_dir* (or
+        the resolved active-agent directory when *skills_dir* is not
+        given), falling back to scanning every known agent skills
+        directory only when no directory could be resolved at all. Pass
+        *scan_all_agents* to always scan every known agent directory in
+        addition to *skills_dir* — used for a full extension removal,
+        since skills may have been rendered for more than one agent
+        (#2948) and all of them need cleaning up, not just the active
+        one. Each candidate directory is verified against the SKILL.md
+        ``metadata.source`` field before removal to avoid accidentally
+        deleting user-created skills with the same name.
 
         Args:
             skill_names: List of skill names to remove.
@@ -1316,6 +1326,12 @@ class ExtensionManager:
                 of resolving via ``_get_skills_dir()``.  Useful when the
                 caller needs to target a specific agent's skills directory
                 regardless of the currently-active agent in init-options.
+            scan_all_agents: If True, always additionally scan every
+                known agent skills directory, not just *skills_dir* (or
+                its resolved fallback). Use only for full extension
+                removal, never for single-agent-scoped cleanup — doing so
+                for the latter would delete other agents' unrelated
+                skills of the same name.
         """
         if not skill_names:
             return
@@ -1365,13 +1381,15 @@ class ExtensionManager:
                 except (OSError, UnicodeDecodeError, Exception):
                     continue
                 shutil.rmtree(skill_subdir)
-        # Additionally always scan every other known agent skills
-        # directory: skills may have been rendered for more than one
-        # agent (#2948), so limiting cleanup to only the directory above
-        # would orphan skills registered for a non-active agent.
-        # Directories already handled above are silently skipped since
-        # their matching skill subdirectories no longer exist.
-        if True:
+        # Only additionally scan every other known agent skills directory
+        # when no directory could be resolved at all (legacy fallback), or
+        # when the caller explicitly asked for a full multi-agent scan
+        # (scan_all_agents=True, used for full extension removal since
+        # skills may have been rendered for more than one agent, #2948).
+        # A single-agent-scoped caller (skills_dir given, scan_all_agents
+        # False) must not have this broader scan touch other agents'
+        # unrelated skills of the same name.
+        if not skills_dir or scan_all_agents:
             from .. import AGENT_CONFIG, DEFAULT_SKILLS_DIR
 
             candidate_dirs: set[Path] = set()
@@ -1716,7 +1734,12 @@ class ExtensionManager:
             registrar.unregister_commands(registered_commands, self.project_root)
 
         # Unregister agent skills
-        self._unregister_extension_skills(registered_skills, extension_id)
+        # scan_all_agents=True: this is a full extension removal, so skills
+        # rendered for any installed agent (not just the active one) need
+        # to be cleaned up (#2948).
+        self._unregister_extension_skills(
+            registered_skills, extension_id, scan_all_agents=True
+        )
 
         if keep_config:
             # Preserve config files, only remove non-config files
@@ -1868,7 +1891,6 @@ class ExtensionManager:
         if not isinstance(init_options, dict):
             init_options = {}
 
-        active_agent = init_options.get("ai")
         ai_skills_enabled = is_agent_skills_enabled(
             self.project_root, agent_name, init_options
         )
