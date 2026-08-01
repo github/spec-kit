@@ -20,6 +20,23 @@ import platform
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+_MAX_STDIN_BYTES = 10 * 1024 * 1024  # 10 MiB
+
+
+def _read_stdin_bounded(max_bytes: int = _MAX_STDIN_BYTES) -> str:
+    """Read at most *max_bytes* from stdin to prevent unbounded memory use."""
+    if sys.stdin.isatty():
+        return "{}"
+    chunks: list[str] = []
+    total = 0
+    while total < max_bytes:
+        chunk = sys.stdin.read(min(max_bytes - total, 65536))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+    return "".join(chunks)
+
 import yaml
 
 if TYPE_CHECKING:
@@ -297,7 +314,7 @@ def main():
             timeout = int(sys.argv[3])
         except (TypeError, ValueError):
             timeout = 120
-    payload = sys.stdin.read() if not sys.stdin.isatty() else "{}"
+    payload = _read_stdin_bounded()
     project_root = Path(__file__).parent.parent.resolve()
 
     # Preferred path: specify_cli is importable (durable install) — delegate to
