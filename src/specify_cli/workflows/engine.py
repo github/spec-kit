@@ -1704,10 +1704,12 @@ class WorkflowEngine:
             if not run_dir.is_dir():
                 continue
             state_path = run_dir / "state.json"
-            if state_path.exists():
+            try:
                 with open(state_path, encoding="utf-8") as f:
                     state_data = json.load(f)
                 runs.append(state_data)
+            except (FileNotFoundError, json.JSONDecodeError, OSError):
+                continue
         return runs
 
 
