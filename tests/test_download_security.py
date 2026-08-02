@@ -475,6 +475,70 @@ def test_safe_extract_tar_enforces_entry_and_size_limits(tmp_path):
         safe_extract_tar(archive_path, tmp_path / "total", max_total_bytes=7)
 
 
+def _truncated_tar_gz_bytes(keep_bytes):
+    """Return the leading *keep_bytes* of a multi-member tar.gz's bytes.
+
+    A gzip stream cut short this way ends before its end-of-stream marker, so
+    reading it raises a bare ``EOFError`` from the gzip layer. ``tarfile``
+    decompresses lazily, so *where* that surfaces depends on how much is kept:
+    a very short prefix fails in ``tarfile.open`` itself, while a longer one
+    opens fine and only fails once members are iterated.
+    """
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        for index in range(5):
+            info = tarfile.TarInfo(f"file{index}.txt")
+            content = bytes(range(256)) * 400
+            info.size = len(content)
+            archive.addfile(info, io.BytesIO(content))
+    return buffer.getvalue()[:keep_bytes]
+
+
+def test_detect_archive_format_rejects_truncated_tar_gz(tmp_path):
+    # A gzip stream truncated before tarfile can read its first header raises a
+    # bare EOFError -- not a TarError -- from the format probe. Catching only
+    # TarError let it escape as a raw exception instead of leaving is_tar_gz
+    # False and reporting the module's clean format-mismatch error.
+    archive_path = tmp_path / "truncated.tar.gz"
+    archive_path.write_bytes(_truncated_tar_gz_bytes(64))
+
+    with pytest.raises(ValueError, match="format mismatch"):
+        detect_archive_format(archive_path)
+
+
+@pytest.mark.parametrize("keep_bytes", [64, 512, 2048])
+def test_safe_extract_tar_rejects_truncated_archive(tmp_path, keep_bytes):
+    # The same bare EOFError, from tarfile.open on a short prefix and from
+    # member iteration on a longer one. Both sites reported it raw.
+    archive_path = tmp_path / f"truncated-{keep_bytes}.tar.gz"
+    archive_path.write_bytes(_truncated_tar_gz_bytes(keep_bytes))
+
+    with pytest.raises(ValueError, match="Invalid tar.gz archive"):
+        safe_extract_tar(archive_path, tmp_path / f"out-{keep_bytes}")
+
+
+def test_safe_extract_tar_wraps_truncation_in_caller_error_type(tmp_path):
+    # The leak bypassed the caller's domain error type entirely, so callers
+    # that only catch their own error (or ValueError) crashed the command.
+    archive_path = tmp_path / "truncated.tar.gz"
+    archive_path.write_bytes(_truncated_tar_gz_bytes(2048))
+
+    with pytest.raises(_CustomZipError, match="Invalid tar.gz archive"):
+        safe_extract_tar(
+            archive_path,
+            tmp_path / "out",
+            error_type=_CustomZipError,
+        )
+
+
+def test_safe_extract_archive_rejects_truncated_tar_gz(tmp_path):
+    archive_path = tmp_path / "truncated.tar.gz"
+    archive_path.write_bytes(_truncated_tar_gz_bytes(2048))
+
+    with pytest.raises(ValueError):
+        safe_extract_archive(archive_path, tmp_path / "out")
+
+
 @pytest.mark.parametrize("suffix", [".zip", ".tar.gz", ".tgz"])
 def test_safe_extract_archive_has_format_parity(tmp_path, suffix):
     archive_path = tmp_path / f"package{suffix}"

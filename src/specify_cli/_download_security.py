@@ -10,6 +10,7 @@ import struct
 import tarfile
 import unicodedata
 import zipfile
+import zlib
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from ipaddress import IPv4Address, IPv6Address, ip_address
@@ -69,6 +70,13 @@ _ZIP_MAX_COMMENT_BYTES = (1 << 16) - 1
 _BOUNDED_ZIP_COMPRESSION_METHODS = frozenset(
     (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
 )
+#: Decompression failures a truncated or corrupt gzip stream raises from
+#: ``tarfile``. Most are wrapped in ``TarError``, but a stream that ends
+#: mid-member escapes as a bare ``EOFError`` from the gzip layer, and a corrupt
+#: deflate block can surface as ``zlib.error``. Neither derives from
+#: ``TarError`` or ``OSError``, so both bypass a ``(TarError, OSError)`` handler.
+_TAR_DECOMPRESSION_ERRORS = (tarfile.TarError, EOFError, zlib.error)
+
 _ARCHIVE_CONTENT_TYPES: dict[str, ArchiveFormat] = {
     "application/gzip": "tar.gz",
     "application/x-gzip": "tar.gz",
@@ -166,7 +174,11 @@ def detect_archive_format(
                 try:
                     with tarfile.open(fileobj=archive_file, mode="r:gz"):
                         is_tar_gz = True
-                except tarfile.TarError:
+                except _TAR_DECOMPRESSION_ERRORS:
+                    # A truncated gzip stream raises a bare EOFError here rather
+                    # than a TarError, so catching only TarError let it escape
+                    # this probe as a raw exception instead of leaving
+                    # ``is_tar_gz`` False and reporting the format mismatch.
                     pass
             archive_file.seek(0)
         except OSError as exc:
@@ -1077,7 +1089,7 @@ def safe_extract_tar(
             mode="r:gz",
             fileobj=archive_file,
         )
-    except (tarfile.TarError, OSError) as exc:
+    except (*_TAR_DECOMPRESSION_ERRORS, OSError) as exc:
         _raise_from(error_type, f"Invalid tar.gz archive: {archive_path}", exc)
 
     with archive:
@@ -1149,7 +1161,7 @@ def safe_extract_tar(
                             f"of {max_total_bytes} bytes",
                         )
                 validated.append((member, normalized_name, is_dir))
-        except (tarfile.TarError, OSError) as exc:
+        except (*_TAR_DECOMPRESSION_ERRORS, OSError) as exc:
             _raise_from(
                 error_type,
                 f"Invalid tar.gz archive: {archive_path}",
