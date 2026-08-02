@@ -15,7 +15,9 @@ def _build_agent_config() -> dict[str, dict[str, Any]]:
 
 AGENT_CONFIG: dict[str, dict[str, Any]] = _build_agent_config()
 
-DEFAULT_INIT_INTEGRATION = "copilot"
+import os
+
+DEFAULT_INIT_INTEGRATION = os.environ.get("SPECKIT_DEFAULT_INIT_INTEGRATION", "copilot")
 
 SCRIPT_TYPE_CHOICES: dict[str, str] = {
     "sh": "POSIX Shell (bash/zsh)",
