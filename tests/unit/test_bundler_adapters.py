@@ -104,6 +104,18 @@ def test_fetch_rejects_malformed_source_url_cleanly(url):
         fetcher(_source(url))
 
 
+@pytest.mark.parametrize("use_file_url", [False, True], ids=["path", "file-url"])
+def test_local_catalog_decode_errors_are_wrapped(tmp_path, use_file_url):
+    catalog_path = tmp_path / "catalog.json"
+    catalog_path.write_bytes(b"\xff\xfe")
+    url = catalog_path.as_uri() if use_file_url else str(catalog_path)
+
+    fetcher = adapters.make_catalog_fetcher(allow_network=False)
+
+    with pytest.raises(BundlerError, match="Could not read"):
+        fetcher(_source(url))
+
+
 def test_builtin_community_catalog_fetches_repository_catalog_online(monkeypatch):
     captured: dict = {}
 

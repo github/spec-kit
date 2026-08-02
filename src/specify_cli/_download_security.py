@@ -7,6 +7,7 @@ import re
 import socket
 import stat
 import struct
+import tarfile
 import unicodedata
 import zipfile
 from collections.abc import Iterator
@@ -14,11 +15,12 @@ from contextlib import ExitStack, contextmanager
 from ipaddress import IPv4Address, IPv6Address, ip_address
 from itertools import pairwise
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import NoReturn, TypeVar
+from typing import BinaryIO, Literal, NoReturn, TypeVar
 from urllib.parse import ParseResult, urlparse
 
 
 ErrorT = TypeVar("ErrorT", bound=Exception)
+ArchiveFormat = Literal["zip", "tar.gz"]
 
 MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
 MAX_ZIP_ENTRIES = 512
@@ -67,6 +69,130 @@ _ZIP_MAX_COMMENT_BYTES = (1 << 16) - 1
 _BOUNDED_ZIP_COMPRESSION_METHODS = frozenset(
     (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
 )
+_ARCHIVE_CONTENT_TYPES: dict[str, ArchiveFormat] = {
+    "application/gzip": "tar.gz",
+    "application/x-gzip": "tar.gz",
+    "application/x-tar+gzip": "tar.gz",
+    "application/zip": "zip",
+    "application/x-zip-compressed": "zip",
+}
+
+
+def archive_format_from_name(name: str) -> ArchiveFormat | None:
+    """Return the supported archive format declared by a path or URL."""
+    try:
+        path = urlparse(name).path.lower()
+    except (TypeError, ValueError):
+        return None
+    if path.endswith(".tar.gz") or path.endswith(".tgz"):
+        return "tar.gz"
+    if path.endswith(".zip"):
+        return "zip"
+    return None
+
+
+def archive_format_from_content_type(content_type: str | None) -> ArchiveFormat | None:
+    """Return the supported archive format declared by an HTTP Content-Type."""
+    if not isinstance(content_type, str):
+        return None
+    media_type = content_type.partition(";")[0].strip().lower()
+    return _ARCHIVE_CONTENT_TYPES.get(media_type)
+
+
+def archive_suffix(archive_format: ArchiveFormat) -> str:
+    """Return the canonical filename suffix for *archive_format*."""
+    if archive_format == "zip":
+        return ".zip"
+    if archive_format == "tar.gz":
+        return ".tar.gz"
+    raise ValueError(f"Unsupported archive format: {archive_format!r}")
+
+
+def detect_archive_format(
+    archive_path: Path,
+    *,
+    archive_file: BinaryIO | None = None,
+    source_name: str | None = None,
+    content_type: str | None = None,
+    error_type: type[ErrorT] = ValueError,
+) -> ArchiveFormat:
+    """Validate the declared archive format against the file contents.
+
+    A recognized path/URL suffix is authoritative. For remote responses whose
+    final URL has no archive suffix, a recognized Content-Type may declare the
+    format instead. When both declarations are recognized they must agree, and
+    the resulting declaration must match the archive bytes.
+    """
+    archive_path = Path(archive_path)
+    name_format = archive_format_from_name(
+        source_name if source_name is not None else str(archive_path)
+    )
+    content_format = archive_format_from_content_type(content_type)
+    if (
+        name_format is not None
+        and content_format is not None
+        and name_format != content_format
+    ):
+        _raise(
+            error_type,
+            f"Archive format mismatch: filename declares {name_format} but "
+            f"Content-Type declares {content_format}",
+        )
+    declared_format = name_format or content_format
+
+    with ExitStack() as stack:
+        if archive_file is None:
+            try:
+                archive_file = stack.enter_context(archive_path.open("rb"))
+            except OSError as exc:
+                _raise_from(error_type, f"Invalid archive: {archive_path}", exc)
+        try:
+            archive_file.seek(0)
+            is_zip = zipfile.is_zipfile(archive_file)
+            archive_file.seek(0)
+            signature = archive_file.read(4)
+            # Let the bounded ZIP preflight report structural errors such as
+            # impossible entry counts. ``is_zipfile`` rejects those before the
+            # extractor can produce the established security diagnostic.
+            is_zip = is_zip or signature in {
+                b"PK\x03\x04",
+                b"PK\x05\x06",
+                b"PK\x07\x08",
+            }
+            is_gzip = signature[:2] == b"\x1f\x8b"
+            archive_file.seek(0)
+            is_tar_gz = False
+            if is_gzip:
+                try:
+                    with tarfile.open(fileobj=archive_file, mode="r:gz"):
+                        is_tar_gz = True
+                except tarfile.TarError:
+                    pass
+            archive_file.seek(0)
+        except OSError as exc:
+            _raise_from(error_type, f"Invalid archive: {archive_path}", exc)
+
+    actual_format: ArchiveFormat | None
+    if is_zip and not is_tar_gz:
+        actual_format = "zip"
+    elif is_tar_gz and not is_zip:
+        actual_format = "tar.gz"
+    else:
+        actual_format = None
+    if declared_format is None:
+        if actual_format is None:
+            _raise(
+                error_type,
+                "Unsupported archive format; expected .zip, .tar.gz, or .tgz",
+            )
+        declared_format = actual_format
+    if actual_format != declared_format:
+        actual_label = actual_format or "invalid/unsupported data"
+        _raise(
+            error_type,
+            f"Archive format mismatch: expected {declared_format}, got {actual_label}",
+        )
+    return declared_format
 
 
 def _ip_address_without_scope(
@@ -292,6 +418,7 @@ def build_safe_download_path(
     *,
     error_type: type[ErrorT] = ValueError,
     label: str = "archive",
+    suffix: str = ".zip",
 ) -> Path:
     """Build a portable single-component archive path inside *target_dir*."""
     if not isinstance(identifier, str) or not isinstance(version, str):
@@ -301,7 +428,9 @@ def build_safe_download_path(
             f"{identifier!r} and {version!r}",
         )
 
-    filename = f"{identifier}-{version}.zip"
+    if suffix not in {".zip", ".tar.gz", ".tgz"}:
+        _raise(error_type, f"Unsupported archive download suffix: {suffix!r}")
+    filename = f"{identifier}-{version}{suffix}"
     try:
         filename_too_long = (
             len(filename.encode("utf-8")) > MAX_ZIP_COMPONENT_BYTES
@@ -378,24 +507,25 @@ def read_zip_member_limited(
         )
 
 
-def normalize_zip_member_name(
+def normalize_archive_member_name(
     name: str,
     *,
+    archive_label: str = "archive",
     error_type: type[ErrorT] = ValueError,
 ) -> str:
-    """Return a normalized, portable ZIP member name or raise if unsafe."""
+    """Return a normalized, portable archive member name or raise if unsafe."""
     if "\x00" in name:
-        _raise(error_type, f"Unsafe path in ZIP archive: {name!r}")
+        _raise(error_type, f"Unsafe path in {archive_label} archive: {name!r}")
 
     normalized = name.replace("\\", "/")
     try:
         encoded_name = normalized.encode("utf-8")
     except UnicodeEncodeError:
-        _raise(error_type, f"Unsafe path in ZIP archive: {name!r}")
+        _raise(error_type, f"Unsafe path in {archive_label} archive: {name!r}")
     if len(encoded_name) > MAX_ZIP_PATH_BYTES:
         _raise(
             error_type,
-            f"Unsafe path in ZIP archive: {name!r} "
+            f"Unsafe path in {archive_label} archive: {name!r} "
             "(not portable across supported filesystems)",
         )
     path = PurePosixPath(normalized)
@@ -415,7 +545,8 @@ def normalize_zip_member_name(
     ):
         _raise(
             error_type,
-            f"Unsafe path in ZIP archive: {name!r} (potential path traversal)",
+            f"Unsafe path in {archive_label} archive: {name!r} "
+            "(potential path traversal)",
         )
     for part in raw_parts:
         reserved_stem = part.partition(".")[0].partition(":")[0].rstrip(" ")
@@ -432,19 +563,37 @@ def normalize_zip_member_name(
         ):
             _raise(
                 error_type,
-                f"Unsafe path in ZIP archive: {name!r} "
+                f"Unsafe path in {archive_label} archive: {name!r} "
                 "(not portable across supported filesystems)",
             )
     return normalized
 
 
-def portable_zip_path_key(name: str) -> tuple[str, ...]:
+def normalize_zip_member_name(
+    name: str,
+    *,
+    error_type: type[ErrorT] = ValueError,
+) -> str:
+    """Return a normalized, portable ZIP member name or raise if unsafe."""
+    return normalize_archive_member_name(
+        name,
+        archive_label="ZIP",
+        error_type=error_type,
+    )
+
+
+def portable_archive_path_key(name: str) -> tuple[str, ...]:
     """Return a comparison key for filesystems with case/Unicode folding."""
     normalized_name = name.replace("\\", "/")
     return tuple(
         unicodedata.normalize("NFC", part.casefold())
         for part in normalized_name.removesuffix("/").split("/")
     )
+
+
+def portable_zip_path_key(name: str) -> tuple[str, ...]:
+    """Backward-compatible ZIP-specific alias for portable archive keys."""
+    return portable_archive_path_key(name)
 
 
 def _raise_zip64(error_type: type[ErrorT]) -> NoReturn:
@@ -705,6 +854,7 @@ def _preflight_zip_central_directory(
 def open_zip_bounded(
     zip_path: Path,
     *,
+    archive_file: BinaryIO | None = None,
     error_type: type[ErrorT] = ValueError,
     max_entries: int = MAX_ZIP_ENTRIES,
 ) -> Iterator[zipfile.ZipFile]:
@@ -712,10 +862,11 @@ def open_zip_bounded(
     _validate_non_negative_int(max_entries, "max_entries")
     zip_path = Path(zip_path)
     with ExitStack() as stack:
-        try:
-            archive_file = stack.enter_context(zip_path.open("rb"))
-        except OSError as exc:
-            _raise_from(error_type, f"Invalid ZIP archive: {zip_path}", exc)
+        if archive_file is None:
+            try:
+                archive_file = stack.enter_context(zip_path.open("rb"))
+            except OSError as exc:
+                _raise_from(error_type, f"Invalid ZIP archive: {zip_path}", exc)
         try:
             _preflight_zip_central_directory(
                 archive_file,
@@ -737,6 +888,7 @@ def safe_extract_zip(
     zip_path: Path,
     target_dir: Path,
     *,
+    archive_file: BinaryIO | None = None,
     error_type: type[ErrorT] = ValueError,
     max_entries: int = MAX_ZIP_ENTRIES,
     max_member_bytes: int = MAX_ZIP_MEMBER_BYTES,
@@ -752,6 +904,7 @@ def safe_extract_zip(
 
     with open_zip_bounded(
         zip_path,
+        archive_file=archive_file,
         error_type=error_type,
         max_entries=max_entries,
     ) as zf:
@@ -774,7 +927,7 @@ def safe_extract_zip(
                 error_type=error_type,
             )
             is_dir = member.is_dir() or normalized_name.endswith("/")
-            path_key = portable_zip_path_key(normalized_name)
+            path_key = portable_archive_path_key(normalized_name)
 
             existing = validated_paths.get(path_key)
             if existing is not None:
@@ -894,3 +1047,211 @@ def safe_extract_zip(
                 )
             if limit_error is not None:
                 _raise(error_type, limit_error)
+
+
+def safe_extract_tar(
+    archive_path: Path,
+    target_dir: Path,
+    *,
+    archive_file: BinaryIO | None = None,
+    error_type: type[ErrorT] = ValueError,
+    max_entries: int = MAX_ZIP_ENTRIES,
+    max_member_bytes: int = MAX_ZIP_MEMBER_BYTES,
+    max_total_bytes: int = MAX_ZIP_TOTAL_BYTES,
+) -> None:
+    """Extract a gzip-compressed tar after ZIP-equivalent safety validation."""
+    _validate_non_negative_int(max_entries, "max_entries")
+    _validate_non_negative_int(max_member_bytes, "max_member_bytes")
+    _validate_non_negative_int(max_total_bytes, "max_total_bytes")
+    archive_path = Path(archive_path)
+    try:
+        target_root = target_dir.resolve()
+    except OSError as exc:
+        _raise_from(error_type, f"Invalid tar extraction target: {target_dir}", exc)
+
+    try:
+        if archive_file is not None:
+            archive_file.seek(0)
+        archive = tarfile.open(
+            archive_path if archive_file is None else None,
+            mode="r:gz",
+            fileobj=archive_file,
+        )
+    except (tarfile.TarError, OSError) as exc:
+        _raise_from(error_type, f"Invalid tar.gz archive: {archive_path}", exc)
+
+    with archive:
+        validated: list[tuple[tarfile.TarInfo, str, bool]] = []
+        validated_paths: dict[tuple[str, ...], tuple[str, bool]] = {}
+        total_size = 0
+        try:
+            for index, member in enumerate(archive, start=1):
+                if index > max_entries:
+                    _raise(
+                        error_type,
+                        f"tar.gz archive contains too many entries "
+                        f"({index} > {max_entries})",
+                    )
+                normalized_name = normalize_archive_member_name(
+                    member.name,
+                    archive_label="tar.gz",
+                    error_type=error_type,
+                )
+                is_dir = member.isdir()
+                if member.issym():
+                    _raise(
+                        error_type,
+                        f"Unsafe symlink in tar.gz archive: {member.name}",
+                    )
+                if member.islnk():
+                    _raise(
+                        error_type,
+                        f"Unsafe hard link in tar.gz archive: {member.name}",
+                    )
+                if not is_dir and not member.isreg():
+                    _raise(
+                        error_type,
+                        f"Unsafe member type in tar.gz archive: {member.name}",
+                    )
+
+                path_key = portable_archive_path_key(normalized_name)
+                existing = validated_paths.get(path_key)
+                if existing is not None:
+                    _raise(
+                        error_type,
+                        f"Conflicting path in tar.gz archive: {member.name} "
+                        f"conflicts with {existing[0]}",
+                    )
+                validated_paths[path_key] = (member.name, is_dir)
+
+                member_path = (target_dir / normalized_name).resolve()
+                try:
+                    member_path.relative_to(target_root)
+                except ValueError:
+                    _raise(
+                        error_type,
+                        f"Unsafe path in tar.gz archive: {member.name} "
+                        "(potential path traversal)",
+                    )
+
+                if not is_dir:
+                    if member.size > max_member_bytes:
+                        _raise(
+                            error_type,
+                            f"tar.gz member {member.name} exceeds maximum size "
+                            f"of {max_member_bytes} bytes",
+                        )
+                    total_size += member.size
+                    if total_size > max_total_bytes:
+                        _raise(
+                            error_type,
+                            f"tar.gz archive exceeds maximum uncompressed size "
+                            f"of {max_total_bytes} bytes",
+                        )
+                validated.append((member, normalized_name, is_dir))
+        except (tarfile.TarError, OSError) as exc:
+            _raise_from(
+                error_type,
+                f"Invalid tar.gz archive: {archive_path}",
+                exc,
+            )
+
+        for (
+            (path_key, (original, is_dir)),
+            (next_key, (next_original, _next_is_dir)),
+        ) in pairwise(sorted(validated_paths.items())):
+            if (
+                not is_dir
+                and len(next_key) > len(path_key)
+                and next_key[: len(path_key)] == path_key
+            ):
+                _raise(
+                    error_type,
+                    f"Conflicting path in tar.gz archive: {original} conflicts "
+                    f"with {next_original}",
+                )
+
+        total_written = 0
+        for member, normalized_name, is_dir in validated:
+            member_path = target_dir / normalized_name
+            if is_dir:
+                try:
+                    member_path.mkdir(parents=True, exist_ok=True)
+                except OSError as exc:
+                    _raise_from(
+                        error_type,
+                        f"Failed to create tar.gz directory {member.name}: {exc}",
+                        exc,
+                    )
+                continue
+            try:
+                member_path.parent.mkdir(parents=True, exist_ok=True)
+                source = archive.extractfile(member)
+                if source is None:
+                    _raise(
+                        error_type,
+                        f"Failed to read tar.gz member {member.name}",
+                    )
+                written = 0
+                limit_error: str | None = None
+                with source, member_path.open("wb") as dest:
+                    while True:
+                        chunk = source.read(READ_CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        written += len(chunk)
+                        if written > max_member_bytes:
+                            limit_error = (
+                                f"tar.gz member {member.name} exceeds maximum size "
+                                f"of {max_member_bytes} bytes"
+                            )
+                            break
+                        total_written += len(chunk)
+                        if total_written > max_total_bytes:
+                            limit_error = (
+                                f"tar.gz archive exceeds maximum uncompressed size "
+                                f"of {max_total_bytes} bytes"
+                            )
+                            break
+                        dest.write(chunk)
+            except Exception as exc:
+                _raise_from(
+                    error_type,
+                    f"Failed to extract tar.gz member {member.name}: {exc}",
+                    exc,
+                )
+            if limit_error is not None:
+                _raise(error_type, limit_error)
+
+
+def safe_extract_archive(
+    archive_path: Path,
+    target_dir: Path,
+    *,
+    archive_file: BinaryIO | None = None,
+    source_name: str | None = None,
+    content_type: str | None = None,
+    error_type: type[ErrorT] = ValueError,
+    max_entries: int = MAX_ZIP_ENTRIES,
+    max_member_bytes: int = MAX_ZIP_MEMBER_BYTES,
+    max_total_bytes: int = MAX_ZIP_TOTAL_BYTES,
+) -> ArchiveFormat:
+    """Detect and securely extract a supported archive."""
+    archive_format = detect_archive_format(
+        archive_path,
+        archive_file=archive_file,
+        source_name=source_name,
+        content_type=content_type,
+        error_type=error_type,
+    )
+    extractor = safe_extract_zip if archive_format == "zip" else safe_extract_tar
+    extractor(
+        archive_path,
+        target_dir,
+        archive_file=archive_file,
+        error_type=error_type,
+        max_entries=max_entries,
+        max_member_bytes=max_member_bytes,
+        max_total_bytes=max_total_bytes,
+    )
+    return archive_format

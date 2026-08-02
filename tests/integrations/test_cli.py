@@ -2372,3 +2372,279 @@ def test_refresh_shared_templates_preserves_recovered_user_file(tmp_path):
 
     # Recovered user content must survive (fail-before: replaced by bundled body).
     assert user_file.read_text(encoding="utf-8") == "# USER CUSTOM CONTENT\n"
+
+
+class TestExtensionFlag:
+    """Tests for the --extension flag on specify init."""
+
+    def _run_init(self, tmp_path, args, project_name="ext-test"):
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / project_name
+        project.mkdir(exist_ok=True)
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            # Patch get_speckit_version to return a stable (non-dev) version so that
+            # the extension compatibility check (SpecifierSet(">=0.2.0")) passes.
+            with patch(
+                "specify_cli.commands.init.get_speckit_version",
+                return_value="0.8.2",
+            ):
+                result = runner.invoke(app, [
+                    "init", "--here",
+                    "--integration", "copilot",
+                    "--script", "sh",
+                    "--ignore-agent-tools",
+                ] + args, catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        return project, result
+
+    def test_bundled_extension_installed(self, tmp_path):
+        """--extension git installs the bundled git extension."""
+        project, result = self._run_init(tmp_path, ["--extension", "git"], project_name="ext-bundled")
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+
+        ext_dir = project / ".specify" / "extensions" / "git"
+        assert ext_dir.exists(), "git extension directory not found"
+        assert (ext_dir / "extension.yml").exists(), "extension.yml not found"
+
+        # Tracker should show extension step as done
+        normalized = _normalize_cli_output(result.output)
+        assert "Install extension: git" in normalized
+
+    def test_multiple_extensions_installed(self, tmp_path):
+        """--extension can be specified multiple times."""
+        project, result = self._run_init(
+            tmp_path,
+            ["--extension", "git", "--extension", "selftest"],
+            project_name="ext-multi",
+        )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+
+        ext_dir_git = project / ".specify" / "extensions" / "git"
+        ext_dir_selftest = project / ".specify" / "extensions" / "selftest"
+        assert ext_dir_git.exists(), "git extension not installed"
+        assert ext_dir_selftest.exists(), "selftest extension not installed"
+
+    def test_local_path_extension_installed(self, tmp_path):
+        """--extension /abs/path installs from a local absolute directory path."""
+        from specify_cli import _locate_bundled_extension
+
+        # Use the bundled git extension directory as our "local" extension source
+        bundled_git = _locate_bundled_extension("git")
+        assert bundled_git is not None, "bundled git extension not found; cannot run test"
+
+        # Pass the absolute path directly (starts with "/")
+        project, result = self._run_init(
+            tmp_path,
+            ["--extension", str(bundled_git)],
+            project_name="ext-local",
+        )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+
+        ext_dir = project / ".specify" / "extensions" / "git"
+        assert ext_dir.exists(), "extension from local path not installed"
+
+    def test_unknown_extension_shows_error_in_tracker(self, tmp_path):
+        """An unknown extension name records a tracker error but does not abort init."""
+        project, result = self._run_init(
+            tmp_path,
+            ["--extension", "nonexistent-xyz-ext"],
+            project_name="ext-unknown",
+        )
+
+        assert result.exit_code == 0, "init should not abort on unknown extension"
+        normalized = _normalize_cli_output(result.output)
+        assert "failed" in normalized.lower(), "expected 'failed' for unknown extension"
+
+    def test_extension_flag_works_with_preset(self, tmp_path):
+        """--extension and --preset can be combined."""
+        project, result = self._run_init(
+            tmp_path,
+            ["--extension", "git", "--preset", "lean"],
+            project_name="ext-preset",
+        )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+
+        ext_dir = project / ".specify" / "extensions" / "git"
+        assert ext_dir.exists(), "git extension not installed alongside preset"
+
+    @staticmethod
+    def _zip_bytes_from_dir(source_dir):
+        """Build in-memory ZIP bytes from an extension directory (yml at root)."""
+        import io
+        import zipfile
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for path in sorted(source_dir.rglob("*")):
+                if path.is_file():
+                    zf.write(path, arcname=str(path.relative_to(source_dir)))
+        return buf.getvalue()
+
+    def test_url_extension_rejects_non_https(self, tmp_path):
+        """A non-HTTPS URL is rejected before any download; init is not aborted."""
+        project, result = self._run_init(
+            tmp_path,
+            ["--extension", "http://example.com/ext.zip", "--trust-extension-urls"],
+            project_name="ext-http",
+        )
+
+        assert result.exit_code == 0, "init should not abort on a rejected URL"
+        normalized = _normalize_cli_output(result.output)
+        assert "failed" in normalized.lower()
+        # No extension directory should have been created for the bad URL.
+        assert not (project / ".specify" / "extensions" / "ext").exists()
+
+    def test_url_extension_skipped_without_trust(self, tmp_path):
+        """Non-interactive URL install without --trust-extension-urls is denied."""
+        from unittest.mock import patch
+
+        with patch(
+            "specify_cli.commands.init._stdin_is_interactive", return_value=False
+        ), patch("specify_cli.authentication.http.open_url") as mock_open:
+            project, result = self._run_init(
+                tmp_path,
+                ["--extension", "https://example.com/git.zip"],
+                project_name="ext-url-denied",
+            )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+        # Default-deny: no download attempted, nothing installed.
+        mock_open.assert_not_called()
+        normalized = _normalize_cli_output(result.output)
+        assert "untrusted url" in normalized.lower()
+        assert not (project / ".specify" / "extensions" / "git").exists()
+
+    def test_url_extension_interactive_confirm_installs(self, tmp_path):
+        """An interactive 'yes' to the trust prompt allows the URL install."""
+        import io
+
+        from unittest.mock import patch
+
+        from specify_cli import _locate_bundled_extension
+
+        bundled_git = _locate_bundled_extension("git")
+        assert bundled_git is not None, "bundled git extension not found"
+        zip_bytes = self._zip_bytes_from_dir(bundled_git)
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def _cache_dir_stand_in(project_root):
+            d = project_root / ".specify" / "extensions" / ".cache" / "downloads"
+            d.mkdir(parents=True, exist_ok=True)
+            return d
+
+        def _open_download_zip(project_root, download_dir, zip_filename):
+            target = download_dir / zip_filename
+            o_temporary = getattr(os, "O_TEMPORARY", 0)
+            if o_temporary:
+                return os.open(
+                    target, os.O_RDWR | os.O_CREAT | os.O_EXCL | o_temporary, 0o600
+                )
+            fd = os.open(target, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                os.unlink(target)
+            except OSError:
+                os.close(fd)
+                raise
+            return fd
+
+        with patch(
+            "specify_cli.commands.init._stdin_is_interactive", return_value=True
+        ), patch("typer.confirm", return_value=True), patch(
+            "specify_cli.authentication.http.open_url",
+            return_value=FakeResponse(zip_bytes),
+        ), patch(
+            "specify_cli.extensions._commands._validate_safe_cache_dir",
+            side_effect=_cache_dir_stand_in,
+        ), patch(
+            "specify_cli.extensions._commands._safe_open_download_zip",
+            side_effect=_open_download_zip,
+        ):
+            project, result = self._run_init(
+                tmp_path,
+                ["--extension", "https://example.com/git.zip"],
+                project_name="ext-url-confirm",
+            )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+        assert (project / ".specify" / "extensions" / "git").exists()
+
+    def test_url_extension_installs_zip(self, tmp_path):
+        """A successful HTTPS ZIP download installs via the shared hardened path."""
+        import io
+
+        from unittest.mock import patch
+
+        from specify_cli import _locate_bundled_extension
+
+        bundled_git = _locate_bundled_extension("git")
+        assert bundled_git is not None, "bundled git extension not found"
+        zip_bytes = self._zip_bytes_from_dir(bundled_git)
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def _cache_dir_stand_in(project_root):
+            d = project_root / ".specify" / "extensions" / ".cache" / "downloads"
+            d.mkdir(parents=True, exist_ok=True)
+            return d
+
+        def _open_download_zip(project_root, download_dir, zip_filename):
+            target = download_dir / zip_filename
+            o_temporary = getattr(os, "O_TEMPORARY", 0)
+            if o_temporary:
+                return os.open(
+                    target, os.O_RDWR | os.O_CREAT | os.O_EXCL | o_temporary, 0o600
+                )
+            fd = os.open(target, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                os.unlink(target)
+            except OSError:
+                os.close(fd)
+                raise
+            return fd
+
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            return_value=FakeResponse(zip_bytes),
+        ), patch(
+            "specify_cli.extensions._commands._validate_safe_cache_dir",
+            side_effect=_cache_dir_stand_in,
+        ), patch(
+            "specify_cli.extensions._commands._safe_open_download_zip",
+            side_effect=_open_download_zip,
+        ):
+            project, result = self._run_init(
+                tmp_path,
+                ["--extension", "https://example.com/git.zip", "--trust-extension-urls"],
+                project_name="ext-url",
+            )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+        ext_dir = project / ".specify" / "extensions" / "git"
+        assert ext_dir.exists(), "extension from URL not installed"
+        assert (ext_dir / "extension.yml").exists()
+        # Transient download archive must not linger in the cache.
+        cache_dir = project / ".specify" / "extensions" / ".cache" / "downloads"
+        leftover = list(cache_dir.glob("*.zip")) if cache_dir.exists() else []
+        assert not leftover, f"download cache not cleaned: {leftover}"

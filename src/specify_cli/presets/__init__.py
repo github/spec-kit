@@ -27,11 +27,14 @@ from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 from .._download_security import (
+    archive_format_from_name,
+    archive_suffix,
     MAX_JSON_CATALOG_BYTES,
     build_safe_download_path,
+    detect_archive_format,
     is_https_or_localhost_http,
     read_response_limited,
-    safe_extract_zip,
+    safe_extract_archive,
 )
 from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
 from .._init_options import (
@@ -295,6 +298,12 @@ class PresetManifest:
                 f"Unsupported schema version: {self.data['schema_version']} "
                 f"(expected {self.SCHEMA_VERSION})"
             )
+
+        for section in ("preset", "requires", "provides"):
+            if not isinstance(self.data[section], dict):
+                raise PresetValidationError(
+                    f"Invalid {section}: expected a mapping"
+                )
 
         # Validate preset metadata
         pack = self.data["preset"]
@@ -3359,6 +3368,7 @@ class PresetManager:
         source_dir: Path,
         speckit_version: str,
         priority: int = 10,
+        force: bool = False,
     ) -> PresetManifest:
         """Install preset from a local directory.
 
@@ -3366,6 +3376,7 @@ class PresetManager:
             source_dir: Path to preset directory
             speckit_version: Current spec-kit version
             priority: Resolution priority (lower = higher precedence, default 10)
+            force: If True and the preset is already installed, remove it first
 
         Returns:
             Installed preset manifest
@@ -3384,10 +3395,12 @@ class PresetManager:
         self.check_compatibility(manifest, speckit_version)
 
         if self.registry.is_installed(manifest.id):
-            raise PresetError(
-                f"Preset '{manifest.id}' is already installed. "
-                f"Use 'specify preset remove {manifest.id}' first."
-            )
+            if not force:
+                raise PresetError(
+                    f"Preset '{manifest.id}' is already installed. "
+                    f"Use 'specify preset remove {manifest.id}' first."
+                )
+            self.remove(manifest.id)
 
         dest_dir = self.presets_dir / manifest.id
         if dest_dir.exists():
@@ -3530,18 +3543,20 @@ class PresetManager:
             return
         _materialize_constitution_template(self.project_root, memory_constitution)
 
-    def install_from_zip(
+    def install_from_archive(
         self,
-        zip_path: Path,
+        archive_path: Path,
         speckit_version: str,
         priority: int = 10,
+        force: bool = False,
     ) -> PresetManifest:
-        """Install preset from ZIP file.
+        """Install a preset from a supported archive.
 
         Args:
-            zip_path: Path to preset ZIP file
+            archive_path: Path to a .zip, .tar.gz, or .tgz archive
             speckit_version: Current spec-kit version
             priority: Resolution priority (lower = higher precedence, default 10)
+            force: If True and the preset is already installed, remove it first
 
         Returns:
             Installed preset manifest
@@ -3557,7 +3572,11 @@ class PresetManager:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
 
-            safe_extract_zip(zip_path, temp_path, error_type=PresetValidationError)
+            safe_extract_archive(
+                archive_path,
+                temp_path,
+                error_type=PresetValidationError,
+            )
 
             pack_dir = temp_path
             manifest_path = pack_dir / "preset.yml"
@@ -3570,10 +3589,25 @@ class PresetManager:
 
             if not manifest_path.exists():
                 raise PresetValidationError(
-                    "No preset.yml found in ZIP file"
+                    "No preset.yml found in archive"
                 )
 
-            return self.install_from_directory(pack_dir, speckit_version, priority)
+            return self.install_from_directory(pack_dir, speckit_version, priority, force=force)
+
+    def install_from_zip(
+        self,
+        zip_path: Path,
+        speckit_version: str,
+        priority: int = 10,
+        force: bool = False,
+    ) -> PresetManifest:
+        """Backward-compatible wrapper for archive installation."""
+        return self.install_from_archive(
+            zip_path,
+            speckit_version,
+            priority,
+            force=force,
+        )
 
     def remove(self, pack_id: str) -> bool:
         """Remove an installed preset.
@@ -4599,14 +4633,14 @@ class PresetCatalog:
     def download_pack(
         self, pack_id: str, target_dir: Optional[Path] = None
     ) -> Path:
-        """Download preset ZIP from catalog.
+        """Download a preset archive from a catalog.
 
         Args:
             pack_id: ID of the preset to download
-            target_dir: Directory to save ZIP file (defaults to cache directory)
+            target_dir: Directory to save the archive
 
         Returns:
-            Path to downloaded ZIP file
+            Path to the downloaded archive
 
         Raises:
             PresetError: If pack not found or download fails
@@ -4675,42 +4709,86 @@ class PresetCatalog:
             target_dir = self.cache_dir / "downloads"
         target_dir = Path(target_dir)
         version = pack_info.get("version", "unknown")
-        zip_path = build_safe_download_path(
+        declared_format = archive_format_from_name(download_url)
+        build_safe_download_path(
             target_dir,
             pack_id,
             version,
             error_type=PresetError,
             label="preset",
+            suffix=archive_suffix(declared_format or "tar.gz"),
         )
         target_dir.mkdir(parents=True, exist_ok=True)
 
+        original_download_url = download_url
         extra_headers = None
         resolved_download_url = self._resolve_github_release_asset_api_url(download_url)
         if resolved_download_url:
             download_url = resolved_download_url
             extra_headers = {"Accept": "application/octet-stream"}
 
+        staging_path: Path | None = None
         try:
             with self._open_url(download_url, timeout=60, extra_headers=extra_headers) as response:
-                zip_data = read_response_limited(
+                archive_data = read_response_limited(
                     response,
                     error_type=PresetError,
                     label=f"preset '{pack_id}' download",
                 )
+                final_url = (
+                    response.geturl()
+                    if hasattr(response, "geturl")
+                    else download_url
+                )
+                content_type = (
+                    response.getheader("Content-Type")
+                    if hasattr(response, "getheader")
+                    else None
+                )
 
             verify_archive_sha256(
-                zip_data, pack_info.get("sha256"), pack_id, PresetError
+                archive_data, pack_info.get("sha256"), pack_id, PresetError
             )
 
-            zip_path.write_bytes(zip_data)
-            return zip_path
+            with tempfile.NamedTemporaryFile(
+                prefix="preset-download-",
+                suffix=".archive",
+                dir=target_dir,
+                delete=False,
+            ) as staging_file:
+                staging_path = Path(staging_file.name)
+                staging_file.write(archive_data)
+            archive_format = detect_archive_format(
+                staging_path,
+                source_name=(
+                    final_url
+                    if archive_format_from_name(final_url) is not None
+                    else original_download_url
+                ),
+                content_type=content_type,
+                error_type=PresetError,
+            )
+            archive_path = build_safe_download_path(
+                target_dir,
+                pack_id,
+                version,
+                error_type=PresetError,
+                label="preset",
+                suffix=archive_suffix(archive_format),
+            )
+            os.replace(staging_path, archive_path)
+            staging_path = None
+            return archive_path
 
         except urllib.error.URLError as e:
             raise PresetError(
                 f"Failed to download preset from {download_url}: {e}"
             )
         except IOError as e:
-            raise PresetError(f"Failed to save preset ZIP: {e}")
+            raise PresetError(f"Failed to save preset archive: {e}")
+        finally:
+            if staging_path is not None:
+                staging_path.unlink(missing_ok=True)
 
     def clear_cache(self):
         """Clear all catalog cache files, including per-URL hashed caches."""

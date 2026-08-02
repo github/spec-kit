@@ -93,9 +93,11 @@ def build_bundle(
             # extraction, but collapse to two canonical modes (0755 when any
             # execute bit is set on the source, otherwise 0644) so identical
             # inputs yield a byte-for-byte identical artifact.
-            mode = 0o755 if file_path.stat().st_mode & 0o111 else 0o644
-            info.external_attr = mode << 16
-            archive.writestr(info, file_path.read_bytes())
+            with file_path.open("rb") as fh:
+                st = os.fstat(fh.fileno())
+                mode = 0o755 if st.st_mode & 0o111 else 0o644
+                info.external_attr = mode << 16
+                archive.writestr(info, fh.read())
 
     return BuildResult(artifact_path=artifact_path, file_count=len(files))
 

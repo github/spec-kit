@@ -30,6 +30,145 @@ def _stdin_is_interactive() -> bool:
     return sys.stdin.isatty()
 
 
+def _ext_spec_is_url(ext_spec: str) -> bool:
+    """Return True when *ext_spec* is an http(s) URL rather than a name/path."""
+    from urllib.parse import urlparse
+
+    try:
+        return urlparse(ext_spec).scheme in ("http", "https")
+    except ValueError:
+        return False
+
+
+def _confirm_extension_url_trust(
+    url_specs: list[str], *, trust_override: bool
+) -> dict[str, bool]:
+    """Resolve trust for each URL-based extension before the Live display.
+
+    URL installs pull an arbitrary external extension, so they get the same
+    default-deny confirmation as ``extension add --from``. Returns a mapping of
+    ``url_spec -> approved``. With *trust_override* every URL is pre-approved.
+    In a non-interactive session without the override, every URL is denied
+    (the prompt cannot be answered), mirroring the default-deny posture.
+    """
+    from rich.markup import escape as _escape_markup
+    from rich.panel import Panel
+
+    approvals: dict[str, bool] = {}
+    interactive = _stdin_is_interactive()
+    for spec in url_specs:
+        if trust_override:
+            approvals[spec] = True
+            continue
+        if not interactive:
+            approvals[spec] = False
+            continue
+        console.print()
+        console.print(
+            Panel(
+                "[bold]You are installing an extension from an external URL that is not\n"
+                "listed in any of your configured extension catalogs.[/bold]\n\n"
+                f"URL: {_escape_markup(spec)}\n\n"
+                "Only install extensions from sources you trust.",
+                title="[bold yellow]⚠ Untrusted Source[/bold yellow]",
+                border_style="yellow",
+                padding=(1, 2),
+            )
+        )
+        console.print()
+        approvals[spec] = typer.confirm(
+            f"Install extension from {spec}?", default=False
+        )
+    return approvals
+
+
+def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_version: str) -> str:
+    """Install a single extension during ``specify init``.
+
+    Handles bundled extension names, local directory paths, and HTTPS URLs.
+    Returns a short status message on success.
+    Raises ``ValueError`` on failure so the caller can convert it to a
+    tracker error without aborting the entire init.
+    """
+    from urllib.parse import urlparse
+
+    from .._assets import _locate_bundled_extension
+    from ..extensions import ExtensionCatalog, ExtensionError, ExtensionManager
+    from ..extensions._commands import (
+        _resolve_catalog_extension,
+        install_extension_from_url,
+    )
+
+    manager = ExtensionManager(project_path)
+
+    # --- URL ---
+    parsed = urlparse(ext_spec)
+    if parsed.scheme in ("http", "https"):
+        try:
+            manifest = install_extension_from_url(
+                manager, project_path, ext_spec, speckit_version
+            )
+        except ExtensionError as exc:
+            raise ValueError(str(exc)) from exc
+        return f"{manifest.name} v{manifest.version} installed"
+
+    # --- Local path ---
+    if ext_spec.startswith(("./", "../", "/", "~/", ".\\", "..\\")) or Path(ext_spec).is_absolute():
+        source_path = Path(ext_spec).expanduser().resolve()
+        if not source_path.exists():
+            raise ValueError(f"Directory not found: {source_path}")
+        if not (source_path / "extension.yml").exists():
+            raise ValueError(f"No extension.yml found in {source_path}")
+        manifest = manager.install_from_directory(source_path, speckit_version)
+        return f"{manifest.name} v{manifest.version} installed"
+
+    # --- Bundled extension name or catalog ID ---
+    bundled_path = _locate_bundled_extension(ext_spec)
+    if bundled_path is not None:
+        if manager.registry.is_installed(ext_spec):
+            return "already installed"
+        manifest = manager.install_from_directory(bundled_path, speckit_version)
+        return f"{manifest.name} v{manifest.version} installed"
+
+    # Fall back to catalog
+    catalog = ExtensionCatalog(project_path)
+    ext_info, catalog_error = _resolve_catalog_extension(ext_spec, catalog, "add")
+    if catalog_error:
+        raise ValueError(f"Could not query extension catalog: {catalog_error}")
+    if not ext_info:
+        raise ValueError(f"Extension '{ext_spec}' not found in bundled extensions or catalog")
+
+    resolved_id = ext_info["id"]
+    if resolved_id != ext_spec:
+        bundled_path = _locate_bundled_extension(resolved_id)
+        if bundled_path is not None:
+            if manager.registry.is_installed(resolved_id):
+                return "already installed"
+            manifest = manager.install_from_directory(bundled_path, speckit_version)
+            return f"{manifest.name} v{manifest.version} installed"
+
+    if ext_info.get("bundled") and not ext_info.get("download_url"):
+        from ..extensions import REINSTALL_COMMAND
+
+        raise ValueError(
+            f"Extension '{resolved_id}' is bundled with spec-kit but not found in the installed package. "
+            f"Try reinstalling spec-kit: {REINSTALL_COMMAND}"
+        )
+
+    if not ext_info.get("_install_allowed", True):
+        catalog_name = ext_info.get("_catalog_name", "community")
+        raise ValueError(
+            f"Extension '{ext_spec}' is in the '{catalog_name}' catalog but installation is not allowed from that catalog"
+        )
+
+    zip_path = catalog.download_extension(resolved_id)
+    try:
+        manifest = manager.install_from_zip(zip_path, speckit_version)
+    finally:
+        zip_path.unlink(missing_ok=True)
+    return f"{manifest.name} v{manifest.version} installed"
+
+
 def ensure_constitution_from_template(
     project_path: Path, tracker: StepTracker | None = None
 ) -> None:
@@ -142,6 +281,16 @@ def register(app: typer.Typer) -> None:
             "--integration-options",
             help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")',
         ),
+        extensions: list[str] | None = typer.Option(
+            None,
+            "--extension",
+            help="Install an extension during initialization (bundled name, local path, or HTTPS URL). Repeatable.",
+        ),
+        trust_extension_urls: bool = typer.Option(
+            False,
+            "--trust-extension-urls",
+            help="Pre-authorize installing extensions from external URLs without the interactive trust prompt (required for non-interactive URL installs).",
+        ),
     ):
         """
         Initialize a new Specify project.
@@ -174,6 +323,10 @@ def register(app: typer.Typer) -> None:
             specify init --here --integration gemini
             specify init my-project --integration generic --integration-options="--commands-dir .myagent/commands/"  # Bring your own agent; requires --commands-dir
             specify init my-project --integration claude --preset healthcare-compliance  # With preset
+            specify init my-project --integration copilot --extension git  # With bundled extension
+            specify init my-project --extension git --extension selftest  # Multiple extensions
+            specify init my-project --extension ./my-extensions/custom-ext  # Local path extension
+            specify init my-project --extension https://example.com/extensions/my-ext.zip --trust-extension-urls  # URL extension (non-interactive)
         """
         # Lazy imports to avoid circular dependency — __init__.py imports this module
         from .. import (
@@ -413,9 +566,30 @@ def register(app: typer.Typer) -> None:
             ("chmod", "Ensure scripts executable"),
             ("constitution", "Constitution setup"),
             ("workflow", "Install bundled workflow"),
-            ("final", "Finalize"),
         ]:
             tracker.add(key, label)
+
+        if extensions:
+            from rich.markup import escape as _escape_markup
+
+            for i, ext_spec in enumerate(extensions):
+                tracker.add(
+                    f"extension-{i}", f"Install extension: {_escape_markup(ext_spec)}"
+                )
+
+        tracker.add("final", "Finalize")
+
+        # Resolve trust for URL-based extensions BEFORE entering the Live
+        # display: the confirmation prompt cannot be shown/answered underneath
+        # the Rich Live spinner. URL installs are default-deny unless the user
+        # confirms interactively or passes --trust-extension-urls.
+        extension_url_approvals: dict[str, bool] = {}
+        if extensions:
+            url_specs = [e for e in extensions if _ext_spec_is_url(e)]
+            if url_specs:
+                extension_url_approvals = _confirm_extension_url_trust(
+                    url_specs, trust_override=trust_extension_urls
+                )
 
         # Disable transient mode on Windows: PowerShell 5.1's legacy console
         # hangs when Rich tries to restore cursor state via VT escape sequences.
@@ -625,6 +799,46 @@ def register(app: typer.Typer) -> None:
                             preset_err,
                             continuing="Continuing without the optional preset.",
                         )
+
+                # Install extensions specified via --extension
+                if extensions:
+                    from rich.markup import escape as _escape_markup
+
+                    from ..extensions._commands import _refresh_events_and_warn
+
+                    speckit_ver = get_speckit_version()
+                    any_extension_installed = False
+                    for i, ext_spec in enumerate(extensions):
+                        tracker.start(f"extension-{i}")
+                        # Skip URL extensions the user did not confirm as trusted
+                        # (default-deny; resolved before the Live display).
+                        if _ext_spec_is_url(ext_spec) and not extension_url_approvals.get(
+                            ext_spec, False
+                        ):
+                            tracker.error(
+                                f"extension-{i}",
+                                "skipped: untrusted URL not confirmed "
+                                "(use --trust-extension-urls)",
+                            )
+                            continue
+                        try:
+                            status_msg = _install_extension_during_init(
+                                project_path, ext_spec, speckit_ver
+                            )
+                            tracker.complete(f"extension-{i}", status_msg)
+                            any_extension_installed = True
+                        except Exception as ext_err:
+                            sanitized_ext = str(ext_err).replace("\n", " ").strip()
+                            tracker.error(
+                                f"extension-{i}",
+                                f"failed: {_escape_markup(sanitized_ext[:120])}",
+                            )
+
+                    # Refresh native event configuration once after the batch so
+                    # that an extension declaring ``events:`` has its hooks
+                    # activated, mirroring the ``extension add`` path.
+                    if any_extension_installed:
+                        _refresh_events_and_warn(project_path)
 
                 # Seed the constitution AFTER preset installation so that a
                 # preset-provided constitution-template (resolved via the

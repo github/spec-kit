@@ -1983,23 +1983,25 @@ def _drop_marked_entries(entries: list) -> list:
 
 
 def _load_user_json(path: Path) -> dict | None:
-    """Load a user-owned JSON file, aborting (None) on parse failure (#22/#23).
+    """Load a user-owned JSON file, aborting (None) on read/parse failure (#22/#23).
 
     Returns the parsed dict, or ``None`` when the file is missing or cannot be
-    parsed (e.g. JSONC with comments, or temporarily malformed JSON). Callers
-    must skip the merge rather than resetting user content to ``{}``.
+    read or parsed (e.g. JSONC with comments, a temporarily malformed JSON
+    document, or an unreadable path). Callers must skip the merge rather than
+    resetting user content to ``{}``.
     """
     if not path.exists():
         return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, ValueError) as exc:
+    except (json.JSONDecodeError, OSError, ValueError) as exc:
         logger.warning(
-            "Could not parse %s (may contain JSONC comments or be malformed); "
+            "Could not read or parse %s (it may be unreadable, contain JSONC "
+            "comments, or be malformed); "
             "skipping event-config merge to preserve user content.",
             path,
         )
-        logger.debug("Parse error detail: %s", exc)
+        logger.debug("Read/parse error detail: %s", exc)
         return None
     if not isinstance(data, dict):
         logger.warning("%s is not a JSON object; skipping event-config merge.", path)

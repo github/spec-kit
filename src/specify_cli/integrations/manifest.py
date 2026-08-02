@@ -471,6 +471,10 @@ class IntegrationManifest:
         path = inst.manifest_path
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
+        except UnicodeDecodeError as exc:
+            raise ValueError(
+                f"Integration manifest at {path} is not valid UTF-8"
+            ) from exc
         except json.JSONDecodeError as exc:
             raise ValueError(
                 f"Integration manifest at {path} contains invalid JSON"

@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import stat
 import struct
+import tarfile
 import weakref
 import zipfile
 import zlib
@@ -13,11 +14,16 @@ import pytest
 
 from specify_cli._download_security import (
     MAX_ZIP_CENTRAL_DIRECTORY_BYTES,
+    archive_format_from_content_type,
+    archive_format_from_name,
     build_safe_download_path,
+    detect_archive_format,
     is_https_or_localhost_http,
     is_loopback_url,
     read_response_limited,
     read_zip_member_limited,
+    safe_extract_archive,
+    safe_extract_tar,
     safe_extract_zip,
 )
 
@@ -312,6 +318,176 @@ def test_build_safe_download_path_rejects_nonportable_identifiers(
             identifier,
             "1.0.0",
         )
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("package.zip", "zip"),
+        ("PACKAGE.TAR.GZ", "tar.gz"),
+        ("https://example.com/package.tgz?download=1", "tar.gz"),
+        ("package.tar", None),
+    ],
+)
+def test_archive_format_from_name(name, expected):
+    assert archive_format_from_name(name) == expected
+
+
+@pytest.mark.parametrize(
+    ("content_type", "expected"),
+    [
+        ("application/zip", "zip"),
+        ("application/x-zip-compressed; charset=binary", "zip"),
+        ("application/gzip", "tar.gz"),
+        ("application/x-gzip", "tar.gz"),
+        ("application/octet-stream", None),
+    ],
+)
+def test_archive_format_from_content_type(content_type, expected):
+    assert archive_format_from_content_type(content_type) == expected
+
+
+def _write_tar_gz(path, members):
+    with tarfile.open(path, "w:gz") as archive:
+        for name, content in members:
+            info = tarfile.TarInfo(name)
+            info.size = len(content)
+            archive.addfile(info, io.BytesIO(content))
+
+
+@pytest.mark.parametrize("suffix", [".tar.gz", ".tgz"])
+def test_detect_archive_format_accepts_tar_suffixes(tmp_path, suffix):
+    archive_path = tmp_path / f"package{suffix}"
+    _write_tar_gz(archive_path, [("file.txt", b"contents")])
+
+    assert detect_archive_format(archive_path) == "tar.gz"
+
+
+def test_detect_archive_format_allows_content_type_fallback(tmp_path):
+    archive_path = tmp_path / "download"
+    _write_tar_gz(archive_path, [("file.txt", b"contents")])
+
+    assert (
+        detect_archive_format(
+            archive_path,
+            source_name="https://example.com/download",
+            content_type="application/gzip",
+        )
+        == "tar.gz"
+    )
+
+
+def test_detect_archive_format_rejects_suffix_content_mismatch(tmp_path):
+    archive_path = tmp_path / "package.zip"
+    _write_tar_gz(archive_path, [("file.txt", b"contents")])
+
+    with pytest.raises(ValueError, match="format mismatch"):
+        detect_archive_format(archive_path)
+
+
+def test_detect_archive_format_rejects_suffix_header_mismatch(tmp_path):
+    archive_path = tmp_path / "package.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("file.txt", "contents")
+
+    with pytest.raises(ValueError, match="Content-Type"):
+        detect_archive_format(
+            archive_path,
+            content_type="application/gzip",
+        )
+
+
+def test_build_safe_download_path_uses_archive_suffix(tmp_path):
+    path = build_safe_download_path(tmp_path, "package", "1.0.0", suffix=".tar.gz")
+    assert path.name == "package-1.0.0.tar.gz"
+
+
+@pytest.mark.parametrize(
+    "member_name",
+    ["../evil.txt", "nested/../../evil.txt", "C:/Windows/evil.txt"],
+)
+def test_safe_extract_tar_rejects_traversal(tmp_path, member_name):
+    archive_path = tmp_path / "bad.tar.gz"
+    _write_tar_gz(archive_path, [(member_name, b"nope")])
+
+    with pytest.raises(ValueError, match="Unsafe path"):
+        safe_extract_tar(archive_path, tmp_path / "out")
+
+
+@pytest.mark.parametrize(
+    ("link_type", "message"),
+    [(tarfile.SYMTYPE, "symlink"), (tarfile.LNKTYPE, "hard link")],
+)
+def test_safe_extract_tar_rejects_links_without_partial_extraction(
+    tmp_path, link_type, message
+):
+    archive_path = tmp_path / "bad.tar.gz"
+    with tarfile.open(archive_path, "w:gz") as archive:
+        safe = tarfile.TarInfo("safe.txt")
+        safe.size = 4
+        archive.addfile(safe, io.BytesIO(b"safe"))
+        link = tarfile.TarInfo("escape")
+        link.type = link_type
+        link.linkname = "../../outside"
+        archive.addfile(link)
+
+    out_dir = tmp_path / "out"
+    with pytest.raises(ValueError, match=message):
+        safe_extract_tar(archive_path, out_dir)
+
+    assert not out_dir.exists() or not any(out_dir.rglob("*"))
+
+
+def test_safe_extract_tar_rejects_special_file(tmp_path):
+    archive_path = tmp_path / "bad.tar.gz"
+    with tarfile.open(archive_path, "w:gz") as archive:
+        fifo = tarfile.TarInfo("pipe")
+        fifo.type = tarfile.FIFOTYPE
+        archive.addfile(fifo)
+
+    with pytest.raises(ValueError, match="Unsafe member type"):
+        safe_extract_tar(archive_path, tmp_path / "out")
+
+
+def test_safe_extract_tar_rejects_conflicting_paths(tmp_path):
+    archive_path = tmp_path / "bad.tar.gz"
+    _write_tar_gz(
+        archive_path,
+        [("Folder/file.txt", b"one"), ("folder/FILE.txt", b"two")],
+    )
+
+    with pytest.raises(ValueError, match="Conflicting path"):
+        safe_extract_tar(archive_path, tmp_path / "out")
+
+
+def test_safe_extract_tar_enforces_entry_and_size_limits(tmp_path):
+    archive_path = tmp_path / "bad.tar.gz"
+    _write_tar_gz(
+        archive_path,
+        [("one.txt", b"1234"), ("two.txt", b"5678")],
+    )
+
+    with pytest.raises(ValueError, match="too many entries"):
+        safe_extract_tar(archive_path, tmp_path / "entries", max_entries=1)
+    with pytest.raises(ValueError, match="member.*maximum size"):
+        safe_extract_tar(archive_path, tmp_path / "member", max_member_bytes=3)
+    with pytest.raises(ValueError, match="uncompressed size"):
+        safe_extract_tar(archive_path, tmp_path / "total", max_total_bytes=7)
+
+
+@pytest.mark.parametrize("suffix", [".zip", ".tar.gz", ".tgz"])
+def test_safe_extract_archive_has_format_parity(tmp_path, suffix):
+    archive_path = tmp_path / f"package{suffix}"
+    if suffix == ".zip":
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            archive.writestr("nested/file.txt", b"contents")
+    else:
+        _write_tar_gz(archive_path, [("nested/file.txt", b"contents")])
+
+    out_dir = tmp_path / f"out-{suffix.replace('.', '-')}"
+    safe_extract_archive(archive_path, out_dir)
+
+    assert (out_dir / "nested" / "file.txt").read_bytes() == b"contents"
 
 
 @pytest.mark.parametrize(

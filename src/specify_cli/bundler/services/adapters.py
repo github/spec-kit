@@ -18,7 +18,7 @@ from urllib.request import url2pathname
 from ..._assets import _locate_core_pack, _repo_root
 from ..._download_security import MAX_JSON_CATALOG_BYTES, read_response_limited
 from .. import BundlerError
-from ..lib.yamlio import loads_json
+from ..lib.yamlio import load_json, loads_json
 from ..models.catalog import CatalogSource
 from ..models.manifest import ComponentRef
 
@@ -145,13 +145,13 @@ def make_catalog_fetcher(*, allow_network: bool = True):
             path = _file_url_to_path(parsed)
             if not path.exists():
                 raise BundlerError(f"Catalog file not found: {path}")
-            return loads_json(path.read_text(encoding="utf-8"), origin=str(path))
+            return load_json(path)
 
         if scheme == "" or _is_windows_drive_path(url):
             path = Path(url)
             if not path.exists():
                 raise BundlerError(f"Catalog file not found: {path}")
-            return loads_json(path.read_text(encoding="utf-8"), origin=str(path))
+            return load_json(path)
 
         if scheme in ("http", "https"):
             if not allow_network:
@@ -226,6 +226,10 @@ class DefaultPrimitiveInstaller:
     def install(self, project_root: Path, component: ComponentRef) -> None:
         manager = self._manager_for(component, project_root)
         manager.install(component)
+
+    def refresh(self, project_root: Path, component: ComponentRef) -> None:
+        manager = self._manager_for(component, project_root)
+        manager.refresh(component)
 
     def remove(self, project_root: Path, component: ComponentRef) -> None:
         manager = self._manager_for(component, project_root)

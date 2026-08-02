@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="./media/logo_large.webp" alt="Spec Kit Logo" width="200" height="200"/>
+    <img src="https://raw.githubusercontent.com/github/spec-kit/main/media/logo_large.webp" alt="Spec Kit Logo" width="200" height="200"/>
     <h1>🌱 Spec Kit</h1>
     <h3><em>Define what to build before building it — with any AI coding agent.</em></h3>
 </div>
@@ -136,7 +136,7 @@ For detailed step-by-step instructions, see our [comprehensive guide](./spec-dri
 
 Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)!
 
-[![Spec Kit video header](/media/spec-kit-video-header.jpg)](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)
+[![Spec Kit video header](https://raw.githubusercontent.com/github/spec-kit/main/media/spec-kit-video-header.jpg)](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)
 
 ## 🌍 Community
 

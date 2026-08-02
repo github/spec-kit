@@ -495,6 +495,8 @@ class WorkflowCatalog:
         try:
             with open(meta_file, encoding="utf-8") as f:
                 meta = json.load(f)
+            if not isinstance(meta, dict):
+                return False
             fetched_at = float(meta.get("fetched_at", 0))
             return (time.time() - fetched_at) < self.CACHE_DURATION
         except (json.JSONDecodeError, OSError, TypeError, ValueError):
@@ -509,8 +511,10 @@ class WorkflowCatalog:
         if not force_refresh and self._is_url_cache_valid(entry.url):
             try:
                 with open(cache_file, encoding="utf-8") as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, OSError):
+                    cached = json.load(f)
+                if isinstance(cached, dict):
+                    return cached
+            except (UnicodeDecodeError, json.JSONDecodeError, OSError):
                 # Ignore invalid/unreadable cache and fall back to fetching from source.
                 pass
 
@@ -574,7 +578,9 @@ class WorkflowCatalog:
             if cache_file.exists():
                 try:
                     with open(cache_file, encoding="utf-8") as f:
-                        return json.load(f)
+                        cached = json.load(f)
+                    if isinstance(cached, dict):
+                        return cached
                 except (json.JSONDecodeError, ValueError, OSError):
                     # Stale-cache read failed; let the original fetch error propagate.
                     pass
@@ -1184,6 +1190,8 @@ class StepCatalog:
         try:
             with open(meta_file, encoding="utf-8") as f:
                 meta = json.load(f)
+            if not isinstance(meta, dict):
+                return False
             fetched_at = float(meta.get("fetched_at", 0))
             return (time.time() - fetched_at) < self.CACHE_DURATION
         except (json.JSONDecodeError, OSError, TypeError, ValueError):
@@ -1202,7 +1210,7 @@ class StepCatalog:
                     cached = json.load(f)
                 if isinstance(cached, dict):
                     return cached
-            except (json.JSONDecodeError, OSError):
+            except (UnicodeDecodeError, json.JSONDecodeError, OSError):
                 # Ignore invalid/unreadable cache and fall back to fetching from source.
                 pass
 

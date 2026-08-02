@@ -20,7 +20,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, BinaryIO, Callable, Dict, List, Optional, Set
 
 import pathspec
 import yaml
@@ -29,11 +29,14 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from .._assets import _locate_core_pack, _repo_root
 from .._download_security import (
+    archive_format_from_name,
+    archive_suffix,
     MAX_JSON_CATALOG_BYTES,
     build_safe_download_path,
+    detect_archive_format,
     is_https_or_localhost_http,
     read_response_limited,
-    safe_extract_zip,
+    safe_extract_archive,
 )
 from .._init_options import is_ai_skills_enabled
 from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
@@ -574,8 +577,11 @@ class ExtensionManifest:
 
     def get_hash(self) -> str:
         """Calculate SHA256 hash of manifest file."""
+        h = hashlib.sha256()
         with open(self.path, "rb") as f:
-            return f"sha256:{hashlib.sha256(f.read()).hexdigest()}"
+            for chunk in iter(lambda: f.read(8192), b""):
+                h.update(chunk)
+        return f"sha256:{h.hexdigest()}"
 
 
 class ExtensionRegistry:
@@ -2408,7 +2414,7 @@ class ExtensionManager:
                 pass  # Best-effort; install already committed to the registry.
 
         # Restore execute bits on shipped POSIX scripts. copytree here (and the
-        # zipfile.extractall in install_from_zip, which delegates to this method) does
+        # archive extraction in install_from_archive, which delegates here, does
         # not restore a stripped Unix mode, so a bundled *.sh would land non-executable
         # and a documented `.specify/extensions/<id>/scripts/...` invocation would fail
         # with "Permission denied". This is the single sink every install route funnels
@@ -2427,21 +2433,27 @@ class ExtensionManager:
 
         return manifest
 
-    def install_from_zip(
+    def install_from_archive(
         self,
-        zip_path: Path,
+        archive_path: Path,
         speckit_version: str,
         priority: int = 10,
         force: bool = False,
+        *,
+        archive_file: BinaryIO | None = None,
+        source_name: str | None = None,
+        content_type: str | None = None,
     ) -> ExtensionManifest:
-        """Install extension from ZIP file.
+        """Install an extension from a supported archive.
 
         Args:
-            zip_path: Path to extension ZIP file
+            archive_path: Path to a .zip, .tar.gz, or .tgz archive
             speckit_version: Current spec-kit version
             priority: Resolution priority (lower = higher precedence, default 10)
             force: If True and extension is already installed, remove it first
                    before proceeding with installation
+            archive_file: Already-open archive stream to consume instead of
+                          reopening ``zip_path``
 
         Returns:
             Installed extension manifest
@@ -2457,7 +2469,14 @@ class ExtensionManager:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
 
-            safe_extract_zip(zip_path, temp_path, error_type=ValidationError)
+            safe_extract_archive(
+                archive_path,
+                temp_path,
+                archive_file=archive_file,
+                source_name=source_name,
+                content_type=content_type,
+                error_type=ValidationError,
+            )
 
             # Find extension directory (may be nested)
             extension_dir = temp_path
@@ -2471,7 +2490,7 @@ class ExtensionManager:
                     manifest_path = extension_dir / "extension.yml"
 
             if not manifest_path.exists():
-                raise ValidationError("No extension.yml found in ZIP file")
+                raise ValidationError("No extension.yml found in archive")
 
             # Install from extracted directory
             return self.install_from_directory(
@@ -2620,6 +2639,28 @@ class ExtensionManager:
             deployed.append(target_name)
 
         return deployed, skipped_existing, failed
+
+    def install_from_zip(
+        self,
+        zip_path: Path,
+        speckit_version: str,
+        priority: int = 10,
+        force: bool = False,
+        *,
+        archive_file: BinaryIO | None = None,
+        source_name: str | None = None,
+        content_type: str | None = None,
+    ) -> ExtensionManifest:
+        """Backward-compatible wrapper for archive installation."""
+        return self.install_from_archive(
+            zip_path,
+            speckit_version,
+            priority=priority,
+            force=force,
+            archive_file=archive_file,
+            source_name=source_name,
+            content_type=content_type,
+        )
 
     def remove(self, extension_id: str, keep_config: bool = False) -> bool:
         """Remove an installed extension.
@@ -3938,14 +3979,14 @@ class ExtensionCatalog(CatalogStackBase):
     def download_extension(
         self, extension_id: str, target_dir: Optional[Path] = None
     ) -> Path:
-        """Download extension ZIP from catalog.
+        """Download an extension archive from a catalog.
 
         Args:
             extension_id: ID of the extension to download
-            target_dir: Directory to save ZIP file (defaults to temp directory)
+            target_dir: Directory to save the archive
 
         Returns:
-            Path to downloaded ZIP file
+            Path to the downloaded archive
 
         Raises:
             ExtensionError: If extension not found or download fails
@@ -4004,45 +4045,88 @@ class ExtensionCatalog(CatalogStackBase):
             target_dir = self.cache_dir / "downloads"
         target_dir = Path(target_dir)
         version = ext_info.get("version", "unknown")
-        zip_path = build_safe_download_path(
+        declared_format = archive_format_from_name(download_url)
+        build_safe_download_path(
             target_dir,
             extension_id,
             version,
             error_type=ExtensionError,
             label="extension",
+            suffix=archive_suffix(declared_format or "tar.gz"),
         )
         target_dir.mkdir(parents=True, exist_ok=True)
 
+        original_download_url = download_url
         extra_headers = None
         resolved_download_url = self._resolve_github_release_asset_api_url(download_url)
         if resolved_download_url:
             download_url = resolved_download_url
             extra_headers = {"Accept": "application/octet-stream"}
 
-        # Download the ZIP file
+        staging_path: Path | None = None
         try:
             with self._open_url(
                 download_url, timeout=60, extra_headers=extra_headers
             ) as response:
-                zip_data = read_response_limited(
+                archive_data = read_response_limited(
                     response,
                     error_type=ExtensionError,
                     label=f"extension '{extension_id}' download",
                 )
+                final_url = (
+                    response.geturl()
+                    if hasattr(response, "geturl")
+                    else download_url
+                )
+                content_type = (
+                    response.getheader("Content-Type")
+                    if hasattr(response, "getheader")
+                    else None
+                )
 
             verify_archive_sha256(
-                zip_data, ext_info.get("sha256"), extension_id, ExtensionError
+                archive_data, ext_info.get("sha256"), extension_id, ExtensionError
             )
 
-            zip_path.write_bytes(zip_data)
-            return zip_path
+            with tempfile.NamedTemporaryFile(
+                prefix="extension-download-",
+                suffix=".archive",
+                dir=target_dir,
+                delete=False,
+            ) as staging_file:
+                staging_path = Path(staging_file.name)
+                staging_file.write(archive_data)
+            archive_format = detect_archive_format(
+                staging_path,
+                source_name=(
+                    final_url
+                    if archive_format_from_name(final_url) is not None
+                    else original_download_url
+                ),
+                content_type=content_type,
+                error_type=ExtensionError,
+            )
+            archive_path = build_safe_download_path(
+                target_dir,
+                extension_id,
+                version,
+                error_type=ExtensionError,
+                label="extension",
+                suffix=archive_suffix(archive_format),
+            )
+            os.replace(staging_path, archive_path)
+            staging_path = None
+            return archive_path
 
         except urllib.error.URLError as e:
             raise ExtensionError(
                 f"Failed to download extension from {download_url}: {e}"
             )
         except IOError as e:
-            raise ExtensionError(f"Failed to save extension ZIP: {e}")
+            raise ExtensionError(f"Failed to save extension archive: {e}")
+        finally:
+            if staging_path is not None:
+                staging_path.unlink(missing_ok=True)
 
     def clear_cache(self):
         """Clear the catalog cache (both legacy and URL-hash-based files)."""
