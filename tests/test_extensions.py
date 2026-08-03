@@ -10472,10 +10472,10 @@ class TestConfigManagerCrossExtensionEnvLeak:
     def test_non_utf8_registry_does_not_crash(self, tmp_path, monkeypatch):
         """A registry file with invalid text encoding must NOT propagate
         ``UnicodeDecodeError`` out of the sibling scan and abort every
-        config read. ``ExtensionRegistry._load()`` catches ``JSONDecodeError``
-        / ``FileNotFoundError`` only, so ``_sibling_extension_ids`` must
-        additionally swallow ``UnicodeError`` and degrade to the documented
-        pre-fix behaviour.
+        config read. ``ExtensionRegistry._load()`` now starts fresh on a
+        non-UTF-8 registry itself, but ``_sibling_extension_ids`` keeps
+        swallowing ``UnicodeError`` as defense in depth so a regression of
+        that contract still degrades to the documented pre-fix behaviour.
         """
         extensions_dir = tmp_path / ".specify" / "extensions"
         extensions_dir.mkdir(parents=True)

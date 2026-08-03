@@ -4259,11 +4259,11 @@ class ConfigManager:
         Returns an empty list if the registry is missing or corrupted
         (fresh project, ad-hoc test harness) so ``_get_env_config`` degrades
         to its pre-fix behaviour rather than crashing. ``UnicodeError`` is
-        caught alongside ``OSError`` because ``ExtensionRegistry._load()``
-        opens the file in text mode and only handles ``JSONDecodeError`` /
-        ``FileNotFoundError``, so a registry file with non-UTF-8 bytes would
-        otherwise surface a ``UnicodeDecodeError`` here and break *every*
-        config read instead of degrading gracefully.
+        caught alongside ``OSError`` as defense in depth:
+        ``ExtensionRegistry._load()`` now starts fresh on a non-UTF-8
+        registry itself, but this scan must degrade gracefully even if that
+        contract regresses, because a failure here would break *every*
+        config read.
 
         Used by ``_get_env_config`` to detect env vars whose remainder claims
         a longer, sibling-owned prefix (e.g. ``SPECKIT_GIT_HOOKS_URL`` is
