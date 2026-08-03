@@ -10731,8 +10731,6 @@ class TestWrapStrategy:
         the whole registration with a raw ``UnicodeDecodeError``. An
         unreadable core is treated like a missing one.
         """
-        import warnings
-
         from specify_cli.presets import _substitute_core_template
         from specify_cli.agents import CommandRegistrar
 
@@ -10742,8 +10740,7 @@ class TestWrapStrategy:
 
         registrar = CommandRegistrar()
         body = "Pre.\n\n{CORE_TEMPLATE}\n\nPost.\n"
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with pytest.warns(UserWarning, match="Ignoring core template"):
             result, core_fm = _substitute_core_template(
                 body, "specify", project_dir, registrar
             )
