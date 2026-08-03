@@ -129,13 +129,13 @@ def _run_init(integration: str, *, script_type: str, offline: bool = False) -> N
 
 def _resolve_init_integration(override: str | None, manifest) -> str:
     """Precedence (FR-013): explicit override → bundle-declared → default."""
-    from ..._agent_config import DEFAULT_INIT_INTEGRATION
+    from ..._agent_config import resolve_default_init_integration
 
     if override:
         return override
     if manifest is not None and manifest.integration is not None:
         return manifest.integration.id
-    return DEFAULT_INIT_INTEGRATION
+    return resolve_default_init_integration()
 
 
 # ===== Consume =====

@@ -77,7 +77,9 @@ from ._version import (
 from ._agent_config import (
     AGENT_CONFIG as AGENT_CONFIG,
     DEFAULT_INIT_INTEGRATION as DEFAULT_INIT_INTEGRATION,
+    DEFAULT_INIT_INTEGRATION_ENV_VAR as DEFAULT_INIT_INTEGRATION_ENV_VAR,
     SCRIPT_TYPE_CHOICES as SCRIPT_TYPE_CHOICES,
+    resolve_default_init_integration as resolve_default_init_integration,
 )
 from ._init_options import (
     INIT_OPTIONS_FILE as INIT_OPTIONS_FILE,

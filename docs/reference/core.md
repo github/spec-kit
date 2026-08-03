@@ -25,7 +25,7 @@ Creates a new Spec Kit project with the necessary directory structure, templates
 
 Use `<project_name>` to create a new directory, or `--here` (or `.`) to initialize in the current directory. If the directory already has files, use `--force` to merge without confirmation.
 
-When `--integration` is omitted, interactive terminals prompt you to choose an integration. Non-interactive sessions, such as CI or piped runs, default to GitHub Copilot; pass `--integration <key>` to choose a different integration explicitly.
+When `--integration` is omitted, interactive terminals prompt you to choose an integration. Non-interactive sessions, such as CI or piped runs, default to GitHub Copilot; pass `--integration <key>` to choose a different integration explicitly, or set `SPECKIT_INTEGRATION_DEFAULT` to change the fallback (see [Environment Variables](#environment-variables)).
 
 ### Examples
 
@@ -50,6 +50,7 @@ specify init my-project --integration copilot --preset compliance
 
 | Variable          | Description                                                              |
 | ----------------- | ------------------------------------------------------------------------ |
+| `SPECKIT_INTEGRATION_DEFAULT` | Override the fallback integration used by `specify init` when `--integration` is omitted (interactive prompt default and non-interactive fallback). Set it to any registered integration key (e.g. `gemini`, `claude`). An unrecognized value is ignored with a warning and the built-in default (`copilot`) is used. An explicit `--integration <key>` always takes precedence. |
 | `SPECIFY_INIT_DIR` | Target a member project from outside its directory (e.g. a monorepo root) without `cd`, for non-interactive / CI use. Set it to the **project root** — the directory *containing* `.specify/` (relative paths resolve against the current directory). The path must exist and contain `.specify/`, otherwise the command errors and does **not** fall back to the current directory. Resolved once in the core root helper (`get_repo_root` in Bash, `Get-RepoRoot` in PowerShell), so it is honored by the core feature scripts (`/speckit.plan`, `/speckit.tasks`, …) and the Git extension's feature-branch creation, which inherit it. The `specify` CLI applies the **same** validation rules to every project-scoped subcommand (`specify integration …`, `specify extension …`, `specify workflow …`, `specify preset …`, and the rest that operate on a `.specify/` project), so those can target a member project too. When unset, Bash/PowerShell helpers keep their existing upward search; the `specify` CLI keeps its project-scoped resolver cwd-only unless a command explicitly defines broader detection (for example, bundle commands). |
 | `SPECIFY_FEATURE_DIRECTORY` | Override the active feature directory *within* the resolved project (takes precedence over `.specify/feature.json`). Relative paths resolve under the project root. Combine with `SPECIFY_INIT_DIR` to pick both the project and the feature non-interactively. |
 | `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches. Must be set in the context of the agent prior to using `/speckit.plan` or follow-up commands. |

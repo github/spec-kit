@@ -116,6 +116,33 @@ class TestInitIntegrationFlag:
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == specify_cli.DEFAULT_INIT_INTEGRATION
 
+    def test_noninteractive_init_honors_default_integration_env_var(
+        self, tmp_path, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("non-interactive init should not open the integration picker")
+
+        monkeypatch.setattr(specify_cli, "select_with_arrows", fail_select)
+        monkeypatch.setenv(
+            specify_cli.DEFAULT_INIT_INTEGRATION_ENV_VAR, "gemini"
+        )
+
+        runner = CliRunner()
+        project = tmp_path / "noninteractive_env"
+        result = runner.invoke(app, [
+            "init", str(project), "--script", "sh", "--ignore-agent-tools",
+        ], catch_exceptions=False)
+
+        assert result.exit_code == 0, result.output
+        assert "defaulting to 'gemini'" in result.output
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == "gemini"
+
     def test_init_here_nonempty_noninteractive_errors_with_force_guidance(self, tmp_path):
         """`init --here` on a non-empty directory with no confirmation input (empty
         stdin) must fail fast with guidance to use --force, instead of the bare

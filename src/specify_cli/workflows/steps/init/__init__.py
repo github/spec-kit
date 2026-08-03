@@ -11,7 +11,10 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from specify_cli._agent_config import DEFAULT_INIT_INTEGRATION, SCRIPT_TYPE_CHOICES
+from specify_cli._agent_config import (
+    SCRIPT_TYPE_CHOICES,
+    resolve_default_init_integration,
+)
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import evaluate_expression
 
@@ -54,7 +57,8 @@ class InitStep(StepBase):
         Initialize in the target directory instead of creating a new one.
     ``integration``
         Integration key (e.g. ``copilot``).  Defaults to the workflow's
-        default integration, then to ``DEFAULT_INIT_INTEGRATION``.
+        default integration, then to the resolved default init integration
+        (``SPECKIT_INTEGRATION_DEFAULT`` env var, else ``copilot``).
     ``integration_options``
         Extra options for the integration (e.g. ``"--skills"`` or
         ``"--commands-dir .myagent/cmds"``).
@@ -81,7 +85,7 @@ class InitStep(StepBase):
         # Apply the same default that specify init uses in non-interactive mode
         # so that output.integration reflects the actual integration used.
         if not integration:
-            integration = DEFAULT_INIT_INTEGRATION
+            integration = resolve_default_init_integration()
 
         integration_options = self._resolve(
             config.get("integration_options"), context

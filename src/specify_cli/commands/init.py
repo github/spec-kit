@@ -14,8 +14,8 @@ from rich.panel import Panel
 
 from .._agent_config import (
     AGENT_CONFIG,
-    DEFAULT_INIT_INTEGRATION,
     SCRIPT_TYPE_CHOICES,
+    resolve_default_init_integration,
 )
 from .._assets import (
     _locate_bundled_preset,
@@ -313,17 +313,18 @@ def register(app: typer.Typer) -> None:
                 raise typer.Exit(1)
             selected_ai = integration
         elif not _stdin_is_interactive():
+            default_integration = resolve_default_init_integration()
             console.print(
-                f"[dim]Non-interactive session detected: defaulting to '{DEFAULT_INIT_INTEGRATION}'. "
+                f"[dim]Non-interactive session detected: defaulting to '{default_integration}'. "
                 "Use --integration to choose a different agent.[/dim]"
             )
-            selected_ai = DEFAULT_INIT_INTEGRATION
+            selected_ai = default_integration
         else:
             ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}
             selected_ai = select_with_arrows(
                 ai_choices,
                 "Choose your coding agent integration:",
-                DEFAULT_INIT_INTEGRATION,
+                resolve_default_init_integration(),
             )
 
         if not integration:
