@@ -11353,6 +11353,31 @@ class TestResolveContent:
         content = resolver.resolve_content("nonexistent")
         assert content is None
 
+    def test_resolve_content_unreadable_winning_layer_returns_none(self, project_dir):
+        """An undecodable winning layer must yield None, not a raw traceback.
+
+        ``collect_all_layers`` deliberately keeps a non-UTF-8 legacy command
+        layer (with its ``replace`` default) so unrelated commands still
+        resolve. ``resolve_content`` then read that same file without a
+        boundary, so the tolerated layer crashed with ``UnicodeDecodeError``
+        at composition time — reachable from ``specify preset add`` via
+        ``_register_commands``. The documented contract is "Composed content
+        string, or None if not found".
+        """
+        presets_dir = project_dir / ".specify" / "presets"
+        command_path = (
+            presets_dir / "legacy-pack" / "commands" / "speckit.legacy.md"
+        )
+        command_path.parent.mkdir(parents=True)
+        command_path.write_bytes(b"\xff\xfe")
+        PresetRegistry(presets_dir).add(
+            "legacy-pack", {"version": "1.0.0", "priority": 10}
+        )
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("speckit.legacy", "command")
+        assert content is None
+
     def test_resolve_content_replace_strategy(self, project_dir, temp_dir, valid_pack_data):
         """Test resolve_content with default replace strategy."""
         manager = PresetManager(project_dir)

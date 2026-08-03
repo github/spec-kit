@@ -5540,7 +5540,7 @@ class PresetResolver:
         if not layers:
             return None
 
-        def _read_layer_content(layer: Dict[str, Any]) -> str:
+        def _read_layer_content(layer: Dict[str, Any]) -> Optional[str]:
             """Read a layer's raw text, rewriting extension-relative subdir
             references (agents/, knowledge-base/, etc.) to their installed
             location when the layer is extension-provided (#2101).
@@ -5550,8 +5550,18 @@ class PresetResolver:
             rewrite when it wins outright above or serves as the
             composition base below — never as a mid-stack composing
             (append/prepend/wrap) layer.
+
+            Returns None when the layer cannot be read or decoded:
+            collect_all_layers deliberately keeps a non-UTF-8 legacy layer
+            (with its "replace" default) so unrelated commands still
+            resolve, so the same tolerance must apply here — the documented
+            contract is "Composed content string, or None if not found",
+            not a raw UnicodeDecodeError at composition time.
             """
-            text = layer["path"].read_text(encoding="utf-8")
+            try:
+                text = layer["path"].read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                return None
             extension_id = layer.get("extension_id")
             extension_dir = layer.get("extension_dir")
             if extension_id and extension_dir:
@@ -5589,6 +5599,8 @@ class PresetResolver:
         # Convert to reversed_layers index
         base_reversed_idx = len(layers) - 1 - base_layer_idx
         content = _read_layer_content(layers[base_layer_idx])
+        if content is None:
+            return None
         # Compose only the layers above the base (higher priority = lower index in layers,
         # higher index in reversed_layers). Process bottom-up from base+1.
         start_idx = base_reversed_idx + 1
@@ -5632,7 +5644,12 @@ class PresetResolver:
 
         # Apply composition layers from bottom to top
         for layer in reversed_layers[start_idx:]:
-            layer_content = layer["path"].read_text(encoding="utf-8")
+            try:
+                layer_content = layer["path"].read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                # Same tolerance as _read_layer_content: an unreadable layer
+                # means the composed result cannot be produced.
+                return None
             strategy = layer["strategy"]
 
             if is_command:
