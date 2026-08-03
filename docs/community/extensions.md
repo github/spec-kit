@@ -25,6 +25,7 @@ The following community-contributed extensions are available in [`catalog.commun
 
 | Extension | Purpose | Category | Effect | URL |
 |-----------|---------|----------|--------|-----|
+| adrkit — decision memory for spec-driven development | Pulls the decisions governing this work into agent context, checks produced plans against them, and drafts an ADR from a plan artifact | `process` | Read+Write | [adrkit](https://github.com/mbeacom/adrkit) |
 | Agent Assign | Assign specialized Claude Code agents to spec-kit tasks for targeted execution | `process` | Read+Write | [spec-kit-agent-assign](https://github.com/xymelon/spec-kit-agent-assign) |
 | Agent Governance | Generate agent-platform repository governance files from Spec Kit metadata | `process` | Read+Write | [spec-kit-agent-governance](https://github.com/bigsmartben/spec-kit-agent-governance) |
 | AI-Driven Engineering (AIDE) | A structured 7-step workflow for building new projects from scratch with AI assistants — from vision through implementation | `process` | Read+Write | [aide](https://github.com/mnriem/spec-kit-extensions/tree/main/aide) |

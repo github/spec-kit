@@ -1,8 +1,43 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-29T00:00:00Z",
+  "updated_at": "2026-08-03T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
+    "adrkit": {
+      "name": "adrkit — decision memory for spec-driven development",
+      "id": "adrkit",
+      "description": "Pulls the decisions governing this work into agent context, checks produced plans against them, and drafts an ADR from a plan artifact.",
+      "author": "Mark Beacom (@mbeacom)",
+      "version": "0.1.2",
+      "download_url": "https://github.com/mbeacom/adrkit/releases/download/spec-kit-v0.1.2/adrkit.zip",
+      "repository": "https://github.com/mbeacom/adrkit",
+      "homepage": "https://adrkit.dev",
+      "documentation": "https://github.com/mbeacom/adrkit/blob/main/packages/adapters/spec-kit/README.md",
+      "changelog": "https://github.com/mbeacom/adrkit/blob/main/CHANGELOG.md",
+      "license": "Apache-2.0",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.13.0,<0.16.0",
+        "tools": [{ "name": "adr", "version": ">=0.3.0", "required": true }]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "adr",
+        "governance",
+        "decision-records",
+        "architecture",
+        "compliance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-03T00:00:00Z",
+      "updated_at": "2026-08-03T00:00:00Z"
+    },
     "aide": {
       "name": "AI-Driven Engineering (AIDE)",
       "id": "aide",
