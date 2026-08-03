@@ -285,9 +285,25 @@ class ExtensionManifest:
             raise ValidationError(
                 f"Invalid extension: expected a mapping, got {type(ext).__name__}"
             )
+        # Check presence AND type: the format/version checks below feed these
+        # values straight to ``re.match`` and ``packaging.Version``, both of
+        # which raise a bare TypeError on a non-string. YAML makes that an easy
+        # authoring slip -- unquoted ``version: 1.0`` parses as a float and
+        # ``id: 2`` as an int -- and TypeError is not a ValidationError, so it
+        # escapes every caller that already handles a malformed manifest (see
+        # list_installed()'s "Corrupted extension" fallback, which catches
+        # ValidationError only, making one bad extension exit ``specify
+        # extension list`` with a raw traceback and hide the healthy ones).
+        # Mirrors the sibling IntegrationDescriptor, which already type-checks
+        # the same four fields.
         for field in ["id", "name", "version", "description"]:
             if field not in ext:
                 raise ValidationError(f"Missing extension.{field}")
+            if not isinstance(ext[field], str):
+                raise ValidationError(
+                    f"Invalid extension.{field}: expected a string, "
+                    f"got {type(ext[field]).__name__}"
+                )
 
         # Validate extension ID format
         if not re.match(r"^[a-z0-9-]+$", ext["id"]):
@@ -391,6 +407,16 @@ class ExtensionManifest:
                 )
             if "name" not in cmd or "file" not in cmd:
                 raise ValidationError("Command missing 'name' or 'file'")
+            # The pattern match below would raise a bare TypeError on a
+            # non-string name (``name: 2``), escaping the ValidationError
+            # contract. The 'file' field needs no check here:
+            # relative_extension_path_violation() below already rejects a
+            # non-string value.
+            if not isinstance(cmd["name"], str):
+                raise ValidationError(
+                    f"Invalid command name: expected a string, "
+                    f"got {type(cmd['name']).__name__}"
+                )
 
             # Validate the 'file' field at manifest-load time using the single
             # shared policy in relative_extension_path_violation(), so manifest

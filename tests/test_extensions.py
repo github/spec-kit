@@ -671,6 +671,102 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match=f"Invalid {section}"):
             ExtensionManifest(manifest_path)
 
+    @pytest.mark.parametrize("field", ["id", "name", "version", "description"])
+    @pytest.mark.parametrize("bad", [1.0, 5, None, ["a"], {"a": 1}, True])
+    def test_extension_metadata_field_not_string_rejected(
+        self, temp_dir, valid_manifest_data, field, bad
+    ):
+        """A non-string extension.<field> must raise ValidationError, not a raw
+        TypeError.
+
+        The loop over these four fields only checked key PRESENCE, then fed the
+        values to ``re.match`` (id) and ``packaging.Version`` (version), both of
+        which raise a bare TypeError on a non-string. YAML makes that an easy
+        authoring slip: unquoted ``version: 1.0`` parses as a float and ``id: 2``
+        as an int. TypeError is not a ValidationError, so it escaped
+        list_installed()'s "Corrupted extension" fallback and made
+        `specify extension list` exit 1 with a raw traceback, hiding every
+        healthy extension too. The sibling IntegrationDescriptor already
+        type-checks the same four fields.
+        """
+        import yaml
+
+        valid_manifest_data["extension"][field] = bad
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match=f"Invalid extension.{field}"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("bad", [1.0, 5, None, ["a"], {"a": 1}, True])
+    def test_command_name_not_string_rejected(
+        self, temp_dir, valid_manifest_data, bad
+    ):
+        """A non-string command name must raise ValidationError, not a raw
+        TypeError from the name-pattern match.
+
+        The sibling ``file`` field was already covered, since
+        relative_extension_path_violation() rejects a non-string value; ``name``
+        went straight into EXTENSION_COMMAND_NAME_PATTERN.match().
+        """
+        import yaml
+
+        valid_manifest_data["provides"]["commands"][0]["name"] = bad
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid command name"):
+            ExtensionManifest(manifest_path)
+
+    def test_one_bad_manifest_does_not_hide_healthy_extensions(self, temp_dir):
+        """End-to-end guard for the symptom: an unquoted ``version: 1.0`` in one
+        installed extension must degrade to "Corrupted extension" and still let
+        list_installed() report the healthy ones, instead of raising TypeError
+        out of the whole call.
+        """
+        ext_root = temp_dir / ".specify" / "extensions"
+        for ext_id, version in (("good-ext", '"1.0.0"'), ("bad-ext", "1.0")):
+            ext_path = ext_root / ext_id
+            ext_path.mkdir(parents=True, exist_ok=True)
+            (ext_path / "extension.yml").write_text(
+                f"""schema_version: "1.0"
+extension:
+  id: {ext_id}
+  name: {ext_id}
+  version: {version}
+  description: desc
+requires:
+  speckit_version: ">=0.1.0"
+provides:
+  commands:
+    - name: speckit.{ext_id}.hello
+      file: commands/hello.md
+""",
+                encoding="utf-8",
+            )
+        (ext_root / ".registry").write_text(
+            json.dumps(
+                {
+                    "schema_version": "1.0",
+                    "extensions": {
+                        "good-ext": {"version": "1.0.0", "enabled": True},
+                        "bad-ext": {"version": "1.0", "enabled": True},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        listed = {row["id"]: row for row in ExtensionManager(temp_dir).list_installed()}
+
+        assert set(listed) == {"good-ext", "bad-ext"}
+        assert "Corrupted" not in listed["good-ext"]["description"]
+        assert "Corrupted" in listed["bad-ext"]["description"]
+
     def test_empty_provides_mapping_is_still_accepted_with_hooks(
         self, temp_dir, valid_manifest_data
     ):

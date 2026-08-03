@@ -307,9 +307,25 @@ class PresetManifest:
 
         # Validate preset metadata
         pack = self.data["preset"]
+        # Check presence AND type: the format/version checks below feed these
+        # values straight to ``re.match`` and ``packaging.Version``, both of
+        # which raise a bare TypeError on a non-string. YAML makes that an easy
+        # authoring slip -- unquoted ``version: 1.0`` parses as a float and
+        # ``id: 2`` as an int -- and TypeError is not a PresetValidationError,
+        # so it escapes every caller that already handles a malformed manifest
+        # (see list_installed()'s "Corrupted preset" fallback, which catches
+        # PresetValidationError only, making one bad preset exit ``specify
+        # preset list`` with a raw traceback and hide the healthy ones).
+        # Mirrors the sibling IntegrationDescriptor, which already type-checks
+        # the same four fields.
         for field in ["id", "name", "version", "description"]:
             if field not in pack:
                 raise PresetValidationError(f"Missing preset.{field}")
+            if not isinstance(pack[field], str):
+                raise PresetValidationError(
+                    f"Invalid preset.{field}: expected a string, "
+                    f"got {type(pack[field]).__name__}"
+                )
 
         # Validate pack ID format
         if not re.match(r'^[a-z0-9-]+$', pack["id"]):
@@ -366,6 +382,19 @@ class PresetManifest:
                 raise PresetValidationError(
                     "Template missing 'type', 'name', or 'file'"
                 )
+
+            # 'name' feeds re.match and 'file' feeds os.path.normpath below;
+            # both raise a bare TypeError on a non-string, which is not a
+            # PresetValidationError and so escapes the callers that handle a
+            # malformed manifest. The sibling extension manifest already
+            # rejects a non-string command 'file' via
+            # relative_extension_path_violation().
+            for field in ("name", "file"):
+                if not isinstance(tmpl[field], str):
+                    raise PresetValidationError(
+                        f"Invalid template {field}: expected a string, "
+                        f"got {type(tmpl[field]).__name__}"
+                    )
 
             if tmpl["type"] not in VALID_PRESET_TEMPLATE_TYPES:
                 raise PresetValidationError(

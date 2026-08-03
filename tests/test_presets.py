@@ -217,6 +217,102 @@ class TestPresetManifest:
         ):
             PresetManifest(manifest_path)
 
+    @pytest.mark.parametrize("field", ["id", "name", "version", "description"])
+    @pytest.mark.parametrize("bad", [1.0, 5, None, ["a"], {"a": 1}, True])
+    def test_preset_metadata_field_not_string_raises_validation_error(
+        self, temp_dir, valid_pack_data, field, bad
+    ):
+        """A non-string preset.<field> raises PresetValidationError, not a raw
+        TypeError.
+
+        The loop over these four fields only checked key PRESENCE, then fed the
+        values to ``re.match`` (id) and ``packaging.Version`` (version), both of
+        which raise a bare TypeError on a non-string. YAML makes that an easy
+        authoring slip: unquoted ``version: 1.0`` parses as a float and ``id: 2``
+        as an int. TypeError is not a PresetValidationError, so it escaped
+        list_installed()'s "Corrupted preset" fallback and made
+        `specify preset list` exit 1 with a raw traceback, hiding every healthy
+        preset too. The sibling IntegrationDescriptor already type-checks the
+        same four fields.
+        """
+        valid_pack_data["preset"][field] = bad
+        manifest_path = temp_dir / "preset.yml"
+        manifest_path.write_text(yaml.safe_dump(valid_pack_data), encoding="utf-8")
+
+        with pytest.raises(
+            PresetValidationError,
+            match=rf"Invalid preset\.{field}: expected a string",
+        ):
+            PresetManifest(manifest_path)
+
+    @pytest.mark.parametrize("field", ["name", "file"])
+    @pytest.mark.parametrize("bad", [1.0, 5, None, ["a"], {"a": 1}, True])
+    def test_template_entry_field_not_string_raises_validation_error(
+        self, temp_dir, valid_pack_data, field, bad
+    ):
+        """A non-string template ``name``/``file`` raises PresetValidationError.
+
+        ``name`` reaches ``re.match`` and ``file`` reaches ``os.path.normpath``;
+        both raise a bare TypeError on a non-string. The sibling extension
+        manifest already rejects a non-string command ``file`` via
+        relative_extension_path_violation().
+        """
+        valid_pack_data["provides"]["templates"][0][field] = bad
+        manifest_path = temp_dir / "preset.yml"
+        manifest_path.write_text(yaml.safe_dump(valid_pack_data), encoding="utf-8")
+
+        with pytest.raises(
+            PresetValidationError,
+            match=rf"Invalid template {field}: expected a string",
+        ):
+            PresetManifest(manifest_path)
+
+    def test_one_bad_manifest_does_not_hide_healthy_presets(self, temp_dir):
+        """End-to-end guard for the symptom: an unquoted ``version: 1.0`` in one
+        installed preset must degrade to "Corrupted preset" and still let
+        list_installed() report the healthy ones, instead of raising TypeError
+        out of the whole call.
+        """
+        preset_root = temp_dir / ".specify" / "presets"
+        for pack_id, version in (("good-pack", '"1.0.0"'), ("bad-pack", "1.0")):
+            pack_path = preset_root / pack_id
+            pack_path.mkdir(parents=True, exist_ok=True)
+            (pack_path / "preset.yml").write_text(
+                f"""schema_version: "1.0"
+preset:
+  id: {pack_id}
+  name: {pack_id}
+  version: {version}
+  description: desc
+requires:
+  speckit_version: ">=0.1.0"
+provides:
+  templates:
+    - type: template
+      name: spec
+      file: templates/spec.md
+""",
+                encoding="utf-8",
+            )
+        (preset_root / ".registry").write_text(
+            json.dumps(
+                {
+                    "schema_version": "1.0",
+                    "presets": {
+                        "good-pack": {"version": "1.0.0", "enabled": True},
+                        "bad-pack": {"version": "1.0", "enabled": True},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        listed = {row["id"]: row for row in PresetManager(temp_dir).list_installed()}
+
+        assert set(listed) == {"good-pack", "bad-pack"}
+        assert "Corrupted" not in listed["good-pack"]["description"]
+        assert "Corrupted" in listed["bad-pack"]["description"]
+
     @pytest.mark.parametrize(
         "bad",
         [
