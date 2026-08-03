@@ -11378,6 +11378,88 @@ class TestResolveContent:
         content = resolver.resolve_content("speckit.legacy", "command")
         assert content is None
 
+    def test_resolve_content_unreadable_base_under_composing_layer(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """An undecodable base beneath a valid composing layer yields None.
+
+        Covers the base-read guard: the winning layer composes (append), so
+        resolution reads the base layer beneath it — here the core template,
+        corrupted to non-UTF-8 — and must return None instead of crashing.
+        """
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "append-pack", "name": "Append"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "append",
+            }]
+        }
+        pack_dir = temp_dir / "append-pack"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "templates").mkdir()
+        (pack_dir / "templates" / "spec-template.md").write_text("## Appended Section\n")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        core_spec = project_dir / ".specify" / "templates" / "spec-template.md"
+        core_spec.write_bytes(b"\xff\xfe")
+
+        resolver = PresetResolver(project_dir)
+        assert resolver.resolve_content("spec-template") is None
+
+    def test_resolve_content_unreadable_composing_layer(
+        self, project_dir, temp_dir, valid_pack_data, monkeypatch
+    ):
+        """An unreadable composing layer over a valid base yields None.
+
+        Covers the composition-loop read and the ``OSError`` half of the
+        boundary: the base (core template) reads fine, but the append layer
+        raises a mocked ``PermissionError`` — mocked so the case also holds
+        under privileged CI where permission bits are not enforced.
+        """
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "append-pack", "name": "Append"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "append",
+            }]
+        }
+        pack_dir = temp_dir / "append-pack"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "templates").mkdir()
+        (pack_dir / "templates" / "spec-template.md").write_text("## Appended Section\n")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        layer_path = (
+            project_dir / ".specify" / "presets" / "append-pack"
+            / "templates" / "spec-template.md"
+        )
+        assert layer_path.is_file()
+        original_read_text = Path.read_text
+
+        def failing_read_text(self_path, *args, **kwargs):
+            if self_path == layer_path:
+                raise PermissionError(13, "Permission denied")
+            return original_read_text(self_path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", failing_read_text)
+
+        resolver = PresetResolver(project_dir)
+        assert resolver.resolve_content("spec-template") is None
+
     def test_resolve_content_replace_strategy(self, project_dir, temp_dir, valid_pack_data):
         """Test resolve_content with default replace strategy."""
         manager = PresetManager(project_dir)
