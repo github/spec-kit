@@ -681,7 +681,6 @@ class CommandRegistrar:
                 _sep = _integ.invoke_separator_for_mode(registrar_writes_skills)
         except (ImportError, ValueError, KeyError):
             pass
-            pass
         _prefix = get_invocation_prefix(agent_name, registrar_writes_skills)
 
         for cmd_info in commands:
