@@ -1193,11 +1193,12 @@ def install_integration_events(
                 lines.append(f'timeout = {_native_timeout(integration, cfg.get("timeout", 60) + EVENT_TIMEOUT_BUFFER)}')
                 lines.append('speckit_marker = true')
                 lines.append('')
-        _merge_toml_fragment(config_path, "\n".join(lines))
-        rel = str(config_path.relative_to(project_root))
-        if rel not in manifest.files:
-            manifest.record_existing(rel)
-        created.append(config_path)
+        # S5: only track when the merge wrote (skips on unreadable file).
+        if _merge_toml_fragment(config_path, "\n".join(lines)):
+            rel = str(config_path.relative_to(project_root))
+            if rel not in manifest.files:
+                manifest.record_existing(rel)
+            created.append(config_path)
 
     elif fmt == "json-flat":
         # Cursor hooks.json custom merge. Flat command-string entries, one
@@ -1715,11 +1716,27 @@ def _remove_opencode_entries(config_path: Path) -> bool:
     return False
 
 
-def _merge_toml_fragment(dst: Path, fragment: str) -> None:
+def _merge_toml_fragment(dst: Path, fragment: str) -> bool:
+    """Merge Specify-owned TOML entries into *dst*, regenerating the file.
+
+    An unreadable or undecodable pre-existing file aborts the merge instead
+    of discarding the user's bytes, mirroring ``_load_user_json`` (#22).
+    Returns False when skipped so callers avoid tracking the untouched file
+    (S5).
+    """
     _ensure_safe_destination(dst)
     existing = ""
     if dst.exists():
-        existing = dst.read_text(encoding="utf-8")
+        try:
+            existing = dst.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            logger.warning(
+                "Could not read %s (it may be unreadable or not UTF-8); "
+                "skipping event-config merge to preserve user content.",
+                dst,
+            )
+            logger.debug("Read error detail: %s", exc)
+            return False
     existing = re.sub(
         r'\[\[hooks\.\w+\]\]\n(?:(?!\[\[hooks\.\w+\]\]).)*?speckit_marker = true\n*',
         "",
@@ -1728,6 +1745,7 @@ def _merge_toml_fragment(dst: Path, fragment: str) -> None:
     )
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text(existing.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
+    return True
 
 
 def _remove_toml_entries(dst: Path) -> bool:
@@ -1741,7 +1759,19 @@ def _remove_toml_entries(dst: Path) -> bool:
     # the config after install can't make teardown overwrite a file outside
     # the project (the merge/write path already validates; teardown must too).
     _ensure_safe_destination(dst)
-    existing = dst.read_text(encoding="utf-8")
+    try:
+        existing = dst.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        # An unreadable or undecodable file is left untouched rather than
+        # crashing teardown — it contains only user content as far as we can
+        # tell, and the caller drops the manifest claim either way (S9).
+        logger.warning(
+            "Could not read %s (it may be unreadable or not UTF-8); "
+            "skipping event-config cleanup to preserve user content.",
+            dst,
+        )
+        logger.debug("Read error detail: %s", exc)
+        return False
     cleaned = re.sub(
         r'\[\[hooks\.\w+\]\]\n(?:(?!\[\[hooks\.\w+\]\]).)*?speckit_marker = true\n*',
         "",
