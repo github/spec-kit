@@ -370,7 +370,13 @@
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.2.0"
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "node",
+            "required": true
+          }
+        ]
       },
       "provides": {
         "commands": 1,
