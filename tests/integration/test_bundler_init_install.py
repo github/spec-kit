@@ -44,6 +44,20 @@ def test_precedence_default_when_unspecified():
     assert _resolve_init_integration(None, None) == "copilot"
 
 
+def test_precedence_default_honors_env_var(monkeypatch):
+    monkeypatch.setenv("SPECKIT_INTEGRATION_DEFAULT", "gemini")
+    # With no override and no bundle-declared integration, the env-var default
+    # applies instead of the hardcoded "copilot".
+    assert _resolve_init_integration(None, None) == "gemini"
+    assert _resolve_init_integration(None, _manifest()) == "gemini"
+    # Explicit override and bundle-declared integration still take precedence.
+    assert _resolve_init_integration("claude", None) == "claude"
+    assert (
+        _resolve_init_integration(None, _manifest(integration={"id": "claude"}))
+        == "claude"
+    )
+
+
 def _build_mini(tmp_path: Path) -> Path:
     bundle = tmp_path / "mini"
     bundle.mkdir()

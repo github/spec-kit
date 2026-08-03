@@ -2187,6 +2187,24 @@ class TestInitStep:
         assert result.status == StepStatus.COMPLETED
         assert result.output["integration"] == "copilot"
 
+    def test_default_integration_honors_env_var(self, tmp_path, monkeypatch):
+        # With no step-level and no workflow-level default, the resolved
+        # SPECKIT_INTEGRATION_DEFAULT value must drive both output.integration
+        # and the argv passed to init (guards against reverting to the constant).
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        monkeypatch.setenv("SPECKIT_INTEGRATION_DEFAULT", "gemini")
+        step = InitStep()
+        ctx = StepContext(project_root=str(tmp_path))
+        result = step.execute(
+            {"id": "bootstrap", "here": True, "script": "sh"}, ctx
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["integration"] == "gemini"
+        argv = result.output["argv"]
+        assert "--integration" in argv and "gemini" in argv
+
     def test_project_name_creates_subdirectory(self, tmp_path):
         from specify_cli.workflows.steps.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus

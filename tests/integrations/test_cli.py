@@ -143,6 +143,41 @@ class TestInitIntegrationFlag:
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == "gemini"
 
+    def test_interactive_init_picker_default_honors_env_var(
+        self, tmp_path, monkeypatch
+    ):
+        # The interactive integration picker must receive the resolved
+        # SPECKIT_INTEGRATION_DEFAULT value as its default_key, not the
+        # hardcoded constant (guards the picker wiring against regression).
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli.commands.init as init_mod
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+        monkeypatch.setenv("SPECKIT_INTEGRATION_DEFAULT", "gemini")
+
+        captured = {}
+
+        def fake_select(options, prompt_text=None, default_key=None):
+            # Only capture the integration picker (not the script picker).
+            if "Choose your coding agent integration" in (prompt_text or ""):
+                captured["default_key"] = default_key
+            return default_key
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fake_select)
+
+        runner = CliRunner()
+        project = tmp_path / "interactive_env"
+        result = runner.invoke(app, [
+            "init", str(project), "--script", "sh", "--ignore-agent-tools",
+        ], catch_exceptions=False)
+
+        assert result.exit_code == 0, result.output
+        assert captured.get("default_key") == "gemini"
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == "gemini"
+
     def test_init_here_nonempty_noninteractive_errors_with_force_guidance(self, tmp_path):
         """`init --here` on a non-empty directory with no confirmation input (empty
         stdin) must fail fast with guidance to use --force, instead of the bare
