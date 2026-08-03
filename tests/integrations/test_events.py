@@ -1287,6 +1287,31 @@ class TestCommandRunner:
         argv = _resolve_event_command_argv(cmd_dir / "boot.md", tmp_path, None)
         assert argv is None
 
+    def test_permission_denied_template_returns_none(self, tmp_path, monkeypatch):
+        """The same boundary must cover ``OSError`` (e.g. permission denied).
+
+        Mocked rather than chmod-based so the case also holds under
+        privileged CI where permission bits are not enforced.
+        """
+        from specify_cli.events import _resolve_event_command_argv
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        template = cmd_dir / "boot.md"
+        template.write_text("---\ndescription: Boot\n---\nBody\n")
+
+        original_read_text = Path.read_text
+
+        def failing_read_text(self_path, *args, **kwargs):
+            if self_path == template:
+                raise PermissionError(13, "Permission denied")
+            return original_read_text(self_path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", failing_read_text)
+
+        argv = _resolve_event_command_argv(template, tmp_path, None)
+        assert argv is None
+
     def test_ps_variant_prefixed_with_powershell_launcher(self, tmp_path):
         """S6: the ps variant prefixes argv with pwsh/powershell -File so
         subprocess.run(shell=False) can execute the .ps1 script."""
