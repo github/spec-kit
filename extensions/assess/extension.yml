@@ -1,0 +1,40 @@
+schema_version: "1.0"
+
+extension:
+  id: assess
+  name: "Idea Assessment Pipeline"
+  version: "1.0.0"
+  description: "Assess an idea before Spec-Driven Development via intake, research, define, shape, and decide. A go verdict hands off to /speckit.specify; a kill closes it. Lives under .specify/assessments/<slug>/"
+  category: "process"
+  effect: "read-write"
+  author: spec-kit-core
+  repository: https://github.com/github/spec-kit
+  license: MIT
+
+requires:
+  speckit_version: ">=0.9.0"
+
+provides:
+  commands:
+    - name: speckit.assess.intake
+      file: commands/speckit.assess.intake.md
+      description: "Capture and normalize a raw idea (text, URL, ticket, or codebase pointer) into an intake note"
+    - name: speckit.assess.research
+      file: commands/speckit.assess.research.md
+      description: "Gather evidence — users, market, prior art, and data — to support or challenge the idea"
+    - name: speckit.assess.define
+      file: commands/speckit.assess.define.md
+      description: "Define the problem: who is affected, what hurts, goals, non-goals, and success metrics"
+    - name: speckit.assess.shape
+      file: commands/speckit.assess.shape.md
+      description: "Shape a concept: solution options, scope, appetite, and trade-offs (no implementation design)"
+    - name: speckit.assess.decide
+      file: commands/speckit.assess.decide.md
+      description: "Apply a go / needs-clarification / kill gate and hand survivors off to /speckit.specify"
+
+tags:
+  - "assessment"
+  - "discovery"
+  - "triage"
+  - "product"
+  - "workflow"

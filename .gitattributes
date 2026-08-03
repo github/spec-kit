@@ -1,1 +1,7 @@
 * text=auto eol=lf
+
+.github/workflows/*.lock.yml linguist-generated=true merge=ours -whitespace
+# The project constitution is the one dogfooding artifact carried forward.
+# Keep it exempt from git's whitespace checks (git diff --check / CI) since its
+# generated formatting is not hand-edited.
+.specify/memory/constitution.md -whitespace

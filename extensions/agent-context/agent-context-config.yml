@@ -1,0 +1,24 @@
+# Coding Agent Context Extension Configuration
+
+# WHAT: The single agent context file relative to the project root (the directory containing .specify/). Absolute paths, backslash separators, and `..` path segments are rejected.
+# REQUIREMENT: OPTIONAL. Use this if you want to manually specify a single context file. If you leave this entry blank, it will use the default context file for the coding agent you picked when you set up Spec Kit. See `agent-context-defaults.json` for the defaults.
+# EXAMPLE: context_file: CLAUDE.md
+context_file: ""
+
+# WHAT: List of agent context files relative to the project root (the directory containing .specify/). If you have both `context_file` and `context_files` filled, then this (`context_files`) takes precedence. Absolute paths, backslash separators, and `..` path segments are rejected.
+# REQUIREMENT: OPTIONAL. Use this if your project requires you to keep multiple agent context files in sync.
+# EXAMPLE:
+# context_files:
+#   - AGENTS.md
+#   - CLAUDE.md
+context_files: []
+
+# WHAT: Markers (delimiters) for the managed Spec Kit section. This extension injects information only between these markers.
+# REQUIREMENT: OPTIONAL. Only change if you wish to have a custom marker name.
+# EXAMPLE:
+# context_markers:
+#   start: "<!-- AGENT SPEC KIT CONTEXT START -->"
+#   end: "<!-- AGENT SPEC KIT CONTEXT END -->"
+context_markers:
+  start: "<!-- SPECKIT START -->"
+  end: "<!-- SPECKIT END -->"

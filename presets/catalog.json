@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-04-24T00:00:00Z",
+  "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.json",
+  "presets": {
+    "lean": {
+      "name": "Lean Workflow",
+      "id": "lean",
+      "version": "1.0.0",
+      "description": "Minimal core workflow commands - just the prompt, just the artifact",
+      "author": "github",
+      "repository": "https://github.com/github/spec-kit",
+      "license": "MIT",
+      "bundled": true,
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "commands": 5,
+        "templates": 0
+      },
+      "tags": [
+        "lean",
+        "minimal",
+        "workflow",
+        "core"
+      ]
+    },
+    "constitution-sync": {
+      "name": "Constitution Template Sync",
+      "id": "constitution-sync",
+      "version": "1.0.0",
+      "description": "Opt-in: restores /constitution propagation of amended guidance into plan/spec/tasks templates and installed command files, for teams that treat materialized templates as reviewed artifacts.",
+      "author": "github",
+      "repository": "https://github.com/github/spec-kit",
+      "license": "MIT",
+      "bundled": true,
+      "requires": {
+        "speckit_version": ">=0.14.4"
+      },
+      "provides": {
+        "commands": 1,
+        "templates": 0
+      },
+      "tags": [
+        "constitution",
+        "governance",
+        "templates",
+        "compatibility"
+      ]
+    }
+  }
+}

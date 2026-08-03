@@ -51,7 +51,7 @@ body:
     id: version
     attributes:
       label: Specify CLI Version
-      description: "Run `specify --version` or `pip show spec-kit`"
+      description: "Run `specify version` or `pip show spec-kit`"
       placeholder: "e.g., 1.3.0"
     validations:
       required: true
@@ -62,24 +62,42 @@ body:
       label: AI Agent
       description: Which AI agent are you using?
       options:
+        - Alquimia AI
+        - Amp
+        - Antigravity
+        - Auggie CLI
         - Claude Code
+        - Cline
+        - CodeBuddy
+        - Codex CLI
+        - Cursor
+        - Devin for Terminal
+        - Factory Droid
+        - Firebender
+        - Forge
         - Gemini CLI
         - GitHub Copilot
-        - Cursor
-        - Qwen Code
-        - opencode
-        - Codex CLI
-        - Windsurf
-        - Kilo Code
-        - Auggie CLI
-        - Roo Code
-        - CodeBuddy
-        - Qoder CLI
-        - Amazon Q Developer CLI
-        - Amp
-        - SHAI
+        - Goose
+        - Grok Build
+        - Hermes Agent
         - IBM Bob
-        - Antigravity
+        - Junie
+        - Kilo Code
+        - Kimi Code
+        - Kiro CLI
+        - Lingma
+        - Mistral Vibe
+        - Oh My Pi
+        - opencode
+        - Pi Coding Agent
+        - Qoder CLI
+        - Qwen Code
+        - RovoDev ACLI
+        - SHAI
+        - Tabnine CLI
+        - Trae
+        - ZCode
+        - Zed
         - Not applicable
     validations:
       required: true

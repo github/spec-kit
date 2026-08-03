@@ -11,9 +11,76 @@
       href: quickstart.md
     - name: Upgrade
       href: upgrade.md
+    - name: Install uv
+      href: install/uv.md
+    - name: Install from PyPI
+      href: install/pypi.md
+    - name: Install with pipx
+      href: install/pipx.md
+    - name: One-time Usage (uvx)
+      href: install/one-time.md
+    - name: Enterprise / Air-Gapped
+      href: install/air-gapped.md
+
+# Reference
+- name: Reference
+  items:
+    - name: Overview
+      href: reference/overview.md
+    - name: Core Commands
+      href: reference/core.md
+    - name: Integrations
+      href: reference/integrations.md
+    - name: Extensions
+      href: reference/extensions.md
+    - name: Presets
+      href: reference/presets.md
+    - name: Workflows
+      href: reference/workflows.md
+    - name: Bundles
+      href: reference/bundles.md
+    - name: Agentic SDD
+      href: reference/agentic-sdd.md
+    - name: Agentic Bug Fix
+      href: reference/agentic-bugfix.md
+    - name: Authentication
+      href: reference/authentication.md
+
+# Concepts
+- name: Concepts
+  items:
+    - name: What is SDD?
+      href: concepts/sdd.md
+    - name: Spec Persistence Models
+      href: concepts/spec-persistence.md
+    - name: Handling Complex Features
+      href: concepts/complex-features.md
+    - name: Spec of Specs
+      href: concepts/spec-of-specs.md
 
 # Development workflows
 - name: Development
   items:
     - name: Local Development
       href: local-development.md
+    - name: Evolving Specs
+      href: guides/evolving-specs.md
+    - name: Monorepos
+      href: guides/monorepo.md
+
+# Community
+- name: Community
+  href: community/overview.md
+  items:
+    - name: Overview
+      href: community/overview.md
+    - name: Extensions
+      href: community/extensions.md
+    - name: Presets
+      href: community/presets.md
+    - name: Bundles
+      href: community/bundles.md
+    - name: Walkthroughs
+      href: community/walkthroughs.md
+    - name: Friends
+      href: community/friends.md

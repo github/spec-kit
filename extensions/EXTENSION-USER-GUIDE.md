@@ -46,7 +46,7 @@ Extensions are modular packages that add new commands and functionality to Spec 
 ### Check Your Version
 
 ```bash
-specify --version
+specify version
 # Should show 0.1.0 or higher
 ```
 
@@ -76,13 +76,15 @@ vim .specify/extensions/jira/jira-config.yml
 
 ## Finding Extensions
 
+`specify extension search` searches **all active catalogs** simultaneously, including the community catalog by default. Results are annotated with their source catalog and install status.
+
 ### Browse All Extensions
 
 ```bash
 specify extension search
 ```
 
-Shows all available extensions in the catalog.
+Shows all extensions across all active catalogs (default and community by default).
 
 ### Search by Keyword
 
@@ -151,14 +153,14 @@ This will:
 2. Validate the manifest
 3. Check compatibility with your spec-kit version
 4. Install to `.specify/extensions/jira/`
-5. Register commands with your AI agent
+5. Register commands with your coding agent
 6. Create config template
 
 ### Install from URL
 
 ```bash
 # From GitHub release
-specify extension add --from https://github.com/org/spec-kit-ext/archive/refs/tags/v1.0.0.zip
+specify extension add <extension-name> --from https://github.com/org/spec-kit-ext/archive/refs/tags/v1.0.0.zip
 ```
 
 ### Install from Local Directory (Development)
@@ -185,20 +187,35 @@ Provided commands:
    Check: .specify/extensions/jira/
 ```
 
+### Automatic Agent Skill Registration
+
+If your project uses a skills-based integration (e.g., `--integration claude`, `--integration codex`) or was initialized with `--integration-options="--skills"`, extension commands are **automatically registered as agent skills** during installation. This ensures that extensions are discoverable by agents that use the [agentskills.io](https://agentskills.io) skill specification.
+
+```text
+✓ Extension installed successfully!
+
+Jira Integration (v1.0.0)
+  ...
+
+✓ 3 agent skill(s) auto-registered
+```
+
+When an extension is removed, its corresponding skills are also cleaned up automatically. Pre-existing skills that were manually customized are never overwritten.
+
 ---
 
 ## Using Extensions
 
 ### Using Extension Commands
 
-Extensions add commands that appear in your AI agent (Claude Code):
+Extensions add commands that appear in your coding agent (Claude Code):
 
 ```text
 # In Claude Code
 > /speckit.jira.specstoissues
 
-# Or use short alias (if provided)
-> /speckit.specstoissues
+# Or use a namespaced alias (if provided)
+> /speckit.jira.sync
 ```
 
 ### Extension Configuration
@@ -385,6 +402,11 @@ settings:
   auto_execute_hooks: true
 
 # Hook configuration
+# Available events: before_specify, after_specify, before_plan, after_plan,
+#                   before_tasks, after_tasks, before_implement, after_implement,
+#                   before_analyze, after_analyze, before_checklist, after_checklist,
+#                   before_clarify, after_clarify, before_constitution, after_constitution,
+#                   before_taskstoissues, after_taskstoissues
 hooks:
   after_tasks:
     - extension: jira
@@ -400,26 +422,128 @@ In addition to extension-specific environment variables (`SPECKIT_{EXT_ID}_*`), 
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SPECKIT_CATALOG_URL`       | Override the extension catalog URL | GitHub-hosted catalog |
-| `GH_TOKEN` / `GITHUB_TOKEN` | GitHub API token for downloads     | None                  |
+| `SPECKIT_CATALOG_URL`       | Override the full catalog stack with a single URL (backward compat) | Built-in default stack |
+| `GH_TOKEN` / `GITHUB_TOKEN` | GitHub token for authenticated requests to GitHub-hosted URLs (`raw.githubusercontent.com`, `github.com`, `api.github.com`, `codeload.github.com`). Required when your catalog JSON or extension ZIPs are hosted in a private GitHub repository. | None |
 
 #### Example: Using a custom catalog for testing
 
 ```bash
-# Point to a local or alternative catalog
+# Point to a local or alternative catalog (replaces the full stack)
 export SPECKIT_CATALOG_URL="http://localhost:8000/catalog.json"
 
 # Or use a staging catalog
 export SPECKIT_CATALOG_URL="https://example.com/staging/catalog.json"
 ```
 
+#### Example: Using a private GitHub-hosted catalog
+
+```bash
+# Authenticate with a token (gh CLI, PAT, or GITHUB_TOKEN in CI)
+export GITHUB_TOKEN=$(gh auth token)
+
+# Search a private catalog added via `specify extension catalog add`
+specify extension search jira
+
+# Install from a private catalog
+specify extension add jira-sync
+```
+
+The token is attached automatically to requests targeting GitHub domains. Non-GitHub catalog URLs are always fetched without credentials.
+
 ---
+
+## Extension Catalogs
+
+Spec Kit uses a **catalog stack** — an ordered list of catalogs searched simultaneously. By default, two catalogs are active:
+
+| Priority | Catalog | Install Allowed | Purpose |
+|----------|---------|-----------------|---------|
+| 1 | `catalog.json` (default) | ✅ Yes | Curated extensions available for installation |
+| 2 | `catalog.community.json` (community) | ❌ No (discovery only) | Browse community extensions |
+
+### Listing Active Catalogs
+
+```bash
+specify extension catalog list
+```
+
+### Managing Catalogs via CLI
+
+You can view the main catalog management commands using `--help`:
+
+```text
+specify extension catalog --help
+
+ Usage: specify extension catalog [OPTIONS] COMMAND [ARGS]...
+
+ Manage extension catalogs
+╭─ Options ────────────────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                                      │
+╰──────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────╮
+│ list     List all active extension catalogs.                                     │
+│ add      Add a catalog to .specify/extension-catalogs.yml.                       │
+│ remove   Remove a catalog from .specify/extension-catalogs.yml.                  │
+╰──────────────────────────────────────────────────────────────────────────────────╯
+```
+
+### Adding a Catalog (Project-scoped)
+
+```bash
+# Add an internal catalog that allows installs
+specify extension catalog add \
+  --name "internal" \
+  --priority 2 \
+  --install-allowed \
+  https://internal.company.com/spec-kit/catalog.json
+
+# Add a discovery-only catalog
+specify extension catalog add \
+  --name "partner" \
+  --priority 5 \
+  https://partner.example.com/spec-kit/catalog.json
+```
+
+This creates or updates `.specify/extension-catalogs.yml`.
+
+### Removing a Catalog
+
+```bash
+specify extension catalog remove internal
+```
+
+### Manual Config File
+
+You can also edit `.specify/extension-catalogs.yml` directly:
+
+```yaml
+catalogs:
+  - name: "default"
+    url: "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json"
+    priority: 1
+    install_allowed: true
+    description: "Built-in catalog of installable extensions"
+
+  - name: "internal"
+    url: "https://internal.company.com/spec-kit/catalog.json"
+    priority: 2
+    install_allowed: true
+    description: "Internal company extensions"
+
+  - name: "community"
+    url: "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json"
+    priority: 3
+    install_allowed: false
+    description: "Community-contributed extensions (discovery only)"
+```
+
+A user-level equivalent lives at `~/.specify/extension-catalogs.yml`. Project-level config takes full precedence when it contains one or more catalog entries. An empty `catalogs: []` list falls back to built-in defaults.
 
 ## Organization Catalog Customization
 
-### Why the Default Catalog is Empty
+### Why Customize Your Catalog
 
-The default spec-kit catalog ships empty by design. This allows organizations to:
+Organizations customize their catalogs to:
 
 - **Control available extensions** - Curate which extensions your team can install
 - **Host private extensions** - Internal tools that shouldn't be public
@@ -497,24 +621,40 @@ Options for hosting your catalog:
 
 #### 3. Configure Your Environment
 
-##### Option A: Environment variable (recommended for CI/CD)
+##### Option A: Catalog stack config file (recommended)
+
+Add to `.specify/extension-catalogs.yml` in your project:
+
+```yaml
+catalogs:
+  - name: "my-org"
+    url: "https://your-org.com/spec-kit/catalog.json"
+    priority: 1
+    install_allowed: true
+```
+
+Or use the CLI:
+
+```bash
+specify extension catalog add \
+  --name "my-org" \
+  --install-allowed \
+  https://your-org.com/spec-kit/catalog.json
+```
+
+##### Option B: Environment variable (recommended for CI/CD, single-catalog)
 
 ```bash
 # In ~/.bashrc, ~/.zshrc, or CI pipeline
 export SPECKIT_CATALOG_URL="https://your-org.com/spec-kit/catalog.json"
 ```
 
-##### Option B: Per-project configuration
-
-Create `.env` or set in your shell before running spec-kit commands:
-
-```bash
-SPECKIT_CATALOG_URL="https://your-org.com/spec-kit/catalog.json" specify extension search
-```
-
 #### 4. Verify Configuration
 
 ```bash
+# List active catalogs
+specify extension catalog list
+
 # Search should now show your catalog's extensions
 specify extension search
 
@@ -614,7 +754,7 @@ You can still install extensions not in your catalog using `--from`:
 specify extension add jira
 
 # Direct URL (bypasses catalog)
-specify extension add --from https://github.com/someone/spec-kit-ext/archive/v1.0.0.zip
+specify extension add <extension-name> --from https://github.com/someone/spec-kit-ext/archive/v1.0.0.zip
 
 # Local development
 specify extension add --dev /path/to/extension
@@ -655,12 +795,12 @@ specify extension add --dev /path/to/extension
 
 ### Command Not Available
 
-**Issue**: Extension command not appearing in AI agent
+**Issue**: Extension command not appearing in coding agent
 
 **Solutions**:
 
 1. Check extension is enabled: `specify extension list`
-2. Restart AI agent (Claude Code)
+2. Restart coding agent (Claude Code)
 3. Check command file exists:
 
    ```bash
@@ -684,7 +824,7 @@ specify extension add --dev /path/to/extension
 2. Install older version of extension:
 
    ```bash
-   specify extension add --from https://github.com/org/ext/archive/v1.0.0.zip
+   specify extension add <extension-name> --from https://github.com/org/ext/archive/v1.0.0.zip
    ```
 
 ### MCP Tool Not Available
@@ -694,8 +834,8 @@ specify extension add --dev /path/to/extension
 **Solutions**:
 
 1. Check MCP server is installed
-2. Check AI agent MCP configuration
-3. Restart AI agent
+2. Check coding agent MCP configuration
+3. Restart coding agent
 4. Check extension requirements: `specify extension info jira`
 
 ### Permission Denied

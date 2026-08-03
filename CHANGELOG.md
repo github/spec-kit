@@ -1,82 +1,2525 @@
 # Changelog
 
-<!-- markdownlint-disable MD024 -->
+<!-- insert new changelog below this comment -->
 
-Recent changes to the Specify CLI and templates are documented here.
+## [0.15.1] - 2026-07-31
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### Changed
+
+- fix: escape Rich markup in `workflow resolve` output (#3879)
+- chore(deps): bump actions/stale from 10.4.0 to 11.0.0 (#3877)
+- chore(deps): bump actions/setup-python from 6.3.0 to 7.0.0 (#3876)
+- feat: support tar archives for installs (#3874)
+- fix: eliminate TOCTOU race in file unlink calls (#3819)
+- fix(scripts): tolerate an unusable integration.json in the Python helper (#3785)
+- fix(catalogs): validate the port in the shared catalog-URL validator, like its mirrors do (#3804)
+- feat(presets): add opt-in constitution-sync preset (#3873)
+- fix: reject non-object workflow caches (#3860)
+- Harden extension URL download cache against symlink and junction races (#3869)
+- fix: escape workflow step metadata (#3863)
+- [bug-fix] Fix bundle-update-force-mislead: add refresh() to DefaultPrimitiveInstaller (#3452)
+- fix: use chunked read for extension manifest hash (#3841)
+- fix: preserve unreadable event config files (#3861)
+- fix(scripts): use a .NET Framework-safe trim in the PowerShell init-dir resolver (#3872)
+- Add ContextForge MCP extension to community catalog (#3487)
+- fix: normalize non-UTF-8 integration manifests (#3862)
+- feat: bind gate verdict to workflow input via verdict_input (#3725)
+- docs: use absolute image URLs in README for PyPI rendering (#3867)
+- chore: release 0.15.0, begin 0.15.1.dev0 development (#3871)
+
+## [0.15.0] - 2026-07-30
+
+### Changed
+
+- Add yolo to community workflow catalog (#3864)
+- fix(workflows): guard the shell step's timeout check against OverflowError (#3865)
+- Add Intent Reconciliation extension to community catalog (#3858)
+- fix(workflows): validate prompt step 'timeout' like the shell step (#3847)
+- fix: add utf-8 encoding to registry file open calls (#3816)
+- fix: eliminate TOCTOU race in file unlink calls (#3815)
+- test(workflows): name the condition-rejection tests for the real boundary (#3808)
+- fix: eliminate TOCTOU race in file unlink calls (#3811)
+- fix(presets): escape user-supplied catalog name/URL in add/remove output (#3806)
+- fix: add missing utf-8 encoding to registry file open calls (#3810)
+- [bug-fix] Fix upgrade-overwrites-copilot-skills: pass force=True to extension skill re-registration after upgrade (#3853)
+- fix(integrations): don't abort uninstall when the manifest can't be deleted (#3805)
+- test(extensions): update stale manifest validation message assertion (#3859)
+- fix(agents): coerce a non-string description in TOML command rendering (#3799)
+- fix(workflows): make security requirements sync deterministic (#3832)
+- fix(cli): render the literal [suffix] in --tag help and rejection message (#3800)
+- fix(integrations): preserve non-UTF-8 VS Code settings (#3833)
+- fix(bundler): treat an explicit-null manifest field as missing, not the text "None" (#3798)
+- feat: first-class agent-native runtime hooks for integrations (#3704)
+- fix(extensions): guard the required manifest sections so one bad extension cannot break `extension list` (#3797)
+- fix(presets): escape installed preset metadata in Rich output (#3826)
+- fix(workflows): dispatch prompt steps via the resolved executable (#3793)
+- chore: release 0.14.4, begin 0.14.5.dev0 development (#3850)
+
+## [0.14.4] - 2026-07-29
+
+### Changed
+
+- fix(bundler): degrade non-UTF-8 config reads into BundlerError (#3784)
+- fix(workflows): escape the step-progress line so step ids render (and `/` stops failing the run) (#3783)
+- Update Agent Parity Governance preset to v0.4.1 (#3830)
+- fix(integrations): reject empty --commands-dir in generic raw_options (#3714)
+- fix(presets): guard non-list/non-mapping provides.templates in PresetManifest (#3712)
+- fix(auth): resolve az via shutil.which so azure-cli token works on Windows (#3709)
+- fix(workflows): reject falsy non-mapping workflow-catalogs.yml top level (#3707)
+- fix(integrations): render hyphenated /speckit-<name> for Droid (always-slash agent) (#3688)
+- [preset] Update A11Y Governance preset to v0.4.2 (#3828)
+- [preset] Update Parallel Autonomous Run Governance to v0.2.4 (#3825)
+- fix: correct Optional type annotation for _resolved_dir parameter (#3801)
+- fix: add timeout to prompt step subprocess execution (#3768)
+- fix: handle tags containing / in GitHub release asset URL resolution (#3767)
+- fix(presets): escape catalog metadata in discovery output (#3773)
+- Update Autonomous Run Governance preset to v0.3.3 (#3823)
+- fix: use bounded read for integration catalog HTTP responses (#3763)
+- docs: add Simplified Chinese translation of README (#3740)
+- Update Intake Sequencing Governance preset to v0.2.2 (#3809)
+- fix(workflows): reject non-string/non-boolean 'condition' in if/while/do-while steps (#3706)
+- fix(bundle): escape catalog metadata in discovery output (#3774)
+- fix(workflows,extensions): tolerate non-list catalog tags in search/info display (#3770)
+- fix: correct nullable resolved directory annotation (#3771)
+- fix(presets): tolerate non-string and non-list catalog fields in preset search/info (#3769)
+- fix(integrations): escape catalog metadata in discovery output (#3772)
+- Update Verify Review Ship extension to v0.4.2 (#3792)
+- fix(integrations): preserve native skill invocation prefixes (#3663)
+- Update Intake Review Governance preset to v0.2.0 (#3796)
+- fix(constitution): stop propagating guidance into templates (#3737) (#3790)
+- chore: release 0.14.3, begin 0.14.4.dev0 development (#3795)
+
+## [0.14.3] - 2026-07-28
+
+### Changed
+
+- Update Intake Authoring Governance preset to v0.3.0 (#3788)
+- fix(copilot): honor preset command template overrides (#3592)
+- clarify: require real interrogatives, ban topic-label questions (#3745)
+- feat: Add Alquimia AI integration (#2734)
+- harden: secure extension and preset archive downloads (#3141)
+- fix: correct Optional type annotation for context_note parameter (#3765)
+- Update AGENTS.md (#2626)
+- fix(extensions): tolerate non-string catalog name in display-name lookup (#3747)
+- fix(presets): coerce non-string catalog tags before joining (#3743)
+- fix: register extensions for the active integration only (#3459)
+- fix(extensions): tolerate non-string tags in catalog search (#3746)
+- fix(extensions): hyphenate command names in 'extension info' listing (#3744)
+- fix(workflows): escape remaining untrusted fields in `workflow info` (#3731)
+- fix(extensions): guard non-numeric catalog downloads in search/info rendering (#3710)
+- fix(agent-context): apply default markers when config markers are blank (bash) (#3736)
+- fix: escape Rich markup in catalog list output (#3738)
+- fix(workflows): guard non-mapping 'workflow:' block in WorkflowDefinition (#3694)
+- fix(bundler): reject unsupported schema_version in _merge_config (align readers) (#3711)
+- Update Linear Weave extension to v1.0.1 (#3762)
+- Add Intake Sequencing Governance preset to community catalog (#3761)
+- Update Quality Gates (Enforcement Layer) extension to v0.3.3 (#3760)
+- Update Verify Review Ship extension to v0.4.1 (#3759)
+- fix(agent-context): discover nested plans in Python port mtime fallback (#3734)
+- fix(extensions): make shipped scripts executable after install (#3723)
+- docs(assess): clarify the pipeline works on an empty project (#3732)
+- chore: release 0.14.2, begin 0.14.3.dev0 development (#3730)
+
+## [0.14.2] - 2026-07-24
+
+### Changed
+
+- Update Intake Review Governance preset to v0.1.1 (#3729)
+- Update Verify Review Ship extension to v0.3.0 (#3728)
+- Update Architecture Guard extension to v1.13.1 (#3724)
+- docs(upgrade): Claude Code files live in .claude/skills, not .claude/commands (#3708)
+- fix(kilocode): install commands under .kilo/commands (#3672)
+- fix(auth): normalize whitespace in auth-config env-var/id references at store time (#3691)
+- fix(workflows): guard non-mapping 'inputs:' block in engine._resolve_inputs (#3696)
+- Update Intake Authoring Governance preset to v0.2.0 (#3721)
+- docs: clarify shell-step interpolation safety (#3719)
+- [extension] Add Blueprint Index — Living Architecture Map extension to community catalog (#3718)
+- fix(github-http): return None on malformed host in resolve_github_release_asset_api_url (#3715)
+- fix(integrations): declare PiIntegration multi_install_safe (#3652)
+- harden: remove shell parameter from run_command() (#3716)
+- chore(deps): bump github/codeql-action/init from 4.37.1 to 4.37.3 (#3699)
+- fix: auto-correct conflicting feature prefixes (#1829)
+- chore(deps): bump actions/checkout from 6.0.3 to 7.0.1 (#3703)
+- chore(deps): bump DavidAnson/markdownlint-cli2-action (#3702)
+- chore(deps): bump actions/setup-node from 6.4.0 to 7.0.0 (#3701)
+- chore(deps): bump astral-sh/setup-uv from 8.3.2 to 9.0.0 (#3700)
+- chore: release 0.14.1, begin 0.14.2.dev0 development (#3698)
+
+## [0.14.1] - 2026-07-23
+
+### Changed
+
+- Update Agent Parity Governance preset to v0.4.0 (#3697)
+- fix(bundler): InstallResult.changed counts uninstalled as a change (#3692)
+- [preset] Update Cross-Platform Governance preset to v0.2.1 (#3695)
+- Update A11Y Governance preset to v0.4.1 (#3693)
+- fix(workflows): escape step-graph brackets in `workflow info` so the type shows (#3690)
+- fix(workflows): filter parser rejects trailing tokens (fullmatch, not match) (#3689)
+- Update iSAQB Architecture Governance preset to v0.2.1 (#3687)
+- fix(extensions): parse SKILL.md on the --- delimiter line during removal (#3634)
+- fix(cli): guard lazy .hostname ValueError in extension/preset add --from (#3651)
+- Update Architecture Governance preset to v0.5.1 (#3686)
+- fix(bundler): reject a top-level non-mapping bundle-catalogs.yml in _merge_config (#3659)
+- Update Security Governance preset to v0.6.1 (#3685)
+- fix(integrations): declare OmpIntegration multi_install_safe (#3650)
+- feat(git-extension): add configurable Conventional Commit support (#3390) (#3413)
+- fix(extensions): hyphenate command names in the Forge post-install listing (#3669)
+- fix(bundler): reject falsy non-mapping requires/provides in CatalogEntry.from_dict (#3667)
+- fix(bundler): reject falsy non-list bundles/contributed_components in records (#3666)
+- Update Intake Authoring Governance preset to v0.1.1 (#3678)
+- docs(extensions): clarify agent-context README and add config examples (#3389)
+- chore: release 0.14.0, begin 0.14.1.dev0 development (#3677)
+
+## [0.14.0] - 2026-07-23
+
+### Changed
+
+- docs: add spec-kit-copilot to community friends (#3675)
+- fix(integrations): recompute invoke_separator from retained parsed_options (#3664)
+- fix(workflows): preserve intra-overlay order for multiple insert_after edits (#3662)
+- fix(bundler): reject falsy non-mapping requires/provides in manifest from_dict (#3661)
+- fix(bundler): dump_yaml writes literal UTF-8 (allow_unicode=True) (#3660)
+- fix(integrations): declare kiro-cli multi-install safe (#3477)
+- fix(git-extension): trim trailing whitespace before stripping commit-message quotes (#3673)
+- fix(bundler): order bundle members by canonical POSIX arcname (reproducible builds) (#3658)
+- fix(integrations): Cline overrides post_process_command_content (correct hook name) (#3657)
+- docs(workflows): gate step docstring lists the 'retry' on_reject behaviour (#3656)
+- fix: harden bounded reads and redirect validation (#3671)
+- fix(packaging): bundle scripts/python into the wheel core_pack (#3665) (#3670)
+- fix: bundle scripts/python in wheel so --script py works (#3665) (#3668)
+- docs(workflows): init step docstring lists the 'py' script type (#3655)
+- fix(integrations): declare LingmaIntegration multi_install_safe (#3654)
+- fix: guard constitution command against feature execution (#3646)
+- Fix duplicate step numbering in specify command (#3647)
+- docs(scripts): document the 'py' script type and sh/ps migration plan (#3284) (#3653)
+- harden: bound HTTP reads and enforce strict redirects (#3140)
+- chore: release 0.13.4, begin 0.13.5.dev0 development (#3649)
+
+## [0.13.4] - 2026-07-22
+
+### Changed
+
+- docs(concepts): document the spec-of-specs feature breakdown approach (#3648)
+- fix(scripts): git-ext PowerShell emits the '# To persist' SPECIFY_FEATURE hint (parity) (#3632)
+- fix(integrations): validate cached catalog shape before returning it (#3627)
+- fix(bundler): reject non-list 'catalogs' in bundle-catalogs.yml with a clean error (#3623)
+- fix(bundler): guard lazy .hostname ValueError in catalog add_source (#3644)
+- Add Intake Authoring Governance preset to community catalog (#3643)
+- feat: add Factory Droid CLI integration (#822) (#3587)
+- docs(installation): document the 'py' (Python) script type (#3640)
+- fix(init): show hyphenated /speckit-<name> in Next Steps for Forge projects (#3642)
+- fix(extensions): render hyphenated hook invocations for Forge projects (#3641)
+- fix(workflows): workflow add detects local YAML files case-insensitively (#3633)
+- fix(workflows): list-literal expression ignores trailing/empty commas (#3631)
+- fix(workflows): StepRegistry.add tolerates a corrupted non-dict existing entry (#3630)
+- fix(bundler): reject non-mapping 'integration' in a bundle manifest (#3629)
+- fix(workflows): command/prompt steps fail cleanly on a non-string integration (#3626)
+- docs(core): document the 'py' (Python) --script type in the init option table (#3625)
+- fix(workflows): gate prompt uses isdecimal() so a superscript digit doesn't crash (#3624)
+- fix(integrations): Cline dispatches hyphenated /speckit-<cmd> invocations (#3622)
+- docs(upgrade): document integration upgrade / extension update as the project-files upgrade path (#3326)
+- chore: release 0.13.3, begin 0.13.4.dev0 development (#3645)
+
+## [0.13.3] - 2026-07-22
+
+### Changed
+
+- fix(integrations): escape Rich markup in --integration-options error messages (#3458)
+- docs: document __SPECKIT_COMMAND_ token for portable cross-command references (#3503)
+- [preset] Add Parallel Autonomous Run Governance preset to community catalog (#3614)
+- docs(workflows): fix stale FanOutStep docstring claiming sequential-only execution (#3639)
+- [bundle] Add SicarioSpec Security & Governance Bundle to community catalog (#3636)
+- [preset] Update Autonomous Run Governance preset to v0.3.2 (#3615)
+- fix(workflows): validate every redirect hop when fetching workflow/step catalogs (#3637)
+- Add pipeline workflow to community catalog (#3338)
+- [extension] Add Linear Weave extension to community catalog (#3609)
+- docs: clarify hook priority validation semantics (#3594)
+- fix(workflows): reject a non-string 'integration'/'model' in command & prompt steps (#3597)
+- ci: add dependency audit workflow (#3138)
+- Add Intake Review Governance preset to community catalog (#3613)
+- fix(workflows): reject non-list input 'enum' instead of crashing (#3601)
+- chore: release 0.13.2, begin 0.13.3.dev0 development (#3617)
+
+## [0.13.2] - 2026-07-21
+
+### Changed
+
+- fix(workflows): reject a non-string 'command' in command-step (#3596)
+- fix(workflows): fail gate step loudly on a malformed 'options' (#3595)
+- fix(extensions): re-validate catalog URL after redirects (HTTPS parity/security) (#3524)
+- Add community bundle submission automation (#3553)
+- fix(presets): re-validate catalog URL after redirects (HTTPS parity/security) (#3523)
+- feat(scripts): port create-new-feature, setup-plan and setup-tasks to Python (#3386)
+- fix(agents): parse frontmatter on the --- delimiter line, not any --- substring (#3590)
+- [bug-fix] Fix reinstall-overwrites-kept-config: preserve config on plain reinstall after --keep-config (#3449)
+- feat: update Bob integration to skills-based layout for Bob 2.0 (#3415)
+- Update OKF Knowledge Bundle Generator to v0.3.0 (#3608)
+- Add Test Coverage Drift Control extension to community catalog (#3607)
+- chore: align ruff lint scope (#3139)
+- feat(workflows): WorkflowResolver standalone (PR 1) (#3557)
+- fix(extensions,presets): surface clean error on malformed download URL (#3577)
+- chore: release 0.13.1, begin 0.13.2.dev0 development (#3610)
+
+## [0.13.1] - 2026-07-21
+
+### Changed
+
+- fix(integrations): catch OverflowError on a `priority: .inf` in add/remove (#3589)
+- fix(workflows): reject bool / .inf catalog priority in workflow & step catalog loaders (#3526)
+- fix(catalogs): 'priority: .inf' yields a clean validation error instead of crashing (#3525)
+- docs(integrations): document the 'integration list --catalog' flag (#3530)
+- fix(workflows): fail fan-in loudly on a non-string wait_for entry (#3579)
+- fix(workflows): fail fan-out loudly on a truthy non-mapping step template (#3537)
+- fix(workflows): reject a non-string prompt in prompt-step validate() (#3582)
+- fix(workflows): route 'workflow status --json' errors to stderr (#3520)
+- fix(integrations): Forge dispatches hyphenated /speckit-<cmd> invocations (#3529)
+- chore: release 0.13.0, begin 0.13.1.dev0 development (#3588)
+
+## [0.13.0] - 2026-07-17
+
+### Changed
+
+- fix(auth): Azure DevOps az-CLI token acquisition returns None on undecodable output (#3527)
+- feat(extensions): add assess idea assessment pipeline extension (#3568)
+- fix(bundle): surface a clean BundlerError on a malformed bundle download URL (#3586)
+- Add OKF Knowledge Bundle Generator extension to community catalog (#3585)
+- Update Autonomous Run Governance preset to v0.2.2 (#3584)
+- docs: update extension guide PyPI upgrade guidance (#3578)
+- fix(presets): raise PresetValidationError, not raw ValueError, on malformed catalog URL (#3576)
+- chore(deps): bump github/codeql-action/init from 4.36.2 to 4.37.1 (#3571)
+- docs: align README hero tagline and subtitle with docs/index.md (#3581)
+- chore: release 0.12.18, begin 0.12.19.dev0 development (#3583)
+
+## [0.12.18] - 2026-07-17
+
+### Changed
+
+- chore(deps): bump actions/setup-dotnet from 5.4.0 to 6.0.0 (#3574)
+- chore(deps): bump actions/stale from 10.3.0 to 10.4.0 (#3572)
+- chore(deps): bump actions/setup-node from 6.4.0 to 7.0.0 (#3570)
+- docs: weave harness/SDLC framing into landing page (#3567)
+- docs: reframe SDD positioning, modernize install, and de-duplicate walkthroughs (#3565)
+- docs: document extensions.yml hook configuration (#3563)
+- docs: refresh landing page ecosystem stats (#3561)
+- [extension] Add Dotdog extension to community catalog (#3558)
+- Update DocGuard — CDD Enforcement to v0.33.0 (#3559)
+- chore: release 0.12.17, begin 0.12.18.dev0 development (#3560)
+
+## [0.12.17] - 2026-07-16
+
+### Changed
+
+- fix(extensions): resolve __SPECKIT_COMMAND tokens in auto-registered skills (#3544)
+- fix(workflows): fail if/switch steps on non-list branch instead of crashing (#3515)
+- feat(integrations): add Grok Build skills-based integration (#3535)
+- fix(extensions/git): reject negative -Number in create-new-feature-branch.ps1 (#3538)
+- test: cover preset constitution seeding through init CLI (#3297)
+- fix(integration): preserve ai_skills on `use` for skills-mode Copilot (#3550) (#3551)
+- [extension] Add Figma Starter extension to community catalog (#3547)
+- [extension] Add Spec-Kit BDD extension to community catalog (#3548)
+- [extension] Update Quality Gates (Enforcement Layer) extension to v0.3.2 (#3542)
+- chore: release 0.12.16, begin 0.12.17.dev0 development (#3549)
+
+## [0.12.16] - 2026-07-15
+
+### Changed
+
+- fix(workflows): raise a clear error, not a cryptic crash, on non-string filter args (#3522)
+- feat(workflows): expose workflow source directory to steps (#3469)
+- fix(workflows): fan-out max_concurrency .inf falls back to sequential, not crash (#3521)
+- Update Coding Standards Drift Control extension to v0.4.0 (#3540)
+- fix(presets): seed constitution from preset constitution-template (#3272) (#3276)
+- docs: add PyPI as second supported install route (#3425) (#3516)
+- fix(workflows): fail while/do-while steps on non-list steps instead of crashing (#3519)
+- Add PatchWarden Evidence Pack extension to community catalog (#3514)
+- feat(extensions): port git extension scripts to Python (#3400)
+- chore: release 0.12.15, begin 0.12.16.dev0 development (#3513)
+
+## [0.12.15] - 2026-07-14
+
+### Changed
+
+- Update Autonomous Run Governance preset to v0.1.4 (#3511)
+- fix(workflows): raise catalog error, not raw ValueError, on a malformed catalog URL (#3484)
+- fix(workflows): evaluate 'in'/'not in' safely on a non-iterable right operand (#3447) (#3468)
+- fix: add trailing newline to init-options.json output (#3509)
+- feat(workflows): align workflow CLI with extension command surface (#3419)
+- fix(extensions): stop env-var config leaking across prefix-colliding extension IDs (#3497)
+- fix(integrations): escape control characters in goose recipe YAML renderer (#3384)
+- [extension] Update DocGuard — CDD Enforcement extension to v0.32.0 (#3489)
+- [extension] Add Multi-Repo Branch Sync extension to community catalog (#3411)
+- chore: release 0.12.14, begin 0.12.15.dev0 development (#3506)
+
+## [0.12.14] - 2026-07-13
+
+### Changed
+
+- [extension] Add Spec Kit Memory extension to community catalog (#3455)
+- Add Test-First Governance preset to community catalog (#3504)
+- Add Autonomous Run Governance preset to community catalog (#3501)
+- fix(workflows): validate command step input/options are mappings (#3262)
+- fix(presets): resolve() honors manifest-declared file: for installed presets (#3351)
+- fix(init): don't block on confirmation for 'init --here' without a TTY (#3236)
+- [extension] Add Quality Gates (Enforcement Layer) extension to community catalog (#3431)
+- fix(integrations): exit cleanly on unbalanced quote in --integration-options (#3457) (#3466)
+- fix(integrations): declare kiro-cli multi-install safe (#3471) (#3485)
+- fix(workflows): fail fan-in step on non-list wait_for instead of crashing (#3482)
+- chore: release 0.12.13, begin 0.12.14.dev0 development (#3498)
+
+## [0.12.13] - 2026-07-13
+
+### Changed
+
+- fix(workflows): fail switch step on non-mapping cases instead of crashing (#3481)
+- Cleanup agent-file-template.md (#2579)
+- fix: mark Kiro integration as multi-install safe (#3472)
+- fix: rewrite extension-relative subdir paths in generated command bodies (#3444)
+- fix(templates): point constitution sync checklist at installed command files (#3418)
+- feat(workflows): make shell step timeout configurable (#3327) (#3328)
+- docs: clarify that release tags keep the leading v prefix (#3463)
+- fix(workflows): don't crash on membership test against a non-iterable (#3448)
+- fix(workflows): if-step validate accepts falsy non-list else (#3264)
+- chore: release 0.12.12, begin 0.12.13.dev0 development (#3490)
+
+## [0.12.12] - 2026-07-13
+
+### Changed
+
+- fix(extensions): set-priority repairs corrupted boolean priority (#3268)
+- fix(presets): set-priority repairs corrupted boolean priority (#3269)
+- fix(workflows): engine loop cap ignores bool max_iterations (#3270)
+- docs(bundles): document --integration on 'bundle update' (#3271)
+- fix(workflows): harden catalog.py against mis-shaped registry & non-string fields (#3375)
+- Add Verify Review Ship extension to community catalog (#3450)
+- fix(bundle): reject file:// / local download_url — catalog URLs are HTTPS-only (#3344)
+- fix(extensions): handle prefix-colliding env vars in _get_env_config (#3350)
+- docs: document copilot skills mode (--skills) and markdown deprecation (#3313)
+- chore: release 0.12.11, begin 0.12.12.dev0 development (#3460)
+
+## [0.12.11] - 2026-07-10
+
+### Changed
+
+- fix(agent-context): discover nested plan.md in scoped layouts (#3024) (#3301)
+- fix(auth): return no matches, not raw ValueError, for a malformed URL (#3437)
+- fix(catalogs): raise catalog error, not raw ValueError, on a malformed URL (#3435)
+- fix(bundler): raise BundlerError, not raw ValueError, on a malformed catalog URL (#3433)
+- chore: add pre-commit config and fix trailing whitespace/end-of-file (#3430)
+- Add EARS Requirements Syntax extension to community catalog (#3407)
+- Add Spec Kit Figma extension to community catalog (#3408)
+- fix(workflows): report validation errors instead of crashing on non-string workflow.yml scalars (#3421)
+- fix(templates): remove self-referencing path in plan-template.md note (#3417)
+- chore: release 0.12.10, begin 0.12.11.dev0 development (#3453)
+
+## [0.12.10] - 2026-07-10
+
+### Changed
+
+- chore(deps): bump astral-sh/setup-uv from 8.2.0 to 8.3.2 (#3439)
+- chore(deps): bump DavidAnson/markdownlint-cli2-action (#3438)
+- fix(templates): correct phase numbering in plan.md (#3416)
+- fix(git-ext): honor explicit -Number 0 in PowerShell branch creation (#3412)
+- docs: add 'spectatui' entry to friends.md (#3362)
+- test: pin interpreter probe so py-template render test passes on Windows (#3428)
+- feat(workflows): make shell step timeout configurable (#3404)
+- fix: find plans in nested spec directories (#3405)
+- feat(templates): add py: lines to command templates' scripts frontmatter (#3403)
+- chore: release 0.12.9, begin 0.12.10.dev0 development (#3426)
+
+## [0.12.9] - 2026-07-09
+
+### Changed
+
+- fix(integrations): skip Windows Store python3 alias stub in resolve_python_interpreter (#3385)
+- fix(integrations): escape control characters in SKILL.md frontmatter (#3399)
+- fix(workflows): apply chained expression filters left-to-right (#3339)
+- fix(scripts): resolve invoke_separator by parse success, not python3 availability (#3304) (#3320)
+- fix(shared-infra): refresh_shared_templates preserves recovered user files (#3378)
+- fix(agents): resolve skill placeholders in Goose (yaml) command output (#3374)
+- fix(bundler): enforce version pin on bundled preset/extension installs (#3377)
+- Update Golden Demo extension to v0.3.0 (#3394)
+- test: isolate integration test home (#3144)
+- chore: release 0.12.8, begin 0.12.9.dev0 development (#3410)
+
+## [0.12.8] - 2026-07-08
+
+### Changed
+
+- [extension] Add LLM Wiki extension to community catalog (#3361)
+- Docs: Document missing CLI flags and integrations (#3182)
+- Docs: Remove Cursor from CLI check list in README (#3184)
+- feat(extensions): port update-agent-context to Python (#3387)
+- fix(scripts): fall through to grep/sed when python3 is a broken stub in feature.json parser (#3312)
+- fix(toml): escape control characters so generated command files parse (#3341)
+- fix(cli): exit cleanly on malformed IPv6 URLs in `extension`/`preset`/`workflow add` (#3369)
+- fix(github-http): return None on malformed GHES port instead of raising (#3379)
+- fix(integrations): guard _sha256 against unreadable managed files (#3376)
+- chore: release 0.12.7, begin 0.12.8.dev0 development (#3398)
+
+## [0.12.7] - 2026-07-07
+
+### Changed
+
+- fix(bundler): bundle update uninstalls components dropped by new version (#3353)
+- fix(workflows): route run/resume errors to stderr under --json (#3352)
+- fix(workflows): fan-in validate() rejects non-mapping output (#3349)
+- fix(workflows): shell step validate() rejects non-string run (#3348)
+- fix(integrations): agy honors SPECKIT_INTEGRATION_AGY_EXTRA_ARGS (#3347)
+- Add Orchestration Task Context Management extension to community catalog (#3372)
+- Update DocGuard — CDD Enforcement extension to v0.30.0 (#3371)
+- Update Ripple extension to v1.1.0 (#3370)
+- feat(integrations): generalize post-processing to all format types (#3311)
+- chore: release 0.12.6, begin 0.12.7.dev0 development (#3393)
+
+## [0.12.6] - 2026-07-07
+
+### Changed
+
+- fix(bundler): validate catalog URLs in `catalog add` (HTTPS-only, require host) (#3367)
+- Update Ralph Loop extension to v1.2.1 (#3365)
+- fix extension-local script path rewriting (#3364)
+- Add Charter extension to community catalog (#3363)
+- feat(scripts): add Python check-prerequisites PoC (#3302)
+- test: reduce registry manifest test repetition (#3146)
+- fix(integrations): hermes honors SPECKIT_INTEGRATION_HERMES_EXTRA_ARGS (#3346)
+- fix(extensions): coerce non-mapping YAML config roots to {} in ConfigManager (#3345)
+- fix(yaml): pin goose recipe prompt block-scalar indentation (#3343)
+- chore: release 0.12.5, begin 0.12.6.dev0 development (#3381)
+
+## [0.12.5] - 2026-07-06
+
+### Changed
+
+- fix(workflows): match gate reject option case-insensitively (#3335)
+- fix(bundler): reject host-less catalog URLs in adapters (use hostname, not netloc) (#3333)
+- fix(bundler): resolve catalog search at highest-precedence source before filtering (#3331)
+- fix(workflows): compare non-numeric strings lexicographically instead of returning False (#3323)
+- fix(workflows): quote-aware interpolation so a literal }} in a filter arg doesn't break multi-expression templates (#3307)
+- Support namespaced git feature branch templates (#3293)
+- chore(deps): bump actions/setup-dotnet from 5.3.0 to 5.4.0 (#3315)
+- fix(integrations): cursor-agent honors executable/extra-args env overrides (#3265)
+- docs: drop stale kimi KIMI.md->AGENTS.md migration note (#3291)
+- chore: release 0.12.4, begin 0.12.5.dev0 development (#3305)
+
+## [0.12.4] - 2026-07-02
+
+### Changed
+
+- feat(cli): add `py` script type & Python interpreter resolution (#3278) (#3285)
+- fix: resolve GitHub release asset API URL for private repo bundle downloads (#3136)
+- [extension] Add Analytics extension to community catalog (#3296)
+- fix: interpolate multi-expression templates instead of returning None (#3208) (#3228)
+- feat(cli): honor SPECIFY_INIT_DIR in the specify CLI project resolver (#3186)
+- fix(extensions): resolve core-command dirs via _assets helpers (#3274) (#3287)
+- fix: fall back to feature dir basename for empty CURRENT_BRANCH (#3026) (#3229)
+- feat(bug-fix): add label-driven bug-fix agentic workflow (#3258)
+- feat(workflows): add label-driven bug-test workflow (#3239) (#3257)
+- chore: release 0.12.3, begin 0.12.4.dev0 development (#3295)
+
+## [0.12.3] - 2026-07-01
+
+### Changed
+
+- feat(copilot): warn before skills default rollout (#3256)
+- Add June 2026 newsletter (#3289)
+- docs(toc): add Bundles and Authentication to the Reference nav (#3267)
+- fix(integrations): add zed to discovery catalog.json (#3266)
+- fix(integrations): cline hook note collapses onto instruction at EOF (#3263)
+- refactor: move workflow command handlers to workflows/_commands.py (PR-8/8) (#3159)
+- chore: retire Roo Code integration — extension shut down (#3167) (#3212)
+- fix(bundle): allow 'catalog remove' by the same relative path used to add (#3242)
+- fix(workflows): reject bool max_iterations in while/do-while validation (#3237)
+- fix: allow prerelease spec-kit versions in compatibility checks (#2695)
+- chore: release 0.12.2, begin 0.12.3.dev0 development (#3259)
+
+## [0.12.2] - 2026-06-30
+
+### Changed
+
+- fix(scripts): portable uppercase for branch-name acronym retention (bash 3.2) (#3192)
+- chore: retire Windsurf integration — absorbed into Cognition Devin (#3168) (#3213)
+- [extension] Update Intake extension to v0.1.3 (#3254)
+- feat(workflows): honor max_concurrency in fan-out via a bounded thread pool (#3224)
+- Update Architecture Workflow extension to v1.2.2 (#3255)
+- Add Repository Governance extension to community catalog (#3252)
+- Update Workflow Preset to v1.3.11 (#3251)
+- chore: retire iflow integration — product discontinued (#3166) (#3211)
+- docs(codebuddy): fix dead install links and CodeBuddy capitalization (#3172) (#3216)
+- fix: reject host-less catalog URLs in base and preset validators (#3209) (#3227)
+- chore: release 0.12.1, begin 0.12.2.dev0 development (#3253)
+
+## [0.12.1] - 2026-06-30
+
+### Changed
+
+- chore: align CI Python matrix with devguide lifecycle + fix bash 3.2 portability (#3244)
+- fix: stop check-prerequisites --paths-only from writing feature.json (#3025) (#3190)
+- docs: document integration catalog subcommands (#3206)
+- fix(scripts): use ASCII [OK] marker in initialize-repo.sh (parity with PowerShell twin) (#3231)
+- docs: document integration `search`/`info`/`scaffold` subcommands (#3174) (#3194)
+- docs: remove Cursor from `specify check` agent list (#3178) (#3193)
+- fix(goose): repoint install_url and docs to goose-docs.ai (#3171) (#3215)
+- fix(scripts): route 'Plan template not found' per --json in setup-plan.ps1 (parity with bash) (#3241)
+- fix(bundle): send command errors to stderr so --json stdout stays parseable (#3235)
+- chore: release 0.12.0, begin 0.12.1.dev0 development (#3243)
+
+## [0.12.0] - 2026-06-29
+
+### Changed
+
+- feat: make agent-context extension a full opt-in (#3097)
+- docs(workflows): add the built-in 'init' step type to the Step Types table (#3234)
+- fix(workflows): gate validate() must not crash on non-string options (#3233)
+- fix(workflows): make pipe-filter detection quote-aware in expressions (#3232)
+- fix(workflows): reject a fan-in wait_for that names an unknown step at validation (#3225)
+- fix(scripts): warn when spec template is missing in create-new-feature.ps1 (parity with bash) (#3230)
+- fix(scripts): count subdirectory-only dirs as non-empty in PowerShell (parity with bash) (#3137)
+- fix(scripts): drop HAS_GIT from PowerShell git-extension output (parity with bash) (#3195)
+- Update Product Spec Extension to v1.0.1 (#3226)
+- chore: release 0.11.10, begin 0.11.11.dev0 development (#3240)
+
+## [0.11.10] - 2026-06-29
+
+### Changed
+
+- fix(extensions): apply GHES auth and resolve release assets for `extension add --from` (#3217)
+- fix(pi): repoint install_url to @earendil-works/pi-coding-agent (#3169) (#3214)
+- fix(catalogs): reject host-less catalog URLs in base and preset validators (#3210)
+- fix: update CodeBuddy install docs URL (#3187)
+- fix(workflows): reject infinite number-input default instead of raising OverflowError (#3199)
+- fix(scripts): emit 'Copied plan template' status in setup-plan.ps1 (parity with bash) (#3198)
+- fix(workflows): make expression operator/literal parsing quote-aware (#3197)
+- fix(scripts): honor explicit -Number 0 in PowerShell create-new-feature (parity with bash) (#3196)
+- Add community bundle submission path (#3162)
+- Docs: Document /speckit.converge command (#3181)
+- chore: release 0.11.9, begin 0.11.10.dev0 development (#3189)
+
+## [0.11.9] - 2026-06-26
+
+### Changed
+
+- Docs: add cline and zcode to multi-install-safe table (#3180)
+- Docs: document missing flags --force and --refresh-shared-infra (#3179)
+- fix(claude): stop forking /speckit-analyze to prevent long-session freezes (#3188)
+- fix: derive plan path from feature.json in update-agent-context (#3069)
+- fix(catalog): companion → README docs, version-pinned download URL, v0.11.0, refreshed tags (#2954)
+- chore(deps): bump actions/setup-python from 6.2.0 to 6.3.0 (#3173)
+- Update SicarioSpec Core preset to v0.5.1 (#3165)
+- fix(extensions,presets,workflows): resolve private GHES release assets via /api/v3 (#3157)
+- Update preset composition strategy reference (#3143)
+- fix(scripts): keep PowerShell branch-name acronym match case-sensitive (parity with bash) (#3129)
+- fix(extensions): tell agent to run mandatory hooks, not just emit the directive (#2901)
+- Point sicario-core docs to preset README (#3120)
+- chore: release 0.11.8, begin 0.11.9.dev0 development (#3156)
+
+## [0.11.8] - 2026-06-24
+
+### Changed
+
+- docs: add SpecKit Assistant npm package to Community Friends (#3142)
+- Require preset-usage README with Spec Kit CLI syntax in preset submissions (#3104)
+- [extension] Update Jira Integration (Sync Engine) extension to v0.4.0 (#3152)
+- Add Spec Roadmap extension to community catalog (#3153)
+- feat(integration): update Kimi integration for Kimi Code CLI (#2979)
+- [extension] Add Golden Demo extension to community catalog (#3151)
+- docs: run /speckit.checklist after /speckit.plan in quickstart (#3108)
+- fix(workflows): preserve commas inside quoted list-literal elements (#3134)
+- ci: pin actions to commit SHAs and add shellcheck (#3126)
+- chore: release 0.11.7, begin 0.11.8.dev0 development (#3154)
+
+## [0.11.7] - 2026-06-24
+
+### Changed
+
+- feat(extensions): verify catalog archive sha256 before install (#3080)
+- fix(workflows): validate requires keys and reject phantom permissions gate (#3079)
+- fix(scripts): use case-sensitive match for acronym retention in PS branch names (#3130)
+- feat(integrations): add omp support (#3107)
+- fix: render valid TOML when a command body contains backslashes (#3135)
+- harden: reject shell=True in run_command (#3132)
+- docs: add monorepo guide (#3084)
+- fix(scripts): send check-prerequisites.ps1 errors to stderr (#3123)
+- fix: write Codex dev skills as files (#2988)
+- chore: release 0.11.6, begin 0.11.7.dev0 development (#3121)
+
+## [0.11.6] - 2026-06-23
+
+### Changed
+
+- [extension] Update Spec Kit Preview extension to v1.1.0 and sync Firebender agent lists (#3116)
+- Add Spec Kit Discovery Extension to community catalog (#3119)
+- Update Architecture Workflow extension to v1.2.1 (#3118)
+- docs: clarify project-defined constitution articles (#2994)
+- Add Intake extension to community catalog (#3117)
+- feat: add Firebender integration (Android Studio / IntelliJ) (#3077)
+- Update DocGuard — CDD Enforcement extension to v0.28.0 (#3115)
+- chore: sync issue template agent lists (#3052)
+- fix(shared-infra): remove stale managed scripts the core no longer ships (#3076) (#3098)
+- chore: release 0.11.5, begin 0.11.6.dev0 development (#3105)
+
+## [0.11.5] - 2026-06-22
+
+### Changed
+
+- fix: register enabled extensions for agent on integration use/upgrade (#2949)
+- Add SicarioSpec Core preset to community catalog (#3102)
+- Update Game Narrative Writing preset to v1.1.0 (#3099)
+- feat: add PyPI publishing workflow and readme metadata (#2915)
+- refactor: move extension command handlers to extensions/_commands.py (PR-7/8) (#3014)
+- feat: add ZCode (Z.AI) integration (#3063)
+- fix(agent-context): support multiple context files safely (#2969)
+- Update DocGuard — CDD Enforcement extension to v0.27.0 (#3094)
+- fix(presets): use _repo_root() for bundled-core source-checkout fallback (#3086) (#3091)
+- chore: release 0.11.4, begin 0.11.5.dev0 development (#3092)
+
+## [0.11.4] - 2026-06-22
+
+### Changed
+
+- [extension] Add Tasks to GitHub Project extension to community catalog (#3090)
+- Update Linear Integration extension to v0.7.0 (#3089)
+- fix: fail loudly on an unknown workflow expression filter (#3074)
+- fix: anchor lib/ and lib64/ patterns to repo root in .gitignore (#3083)
+- fix(build): include specify_cli.bundler.lib in built distribution (#3085)
+- Harden command registration path handling (#3088)
+- fix(presets): preserve argument-hint in preset SKILL.md generation (#2978)
+- feat: surface gate detail in the workflow run/resume --json payload (#2965)
+- feat: add `specify bundle` command (#3070)
+- chore: release 0.11.3, begin 0.11.4.dev0 development (#3072)
+
+## [0.11.3] - 2026-06-19
+
+### Changed
+
+- docs: strengthen agent disclosure to cover commits and per-round comments (#3071)
+- fix: isolate per-extension failures so one bad extension can't drop the rest (#2951)
+- fix(taskstoissues): skip tasks that already have a GitHub issue (#2992)
+- feat(scripts): add SPECIFY_INIT_DIR to target a member project from the repo root (#2892)
+- Update Multi-Model Review extension to v0.1.2 (#3066)
+- chore(deps): bump actions/checkout from 6.0.3 to 7.0.0 (#3064)
+- feat(claude): run /analyze in a forked subagent (#2511)
+- fix: count worktree branches in git extension numbering (#3054)
+- Add Token Economy extension to community catalog (#3049)
+- chore: release 0.11.2, begin 0.11.3.dev0 development (#3059)
+
+## [0.11.2] - 2026-06-18
+
+### Changed
+
+- Update Linear Integration extension to v0.6.0 (#3047)
+- fix: align community submission workflows with bug-assess label trigger (#3046)
+- fix(bug-assess): recompile lock so github guard repos is 'all' (#3036)
+- fix(bug-assess): set min-integrity: none to allow reading external user issues (#3030)
+- feat: add bug-assess agentic workflow (#3023)
+- feat: add /speckit.converge command (#3001)
+- fix: preserve .vscode/settings.json and script +x bit on integration upgrade (#3020)
+- feat(workflows): add from_json expression filter (#2961)
+- Add `init` workflow step to bootstrap projects like `specify init` (#2838)
+- chore: release 0.11.1, begin 0.11.2.dev0 development (#3022)
+
+## [0.11.1] - 2026-06-17
+
+### Changed
+
+- chore: ignore Copilot dogfooding scaffolding in .gitignore (#3019)
+- docs: clarify Taskify specify command (#3016)
+- docs: document evolving specs in existing projects (#2902)
+- feat(workflows): opt-in output_format: json exposes parsed shell stdout as output.data (#2963)
+- fix: non-zero exit code when a workflow run ends failed or aborted (#2959)
+- fix(skills): preserve non-ASCII characters in skill frontmatter (#2917)
+- fix: prevent extension self-install from deleting source dir (#2990) (#2991)
+- fix: disable Rich Live transient mode on Windows to prevent PS 5.1 hang (#2938)
+- Update a11y-governance preset to v0.4.0 (#2981)
+- chore: release 0.11.0, begin 0.11.1.dev0 development (#3012)
+
+## [0.11.0] - 2026-06-16
+
+### Changed
+
+- Add workflow step catalog — community-installable step types (#2394)
+- feat(dev): add integration scaffolder (#2685)
+- Add Command Density preset to community catalog (#3006)
+- fix(tests): don't run PowerShell tests via WSL-interop powershell.exe (#2971)
+- Add Zed integration (#2780)
+- Update architecture-governance preset to v0.5.0 (#2929)
+- Update Superpowers Implementation Bridge extension to v1.1.0 (#3011)
+- Update isaqb-architecture-governance preset to v0.2.0 (#2984)
+- Update security-governance preset to v0.6.0 (#2932)
+- chore: update CITATION.cff to v0.10.2 (2026-06-11) (#2966)
+- chore: release 0.10.4, begin 0.10.5.dev0 development (#3010)
+
+## [0.10.4] - 2026-06-16
+
+### Changed
+
+- fix: fail loudly when a fan-out 'items' expression does not resolve to a list (#2957)
+- refactor: move preset command handlers to presets/_commands.py (PR-6/8) (#2826)
+- Update agent-parity-governance preset to v0.3.0 (#2982)
+- Update cross-platform-governance preset to v0.2.0 (#2983)
+- Add Data Model Diagram extension to community catalog (#2922)
+- Add Spec Kit TLDR extension to community catalog (#3007)
+- docs: add guide for handling complex features (#3004)
+- Add Loop Engineering extension to community catalog (#3002)
+- Update MemoryLint extension to v1.5.1 (#3000)
+- chore: release 0.10.3, begin 0.10.4.dev0 development (#2999)
+
+## [0.10.3] - 2026-06-16
+
+### Changed
+
+- Update Superpowers Bridge extension to v1.6.0 (#2998)
+- Add Improve Extension to community catalog (#2997)
+- Update Product Forge extension to v1.7.0 (#2996)
+- Update Linear Integration extension to v0.5.0 (#2995)
+- Update Superpowers Implementation Bridge extension to v1.0.3 (#2993)
+- Update Ralph community extension to v1.1.1 (#2861)
+- Update Linear Integration extension to v0.4.0 (#2942)
+- Update DocGuard — CDD Enforcement to v0.26.0 (#2941)
+- Add SpecKit Companion extension to community catalog (#2937)
+- chore: release 0.10.2, begin 0.10.3.dev0 development (#2936)
+
+## [0.10.2] - 2026-06-11
+
+### Changed
+
+- Add Research Harness extension to community catalog (#2935)
+- Add Coding Standards Drift Control extension to community catalog (#2934)
+- Add Spec Trace extension to community catalog (#2527)
+- fix(extensions): preserve argument-hint in extension Claude SKILL.md (#2916)
+- fix(presets): harden preset URL installs against unsafe redirects (#2911)
+- fix: skip recovered files during refresh_managed overwrite check (#2918) (#2919)
+- Update multi-model-review extension to v0.1.1 (#2900)
+- feat: add category and effect as first-class fields in extension schema (#2899)
+- chore(catalog): add Jira Integration (Sync Engine) extension (#2895)
+- chore: release 0.10.1, begin 0.10.2.dev0 development (#2910)
+
+## [0.10.1] - 2026-06-09
+
+### Changed
+
+- Update DocGuard — CDD Enforcement extension to v0.25.1 (#2909)
+- Update a11y-governance preset to v0.3.0 (#2867)
+- docs: document spec persistence models (#2856)
+- chore(catalog): bump Linear Integration to v0.3.0 (repo renamed to spec-kit-linear-sync) (#2893)
+- chore: update DocGuard extension to v0.25.0 (#2707)
+- chore: remove unused open_github_url/_StripAuthOnRedirect from _github_http.py (#2883)
+- fix(catalogs): validate extension and preset catalog payload shape (#2621)
+- feat(integration): add status reporting (#2674)
+- chore: release 0.10.0, begin 0.10.1.dev0 development (#2904)
+
+## [0.10.0] - 2026-06-09
+
+### Changed
+
+- feat: make git extension opt-in and remove --no-git at v0.10.0 (#2873)
+- [Preset] UpdateFiction book writing v1.9.0 - Illustration support (#2821)
+- test(workflows): cover executable override fallback preflight (#2843)
+- Add GitHub Copilot CLI guidance to readme (#2891)
+- Update Security Review extension to v1.5.3 (#2898)
+- Update Architecture Guard extension to v1.8.17 (#2897)
+- feat(extensions): per-event hook lists with priority ordering (#2798)
+- feat!: remove legacy --ai, --ai-commands-dir, and --ai-skills flags (0.10.0) (#2872)
+- chore: release 0.9.5, begin 0.9.6.dev0 development (#2875)
+
+## [0.9.5] - 2026-06-05
+
+### Changed
+
+- feat(extensions): add bundled bug triage workflow extension (#2871)
+- fix: resolve GitHub release asset API URL for private repo preset and workflow downloads (#2855)
+- chore(deps): bump github/gh-aw-actions from 0.77.0 to 0.78.1 (#2860)
+- chore(deps): bump actions/checkout from 6.0.2 to 6.0.3 (#2859)
+- chore(deps): bump astral-sh/setup-uv from 8.1.0 to 8.2.0 (#2858)
+- chore(deps): bump github/codeql-action from 4.36.0 to 4.36.2 (#2857)
+- fix(workflows): render gate show_file contents in the interactive prompt (#2810)
+- feat: add support for rovodev (#2539)
+- chore: release 0.9.4, begin 0.9.5.dev0 development (#2853)
+
+## [0.9.4] - 2026-06-04
+
+### Changed
+
+- feat(workflows): add JSON output for workflow run resume and status (#2814)
+- Update workflow-preset community catalog to v1.3.2 (#2841)
+- fix: recover active skills registration for extensions (#2803)
+- fix(cursor-agent): enable headless CLI dispatch end-to-end (-p --trust --approve-mcps --force + Windows .cmd shim resolution) (#2631)
+- Update Superpowers Implementation Bridge extension to v1.0.2 (#2852)
+- docs(agents): add PR review response guidance to AGENTS.md (#2850)
+- Allow `specify workflow run` to execute YAML files without a project (#2825)
+- feat(extensions): add --force flag to extension add for overwrite reinstall (#2530)
+- chore: release 0.9.3, begin 0.9.4.dev0 development (#2836)
+
+## [0.9.3] - 2026-06-03
+
+### Changed
+
+- fix: render script command hints with active agent separator (#2649)
+- chore(tests): fix ruff lint violations in tests/ (#2827)
+- fix(workflows): validate run_id in RunState.load before touching the … (#2813)
+- feat(cli): implement specify self upgrade (#2475)
+- feat(workflows): allow resume to accept updated workflow inputs (#2815)
+- catalog: rename "superpowers-bridge" to "superspec" (v1.0.1) (#2772)
+- fix(cli): force UTF-8 stdout/stderr on Windows to prevent UnicodeEncodeError (#2817)
+- fix(plan): clarify quickstart validation guide scope (#2805)
+- chore: release 0.9.2, begin 0.9.3.dev0 development (#2823)
+
+## [0.9.2] - 2026-06-02
+
+### Changed
+
+- Update agent parity governance preset catalog entry (#2777)
+- fix: resolve GitHub release asset API URL for private repo extension downloads (#2792)
+- fix: remove unsupported mode: frontmatter from Copilot skills mode (fixes #2799) (#2819)
+- refactor(integrations): co-locate integration commands in integrations/ domain dir (PR-5/8) (#2720)
+- Update Product Forge extension to v1.6.0 (#2820)
+- feat(workflows): add continue_on_error step field for non-halting failures (#2663)
+- chore: add .editorconfig for consistent code formatting (#2366)
+- fix(shared-infra): record skipped files in speckit.manifest.json (#2483)
+- chore: release 0.9.1, begin 0.9.2.dev0 development (#2818)
+
+## [0.9.1] - 2026-06-02
+
+### Changed
+
+- fix(cli): pin UTF-8 encoding on init-options and .extensionignore I/O (#2686)
+- docs: list Hermes in supported integrations table (#2768)
+- fix(copilot): resolve active spec template (#2765)
+- fix: add missing agent-context extension entries to Cline _expected_files (#2797)
+- Add spec-kit-linear extension to community catalog (#2795)
+- feat: add native Cline integration (#2508)
+- Update workflow-preset community catalog entry (#2756)
+- chore: release 0.9.0, begin 0.9.1.dev0 development (#2794)
+- Add RAG Azure Builder extension to community catalog (#2793)
+
+## [0.9.0] - 2026-06-01
+
+### Changed
+
+- chore: recompile workflow lock files (#2774)
+- Add Multi-Sites Spec Kit extension to community catalog (#2791)
+- Update Product Spec Extension to v0.8.3 (#2790)
+- Publish May 2026 Newsletter (#2787)
+- fix: move URL install confirmation prompt before spinner (#2783) (#2784)
+- Update Reqnroll BDD extension to v1.1.0 (#2775)
+- Extract agent context updates into bundled agent-context extension (#2546)
+- chore(deps): bump actions/setup-dotnet from 5.2.0 to 5.3.0 (#2755)
+- chore: release 0.8.18, begin 0.8.19.dev0 development (#2766)
+
+## [0.8.18] - 2026-05-29
+
+### Changed
+
+- Add support for SPECKIT_WORKFLOW_RUN_ID override (#2742)
+- feat: support SPECKIT_INTEGRATION_<KEY>_EXECUTABLE env var (#2743)
+- chore(deps): bump github/gh-aw-actions from 0.74.8 to 0.77.0 (#2754)
+- chore(deps): bump github/codeql-action from 4.35.5 to 4.36.0 (#2753)
+- fix: disable no-op issue reporting for catalog submission workflows (#2748)
+- Add confirmation prompt for URL-based extension installs (#2745)
+- fix: restrict community submission workflows to labeled event only (#2741)
+- feat(integrations): support SPECIFY_<KEY>_EXTRA_ARGS env var for agent subprocess flags (#2596)
+- chore: release 0.8.17, begin 0.8.18.dev0 development (#2737)
+
+## [0.8.17] - 2026-05-28
+
+### Changed
+
+- docs: consolidate Community sections in README (#2736)
+- Fix shared script command hints for integration separators (#2627)
+- docs: update security-governance preset to v0.4.0 (#2703)
+- feat(agy): enhance Google Antigravity CLI integration (#2689)
+- Fix --dev extension agent symlinks (#2554)
+- Share skills hook note post-processing (#2679)
+- feat: add Hermes Agent integration (with review fixes) (#2651)
+- Update Superpowers Implementation Bridge to v0.7.0 (#2732)
+- chore: release 0.8.16, begin 0.8.17.dev0 development (#2729)
+
+## [0.8.16] - 2026-05-27
+
+### Changed
+
+- docs: update landing page stats and branch naming convention (#2727)
+- feat(workflows): expose {{ context.run_id }} template variable (#2664)
+- fix: resolve __SPECKIT_COMMAND_*__ refs in preset skill rendering (#2717) (#2718)
+- Add Workflow Preset to community catalog (#2725)
+- fix: paths-only skips branch validation, setup-plan preserves existing plan (#2672)
+- docs: fix broken pipx homepage URLs to point to pipx.pypa.io (#2670)
+- Update Architecture Guard extension to v1.8.9 (#2723)
+- Re-validate spec quality checklist after clarify updates spec (#2715)
+- chore: release 0.8.15, begin 0.8.16.dev0 development (#2722)
+
+## [0.8.15] - 2026-05-27
+
+### Changed
+
+- Update Fiction Book Writing preset to v1.8.1 (#2714)
+- chore: update memorylint and superb to 1.4.0 (#2690)
+- fix: promote post-execution hook dispatch to H2 with directive language (#2713)
+- Add Token Budget extension to community catalog (#2712)
+- fix: create skills directory on demand during extension/preset install (#2711)
+- fix: PS 5.1 compat — replace non-ASCII chars in shipped PowerShell scripts (#2709)
+- docs: update security-governance preset to v0.3.0 (#2676)
+- Update README.md (#2675)
+- chore: release 0.8.14, begin 0.8.15.dev0 development (#2706)
+
+## [0.8.14] - 2026-05-26
+
+### Changed
+
+- Add util for windows sub-process (#2598)
+- refactor: create commands/ package and move init handler (PR-4/8) (#2615)
+- Add Product Spec Extension to community catalog (#2705)
+- fix init-options speckit version refresh (#2647)
+- chore(deps): bump github/gh-aw-actions from 0.74.8 to 0.74.9 (#2658)
+- docs: add branch naming convention to AGENTS.md and CONTRIBUTING.md (#2678)
+- chore(deps): bump actions/stale from 10.2.0 to 10.3.0 (#2657)
+- chore(deps): bump github/codeql-action from 4.35.4 to 4.35.5 (#2656)
+- chore: release 0.8.13, begin 0.8.14.dev0 development (#2669)
+
+## [0.8.13] - 2026-05-21
+
+### Changed
+
+- fix: while/do-while loop condition reads stale iteration-0 step output (#2662)
+- docs: fix directory hierarchy in README examples (#2639)
+- fix(catalogs): reject boolean priority in extension and preset catalog readers (#2589)
+- Update Agent Governance extension to v1.2.0 (#2659)
+- Add agentic workflows for community catalog submissions (#2655)
+- feat: add self-check tip to check output (#2574)
+- fix(cli): clarify exception diagnostics (#2602)
+- ci: add diff whitespace check (#2572)
+- chore: release 0.8.12, begin 0.8.13.dev0 development (#2648)
+
+## [0.8.12] - 2026-05-20
+
+### Changed
+
+- fix(codex): inject dot-to-hyphen hook command note in Codex skills (#2503)
+- Update Squad Bridge extension to v1.3.0 (#2645)
+- Update Superpowers Implementation Bridge extension to v0.5.0 (#2644)
+- Add Team Assign extension to community catalog (#2642)
+- refactor: migrate extension catalog stack parsing to shared base (#2576)
+- Update Architecture Workflow extension to v1.1.0 (#2588)
+-  fix(workflow): support integration: auto to follow project's initialized AI (#2421)
+- Add Superpowers Implementation Bridge extension to community catalog (#2586)
+- Add Interactive HTML Preview extension to community catalog (#2585)
+- chore: release 0.8.11, begin 0.8.12.dev0 development (#2584)
+- Update Agent Governance extension to v1.1.0 (#2583)
+
+## [0.8.11] - 2026-05-15
+
+### Changed
+
+- refactor: extract _version.py from __init__.py (PR-3/8) (#2550)
+- Add Time Machine extension to community catalog (#2580)
+- fix(powershell): ensure UTF-8 templates are written without BOM (#2280)
+- docs: document high-assurance spec workflow (#2518)
+- docs: fix script name in directory tree examples (#2555)
+- Fix preset skill description precedence (#2538)
+- fix(integration): clarify multi-install guidance (#2549)
+- feat: add version feature reporting (#2548)
+- Add Architecture Workflow extension to community catalog (#2565)
+- chore: release 0.8.10, begin 0.8.11.dev0 development (#2562)
+
+## [0.8.10] - 2026-05-14
+
+### Changed
+
+- docs: streamline install section and add community overview (#2561)
+- Move community extensions table from README to docs site (#2560)
+- Add Agent Governance extension to community catalog (#2559)
+- Add Reqnroll BDD extension to community catalog (#2545)
+- fix(cli): harden extension registration and discovery workflows (#2499)
+- refactor: extract _assets.py and _utils.py from __init__.py (PR-2/8) (#2543)
+- fix(opencode): use commands/ directory (plural) to match OpenCode docs (#2453)
+- refactor: extract _console.py from __init__.py (PR-1/8) (#2474)
+- Fix constitution reference in README (#2491)
+- chore: release 0.8.9, begin 0.8.10.dev0 development (#2532)
+
+## [0.8.9] - 2026-05-12
+
+### Changed
+
+- docs: revamp landing page with four-pillar card layout (#2531)
+- feat(extensions): update governance ecosystem extensions to latest versions (#2514)
+- Add changelog extension (#2177)
+- Add install directory to docfx.json file references (#2522)
+- feat(catalog): add BrownKit (brownkit) community extension (#2510) (#2520)
+- fix(kiro-cli): replace literal $ARGUMENTS with prose fallback (#2482)
+- Preset: Add game-narrative-writing  preset to community catalog (#2454)
+- docs: clarify CLI upgrade discovery (#2519)
+- fix: make template metadata line breaks markdownlint-safe (#2505)
+- refactor(catalogs): extract integration catalog config loading (#2497)
+- test(presets): silence expected UserWarnings in self-test composition… (#2373)
+- chore: release 0.8.8, begin 0.8.9.dev0 development (#2516)
+
+## [0.8.8] - 2026-05-11
+
+### Changed
+
+- chore(deps): bump actions/checkout from 4.3.1 to 6.0.2 (#2486)
+- feat(catalog): add Spec Kit Schedule (schedule) community extension (#2473)
+- fix(integration): refresh shared infra on `integration switch` (#2375)
+- Add MDE preset to community catalog (#2513)
+- Add MDE extension to community catalog (#2512)
+- chore: update community catalog with latest extension versions (#2490)
+- chore(deps): bump actions/setup-dotnet from 4.3.1 to 5.2.0 (#2489)
+- chore(deps): bump actions/github-script from 7 to 9 (#2488)
+- chore(deps): bump DavidAnson/markdownlint-cli2-action (#2487)
+- chore(deps): bump github/codeql-action from 4.35.3 to 4.35.4 (#2485)
+- feat(catalog): add API Evolve (api-evolve) community extension (#2479)
+- feat: Config-driven opt-in authentication registry with multi-platform support (#2393)
+- chore: release 0.8.7, begin 0.8.8.dev0 development (#2480)
+
+## [0.8.7] - 2026-05-07
+
+### Changed
+
+- feat: add agent-orchestrator to community extension catalog (#2236)
+- chore: update extension versions in community catalog (#2468)
+- fix(goose): Declare args parameter in generated recipes (#2402)
+- feat: Add lingma support (#2348)
+- docs: Add uv installation guide and inline callouts (#2465)
+- Add fx-to-dotnet to community extension catalog (#2471)
+- fix: default non-interactive init to copilot integration (#2414)
+- fix(forge): use hyphen notation for command refs in Forge integration (#2462)
+- feat(catalog): add Cost Tracker (cost) community extension (#2448)
+- chore: release 0.8.6, begin 0.8.7.dev0 development (#2463)
+
+## [0.8.6] - 2026-05-06
+
+### Changed
+
+- Load constitution context in `/speckit.implement` to enforce governance during implementation (#2460)
+- feat: improve catalog submission templates and CODEOWNERS (#2401)
+- fix: validate URL scheme in build_github_request (#2449)
+- Add Architecture Guard to community catalog (#2430)
+- Add multi-model-review extension to community catalog (#2446)
+- Update Ralph Loop to v1.0.2 (#2435)
+- Pin GitHub Actions by SHA (#2441)
+- fix(workflows): require project for catalog list (#2436)
+- Add agent-parity-governance to community catalog (#2382)
+- chore: release 0.8.5, begin 0.8.6.dev0 development (#2447)
+
+## [0.8.5] - 2026-05-04
+
+### Changed
+
+- feat(presets): add Spec2Cloud preset for Azure deployment workflow (#2413)
+- update security-review and memory-md extensions to latest versions (#2445)
+- fix: honor template overrides for tasks-template (#2278) (#2292)
+- Add token-analyzer to community catalog (#2433)
+- docs: add April 2026 newsletter (#2434)
+- feat: emit init-time notice for git extension default change (#2165) (#2432)
+- Update DyanGalih(Memory Hub and Security Review) community extensions (#2429)
+- Support controlled multi-install for safe AI agent integrations (#2389)
+- chore(integrations): clean up docs and project guard (#2428)
+- chore: release 0.8.4, begin 0.8.5.dev0 development (#2431)
+
+## [0.8.4] - 2026-05-01
+
+### Changed
+
+- fix(specify): correct self-referencing step number in validation flow (#2152)
+- chore(deps): bump DavidAnson/markdownlint-cli2-action (#2425)
+- Add security-governance to community catalog (#2386)
+- Add cross-platform-governance to community catalog (#2384)
+- Add architecture-governance to community catalog (#2383)
+- Add a11y-governance to community catalog (#2381)
+- feat(extensions): add Spec2Cloud extension for Azure deployment workflow (#2412)
+- fix: migrate extension commands on integration switch (#2404)
+- feat: add Squad Bridge extension to community catalog (#2417)
+- chore: release 0.8.3, begin 0.8.4.dev0 development (#2418)
+
+## [0.8.3] - 2026-04-29
+
+### Changed
+
+- Add Work IQ extension to community catalog (#2415)
+- feat(integrations): add Devin for Terminal skills-based integration (#2364)
+- fix: include --from git+... in upgrade hint to avoid PyPI squat package (#2411)
+- fix: dispatch opencode commands via run (#2410)
+- feat: add catalog discovery CLI commands (#2360)
+- update security review extension catalog to v1.3.0 (#2374)
+- chore(catalog): bump v-model extension to v0.6.0 (#2399)
+- feat: add threatmodel extension to community catalog (#2369)
+- Add isaqb-architecture-governance to community catalog (#2385)
+- chore: release 0.8.2, begin 0.8.3.dev0 development (#2397)
+
+## [0.8.2] - 2026-04-28
+
+### Changed
+
+- Add MarkItDown Document Converter extension to community catalog (#2390)
+- feat: Speckit preset fiction book v1.7 - Support for RAG (Chroma DB) offline semantic search (#2367)
+- fix(extensions): use explicit UTF-8 encoding when reading manifest YAML (#2370)
+- catalog: add m365 community extension
+- docs: replace deprecated --ai flag with --integration in all documentation (#2359)
+- feat(extensions,presets): authenticate GitHub-hosted catalog and download requests with GITHUB_TOKEN/GH_TOKEN (#2331)
+- Update extensify to v1.1.0 in community catalog (#2337)
+- feat(init): deprecate --no-git flag, gate deprecations at v0.10.0 (#2357)
+- Add Spec Orchestrator extension to community catalog (#2350)
+- chore: release 0.8.1, begin 0.8.2.dev0 development (#2356)
+
+## [0.8.1] - 2026-04-24
+
+### Changed
+
+- fix(plan): use .specify/feature.json to allow /speckit.plan on custom git branches (#2305) (#2349)
+- feat(vibe): migrate to SkillsIntegration from the old prompts-based MarkdownIntegration (#2336)
+- docs: move community presets table to docs site, add missing entries (#2341)
+- docs(presets): add lean preset README and enrich catalog metadata (#2340)
+- fix: resolve command references per integration type (dot vs hyphen) (#2354)
+- Update product-forge to v1.5.1 in community catalog (#2352)
+- chore(deps): bump astral-sh/setup-uv from 8.0.0 to 8.1.0 (#2345)
+- fix: replace xargs trim with sed to handle quotes in descriptions (#2351)
+- feat: register jira preset in community catalog (#2224)
+- feat: Preset screenwriting (#2332)
+- chore: release 0.8.0, begin 0.8.1.dev0 development (#2333)
+
+## [0.8.0] - 2026-04-23
+
+### Changed
+
+- feat(presets): Composition strategies (prepend, append, wrap) for templates, commands, and scripts (#2133)
+- feat(copilot): support `--integration-options="--skills"` for skills-based scaffolding (#2324)
+- docs(install): add pipx as alternative installation method (#2288)
+- Add Memory MD community extension (#2327)
+- Update version-guard to v1.2.0 (#2321)
+- fix: `--force` now overwrites shared infra files during init and upgrade (#2320)
+- chore: release 0.7.5, begin 0.7.6.dev0 development (#2322)
+
+## [0.7.5] - 2026-04-22
+
+### Changed
+
+- fix: resolve skill placeholders for all SKILL.md agents, not just codex/kimi (#2313)
+- feat(cli): add specify self check and self upgrade stub (#2316)
+- Update version-guard to v1.1.0 (#2318)
+- docs: move community presets from README to docs/community (#2314)
+- catalog: add wireframe extension (v0.1.1) (#2262)
+- Move community walkthroughs from README to docs/community (#2312)
+- docs(readme): list red-team in community-extensions table (#2311)
+- feat(catalog): add red-team extension to community catalog (#2306)
+- Add superpowers-bridge community extension (#2309)
+- feat: implement preset wrap strategy (#2189)
+- fix(agents): block directory traversal in command write paths (#2229) (#2296)
+- chore: release 0.7.4, begin 0.7.5.dev0 development (#2299)
+
+## [0.7.4] - 2026-04-21
+
+### Changed
+
+- fix(copilot): use --yolo to grant all permissions in non-interactive mode (#2298)
+- feat: add CITATION.cff and .zenodo.json for academic citation support (#2291)
+- Add spec-validate to community catalog (#2274)
+- feat: register Ripple in community catalog (#2272)
+- Add version-guard to community catalog (#2286)
+- Add spec-reference-loader to community catalog (#2285)
+- Add memory-loader to community catalog (#2284)
+- fix(integrations): strip UTF-8 BOM when reading agent context files (#2283)
+- Preset fiction book writing1.6 (#2270)
+- fix(integrations): migrate Antigravity (agy) layout to .agents/ and deprecate --skills (#2276)
+- chore: release 0.7.3, begin 0.7.4.dev0 development (#2263)
+
+## [0.7.3] - 2026-04-17
+
+### Changed
+
+- fix: replace shell-based context updates with marker-based upsert (#2259)
+- Add Community Friends page to docs site (#2261)
+- Add Spec Scope extension to community catalog (#2172)
+- docs: add Community-maintained plugin for Claude Code and GitHub Copilot CLI that installs Spec Kit skills via the plugin marketplace to README (#2250)
+- fix: suppress CRLF warnings in auto-commit.ps1 (#2258)
+- feat: register Blueprint in community catalog (#2252)
+- preset: Update preset-fiction-book-writing to community catalog -> v1.5.0 (#2256)
+- chore(deps): bump actions/upload-pages-artifact from 3 to 5 (#2251)
+- fix: add reference/*.md to docfx content glob (#2248)
+- chore: release 0.7.2, begin 0.7.3.dev0 development (#2247)
+
+## [0.7.2] - 2026-04-16
+
+### Changed
+
+- docs: add core commands reference and simplify README CLI section (#2245)
+- docs: add workflows reference, reorganize into docs/reference/, and add --version flag (#2244)
+- docs: add presets reference page and rename pack_id to preset_id (#2243)
+- docs: add extensions reference page and integrations FAQ (#2242)
+- docs: consolidate integration documentation into docs/integrations.md (#2241)
+- feat: update memorylint and superpowers-bridge versions to 1.3.0 with new download URLs (#2240)
+- feat: Integration catalog — discovery, versioning, and community distribution (#2130)
+- Add Catalog CI extension to community catalog (#2239)
+- Added issues extension (#2194)
+- chore: release 0.7.1, begin 0.7.2.dev0 development (#2235)
+
+## [0.7.1] - 2026-04-15
+
+### Changed
+
+- ci: add windows-latest to test matrix (#2233)
+- docs: remove deprecated --skip-tls references from local-development guide (#2231)
+- fix: allow Claude to chain skills for hook execution (#2227)
+- docs: merge TESTING.md into CONTRIBUTING.md, remove TESTING.md (#2228)
+- Add agent-assign extension to community catalog (#2030)
+- fix: unofficial PyPI warning (#1982) and legacy extension command name auto-correction (#2017) (#2027)
+- feat: register architect-preview in community catalog (#2214)
+- chore: deprecate --ai flag in favor of --integration on specify init (#2218)
+- chore: release 0.7.0, begin 0.7.1.dev0 development (#2217)
+
+## [0.7.0] - 2026-04-14
+
+### Changed
+
+- Add workflow engine with catalog system (#2158)
+- docs(catalog): add claude-ask-questions to community preset catalog (#2191)
+- Add SFSpeckit — Salesforce SDD Extension (#2208)
+- feat(scripts): optional single-segment branch prefix for gitflow (#2202)
+- chore: release 0.6.2, begin 0.6.3.dev0 development (#2205)
+- Add Worktrees extension to community catalog (#2207)
+- feat: Update catalog.community.json for preset-fiction-book-writing (#2199)
+
+## [0.6.2] - 2026-04-13
+
+### Changed
+
+- feat: Register "What-if Analysis" community extension (#2182)
+- feat: add GitHub Issues Integration to community catalog (#2188)
+- feat(agents): add Goose AI agent support (#2015)
+- Update ralph extension to v1.0.1 in community catalog (#2192)
+- fix: skip docs deployment workflow on forks (#2171)
+- chore: release 0.6.1, begin 0.6.2.dev0 development (#2162)
+
+## [0.6.1] - 2026-04-10
+
+### Changed
+
+- feat: add bundled lean preset with minimal workflow commands (#2161)
+- Add Brownfield Bootstrap extension to community catalog (#2145)
+- Add CI Guard extension to community catalog (#2157)
+- Add SpecTest extension to community catalog (#2159)
+- fix: bundled extensions should not have download URLs (#2155)
+- Add PR Bridge extension to community catalog (#2148)
+- feat(cursor-agent): migrate from .cursor/commands to .cursor/skills (#2156)
+- Add TinySpec extension to community catalog (#2147)
+- chore: bump spec-kit-verify to 1.0.3 and spec-kit-review to 1.0.1 (#2146)
+- Add Status Report extension to community catalog (#2123)
+- chore: release 0.6.0, begin 0.6.1.dev0 development (#2144)
+
+## [0.6.0] - 2026-04-09
+
+### Changed
+
+- Add Bugfix Workflow community extension to catalog and README (#2135)
+- Add Worktree Isolation extension to community catalog (#2143)
+- Add multi-repo-branching preset to community catalog (#2139)
+- Readme clarity (#2013)
+- Rewrite AGENTS.md for integration architecture (#2119)
+- docs: add SpecKit Companion to Community Friends section (#2140)
+- feat: add memorylint extension to community catalog (#2138)
+- chore: release 0.5.1, begin 0.5.2.dev0 development (#2137)
+
+## [0.5.1] - 2026-04-08
+
+### Changed
+
+- fix: pin typer>=0.24.0 and click>=8.2.1 to fix import crash (#2136)
+- feat: update fleet extension to v1.1.0 (#2029)
+- fix(forge): use hyphen notation in frontmatter name field (#2075)
+- fix(bash): sed replacement escaping, BSD portability, dead cleanup in update-agent-context.sh (#2090)
+- Add Spec Diagram community extension to catalog and README (#2129)
+- feat: Git extension stage 2 — GIT_BRANCH_NAME override, --force for existing dirs, auto-install tests (#1940) (#2117)
+- fix(git): surface checkout errors for existing branches (#2122)
+- Add Branch Convention community extension to catalog and README (#2128)
+- docs: lighten March 2026 newsletter for readability (#2127)
+- fix: restore alias compatibility for community extensions (#2110) (#2125)
+- Added March 2026 newsletter (#2124)
+- Add Spec Refine community extension to catalog and README (#2118)
+- Add explicit-task-dependencies community preset to catalog and README (#2091)
+- Add toc-navigation community preset to catalog and README (#2080)
+- fix: prevent ambiguous TOML closing quotes when body ends with `"` (#2113) (#2115)
+- fix speckit issue for trae (#2112)
+- feat: Git extension stage 1 — bundled `extensions/git` with hooks on all core commands (#1941)
+- Upgraded confluence extension to v.1.1.1 (#2109)
+- Update V-Model Extension Pack to v0.5.0 (#2108)
+- Add canon extension and canon-core preset. (#2022)
+- [stage2] fix: serialize multiline descriptions in legacy TOML renderer (#2097)
+- [stage1] fix: strip YAML frontmatter from TOML integration prompts (#2096)
+- Add Confluence extension (#2028)
+- fix: accept 4+ digit spec numbers in tests and docs (#2094)
+- fix(scripts): improve git branch creation error handling (#2089)
+- Add optimize extension to community catalog (#2088)
+- feat: add "VS Code Ask Questions" preset (#2086)
+- Add security-review v1.1.1 to community extensions catalog (#2073)
+- Add `specify integration` subcommand for post-init integration management (#2083)
+- Remove template version info from CLI, fix Claude user-invocable, cleanup dead code (#2081)
+- fix: add user-invocable: true to skill frontmatter (#2077)
+- fix: add actions:write permission to stale workflow (#2079)
+- feat: add argument-hint frontmatter to Claude Code commands (#1951) (#2059)
+- Update conduct extension to v1.0.1 (#2078)
+- chore(deps): bump astral-sh/setup-uv from 7.6.0 to 8.0.0 (#2072)
+- chore(deps): bump actions/configure-pages from 5 to 6 (#2071)
+- feat: add spec-kit-fixit extension to community catalog (#2024)
+- chore: release 0.5.0, begin 0.5.1.dev0 development (#2070)
+- feat: add Forgecode agent support (#2034)
+
+## [0.5.0] - 2026-04-02
+
+### Changed
+
+- Introduces DEVELOPMENT.md (#2069)
+- Update cc-sdd reference to cc-spex in Community Friends (#2007)
+- chore: release 0.4.5, begin 0.4.6.dev0 development (#2064)
+
+## [0.4.5] - 2026-04-02
+
+### Changed
+
+- Stage 6: Complete migration — remove legacy scaffold path (#1924) (#2063)
+- Install Claude Code as native skills and align preset/integration flows (#2051)
+- Add repoindex 0402 (#2062)
+- Stage 5: Skills, Generic & Option-Driven Integrations (#1924) (#2052)
+- feat(scripts): add --dry-run flag to create-new-feature (#1998)
+- fix: support feature branch numbers with 4+ digits (#2040)
+- Add community content disclaimers (#2058)
+- docs: add community extensions website link to README and extensions docs (#2014)
+- docs: remove dead Cognitive Squad and Understanding extension links and from extensions/catalog.community.json (#2057)
+- Add fix-findings extension to community catalog (#2039)
+- Stage 4: TOML integrations — gemini and tabnine migrated to plugin architecture (#2050)
+- feat: add 5 lifecycle extensions to community catalog (#2049)
+- Stage 3: Standard markdown integrations — 19 agents migrated to plugin architecture (#2038)
+- chore: release 0.4.4, begin 0.4.5.dev0 development (#2048)
+
+## [0.4.4] - 2026-04-01
+
+### Changed
+
+- Stage 2: Copilot integration — proof of concept with shared template primitives (#2035)
+- docs: sync AGENTS.md with AGENT_CONFIG for missing agents (#2025)
+- docs: ensure manual tests use local specify (#2020)
+- Stage 1: Integration foundation — base classes, manifest system, and registry (#1925)
+- fix: harden GitHub Actions workflows (#2021)
+- chore: use PEP 440 .dev0 versions on main after releases (#2032)
+- feat: add superpowers bridge extension to community catalog (#2023)
+- feat: add product-forge extension to community catalog (#2012)
+- feat(scripts): add --allow-existing-branch flag to create-new-feature (#1999)
+- fix(scripts): add correct path for copilot-instructions.md (#1997)
+- Update README.md (#1995)
+- fix: prevent extension command shadowing (#1994)
+- Fix Claude Code CLI detection for npm-local installs (#1978)
+- fix(scripts): honor PowerShell agent and script filters (#1969)
+- feat: add MAQA extension suite (7 extensions) to community catalog (#1981)
+- feat: add spec-kit-onboard extension to community catalog (#1991)
+- Add plan-review-gate to community catalog (#1993)
+- chore(deps): bump actions/deploy-pages from 4 to 5 (#1990)
+- chore(deps): bump DavidAnson/markdownlint-cli2-action from 19 to 23 (#1989)
+- chore: bump version to 0.4.3 (#1986)
+
+## [0.4.3] - 2026-03-26
+
+### Changed
+
+- Unify Kimi/Codex skill naming and migrate legacy dotted Kimi dirs (#1971)
+- fix(ps1): replace null-conditional operator for PowerShell 5.1 compatibility (#1975)
+- chore: bump version to 0.4.2 (#1973)
+
+## [0.4.2] - 2026-03-25
+
+### Changed
+
+- feat: Auto-register ai-skills for extensions whenever applicable (#1840)
+- docs: add manual testing guide for slash command validation (#1955)
+- Add AIDE, Extensify, and Presetify to community extensions (#1961)
+- docs: add community presets section to main README (#1960)
+- docs: move community extensions table to main README for discoverability (#1959)
+- docs(readme): consolidate Community Friends sections and fix ToC anchors (#1958)
+- fix(commands): rename NFR references to success criteria in analyze and clarify (#1935)
+- Add Community Friends section to README (#1956)
+- docs: add Community Friends section with Spec Kit Assistant VS Code extension (#1944)
+
+## [0.4.1] - 2026-03-24
+
+### Changed
+
+- Add checkpoint extension (#1947)
+- fix(scripts): prioritize .specify over git for repo root detection (#1933)
+- docs: add AIDE extension demo to community projects (#1943)
+- fix(templates): add missing Assumptions section to spec template (#1939)
+
+## [0.4.0] - 2026-03-23
+
+### Changed
+
+- fix(cli): add allow_unicode=True and encoding="utf-8" to YAML I/O (#1936)
+- fix(codex): native skills fallback refresh + legacy prompt suppression (#1930)
+- feat(cli): embed core pack in wheel for offline/air-gapped deployment (#1803)
+- ci: increase stale workflow operations-per-run to 250 (#1922)
+- docs: update publishing guide with Category and Effect columns (#1913)
+- fix: Align native skills frontmatter with install_ai_skills (#1920)
+- feat: add timestamp-based branch naming option for `specify init` (#1911)
+- docs: add Extension Comparison Guide for community extensions (#1897)
+- docs: update SUPPORT.md, fix issue templates, add preset submission template (#1910)
+- Add support for Junie (#1831)
+- feat: migrate Codex/agy init to native skills workflow (#1906)
+
+## [0.3.2] - 2026-03-19
+
+### Changed
+
+- Add conduct extension to community catalog (#1908)
+- feat(extensions): add verify-tasks extension to community catalog (#1871)
+- feat(presets): add enable/disable toggle and update semantics (#1891)
+- feat: add iFlow CLI support (#1875)
+- feat(commands): wire before/after hook events into specify and plan templates (#1886)
+- docs(catalog): add speckit-utils to community catalog (#1896)
+- docs: Add Extensions & Presets section to README (#1898)
+- chore: update DocGuard extension to v0.9.11 (#1899)
+- Update cognitive-squad catalog entry — Triadic Model, full lifecycle (#1884)
+- feat: register spec-kit-iterate extension (#1887)
+- fix(scripts): add explicit positional binding to PowerShell create-new-feature params (#1885)
+- fix(scripts): encode residual JSON control chars as \uXXXX instead of stripping (#1872)
+- chore: update DocGuard extension to v0.9.10 (#1890)
+- Feature/spec kit add pi coding agent pullrequest (#1853)
+- feat: register spec-kit-learn extension (#1883)
+
+## [0.3.1] - 2026-03-17
+
+### Changed
+
+- docs: add greenfield Spring Boot pirate-speak preset demo to README (#1878)
+- fix(ai-skills): exclude non-speckit copilot agent markdown from skills (#1867)
+- feat: add Trae IDE support as a new agent (#1817)
+- feat(cli): polite deep merge for settings.json and support JSONC (#1874)
+- feat(extensions,presets): add priority-based resolution ordering (#1855)
+- fix(scripts): suppress stdout from git fetch in create-new-feature.sh (#1876)
+- fix(scripts): harden bash scripts — escape, compat, and error handling (#1869)
+- Add cognitive-squad to community extension catalog (#1870)
+- docs: add Go / React brownfield walkthrough to community walkthroughs (#1868)
+- chore: update DocGuard extension to v0.9.8 (#1859)
+- Feature: add specify status command (#1837)
+- fix(extensions): show extension ID in list output (#1843)
+- feat(extensions): add Archive and Reconcile extensions to community catalog (#1844)
+- feat: Add DocGuard CDD enforcement extension to community catalog (#1838)
+
+## [0.3.0] - 2026-03-13
+
+### Changed
+
+- feat(presets): Pluggable preset system with catalog, resolver, and skills propagation (#1787)
+- fix: match 'Last updated' timestamp with or without bold markers (#1836)
+- Add specify doctor command for project health diagnostics (#1828)
+- fix: harden bash scripts against shell injection and improve robustness (#1809)
+- fix: clean up command templates (specify, analyze) (#1810)
+- fix: migrate Qwen Code CLI from TOML to Markdown format (#1589) (#1730)
+- fix(cli): deprecate explicit command support for agy (#1798) (#1808)
+- Add /selftest.extension core extension to test other extensions (#1758)
+- feat(extensions): Quality of life improvements for RFC-aligned catalog integration (#1776)
+- Add Java brownfield walkthrough to community walkthroughs (#1820)
+
+## [0.2.1] - 2026-03-11
+
+### Changed
+
+- Added February 2026 newsletter (#1812)
+- feat: add Kimi Code CLI agent support (#1790)
+- docs: fix broken links in quickstart guide (#1759) (#1797)
+- docs: add catalog cli help documentation (#1793) (#1794)
+- fix: use quiet checkout to avoid exception on git checkout (#1792)
+- feat(extensions): support .extensionignore to exclude files during install (#1781)
+- feat: add Codex support for extension command registration (#1767)
+
+## [0.2.0] - 2026-03-09
+
+### Changed
+
+- fix: sync agent list comments with actual supported agents (#1785)
+- feat(extensions): support multiple active catalogs simultaneously (#1720)
+- Pavel/add tabnine cli support (#1503)
+- Add Understanding extension to community catalog (#1778)
+- Add ralph extension to community catalog (#1780)
+- Update README with project initialization instructions (#1772)
+- feat: add review extension to community catalog (#1775)
+- Add fleet extension to community catalog (#1771)
+- Integration of Mistral vibe support into speckit (#1725)
+- fix: Remove duplicate options in specify.md (#1765)
+- fix: use global branch numbering instead of per-short-name detection (#1757)
+- Add Community Walkthroughs section to README (#1766)
+- feat(extensions): add Jira Integration to community catalog (#1764)
+- Add Azure DevOps Integration extension to community catalog (#1734)
+- Fix docs: update Antigravity link and add initialization example (#1748)
+- fix: wire after_tasks and after_implement hook events into command templates (#1702)
+- make c ignores consistent with c++ (#1747)
+
+## [0.1.13] - 2026-03-03
+
+### Changed
+
+- feat: add kiro-cli and AGENT_CONFIG consistency coverage (#1690)
+- feat: add verify extension to community catalog (#1726)
+- Add Retrospective Extension to community catalog README table (#1741)
+- fix(scripts): add empty description validation and branch checkout error handling (#1559)
+- fix: correct Copilot extension command registration (#1724)
+- fix(implement): remove Makefile from C ignore patterns (#1558)
+- Add sync extension to community catalog (#1728)
+- fix(checklist): clarify file handling behavior for append vs create (#1556)
+- fix(clarify): correct conflicting question limit from 10 to 5 (#1557)
+
+## [0.1.12] - 2026-03-02
+
+### Changed
+
+- fix: use RELEASE_PAT so tag push triggers release workflow (#1736)
+
+## [0.1.11] - 2026-03-02
+
+### Changed
+
+- fix: release-trigger uses release branch + PR instead of direct push to main (#1733)
+- fix: Split release process to sync pyproject.toml version with git tags (#1732)
+
+## [0.1.10] - 2026-02-27
+
+### Changed
+
+- fix: prepend YAML frontmatter to Cursor .mdc files (#1699)
+
+## [0.1.9] - 2026-02-28
+
+### Changed
+
+- chore(deps): bump astral-sh/setup-uv from 6 to 7 (#1709)
+
+## [0.1.8] - 2026-02-28
+
+### Changed
+
+- chore(deps): bump actions/setup-python from 5 to 6 (#1710)
+
+## [0.1.7] - 2026-02-27
+
+### Changed
+
+- chore: Update outdated GitHub Actions versions (#1706)
+- docs: Document dual-catalog system for extensions (#1689)
+- Fix version command in documentation (#1685)
+- Add Cleanup Extension to README (#1678)
+- Add retrospective extension to community catalog (#1681)
 
 ## [0.1.6] - 2026-02-23
 
-### Fixed
+### Changed
 
-- **Parameter Ordering Issues (#1641)**: Fixed CLI parameter parsing issue where option flags were incorrectly consumed as values for preceding options
-  - Added validation to detect when `--ai` or `--ai-commands-dir` incorrectly consume following flags like `--here` or `--ai-skills`
-  - Now provides clear error messages: "Invalid value for --ai: '--here'"
-  - Includes helpful hints suggesting proper usage and listing available agents
-  - Commands like `specify init --ai-skills --ai --here` now fail with actionable feedback instead of confusing "Must specify project name" errors
-  - Added comprehensive test suite (5 new tests) to prevent regressions
+- Add Cleanup Extension to catalog (#1617)
+- Fix parameter ordering issues in CLI (#1669)
+- Update V-Model Extension Pack to v0.4.0 (#1665)
+- docs: Fix doc missing step (#1496)
+- Update V-Model Extension Pack to v0.3.0 (#1661)
 
 ## [0.1.5] - 2026-02-21
 
-### Fixed
+### Changed
 
-- **AI Skills Installation Bug (#1658)**: Fixed `--ai-skills` flag not generating skill files for GitHub Copilot and other agents with non-standard command directory structures
-  - Added `commands_subdir` field to `AGENT_CONFIG` to explicitly specify the subdirectory name for each agent
-  - Affected agents now work correctly: copilot (`.github/agents/`), opencode (`.opencode/command/`), windsurf (`.windsurf/workflows/`), codex (`.codex/prompts/`), kilocode (`.kilocode/workflows/`), q (`.amazonq/prompts/`), and agy (`.agent/workflows/`)
-  - The `install_ai_skills()` function now uses the correct path for all agents instead of assuming `commands/` for everyone
+- Fix #1658: Add commands_subdir field to support non-standard agent directory structures (#1660)
+- feat: add GitHub issue templates (#1655)
+- Update V-Model Extension Pack to v0.2.0 in community catalog (#1656)
+- Add V-Model Extension Pack to catalog (#1640)
+- refactor: remove OpenAPI/GraphQL bias from templates (#1652)
 
 ## [0.1.4] - 2026-02-20
 
-### Fixed
+### Changed
 
-- **Qoder CLI detection**: Renamed `AGENT_CONFIG` key from `"qoder"` to `"qodercli"` to match the actual executable name, fixing `specify check` and `specify init --ai` detection failures
+- fix: rename Qoder AGENT_CONFIG key from 'qoder' to 'qodercli' to match actual CLI executable (#1651)
 
 ## [0.1.3] - 2026-02-20
 
-### Added
+### Changed
 
-- **Generic Agent Support**: Added `--ai generic` option for unsupported AI agents ("bring your own agent")
-  - Requires `--ai-commands-dir <path>` to specify where the agent reads commands from
-  - Generates Markdown commands with `$ARGUMENTS` format (compatible with most agents)
-  - Example: `specify init my-project --ai generic --ai-commands-dir .myagent/commands/`
-  - Enables users to start with Spec Kit immediately while their agent awaits formal support
+- Add generic agent support with customizable command directories (#1639)
+
+## [0.1.2] - 2026-02-20
+
+### Changed
+
+- fix: pin click>=8.1 to prevent Python 3.14/Homebrew env isolation crash (#1648)
 
 ## [0.0.102] - 2026-02-20
+
+### Changed
 
 - fix: include 'src/**' path in release workflow triggers (#1646)
 
 ## [0.0.101] - 2026-02-19
 
+### Changed
+
 - chore(deps): bump github/codeql-action from 3 to 4 (#1635)
 
 ## [0.0.100] - 2026-02-19
+
+### Changed
 
 - Add pytest and Python linting (ruff) to CI (#1637)
 - feat: add pull request template for better contribution guidelines (#1634)
 
 ## [0.0.99] - 2026-02-19
 
+### Changed
+
 - Feat/ai skills (#1632)
 
 ## [0.0.98] - 2026-02-19
+
+### Changed
 
 - chore(deps): bump actions/stale from 9 to 10 (#1623)
 - feat: add dependabot configuration for pip and GitHub Actions updates (#1622)
 
 ## [0.0.97] - 2026-02-18
 
+### Changed
+
 - Remove Maintainers section from README.md (#1618)
 
 ## [0.0.96] - 2026-02-17
+
+### Changed
 
 - fix: typo in plan-template.md (#1446)
 
 ## [0.0.95] - 2026-02-12
 
+### Changed
+
 - Feat: add a new agent: Google Anti Gravity (#1220)
 
 ## [0.0.94] - 2026-02-11
 
+### Changed
+
 - Add stale workflow for 180-day inactive issues and PRs (#1594)
+
+## [0.0.93] - 2026-02-10
+
+### Changed
+
+- Add modular extension system (#1551)
+
+## [0.0.92] - 2026-02-10
+
+### Changed
+
+- Fixes #1586 - .specify.specify path error (#1588)
+
+## [0.0.91] - 2026-02-09
+
+### Changed
+
+- fix: preserve constitution.md during reinitialization (#1541) (#1553)
+- fix: resolve markdownlint errors across documentation (#1571)
+
+## [0.0.90] - 2025-12-04
+
+### Changed
+
+- Update Markdown formatting
+- Update Markdown formatting
+- docs: Add existing project initialization to getting started
+
+## [0.0.89] - 2025-12-02
+
+### Changed
+
+- Update scripts/bash/create-new-feature.sh
+- fix(scripts): prevent octal interpretation in feature number parsing
+- fix: remove unused short_name parameter from branch numbering functions
+- Update scripts/powershell/create-new-feature.ps1
+- Update scripts/bash/create-new-feature.sh
+- fix: use global maximum for branch numbering to prevent collisions
+
+## [0.0.88] - 2025-12-01
+
+### Changed
+
+- fix the incorrect task-template file path
+
+## [0.0.87] - 2025-12-01
+
+### Changed
+
+- Limit width and height to 200px to match the small logo
+- docs: Switch readme logo to logo_large.webp
+- fix:merge
+- fix
+- fix
+- feat:qoder agent
+- docs: Enhance quickstart guide with admonitions and examples
+- docs: add constitution step to quickstart guide (fixes #906)
+- Update supported AI agents in README.md
+- cancel:test
+- test
+- fix:literal bug
+- fix:test
+- test
+- fix:qoder url
+- fix:download owner
+- test
+- feat:support Qoder CLI
+
+## [0.0.86] - 2025-11-26
+
+### Changed
+
+- feat: add bob to new update-agent-context.ps1 + consistency in comments
+- feat: add support for IBM Bob IDE
+
+## [0.0.85] - 2025-11-14
+
+### Changed
+
+- Unset CDPATH while getting SCRIPT_DIR
+
+## [0.0.84] - 2025-11-14
+
+### Changed
+
+- docs: fix broken link and improve agent reference
+- docs: reorganize upgrade documentation structure
+- docs: remove related documentation section from upgrading guide
+- fix: remove broken link to existing project guide
+- docs: Add comprehensive upgrading guide for Spec Kit
+- Refactor ESLint configuration checks in implement.md to address deprecation
+
+## [0.0.83] - 2025-11-14
+
+### Changed
+
+- feat: Add OVHcloud SHAI AI Agent
+
+## [0.0.82] - 2025-11-14
+
+### Changed
+
+- fix: incorrect logic to create release packages with subset AGENTS or SCRIPTS
+
+## [0.0.81] - 2025-11-14
+
+### Changed
+
+- Fix tasktoissues.md to use the 'github/github-mcp-server/issue_write' tool
+
+## [0.0.80] - 2025-11-14
+
+### Changed
+
+- Refactor feature script logic and update agent context scripts
+- Update templates/commands/taskstoissues.md
+- Update CHANGELOG.md
+- Update agent configuration
+- Update scripts/powershell/create-new-feature.ps1
+- Update src/specify_cli/__init__.py
+- Create create-release-packages.ps1
+- Script changes
+- Update taskstoissues.md
+- Create taskstoissues.md
+- Update src/specify_cli/__init__.py
+- Update CONTRIBUTING.md
+- Potential fix for code scanning alert no. 3: Workflow does not contain permissions
+- Update src/specify_cli/__init__.py
+- Update CHANGELOG.md
+- Fixes #970
+- Fixes #975
+- Support for version command
+- Exclude generated releases
+- Lint fixes
+- Prompt updates
+- Hand offs with prompts
+- Chatmodes are back in vogue
+- Let's switch to proper prompts
+- Update prompts
+- Update with prompt
+- Testing hand-offs
+- Use VS Code handoffs
+
+## [0.0.79] - 2025-10-23
+
+### Changed
+
+- docs: restore important note about JSON output in specify command
+- fix: improve branch number detection to check all sources
+- feat: check remote branches to prevent duplicate branch numbers
+
+## [0.0.78] - 2025-10-21
+
+### Changed
+
+- Update CONTRIBUTING.md
+- docs: add steps for testing template and command changes locally
+- update specify to make "short-name" argu for create-new-feature.sh in the right position
+
+## [0.0.77] - 2025-10-21
+
+### Changed
+
+- fix: include the latest changelog in the `GitHub Release`'s  body
+
+## [0.0.76] - 2025-10-21
+
+### Changed
+
+- Fix update-agent-context.sh to handle files without Active Technologies/Recent Changes sections
+
+## [0.0.75] - 2025-10-21
+
+### Changed
+
+- Fixed indentation.
+- Added correct `install_url` for Amp agent CLI script.
+- Added support for Amp code agent.
+
+## [0.0.74] - 2025-10-21
+
+### Changed
+
+- feat(ci): add markdownlint-cli2 for consistent markdown formatting
+
+## [0.0.73] - 2025-10-21
+
+### Changed
+
+- revert vscode auto remove extra space
+- fix: correct command references in implement.md
+- fix regarding copilot suggestion
+- fix: correct command references in speckit.analyze.md
+- Support more lang/Devops of Common Patterns by Technology
+- chore: replace `bun` by `node/npm` in the `devcontainer` (as many CLI-based agents actually require a `node` runtime)
+- chore: add Claude Code extension to devcontainer configuration
+- chore: add installation of `codebuddy` CLI in the `devcontainer`
+- chore: fix path to powershell script in vscode settings
+- fix: correct `run_command` exit behavior and improve installation instructions (for `Amazon Q`) in `post-create.sh` + fix typos in `CONTRIBUTING.md`
+- chore: add `specify`'s github copilot chat settings to `devcontainer`
+- chore: add `devcontainer` support  to ease developer workstation setup
+
+## [0.0.72] - 2025-10-18
+
+### Changed
+
+- fix: correct argument parsing in create-new-feature.sh script
+
+## [0.0.71] - 2025-10-18
+
+### Changed
+
+- fix: Skip CLI checks for IDE-based agents in check command
+- Change loop condition to include last argument
+
+## [0.0.70] - 2025-10-18
+
+### Changed
+
+- fix: broken media files
+- Update README.md
+- The function parameters lack type hints. Consider adding type annotations for better code clarity and IDE support.
+- - **Smart JSON Merging for VS Code Settings**: `.vscode/settings.json` is now intelligently merged instead of being overwritten during `specify init --here` or `specify init .`   - Existing settings are preserved   - New Spec Kit settings are added   - Nested objects are merged recursively   - Prevents accidental loss of custom VS Code workspace configurations
+- Fix: incorrect command formatting in agent context file, refix #895
+
+## [0.0.69] - 2025-10-15
+
+### Changed
+
+- Update scripts/bash/create-new-feature.sh
+- Update create-new-feature.sh
+- Update files
+- Update files
+- Create .gitattributes
+- Update wording
+- Update logic for arguments
+- Update script logic
+
+## [0.0.68] - 2025-10-15
+
+### Changed
+
+- format content as copilot suggest
+- Ruby, PHP, Rust, Kotlin, C, C++
+
+## [0.0.67] - 2025-10-15
+
+### Changed
+
+- Use the number prefix to find the right spec
+
+## [0.0.66] - 2025-10-15
+
+### Changed
+
+- Update CodeBuddy agent name to 'CodeBuddy CLI'
+- Rename CodeBuddy to CodeBuddy CLI in update script
+- Update AI coding agent references in installation guide
+- Rename CodeBuddy to CodeBuddy CLI in AGENTS.md
+- Update README.md
+- Update CodeBuddy link in README.md
+- update codebuddyCli
+
+## [0.0.65] - 2025-10-15
+
+### Changed
+
+- Fix: Fix incorrect command formatting in agent context file
+- docs: fix heading capitalization for consistency
+- Update README.md
+
+## [0.0.64] - 2025-10-14
+
+### Changed
+
+- Update tasks.md
+- Update README.md
+
+## [0.0.63] - 2025-10-14
+
+### Changed
+
+- fix: update CODEBUDDY file path in agent context scripts
+- docs(readme): add /speckit.tasks step and renumber walkthrough
+
+## [0.0.62] - 2025-10-11
+
+### Changed
+
+- A few more places to update from code review
+- fix: align Cursor agent naming to use 'cursor-agent' consistently
+
+## [0.0.61] - 2025-10-10
+
+### Changed
+
+- Update clarify.md
+- add how to upgrade specify installation
+
+## [0.0.60] - 2025-10-10
+
+### Changed
+
+- Update vscode-settings.json
+- Update instructions and bug fix
+
+## [0.0.59] - 2025-10-10
+
+### Changed
+
+- Update __init__.py
+- Consolidate Cursor naming
+- Update CHANGELOG.md
+- Git errors are now highlighted.
+- Update __init__.py
+- Refactor agent configuration
+- Update src/specify_cli/__init__.py
+- Update scripts/powershell/update-agent-context.ps1
+- Update AGENTS.md
+- Update templates/commands/implement.md
+- Update templates/commands/implement.md
+- Update CHANGELOG.md
+- Update changelog
+- Update plan.md
+- Add ignore file verification step to /speckit.implement command
+- Escape backslashes in TOML outputs
+- update CodeBuddy to international site
+- feat: support codebuddy ai
+- feat: support codebuddy ai
+
+## [0.0.58] - 2025-10-08
+
+### Changed
+
+- Add escaping guidelines to command templates
+- Update README.md
+- Update README.md
+
+## [0.0.57] - 2025-10-06
+
+### Changed
+
+- Update CHANGELOG.md
+- Update command reference
+- Package up VS Code settings for Copilot
+- Update tasks-template.md
+- Update templates/tasks-template.md
+- Cleanup
+- Update CLI changes
+- Update template and docs
+- Update checklist.md
+- Update templates
+- Cleanup redundancies
+- Update checklist.md
+- Codex CLI is now fully supported
+- Update specify.md
+- Prompt updates
+- Update prompt prefix
+- Update .github/workflows/scripts/create-release-packages.sh
+- Consistency updates to commands
+- Update commands.
+- Update logs
+- Template cleanup and reorganization
+- Remove Codex named args limitation warning
+- Remove Codex named args limitation from README.md
+
+## [0.0.56] - 2025-10-02
+
+### Changed
+
+- docs(readme): link Amazon Q slash command limitation issue
+- docs: clarify Amazon Q limitation and update init docstring
+- feat(agent): Added Amazon Q Developer CLI Integration
+
+## [0.0.55] - 2025-09-30
+
+### Changed
+
+- Update URLs to Contributing and Support Guides in Docs
+- fix: add UTF-8 encoding to file read/write operations in update-agent-context.ps1
+- Update __init__.py
+- Update src/specify_cli/__init__.py
+- docs: fix the paths of generated files (moved under a `.specify/` folder)
+- Update src/specify_cli/__init__.py
+- feat: support 'specify init .' for current directory initialization
+- feat: Add emacs-style up/down keys
+
+## [0.0.54] - 2025-09-25
+
+### Changed
+
+- Update CONTRIBUTING.md
+- Refine `plan-template.md` with improved project type detection, clarified structure decision process, and enhanced research task guidance.
+- Update __init__.py
+
+## [0.0.53] - 2025-09-24
+
+### Changed
+
+- Update template path for spec file creation
+- Update template path for spec file creation
+- docs: remove constitution_update_checklist from README
+
+## [0.0.52] - 2025-09-22
+
+### Changed
+
+- Update analyze.md
+- Update templates/commands/analyze.md
+- Update templates/commands/clarify.md
+- Update templates/commands/plan.md
+- Update with extra commands
+- Update with --force flag
+- feat: add uv tool install instructions to README
+
+## [0.0.51] - 2025-09-21
+
+### Changed
+
+- Update with Roo Code support
+
+## [0.0.50] - 2025-09-21
+
+### Changed
+
+- Update generate-release-notes.sh
+- Update error messages
+- Auggie folder fix
+
+## [0.0.49] - 2025-09-21
+
+### Changed
+
+- Update scripts/powershell/update-agent-context.ps1
+- Update templates/commands/implement.md
+- Cleanup the check command
+- Add support for Auggie
+- Update AGENTS.md
+- Updates with Kilo Code support
+- Update README.md
+- Update templates/commands/constitution.md
+- Update templates/commands/implement.md
+- Update templates/commands/plan.md
+- Update templates/commands/specify.md
+- Update templates/commands/tasks.md
+- Update README.md
+- Stop splitting the warning over multiple lines
+- Update templates based on #419
+- docs: Update README with codex in check command
+
+## [0.0.48] - 2025-09-21
+
+### Changed
+
+- Update scripts/powershell/check-prerequisites.ps1
+- Update CHANGELOG.md
+- Update CHANGELOG.md
+- Update changelog
+- Update scripts/bash/update-agent-context.sh
+- Fix script config
+- Update scripts/bash/common.sh
+- Update scripts/powershell/update-agent-context.ps1
+- Update scripts/powershell/update-agent-context.ps1
+- Clarification
+- Update prompts
+- Update update-agent-context.ps1
+- Update CONTRIBUTING.md
+- Update CONTRIBUTING.md
+- Update CONTRIBUTING.md
+- Update CONTRIBUTING.md
+- Update CONTRIBUTING.md
+- Update contribution guidelines.
+- Root detection logic
+- Update templates/plan-template.md
+- Update scripts/bash/update-agent-context.sh
+- Update scripts/powershell/create-new-feature.ps1
+- Simplification
+- Script and template tweaks
+- Update config
+- Update scripts/powershell/check-prerequisites.ps1
+- Update scripts/bash/check-prerequisites.sh
+- Fix script path
+- Script cleanup
+- Update scripts/bash/check-prerequisites.sh
+- Update scripts/powershell/check-prerequisites.ps1
+- Update script delegation from GitHub Action
+- Cleanup the setup for generated packages
+- Use proper line endings
+- Consolidate scripts
+
+## [0.0.47] - 2025-09-20
+
+### Changed
+
+- Updating agent context files
+
+## [0.0.46] - 2025-09-20
+
+### Changed
+
+- Update update-agent-context.ps1
+- Update package release
+- Update config
+- Update __init__.py
+- Update __init__.py
+- Remove Codex-specific logic in the initialization script
+- Update version rev
+- Update __init__.py
+- Enhance Codex support by auto-syncing prompt files, allowing spec generation without git, and documenting clearer /specify usage.
+- Consistency tweaks
+- Consistent step coloring
+- Update __init__.py
+- Update __init__.py
+- Quick UI tweak
+- Update package release
+- Limit workspace command seeding to Codex init and update Codex documentation accordingly.
+- Clarify Codex-specific README note with rationale for its different workflow.
+- Bump to 0.0.7 and document Codex support
+- Normalize Codex command templates to the scripts-based schema and auto-upgrade generated commands.
+- Fix remaining merge conflict markers in __init__.py
+- Add Codex CLI support with AGENTS.md and commands bootstrap
+
+## [0.0.45] - 2025-09-19
+
+### Changed
+
+- Update with Windsurf support
+- expose token as an argument through cli --github-token
+- add github auth headers if there are GITHUB_TOKEN/GH_TOKEN set
+
+## [0.0.44] - 2025-09-18
+
+### Changed
+
+- Update specify.md
+- Update __init__.py
+
+## [0.0.43] - 2025-09-18
+
+### Changed
+
+- Update with support for /implement
+
+## [0.0.42] - 2025-09-18
+
+### Changed
+
+- Update constitution.md
+
+## [0.0.41] - 2025-09-18
+
+### Changed
+
+- Update constitution.md
+
+## [0.0.40] - 2025-09-18
+
+### Changed
+
+- Update constitution command
+
+## [0.0.39] - 2025-09-18
+
+### Changed
+
+- Cleanup
+- fix: commands format for qwen
+
+## [0.0.38] - 2025-09-18
+
+### Changed
+
+- Fix template path in update-agent-context.sh
+- docs: fix grammar mistakes in markdown files
+
+## [0.0.37] - 2025-09-17
+
+### Changed
+
+- fix: add missing Qwen support to release workflow and agent scripts
+
+## [0.0.36] - 2025-09-17
+
+### Changed
+
+- feat: Add opencode ai agent
+- Fix --no-git argument resolution.
+
+## [0.0.35] - 2025-09-17
+
+### Changed
+
+- chore(release): bump version to 0.0.5 and update changelog
+- chore: address review feedback - remove comment and fix numbering
+- feat: add Qwen Code support to Spec Kit
+
+## [0.0.34] - 2025-09-15
+
+### Changed
+
+- Update template.
+
+## [0.0.33] - 2025-09-15
+
+### Changed
+
+- Update scripts
+
+## [0.0.32] - 2025-09-15
+
+### Changed
+
+- Update template paths
+
+## [0.0.31] - 2025-09-15
+
+### Changed
+
+- Update for Cursor rules & script path
+- Update Specify definition
+- Update README.md
+- Update with video header
+- fix(docs): remove redundant white space
+
+## [0.0.30] - 2025-09-12
+
+### Changed
+
+- Update update-agent-context.ps1
+
+## [0.0.29] - 2025-09-12
+
+### Changed
+
+- Update create-release-packages.sh
+- Update with check changes
+
+## [0.0.28] - 2025-09-12
+
+### Changed
+
+- Update wording
+- Update release.yml
+
+## [0.0.27] - 2025-09-12
+
+### Changed
+
+- Support Cursor
+
+## [0.0.26] - 2025-09-12
+
+### Changed
+
+- Saner approach to scripts
+
+## [0.0.25] - 2025-09-12
+
+### Changed
+
+- Update packaging
+
+## [0.0.24] - 2025-09-12
+
+### Changed
+
+- Fix package logic
+
+## [0.0.23] - 2025-09-12
+
+### Changed
+
+- Update config
+- Update __init__.py
+- Refactor with platform-specific constraints
+- Update README.md
+- Update CLI reference
+- Update __init__.py
+- refactor: extract Claude local path to constant for maintainability
+- fix: support Claude CLI installed via migrate-installer
+
+## [0.0.22] - 2025-09-11
+
+### Changed
+
+- Update release.yml
+- Update create-release-packages.sh
+- Update create-release-packages.sh
+- Update release file
+
+## [0.0.21] - 2025-09-11
+
+### Changed
+
+- Consolidate script creation
+- Update how Copilot prompts are created
+- Update local-development.md
+- Local dev guide and script updates
+- Update CONTRIBUTING.md
+- Enhance HTTP client initialization with optional SSL verification and bump version to 0.0.3
+- Complete Gemini CLI command instructions
+- Refactor HTTP client usage to utilize truststore for SSL context
+- docs: Update Commands sections renaming to match implementation
+- docs: Fix formatting issues in README.md for consistency
+- Update docs and release
+
+## [0.0.20] - 2025-09-08
+
+### Changed
+
+- Update docs/quickstart.md
+- Docs setup
+
+## [0.0.19] - 2025-09-08
+
+### Changed
+
+- Update README.md
+
+## [0.0.18] - 2025-09-08
+
+### Changed
+
+- Update README.md
+
+## [0.0.17] - 2025-09-08
+
+### Changed
+
+- Remove trailing whitespace from tasks.md template
+
+## [0.0.16] - 2025-09-07
+
+### Changed
+
+- Fix release workflow to work with repository rules
+
+## [0.0.15] - 2025-09-07
+
+### Changed
+
+- Use `/usr/bin/env bash` instead of `/bin/bash` for shebang
+
+## [0.0.14] - 2025-09-04
+
+### Changed
+
+- fix: correct typos in spec-driven.md
+
+## [0.0.13] - 2025-09-04
+
+### Changed
+
+- Fix formatting in usage instructions
+
+## [0.0.12] - 2025-09-04
+
+### Changed
+
+- Fix template path in plan command documentation
+
+## [0.0.11] - 2025-09-04
+
+### Changed
+
+- fix: incorrect tree structure in examples
+
+## [0.0.10] - 2025-09-04
+
+### Changed
+
+- fix minor typo in Article I
+
+## [0.0.9] - 2025-09-03
+
+### Changed
+
+- Update CLI commands from '/spec' to '/specify'
+
+## [0.0.8] - 2025-09-02
+
+### Changed
+
+- adding executable permission to the scripts so they execute when the coding agent launches them
+
+## [0.0.7] - 2025-09-02
+
+### Changed
+
+- doco(spec-driven): Fix small typo in document
+
+## [0.0.6] - 2025-08-25
+
+### Changed
+
+- Update README.md
+
+## [0.0.5] - 2025-08-25
+
+### Changed
+
+- Update .github/workflows/release.yml
+- Fix release workflow to work with repository rules
+
+## [0.0.4] - 2025-08-25
+
+### Changed
+
+- Add John Lam as contributor and release badge
+
+## [0.0.3] - 2025-08-22
+
+### Changed
+
+- Update requirements
+
+## [0.0.2] - 2025-08-22
+
+### Changed
+
+- Update README.md
+
+## [0.0.1] - 2025-08-22
+
+### Changed
+
+- Update release.yml

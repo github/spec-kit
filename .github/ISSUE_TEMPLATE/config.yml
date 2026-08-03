@@ -7,7 +7,7 @@ contact_links:
     url: https://github.com/github/spec-kit/blob/main/README.md
     about: Read the Spec Kit documentation and guides
   - name: 🛠️ Extension Development Guide
-    url: https://github.com/manfredseee/spec-kit/blob/main/extensions/EXTENSION-DEVELOPMENT-GUIDE.md
+    url: https://github.com/github/spec-kit/blob/main/extensions/EXTENSION-DEVELOPMENT-GUIDE.md
     about: Learn how to develop and publish Spec Kit extensions
   - name: 🤝 Contributing Guide
     url: https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md

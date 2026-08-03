@@ -1,0 +1,29 @@
+{
+  "title": "Spec Kit",
+  "description": "Spec Kit is an open source toolkit for Spec-Driven Development (SDD) — a methodology that helps software teams build high-quality software faster by focusing on product scenarios and predictable outcomes. It provides the Specify CLI, slash-command templates, extensions, presets, workflows, and integrations for popular AI coding agents.",
+  "creators": [
+    {
+      "name": "Delimarsky, Den"
+    },
+    {
+      "name": "Riem, Manfred"
+    }
+  ],
+  "license": "MIT",
+  "upload_type": "software",
+  "keywords": [
+    "spec-driven development",
+    "ai coding agents",
+    "software engineering",
+    "cli",
+    "copilot",
+    "specification"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/github/spec-kit",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ]
+}

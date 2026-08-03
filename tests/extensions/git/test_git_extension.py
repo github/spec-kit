@@ -1,0 +1,2082 @@
+"""
+Tests for the bundled git extension (extensions/git/).
+
+Validates:
+- extension.yml manifest
+- Bash scripts (create-new-feature-branch.sh, initialize-repo.sh, auto-commit.sh, git-common.sh)
+- PowerShell scripts (where pwsh is available)
+- Config reading from git-config.yml
+- Extension install via ExtensionManager
+"""
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from tests.conftest import requires_bash
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+EXT_DIR = PROJECT_ROOT / "extensions" / "git"
+EXT_BASH = EXT_DIR / "scripts" / "bash"
+EXT_PS = EXT_DIR / "scripts" / "powershell"
+CORE_COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
+CORE_COMMON_PS = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
+
+HAS_PWSH = shutil.which("pwsh") is not None
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def _init_git(path: Path) -> None:
+    """Initialize a git repo with a dummy commit."""
+    subprocess.run(["git", "init", "-q"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=path, check=True)
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "seed", "-q"],
+        cwd=path,
+        check=True,
+    )
+
+
+def _setup_project(tmp_path: Path, *, git: bool = True) -> Path:
+    """Create a project directory with core scripts and .specify."""
+    # Core scripts (needed by extension scripts that source common.sh)
+    bash_dir = tmp_path / "scripts" / "bash"
+    bash_dir.mkdir(parents=True)
+    shutil.copy(CORE_COMMON_SH, bash_dir / "common.sh")
+
+    ps_dir = tmp_path / "scripts" / "powershell"
+    ps_dir.mkdir(parents=True)
+    shutil.copy(CORE_COMMON_PS, ps_dir / "common.ps1")
+
+    # .specify structure
+    (tmp_path / ".specify" / "templates").mkdir(parents=True)
+
+    # Extension scripts (as if installed)
+    ext_bash = tmp_path / ".specify" / "extensions" / "git" / "scripts" / "bash"
+    ext_bash.mkdir(parents=True)
+    for f in EXT_BASH.iterdir():
+        dest = ext_bash / f.name
+        shutil.copy(f, dest)
+        dest.chmod(0o755)
+
+    ext_ps = tmp_path / ".specify" / "extensions" / "git" / "scripts" / "powershell"
+    ext_ps.mkdir(parents=True)
+    for f in EXT_PS.iterdir():
+        shutil.copy(f, ext_ps / f.name)
+
+    # Copy extension.yml
+    shutil.copy(EXT_DIR / "extension.yml", tmp_path / ".specify" / "extensions" / "git" / "extension.yml")
+
+    if git:
+        _init_git(tmp_path)
+
+    return tmp_path
+
+
+def _write_config(project: Path, content: str) -> Path:
+    """Write git-config.yml into the extension config directory."""
+    config_path = project / ".specify" / "extensions" / "git" / "git-config.yml"
+    config_path.write_text(content, encoding="utf-8")
+    return config_path
+
+
+def _add_sibling_worktree(project: Path, path: Path, branch: str) -> None:
+    """Add a sibling worktree so `git branch -a` marks it with `+`."""
+    subprocess.run(
+        ["git", "worktree", "add", "-q", "-b", branch, str(path), "HEAD"],
+        cwd=project,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+# Git identity env vars for CI runners without global git config
+_GIT_ENV = {
+    "GIT_AUTHOR_NAME": "Test User",
+    "GIT_AUTHOR_EMAIL": "test@example.com",
+    "GIT_COMMITTER_NAME": "Test User",
+    "GIT_COMMITTER_EMAIL": "test@example.com",
+}
+
+
+def _run_bash(script_name: str, cwd: Path, *args: str, env_extra: dict | None = None) -> subprocess.CompletedProcess:
+    """Run an extension bash script."""
+    script = cwd / ".specify" / "extensions" / "git" / "scripts" / "bash" / script_name
+    env = {**os.environ, **_GIT_ENV, **(env_extra or {})}
+    return subprocess.run(
+        ["bash", str(script), *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def _run_pwsh(script_name: str, cwd: Path, *args: str, env_extra: dict | None = None) -> subprocess.CompletedProcess:
+    """Run an extension PowerShell script."""
+    script = cwd / ".specify" / "extensions" / "git" / "scripts" / "powershell" / script_name
+    env = {**os.environ, **_GIT_ENV, **(env_extra or {})}
+    return subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(script), *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+# ── Manifest Tests ───────────────────────────────────────────────────────────
+
+
+class TestGitExtensionManifest:
+    def test_manifest_validates(self):
+        """extension.yml passes manifest validation."""
+        from specify_cli.extensions import ExtensionManifest
+
+        m = ExtensionManifest(EXT_DIR / "extension.yml")
+        assert m.id == "git"
+        assert m.version == "1.0.0"
+
+    def test_manifest_commands(self):
+        """Manifest declares expected commands."""
+        from specify_cli.extensions import ExtensionManifest
+
+        m = ExtensionManifest(EXT_DIR / "extension.yml")
+        names = [c["name"] for c in m.commands]
+        assert "speckit.git.feature" in names
+        assert "speckit.git.validate" in names
+        assert "speckit.git.remote" in names
+        assert "speckit.git.initialize" in names
+        assert "speckit.git.commit" in names
+
+    def test_manifest_hooks(self):
+        """Manifest declares expected hooks."""
+        from specify_cli.extensions import ExtensionManifest
+
+        m = ExtensionManifest(EXT_DIR / "extension.yml")
+        assert "before_constitution" in m.hooks
+        assert "before_specify" in m.hooks
+        assert "after_specify" in m.hooks
+        assert "after_implement" in m.hooks
+        assert m.hooks["before_constitution"]["command"] == "speckit.git.initialize"
+        assert m.hooks["before_specify"]["command"] == "speckit.git.feature"
+
+    def test_manifest_command_files_exist(self):
+        """All command files referenced in the manifest exist."""
+        from specify_cli.extensions import ExtensionManifest
+
+        m = ExtensionManifest(EXT_DIR / "extension.yml")
+        for cmd in m.commands:
+            cmd_path = EXT_DIR / cmd["file"]
+            assert cmd_path.is_file(), f"Missing command file: {cmd['file']}"
+
+
+# ── Install Tests ────────────────────────────────────────────────────────────
+
+
+class TestGitExtensionInstall:
+    def test_install_from_directory(self, tmp_path: Path):
+        """Extension installs via ExtensionManager.install_from_directory."""
+        from specify_cli.extensions import ExtensionManager
+
+        (tmp_path / ".specify").mkdir()
+        manager = ExtensionManager(tmp_path)
+        manifest = manager.install_from_directory(EXT_DIR, "0.5.0", register_commands=False)
+        assert manifest.id == "git"
+        assert manager.registry.is_installed("git")
+
+    def test_install_copies_scripts(self, tmp_path: Path):
+        """Extension install copies script files."""
+        from specify_cli.extensions import ExtensionManager
+
+        (tmp_path / ".specify").mkdir()
+        manager = ExtensionManager(tmp_path)
+        manager.install_from_directory(EXT_DIR, "0.5.0", register_commands=False)
+
+        ext_installed = tmp_path / ".specify" / "extensions" / "git"
+        assert (ext_installed / "scripts" / "bash" / "create-new-feature-branch.sh").is_file()
+        assert (ext_installed / "scripts" / "bash" / "initialize-repo.sh").is_file()
+        assert (ext_installed / "scripts" / "bash" / "auto-commit.sh").is_file()
+        assert (ext_installed / "scripts" / "bash" / "git-common.sh").is_file()
+        assert (ext_installed / "scripts" / "powershell" / "create-new-feature-branch.ps1").is_file()
+        assert (ext_installed / "scripts" / "powershell" / "initialize-repo.ps1").is_file()
+        assert (ext_installed / "scripts" / "powershell" / "auto-commit.ps1").is_file()
+        assert (ext_installed / "scripts" / "powershell" / "git-common.ps1").is_file()
+
+    def test_bundled_extension_locator(self):
+        """_locate_bundled_extension finds the git extension."""
+        from specify_cli import _locate_bundled_extension
+
+        path = _locate_bundled_extension("git")
+        assert path is not None
+        assert (path / "extension.yml").is_file()
+
+
+# ── initialize-repo.sh Tests ─────────────────────────────────────────────────
+
+
+@requires_bash
+class TestInitializeRepoBash:
+    def test_initializes_git_repo(self, tmp_path: Path):
+        """initialize-repo.sh creates a git repo with initial commit."""
+        project = _setup_project(tmp_path, git=False)
+        result = _run_bash("initialize-repo.sh", project)
+        assert result.returncode == 0, result.stderr
+
+        # Success marker is the full ASCII "[OK] ..." line (matching the PowerShell
+        # twin and the sibling auto-commit scripts), not a Unicode checkmark.
+        assert "[OK] Git repository initialized" in result.stderr, result.stderr
+
+        # Verify git repo exists
+        assert (project / ".git").exists()
+
+        # Verify at least one commit exists
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert log.returncode == 0
+
+    def test_skips_if_already_git_repo(self, tmp_path: Path):
+        """initialize-repo.sh skips if already a git repo."""
+        project = _setup_project(tmp_path, git=True)
+        result = _run_bash("initialize-repo.sh", project)
+        assert result.returncode == 0
+        assert "already initialized" in result.stderr.lower()
+
+    def test_custom_commit_message(self, tmp_path: Path):
+        """initialize-repo.sh reads custom commit message from config."""
+        project = _setup_project(tmp_path, git=False)
+        _write_config(project, 'init_commit_message: "Custom init message"\n')
+
+        result = _run_bash("initialize-repo.sh", project)
+        assert result.returncode == 0
+
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "Custom init message" in log.stdout
+
+
+@pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
+class TestInitializeRepoPowerShell:
+    def test_initializes_git_repo(self, tmp_path: Path):
+        """initialize-repo.ps1 creates a git repo with initial commit."""
+        project = _setup_project(tmp_path, git=False)
+        result = _run_pwsh("initialize-repo.ps1", project)
+        assert result.returncode == 0, result.stderr
+        assert (project / ".git").exists()
+
+    def test_skips_if_already_git_repo(self, tmp_path: Path):
+        """initialize-repo.ps1 skips if already a git repo."""
+        project = _setup_project(tmp_path, git=True)
+        result = _run_pwsh("initialize-repo.ps1", project)
+        assert result.returncode == 0
+
+
+# ── create-new-feature-branch.sh Tests ──────────────────────────────────────────────
+
+
+@requires_bash
+class TestCreateFeatureBash:
+    def test_creates_branch_sequential(self, tmp_path: Path):
+        """Extension create-new-feature-branch.sh creates sequential branch."""
+        project = _setup_project(tmp_path)
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--short-name", "user-auth", "Add user authentication",
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "001-user-auth"
+        assert data["FEATURE_NUM"] == "001"
+
+    def test_output_omits_has_git_for_parity(self, tmp_path: Path):
+        """The bash output contract is {BRANCH_NAME, FEATURE_NUM} (+ DRY_RUN) in JSON
+        and a BRANCH_NAME:/FEATURE_NUM: text block -- no HAS_GIT key/line. This pins
+        the canonical contract the PowerShell twin must mirror."""
+        project = _setup_project(tmp_path)
+        rj = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--short-name", "parity", "Parity feature",
+        )
+        assert rj.returncode == 0, rj.stderr
+        assert "HAS_GIT" not in json.loads(rj.stdout)
+        rt = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--dry-run", "--short-name", "parity", "Parity feature",
+        )
+        assert rt.returncode == 0, rt.stderr
+        assert "HAS_GIT" not in rt.stdout
+
+    def test_help_documents_branch_prefix(self, tmp_path: Path):
+        """--help documents both template config knobs."""
+        project = _setup_project(tmp_path)
+        result = _run_bash("create-new-feature-branch.sh", project, "--help")
+
+        assert result.returncode == 0
+        assert "branch_template" in result.stdout
+        assert "branch_prefix" in result.stdout
+
+    def test_branch_name_short_word_case_sensitivity(self, tmp_path: Path):
+        """A short word is dropped from the derived branch name unless it appears
+        as an acronym in UPPERCASE in the description (case-sensitive, must match the
+        PowerShell twin)."""
+        project = _setup_project(tmp_path)
+        # lowercase "go" (<3 chars, not an uppercase acronym) is dropped
+        r1 = _run_bash(
+            "create-new-feature-branch.sh", project, "--json", "--dry-run", "Add go support",
+        )
+        assert r1.returncode == 0, r1.stderr
+        assert json.loads(r1.stdout)["BRANCH_NAME"] == "001-support"
+        # uppercase "GO" is kept as an acronym
+        r2 = _run_bash(
+            "create-new-feature-branch.sh", project, "--json", "--dry-run", "Use GO now",
+        )
+        assert r2.returncode == 0, r2.stderr
+        assert json.loads(r2.stdout)["BRANCH_NAME"] == "001-use-go-now"
+
+    def test_creates_branch_timestamp(self, tmp_path: Path):
+        """Extension create-new-feature-branch.sh creates timestamp branch."""
+        project = _setup_project(tmp_path)
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--timestamp", "--short-name", "feat", "Feature",
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert re.match(r"^\d{8}-\d{6}-feat$", data["BRANCH_NAME"])
+
+    def test_increments_from_existing_specs(self, tmp_path: Path):
+        """Sequential numbering increments past existing spec directories."""
+        project = _setup_project(tmp_path)
+        (project / "specs" / "001-first").mkdir(parents=True)
+        (project / "specs" / "002-second").mkdir(parents=True)
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--short-name", "third", "Third feature",
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["FEATURE_NUM"] == "003"
+
+    def test_branch_template_adds_author_and_app_namespace(self, tmp_path: Path):
+        """branch_template namespaces generated branch names for monorepos."""
+        project = _setup_project(tmp_path / "app-a")
+        subprocess.run(["git", "config", "user.name", "jdoe"], cwd=project, check=True)
+        _write_config(project, 'branch_template: "{author}/{app}/{number}-{slug}"\n')
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--short-name", "guided-tour", "Add guided tour",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/app-a/001-guided-tour"
+        assert data["FEATURE_NUM"] == "001"
+
+    def test_branch_prefix_shorthand_adds_namespace(self, tmp_path: Path):
+        """branch_prefix expands to a namespace before the default branch shape."""
+        project = _setup_project(tmp_path / "app-a")
+        _write_config(project, 'branch_prefix: "features/{app}"\n')
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--short-name", "guided-tour", "Add guided tour",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "features/app-a/001-guided-tour"
+        assert data["FEATURE_NUM"] == "001"
+
+    def test_branch_template_scopes_number_after_numeric_app_namespace(self, tmp_path: Path):
+        """Numeric-looking namespace segments must not be parsed as feature numbers."""
+        project = _setup_project(tmp_path / "2026-app")
+        subprocess.run(["git", "config", "user.name", "jdoe"], cwd=project, check=True)
+        _write_config(project, 'branch_template: "{author}/{app}/{number}-{slug}"\n')
+        subprocess.run(["git", "branch", "jdoe/2026-app/007-existing"], cwd=project, check=True)
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--short-name", "next", "Next feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/2026-app/008-next"
+        assert data["FEATURE_NUM"] == "008"
+
+    def test_branch_template_ignores_malformed_timestamp_branches_when_numbering(self, tmp_path: Path):
+        """Malformed timestamp-looking branches must not inflate sequential numbering."""
+        project = _setup_project(tmp_path / "app-a")
+        subprocess.run(["git", "config", "user.name", "jdoe"], cwd=project, check=True)
+        _write_config(project, 'branch_template: "{author}/{app}/{number}-{slug}"\n')
+        subprocess.run(["git", "branch", "jdoe/app-a/007-existing"], cwd=project, check=True)
+        subprocess.run(["git", "branch", "jdoe/app-a/2026031-143022-invalid"], cwd=project, check=True)
+        subprocess.run(["git", "branch", "jdoe/app-a/20260319-143022"], cwd=project, check=True)
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--short-name", "next", "Next feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/app-a/008-next"
+        assert data["FEATURE_NUM"] == "008"
+
+    def test_branch_template_scopes_existing_branch_numbers(self, tmp_path: Path):
+        """Templated branch numbering ignores branches outside the current namespace."""
+        project = _setup_project(tmp_path / "app-a")
+        subprocess.run(["git", "config", "user.name", "jdoe"], cwd=project, check=True)
+        _write_config(project, 'branch_template: "{author}/{app}/{number}-{slug}"\n')
+        subprocess.run(["git", "branch", "jdoe/app-a/007-existing"], cwd=project, check=True)
+        subprocess.run(["git", "branch", "jdoe/app-b/010-other-app"], cwd=project, check=True)
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--short-name", "next", "Next feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/app-a/008-next"
+        assert data["FEATURE_NUM"] == "008"
+
+    def test_branch_template_requires_number_token(self, tmp_path: Path):
+        """Configured templates must include {number} so generated branches validate."""
+        project = _setup_project(tmp_path / "app-a")
+        _write_config(project, 'branch_template: "{author}/{app}/{slug}"\n')
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--short-name", "guided-tour", "Add guided tour",
+        )
+
+        assert result.returncode != 0
+        assert "branch_template" in result.stderr
+        assert "{number}" in result.stderr
+
+    def test_branch_template_requires_feature_segment_to_start_with_number(self, tmp_path: Path):
+        """Templates must render a final path segment that validation accepts."""
+        project = _setup_project(tmp_path / "app-a")
+        _write_config(project, 'branch_template: "{author}/{app}/feature-{number}"\n')
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--short-name", "guided-tour", "Add guided tour",
+        )
+
+        assert result.returncode != 0
+        assert "branch_template" in result.stderr
+        assert "{number}-" in result.stderr
+
+    def test_branch_template_rejects_slug_before_number(self, tmp_path: Path):
+        """{slug} before {number} would make branch-number scanning slug-specific."""
+        project = _setup_project(tmp_path / "app-a")
+        _write_config(project, 'branch_template: "{author}/{slug}/{number}-{slug}"\n')
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--short-name", "guided-tour", "Add guided tour",
+        )
+
+        assert result.returncode != 0
+        assert "branch_template" in result.stderr
+        assert "{slug}" in result.stderr
+        assert "{number}" in result.stderr
+
+    def test_git_branch_name_override_extracts_number_after_namespace(self, tmp_path: Path):
+        """GIT_BRANCH_NAME extracts FEATURE_NUM from a namespaced branch."""
+        project = _setup_project(tmp_path / "app-a")
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "Ignored description",
+            env_extra={"GIT_BRANCH_NAME": "jdoe/app-a/042-custom-branch"},
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/app-a/042-custom-branch"
+        assert data["FEATURE_NUM"] == "042"
+
+    def test_git_branch_name_override_ignores_numeric_namespace_segments(self, tmp_path: Path):
+        """GIT_BRANCH_NAME uses the feature segment, not numeric namespace segments."""
+        project = _setup_project(tmp_path / "2026-app")
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "Ignored description",
+            env_extra={"GIT_BRANCH_NAME": "jdoe/2026-app/042-custom-branch"},
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/2026-app/042-custom-branch"
+        assert data["FEATURE_NUM"] == "042"
+
+    def test_git_branch_name_override_without_feature_marker_preserves_full_name(self, tmp_path: Path):
+        """GIT_BRANCH_NAME without a feature marker keeps the historical FEATURE_NUM."""
+        project = _setup_project(tmp_path / "app-a")
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "Ignored description",
+            env_extra={"GIT_BRANCH_NAME": "jdoe/app-a/custom-branch"},
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/app-a/custom-branch"
+        assert data["FEATURE_NUM"] == "jdoe/app-a/custom-branch"
+
+    def test_truncation_warning_reports_utf8_bytes(self):
+        """Bash truncation warnings should use the same byte counter as enforcement."""
+        source = (EXT_BASH / "create-new-feature-branch.sh").read_text(encoding="utf-8")
+
+        assert '_byte_length "$ORIGINAL_BRANCH_NAME"' in source
+        assert '_byte_length "$BRANCH_NAME"' in source
+
+    def test_dry_run_counts_branches_checked_out_in_worktrees(self, tmp_path: Path):
+        """Branches checked out in sibling worktrees still reserve their prefix."""
+        project = _setup_project(tmp_path / "project")
+        _add_sibling_worktree(project, tmp_path / "sibling-worktree", "007-worktree-feature")
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--short-name", "next", "Next feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "008-next"
+        assert data["FEATURE_NUM"] == "008"
+
+    def test_dry_run_preserves_literal_plus_branch_prefix(self, tmp_path: Path):
+        """A literal leading plus in a branch name is not a git worktree marker."""
+        project = _setup_project(tmp_path)
+        subprocess.run(
+            ["git", "branch", "+007-plus-prefix"],
+            cwd=project,
+            check=True,
+        )
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--short-name", "next", "Next feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "001-next"
+        assert data["FEATURE_NUM"] == "001"
+
+    def test_no_git_graceful_degradation(self, tmp_path: Path):
+        """create-new-feature-branch.sh works without git (outputs branch name, skips branch creation)."""
+        project = _setup_project(tmp_path, git=False)
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--short-name", "no-git", "No git feature",
+        )
+        assert result.returncode == 0, result.stderr
+        assert "Warning" in result.stderr
+        data = json.loads(result.stdout)
+        assert "BRANCH_NAME" in data
+        assert "FEATURE_NUM" in data
+
+    def test_dry_run(self, tmp_path: Path):
+        """--dry-run computes branch name without creating anything."""
+        project = _setup_project(tmp_path)
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--short-name", "dry", "Dry run test",
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data.get("DRY_RUN") is True
+        assert not (project / "specs" / data["BRANCH_NAME"]).exists()
+
+    def test_specify_init_dir_without_core_errors(self, tmp_path: Path):
+        """With no core scripts (only git-common.sh loaded), a set SPECIFY_INIT_DIR
+        hard-errors instead of silently falling back to the walk-up project root."""
+        project = _setup_project(tmp_path, git=False)
+        # Simulate a no-core install: drop core common.sh so only git-common.sh loads.
+        (project / "scripts" / "bash" / "common.sh").unlink()
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--short-name", "x", "X feature",
+            env_extra={"SPECIFY_INIT_DIR": str(project)},
+        )
+        assert result.returncode != 0
+        assert "requires updated Spec Kit core scripts" in result.stderr
+
+    def test_specify_init_dir_with_stale_core_errors(self, tmp_path: Path):
+        """With an older core common.sh, a set SPECIFY_INIT_DIR must hard-error
+        instead of calling the stale get_repo_root that ignores the override."""
+        project = _setup_project(tmp_path, git=False)
+        (project / "scripts" / "bash" / "common.sh").write_text(
+            "#!/usr/bin/env bash\nget_repo_root() { pwd; }\n",
+            encoding="utf-8",
+        )
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--short-name", "x", "X feature",
+            env_extra={"SPECIFY_INIT_DIR": str(tmp_path / "missing")},
+        )
+        assert result.returncode != 0
+        assert "requires updated Spec Kit core scripts" in result.stderr
+
+    def test_explicit_number_zero_is_honored(self, tmp_path: Path):
+        """An explicit --number 0 is honored (yields 000), not treated as
+        'auto-detect'. Pins the canonical behavior the PowerShell twin must
+        mirror; the empty-string check (`[ -z "$BRANCH_NUMBER" ]`) already
+        distinguishes an unset flag from a supplied 0."""
+        project = _setup_project(tmp_path)
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--number", "0", "--short-name", "zero", "Zero feature",
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "000-zero"
+        assert data["FEATURE_NUM"] == "000"
+
+    def test_negative_number_rejected(self, tmp_path: Path):
+        """A negative --number is rejected. Pins the canonical behavior the
+        PowerShell twin must mirror; a negative value would otherwise format to
+        e.g. '-005' and produce a branch name starting with '-', which git
+        refuses (refs cannot begin with a dash)."""
+        project = _setup_project(tmp_path)
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--number", "-5", "--short-name", "neg", "Negative feature",
+        )
+        assert result.returncode != 0
+        assert "--number must be a non-negative integer" in result.stderr
+
+
+@pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
+class TestCreateFeaturePowerShell:
+    def test_creates_branch_sequential(self, tmp_path: Path):
+        """Extension create-new-feature-branch.ps1 creates sequential branch."""
+        project = _setup_project(tmp_path)
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-ShortName", "user-auth", "Add user authentication",
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "001-user-auth"
+
+    def test_output_omits_has_git_to_match_bash(self, tmp_path: Path):
+        """PowerShell must mirror the bash twin's output contract: neither JSON nor
+        text output may include HAS_GIT (it is computed internally for branch-creation
+        logic only). Fails before the fix (PS emitted HAS_GIT), passes after."""
+        project = _setup_project(tmp_path)
+        rj = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-ShortName", "parity", "Parity feature",
+        )
+        assert rj.returncode == 0, rj.stderr
+        assert "HAS_GIT" not in json.loads(rj.stdout)
+        rt = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-DryRun", "-ShortName", "parity", "Parity feature",
+        )
+        assert rt.returncode == 0, rt.stderr
+        assert "HAS_GIT" not in rt.stdout
+
+    def test_persist_hint_matches_twins(self, tmp_path: Path):
+        """The non-JSON SPECIFY_FEATURE hint must use the '# To persist in your
+        shell: $env:SPECIFY_FEATURE = '<name>' form — matching the core
+        create-new-feature.ps1 twin and the bash/python twins of this script —
+        not the old 'environment variable set to:' wording (the env var is only
+        set in this child process, so the actionable output is the persist hint)."""
+        project = _setup_project(tmp_path)
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-ShortName", "persist", "Persist hint feature",
+        )
+        assert result.returncode == 0, result.stderr
+        assert "# To persist in your shell:" in result.stdout
+        assert "$env:SPECIFY_FEATURE = '001-persist'" in result.stdout
+        assert "environment variable set to:" not in result.stdout
+
+    def test_help_documents_branch_prefix(self, tmp_path: Path):
+        """-Help documents both template config knobs."""
+        project = _setup_project(tmp_path)
+        result = _run_pwsh("create-new-feature-branch.ps1", project, "-Help")
+
+        assert result.returncode == 0
+        assert "branch_template" in result.stdout
+        assert "branch_prefix" in result.stdout
+
+    def test_branch_name_short_word_case_sensitivity(self, tmp_path: Path):
+        """PowerShell must match the bash twin: a short word is dropped unless it
+        appears as an acronym in UPPERCASE (case-sensitive -cmatch, not -match)."""
+        project = _setup_project(tmp_path)
+        r1 = _run_pwsh(
+            "create-new-feature-branch.ps1", project, "-Json", "-DryRun", "Add go support",
+        )
+        assert r1.returncode == 0, r1.stderr
+        assert json.loads(r1.stdout)["BRANCH_NAME"] == "001-support"
+        r2 = _run_pwsh(
+            "create-new-feature-branch.ps1", project, "-Json", "-DryRun", "Use GO now",
+        )
+        assert r2.returncode == 0, r2.stderr
+        assert json.loads(r2.stdout)["BRANCH_NAME"] == "001-use-go-now"
+
+    def test_dry_run_counts_branches_checked_out_in_worktrees(self, tmp_path: Path):
+        """Branches checked out in sibling worktrees still reserve their prefix."""
+        project = _setup_project(tmp_path / "project")
+        _add_sibling_worktree(project, tmp_path / "sibling-worktree", "007-worktree-feature")
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-ShortName", "next", "Next feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "008-next"
+        assert data["FEATURE_NUM"] == "008"
+
+    def test_creates_branch_timestamp(self, tmp_path: Path):
+        """Extension create-new-feature-branch.ps1 creates timestamp branch."""
+        project = _setup_project(tmp_path)
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-Timestamp", "-ShortName", "feat", "Feature",
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert re.match(r"^\d{8}-\d{6}-feat$", data["BRANCH_NAME"])
+
+    def test_branch_template_adds_author_and_app_namespace(self, tmp_path: Path):
+        """PowerShell supports branch_template namespaces."""
+        project = _setup_project(tmp_path / "app-a")
+        subprocess.run(["git", "config", "user.name", "jdoe"], cwd=project, check=True)
+        _write_config(project, 'branch_template: "{author}/{app}/{number}-{slug}"\n')
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-ShortName", "guided-tour", "Add guided tour",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/app-a/001-guided-tour"
+        assert data["FEATURE_NUM"] == "001"
+
+    def test_branch_prefix_shorthand_adds_namespace(self, tmp_path: Path):
+        """PowerShell supports branch_prefix shorthand namespaces."""
+        project = _setup_project(tmp_path / "app-a")
+        _write_config(project, 'branch_prefix: "features/{app}"\n')
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-ShortName", "guided-tour", "Add guided tour",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "features/app-a/001-guided-tour"
+        assert data["FEATURE_NUM"] == "001"
+
+    def test_branch_template_scopes_number_after_numeric_app_namespace(self, tmp_path: Path):
+        """PowerShell ignores numeric-looking namespace segments when numbering."""
+        project = _setup_project(tmp_path / "2026-app")
+        subprocess.run(["git", "config", "user.name", "jdoe"], cwd=project, check=True)
+        _write_config(project, 'branch_template: "{author}/{app}/{number}-{slug}"\n')
+        subprocess.run(["git", "branch", "jdoe/2026-app/007-existing"], cwd=project, check=True)
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-ShortName", "next", "Next feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/2026-app/008-next"
+        assert data["FEATURE_NUM"] == "008"
+
+    def test_branch_template_ignores_malformed_timestamp_branches_when_numbering(self, tmp_path: Path):
+        """PowerShell skips malformed timestamp-looking refs during sequential numbering."""
+        project = _setup_project(tmp_path / "app-a")
+        subprocess.run(["git", "config", "user.name", "jdoe"], cwd=project, check=True)
+        _write_config(project, 'branch_template: "{author}/{app}/{number}-{slug}"\n')
+        subprocess.run(["git", "branch", "jdoe/app-a/007-existing"], cwd=project, check=True)
+        subprocess.run(["git", "branch", "jdoe/app-a/2026031-143022-invalid"], cwd=project, check=True)
+        subprocess.run(["git", "branch", "jdoe/app-a/20260319-143022"], cwd=project, check=True)
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-ShortName", "next", "Next feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/app-a/008-next"
+        assert data["FEATURE_NUM"] == "008"
+
+    def test_branch_template_scopes_existing_branch_numbers(self, tmp_path: Path):
+        """PowerShell templated numbering ignores branches outside the namespace."""
+        project = _setup_project(tmp_path / "app-a")
+        subprocess.run(["git", "config", "user.name", "jdoe"], cwd=project, check=True)
+        _write_config(project, 'branch_template: "{author}/{app}/{number}-{slug}"\n')
+        subprocess.run(["git", "branch", "jdoe/app-a/007-existing"], cwd=project, check=True)
+        subprocess.run(["git", "branch", "jdoe/app-b/010-other-app"], cwd=project, check=True)
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-ShortName", "next", "Next feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/app-a/008-next"
+        assert data["FEATURE_NUM"] == "008"
+
+    def test_branch_template_requires_number_token(self, tmp_path: Path):
+        """PowerShell rejects templates without {number}."""
+        project = _setup_project(tmp_path / "app-a")
+        _write_config(project, 'branch_template: "{author}/{app}/{slug}"\n')
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-ShortName", "guided-tour", "Add guided tour",
+        )
+
+        assert result.returncode != 0
+        assert "branch_template" in result.stderr
+        assert "{number}" in result.stderr
+
+    def test_branch_template_requires_feature_segment_to_start_with_number(self, tmp_path: Path):
+        """PowerShell rejects templates whose final segment cannot validate."""
+        project = _setup_project(tmp_path / "app-a")
+        _write_config(project, 'branch_template: "{author}/{app}/feature-{number}"\n')
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-ShortName", "guided-tour", "Add guided tour",
+        )
+
+        assert result.returncode != 0
+        assert "branch_template" in result.stderr
+        assert "{number}-" in result.stderr
+
+    def test_branch_template_rejects_slug_before_number(self, tmp_path: Path):
+        """PowerShell rejects templates where {slug} scopes number scanning."""
+        project = _setup_project(tmp_path / "app-a")
+        _write_config(project, 'branch_template: "{author}/{slug}/{number}-{slug}"\n')
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-ShortName", "guided-tour", "Add guided tour",
+        )
+
+        assert result.returncode != 0
+        assert "branch_template" in result.stderr
+        assert "{slug}" in result.stderr
+        assert "{number}" in result.stderr
+
+    def test_git_branch_name_override_extracts_number_after_namespace(self, tmp_path: Path):
+        """PowerShell GIT_BRANCH_NAME extracts FEATURE_NUM from a namespaced branch."""
+        project = _setup_project(tmp_path / "app-a")
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "Ignored description",
+            env_extra={"GIT_BRANCH_NAME": "jdoe/app-a/042-custom-branch"},
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/app-a/042-custom-branch"
+        assert data["FEATURE_NUM"] == "042"
+
+    def test_git_branch_name_override_ignores_numeric_namespace_segments(self, tmp_path: Path):
+        """PowerShell GIT_BRANCH_NAME ignores numeric namespace segments."""
+        project = _setup_project(tmp_path / "2026-app")
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "Ignored description",
+            env_extra={"GIT_BRANCH_NAME": "jdoe/2026-app/042-custom-branch"},
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/2026-app/042-custom-branch"
+        assert data["FEATURE_NUM"] == "042"
+
+    def test_git_branch_name_override_without_feature_marker_preserves_full_name(self, tmp_path: Path):
+        """PowerShell keeps the full override name when no feature marker exists."""
+        project = _setup_project(tmp_path / "app-a")
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "Ignored description",
+            env_extra={"GIT_BRANCH_NAME": "jdoe/app-a/custom-branch"},
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/app-a/custom-branch"
+        assert data["FEATURE_NUM"] == "jdoe/app-a/custom-branch"
+
+    def test_no_git_graceful_degradation(self, tmp_path: Path):
+        """create-new-feature-branch.ps1 works without git."""
+        project = _setup_project(tmp_path, git=False)
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-ShortName", "no-git", "No git feature",
+        )
+        assert result.returncode == 0, result.stderr
+        # pwsh may prefix warnings to stdout; find the JSON line
+        json_line = [ln for ln in result.stdout.splitlines() if ln.strip().startswith("{")]
+        assert json_line, f"No JSON in output: {result.stdout}"
+        data = json.loads(json_line[-1])
+        assert "BRANCH_NAME" in data
+        assert "FEATURE_NUM" in data
+
+    def test_specify_init_dir_without_core_errors(self, tmp_path: Path):
+        """With no core scripts (only git-common.ps1 loaded), a set SPECIFY_INIT_DIR
+        hard-errors instead of silently falling back to the walk-up project root."""
+        project = _setup_project(tmp_path, git=False)
+        (project / "scripts" / "powershell" / "common.ps1").unlink()
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature-branch.ps1"
+        env = {**os.environ, **_GIT_ENV, "SPECIFY_INIT_DIR": str(project)}
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-File", str(script), "-Json", "-ShortName", "x", "X feature"],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert result.returncode != 0
+        assert "requires updated Spec Kit core scripts" in result.stderr
+
+    def test_specify_init_dir_with_stale_core_errors(self, tmp_path: Path):
+        """With an older core common.ps1, a set SPECIFY_INIT_DIR must hard-error
+        instead of calling the stale Get-RepoRoot that ignores the override."""
+        project = _setup_project(tmp_path, git=False)
+        (project / "scripts" / "powershell" / "common.ps1").write_text(
+            "function Get-RepoRoot { return (Get-Location).Path }\n",
+            encoding="utf-8",
+        )
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature-branch.ps1"
+        env = {**os.environ, **_GIT_ENV, "SPECIFY_INIT_DIR": str(tmp_path / "missing")}
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-File", str(script), "-Json", "-ShortName", "x", "X feature"],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert result.returncode != 0
+        assert "requires updated Spec Kit core scripts" in result.stderr
+
+    def test_explicit_number_zero_is_honored(self, tmp_path: Path):
+        """An explicit -Number 0 is honored (yields 000), matching the bash twin's
+        --number 0. Regression guard: -Number defaults to 0, so a bare `-eq 0`
+        check cannot tell an unset flag from a supplied 0 and would silently
+        auto-detect instead. Uses PSBoundParameters.ContainsKey('Number')."""
+        project = _setup_project(tmp_path)
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-Number", "0", "-ShortName", "zero", "Zero feature",
+        )
+        assert result.returncode == 0, result.stderr
+        json_line = [ln for ln in result.stdout.splitlines() if ln.strip().startswith("{")]
+        assert json_line, f"No JSON in output: {result.stdout}"
+        data = json.loads(json_line[-1])
+        assert data["BRANCH_NAME"] == "000-zero"
+        assert data["FEATURE_NUM"] == "000"
+
+    def test_negative_number_rejected(self, tmp_path: Path):
+        """A negative -Number is rejected, matching the bash/Python twins'
+        '--number must be a non-negative integer'. Regression guard: -Number is
+        [long], so PowerShell binds '-5' as -5 rather than rejecting it the way
+        the twins' `^[0-9]+$` check does; the value would then format via
+        '{0:000}' to '-005' and yield a branch name starting with '-', which
+        git refuses (refs cannot begin with a dash)."""
+        project = _setup_project(tmp_path)
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-Number", "-5", "-ShortName", "neg", "Negative feature",
+        )
+        assert result.returncode != 0
+        assert "--number must be a non-negative integer" in result.stderr
+
+
+# ── auto-commit.sh Tests ─────────────────────────────────────────────────────
+
+
+@requires_bash
+class TestAutoCommitBash:
+    def test_disabled_by_default(self, tmp_path: Path):
+        """auto-commit.sh exits silently when config is all false."""
+        project = _setup_project(tmp_path)
+        _write_config(project, "auto_commit:\n  default: false\n")
+        result = _run_bash("auto-commit.sh", project, "after_specify")
+        assert result.returncode == 0
+        # Should not have created any new commits
+        log = subprocess.run(
+            ["git", "log", "--oneline"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert log.stdout.strip().count("\n") == 0  # only the seed commit
+
+    def test_enabled_per_command(self, tmp_path: Path):
+        """auto-commit.sh commits when per-command key is enabled."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "test commit after specify"\n'
+        ))
+        # Create a file to commit
+        (project / "specs" / "001-test" / "spec.md").parent.mkdir(parents=True)
+        (project / "specs" / "001-test" / "spec.md").write_text("test spec")
+
+        result = _run_bash("auto-commit.sh", project, "after_specify")
+        assert result.returncode == 0
+
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "test commit after specify" in log.stdout
+
+    def test_custom_message(self, tmp_path: Path):
+        """auto-commit.sh uses the per-command message."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_plan:\n"
+            "    enabled: true\n"
+            '    message: "[Project] Plan complete"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+
+        result = _run_bash("auto-commit.sh", project, "after_plan")
+        assert result.returncode == 0
+
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Project] Plan complete" in log.stdout
+
+    def test_default_true_with_no_event_key(self, tmp_path: Path):
+        """auto-commit.sh uses default: true when event key is absent."""
+        project = _setup_project(tmp_path)
+        _write_config(project, "auto_commit:\n  default: true\n")
+        (project / "new-file.txt").write_text("content")
+
+        result = _run_bash("auto-commit.sh", project, "after_tasks")
+        assert result.returncode == 0
+
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "Auto-commit after tasks" in log.stdout
+
+    def test_no_changes_skips(self, tmp_path: Path):
+        """auto-commit.sh skips when there are no changes."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "should not appear"\n'
+        ))
+        # Commit all existing files so nothing is dirty
+        subprocess.run(["git", "add", "."], cwd=project, check=True)
+        subprocess.run(["git", "commit", "-m", "setup", "-q"], cwd=project, check=True)
+
+        result = _run_bash("auto-commit.sh", project, "after_specify")
+        assert result.returncode == 0
+        assert "No changes" in result.stderr
+
+    def test_no_config_file_skips(self, tmp_path: Path):
+        """auto-commit.sh exits silently when no config file exists."""
+        project = _setup_project(tmp_path)
+        # Remove config if it was copied
+        config = project / ".specify" / "extensions" / "git" / "git-config.yml"
+        config.unlink(missing_ok=True)
+
+        result = _run_bash("auto-commit.sh", project, "after_specify")
+        assert result.returncode == 0
+
+    def test_no_git_repo_skips(self, tmp_path: Path):
+        """auto-commit.sh skips when not in a git repo."""
+        project = _setup_project(tmp_path, git=False)
+        _write_config(project, "auto_commit:\n  default: true\n")
+        result = _run_bash("auto-commit.sh", project, "after_specify")
+        assert result.returncode == 0
+        assert "not a Git repository" in result.stderr.lower() or "Warning" in result.stderr
+
+    def test_requires_event_name_argument(self, tmp_path: Path):
+        """auto-commit.sh fails without event name argument."""
+        project = _setup_project(tmp_path)
+        result = _run_bash("auto-commit.sh", project)
+        assert result.returncode != 0
+
+    def test_success_message_uses_ok_prefix(self, tmp_path: Path):
+        """auto-commit.sh success message uses [OK] (not Unicode)."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash("auto-commit.sh", project, "after_specify")
+        assert result.returncode == 0
+        assert "[OK] Changes committed" in result.stderr
+
+    def test_success_message_no_unicode_checkmark(self, tmp_path: Path):
+        """auto-commit.sh must not use Unicode checkmark in output."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_plan:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash("auto-commit.sh", project, "after_plan")
+        assert result.returncode == 0
+        assert "\u2713" not in result.stderr, "Must not use Unicode checkmark"
+
+
+@requires_bash
+class TestAutoCommitBashCommitStyle:
+    """Tests for the `commit_style: conventional` option (issue #3390)."""
+
+    def test_fixed_is_default_when_commit_style_absent(self, tmp_path: Path):
+        """Omitting commit_style preserves the fixed/static message behavior."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash("auto-commit.sh", project, "after_specify")
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Spec Kit] Add specification" in log.stdout
+
+    def test_explicit_fixed_style_uses_configured_message(self, tmp_path: Path):
+        """commit_style: fixed (explicit) still uses the configured static message,
+        not just the absent-key default."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: fixed\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash(
+            "auto-commit.sh", project, "after_specify", "feat: this should be ignored"
+        )
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Spec Kit] Add specification" in log.stdout
+        assert "this should be ignored" not in log.stdout
+
+    def test_conventional_message_file_used(self, tmp_path: Path):
+        """--message-file reads the generated message from a file instead of argv,
+        avoiding shell interpolation of agent-controlled content."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        # Write the message file inside the worktree (as an agent invoking
+        # this from a working directory tool naturally would) to exercise
+        # the exclusion-from-staging behavior below.
+        msg_file = project / "commit-msg.txt"
+        msg_file.write_text("feat: add $(dangerous) `injection` test\n")
+        result = _run_bash(
+            "auto-commit.sh", project, "after_specify", "--message-file", str(msg_file)
+        )
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "feat: add $(dangerous) `injection` test" in log.stdout
+
+    def test_message_file_not_staged_or_left_behind(self, tmp_path: Path):
+        """--message-file written inside the worktree must never be staged or
+        committed itself, and must be removed once its content is consumed."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        msg_file = project / "commit-msg.txt"
+        msg_file.write_text("feat: real change\n")
+        result = _run_bash(
+            "auto-commit.sh", project, "after_specify", "--message-file", str(msg_file)
+        )
+        assert result.returncode == 0
+        assert not msg_file.exists()
+        show = subprocess.run(
+            ["git", "show", "--stat", "--oneline", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "new-file.txt" in show.stdout
+        assert "commit-msg.txt" not in show.stdout
+
+    def test_message_file_alone_does_not_defeat_no_changes_shortcircuit(self, tmp_path: Path):
+        """If the message file is the only 'change' in the worktree (no real
+        edits), auto-commit must still report no changes rather than
+        committing the transport file by itself."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        # Baseline-commit the scaffolding (and config) so the tree is
+        # genuinely clean before introducing the message file — otherwise
+        # the untracked scaffold files would mask whether the message file
+        # alone is enough to (incorrectly) trigger a commit.
+        subprocess.run(["git", "add", "-A"], cwd=project, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-q", "-m", "baseline"],
+            cwd=project, check=True, capture_output=True, env={**os.environ, **_GIT_ENV},
+        )
+        msg_file = project / "commit-msg.txt"
+        msg_file.write_text("feat: no real changes\n")
+        result = _run_bash(
+            "auto-commit.sh", project, "after_specify", "--message-file", str(msg_file)
+        )
+        assert result.returncode == 0
+        assert "No changes to commit" in result.stderr
+        assert not msg_file.exists()
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "baseline" in log.stdout
+
+    def test_message_file_missing_fails(self, tmp_path: Path):
+        """--message-file pointing at a nonexistent file fails clearly."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        missing = tmp_path / "does-not-exist.txt"
+        result = _run_bash(
+            "auto-commit.sh", project, "after_specify", "--message-file", str(missing)
+        )
+        assert result.returncode != 0
+        assert "not found" in result.stderr.lower()
+
+    def test_conventional_uses_generated_message(self, tmp_path: Path):
+        """commit_style: conventional uses the generated_message argument as the commit message."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash(
+            "auto-commit.sh", project, "after_specify", "feat: add OAuth specification"
+        )
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "feat: add OAuth specification" in log.stdout
+        assert "[Spec Kit] Add specification" not in log.stdout
+
+    def test_conventional_without_generated_message_fails(self, tmp_path: Path):
+        """commit_style: conventional fails clearly instead of falling back to the fixed message."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash("auto-commit.sh", project, "after_specify")
+        assert result.returncode != 0
+        assert "conventional" in result.stderr.lower()
+
+        # No commit should have been made, and the fixed message must not be used.
+        log = subprocess.run(
+            ["git", "log", "--oneline"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Spec Kit] Add specification" not in log.stdout
+
+    def test_conventional_skips_cleanly_with_no_changes(self, tmp_path: Path):
+        """No pending changes short-circuits before the missing-message failure."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        subprocess.run(["git", "add", "."], cwd=project, check=True)
+        subprocess.run(["git", "commit", "-m", "setup", "-q"], cwd=project, check=True)
+
+        result = _run_bash("auto-commit.sh", project, "after_specify")
+        assert result.returncode == 0
+        assert "No changes" in result.stderr
+
+    def test_conventional_with_trailing_inline_comment(self, tmp_path: Path):
+        """commit_style value with a trailing YAML inline comment is still recognized."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional  # team standard\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash(
+            "auto-commit.sh", project, "after_specify", "feat: add OAuth specification"
+        )
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "feat: add OAuth specification" in log.stdout
+        assert "[Spec Kit] Add specification" not in log.stdout
+
+    def test_unknown_commit_style_defaults_to_fixed(self, tmp_path: Path):
+        """An unrecognized commit_style value falls back to 'fixed' with a warning,
+        instead of silently mis-parsing or crashing."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventonal\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash("auto-commit.sh", project, "after_specify")
+        assert result.returncode == 0
+        assert "unknown commit_style" in result.stderr.lower()
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Spec Kit] Add specification" in log.stdout
+
+    def test_duplicate_commit_style_lines_use_first_match(self, tmp_path: Path):
+        """A config with multiple `commit_style:` lines (e.g. from a bad merge) uses only
+        the first match instead of concatenating values into an unrecognized style."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "commit_style: fixed\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash(
+            "auto-commit.sh", project, "after_specify", "feat: add OAuth specification"
+        )
+        assert result.returncode == 0
+        assert "unknown commit_style" not in result.stderr.lower()
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "feat: add OAuth specification" in log.stdout
+        assert "[Spec Kit] Add specification" not in log.stdout
+
+
+@pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
+class TestAutoCommitPowerShell:
+    def test_disabled_by_default(self, tmp_path: Path):
+        """auto-commit.ps1 exits silently when config is all false."""
+        project = _setup_project(tmp_path)
+        _write_config(project, "auto_commit:\n  default: false\n")
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+
+    def test_enabled_per_command(self, tmp_path: Path):
+        """auto-commit.ps1 commits when per-command key is enabled."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "ps commit"\n'
+        ))
+        (project / "specs" / "001-test").mkdir(parents=True)
+        (project / "specs" / "001-test" / "spec.md").write_text("test")
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "ps commit" in log.stdout
+
+    def test_success_message_uses_ok_prefix(self, tmp_path: Path):
+        """auto-commit.ps1 success message uses [OK] (not Unicode)."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+        assert "[OK] Changes committed" in result.stdout
+
+    def test_success_message_no_unicode_checkmark(self, tmp_path: Path):
+        """auto-commit.ps1 must not use Unicode checkmark in output."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_plan:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_pwsh("auto-commit.ps1", project, "after_plan")
+        assert result.returncode == 0
+        assert "\u2713" not in result.stdout, "Must not use Unicode checkmark"
+
+
+@pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
+class TestAutoCommitPowerShellCommitStyle:
+    """Tests for the `commit_style: conventional` option (issue #3390)."""
+
+    def test_fixed_is_default_when_commit_style_absent(self, tmp_path: Path):
+        """Omitting commit_style preserves the fixed/static message behavior."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Spec Kit] Add specification" in log.stdout
+
+    def test_explicit_fixed_style_uses_configured_message(self, tmp_path: Path):
+        """commit_style: fixed (explicit) still uses the configured static message,
+        not just the absent-key default."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: fixed\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_pwsh(
+            "auto-commit.ps1", project, "after_specify", "feat: this should be ignored"
+        )
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Spec Kit] Add specification" in log.stdout
+        assert "this should be ignored" not in log.stdout
+
+    def test_conventional_message_file_used(self, tmp_path: Path):
+        """-MessageFile reads the generated message from a file instead of argv,
+        avoiding shell interpolation of agent-controlled content."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        msg_file = project / "commit-msg.txt"
+        msg_file.write_text("feat: add $(dangerous) `injection` test\n")
+        result = _run_pwsh(
+            "auto-commit.ps1", project, "after_specify", "-MessageFile", str(msg_file)
+        )
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "feat: add $(dangerous) `injection` test" in log.stdout
+
+    def test_message_file_not_staged_or_left_behind(self, tmp_path: Path):
+        """-MessageFile written inside the worktree must never be staged or
+        committed itself, and must be removed once its content is consumed."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        msg_file = project / "commit-msg.txt"
+        msg_file.write_text("feat: real change\n")
+        result = _run_pwsh(
+            "auto-commit.ps1", project, "after_specify", "-MessageFile", str(msg_file)
+        )
+        assert result.returncode == 0
+        assert not msg_file.exists()
+        show = subprocess.run(
+            ["git", "show", "--stat", "--oneline", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "new-file.txt" in show.stdout
+        assert "commit-msg.txt" not in show.stdout
+
+    def test_message_file_alone_does_not_defeat_no_changes_shortcircuit(self, tmp_path: Path):
+        """If the message file is the only 'change' in the worktree (no real
+        edits), auto-commit must still report no changes rather than
+        committing the transport file by itself."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        # Baseline-commit the scaffolding (and config) so the tree is
+        # genuinely clean before introducing the message file — otherwise
+        # the untracked scaffold files would mask whether the message file
+        # alone is enough to (incorrectly) trigger a commit.
+        subprocess.run(["git", "add", "-A"], cwd=project, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-q", "-m", "baseline"],
+            cwd=project, check=True, capture_output=True, env={**os.environ, **_GIT_ENV},
+        )
+        msg_file = project / "commit-msg.txt"
+        msg_file.write_text("feat: no real changes\n")
+        result = _run_pwsh(
+            "auto-commit.ps1", project, "after_specify", "-MessageFile", str(msg_file)
+        )
+        assert result.returncode == 0
+        assert "No changes to commit" in (result.stdout + result.stderr)
+        assert not msg_file.exists()
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "baseline" in log.stdout
+
+    def test_message_file_missing_fails(self, tmp_path: Path):
+        """-MessageFile pointing at a nonexistent file fails clearly."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        missing = tmp_path / "does-not-exist.txt"
+        result = _run_pwsh(
+            "auto-commit.ps1", project, "after_specify", "-MessageFile", str(missing)
+        )
+        assert result.returncode != 0
+        assert "not found" in (result.stdout + result.stderr).lower()
+
+    def test_conventional_uses_generated_message(self, tmp_path: Path):
+        """commit_style: conventional uses the generated_message argument as the commit message."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_pwsh(
+            "auto-commit.ps1", project, "after_specify", "feat: add OAuth specification"
+        )
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "feat: add OAuth specification" in log.stdout
+        assert "[Spec Kit] Add specification" not in log.stdout
+
+    def test_conventional_without_generated_message_fails(self, tmp_path: Path):
+        """commit_style: conventional fails clearly instead of falling back to the fixed message."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode != 0
+        # Write-Warning output placement (stdout vs. stderr) is not deterministic
+        # across pwsh versions/platforms, so check the combined stream like the
+        # other pwsh tests above (e.g. test_not_a_repo_still_detected_with_autocrlf).
+        combined = result.stdout + result.stderr
+        assert "conventional" in combined.lower()
+
+        log = subprocess.run(
+            ["git", "log", "--oneline"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Spec Kit] Add specification" not in log.stdout
+
+    def test_conventional_skips_cleanly_with_no_changes(self, tmp_path: Path):
+        """No pending changes short-circuits before the missing-message failure."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        subprocess.run(["git", "add", "."], cwd=project, check=True)
+        subprocess.run(["git", "commit", "-m", "setup", "-q"], cwd=project, check=True)
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+        combined = result.stdout + result.stderr
+        assert "No changes" in combined
+
+    def test_conventional_with_trailing_inline_comment(self, tmp_path: Path):
+        """commit_style value with a trailing YAML inline comment is still recognized."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional  # team standard\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_pwsh(
+            "auto-commit.ps1", project, "after_specify", "feat: add OAuth specification"
+        )
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "feat: add OAuth specification" in log.stdout
+        assert "[Spec Kit] Add specification" not in log.stdout
+
+    def test_unknown_commit_style_defaults_to_fixed(self, tmp_path: Path):
+        """An unrecognized commit_style value falls back to 'fixed' with a warning,
+        instead of silently mis-parsing or crashing."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventonal\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+        combined = (result.stdout or "") + (result.stderr or "")
+        assert "unknown commit_style" in combined.lower()
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Spec Kit] Add specification" in log.stdout
+
+
+# ── auto-commit.ps1 CRLF warning tests (issue #2253) ────────────────────────
+
+
+@pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
+class TestAutoCommitPowerShellCRLF:
+    """Tests for CRLF warning handling in auto-commit.ps1 (issue #2253).
+
+    On Windows, git emits CRLF warnings to stderr when core.autocrlf=true
+    and files use LF line endings.  PowerShell's $ErrorActionPreference='Stop'
+    converts stderr output into terminating errors, crashing the script.
+
+    These tests use core.autocrlf=true + explicit LF-ending files.  On Windows
+    the CRLF warnings fire and exercise the fix; on other platforms the tests
+    still run (they just won't produce stderr warnings, so they pass trivially).
+    """
+
+    # -- positive tests (fix works) ----------------------------------------
+
+    def test_commit_succeeds_with_autocrlf(self, tmp_path: Path):
+        """auto-commit.ps1 creates a commit when core.autocrlf=true (CRLF
+        warnings on stderr must not crash the script)."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "crlf commit"\n'
+        ))
+        # Create and commit a tracked LF-ending file first so the script's
+        # `git diff --quiet HEAD` checks inspect a tracked modification.
+        tracked = project / "crlf-test.txt"
+        tracked.write_bytes(b"line one\nline two\nline three\n")
+        subprocess.run(["git", "add", "crlf-test.txt"], cwd=project, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "seed tracked file"],
+            cwd=project, check=True, env={**os.environ, **_GIT_ENV},
+        )
+        subprocess.run(
+            ["git", "config", "core.autocrlf", "true"],
+            cwd=project, check=True,
+        )
+        # Modify the tracked file with explicit LF endings to trigger the
+        # CRLF warning during diff/status checks on Windows.
+        tracked.write_bytes(b"line one\nline two changed\nline three\n")
+
+        # On Windows, verify the test setup actually produces a CRLF warning.
+        if sys.platform == "win32":
+            probe = subprocess.run(
+                ["git", "diff", "--quiet", "HEAD"],
+                cwd=project, capture_output=True, text=True,
+            )
+            assert "LF will be replaced by CRLF" in probe.stderr, (
+                "Expected CRLF warning from git on Windows; test setup may be wrong"
+            )
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+
+        assert result.returncode == 0, (
+            f"Script crashed (likely CRLF stderr); stderr:\n{result.stderr}"
+        )
+        assert "[OK] Changes committed" in result.stdout
+
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "crlf commit" in log.stdout
+
+    def test_custom_message_not_corrupted_by_crlf(self, tmp_path: Path):
+        """Commit message is the configured value, not a CRLF warning."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_plan:\n"
+            "    enabled: true\n"
+            '    message: "[Project] Plan done"\n'
+        ))
+        subprocess.run(
+            ["git", "config", "core.autocrlf", "true"],
+            cwd=project, check=True,
+        )
+        (project / "plan.txt").write_bytes(b"plan\ncontent\n")
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_plan")
+        assert result.returncode == 0
+
+        log = subprocess.run(
+            ["git", "log", "--format=%s", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Project] Plan done" in log.stdout.strip()
+
+    def test_no_changes_still_skips_with_autocrlf(self, tmp_path: Path):
+        """Script correctly detects 'no changes' even with core.autocrlf=true."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        subprocess.run(
+            ["git", "config", "core.autocrlf", "true"],
+            cwd=project, check=True,
+        )
+        # Stage and commit everything so the working tree is clean.
+        subprocess.run(["git", "add", "."], cwd=project, check=True,
+                        env={**os.environ, **_GIT_ENV})
+        subprocess.run(["git", "commit", "-m", "setup", "-q"], cwd=project,
+                        check=True, env={**os.environ, **_GIT_ENV})
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+        assert "[OK]" not in result.stdout, "Should not have committed anything"
+
+    # -- negative tests (real errors still surface) ------------------------
+
+    def test_not_a_repo_still_detected_with_autocrlf(self, tmp_path: Path):
+        """Script still exits gracefully when not in a git repo, even though
+        ErrorActionPreference is relaxed around the rev-parse call."""
+        project = _setup_project(tmp_path, git=False)
+        _write_config(project, "auto_commit:\n  default: true\n")
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+        combined = result.stdout + result.stderr
+        assert "not a git repository" in combined.lower() or "warning" in combined.lower()
+
+    def test_missing_config_still_exits_cleanly_with_autocrlf(self, tmp_path: Path):
+        """Script exits 0 when git-config.yml is absent (no over-suppression)."""
+        project = _setup_project(tmp_path)
+        subprocess.run(
+            ["git", "config", "core.autocrlf", "true"],
+            cwd=project, check=True,
+        )
+        config = project / ".specify" / "extensions" / "git" / "git-config.yml"
+        config.unlink(missing_ok=True)
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+        # Should not have committed anything — config file missing means disabled.
+        log = subprocess.run(
+            ["git", "log", "--oneline"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert log.stdout.strip().count("\n") == 0  # only the seed commit
+
+
+# ── git-common.sh Tests ──────────────────────────────────────────────────────
+
+
+@requires_bash
+class TestGitCommonBash:
+    def test_has_git_true(self, tmp_path: Path):
+        """has_git returns 0 in a git repo."""
+        project = _setup_project(tmp_path, git=True)
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "bash" / "git-common.sh"
+        result = subprocess.run(
+            ["bash", "-c", f'source "{script}" && has_git "{project}"'],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+
+    def test_has_git_false(self, tmp_path: Path):
+        """has_git returns non-zero outside a git repo."""
+        project = _setup_project(tmp_path, git=False)
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "bash" / "git-common.sh"
+        result = subprocess.run(
+            ["bash", "-c", f'source "{script}" && has_git "{project}"'],
+            capture_output=True, text=True,
+        )
+        assert result.returncode != 0
+
+    def test_check_feature_branch_sequential(self, tmp_path: Path):
+        """check_feature_branch accepts sequential branch names."""
+        project = _setup_project(tmp_path)
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "bash" / "git-common.sh"
+        result = subprocess.run(
+            ["bash", "-c", f'source "{script}" && check_feature_branch "001-my-feature" "true"'],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+
+    def test_check_feature_branch_timestamp(self, tmp_path: Path):
+        """check_feature_branch accepts timestamp branch names."""
+        project = _setup_project(tmp_path)
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "bash" / "git-common.sh"
+        result = subprocess.run(
+            ["bash", "-c", f'source "{script}" && check_feature_branch "20260319-143022-feat" "true"'],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+
+    def test_check_feature_branch_rejects_main(self, tmp_path: Path):
+        """check_feature_branch rejects non-feature branch names."""
+        project = _setup_project(tmp_path)
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "bash" / "git-common.sh"
+        result = subprocess.run(
+            ["bash", "-c", f'source "{script}" && check_feature_branch "main" "true"'],
+            capture_output=True, text=True,
+        )
+        assert result.returncode != 0
+
+    def test_check_feature_branch_rejects_malformed_timestamp(self, tmp_path: Path):
+        """check_feature_branch rejects malformed timestamps (7-digit date)."""
+        project = _setup_project(tmp_path)
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "bash" / "git-common.sh"
+        result = subprocess.run(
+            ["bash", "-c", f'source "{script}" && check_feature_branch "2026031-143022-feat" "true"'],
+            capture_output=True, text=True,
+        )
+        assert result.returncode != 0
+
+    def test_check_feature_branch_accepts_single_prefix(self, tmp_path: Path):
+        """git-common check_feature_branch matches core: one optional path prefix."""
+        project = _setup_project(tmp_path)
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "bash" / "git-common.sh"
+        result = subprocess.run(
+            ["bash", "-c", f'source "{script}" && check_feature_branch "feat/001-my-feature" "true"'],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+
+    def test_check_feature_branch_accepts_nested_prefix(self, tmp_path: Path):
+        project = _setup_project(tmp_path)
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "bash" / "git-common.sh"
+        result = subprocess.run(
+            ["bash", "-c", f'source "{script}" && check_feature_branch "feat/fix/001-x" "true"'],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+
+    def test_check_feature_branch_rejects_nested_prefix_without_number(self, tmp_path: Path):
+        project = _setup_project(tmp_path)
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "bash" / "git-common.sh"
+        result = subprocess.run(
+            ["bash", "-c", f'source "{script}" && check_feature_branch "feat/fix/no-number" "true"'],
+            capture_output=True, text=True,
+        )
+        assert result.returncode != 0
+
+    def test_check_feature_branch_rejects_numeric_namespace_without_feature_number(self, tmp_path: Path):
+        project = _setup_project(tmp_path)
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "bash" / "git-common.sh"
+        result = subprocess.run(
+            ["bash", "-c", f'source "{script}" && check_feature_branch "jdoe/2026-app/no-number" "true"'],
+            capture_output=True, text=True,
+        )
+        assert result.returncode != 0
+
+
+@pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
+class TestGitCommonPowerShell:
+    def test_test_feature_branch_accepts_single_prefix(self, tmp_path: Path):
+        project = _setup_project(tmp_path)
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "powershell" / "git-common.ps1"
+        result = subprocess.run(
+            [
+                "pwsh",
+                "-NoProfile",
+                "-Command",
+                f'. "{script}"; if (Test-FeatureBranch -Branch "feat/001-x" -HasGit $true) {{ exit 0 }} else {{ exit 1 }}',
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+
+    def test_test_feature_branch_accepts_nested_prefix(self, tmp_path: Path):
+        project = _setup_project(tmp_path)
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "powershell" / "git-common.ps1"
+        result = subprocess.run(
+            [
+                "pwsh",
+                "-NoProfile",
+                "-Command",
+                f'. "{script}"; if (Test-FeatureBranch -Branch "jdoe/app-a/001-x" -HasGit $true) {{ exit 0 }} else {{ exit 1 }}',
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+
+    def test_test_feature_branch_rejects_numeric_namespace_without_feature_number(self, tmp_path: Path):
+        project = _setup_project(tmp_path)
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "powershell" / "git-common.ps1"
+        result = subprocess.run(
+            [
+                "pwsh",
+                "-NoProfile",
+                "-Command",
+                f'. "{script}"; if (Test-FeatureBranch -Branch "jdoe/2026-app/no-number" -HasGit $true) {{ exit 0 }} else {{ exit 1 }}',
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0

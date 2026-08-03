@@ -78,7 +78,7 @@ The SDD methodology is significantly enhanced through three powerful commands th
 
 This command transforms a simple feature description (the user-prompt) into a complete, structured specification with automatic repository management:
 
-1. **Automatic Feature Numbering**: Scans existing specs to determine the next feature number (e.g., 001, 002, 003)
+1. **Automatic Feature Numbering**: Scans existing specs to determine the next feature number (e.g., 001, 002, 003, …, 1000 — expands beyond 3 digits automatically)
 2. **Branch Creation**: Generates a semantic branch name from your description and creates it automatically
 3. **Template-Based Generation**: Copies and customizes the feature specification template with your requirements
 4. **Directory Structure**: Creates the proper `specs/[branch-name]/` structure for all related documents
@@ -317,6 +317,12 @@ No implementation code shall be written before:
 ```
 
 This completely inverts traditional AI code generation. Instead of generating code and hoping it works, the LLM must first generate comprehensive tests that define behavior, get them approved, and only then generate implementation.
+
+#### Articles IV, V & VI: Project-Defined Governance
+
+Articles IV, V, and VI are intentionally defined by each project's constitution rather than prescribed by Spec Kit. The constitution template provides placeholder slots and example concerns such as integration testing, observability, versioning, and breaking changes, but teams replace those placeholders with the principles that match their system and organization.
+
+This keeps the nine-article structure stable while allowing each project to encode its own non-negotiable standards. For one project, Article IV might govern security and access boundaries; for another, it might define integration test requirements. The `/speckit.analyze` command evaluates the concrete constitution in the project, so these project-defined articles participate in compliance checks just like the built-in examples.
 
 #### Articles VII & VIII: Simplicity and Anti-Abstraction
 

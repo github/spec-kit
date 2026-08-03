@@ -1,0 +1,1 @@
+- **User Story 1:** I want a test script that prints "Hello hooks!".

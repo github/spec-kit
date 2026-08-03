@@ -1,0 +1,33 @@
+schema_version: "1.0"
+
+bundle:
+  id: "security-researcher"
+  name: "Security Researcher"
+  version: "1.0.0"
+  role: "security-researcher"
+  description: "Spec-Driven Development setup for security researchers: threat modeling, security review, and compliance checks."
+  author: "spec-kit-examples"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.9.0"
+  tools: []
+  mcp: []
+
+provides:
+  extensions:
+    - id: "agent-context"
+      version: "1.0.0"
+  presets:
+    - id: "security-compliance"
+      version: "1.0.0"
+      priority: 5
+      strategy: "append"
+  steps:
+    - id: "threat-model"
+    - id: "security-review"
+  workflows:
+    - id: "secure-sdd"
+      version: "1.0.0"
+
+tags: ["security", "compliance", "threat-modeling"]

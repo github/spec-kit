@@ -8,15 +8,15 @@ run_command() {
     local command_to_run="$*"
     local output
     local exit_code
-    
+
     # Capture all output (stdout and stderr)
     output=$(eval "$command_to_run" 2>&1) || exit_code=$?
     exit_code=${exit_code:-0}
-    
+
     if [ $exit_code -ne 0 ]; then
         echo -e "\033[0;31m[ERROR] Command failed (Exit Code $exit_code): $command_to_run\033[0m" >&2
         echo -e "\033[0;31m$output\033[0m" >&2
-        
+
         exit $exit_code
     fi
 }
@@ -51,36 +51,61 @@ echo -e "\n🤖 Installing OpenCode CLI..."
 run_command "npm install -g opencode-ai@latest"
 echo "✅ Done"
 
-echo -e "\n🤖 Installing Amazon Q CLI..."
-# 👉🏾 https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-verify-download.html
+echo -e "\n🤖 Installing Junie CLI..."
+run_command "npm install -g @jetbrains/junie-cli@latest"
+echo "✅ Done"
 
-run_command "curl --proto '=https' --tlsv1.2 -sSf 'https://desktop-release.q.us-east-1.amazonaws.com/latest/q-x86_64-linux.zip' -o 'q.zip'"
-run_command "curl --proto '=https' --tlsv1.2 -sSf 'https://desktop-release.q.us-east-1.amazonaws.com/latest/q-x86_64-linux.zip.sig' -o 'q.zip.sig'"
-cat > amazonq-public-key.asc << 'EOF'
------BEGIN PGP PUBLIC KEY BLOCK-----
+echo -e "\n🤖 Installing Pi Coding Agent..."
+run_command "npm install -g @earendil-works/pi-coding-agent@latest"
+echo "✅ Done"
 
-mDMEZig60RYJKwYBBAHaRw8BAQdAy/+G05U5/EOA72WlcD4WkYn5SInri8pc4Z6D
-BKNNGOm0JEFtYXpvbiBRIENMSSBUZWFtIDxxLWNsaUBhbWF6b24uY29tPoiZBBMW
-CgBBFiEEmvYEF+gnQskUPgPsUNx6jcJMVmcFAmYoOtECGwMFCQPCZwAFCwkIBwIC
-IgIGFQoJCAsCBBYCAwECHgcCF4AACgkQUNx6jcJMVmef5QD/QWWEGG/cOnbDnp68
-SJXuFkwiNwlH2rPw9ZRIQMnfAS0A/0V6ZsGB4kOylBfc7CNfzRFGtovdBBgHqA6P
-zQ/PNscGuDgEZig60RIKKwYBBAGXVQEFAQEHQC4qleONMBCq3+wJwbZSr0vbuRba
-D1xr4wUPn4Avn4AnAwEIB4h+BBgWCgAmFiEEmvYEF+gnQskUPgPsUNx6jcJMVmcF
-AmYoOtECGwwFCQPCZwAACgkQUNx6jcJMVmchMgEA6l3RveCM0YHAGQaSFMkguoAo
-vK6FgOkDawgP0NPIP2oA/jIAO4gsAntuQgMOsPunEdDeji2t+AhV02+DQIsXZpoB
-=f8yY
------END PGP PUBLIC KEY BLOCK-----
-EOF
-run_command "gpg --batch --import amazonq-public-key.asc"
-run_command "gpg --verify q.zip.sig q.zip"
-run_command "unzip -q q.zip"
-run_command "chmod +x ./q/install.sh"
-run_command "./q/install.sh --no-confirm"
-run_command "rm -rf ./q q.zip q.zip.sig amazonq-public-key.asc"
+echo -e "\n🤖 Installing Kiro CLI..."
+# https://kiro.dev/docs/cli/
+KIRO_INSTALLER_URL="https://kiro.dev/install.sh"
+KIRO_INSTALLER_SHA256="7487a65cf310b7fb59b357c4b5e6e3f3259d383f4394ecedb39acf70f307cffb"
+KIRO_INSTALLER_PATH="$(mktemp)"
+
+cleanup_kiro_installer() {
+  rm -f "$KIRO_INSTALLER_PATH"
+}
+trap cleanup_kiro_installer EXIT
+
+run_command "curl -fsSL \"$KIRO_INSTALLER_URL\" -o \"$KIRO_INSTALLER_PATH\""
+run_command "echo \"$KIRO_INSTALLER_SHA256  $KIRO_INSTALLER_PATH\" | sha256sum -c -"
+
+run_command "bash \"$KIRO_INSTALLER_PATH\""
+
+kiro_binary=""
+if command -v kiro-cli >/dev/null 2>&1; then
+  kiro_binary="kiro-cli"
+elif command -v kiro >/dev/null 2>&1; then
+  kiro_binary="kiro"
+else
+  echo -e "\033[0;31m[ERROR] Kiro CLI installation did not create 'kiro-cli' or 'kiro' in PATH.\033[0m" >&2
+  exit 1
+fi
+
+run_command "$kiro_binary --help > /dev/null"
+echo "✅ Done"
+
+echo -e "\n🤖 Installing Kimi Code CLI..."
+# https://code.kimi.com
+run_command "npm install -g @moonshot-ai/kimi-code@latest"
 echo "✅ Done"
 
 echo -e "\n🤖 Installing CodeBuddy CLI..."
 run_command "npm install -g @tencent-ai/codebuddy-code@latest"
+echo "✅ Done"
+
+echo -e "\n🤖 Installing Factory Droid CLI..."
+run_command "npm install -g droid@latest"
+
+if ! command -v droid >/dev/null 2>&1; then
+  echo -e "\033[0;31m[ERROR] Droid CLI installation did not create 'droid' in PATH.\033[0m" >&2
+  exit 1
+fi
+
+run_command "droid --version > /dev/null"
 echo "✅ Done"
 
 # Installing UV (Python package manager)

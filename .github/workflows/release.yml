@@ -2,68 +2,87 @@ name: Create Release
 
 on:
   push:
-    branches: [ main ]
-    paths:
-      - 'memory/**'
-      - 'scripts/**'
-      - 'src/**'
-      - 'templates/**'
-      - '.github/workflows/**'
-  workflow_dispatch:
+    tags:
+      - 'v*'
 
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Get latest tag
-        id: get_tag
+
+      - name: Extract version from tag
+        id: version
         run: |
-          chmod +x .github/workflows/scripts/get-next-version.sh
-          .github/workflows/scripts/get-next-version.sh
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "tag=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building release for $VERSION"
+
       - name: Check if release already exists
         id: check_release
         run: |
-          chmod +x .github/workflows/scripts/check-release-exists.sh
-          .github/workflows/scripts/check-release-exists.sh ${{ steps.get_tag.outputs.new_version }}
+          VERSION="${{ steps.version.outputs.tag }}"
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Release $VERSION already exists, skipping..."
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Release $VERSION does not exist, proceeding..."
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Create release package variants
-        if: steps.check_release.outputs.exists == 'false'
-        run: |
-          chmod +x .github/workflows/scripts/create-release-packages.sh
-          .github/workflows/scripts/create-release-packages.sh ${{ steps.get_tag.outputs.new_version }}
+
       - name: Generate release notes
         if: steps.check_release.outputs.exists == 'false'
-        id: release_notes
         run: |
-          chmod +x .github/workflows/scripts/generate-release-notes.sh
-          .github/workflows/scripts/generate-release-notes.sh ${{ steps.get_tag.outputs.new_version }} ${{ steps.get_tag.outputs.latest_tag }}
+          VERSION="${{ steps.version.outputs.tag }}"
+          VERSION_NO_V=${VERSION#v}
+
+          # Find previous tag
+          PREVIOUS_TAG=$(git tag -l 'v*' --sort=-version:refname | grep -v "^${VERSION}$" | head -n 1)
+          if [ -z "$PREVIOUS_TAG" ]; then
+            PREVIOUS_TAG=""
+          fi
+
+          # Get commits since previous tag
+          if [ -z "$PREVIOUS_TAG" ]; then
+            COMMIT_COUNT=$(git rev-list --count HEAD)
+            if [ "$COMMIT_COUNT" -gt 20 ]; then
+              COMMITS=$(git log --oneline --pretty=format:"- %s" --no-merges HEAD~20..HEAD)
+            else
+              COMMITS=$(git log --oneline --pretty=format:"- %s" --no-merges)
+            fi
+          else
+            COMMITS=$(git log --oneline --pretty=format:"- %s" --no-merges "$PREVIOUS_TAG"..HEAD)
+          fi
+
+          cat > release_notes.md << NOTES_EOF
+          ## Install
+
+          \`\`\`bash
+          uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@${VERSION}
+          specify init my-project
+          \`\`\`
+
+          NOTES_EOF
+
+          echo "## What's Changed" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "$COMMITS" >> release_notes.md
+
       - name: Create GitHub Release
         if: steps.check_release.outputs.exists == 'false'
         run: |
-          chmod +x .github/workflows/scripts/create-github-release.sh
-          .github/workflows/scripts/create-github-release.sh ${{ steps.get_tag.outputs.new_version }}
+          VERSION="${{ steps.version.outputs.tag }}"
+          VERSION_NO_V=${VERSION#v}
+          gh release create "$VERSION" \
+            --title "Spec Kit - $VERSION_NO_V" \
+            --notes-file release_notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Update version in pyproject.toml (for release artifacts only)
-        if: steps.check_release.outputs.exists == 'false'
-        run: |
-          chmod +x .github/workflows/scripts/update-version.sh
-          .github/workflows/scripts/update-version.sh ${{ steps.get_tag.outputs.new_version }}
-      - name: Commit version bump to main
-        if: steps.check_release.outputs.exists == 'false'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add pyproject.toml
-          git diff --cached --quiet || git commit -m "chore: bump version to ${{ steps.get_tag.outputs.new_version }} [skip ci]"
-          git push
-

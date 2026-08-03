@@ -2,7 +2,7 @@
 
 This guide shows how to iterate on the `specify` CLI locally without publishing a release or committing to `main` first.
 
-> Scripts now have both Bash (`.sh`) and PowerShell (`.ps1`) variants. The CLI auto-selects based on OS unless you pass `--script sh|ps`.
+> Scripts are available as Bash (`.sh`), PowerShell (`.ps1`), and Python (`.py`) variants. Interactive `specify init` prompts you to choose one; non-interactive runs default to a shell variant for your OS. Pass `--script sh|ps|py` to select explicitly.
 
 ## 1. Clone and Switch Branches
 
@@ -20,7 +20,7 @@ You can execute the CLI via the module entrypoint without installing anything:
 ```bash
 # From repo root
 python -m src.specify_cli --help
-python -m src.specify_cli init demo-project --ai claude --ignore-agent-tools --script sh
+python -m src.specify_cli init demo-project --integration claude --ignore-agent-tools --script sh
 ```
 
 If you prefer invoking the script file style (uses shebang):
@@ -52,7 +52,7 @@ Re-running after code edits requires no reinstall because of editable mode.
 `uvx` can run from a local path (or a Git ref) to simulate user flows:
 
 ```bash
-uvx --from . specify init demo-uvx --ai copilot --ignore-agent-tools --script sh
+uvx --from . specify init demo-uvx --integration copilot --ignore-agent-tools --script sh
 ```
 
 You can also point uvx at a specific branch without merging:
@@ -69,14 +69,14 @@ If you're in another directory, use an absolute path instead of `.`:
 
 ```bash
 uvx --from /mnt/c/GitHub/spec-kit specify --help
-uvx --from /mnt/c/GitHub/spec-kit specify init demo-anywhere --ai copilot --ignore-agent-tools --script sh
+uvx --from /mnt/c/GitHub/spec-kit specify init demo-anywhere --integration copilot --ignore-agent-tools --script sh
 ```
 
 Set an environment variable for convenience:
 
 ```bash
 export SPEC_KIT_SRC=/mnt/c/GitHub/spec-kit
-uvx --from "$SPEC_KIT_SRC" specify init demo-env --ai copilot --ignore-agent-tools --script ps
+uvx --from "$SPEC_KIT_SRC" specify init demo-env --integration copilot --ignore-agent-tools --script ps
 ```
 
 (Optional) Define a shell function:
@@ -98,15 +98,41 @@ ls -l scripts | grep .sh
 
 On Windows you will instead use the `.ps1` scripts (no chmod needed).
 
-## 6. Run Lint / Basic Checks (Add Your Own)
+## 6. Scaffold a Built-In Integration
 
-Currently no enforced lint config is bundled, but you can quickly sanity check importability:
+Use the integration scaffold command to create the initial Python package and
+test skeleton for a new built-in integration:
+
+```bash
+specify integration scaffold my-agent --type markdown
+specify integration scaffold my-agent --type toml
+specify integration scaffold my-agent --type yaml
+specify integration scaffold my-agent --type skills
+```
+
+Hyphenated keys are converted to Python-safe package names, for example
+`my-agent` creates `src/specify_cli/integrations/my_agent/` and
+`tests/integrations/test_integration_my_agent.py`.
+
+The scaffold does not register the integration automatically. Review the
+generated metadata, then add the import and `_register()` call in
+`src/specify_cli/integrations/__init__.py`.
+
+## 7. Run Lint / Basic Checks
+
+CI enforces `ruff check src tests` (see `.github/workflows/test.yml`), so run it locally before pushing:
+
+```bash
+uvx ruff check src tests
+```
+
+You can also quickly sanity check importability:
 
 ```bash
 python -c "import specify_cli; print('Import OK')"
 ```
 
-## 7. Build a Wheel Locally (Optional)
+## 8. Build a Wheel Locally (Optional)
 
 Validate packaging before publishing:
 
@@ -117,29 +143,27 @@ ls dist/
 
 Install the built artifact into a fresh throwaway environment if needed.
 
-## 8. Using a Temporary Workspace
+## 9. Using a Temporary Workspace
 
 When testing `init --here` in a dirty directory, create a temp workspace:
 
 ```bash
 mkdir /tmp/spec-test && cd /tmp/spec-test
-python -m src.specify_cli init --here --ai claude --ignore-agent-tools --script sh  # if repo copied here
+python -m src.specify_cli init --here --integration claude --ignore-agent-tools --script sh  # if repo copied here
 ```
 
 Or copy only the modified CLI portion if you want a lighter sandbox.
 
-## 9. Debug Network / TLS Skips
+## 10. Debug Network / TLS Issues
 
-If you need to bypass TLS validation while experimenting:
+> **Deprecated:** The `--skip-tls` flag is a no-op and has no effect.
+> It was previously used to bypass TLS validation during local testing.
+> If you encounter TLS errors (e.g., on a corporate network), configure your
+> environment's certificate store or proxy instead.
+>
+> For example, set `SSL_CERT_FILE` or configure `HTTPS_PROXY` / `HTTP_PROXY`.
 
-```bash
-specify check --skip-tls
-specify init demo --skip-tls --ai gemini --ignore-agent-tools --script ps
-```
-
-(Use only for local experimentation.)
-
-## 10. Rapid Edit Loop Summary
+## 11. Rapid Edit Loop Summary
 
 | Action | Command |
 |--------|---------|
@@ -150,7 +174,7 @@ specify init demo --skip-tls --ai gemini --ignore-agent-tools --script ps
 | Git branch uvx | `uvx --from git+URL@branch specify ...` |
 | Build wheel | `uv build` |
 
-## 11. Cleaning Up
+## 12. Cleaning Up
 
 Remove build artifacts / virtual env quickly:
 
@@ -158,17 +182,17 @@ Remove build artifacts / virtual env quickly:
 rm -rf .venv dist build *.egg-info
 ```
 
-## 12. Common Issues
+## 13. Common Issues
 
 | Symptom | Fix |
 |---------|-----|
 | `ModuleNotFoundError: typer` | Run `uv pip install -e .` |
 | Scripts not executable (Linux) | Re-run init or `chmod +x scripts/*.sh` |
-| Git step skipped | You passed `--no-git` or Git not installed |
-| Wrong script type downloaded | Pass `--script sh` or `--script ps` explicitly |
-| TLS errors on corporate network | Try `--skip-tls` (not for production) |
+| Git commands unavailable | Install the git extension with `specify extension add git` |
+| Wrong script type downloaded | Pass `--script sh`, `--script ps`, or `--script py` explicitly |
+| TLS errors on corporate network | Configure your environment's certificate store or proxy. The `--skip-tls` flag is deprecated and has no effect. |
 
-## 13. Next Steps
+## 14. Next Steps
 
 - Update docs and run through Quick Start using your modified CLI
 - Open a PR when satisfied
