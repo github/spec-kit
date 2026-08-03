@@ -524,7 +524,13 @@ def _resolve_event_command_argv(
     else:
         base = project_root / ".specify"
 
-    tokens = shlex.split(script_cmd, posix=(os.name != "nt"))
+    try:
+        tokens = shlex.split(script_cmd, posix=(os.name != "nt"))
+    except ValueError:
+        # Mirror the generated dispatcher's _resolve_argv: a scripts: value
+        # shlex cannot tokenize (e.g. an unclosed quote) declares no runnable
+        # script, so degrade to "no argv" instead of raising.
+        return None
     if not tokens:
         return None
     script_abs = base / tokens[0]

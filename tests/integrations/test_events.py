@@ -1031,6 +1031,32 @@ class TestCommandRunner:
         assert PurePath(argv[1]).as_posix().endswith(".specify/scripts/python/boot.py")
         assert ".specify" in argv[1]
 
+    def test_unparseable_script_command_returns_none(self, tmp_path):
+        """A ``scripts:`` value shlex cannot tokenize must resolve to no argv.
+
+        The generated dispatcher's ``_resolve_argv`` twin wraps its
+        ``shlex.split`` in ``except ValueError: return None``, but the
+        CLI-side resolver did not: an unclosed quote in a ``scripts:``
+        frontmatter value raised a raw ``ValueError: No closing quotation``
+        through ``resolve_and_run_event_command`` instead of degrading to
+        "no runnable script" like every other malformed-input case here.
+        """
+        from specify_cli.events import _resolve_event_command_argv
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "boot.md").write_text(
+            "---\n"
+            "description: \"Boot\"\n"
+            "scripts:\n"
+            "  sh: scripts/bash/boot.sh \"unclosed\n"
+            "---\nBody\n",
+            encoding="utf-8",
+        )
+
+        argv = _resolve_event_command_argv(cmd_dir / "boot.md", tmp_path, None)
+        assert argv is None
+
     def test_ps_variant_prefixed_with_powershell_launcher(self, tmp_path):
         """S6: the ps variant prefixes argv with pwsh/powershell -File so
         subprocess.run(shell=False) can execute the .ps1 script."""
