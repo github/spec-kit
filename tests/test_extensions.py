@@ -1241,6 +1241,28 @@ class TestExtensionRegistry:
         result = registry.list()
         assert result == {}
 
+    def test_load_starts_fresh_for_non_utf8_registry(self, temp_dir):
+        """A registry file with undecodable bytes must start fresh, not raise.
+
+        ``_load()`` documents "Corrupted or missing registry, start fresh" and
+        already treats malformed JSON that way, but a registry whose *bytes*
+        cannot be decoded as UTF-8 raised a raw ``UnicodeDecodeError`` from the
+        same boundary — the same corruption class reaching a different
+        exception type.
+        """
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+        (extensions_dir / ExtensionRegistry.REGISTRY_FILE).write_bytes(
+            b"\xff\xfe not utf-8 \xc3\x28"
+        )
+
+        registry = ExtensionRegistry(extensions_dir)
+
+        assert registry.data == {
+            "schema_version": ExtensionRegistry.SCHEMA_VERSION,
+            "extensions": {},
+        }
+
 
 # ===== ExtensionManager Tests =====
 
