@@ -1601,6 +1601,57 @@ class TestExtensionManager:
         assert external_target.read_text() == "model: linked-model\n"
         assert not manager.registry.is_installed("test-ext")
 
+    def test_reinstall_with_unreadable_kept_config_aborts_with_guidance(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """An unreadable kept config must abort reinstall, not crash it.
+
+        The sibling symlink guard four lines above raises ``ValidationError``
+        with resolution guidance, but the rescue read itself
+        (``cfg_file.read_bytes()``/``stat()``) had no boundary, so a kept
+        config that cannot be read (permission or I/O error) crashed the
+        reinstall with a raw ``OSError``. It must reject the reinstall while
+        dest_dir is untouched so the preserved bytes are never rescued
+        half-read or lost to the rmtree below.
+        """
+        manager = ExtensionManager(project_dir)
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+        kept_bytes = config_file.read_bytes()
+
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+        assert config_file.is_file()
+
+        # Simulate a kept config that can no longer be read (e.g. a
+        # permission or I/O error) without touching real permissions so the
+        # test also runs on platforms where chmod is a no-op.
+        original_read_bytes = Path.read_bytes
+
+        def failing_read_bytes(self_path, *args, **kwargs):
+            if self_path == config_file:
+                raise PermissionError(13, "Permission denied")
+            return original_read_bytes(self_path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_bytes", failing_read_bytes)
+
+        with pytest.raises(ValidationError, match="cannot be read"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # The kept config survives untouched; nothing was rescued half-read.
+        monkeypatch.undo()
+        assert config_file.read_bytes() == kept_bytes
+        assert not manager.registry.is_installed("test-ext")
+
     def test_retry_with_symlinked_live_config_aborts_and_preserves_both(
         self, extension_dir, project_dir, monkeypatch
     ):

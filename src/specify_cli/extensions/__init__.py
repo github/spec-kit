@@ -2186,10 +2186,24 @@ class ExtensionManager:
                         "a regular file or remove it — then reinstall."
                     )
                 if cfg_file.is_file():
-                    stranded_configs[cfg_file.name] = (
-                        cfg_file.read_bytes(),
-                        cfg_file.stat().st_mode,
-                    )
+                    # A kept config that cannot be read or stat'ed must not
+                    # crash the reinstall with a raw OSError — and must not
+                    # reach the rmtree below unrescued. Like the symlink
+                    # guard above, reject while dest_dir is untouched so the
+                    # preserved bytes are never lost.
+                    try:
+                        stranded_configs[cfg_file.name] = (
+                            cfg_file.read_bytes(),
+                            cfg_file.stat().st_mode,
+                        )
+                    except OSError as exc:
+                        raise ValidationError(
+                            "Preserved extension config for "
+                            f"'{manifest.id}' cannot be read "
+                            f"({cfg_file.name}) in {dest_dir}: {exc}. "
+                            "Resolve manually — fix its permissions or "
+                            "remove it — then reinstall."
+                        ) from exc
 
         if stranded_configs and not staging_is_complete:
             # Write a durable backup outside dest_dir before any
