@@ -2224,14 +2224,54 @@ class TestIntegrationSwitch:
         # Old claude files removed
         assert not (project / ".claude" / "skills" / "speckit-plan" / "SKILL.md").exists()
 
-        # New copilot files created
-        assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
-        assert "/speckit.specify" in shared_script.read_text(encoding="utf-8")
-        assert "/speckit-specify" not in shared_script.read_text(encoding="utf-8")
+        # New default Copilot skills created
+        assert (
+            project / ".github" / "skills" / "speckit-plan" / "SKILL.md"
+        ).exists()
+        assert "/speckit-specify" in shared_script.read_text(encoding="utf-8")
+        assert "/speckit.specify" not in shared_script.read_text(encoding="utf-8")
 
         # integration.json updated
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == "copilot"
+
+    def test_switch_rejects_conflicting_copilot_modes_before_uninstall(
+        self, tmp_path
+    ):
+        project = _init_project(tmp_path, "claude")
+        claude_skill = (
+            project / ".claude" / "skills" / "speckit-plan" / "SKILL.md"
+        )
+        before_state = json.loads(
+            (project / ".specify" / "integration.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        result = _run_in_project(
+            project,
+            [
+                "integration",
+                "switch",
+                "copilot",
+                "--integration-options",
+                "--skills --commands",
+                "--script",
+                "sh",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "--skills and --commands are mutually exclusive" in result.output
+        assert claude_skill.exists()
+        assert not (project / ".github" / "skills").exists()
+        assert not (project / ".github" / "agents").exists()
+        after_state = json.loads(
+            (project / ".specify" / "integration.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert after_state == before_state
 
     def test_switch_migrates_extension_commands(self, tmp_path):
         """Switching should migrate extension commands to the new agent directory."""
@@ -2492,6 +2532,7 @@ class TestIntegrationSwitch:
             os.chdir(project)
             result = runner.invoke(app, [
                 "integration", "switch", "copilot",
+                "--integration-options", "--commands",
                 "--script", "sh",
             ], catch_exceptions=False)
         finally:
@@ -2530,6 +2571,7 @@ class TestIntegrationSwitch:
             os.chdir(project)
             result = runner.invoke(app, [
                 "integration", "switch", "copilot",
+                "--integration-options", "--commands",
                 "--script", "sh",
             ], catch_exceptions=False)
         finally:
@@ -2558,6 +2600,7 @@ class TestIntegrationSwitch:
             os.chdir(project)
             result = runner.invoke(app, [
                 "integration", "switch", "copilot",
+                "--integration-options", "--commands",
                 "--script", "sh",
             ], catch_exceptions=False)
         finally:
@@ -2582,6 +2625,7 @@ class TestIntegrationSwitch:
             os.chdir(project)
             result = runner.invoke(app, [
                 "integration", "switch", "copilot",
+                "--integration-options", "--commands",
                 "--script", "sh",
                 "--refresh-shared-infra",
             ], catch_exceptions=False)
@@ -2894,7 +2938,9 @@ class TestIntegrationUpgrade:
         assert manifest_path.read_text(encoding="utf-8") == before_manifest
 
     def test_upgrade_default_refreshes_shared_script_refs_for_option_separator_change(self, tmp_path):
-        project = _init_project(tmp_path, "copilot")
+        project = _init_project(
+            tmp_path, "copilot", integration_options="--commands"
+        )
         template = project / ".specify" / "templates" / "plan-template.md"
         managed_script = project / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
         customized_script = project / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
@@ -2915,6 +2961,46 @@ class TestIntegrationUpgrade:
         assert "/speckit-specify" in managed_content
         assert "/speckit.specify" not in managed_content
         assert customized_script.read_text(encoding="utf-8") == customized_before
+
+    def test_upgrade_preserves_historical_copilot_commands_without_options(
+        self, tmp_path
+    ):
+        """A command manifest restores missing files instead of migrating."""
+        project = _init_project(
+            tmp_path, "copilot", integration_options="--commands"
+        )
+        state_path = project / ".specify" / "integration.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        copilot_settings = state["integration_settings"]["copilot"]
+        copilot_settings.pop("raw_options", None)
+        copilot_settings.pop("parsed_options", None)
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+
+        for path in (project / ".github" / "agents").glob(
+            "speckit.*.agent.md"
+        ):
+            path.unlink()
+        for path in (project / ".github" / "prompts").glob(
+            "speckit.*.prompt.md"
+        ):
+            path.unlink()
+
+        result = _run_in_project(
+            project,
+            ["integration", "upgrade", "copilot", "--script", "sh", "--force"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert (
+            project / ".github" / "agents" / "speckit.plan.agent.md"
+        ).exists()
+        assert not (project / ".github" / "skills").exists()
+        init_options = json.loads(
+            (project / ".specify" / "init-options.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert init_options.get("ai_skills") is not True
 
     def test_upgrade_non_default_keeps_default_template_invocations(self, tmp_path):
         project = _init_project(tmp_path, "gemini")
@@ -3721,7 +3807,9 @@ class TestIntegrationUpgrade:
         tracking it, so without ``stale_cleanup_exclusions()`` the Phase 2
         stale cleanup would delete it (destroying the user's settings).
         """
-        project = _init_project(tmp_path, "copilot")
+        project = _init_project(
+            tmp_path, "copilot", integration_options="--commands"
+        )
         settings = project / ".vscode" / "settings.json"
         assert settings.is_file(), "init should create .vscode/settings.json"
         before = json.loads(settings.read_text(encoding="utf-8"))

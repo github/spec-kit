@@ -331,6 +331,14 @@ def integration_switch(
 
     selected_script = _resolve_script_type(project_root, script)
 
+    # Resolve and validate target options before uninstalling the current
+    # integration. Invalid options must not leave the project partially
+    # switched with the previous integration already removed.
+    raw_options, parsed_options = _resolve_integration_options(
+        target_integration, current, target, integration_options
+    )
+    target_integration.is_skills_mode(parsed_options, project_root)
+
     # Phase 1: Uninstall current integration (if any)
     if installed_key:
         current_integration = get_integration(installed_key)
@@ -422,13 +430,6 @@ def integration_switch(
         else:
             _remove_integration_json(project_root)
         current = _read_integration_json(project_root)
-
-    # Build parsed options from --integration-options so the integration
-    # can determine its effective invoke separator before shared infra
-    # is installed.
-    raw_options, parsed_options = _resolve_integration_options(
-        target_integration, current, target, integration_options
-    )
 
     # Refresh shared infrastructure to the current CLI version. Switching
     # integrations is exactly when stale vendored shared scripts (e.g.

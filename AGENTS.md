@@ -260,13 +260,13 @@ The base classes handle most work automatically. Override only when the agent de
 | Override | When to use | Example |
 |---|---|---|
 | `command_filename(template_name)` | Custom file naming or extension | Copilot → `speckit.{name}.agent.md` |
-| `options()` | Integration-specific CLI flags via `--integration-options` | Codex → `--skills` flag, Copilot → `--skills` flag |
-| `setup()` | Custom install logic (companion files, settings merge) | Copilot → `.agent.md` + `.prompt.md` + `.vscode/settings.json` (default) or `speckit-<name>/SKILL.md` (skills mode) |
+| `options()` | Integration-specific CLI flags via `--integration-options` | Codex → `--skills` flag, Copilot → `--commands` flag |
+| `setup()` | Custom install logic (companion files, settings merge) | Copilot → `speckit-<name>/SKILL.md` (default) or `.agent.md` + `.prompt.md` + `.vscode/settings.json` (`--commands`) |
 | `teardown()` | Custom uninstall logic | Rarely needed; base handles manifest-tracked files |
 
 **Example — Copilot (fully custom `setup`):**
 
-Copilot extends `IntegrationBase` directly because it creates `.agent.md` commands, companion `.prompt.md` files, and merges `.vscode/settings.json`. It also supports a `--skills` mode that scaffolds `speckit-<name>/SKILL.md` under `.github/skills/` using composition with an internal `_CopilotSkillsHelper`. See `src/specify_cli/integrations/copilot/__init__.py` for the full implementation.
+Copilot extends `IntegrationBase` directly because it supports two layouts. It scaffolds `speckit-<name>/SKILL.md` under `.github/skills/` by default using composition with an internal `_CopilotSkillsHelper`. Its `--commands` mode creates `.agent.md` commands, companion `.prompt.md` files, and merges `.vscode/settings.json`. See `src/specify_cli/integrations/copilot/__init__.py` for the full implementation.
 
 ### 7. Update Devcontainer files (Optional)
 
@@ -415,36 +415,28 @@ Some agents require custom processing beyond the standard template transformatio
 
 ### Copilot Integration
 
-GitHub Copilot has unique requirements:
+GitHub Copilot uses skills by default, scaffolded as
+`speckit-<name>/SKILL.md` under `.github/skills/`.
 
-- Commands use `.agent.md` extension (not `.md`)
+**Commands mode (`--commands`):** Copilot also supports a commands-based layout
+via `--integration-options="--commands"`. When enabled:
+
+- Commands use `.agent.md` extension under `.github/agents/`
 - Each command gets a companion `.prompt.md` file in `.github/prompts/`
-- Installs `.vscode/settings.json` with prompt file recommendations
-- Context file lives at `.github/copilot-instructions.md`
+- `.vscode/settings.json` is merged with prompt file recommendations
+- `build_command_invocation()` returns bare args for `--agent` dispatch
 
-Implementation: Extends `IntegrationBase` with custom `setup()` method that:
-
-1. Processes templates with `process_template()`
-2. Generates companion `.prompt.md` files
-3. Merges VS Code settings
-
-**Skills mode (`--skills`):** Copilot also supports an alternative skills-based layout
-via `--integration-options="--skills"`. When enabled:
-
-- Commands are scaffolded as `speckit-<name>/SKILL.md` under `.github/skills/`
-- No companion `.prompt.md` files are generated
-- No `.vscode/settings.json` merge
-- `post_process_skill_content()` injects a `mode: speckit.<stem>` frontmatter field
-- `build_command_invocation()` returns `/speckit-<stem>` instead of bare args
+In the default skills mode, no companion prompts or VS Code settings merge are
+created, and `build_command_invocation()` returns `/speckit-<stem>`.
 
 The two modes are mutually exclusive — a project uses one or the other:
 
 ```bash
-# Default mode: .agent.md agents + .prompt.md companions + settings merge
+# Default skills mode: speckit-<name>/SKILL.md under .github/skills/
 specify init my-project --integration copilot
 
-# Skills mode: speckit-<name>/SKILL.md under .github/skills/
-specify init my-project --integration copilot --integration-options="--skills"
+# Commands mode: .agent.md agents + .prompt.md companions + settings merge
+specify init my-project --integration copilot --integration-options="--commands"
 ```
 
 ### Forge Integration

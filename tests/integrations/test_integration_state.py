@@ -89,10 +89,10 @@ def test_write_integration_json_strips_integration_key(tmp_path):
 def test_with_integration_setting_recomputes_separator_from_retained_options():
     """Updating only script_type must not drop an options-dependent separator.
 
-    Copilot resolves the command-ref separator to '-' when '--skills' options
-    are stored and '.' otherwise. A second call that changes only script_type
+    Copilot resolves the command-ref separator to '.' when '--commands' is
+    stored and '-' by default. A second call that changes only script_type
     (parsed_options=None, raw_options=None) retains the stored parsed_options,
-    so invoke_separator must stay '-', not be recomputed from the None argument.
+    so invoke_separator must stay '.', not be recomputed from the None argument.
     """
     from specify_cli.integrations import get_integration
     from specify_cli.integration_runtime import with_integration_setting
@@ -100,15 +100,15 @@ def test_with_integration_setting_recomputes_separator_from_retained_options():
     copilot = get_integration("copilot")
 
     settings = with_integration_setting(
-        {}, "copilot", copilot, parsed_options={"skills": True}
+        {}, "copilot", copilot, parsed_options={"commands": True}
     )
-    assert settings["copilot"]["invoke_separator"] == "-"
+    assert settings["copilot"]["invoke_separator"] == "."
 
     settings2 = with_integration_setting(
         {"integration_settings": settings}, "copilot", copilot, script_type="ps"
     )
     # parsed_options are retained (only script_type changed) ...
-    assert settings2["copilot"]["parsed_options"] == {"skills": True}
+    assert settings2["copilot"]["parsed_options"] == {"commands": True}
     assert settings2["copilot"]["script"] == "ps"
     # ... so the separator must reflect them, not the (None) argument.
-    assert settings2["copilot"]["invoke_separator"] == "-"
+    assert settings2["copilot"]["invoke_separator"] == "."

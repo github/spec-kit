@@ -2043,7 +2043,7 @@ class TestExtensionSkillRegistration:
         assert skill_file.exists(), "sanity: skills mode should write SKILL.md"
 
         # Toggle ai_skills off for the same active agent (copilot) and
-        # rescaffold, mirroring `integration upgrade copilot` (no --skills).
+        # rescaffold, mirroring `integration upgrade copilot --commands`.
         _create_init_options(project_dir, ai="copilot", ai_skills=False)
         manager.register_enabled_extensions_for_agent("copilot")
 
@@ -2117,7 +2117,7 @@ class TestExtensionSkillRegistration:
         )
 
         # Toggle copilot to command mode (mirroring `integration upgrade
-        # copilot` with no --skills) — copilot's mirror is now stale.
+        # copilot --commands`) — copilot's mirror is now stale.
         _create_init_options(project_dir, ai="copilot", ai_skills=False)
         manager.register_enabled_extensions_for_agent("copilot")
 

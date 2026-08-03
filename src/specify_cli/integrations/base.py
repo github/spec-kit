@@ -225,8 +225,8 @@ class IntegrationBase(ABC):
         on-disk layout to avoid silently migrating an existing project to a
         different mode.  The default ignores it.
 
-        The default (command-first integrations, e.g. Copilot's default
-        layout) is skills mode only when ``--skills`` was requested.
+        The default for command-first integrations is skills mode only when
+        ``--skills`` was requested.
         ``SkillsIntegration`` overrides this to return ``True`` by default;
         skills-first integrations that expose a legacy opt-out (e.g. Bob)
         override it to honor their own flag.

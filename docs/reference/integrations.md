@@ -20,7 +20,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Firebender](https://firebender.com/)                                                | `firebender`     | IDE-based agent for Android Studio / IntelliJ                                                                                             |
 | [Forge](https://forgecode.dev/)                                                      | `forge`          |                                                                                                                                           |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli)                            | `gemini`         |                                                                                                                                           |
-| [GitHub Copilot](https://code.visualstudio.com/)                                     | `copilot`        | Defaults to legacy markdown mode: `.agent.md` command files under `.github/agents/`, companion `.prompt.md` files under `.github/prompts/`, and a `.vscode/settings.json` merge. Pass `--integration-options="--skills"` to scaffold skills as `speckit-<command>/SKILL.md` under `.github/skills/` instead. Legacy markdown mode is deprecated and will stop being the default in a future release. |
+| [GitHub Copilot](https://code.visualstudio.com/)                                     | `copilot`        | Skills-based by default; installs `speckit-<command>/SKILL.md` under `.github/skills/`. Pass `--integration-options="--commands"` to use the supported commands layout: `.agent.md` files under `.github/agents/`, companion `.prompt.md` files under `.github/prompts/`, and a `.vscode/settings.json` merge. |
 | [Goose](https://goose-docs.ai/)                                                      | `goose`          | Uses YAML recipe format in `.goose/recipes/`                                                                                              |
 | [Grok Build](https://docs.x.ai/build/overview)                                       | `grok`           | Skills-based integration; installs skills into `.grok/skills` and invokes them as `/speckit-<command>`                                    |
 | [Hermes](https://github.com/NousResearch/hermes-agent)                               | `hermes`         | Skills-based integration; installs skills globally into `~/.hermes/skills/`                                                                |
@@ -234,7 +234,8 @@ Some integrations accept additional options via `--integration-options`:
 | ----------- | ------------------- | -------------------------------------------------------------- |
 | `generic`   | `--commands-dir`    | Required. Directory for command files                          |
 | `kimi`      | `--migrate-legacy`  | Migrate legacy `.kimi/skills/` installs to `.kimi-code/skills/` (including dotted→hyphenated skill naming, e.g. `speckit.xxx` → `speckit-xxx`) |
-| `copilot`   | `--skills`          | Scaffold commands as agent skills (`speckit-<command>/SKILL.md` under `.github/skills/`, invoked as `/speckit-<command>`) instead of the default legacy markdown mode (`.github/agents/*.agent.md` plus `.github/prompts/*.prompt.md` and a `.vscode/settings.json` merge). Without this flag, install warns that legacy markdown mode is deprecated. |
+| `copilot`   | `--commands`        | Scaffold `.github/agents/*.agent.md` commands with `.github/prompts/*.prompt.md` companions and merge `.vscode/settings.json` instead of using the default skills layout. |
+| `copilot`   | `--skills`          | Force the default skills layout, overriding an existing commands layout during an explicit migration. |
 
 Example:
 

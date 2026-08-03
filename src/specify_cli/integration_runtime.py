@@ -70,8 +70,8 @@ def with_integration_setting(
     # ``script_type`` changes (``parsed_options`` and ``raw_options`` both
     # None), the previously-stored ``parsed_options`` are retained above, so
     # deriving the separator from the argument (None) would drop an
-    # options-dependent separator (e.g. Copilot ``--skills`` -> "-") back to
-    # the default ".".
+    # options-dependent separator (e.g. Copilot ``--commands`` -> ".") back to
+    # the default "-".
     current["invoke_separator"] = integration.effective_invoke_separator(
         current.get("parsed_options"), project_root
     )
