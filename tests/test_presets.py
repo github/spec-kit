@@ -484,6 +484,27 @@ class TestPresetRegistry:
         assert registry.list() == {}
         assert not registry.is_installed("test-pack")
 
+    def test_load_starts_fresh_for_non_utf8_registry(self, temp_dir):
+        """A registry file with undecodable bytes must start fresh, not raise.
+
+        ``_load()`` already treats malformed JSON as "corrupted registry,
+        start fresh", but a registry whose *bytes* cannot be decoded as UTF-8
+        raised a raw ``UnicodeDecodeError`` from the same boundary — the same
+        corruption class reaching a different exception type.
+        """
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        (packs_dir / PresetRegistry.REGISTRY_FILE).write_bytes(
+            b"\xff\xfe not utf-8 \xc3\x28"
+        )
+
+        registry = PresetRegistry(packs_dir)
+
+        assert registry.data == {
+            "schema_version": PresetRegistry.SCHEMA_VERSION,
+            "presets": {},
+        }
+
     def test_add_and_get(self, temp_dir):
         """Test adding and retrieving a pack."""
         packs_dir = temp_dir / "packs"
