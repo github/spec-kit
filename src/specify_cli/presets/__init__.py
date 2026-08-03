@@ -389,7 +389,7 @@ class PresetManifest:
             # malformed manifest. The sibling extension manifest already
             # rejects a non-string command 'file' via
             # relative_extension_path_violation().
-            for field in ("name", "file"):
+            for field in ("type", "name", "file"):
                 if not isinstance(tmpl[field], str):
                     raise PresetValidationError(
                         f"Invalid template {field}: expected a string, "
