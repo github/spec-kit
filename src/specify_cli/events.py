@@ -548,7 +548,15 @@ def _resolve_event_command_argv(
     """
     from .integrations.base import IntegrationBase
 
-    content = template_path.read_text(encoding="utf-8")
+    try:
+        content = template_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        # An unreadable or undecodable template cannot declare a runnable
+        # script. Degrade to "no argv" like every other failure in this
+        # resolver (missing frontmatter, malformed YAML, absent scripts)
+        # instead of leaking a raw traceback through
+        # resolve_and_run_event_command.
+        return None
     m = re.match(r'^---\n(.*?)\n---', content, re.DOTALL)
     if not m:
         return None
