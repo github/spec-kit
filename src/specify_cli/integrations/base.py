@@ -386,15 +386,22 @@ class IntegrationBase(ABC):
         cwd = str(project_root) if project_root else None
 
         if stream:
-            # No timeout when streaming — the user sees live output and
-            # can Ctrl+C at any time.  The timeout parameter is only
-            # applied in the captured (non-streaming) branch below.
+            # Stream output directly to the terminal so the user sees live
+            # progress.  Apply the same timeout as the captured branch to
+            # prevent indefinite hangs if the child process stalls.
             try:
                 result = subprocess.run(
                     exec_args,
                     text=True,
                     cwd=cwd,
+                    timeout=timeout,
                 )
+            except subprocess.TimeoutExpired:
+                return {
+                    "exit_code": 124,
+                    "stdout": "",
+                    "stderr": f"Command timed out after {timeout}s",
+                }
             except KeyboardInterrupt:
                 return {
                     "exit_code": 130,
