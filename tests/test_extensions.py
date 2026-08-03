@@ -2091,6 +2091,87 @@ class TestExtensionManager:
         assert (staging_dir / "test-ext-config.yml").read_bytes() == staged_bytes
         assert not manager.registry.is_installed("test-ext")
 
+    def test_retry_with_unreadable_staged_config_aborts_and_preserves_both(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """An unreadable staged backup must abort the retry, not crash it.
+
+        Every sibling read in the retry path (the live twin, the packaged
+        baseline check, the mode sidecar) already catches ``OSError``, but the
+        staged file's own ``stat()``/``read_bytes()`` had no boundary, so a
+        staged config that cannot be read crashed the reinstall with a raw
+        ``OSError`` instead of the conflict guidance. It must be treated like
+        an uncomparable live config: preserve both copies and abort while
+        dest_dir is untouched.
+        """
+        manager = ExtensionManager(project_dir)
+
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+        live_bytes = config_file.read_bytes()
+
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+
+        staging_dir = manager._rescue_staging_dir("test-ext")
+
+        original_copytree = shutil.copytree
+        copytree_calls = 0
+
+        def flaky_copytree(*args, **kwargs):
+            nonlocal copytree_calls
+            copytree_calls += 1
+            if copytree_calls == 1:
+                dst = args[1]
+                Path(dst).mkdir(parents=True, exist_ok=True)
+                (Path(dst) / "_partial.txt").write_text("partial")
+                raise OSError("simulated disk full")
+            return original_copytree(*args, **kwargs)
+
+        monkeypatch.setattr(_ext_module.shutil, "copytree", flaky_copytree)
+
+        with pytest.raises(OSError, match="simulated disk full"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        assert staging_dir.exists()
+        assert (staging_dir / ".rescue-complete").exists()
+        staged_file = staging_dir / "test-ext-config.yml"
+        assert staged_file.is_file()
+
+        # Simulate a staged backup that can no longer be read (e.g. a
+        # permission or I/O error) without touching real permissions so the
+        # test also runs on platforms where chmod is a no-op.
+        original_read_bytes = Path.read_bytes
+
+        def failing_read_bytes(self_path, *args, **kwargs):
+            if self_path == staged_file:
+                raise PermissionError(13, "Permission denied")
+            return original_read_bytes(self_path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_bytes", failing_read_bytes)
+
+        with pytest.raises(ValidationError, match="Preserved extension config conflict"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # Both copies must survive: the live config and the staged backup.
+        monkeypatch.undo()
+        assert config_file.read_bytes() == live_bytes
+        assert staging_dir.exists()
+        assert staged_file.is_file()
+        assert not manager.registry.is_installed("test-ext")
+
     @pytest.mark.parametrize(
         "failure_mode",
         [

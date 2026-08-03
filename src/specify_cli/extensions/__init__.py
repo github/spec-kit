@@ -2093,8 +2093,19 @@ class ExtensionManager:
                         _staged_modes = _loaded_modes
             for staged_name in sorted(staged_names):
                 staged_file = rescue_staging_dir / staged_name
-                staged_stat = staged_file.stat()
-                staged_bytes = staged_file.read_bytes()
+                # A staged backup that cannot be read or stat'ed must not
+                # crash the retry with a raw OSError: like an uncomparable
+                # live config below, treat it as a conflict so both copies
+                # are preserved and the user resolves it while dest_dir is
+                # still untouched. Every sibling read in this path (live
+                # twin, packaged baseline, mode sidecar) already catches
+                # OSError.
+                try:
+                    staged_stat = staged_file.stat()
+                    staged_bytes = staged_file.read_bytes()
+                except OSError:
+                    conflicting.add(staged_name)
+                    continue
                 # Prefer the sidecar-recorded mode; fall back to the staged
                 # file's own mode for backwards-compat with staging dirs
                 # written before the sidecar was introduced.
