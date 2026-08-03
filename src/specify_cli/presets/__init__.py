@@ -3281,6 +3281,8 @@ class PresetManager:
                 if current_source not in owned_sources:
                     continue
 
+            extension_restore = extension_restore_index.get(skill_name)
+
             # Try to find the core command template. Project-local overrides
             # in core_templates_dir take precedence, but that directory is
             # rarely populated — the real core commands ship in the bundled
@@ -3288,9 +3290,17 @@ class PresetManager:
             # (source checkout). Callers that want a genuine restore (a
             # preset was removed outright, not superseded by another
             # renderer) opt into that fallback via restore_from_bundled_core
-            # so the skill is restored instead of deleted (#3928).
+            # so the skill is restored instead of deleted (#3928). An
+            # installed extension providing a core-named command resolves
+            # ahead of bundled core elsewhere, so skip the bundled fallback
+            # when an extension restore exists — otherwise it would win
+            # over the higher-priority extension layer below.
             core_file = core_templates_dir / f"{short_name}.md"
-            if not core_file.exists() and restore_from_bundled_core:
+            if (
+                not core_file.exists()
+                and restore_from_bundled_core
+                and extension_restore is None
+            ):
                 from .. import _locate_core_pack, _repo_root
 
                 _core_pack = _locate_core_pack()
@@ -3343,7 +3353,6 @@ class PresetManager:
                 mutated_names.append(skill_name)
                 continue
 
-            extension_restore = extension_restore_index.get(skill_name)
             if extension_restore:
                 content = extension_restore["source_file"].read_text(encoding="utf-8")
                 frontmatter, body = registrar.parse_frontmatter(content)
