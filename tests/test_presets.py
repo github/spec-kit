@@ -4947,12 +4947,12 @@ class TestPresetSkills:
         install_self_test_preset(manager)
 
         skill_file = skills_dir / "speckit-specify" / "SKILL.md"
-        assert "preset:self-test" in skill_file.read_text()
+        assert "preset:self-test" in skill_file.read_text(encoding="utf-8")
 
         manager.remove("self-test")
 
         assert skill_file.exists(), "Core skill must be restored, not deleted"
-        content = skill_file.read_text()
+        content = skill_file.read_text(encoding="utf-8")
         assert "preset:self-test" not in content
         assert "templates/commands/specify.md" in content
         assert "Create or update the feature specification" in content
