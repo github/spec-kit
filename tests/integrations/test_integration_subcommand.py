@@ -2273,6 +2273,50 @@ class TestIntegrationSwitch:
         )
         assert after_state == before_state
 
+    def test_switch_preserves_target_options_with_fallback_integration(
+        self, tmp_path
+    ):
+        project = _init_project(tmp_path, "claude")
+        install = _run_in_project(
+            project,
+            [
+                "integration",
+                "install",
+                "opencode",
+                "--script",
+                "sh",
+                "--force",
+            ],
+        )
+        assert install.exit_code == 0, install.output
+
+        result = _run_in_project(
+            project,
+            [
+                "integration",
+                "switch",
+                "copilot",
+                "--integration-options",
+                "--commands",
+                "--script",
+                "sh",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert (
+            project / ".github" / "agents" / "speckit.plan.agent.md"
+        ).exists()
+        assert not (project / ".github" / "skills").exists()
+        state = json.loads(
+            (project / ".specify" / "integration.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert state["integration_settings"]["copilot"]["parsed_options"] == {
+            "commands": True
+        }
+
     def test_switch_migrates_extension_commands(self, tmp_path):
         """Switching should migrate extension commands to the new agent directory."""
         project = _init_project(tmp_path, "kimi")

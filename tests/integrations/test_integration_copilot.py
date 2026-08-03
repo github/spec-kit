@@ -431,6 +431,41 @@ class TestCopilotSkillsMode:
         (tmp_path / ".github" / "skills" / "speckit-plan").mkdir(parents=True)
         assert copilot.is_skills_mode(project_root=tmp_path) is True
 
+    def test_commands_manifest_wins_over_untracked_skill(self, tmp_path):
+        copilot = self._make_copilot()
+        manifest = IntegrationManifest("copilot", tmp_path)
+        copilot.setup(
+            tmp_path, manifest, parsed_options={"commands": True}
+        )
+        manifest.save()
+        stale_skill = (
+            tmp_path
+            / ".github"
+            / "skills"
+            / "speckit-plan"
+            / "SKILL.md"
+        )
+        stale_skill.parent.mkdir(parents=True)
+        stale_skill.write_text("# user-authored skill\n", encoding="utf-8")
+
+        assert copilot.is_skills_mode(project_root=tmp_path) is False
+
+    def test_skills_manifest_wins_over_untracked_command(self, tmp_path):
+        copilot = self._make_copilot()
+        manifest = IntegrationManifest("copilot", tmp_path)
+        copilot.setup(tmp_path, manifest)
+        manifest.save()
+        stale_agent = (
+            tmp_path
+            / ".github"
+            / "agents"
+            / "speckit.plan.agent.md"
+        )
+        stale_agent.parent.mkdir(parents=True)
+        stale_agent.write_text("# stale command\n", encoding="utf-8")
+
+        assert copilot.is_skills_mode(project_root=tmp_path) is True
+
     def test_explicit_skills_forces_migration_from_commands(self, tmp_path):
         copilot = self._make_copilot()
         agents_dir = tmp_path / ".github" / "agents"

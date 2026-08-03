@@ -30,6 +30,19 @@ import typer
 from ..base import IntegrationBase, IntegrationOption, SkillsIntegration
 from ..manifest import IntegrationManifest
 
+_COPILOT_CORE_COMMANDS = {
+    "analyze",
+    "checklist",
+    "clarify",
+    "constitution",
+    "converge",
+    "implement",
+    "plan",
+    "specify",
+    "tasks",
+    "taskstoissues",
+}
+
 
 def _copilot_executable() -> str:
     """Return the executable name for Copilot CLI on this platform.
@@ -170,14 +183,9 @@ class CopilotIntegration(IntegrationBase):
         if opts.get("commands"):
             return False
         if project_root is not None:
-            github_dir = Path(project_root) / ".github"
-            has_managed_skills = any((github_dir / "skills").glob("speckit-*"))
-            has_managed_commands = any(
-                (github_dir / "agents").glob("speckit.*.agent.md")
-            ) or any((github_dir / "prompts").glob("speckit.*.prompt.md"))
-
+            project_root = Path(project_root)
             manifest_path = (
-                Path(project_root)
+                project_root
                 / ".specify"
                 / "integrations"
                 / "copilot.manifest.json"
@@ -188,17 +196,43 @@ class CopilotIntegration(IntegrationBase):
                         self.key, Path(project_root)
                     ).files
                 except (OSError, ValueError):
-                    manifest_files = {}
-                has_managed_skills = has_managed_skills or any(
+                    manifest_files = None
+                if manifest_files is not None and any(
                     path.startswith(".github/skills/speckit-")
                     and path.endswith("/SKILL.md")
                     for path in manifest_files
-                )
-                has_managed_commands = has_managed_commands or any(
+                ):
+                    return True
+                if manifest_files is not None and any(
                     path.startswith(".github/agents/speckit.")
                     and path.endswith(".agent.md")
                     for path in manifest_files
-                )
+                ):
+                    return False
+
+            github_dir = project_root / ".github"
+            has_managed_skills = any(
+                (
+                    github_dir
+                    / "skills"
+                    / f"speckit-{command}"
+                    / "SKILL.md"
+                ).is_file()
+                for command in _COPILOT_CORE_COMMANDS
+            )
+            has_managed_commands = any(
+                (
+                    github_dir
+                    / "agents"
+                    / f"speckit.{command}.agent.md"
+                ).is_file()
+                or (
+                    github_dir
+                    / "prompts"
+                    / f"speckit.{command}.prompt.md"
+                ).is_file()
+                for command in _COPILOT_CORE_COMMANDS
+            )
             if has_managed_commands and not has_managed_skills:
                 return False
         return True

@@ -334,10 +334,10 @@ def integration_switch(
     # Resolve and validate target options before uninstalling the current
     # integration. Invalid options must not leave the project partially
     # switched with the previous integration already removed.
-    raw_options, parsed_options = _resolve_integration_options(
+    target_raw_options, target_parsed_options = _resolve_integration_options(
         target_integration, current, target, integration_options
     )
-    target_integration.is_skills_mode(parsed_options, project_root)
+    target_integration.is_skills_mode(target_parsed_options, project_root)
 
     # Phase 1: Uninstall current integration (if any)
     if installed_key:
@@ -411,7 +411,10 @@ def integration_switch(
             fallback_key = installed_keys[0]
             fallback_integration = get_integration(fallback_key)
             if fallback_integration is not None:
-                raw_options, parsed_options = _resolve_integration_options(
+                (
+                    fallback_raw_options,
+                    fallback_parsed_options,
+                ) = _resolve_integration_options(
                     fallback_integration, current, fallback_key, None
                 )
                 _set_default_integration_or_exit(
@@ -420,8 +423,8 @@ def integration_switch(
                     fallback_key,
                     fallback_integration,
                     installed_keys,
-                    raw_options=raw_options,
-                    parsed_options=parsed_options,
+                    raw_options=fallback_raw_options,
+                    parsed_options=fallback_parsed_options,
                 )
             else:
                 _write_integration_json(
@@ -446,11 +449,11 @@ def integration_switch(
         force=refresh_shared_infra,
         refresh_managed=True,
         invoke_separator=_invoke_separator_for_integration(
-            target_integration, current, target, parsed_options,
+            target_integration, current, target, target_parsed_options,
             project_root=project_root,
         ),
         invoke_prefix=_invoke_prefix_for_integration(
-            target_integration, target, parsed_options, project_root
+            target_integration, target, target_parsed_options, project_root
         ),
         refresh_hint=(
             "To overwrite customizations, re-run with "
@@ -472,14 +475,14 @@ def integration_switch(
         target_integration.key,
         target_integration.config,
         project_root,
-        parsed_options,
+        target_parsed_options,
     )
     try:
         target_integration.setup(
             project_root, manifest,
-            parsed_options=parsed_options,
+            parsed_options=target_parsed_options,
             script_type=selected_script,
-            raw_options=raw_options,
+            raw_options=target_raw_options,
             events=events_map,
         )
         manifest.save()
@@ -490,8 +493,8 @@ def integration_switch(
             target_integration,
             _dedupe_integration_keys([*installed_keys, target_integration.key]),
             script_type=selected_script,
-            raw_options=raw_options,
-            parsed_options=parsed_options,
+            raw_options=target_raw_options,
+            parsed_options=target_parsed_options,
         )
 
     except Exception as exc:

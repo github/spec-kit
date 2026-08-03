@@ -426,7 +426,7 @@ class _RunCapture:
         return _Result()
 
 
-def test_copilot_dispatch_command_includes_extra_args(monkeypatch):
+def test_copilot_commands_dispatch_includes_extra_args(monkeypatch):
     """Locks the bypass fix: `CopilotIntegration.dispatch_command`
     must honour `SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS`, not just `build_exec_args`.
     """
@@ -441,9 +441,9 @@ def test_copilot_dispatch_command_includes_extra_args(monkeypatch):
         "SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS", "--allow-tool 'shell(echo)'"
     )
 
-    CopilotIntegration().dispatch_command(
-        "speckit.plan", args="body", stream=False
-    )
+    integration = CopilotIntegration()
+    integration._skills_mode = False
+    integration.dispatch_command("speckit.plan", args="body", stream=False)
 
     assert capture.captured_args is not None
     # Hook inserted between `-p prompt` and the canonical Copilot flags.
