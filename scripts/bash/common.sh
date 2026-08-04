@@ -398,6 +398,73 @@ json_escape() {
 check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 
+_python3_command() {
+    if command -v python3 >/dev/null 2>&1 &&
+        python3 -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then
+        printf '%s\n' "python3"
+    elif command -v python >/dev/null 2>&1 &&
+        python -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then
+        printf '%s\n' "python"
+    elif command -v py >/dev/null 2>&1 &&
+        py -3 -c 'import sys' >/dev/null 2>&1; then
+        printf '%s\n' "py -3"
+    else
+        return 1
+    fi
+}
+
+_sorted_extension_ids() {
+    local ext_dir="$1"
+    local python_spec
+    if python_spec=$(_python3_command); then
+        local -a python_cmd
+        read -r -a python_cmd <<< "$python_spec"
+        SPECKIT_EXTENSIONS="$ext_dir" "${python_cmd[@]}" -c "
+import json, os, re
+from pathlib import Path
+
+root = Path(os.environ['SPECKIT_EXTENSIONS'])
+registered = {}
+registry = root / '.registry'
+if registry.is_file():
+    try:
+        data = json.loads(registry.read_text())
+        value = data.get('extensions', {}) if isinstance(data, dict) else {}
+        registered = value if isinstance(value, dict) else {}
+    except Exception:
+        registered = {}
+
+def priority(value):
+    if isinstance(value, bool):
+        return 10
+    try:
+        parsed = int(value)
+        return parsed if parsed >= 1 else 10
+    except (TypeError, ValueError, OverflowError):
+        return 10
+
+ranked = []
+for ext_id, meta in registered.items():
+    if re.fullmatch(r'[a-z0-9-]+', ext_id) and isinstance(meta, dict) and bool(meta.get('enabled', True)):
+        ranked.append((priority(meta.get('priority')), ext_id))
+for path in root.iterdir():
+    if path.is_dir() and re.fullmatch(r'[a-z0-9-]+', path.name) and path.name not in registered:
+        ranked.append((10, path.name))
+for _, ext_id in sorted(ranked):
+    print(ext_id)
+" 2>/dev/null
+        return
+    fi
+
+    local ext extension_id
+    for ext in "$ext_dir"/*/; do
+        [ -d "$ext" ] || continue
+        extension_id=$(basename "$ext")
+        case "$extension_id" in *[!a-z0-9-]*) continue ;; esac
+        printf '%s\n' "$extension_id"
+    done
+}
+
 # Resolve a template name to a file path using the priority stack:
 #   1. .specify/templates/overrides/
 #   2. .specify/presets/<preset-id>/templates/ (sorted by priority from .registry)
@@ -408,6 +475,8 @@ resolve_template() {
     local repo_root="$2"
     local base="$repo_root/.specify/templates"
 
+    case "$template_name" in ""|*[!a-z0-9-]*) return 1 ;; esac
+
     # Priority 1: Project overrides
     local override="$base/overrides/${template_name}.md"
     [ -f "$override" ] && echo "$override" && return 0
@@ -416,19 +485,24 @@ resolve_template() {
     local presets_dir="$repo_root/.specify/presets"
     if [ -d "$presets_dir" ]; then
         local registry_file="$presets_dir/.registry"
-        if [ -f "$registry_file" ] && command -v python3 >/dev/null 2>&1; then
+        local python_spec=""
+        local -a python_cmd=()
+        if python_spec=$(_python3_command); then
+            read -r -a python_cmd <<< "$python_spec"
+        fi
+        if [ -f "$registry_file" ] && [ "${#python_cmd[@]}" -gt 0 ]; then
             # Read preset IDs sorted by priority (lower number = higher precedence).
             # The python3 call is wrapped in an if-condition so that set -e does not
             # abort the function when python3 exits non-zero (e.g. invalid JSON).
             local sorted_presets=""
-            if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" python3 -c "
-import json, sys, os
+            if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" "${python_cmd[@]}" -c "
+import json, re, sys, os
 try:
     with open(os.environ['SPECKIT_REGISTRY']) as f:
         data = json.load(f)
     presets = data.get('presets', {})
     for pid, meta in sorted(presets.items(), key=lambda x: x[1].get('priority', 10) if isinstance(x[1], dict) else 10):
-        if isinstance(meta, dict) and meta.get('enabled', True) is not False:
+        if isinstance(meta, dict) and bool(meta.get('enabled', True)) and re.fullmatch(r'[a-z0-9-]+', pid):
             print(pid)
 except Exception:
     sys.exit(1)
@@ -437,6 +511,8 @@ except Exception:
                     # python3 succeeded and returned preset IDs — search in priority order
                     while IFS= read -r preset_id; do
                         local candidate="$presets_dir/$preset_id/templates/${template_name}.md"
+                        [ -f "$candidate" ] && echo "$candidate" && return 0
+                        candidate="$presets_dir/$preset_id/${template_name}.md"
                         [ -f "$candidate" ] && echo "$candidate" && return 0
                     done <<< "$sorted_presets"
                 fi
@@ -447,6 +523,8 @@ except Exception:
                     [ -d "$preset" ] || continue
                     local candidate="$preset/templates/${template_name}.md"
                     [ -f "$candidate" ] && echo "$candidate" && return 0
+                    candidate="$preset/${template_name}.md"
+                    [ -f "$candidate" ] && echo "$candidate" && return 0
                 done
             fi
         else
@@ -455,6 +533,8 @@ except Exception:
                 [ -d "$preset" ] || continue
                 local candidate="$preset/templates/${template_name}.md"
                 [ -f "$candidate" ] && echo "$candidate" && return 0
+                candidate="$preset/${template_name}.md"
+                [ -f "$candidate" ] && echo "$candidate" && return 0
             done
         fi
     fi
@@ -462,13 +542,14 @@ except Exception:
     # Priority 3: Extension-provided templates
     local ext_dir="$repo_root/.specify/extensions"
     if [ -d "$ext_dir" ]; then
-        for ext in "$ext_dir"/*/; do
-            [ -d "$ext" ] || continue
-            # Skip hidden directories (e.g. .backup, .cache)
-            case "$(basename "$ext")" in .*) continue;; esac
+        local sorted_extensions=""
+        sorted_extensions=$(_sorted_extension_ids "$ext_dir") || sorted_extensions=""
+        while IFS= read -r extension_id; do
+            [ -n "$extension_id" ] || continue
+            local ext="$ext_dir/$extension_id"
             local candidate="$ext/templates/${template_name}.md"
             [ -f "$candidate" ] && echo "$candidate" && return 0
-        done
+        done <<< "$sorted_extensions"
     fi
 
     # Priority 4: Core templates
@@ -492,9 +573,7 @@ resolve_template_content() {
     local repo_root="$2"
     local base="$repo_root/.specify/templates"
 
-    case "$template_name" in
-        ""|*[!a-z0-9-]*|-*|*-|*--*) return 1 ;;
-    esac
+    case "$template_name" in ""|*[!a-z0-9-]*) return 1 ;; esac
 
     # Collect all layers (highest priority first)
     local -a layer_paths=()
@@ -513,15 +592,20 @@ resolve_template_content() {
         local registry_file="$presets_dir/.registry"
         local sorted_presets=""
         local registry_parsed=false
-        if [ -f "$registry_file" ] && command -v python3 >/dev/null 2>&1; then
-            if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" python3 -c "
+        local python_spec=""
+        local -a python_cmd=()
+        if python_spec=$(_python3_command); then
+            read -r -a python_cmd <<< "$python_spec"
+        fi
+        if [ -f "$registry_file" ] && [ "${#python_cmd[@]}" -gt 0 ]; then
+            if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" "${python_cmd[@]}" -c "
 import json, re, sys, os
 try:
     with open(os.environ['SPECKIT_REGISTRY']) as f:
         data = json.load(f)
     presets = data.get('presets', {})
     for pid, meta in sorted(presets.items(), key=lambda x: x[1].get('priority', 10) if isinstance(x[1], dict) else 10):
-        if isinstance(meta, dict) and meta.get('enabled', True) is not False and re.fullmatch(r'[a-z0-9-]+', pid):
+        if isinstance(meta, dict) and bool(meta.get('enabled', True)) and re.fullmatch(r'[a-z0-9-]+', pid):
             print(pid)
 except Exception:
     sys.exit(1)
@@ -546,7 +630,7 @@ except Exception:
                 local manifest="$presets_dir/$preset_id/preset.yml"
                 local manifest_declared=false
                 if [ -f "$manifest" ]; then
-                    if ! command -v python3 >/dev/null 2>&1; then
+                    if [ "${#python_cmd[@]}" -eq 0 ]; then
                         echo "Error: Python 3 and PyYAML are required to resolve preset template composition" >&2
                         return 2
                     fi
@@ -554,7 +638,7 @@ except Exception:
                     local py_stderr
                     local parse_status
                     py_stderr=$(mktemp)
-                    if result=$(SPECKIT_MANIFEST="$manifest" SPECKIT_TMPL="$template_name" python3 -c "
+                    if result=$(SPECKIT_MANIFEST="$manifest" SPECKIT_TMPL="$template_name" "${python_cmd[@]}" -c "
 import sys, os
 try:
     import yaml
@@ -610,6 +694,10 @@ except Exception as exc:
                 if [ -z "$candidate" ] && [ "$manifest_declared" = false ]; then
                     local cf="$presets_dir/$preset_id/templates/${template_name}.md"
                     [ -f "$cf" ] && candidate="$cf"
+                    if [ -z "$candidate" ]; then
+                        cf="$presets_dir/$preset_id/${template_name}.md"
+                        [ -f "$cf" ] && candidate="$cf"
+                    fi
                 fi
                 if [ -n "$candidate" ]; then
                     layer_paths+=("$candidate")
@@ -622,15 +710,17 @@ except Exception as exc:
     # Priority 3: Extension-provided templates (always "replace")
     local ext_dir="$repo_root/.specify/extensions"
     if [ -d "$ext_dir" ]; then
-        for ext in "$ext_dir"/*/; do
-            [ -d "$ext" ] || continue
-            case "$(basename "$ext")" in .*) continue;; esac
+        local sorted_extensions=""
+        sorted_extensions=$(_sorted_extension_ids "$ext_dir") || sorted_extensions=""
+        while IFS= read -r extension_id; do
+            [ -n "$extension_id" ] || continue
+            local ext="$ext_dir/$extension_id"
             local candidate="$ext/templates/${template_name}.md"
             if [ -f "$candidate" ]; then
                 layer_paths+=("$candidate")
                 layer_strategies+=("replace")
             fi
-        done
+        done <<< "$sorted_extensions"
     fi
 
     # Priority 4: Core templates (always "replace")

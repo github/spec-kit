@@ -1063,6 +1063,40 @@ class TestPresetResolver:
         result = resolver.resolve("nonexistent-template")
         assert result is None
 
+    def test_resolver_ignores_traversing_registry_ids(self, project_dir):
+        """Registry IDs cannot escape preset or extension install roots."""
+        for registry_dir, registry_key, outside_name in (
+            ("presets", "presets", "outside-preset"),
+            ("extensions", "extensions", "outside-extension"),
+        ):
+            outside = project_dir.parent / outside_name
+            (outside / "templates").mkdir(parents=True)
+            (outside / "templates" / "spec-template.md").write_text(
+                f"# Sensitive {registry_key}\n",
+                encoding="utf-8",
+            )
+            installed = project_dir / ".specify" / registry_dir
+            installed.mkdir(parents=True, exist_ok=True)
+            (installed / ".registry").write_text(
+                json.dumps(
+                    {
+                        registry_key: {
+                            f"../../../{outside_name}": {
+                                "enabled": True,
+                                "priority": 1,
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+        content = PresetResolver(project_dir).resolve_content("spec-template")
+
+        assert content is not None
+        assert "Core Spec Template" in content
+        assert "Sensitive" not in content
+
     def test_resolve_higher_priority_pack_wins(self, project_dir, temp_dir, valid_pack_data):
         """Test that a pack with lower priority number wins over higher number."""
         manager = PresetManager(project_dir)
@@ -12768,11 +12802,21 @@ class TestInstalledPresetRichMarkup:
             assert result.exit_code == 0, (args, result.output, result.exception)
             assert "Broken [/red] tag" in strip_ansi(result.output)
 
-    def test_resolve_escapes_template_name(self, project_dir):
-        """``preset resolve`` echoes its argument; an unbalanced tag must not crash."""
+    def test_resolve_rejects_invalid_template_name(self, project_dir):
+        """``preset resolve`` rejects names before joining them into paths."""
         result = self._invoke(project_dir, ["preset", "resolve", "no[/red]such"])
-        assert result.exit_code == 0, (result.output, result.exception)
-        assert "no[/red]such" in strip_ansi(result.output)
+        assert result.exit_code == 1, (result.output, result.exception)
+        assert "invalid template name" in strip_ansi(result.output)
+
+    def test_resolve_rejects_path_traversal(self, project_dir):
+        """The resolver rejects traversal before joining names into paths."""
+        result = self._invoke(
+            project_dir,
+            ["preset", "resolve", "../../../README"],
+        )
+
+        assert result.exit_code == 1
+        assert "invalid template name" in strip_ansi(result.output)
 
     def test_resolve_escapes_layer_path_and_source(self, project_dir):
         """The top-layer path/source lines must render markup literally.

@@ -9,6 +9,7 @@ keeps working.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 import typer
@@ -351,6 +352,14 @@ def preset_resolve(
     """Show which template will be resolved for a given name."""
     from .. import _require_specify_project
     from . import PresetResolver
+
+    if re.fullmatch(r"[a-z0-9-]+", template_name) is None:
+        typer.echo(
+            f"Error: invalid template name '{template_name}'; "
+            "use lowercase letters, digits, and hyphens only",
+            err=True,
+        )
+        raise typer.Exit(1)
 
     project_root = _require_specify_project()
     resolver = PresetResolver(project_root)

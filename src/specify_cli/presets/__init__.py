@@ -4911,6 +4911,18 @@ class PresetResolver:
                 self._manifest_cache[key] = None
         return self._manifest_cache[key]
 
+    @staticmethod
+    def _is_safe_registry_id(value: object) -> bool:
+        return isinstance(value, str) and re.fullmatch(r"[a-z0-9-]+", value) is not None
+
+    def _get_all_presets_by_priority(self) -> List[tuple[str, dict]]:
+        registry = PresetRegistry(self.presets_dir)
+        return [
+            (pack_id, metadata)
+            for pack_id, metadata in registry.list_by_priority()
+            if self._is_safe_registry_id(pack_id)
+        ]
+
     def _manifest_declared_template(
         self, pack_dir: Path, template_name: str, template_type: str
     ) -> tuple[dict | None, Path | None]:
@@ -4969,6 +4981,8 @@ class PresetResolver:
 
         # Only include enabled extensions in the result
         for ext_id, metadata in all_registered:
+            if not self._is_safe_registry_id(ext_id):
+                continue
             # Skip disabled extensions
             if not metadata.get("enabled", True):
                 continue
@@ -4977,7 +4991,7 @@ class PresetResolver:
 
         # Add unregistered directories with implicit priority=10
         for ext_dir in self.extensions_dir.iterdir():
-            if not ext_dir.is_dir() or ext_dir.name.startswith("."):
+            if not ext_dir.is_dir() or not self._is_safe_registry_id(ext_dir.name):
                 continue
             if ext_dir.name not in registered_extension_ids:
                 all_extensions.append((10, ext_dir.name, None))
@@ -5043,8 +5057,7 @@ class PresetResolver:
 
         # Priority 2: Installed presets (sorted by priority — lower number wins)
         if not skip_presets and self.presets_dir.exists():
-            registry = PresetRegistry(self.presets_dir)
-            for pack_id, _metadata in registry.list_by_priority():
+            for pack_id, _metadata in self._get_all_presets_by_priority():
                 pack_dir = self.presets_dir / pack_id
                 # The preset manifest is authoritative: if it declares this
                 # template with an explicit ``file:``, resolve to that path —
@@ -5237,13 +5250,11 @@ class PresetResolver:
             return {"path": resolved_str, "source": "project override"}
 
         if str(self.presets_dir) in resolved_str and self.presets_dir.exists():
-            registry = PresetRegistry(self.presets_dir)
-            for pack_id, _metadata in registry.list_by_priority():
+            for pack_id, metadata in self._get_all_presets_by_priority():
                 pack_dir = self.presets_dir / pack_id
                 try:
                     resolved.relative_to(pack_dir)
-                    meta = registry.get(pack_id)
-                    version = meta.get("version", "?") if meta else "?"
+                    version = metadata.get("version", "?")
                     return {
                         "path": resolved_str,
                         "source": f"{pack_id} v{version}",
@@ -5329,8 +5340,7 @@ class PresetResolver:
 
         # Priority 2: Installed presets (sorted by priority — lower number = higher precedence)
         if self.presets_dir.exists():
-            registry = PresetRegistry(self.presets_dir)
-            for pack_id, metadata in registry.list_by_priority():
+            for pack_id, metadata in self._get_all_presets_by_priority():
                 pack_dir = self.presets_dir / pack_id
                 # Read strategy and manifest file path from preset manifest
                 strategy = "replace"

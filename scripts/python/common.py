@@ -183,6 +183,26 @@ def get_feature_paths(
     )
 
 
+_SAFE_COMPONENT_PATTERN = re.compile(r"[a-z0-9-]+")
+
+
+def _is_safe_component(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and _SAFE_COMPONENT_PATTERN.fullmatch(value) is not None
+    )
+
+
+def _normalize_priority(value: object) -> int:
+    if isinstance(value, bool):
+        return 10
+    try:
+        priority = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 10
+    return priority if priority >= 1 else 10
+
+
 def _sorted_preset_ids(presets_dir: Path) -> list[str]:
     registry = presets_dir / ".registry"
     if registry.is_file():
@@ -200,7 +220,11 @@ def _sorted_preset_ids(presets_dir: Path) -> list[str]:
                     if isinstance(kv[1], dict)
                     else 10,
                 )
-                if isinstance(meta, dict) and meta.get("enabled", True) is not False
+                if (
+                    _is_safe_component(pid)
+                    and isinstance(meta, dict)
+                    and bool(meta.get("enabled", True))
+                )
             ]
         except Exception:
             pass
@@ -208,10 +232,61 @@ def _sorted_preset_ids(presets_dir: Path) -> list[str]:
         return sorted(
             p.name
             for p in presets_dir.iterdir()
-            if p.is_dir() and not p.name.startswith(".")
+            if p.is_dir() and _is_safe_component(p.name)
         )
     except OSError:
         return []
+
+
+def _sorted_extension_ids(extensions_dir: Path) -> list[str]:
+    registry = extensions_dir / ".registry"
+    registered_ids: set[str] = set()
+    extensions: dict[object, object] = {}
+    if registry.is_file():
+        try:
+            data = json.loads(registry.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and isinstance(data.get("extensions"), dict):
+                extensions = data["extensions"]
+                registered_ids = {
+                    ext_id for ext_id in extensions if isinstance(ext_id, str)
+                }
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            pass
+
+    ranked: list[tuple[int, str]] = []
+    for ext_id, metadata in extensions.items():
+        if (
+            _is_safe_component(ext_id)
+            and isinstance(metadata, dict)
+            and bool(metadata.get("enabled", True))
+        ):
+            ranked.append((_normalize_priority(metadata.get("priority")), ext_id))
+
+    try:
+        ranked.extend(
+            (10, path.name)
+            for path in extensions_dir.iterdir()
+            if (
+                path.is_dir()
+                and _is_safe_component(path.name)
+                and path.name not in registered_ids
+            )
+        )
+    except OSError:
+        pass
+    return [ext_id for _, ext_id in sorted(ranked)]
+
+
+def _conventional_preset_template(
+    preset_dir: Path, template_name: str
+) -> Path | None:
+    for candidate in (
+        preset_dir / "templates" / f"{template_name}.md",
+        preset_dir / f"{template_name}.md",
+    ):
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def resolve_template(template_name: str, repo_root: Path) -> Path | None:
@@ -223,6 +298,9 @@ def resolve_template(template_name: str, repo_root: Path) -> Path | None:
       3. .specify/extensions/<ext-id>/templates/ (hidden directories skipped)
       4. .specify/templates/ (core)
     """
+    if not _is_safe_component(template_name):
+        return None
+
     base = repo_root / ".specify" / "templates"
 
     override = base / "overrides" / f"{template_name}.md"
@@ -232,19 +310,16 @@ def resolve_template(template_name: str, repo_root: Path) -> Path | None:
     presets_dir = repo_root / ".specify" / "presets"
     if presets_dir.is_dir():
         for preset_id in _sorted_preset_ids(presets_dir):
-            candidate = presets_dir / preset_id / "templates" / f"{template_name}.md"
-            if candidate.is_file():
+            candidate = _conventional_preset_template(
+                presets_dir / preset_id, template_name
+            )
+            if candidate is not None:
                 return candidate
 
     ext_dir = repo_root / ".specify" / "extensions"
     if ext_dir.is_dir():
-        try:
-            extensions = sorted(p for p in ext_dir.iterdir() if p.is_dir())
-        except OSError:
-            extensions = []
-        for ext in extensions:
-            if ext.name.startswith("."):
-                continue
+        for extension_id in _sorted_extension_ids(ext_dir):
+            ext = ext_dir / extension_id
             candidate = ext / "templates" / f"{template_name}.md"
             if candidate.is_file():
                 return candidate
@@ -264,7 +339,7 @@ def _preset_template_layer(
 ) -> tuple[Path, str] | None:
     """Return the preset template path and composition strategy."""
     manifest_path = preset_dir / "preset.yml"
-    conventional = preset_dir / "templates" / f"{template_name}.md"
+    conventional = _conventional_preset_template(preset_dir, template_name)
 
     try:
         import yaml
@@ -273,7 +348,7 @@ def _preset_template_layer(
             raise TemplateResolutionError(
                 "PyYAML is required to resolve preset template composition"
             ) from exc
-        return (conventional, "replace") if conventional.is_file() else None
+        return (conventional, "replace") if conventional is not None else None
 
     if manifest_path.is_file():
         try:
@@ -309,12 +384,12 @@ def _preset_template_layer(
                 f"Failed to parse preset manifest {manifest_path}: {exc}"
             ) from exc
 
-    return (conventional, "replace") if conventional.is_file() else None
+    return (conventional, "replace") if conventional is not None else None
 
 
 def resolve_template_content(template_name: str, repo_root: Path) -> str | None:
     """Resolve and compose template content through the project layer stack."""
-    if re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", template_name) is None:
+    if not _is_safe_component(template_name):
         return None
 
     layers: list[tuple[Path, str]] = []
@@ -336,15 +411,8 @@ def resolve_template_content(template_name: str, repo_root: Path) -> str | None:
             layers.append(layer)
 
     extensions_dir = repo_root / ".specify" / "extensions"
-    try:
-        extension_dirs = sorted(
-            path
-            for path in extensions_dir.iterdir()
-            if path.is_dir() and not path.name.startswith(".")
-        )
-    except OSError:
-        extension_dirs = []
-    for extension_dir in extension_dirs:
+    for extension_id in _sorted_extension_ids(extensions_dir):
+        extension_dir = extensions_dir / extension_id
         candidate = extension_dir / "templates" / f"{template_name}.md"
         if candidate.is_file():
             layers.append((candidate, "replace"))

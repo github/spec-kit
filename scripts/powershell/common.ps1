@@ -332,6 +332,52 @@ function Get-Python3Command {
     return $null
 }
 
+function Get-SortedExtensionIds {
+    param([Parameter(Mandatory=$true)][string]$ExtensionsDir)
+
+    $registeredNames = @()
+    $ranked = @()
+    $registryFile = Join-Path $ExtensionsDir '.registry'
+    if (Test-Path $registryFile) {
+        try {
+            $data = Get-Content $registryFile -Raw | ConvertFrom-Json
+            $extensionsProperty = if ($data -is [PSCustomObject]) {
+                $data.PSObject.Properties['extensions']
+            } else { $null }
+            $extensions = if ($extensionsProperty -and $extensionsProperty.Value -is [PSCustomObject]) {
+                $extensionsProperty.Value
+            } else { [PSCustomObject]@{} }
+            $registeredNames = @($extensions.PSObject.Properties | ForEach-Object { $_.Name })
+            foreach ($entry in $extensions.PSObject.Properties) {
+                if ($entry.Name -cnotmatch '^[a-z0-9-]+$' -or $entry.Value -isnot [PSCustomObject]) {
+                    continue
+                }
+                $enabledProperty = $entry.Value.PSObject.Properties['enabled']
+                if ($enabledProperty -and -not [bool]$enabledProperty.Value) { continue }
+                $priority = 10
+                $priorityProperty = $entry.Value.PSObject.Properties['priority']
+                if ($priorityProperty -and $priorityProperty.Value -isnot [bool]) {
+                    $parsedPriority = 0
+                    if ([int]::TryParse([string]$priorityProperty.Value, [ref]$parsedPriority) -and $parsedPriority -ge 1) {
+                        $priority = $parsedPriority
+                    }
+                }
+                $ranked += [PSCustomObject]@{ Priority = $priority; Id = $entry.Name }
+            }
+        } catch {
+            $registeredNames = @()
+            $ranked = @()
+        }
+    }
+
+    foreach ($directory in Get-ChildItem -Path $ExtensionsDir -Directory -ErrorAction SilentlyContinue) {
+        if ($directory.Name -cmatch '^[a-z0-9-]+$' -and $directory.Name -notin $registeredNames) {
+            $ranked += [PSCustomObject]@{ Priority = 10; Id = $directory.Name }
+        }
+    }
+    return $ranked | Sort-Object Priority, Id | ForEach-Object { $_.Id }
+}
+
 # Resolve a template name to a file path using the priority stack:
 #   1. .specify/templates/overrides/
 #   2. .specify/presets/<preset-id>/templates/ (sorted by priority from .registry)
@@ -342,6 +388,8 @@ function Resolve-Template {
         [Parameter(Mandatory=$true)][string]$TemplateName,
         [Parameter(Mandatory=$true)][string]$RepoRoot
     )
+
+    if ($TemplateName -cnotmatch '^[a-z0-9-]+$') { return $null }
 
     $base = Join-Path $RepoRoot '.specify/templates'
 
@@ -394,8 +442,11 @@ function Resolve-Template {
                     }
                     $sortedPresets = $presetEntries |
                         Where-Object { $_.Value -is [PSCustomObject] } |
-                        Where-Object { $null -eq $_.Value.enabled -or $_.Value.enabled -ne $false } |
-                        Where-Object { $_.Name -match '^[a-z0-9-]+$' } |
+                        Where-Object {
+                            $enabled = $_.Value.PSObject.Properties['enabled']
+                            -not $enabled -or [bool]$enabled.Value
+                        } |
+                        Where-Object { $_.Name -cmatch '^[a-z0-9-]+$' } |
                         Sort-Object { & $priorityFor $_ } |
                         ForEach-Object { $_.Name }
                 }
@@ -409,11 +460,15 @@ function Resolve-Template {
             foreach ($presetId in $sortedPresets) {
                 $candidate = Join-Path $presetsDir "$presetId/templates/$TemplateName.md"
                 if (Test-Path $candidate) { return $candidate }
+                $candidate = Join-Path $presetsDir "$presetId/$TemplateName.md"
+                if (Test-Path $candidate) { return $candidate }
             }
         } else {
             # Fallback: alphabetical directory order
             foreach ($preset in Get-ChildItem -Path $presetsDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '.*' } | Sort-Object Name) {
                 $candidate = Join-Path $preset.FullName "templates/$TemplateName.md"
+                if (Test-Path $candidate) { return $candidate }
+                $candidate = Join-Path $preset.FullName "$TemplateName.md"
                 if (Test-Path $candidate) { return $candidate }
             }
         }
@@ -422,8 +477,8 @@ function Resolve-Template {
     # Priority 3: Extension-provided templates
     $extDir = Join-Path $RepoRoot '.specify/extensions'
     if (Test-Path $extDir) {
-        foreach ($ext in Get-ChildItem -Path $extDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '.*' } | Sort-Object Name) {
-            $candidate = Join-Path $ext.FullName "templates/$TemplateName.md"
+        foreach ($extensionId in Get-SortedExtensionIds -ExtensionsDir $extDir) {
+            $candidate = Join-Path $extDir "$extensionId/templates/$TemplateName.md"
             if (Test-Path $candidate) { return $candidate }
         }
     }
@@ -444,7 +499,7 @@ function Resolve-TemplateContent {
         [Parameter(Mandatory=$true)][string]$RepoRoot
     )
 
-    if ($TemplateName -notmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$') {
+    if ($TemplateName -cnotmatch '^[a-z0-9-]+$') {
         return $null
     }
 
@@ -506,7 +561,11 @@ function Resolve-TemplateContent {
                     }
                     $sortedPresets = $presetEntries |
                         Where-Object { $_.Value -is [PSCustomObject] } |
-                        Where-Object { $null -eq $_.Value.enabled -or $_.Value.enabled -ne $false } |
+                        Where-Object {
+                            $enabled = $_.Value.PSObject.Properties['enabled']
+                            -not $enabled -or [bool]$enabled.Value
+                        } |
+                        Where-Object { $_.Name -cmatch '^[a-z0-9-]+$' } |
                         Sort-Object { & $priorityFor $_ } |
                         ForEach-Object { $_.Name }
                 }
@@ -518,7 +577,7 @@ function Resolve-TemplateContent {
 
         if (-not $registryParsed) {
             $sortedPresets = Get-ChildItem -Path $presetsDir -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -match '^[a-z0-9-]+$' } |
+                Where-Object { $_.Name -cmatch '^[a-z0-9-]+$' } |
                 Sort-Object Name |
                 ForEach-Object { $_.Name }
         }
@@ -592,6 +651,10 @@ except Exception as exc:
                 if (-not $candidate -and -not $manifestDeclared) {
                     $cf = Join-Path $presetsDir "$presetId/templates/$TemplateName.md"
                     if (Test-Path $cf) { $candidate = $cf }
+                    if (-not $candidate) {
+                        $cf = Join-Path $presetsDir "$presetId/$TemplateName.md"
+                        if (Test-Path $cf) { $candidate = $cf }
+                    }
                 }
                 if ($candidate) {
                     $layerPaths += $candidate
@@ -603,8 +666,8 @@ except Exception as exc:
     # Priority 3: Extension-provided templates (always "replace")
     $extDir = Join-Path $RepoRoot '.specify/extensions'
     if (Test-Path $extDir) {
-        foreach ($ext in Get-ChildItem -Path $extDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '.*' } | Sort-Object Name) {
-            $candidate = Join-Path $ext.FullName "templates/$TemplateName.md"
+        foreach ($extensionId in Get-SortedExtensionIds -ExtensionsDir $extDir) {
+            $candidate = Join-Path $extDir "$extensionId/templates/$TemplateName.md"
             if (Test-Path $candidate) {
                 $layerPaths += $candidate
                 $layerStrategies += 'replace'

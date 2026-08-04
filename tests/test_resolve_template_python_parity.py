@@ -115,6 +115,95 @@ def test_all_variants_reject_unresolvable_template(
 
 
 @requires_bash
+def test_all_variants_ignore_traversing_preset_registry_ids(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    outside = repo / "outside"
+    outside.mkdir()
+    (outside / f"{TEMPLATE}.md").write_text("sensitive content\n", encoding="utf-8")
+    presets = repo / ".specify" / "presets"
+    presets.mkdir(parents=True)
+    (presets / ".registry").write_text(
+        '{"presets":{"../../../outside":{"enabled":true,"priority":1}}}\n',
+        encoding="utf-8",
+    )
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode == 1 for result in results)
+    assert all("sensitive content" not in result.stdout for result in results)
+
+
+@requires_bash
+def test_all_variants_support_root_level_preset_convention(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    preset = repo / ".specify" / "presets" / "root-pack"
+    preset.mkdir(parents=True)
+    (preset / f"{TEMPLATE}.md").write_text("# Root convention\n", encoding="utf-8")
+    (repo / ".specify" / "presets" / ".registry").write_text(
+        '{"presets":{"root-pack":{"enabled":true,"priority":1}}}\n',
+        encoding="utf-8",
+    )
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["TEMPLATE_CONTENT"] == "# Root convention\n"
+        for result in results
+    )
+
+
+@requires_bash
+def test_all_variants_honor_extension_registry_state_and_priority(
+    tmp_path: Path,
+) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    extensions = repo / ".specify" / "extensions"
+    for extension_id, content in (
+        ("disabled-ext", "# Disabled\n"),
+        ("low-priority", "# Low priority\n"),
+        ("high-priority", "# High priority\n"),
+    ):
+        template_dir = extensions / extension_id / "templates"
+        template_dir.mkdir(parents=True)
+        (template_dir / f"{TEMPLATE}.md").write_text(content, encoding="utf-8")
+    (extensions / ".registry").write_text(
+        '{"extensions":{'
+        '"disabled-ext":{"enabled":null,"priority":1},'
+        '"low-priority":{"enabled":true,"priority":20},'
+        '"high-priority":{"enabled":true,"priority":5}'
+        "}}\n",
+        encoding="utf-8",
+    )
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["TEMPLATE_CONTENT"] == "# High priority\n"
+        for result in results
+    )
+
+
+@requires_bash
 def test_all_variants_fail_when_wrap_placeholder_is_missing(
     tmp_path: Path,
 ) -> None:
