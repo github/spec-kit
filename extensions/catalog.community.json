@@ -390,6 +390,44 @@
       "created_at": "2026-03-14T00:00:00Z",
       "updated_at": "2026-03-14T00:00:00Z"
     },
+    "axi": {
+      "name": "Axi Extension",
+      "id": "axi",
+      "description": "A Spec Kit extension that renders a feature's markdown in a local browser review surface for human annotation, then returns the queued notes to the agent to apply.",
+      "author": "d0whc3r",
+      "version": "1.1.4",
+      "download_url": "https://github.com/d0whc3r/spec-kit-axi/releases/download/v1.1.4/axi-1.1.4.zip",
+      "repository": "https://github.com/d0whc3r/spec-kit-axi",
+      "homepage": "https://d0whc3r.github.io/spec-kit-axi/",
+      "documentation": "https://github.com/d0whc3r/spec-kit-axi/wiki",
+      "changelog": "https://github.com/d0whc3r/spec-kit-axi/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "node",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "axi",
+        "spec-kit",
+        "spec-kit-extension"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-03T00:00:00Z",
+      "updated_at": "2026-08-03T00:00:00Z"
+    },
     "azure-devops": {
       "name": "Azure DevOps Integration",
       "id": "azure-devops",
