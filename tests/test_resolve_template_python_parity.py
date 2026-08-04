@@ -92,6 +92,59 @@ def test_all_variants_preserve_composition_parity(
 
 
 @requires_bash
+def test_all_variants_read_utf8_registry_under_ascii_locale(
+    tmp_path: Path,
+) -> None:
+    """Registry/manifest reads must force UTF-8, not the process locale.
+
+    With UTF-8 mode disabled and a C locale, the interpreter's default text
+    encoding is ASCII. Non-ASCII *metadata* in the registry or a manifest must
+    still resolve, because the resolvers open those files as UTF-8 explicitly.
+    Template content stays ASCII so the pure-Python variant can emit it on the
+    ASCII stdout this configuration forces.
+    """
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    expected = install_composition_stack(repo, TEMPLATE, "# Core\n")
+
+    # Inject non-ASCII metadata into the preset registry and a manifest so a
+    # locale-dependent decode would raise instead of resolving cleanly.
+    registry = repo / ".specify" / "presets" / ".registry"
+    registry_data = json.loads(registry.read_text(encoding="utf-8"))
+    registry_data["presets"]["wrap-pack"]["description"] = "Café ✓ wrapper"
+    registry.write_text(
+        json.dumps(registry_data, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8") + '      description: "Café ✓"\n',
+        encoding="utf-8",
+    )
+
+    env = clean_env()
+    # Force the interpreter's default text encoding to ASCII so an unqualified
+    # open() would fail on the non-ASCII metadata above.
+    env["PYTHONUTF8"] = "0"
+    env["PYTHONCOERCECLOCALE"] = "0"
+    env["LC_ALL"] = "C"
+    env["LANG"] = "C"
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, env))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["TEMPLATE_CONTENT"] == expected
+        for result in results
+    )
+
+
+@requires_bash
 @pytest.mark.parametrize(
     "template_name",
     ["missing-template", "../../../outside"],
@@ -532,6 +585,45 @@ def test_bash_fails_when_override_read_fails(tmp_path: Path) -> None:
       file: null
       strategy: append
 """,
+        f"""provides:
+  templates:
+    - name: {TEMPLATE}
+      file: templates/{TEMPLATE}.md
+      strategy: wrap
+    - type: template
+      name: unrelated-template
+      file: templates/other.md
+""",
+        f"""provides:
+  templates:
+    - type: template
+      name: {TEMPLATE}
+      file: templates/{TEMPLATE}.md
+      strategy: wrap
+    - type: template
+      name: unrelated-template
+""",
+        f"""provides:
+  templates:
+    - type: template
+      name: {TEMPLATE}
+      file: templates/{TEMPLATE}.md
+      strategy: wrap
+    - type: bogus
+      name: unrelated-template
+      file: templates/other.md
+""",
+        f"""provides:
+  templates:
+    - type: template
+      name: {TEMPLATE}
+      file: templates/{TEMPLATE}.md
+      strategy: wrap
+    - type: template
+      name: unrelated-template
+      file: templates/other.md
+      strategy: merge
+""",
     ],
     ids=[
         "invalid_yaml",
@@ -541,6 +633,10 @@ def test_bash_fails_when_override_read_fails(tmp_path: Path) -> None:
         "non_string_file",
         "non_string_strategy",
         "malformed_entry_after_match",
+        "entry_missing_type",
+        "entry_missing_file",
+        "unsupported_type",
+        "unsupported_strategy",
     ],
 )
 def test_all_variants_fail_for_malformed_preset_manifest(

@@ -335,6 +335,36 @@ class TemplateResolutionError(RuntimeError):
     """Raised when template layers exist but cannot be composed safely."""
 
 
+# Mirror the canonical PresetManifest contract (see src/specify_cli/presets)
+# so runtime resolution rejects the same structurally malformed manifests.
+_VALID_TEMPLATE_TYPES = ("template", "command", "script")
+_VALID_TEMPLATE_STRATEGIES = ("replace", "prepend", "append", "wrap")
+_VALID_SCRIPT_STRATEGIES = ("replace", "wrap")
+
+
+def _validate_manifest_template_entry(entry: object) -> None:
+    """Validate a single manifest template entry against the canonical rules."""
+    if not isinstance(entry, dict):
+        raise ValueError("manifest template entries must be mappings")
+    if "type" not in entry or "name" not in entry or "file" not in entry:
+        raise ValueError("manifest template entry missing type, name, or file")
+    for field in ("type", "name", "file"):
+        if not isinstance(entry[field], str):
+            raise ValueError(f"manifest template {field} must be a string")
+    if entry["type"] not in _VALID_TEMPLATE_TYPES:
+        raise ValueError(f"invalid manifest template type '{entry['type']}'")
+    strategy = entry.get("strategy", "replace")
+    if not isinstance(strategy, str):
+        raise ValueError("manifest template strategy must be a string")
+    strategy = strategy.lower()
+    if strategy not in _VALID_TEMPLATE_STRATEGIES:
+        raise ValueError(f"invalid manifest template strategy '{strategy}'")
+    if entry["type"] == "script" and strategy not in _VALID_SCRIPT_STRATEGIES:
+        raise ValueError(
+            f"invalid manifest script strategy '{strategy}'"
+        )
+
+
 def _preset_template_layer(
     preset_dir: Path, template_name: str
 ) -> tuple[Path, str] | None:
@@ -363,14 +393,7 @@ def _preset_template_layer(
             if not isinstance(templates, list):
                 raise ValueError("manifest templates must be a list")
             for entry in templates:
-                if not isinstance(entry, dict):
-                    raise ValueError("manifest template entries must be mappings")
-                file_value = entry.get("file", "")
-                strategy = entry.get("strategy", "replace")
-                if not isinstance(file_value, str):
-                    raise ValueError("manifest template file must be a string")
-                if not isinstance(strategy, str):
-                    raise ValueError("manifest template strategy must be a string")
+                _validate_manifest_template_entry(entry)
             for entry in templates:
                 if (
                     entry.get("name") != template_name

@@ -428,7 +428,7 @@ registered = {}
 registry = root / '.registry'
 if registry.is_file():
     try:
-        data = json.loads(registry.read_text())
+        data = json.loads(registry.read_text(encoding='utf-8'))
         value = data.get('extensions', {}) if isinstance(data, dict) else {}
         registered = value if isinstance(value, dict) else {}
     except Exception:
@@ -503,7 +503,7 @@ resolve_template() {
             if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" "${python_cmd[@]}" -c "
 import json, re, sys, os
 try:
-    with open(os.environ['SPECKIT_REGISTRY']) as f:
+    with open(os.environ['SPECKIT_REGISTRY'], encoding='utf-8') as f:
         data = json.load(f)
     presets = data.get('presets', {})
     def priority(meta):
@@ -622,7 +622,7 @@ resolve_template_content() {
             if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" "${python_cmd[@]}" -c "
 import json, re, sys, os
 try:
-    with open(os.environ['SPECKIT_REGISTRY']) as f:
+    with open(os.environ['SPECKIT_REGISTRY'], encoding='utf-8') as f:
         data = json.load(f)
     presets = data.get('presets', {})
     def priority(meta):
@@ -675,7 +675,7 @@ except ImportError:
     print('yaml_missing', file=sys.stderr)
     sys.exit(2)
 try:
-    with open(os.environ['SPECKIT_MANIFEST']) as f:
+    with open(os.environ['SPECKIT_MANIFEST'], encoding='utf-8') as f:
         data = yaml.safe_load(f)
     if not isinstance(data, dict):
         raise ValueError('manifest root must be a mapping')
@@ -685,15 +685,26 @@ try:
     templates = provides.get('templates', [])
     if not isinstance(templates, list):
         raise ValueError('manifest templates must be a list')
+    valid_types = ('template', 'command', 'script')
+    valid_strategies = ('replace', 'prepend', 'append', 'wrap')
     for t in templates:
         if not isinstance(t, dict):
             raise ValueError('manifest template entries must be mappings')
-        file_value = t.get('file', '')
+        if 'type' not in t or 'name' not in t or 'file' not in t:
+            raise ValueError('manifest template entry missing type, name, or file')
+        for field in ('type', 'name', 'file'):
+            if not isinstance(t[field], str):
+                raise ValueError('manifest template ' + field + ' must be a string')
+        if t['type'] not in valid_types:
+            raise ValueError('invalid manifest template type')
         strategy = t.get('strategy', 'replace')
-        if not isinstance(file_value, str):
-            raise ValueError('manifest template file must be a string')
         if not isinstance(strategy, str):
             raise ValueError('manifest template strategy must be a string')
+        strategy = strategy.lower()
+        if strategy not in valid_strategies:
+            raise ValueError('invalid manifest template strategy')
+        if t['type'] == 'script' and strategy not in ('replace', 'wrap'):
+            raise ValueError('invalid manifest script strategy')
     for t in templates:
         if t.get('name') == os.environ['SPECKIT_TMPL'] and t.get('type', 'template') == 'template':
             file_value = t.get('file', '')
