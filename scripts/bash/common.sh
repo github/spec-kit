@@ -590,9 +590,11 @@ resolve_template_content() {
     # Priority 1: Project overrides (always "replace")
     local override="$base/overrides/${template_name}.md"
     if [ -f "$override" ]; then
-        layer_paths+=("$override")
-        layer_strategies+=("replace")
+        cat "$override"
+        return 0
     fi
+
+    local effective_base_found=false
 
     # Priority 2: Installed presets (sorted by priority from .registry)
     local presets_dir="$repo_root/.specify/presets"
@@ -718,6 +720,10 @@ except Exception as exc:
                 if [ -n "$candidate" ]; then
                     layer_paths+=("$candidate")
                     layer_strategies+=("$strategy")
+                    if [ "$strategy" = "replace" ]; then
+                        effective_base_found=true
+                        break
+                    fi
                 fi
             done <<< "$sorted_presets"
         fi
@@ -725,7 +731,7 @@ except Exception as exc:
 
     # Priority 3: Extension-provided templates (always "replace")
     local ext_dir="$repo_root/.specify/extensions"
-    if [ -d "$ext_dir" ]; then
+    if [ "$effective_base_found" = false ] && [ -d "$ext_dir" ]; then
         local sorted_extensions=""
         sorted_extensions=$(_sorted_extension_ids "$ext_dir") || sorted_extensions=""
         while IFS= read -r extension_id; do
@@ -735,13 +741,15 @@ except Exception as exc:
             if [ -f "$candidate" ]; then
                 layer_paths+=("$candidate")
                 layer_strategies+=("replace")
+                effective_base_found=true
+                break
             fi
         done <<< "$sorted_extensions"
     fi
 
     # Priority 4: Core templates (always "replace")
     local core="$base/${template_name}.md"
-    if [ -f "$core" ]; then
+    if [ "$effective_base_found" = false ] && [ -f "$core" ]; then
         layer_paths+=("$core")
         layer_strategies+=("replace")
     fi

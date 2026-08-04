@@ -205,6 +205,55 @@ def test_all_variants_honor_extension_registry_state_and_priority(
 
 
 @requires_bash
+@pytest.mark.parametrize("base_kind", ["override", "preset"])
+def test_all_variants_ignore_malformed_layers_below_replace_base(
+    tmp_path: Path,
+    base_kind: str,
+) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    expected = "# Winning base\r\nBody\r\n"
+    presets = repo / ".specify" / "presets"
+
+    if base_kind == "override":
+        override = repo / ".specify" / "templates" / "overrides"
+        override.mkdir(parents=True)
+        (override / f"{TEMPLATE}.md").write_bytes(expected.encode("utf-8"))
+        registry = {"presets": {"broken-pack": {"enabled": True, "priority": 1}}}
+    else:
+        winning = presets / "winning-pack" / "templates"
+        winning.mkdir(parents=True)
+        (winning / f"{TEMPLATE}.md").write_bytes(expected.encode("utf-8"))
+        registry = {
+            "presets": {
+                "winning-pack": {"enabled": True, "priority": 1},
+                "broken-pack": {"enabled": True, "priority": 2},
+            }
+        }
+
+    broken = presets / "broken-pack"
+    broken.mkdir(parents=True)
+    (broken / "preset.yml").write_text("provides: [\n", encoding="utf-8")
+    (presets / ".registry").write_text(
+        json.dumps(registry, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["TEMPLATE_CONTENT"] == expected
+        for result in results
+    )
+
+
+@requires_bash
 @pytest.mark.parametrize(
     ("entries", "expected"),
     [

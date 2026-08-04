@@ -395,6 +395,32 @@ def resolve_template_content(template_name: str, repo_root: Path) -> str | None:
 
     layers: list[tuple[Path, str]] = []
 
+    def compose_from_base() -> str:
+        try:
+            content = layers[-1][0].read_bytes().decode("utf-8")
+            for path, strategy in reversed(layers[:-1]):
+                layer_content = path.read_bytes().decode("utf-8")
+                if strategy == "prepend":
+                    content = f"{layer_content}\n\n{content}"
+                elif strategy == "append":
+                    content = f"{content}\n\n{layer_content}"
+                elif strategy == "wrap":
+                    placeholder = "{CORE_TEMPLATE}"
+                    if placeholder not in layer_content:
+                        raise TemplateResolutionError(
+                            f"Wrap layer {path} is missing {placeholder}"
+                        )
+                    content = layer_content.replace(placeholder, content)
+                else:
+                    raise TemplateResolutionError(
+                        f"Unknown template composition strategy '{strategy}' in {path}"
+                    )
+        except (OSError, UnicodeError) as exc:
+            raise TemplateResolutionError(
+                f"Failed to read template layer for '{template_name}': {exc}"
+            ) from exc
+        return content
+
     override = (
         repo_root
         / ".specify"
@@ -404,12 +430,15 @@ def resolve_template_content(template_name: str, repo_root: Path) -> str | None:
     )
     if override.is_file():
         layers.append((override, "replace"))
+        return compose_from_base()
 
     presets_dir = repo_root / ".specify" / "presets"
     for preset_id in _sorted_preset_ids(presets_dir):
         layer = _preset_template_layer(presets_dir / preset_id, template_name)
         if layer is not None:
             layers.append(layer)
+            if layer[1] == "replace":
+                return compose_from_base()
 
     extensions_dir = repo_root / ".specify" / "extensions"
     for extension_id in _sorted_extension_ids(extensions_dir):
@@ -417,50 +446,19 @@ def resolve_template_content(template_name: str, repo_root: Path) -> str | None:
         candidate = extension_dir / "templates" / f"{template_name}.md"
         if candidate.is_file():
             layers.append((candidate, "replace"))
+            return compose_from_base()
 
     core = repo_root / ".specify" / "templates" / f"{template_name}.md"
     if core.is_file():
         layers.append((core, "replace"))
+        return compose_from_base()
 
     if not layers:
         return None
 
-    base_index = next(
-        (index for index, (_, strategy) in enumerate(layers) if strategy == "replace"),
-        None,
+    raise TemplateResolutionError(
+        f"Template '{template_name}' has composing layers but no replace base"
     )
-    if base_index is None:
-        raise TemplateResolutionError(
-            f"Template '{template_name}' has composing layers but no replace base"
-        )
-
-    try:
-        content = layers[base_index][0].read_text(encoding="utf-8")
-        for path, strategy in reversed(layers[:base_index]):
-            layer_content = path.read_text(encoding="utf-8")
-            if strategy == "prepend":
-                content = f"{layer_content}\n\n{content}"
-            elif strategy == "append":
-                content = f"{content}\n\n{layer_content}"
-            elif strategy == "wrap":
-                placeholder = "{CORE_TEMPLATE}"
-                if placeholder not in layer_content:
-                    raise TemplateResolutionError(
-                        f"Wrap layer {path} is missing {placeholder}"
-                    )
-                content = layer_content.replace(placeholder, content)
-            elif strategy == "replace":
-                content = layer_content
-            else:
-                raise TemplateResolutionError(
-                    f"Unknown template composition strategy '{strategy}' in {path}"
-                )
-    except (OSError, UnicodeError) as exc:
-        raise TemplateResolutionError(
-            f"Failed to read template layer for '{template_name}': {exc}"
-        ) from exc
-
-    return content
 
 
 def get_invoke_separator(repo_root: Path) -> str:

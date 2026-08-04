@@ -512,9 +512,13 @@ function Resolve-TemplateContent {
     # Priority 1: Project overrides (always "replace")
     $override = Join-Path $base "overrides/$TemplateName.md"
     if (Test-Path $override) {
-        $layerPaths += $override
-        $layerStrategies += 'replace'
+        return [System.IO.File]::ReadAllText(
+            $override,
+            [System.Text.Encoding]::UTF8
+        )
     }
+
+    $effectiveBaseFound = $false
 
     # Priority 2: Installed presets (sorted by priority from .registry)
     $presetsDir = Join-Path $RepoRoot '.specify/presets'
@@ -645,25 +649,31 @@ except Exception as exc:
                 if ($candidate) {
                     $layerPaths += $candidate
                     $layerStrategies += $strategy
+                    if ($strategy -eq 'replace') {
+                        $effectiveBaseFound = $true
+                        break
+                    }
                 }
             }
     }
 
     # Priority 3: Extension-provided templates (always "replace")
     $extDir = Join-Path $RepoRoot '.specify/extensions'
-    if (Test-Path $extDir) {
+    if (-not $effectiveBaseFound -and (Test-Path $extDir)) {
         foreach ($extensionId in Get-SortedExtensionIds -ExtensionsDir $extDir) {
             $candidate = Join-Path $extDir "$extensionId/templates/$TemplateName.md"
             if (Test-Path $candidate) {
                 $layerPaths += $candidate
                 $layerStrategies += 'replace'
+                $effectiveBaseFound = $true
+                break
             }
         }
     }
 
     # Priority 4: Core templates (always "replace")
     $core = Join-Path $base "$TemplateName.md"
-    if (Test-Path $core) {
+    if (-not $effectiveBaseFound -and (Test-Path $core)) {
         $layerPaths += $core
         $layerStrategies += 'replace'
     }
