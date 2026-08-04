@@ -17,6 +17,7 @@ import platform
 import tempfile
 import shutil
 import tomllib
+import yaml
 from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
@@ -2995,6 +2996,30 @@ Real body starts here.
 
         assert "Prüfe Konformität" in output
         assert "\\u" not in output
+
+    def test_render_frontmatter_keeps_long_description_on_one_line(self):
+        """A long description must not be folded across lines.
+
+        PyYAML wraps plain scalars at ~80 columns by default, which splits a
+        long ``description`` onto a continuation line. The YAML stays valid,
+        but the rendered frontmatter then differs in shape from the
+        hand-written core command templates, where ``description`` is always a
+        single line -- and consumers that read frontmatter line-wise see a
+        truncated description followed by a stray line.
+        """
+        long_description = (
+            "Execute the implementation plan by processing and executing all "
+            "tasks defined in tasks.md"
+        )
+        frontmatter = {"name": "speckit-implement", "description": long_description}
+
+        registrar = CommandRegistrar()
+        output = registrar.render_frontmatter(frontmatter)
+
+        assert f"description: {long_description}\n" in output
+
+        body = output.split("---\n")[1]
+        assert yaml.safe_load(body)["description"] == long_description
 
     def test_adjust_script_paths_does_not_mutate_input(self):
         """Path adjustments should not mutate caller-owned frontmatter dicts."""
