@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-03T00:00:00Z",
+  "updated_at": "2026-08-04T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -4487,6 +4487,47 @@
       "stars": 0,
       "created_at": "2026-06-22T00:00:00Z",
       "updated_at": "2026-06-22T00:00:00Z"
+    },
+    "tdd": {
+      "name": "TDD Extension",
+      "id": "tdd",
+      "description": "Drives spec-kit implementation with tests: a language-agnostic red-green-refactor loop with a per-feature test list, recorded red and green evidence, and mutation-checked test strength.",
+      "author": "d0whc3r",
+      "version": "1.1.2",
+      "download_url": "https://github.com/d0whc3r/spec-kit-tdd/releases/download/v1.1.2/tdd-1.1.2.zip",
+      "repository": "https://github.com/d0whc3r/spec-kit-tdd",
+      "homepage": "https://d0whc3r.github.io/spec-kit-tdd/",
+      "documentation": "https://github.com/d0whc3r/spec-kit-tdd/wiki",
+      "changelog": "https://github.com/d0whc3r/spec-kit-tdd/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.11.9"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 3
+      },
+      "tags": [
+        "acceptance-tests",
+        "mutation-testing",
+        "property-based-testing",
+        "quality",
+        "red-green-refactor",
+        "spec-kit",
+        "spec-kit-extension",
+        "tdd",
+        "test-driven-development",
+        "test-first",
+        "testing",
+        "unit-tests"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-04T00:00:00Z",
+      "updated_at": "2026-08-04T00:00:00Z"
     },
     "team-assign": {
       "name": "Team Assign",
