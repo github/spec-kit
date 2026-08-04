@@ -602,7 +602,15 @@ try:
         data = yaml.safe_load(f)
     if not isinstance(data, dict):
         raise ValueError('manifest root must be a mapping')
-    for t in data.get('provides', {}).get('templates', []):
+    provides = data.get('provides', {})
+    if not isinstance(provides, dict):
+        raise ValueError('manifest provides must be a mapping')
+    templates = provides.get('templates', [])
+    if not isinstance(templates, list):
+        raise ValueError('manifest templates must be a list')
+    for t in templates:
+        if not isinstance(t, dict):
+            raise ValueError('manifest template entries must be mappings')
         if t.get('name') == sys.argv[2] and t.get('type', 'template') == 'template':
             print('found\t' + t.get('strategy', 'replace') + '\t' + t.get('file', ''))
             sys.exit(0)

@@ -353,7 +353,7 @@ def _preset_template_layer(
 
     if manifest_path.is_file():
         try:
-            manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+            manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
             if not isinstance(manifest, dict):
                 raise ValueError("manifest root must be a mapping")
             provides = manifest.get("provides", {})
@@ -363,9 +363,10 @@ def _preset_template_layer(
             if not isinstance(templates, list):
                 raise ValueError("manifest templates must be a list")
             for entry in templates:
+                if not isinstance(entry, dict):
+                    raise ValueError("manifest template entries must be mappings")
                 if (
-                    not isinstance(entry, dict)
-                    or entry.get("name") != template_name
+                    entry.get("name") != template_name
                     or entry.get("type", "template") != "template"
                 ):
                     continue

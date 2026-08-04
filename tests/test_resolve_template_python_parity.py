@@ -440,13 +440,29 @@ def test_all_variants_fail_when_yaml_parser_is_unavailable(
 
 
 @requires_bash
+@pytest.mark.parametrize(
+    "manifest_content",
+    [
+        "provides: [\n",
+        "",
+        "provides:\n  templates:\n    - null\n",
+        "provides:\n  templates: {}\n",
+    ],
+    ids=[
+        "invalid_yaml",
+        "empty_document",
+        "non_mapping_template_entry",
+        "non_list_templates",
+    ],
+)
 def test_all_variants_fail_for_malformed_preset_manifest(
     tmp_path: Path,
+    manifest_content: str,
 ) -> None:
     repo, _ = _setup_repo(tmp_path)
     (
         repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
-    ).write_text("provides: [\n", encoding="utf-8")
+    ).write_text(manifest_content, encoding="utf-8")
 
     results = [
         run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
