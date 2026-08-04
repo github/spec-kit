@@ -181,6 +181,44 @@ def test_all_variants_resolve_requested_template(
 
 
 @requires_bash
+@pytest.mark.parametrize("missing", [False, True], ids=["composed", "missing"])
+def test_all_variants_validate_requested_template_in_text_mode(
+    prereq_repo: Path, missing: bool
+) -> None:
+    _write_feature_json(prereq_repo)
+    feature = prereq_repo / "specs" / "001-my-feature"
+    feature.mkdir(parents=True)
+    (feature / "plan.md").write_text("# Plan\n", encoding="utf-8")
+    template_name = "missing-template" if missing else "checklist-template"
+    install_composition_stack(
+        prereq_repo, "checklist-template", "# Checklist\n"
+    )
+
+    results = [
+        _run(
+            _bash_cmd(prereq_repo, "--template", template_name),
+            prereq_repo,
+        ),
+        _run(
+            _py_cmd(prereq_repo, "--template", template_name),
+            prereq_repo,
+        ),
+    ]
+    if HAS_PWSH or _WINDOWS_POWERSHELL:
+        results.append(
+            _run(
+                _ps_cmd(prereq_repo, "-Template", template_name),
+                prereq_repo,
+            )
+        )
+
+    expected_status = 1 if missing else 0
+    assert all(result.returncode == expected_status for result in results)
+    if missing:
+        assert all(result.stdout == "" for result in results)
+
+
+@requires_bash
 @pytest.mark.parametrize(
     "args",
     [

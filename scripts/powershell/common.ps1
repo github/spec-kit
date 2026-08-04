@@ -479,6 +479,9 @@ function Resolve-Template {
     if (Test-Path $extDir) {
         foreach ($extensionId in Get-SortedExtensionIds -ExtensionsDir $extDir) {
             $candidate = Join-Path $extDir "$extensionId/templates/$TemplateName.md"
+            if (-not (Test-Path $candidate)) {
+                $candidate = Join-Path $extDir "$extensionId/$TemplateName.md"
+            }
             if (Test-Path $candidate) { return $candidate }
         }
     }
@@ -662,6 +665,9 @@ except Exception as exc:
     if (-not $effectiveBaseFound -and (Test-Path $extDir)) {
         foreach ($extensionId in Get-SortedExtensionIds -ExtensionsDir $extDir) {
             $candidate = Join-Path $extDir "$extensionId/templates/$TemplateName.md"
+            if (-not (Test-Path $candidate)) {
+                $candidate = Join-Path $extDir "$extensionId/$TemplateName.md"
+            }
             if (Test-Path $candidate) {
                 $layerPaths += $candidate
                 $layerStrategies += 'replace'

@@ -205,6 +205,37 @@ def test_all_variants_honor_extension_registry_state_and_priority(
 
 
 @requires_bash
+def test_all_variants_support_root_level_extension_convention(
+    tmp_path: Path,
+) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    extension = repo / ".specify" / "extensions" / "root-extension"
+    extension.mkdir(parents=True)
+    (extension / f"{TEMPLATE}.md").write_text(
+        "# Root extension\n",
+        encoding="utf-8",
+    )
+    (repo / ".specify" / "extensions" / ".registry").write_text(
+        '{"extensions":{"root-extension":{"enabled":true,"priority":1}}}\n',
+        encoding="utf-8",
+    )
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["TEMPLATE_CONTENT"] == "# Root extension\n"
+        for result in results
+    )
+
+
+@requires_bash
 @pytest.mark.parametrize("base_kind", ["override", "preset"])
 def test_all_variants_ignore_malformed_layers_below_replace_base(
     tmp_path: Path,

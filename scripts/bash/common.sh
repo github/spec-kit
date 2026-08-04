@@ -456,6 +456,11 @@ for _, ext_id in sorted(ranked):
         return
     fi
 
+    if [ -f "$ext_dir/.registry" ]; then
+        echo "Error: Python 3 is required to honor the extension registry" >&2
+        return 2
+    fi
+
     local ext extension_id
     for ext in "$ext_dir"/*/; do
         [ -d "$ext" ] || continue
@@ -551,11 +556,14 @@ except Exception:
     local ext_dir="$repo_root/.specify/extensions"
     if [ -d "$ext_dir" ]; then
         local sorted_extensions=""
-        sorted_extensions=$(_sorted_extension_ids "$ext_dir") || sorted_extensions=""
+        if ! sorted_extensions=$(_sorted_extension_ids "$ext_dir"); then
+            return 2
+        fi
         while IFS= read -r extension_id; do
             [ -n "$extension_id" ] || continue
             local ext="$ext_dir/$extension_id"
             local candidate="$ext/templates/${template_name}.md"
+            [ -f "$candidate" ] || candidate="$ext/${template_name}.md"
             [ -f "$candidate" ] && echo "$candidate" && return 0
         done <<< "$sorted_extensions"
     fi
@@ -733,11 +741,14 @@ except Exception as exc:
     local ext_dir="$repo_root/.specify/extensions"
     if [ "$effective_base_found" = false ] && [ -d "$ext_dir" ]; then
         local sorted_extensions=""
-        sorted_extensions=$(_sorted_extension_ids "$ext_dir") || sorted_extensions=""
+        if ! sorted_extensions=$(_sorted_extension_ids "$ext_dir"); then
+            return 2
+        fi
         while IFS= read -r extension_id; do
             [ -n "$extension_id" ] || continue
             local ext="$ext_dir/$extension_id"
             local candidate="$ext/templates/${template_name}.md"
+            [ -f "$candidate" ] || candidate="$ext/${template_name}.md"
             if [ -f "$candidate" ]; then
                 layer_paths+=("$candidate")
                 layer_strategies+=("replace")

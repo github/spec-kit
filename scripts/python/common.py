@@ -278,12 +278,12 @@ def _sorted_extension_ids(extensions_dir: Path) -> list[str]:
     return [ext_id for _, ext_id in sorted(ranked)]
 
 
-def _conventional_preset_template(
-    preset_dir: Path, template_name: str
+def _conventional_template(
+    base_dir: Path, template_name: str
 ) -> Path | None:
     for candidate in (
-        preset_dir / "templates" / f"{template_name}.md",
-        preset_dir / f"{template_name}.md",
+        base_dir / "templates" / f"{template_name}.md",
+        base_dir / f"{template_name}.md",
     ):
         if candidate.is_file():
             return candidate
@@ -311,7 +311,7 @@ def resolve_template(template_name: str, repo_root: Path) -> Path | None:
     presets_dir = repo_root / ".specify" / "presets"
     if presets_dir.is_dir():
         for preset_id in _sorted_preset_ids(presets_dir):
-            candidate = _conventional_preset_template(
+            candidate = _conventional_template(
                 presets_dir / preset_id, template_name
             )
             if candidate is not None:
@@ -321,8 +321,8 @@ def resolve_template(template_name: str, repo_root: Path) -> Path | None:
     if ext_dir.is_dir():
         for extension_id in _sorted_extension_ids(ext_dir):
             ext = ext_dir / extension_id
-            candidate = ext / "templates" / f"{template_name}.md"
-            if candidate.is_file():
+            candidate = _conventional_template(ext, template_name)
+            if candidate is not None:
                 return candidate
 
     core = base / f"{template_name}.md"
@@ -340,7 +340,7 @@ def _preset_template_layer(
 ) -> tuple[Path, str] | None:
     """Return the preset template path and composition strategy."""
     manifest_path = preset_dir / "preset.yml"
-    conventional = _conventional_preset_template(preset_dir, template_name)
+    conventional = _conventional_template(preset_dir, template_name)
 
     try:
         import yaml
@@ -443,8 +443,8 @@ def resolve_template_content(template_name: str, repo_root: Path) -> str | None:
     extensions_dir = repo_root / ".specify" / "extensions"
     for extension_id in _sorted_extension_ids(extensions_dir):
         extension_dir = extensions_dir / extension_id
-        candidate = extension_dir / "templates" / f"{template_name}.md"
-        if candidate.is_file():
+        candidate = _conventional_template(extension_dir, template_name)
+        if candidate is not None:
             layers.append((candidate, "replace"))
             return compose_from_base()
 

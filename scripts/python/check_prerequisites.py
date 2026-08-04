@@ -222,26 +222,29 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     docs = _available_docs(paths, args.include_tasks)
+    template_content = None
+    if args.template_name:
+        try:
+            template_content = resolve_template_content(
+                args.template_name, paths.repo_root
+            )
+        except TemplateResolutionError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        if template_content is None:
+            print(
+                f"ERROR: Could not resolve required {args.template_name} from "
+                f"the template override stack for {paths.repo_root}",
+                file=sys.stderr,
+            )
+            return 1
+
     if args.json_mode:
         payload: dict[str, object] = {
             "FEATURE_DIR": str(paths.feature_dir),
             "AVAILABLE_DOCS": docs,
         }
         if args.template_name:
-            try:
-                template_content = resolve_template_content(
-                    args.template_name, paths.repo_root
-                )
-            except TemplateResolutionError as exc:
-                print(f"ERROR: {exc}", file=sys.stderr)
-                return 1
-            if template_content is None:
-                print(
-                    f"ERROR: Could not resolve required {args.template_name} from "
-                    f"the template override stack for {paths.repo_root}",
-                    file=sys.stderr,
-                )
-                return 1
             payload["TEMPLATE_CONTENT"] = template_content
         sys.stdout.write(
             _json_line(payload)
