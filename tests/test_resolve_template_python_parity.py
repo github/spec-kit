@@ -119,7 +119,7 @@ def test_all_variants_reject_unresolvable_template(
 def test_all_variants_ignore_traversing_preset_registry_ids(tmp_path: Path) -> None:
     repo = make_repo(tmp_path)
     install_scripts(repo, SCRIPT)
-    outside = repo / "outside"
+    outside = repo.parent / "outside"
     outside.mkdir()
     (outside / f"{TEMPLATE}.md").write_text("sensitive content\n", encoding="utf-8")
     presets = repo / ".specify" / "presets"

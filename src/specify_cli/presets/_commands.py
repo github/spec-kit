@@ -353,18 +353,26 @@ def preset_resolve(
     from .. import _require_specify_project
     from . import PresetResolver
 
-    if re.fullmatch(r"[a-z0-9-]+", template_name) is None:
+    is_command = "." in template_name
+    valid_name = (
+        re.fullmatch(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+", template_name)
+        if is_command
+        else re.fullmatch(r"[a-z0-9-]+", template_name)
+    )
+    if valid_name is None:
         typer.echo(
             f"Error: invalid template name '{template_name}'; "
-            "use lowercase letters, digits, and hyphens only",
+            "use lowercase letters, digits, and hyphens, with non-empty "
+            "dot-separated segments for commands",
             err=True,
         )
         raise typer.Exit(1)
 
     project_root = _require_specify_project()
     resolver = PresetResolver(project_root)
+    template_type = "command" if is_command else "template"
 
-    layers = resolver.collect_all_layers(template_name)
+    layers = resolver.collect_all_layers(template_name, template_type)
     safe_template_name = _escape_markup(str(template_name))
 
     if layers:
@@ -387,7 +395,7 @@ def preset_resolve(
         if has_composition:
             # Verify composition is actually possible
             try:
-                composed = resolver.resolve_content(template_name)
+                composed = resolver.resolve_content(template_name, template_type)
             except Exception as exc:
                 composed = None
                 console.print(
@@ -426,7 +434,7 @@ def preset_resolve(
                 )
     else:
         # No layers found — fall back to resolve_with_source for non-composition cases
-        result = resolver.resolve_with_source(template_name)
+        result = resolver.resolve_with_source(template_name, template_type)
         if result:
             console.print(
                 f"  [bold]{safe_template_name}[/bold]: "

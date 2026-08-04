@@ -10100,7 +10100,9 @@ def test_core_constitution_command_resolves_template_at_runtime():
 
 def test_core_checklist_command_resolves_template_at_runtime():
     """The checklist command must consume the composed scaffold."""
-    content = (CORE_CONSTITUTION_COMMAND.parent / "checklist.md").read_text()
+    content = (CORE_CONSTITUTION_COMMAND.parent / "checklist.md").read_text(
+        encoding="utf-8"
+    )
 
     assert "--template checklist-template" in content
     assert "TEMPLATE_CONTENT" in content
@@ -12813,6 +12815,26 @@ class TestInstalledPresetRichMarkup:
         result = self._invoke(
             project_dir,
             ["preset", "resolve", "../../../README"],
+        )
+
+        assert result.exit_code == 1
+        assert "invalid template name" in strip_ansi(result.output)
+
+    def test_resolve_accepts_dotted_command_name(self, project_dir):
+        """Documented dotted command identifiers use command resolution."""
+        result = self._invoke(
+            project_dir,
+            ["preset", "resolve", "speckit.constitution"],
+        )
+
+        assert result.exit_code == 0, (result.output, result.exception)
+        assert "constitution.md" in strip_ansi(result.output)
+
+    def test_resolve_rejects_empty_command_segments(self, project_dir):
+        """Dotted command identifiers cannot contain empty path-like segments."""
+        result = self._invoke(
+            project_dir,
+            ["preset", "resolve", "speckit..constitution"],
         )
 
         assert result.exit_code == 1
