@@ -539,6 +539,101 @@ def test_safe_extract_archive_rejects_truncated_tar_gz(tmp_path):
         safe_extract_archive(archive_path, tmp_path / "out")
 
 
+def _corrupt_deflate_tar_gz_bytes():
+    """Return a tar.gz whose deflate stream is corrupt mid-member.
+
+    Unlike truncation, which the gzip layer reports as ``EOFError``, mangling
+    bytes inside a deflate block raises ``zlib.error``. ``tarfile`` converts
+    that to ``ReadError`` when it surfaces while reading a member *header*, but
+    the forward seek it performs to skip over member *data* sits outside that
+    conversion, so the raw ``zlib.error`` escapes from there.
+
+    Reaching that seek requires members larger than the gzip read buffer --
+    with small members the whole stream is decompressed during the first header
+    read, and the error is wrapped. Hence two 256 KiB members, stored at
+    ``compresslevel=1`` so the fixture stays a few kilobytes on disk, with the
+    corruption placed past the midpoint so the first header still reads clean.
+    """
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz", compresslevel=1) as archive:
+        for index in range(2):
+            info = tarfile.TarInfo(f"file{index}.txt")
+            content = bytes((i * 7 + index) % 256 for i in range(1024)) * 256
+            info.size = len(content)
+            archive.addfile(info, io.BytesIO(content))
+
+    raw = bytearray(buffer.getvalue())
+    midpoint = len(raw) // 2
+    for offset in range(midpoint, min(midpoint + 64, len(raw) - 8)):
+        raw[offset] ^= 0xA5
+    return bytes(raw)
+
+
+def test_corrupt_deflate_fixture_raises_bare_zlib_error():
+    # Guards the fixture itself: the tests below are only meaningful while this
+    # archive reaches the module as a bare zlib.error -- neither a TarError nor
+    # an OSError, so a (TarError, OSError) handler would miss it. If a future
+    # Python wraps it, this fails loudly instead of the coverage silently
+    # decaying into a duplicate of the EOFError cases.
+    archive_file = io.BytesIO(_corrupt_deflate_tar_gz_bytes())
+
+    with tarfile.open(fileobj=archive_file, mode="r:gz") as archive:
+        with pytest.raises(zlib.error):
+            for _member in archive:
+                pass
+
+
+def test_detect_archive_format_accepts_corrupt_deflate_tar_gz(tmp_path):
+    # Detection is a format probe, not an integrity check: tarfile.open reads
+    # only the first member header, which is intact here, so the archive is
+    # correctly identified as tar.gz and the corruption is caught later by
+    # safe_extract_tar (see the tests below).
+    #
+    # Note this does not exercise the probe's zlib.error handling, which is
+    # unreachable: the header read is inside tarfile's own
+    # zlib.error -> ReadError conversion, so the probe sees ReadError. The
+    # zlib.error arm of _TAR_DECOMPRESSION_ERRORS is defensive at this site and
+    # load-bearing only at the two safe_extract_tar sites.
+    archive_path = tmp_path / "corrupt.tar.gz"
+    archive_path.write_bytes(_corrupt_deflate_tar_gz_bytes())
+
+    assert detect_archive_format(archive_path) == "tar.gz"
+
+
+def test_safe_extract_tar_rejects_corrupt_deflate(tmp_path):
+    archive_path = tmp_path / "corrupt.tar.gz"
+    archive_path.write_bytes(_corrupt_deflate_tar_gz_bytes())
+
+    with pytest.raises(ValueError, match="Invalid tar.gz archive"):
+        safe_extract_tar(archive_path, tmp_path / "out")
+
+
+def test_safe_extract_tar_wraps_corrupt_deflate_in_caller_error_type(tmp_path):
+    # zlib.error must reach the caller's domain error type, exactly as EOFError
+    # does, so this cannot regress independently of the truncation handling.
+    archive_path = tmp_path / "corrupt.tar.gz"
+    archive_path.write_bytes(_corrupt_deflate_tar_gz_bytes())
+
+    with pytest.raises(_CustomZipError, match="Invalid tar.gz archive"):
+        safe_extract_tar(
+            archive_path,
+            tmp_path / "out",
+            error_type=_CustomZipError,
+        )
+
+
+def test_safe_extract_archive_wraps_corrupt_deflate_in_caller_error_type(tmp_path):
+    archive_path = tmp_path / "corrupt.tar.gz"
+    archive_path.write_bytes(_corrupt_deflate_tar_gz_bytes())
+
+    with pytest.raises(_CustomZipError, match="Invalid tar.gz archive"):
+        safe_extract_archive(
+            archive_path,
+            tmp_path / "out",
+            error_type=_CustomZipError,
+        )
+
+
 @pytest.mark.parametrize("suffix", [".zip", ".tar.gz", ".tgz"])
 def test_safe_extract_archive_has_format_parity(tmp_path, suffix):
     archive_path = tmp_path / f"package{suffix}"

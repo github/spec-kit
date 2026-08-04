@@ -71,10 +71,16 @@ _BOUNDED_ZIP_COMPRESSION_METHODS = frozenset(
     (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
 )
 #: Decompression failures a truncated or corrupt gzip stream raises from
-#: ``tarfile``. Most are wrapped in ``TarError``, but a stream that ends
-#: mid-member escapes as a bare ``EOFError`` from the gzip layer, and a corrupt
-#: deflate block can surface as ``zlib.error``. Neither derives from
-#: ``TarError`` or ``OSError``, so both bypass a ``(TarError, OSError)`` handler.
+#: ``tarfile``. Most are wrapped in ``TarError``, but two escape raw, and
+#: neither derives from ``TarError`` or ``OSError``, so both bypass a
+#: ``(TarError, OSError)`` handler:
+#:
+#: * ``EOFError`` -- from the gzip layer when the stream ends before its
+#:   end-of-stream marker, i.e. a truncated archive.
+#: * ``zlib.error`` -- from a corrupt deflate block. ``tarfile`` converts this
+#:   to ``ReadError`` while reading a member *header*, but the forward seek it
+#:   performs to skip member *data* sits outside that conversion, so a corrupt
+#:   region past the first header escapes raw.
 _TAR_DECOMPRESSION_ERRORS = (tarfile.TarError, EOFError, zlib.error)
 
 _ARCHIVE_CONTENT_TYPES: dict[str, ArchiveFormat] = {
