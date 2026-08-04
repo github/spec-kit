@@ -63,6 +63,16 @@ specify preset resolve <name>
 
 Shows which file will be used for a given name by tracing the full resolution stack. Useful for debugging when multiple presets provide the same file.
 
+To emit the effective template content instead of human-readable diagnostics, use:
+
+```bash
+specify preset resolve <name> --content
+```
+
+This writes only the fully composed content to stdout, including `prepend`, `append`, and `wrap`
+layers. It exits non-zero when the template cannot be found or composed, so commands and scripts can
+consume it without accidentally treating diagnostic output as a template.
+
 ## Enable / Disable a Preset
 
 ```bash

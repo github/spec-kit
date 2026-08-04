@@ -72,13 +72,16 @@ and commands read the constitution at runtime and are not modified here.
 
 You are updating the project constitution at `.specify/memory/constitution.md`. The active
 constitution scaffold is resolved at command time from `constitution-template` through the Spec Kit
-preset/template resolution stack (equivalent to `specify preset resolve constitution-template`).
-Project overrides, composing preset layers, and extension layers MUST all be included before the core
-template fallback.
+preset/template resolution stack.
 
 Follow this execution flow:
 
-1. Resolve and load the active `constitution-template`, including all composed layers.
+1. Run `specify preset resolve constitution-template --content` from the repository root and use its
+   stdout as the active template.
+   - This command applies project overrides, composing preset layers, and extension layers before the
+     core template fallback. It MUST succeed before continuing.
+   - If it fails, stop and report the resolution error; do not continue with only one contributing
+     template layer.
    - If `.specify/memory/constitution.md` exists, load it as the source of current project-specific
      values and amendments. Preserve information that is still applicable when applying the newly
      resolved scaffold.

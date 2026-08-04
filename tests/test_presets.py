@@ -10056,9 +10056,9 @@ def test_core_constitution_command_resolves_template_at_runtime():
     """The core command must consume the composed scaffold on every invocation."""
     content = CORE_CONSTITUTION_COMMAND.read_text()
 
-    assert "resolved at command time" in content
-    assert "specify preset resolve constitution-template" in content
-    assert "including all composed layers" in content
+    assert "specify preset resolve constitution-template --content" in content
+    assert "stdout as the active template" in content
+    assert "do not continue with only one contributing" in content
     assert "Do not write back to any versioned template layer" in content
 
 
@@ -12854,6 +12854,47 @@ class TestInstalledPresetRichMarkup:
         assert "Composition chain" in output, output
         assert "[base]" in output, output
         assert "[append]" in output, output
+
+    def test_resolve_content_emits_composed_template(self, temp_dir, project_dir):
+        """``--content`` emits only the fully composed resolver output."""
+        manager = self._install(
+            temp_dir,
+            project_dir,
+            strategy="replace",
+            pack_id="base-pack",
+            priority=20,
+        )
+        self._install(
+            temp_dir,
+            project_dir,
+            strategy="append",
+            pack_id="app-pack",
+            priority=5,
+        )
+        (
+            manager.presets_dir / "base-pack" / "templates" / "spec-template.md"
+        ).write_text("# Base\n")
+        (
+            manager.presets_dir / "app-pack" / "templates" / "spec-template.md"
+        ).write_text("# Appended\n")
+
+        result = self._invoke(
+            project_dir,
+            ["preset", "resolve", "spec-template", "--content"],
+        )
+
+        assert result.exit_code == 0, (result.output, result.exception)
+        assert result.output == "# Base\n\n\n# Appended\n"
+
+    def test_resolve_content_fails_when_template_is_missing(self, project_dir):
+        """``--content`` must not return success-shaped diagnostic output."""
+        result = self._invoke(
+            project_dir,
+            ["preset", "resolve", "missing-template", "--content"],
+        )
+
+        assert result.exit_code == 1
+        assert "was not found or could not be composed" in result.output
 
 
 class TestConstitutionSyncPreset:

@@ -347,13 +347,34 @@ def preset_search(
 @preset_app.command("resolve")
 def preset_resolve(
     template_name: str = typer.Argument(..., help="Template name to resolve (e.g., spec-template)"),
+    content: bool = typer.Option(
+        False,
+        "--content",
+        help="Write the fully composed template content to stdout",
+    ),
 ):
-    """Show which template will be resolved for a given name."""
+    """Show template resolution details or emit its composed content."""
     from .. import _require_specify_project
-    from . import PresetResolver
+    from . import PresetResolver, PresetValidationError
 
     project_root = _require_specify_project()
     resolver = PresetResolver(project_root)
+
+    if content:
+        try:
+            resolved_content = resolver.resolve_content(template_name)
+        except (OSError, UnicodeError, PresetValidationError, ValueError) as exc:
+            typer.echo(f"Error: failed to resolve {template_name}: {exc}", err=True)
+            raise typer.Exit(1)
+        if resolved_content is None:
+            typer.echo(
+                f"Error: template '{template_name}' was not found or could not be composed",
+                err=True,
+            )
+            raise typer.Exit(1)
+        typer.echo(resolved_content, nl=False)
+        return
+
     layers = resolver.collect_all_layers(template_name)
     safe_template_name = _escape_markup(str(template_name))
 
