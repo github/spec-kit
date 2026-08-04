@@ -206,9 +206,7 @@ def _normalize_priority(value: object) -> int:
 def _sorted_preset_ids(presets_dir: Path) -> list[str]:
     registry = presets_dir / ".registry"
     if registry.is_file():
-        # Mirrors bash: any failure while reading or sorting the registry
-        # (invalid JSON, non-dict shapes, unorderable priority values) falls
-        # back to the directory scan below.
+        # Invalid JSON or registry shapes fall back to the directory scan below.
         try:
             data = json.loads(registry.read_text(encoding="utf-8"))
             presets = data.get("presets", {})
@@ -216,9 +214,12 @@ def _sorted_preset_ids(presets_dir: Path) -> list[str]:
                 pid
                 for pid, meta in sorted(
                     presets.items(),
-                    key=lambda kv: kv[1].get("priority", 10)
-                    if isinstance(kv[1], dict)
-                    else 10,
+                    key=lambda kv: (
+                        _normalize_priority(kv[1].get("priority"))
+                        if isinstance(kv[1], dict)
+                        else 10,
+                        kv[0],
+                    ),
                 )
                 if (
                     _is_safe_component(pid)

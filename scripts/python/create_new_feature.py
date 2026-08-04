@@ -392,7 +392,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Error: {exc}", file=sys.stderr)
                 return 1
             if template_content is not None:
-                spec_file.write_text(template_content, encoding="utf-8")
+                spec_file.write_bytes(template_content.encode("utf-8"))
             else:
                 print(
                     "Warning: Spec template not found; created empty spec file",

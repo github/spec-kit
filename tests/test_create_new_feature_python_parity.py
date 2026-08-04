@@ -384,7 +384,7 @@ def test_python_full_run_matches_bash(repo_pair: tuple[Path, Path]) -> None:
     branch = json_stdout(py)["BRANCH_NAME"]
     for repo in repo_pair:
         spec = repo / "specs" / branch / "spec.md"
-        assert spec.read_text(encoding="utf-8") == TEMPLATE_BODY
+        assert spec.read_bytes() == TEMPLATE_BODY.encode("utf-8")
     assert (repo_b / ".specify" / "feature.json").read_bytes() == (
         repo_a / ".specify" / "feature.json"
     ).read_bytes()

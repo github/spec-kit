@@ -62,7 +62,7 @@ def test_python_fresh_copy_matches_bash(tmp_path: Path) -> None:
     )
     for repo in (repo_a, repo_b):
         plan = repo / "specs" / "001-my-feature" / "plan.md"
-        assert plan.read_text(encoding="utf-8") == TEMPLATE_BODY
+        assert plan.read_bytes() == TEMPLATE_BODY.encode("utf-8")
 
 
 @requires_bash
@@ -171,13 +171,19 @@ def test_python_missing_template_matches_bash(tmp_path: Path) -> None:
 
 @requires_bash
 @pytest.mark.parametrize(
-    "registry",
+    ("registry", "expected"),
     [
-        '{"presets": {"alpha": {"priority": "high"}, "beta": {"priority": 1}}}',
-        '{"presets": {"alpha": {"priority": 2}, "beta": {"priority": 1}, "gamma": {"priority": null}}}',
-        "[]",
-        '{"presets":[]}',
-        '{"presets":null}',
+        (
+            '{"presets": {"alpha": {"priority": "high"}, "beta": {"priority": 1}}}',
+            "# beta plan\n",
+        ),
+        (
+            '{"presets": {"alpha": {"priority": 2}, "beta": {"priority": 1}, "gamma": {"priority": null}}}',
+            "# beta plan\n",
+        ),
+        ("[]", "# alpha plan\n"),
+        ('{"presets":[]}', "# alpha plan\n"),
+        ('{"presets":null}', "# alpha plan\n"),
     ],
     ids=[
         "mixed_priorities",
@@ -187,10 +193,10 @@ def test_python_missing_template_matches_bash(tmp_path: Path) -> None:
         "null_presets",
     ],
 )
-def test_all_variants_broken_registry_falls_back_to_dir_scan(
-    tmp_path: Path, registry: str
+def test_all_variants_normalize_or_fallback_for_registry(
+    tmp_path: Path, registry: str, expected: str
 ) -> None:
-    """Malformed registries fall back to the alphabetical directory scan."""
+    """Priorities normalize canonically; malformed shapes fall back to directories."""
     repos = [
         _setup_repo(tmp_path, "bash", template=False),
         _setup_repo(tmp_path, "powershell", template=False),
@@ -235,7 +241,7 @@ def test_all_variants_broken_registry_falls_back_to_dir_scan(
     ) == 1
     for _, repo in results:
         plan = repo / "specs" / "001-my-feature" / "plan.md"
-        assert plan.read_text(encoding="utf-8") == "# alpha plan\n"
+        assert plan.read_text(encoding="utf-8") == expected
 
 
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")

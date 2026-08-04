@@ -332,6 +332,23 @@ function Get-Python3Command {
     return $null
 }
 
+function Get-NormalizedPriority {
+    param($Value)
+
+    if ($Value -is [bool]) { return 10 }
+    if ($Value -is [string]) {
+        $integerText = $Value.Trim()
+        if ($integerText -cnotmatch '^[+-]?[0-9]+(?:_[0-9]+)*$') { return 10 }
+        $Value = $integerText.Replace('_', '')
+    }
+    try {
+        $parsedPriority = [System.Numerics.BigInteger]$Value
+    } catch {
+        return 10
+    }
+    return $(if ($parsedPriority -ge 1) { $parsedPriority } else { 10 })
+}
+
 function Get-SortedExtensionIds {
     param([Parameter(Mandatory=$true)][string]$ExtensionsDir)
 
@@ -356,11 +373,8 @@ function Get-SortedExtensionIds {
                 if ($enabledProperty -and -not [bool]$enabledProperty.Value) { continue }
                 $priority = 10
                 $priorityProperty = $entry.Value.PSObject.Properties['priority']
-                if ($priorityProperty -and $priorityProperty.Value -isnot [bool]) {
-                    $parsedPriority = 0
-                    if ([int]::TryParse([string]$priorityProperty.Value, [ref]$parsedPriority) -and $parsedPriority -ge 1) {
-                        $priority = $parsedPriority
-                    }
+                if ($priorityProperty) {
+                    $priority = Get-NormalizedPriority -Value $priorityProperty.Value
                 }
                 $ranked += [PSCustomObject]@{ Priority = $priority; Id = $entry.Name }
             }
@@ -420,25 +434,11 @@ function Resolve-Template {
                         param($Entry)
                         if ($Entry.Value -is [PSCustomObject]) {
                             $priorityProperty = $Entry.Value.PSObject.Properties['priority']
-                            if ($priorityProperty) { return $priorityProperty.Value }
+                            if ($priorityProperty) {
+                                return Get-NormalizedPriority -Value $priorityProperty.Value
+                            }
                         }
                         return 10
-                    }
-                    if ($presetEntries.Count -gt 1) {
-                        $allNumeric = $true
-                        $allStrings = $true
-                        foreach ($entry in $presetEntries) {
-                            $priority = & $priorityFor $entry
-                            if ($null -eq $priority -or $priority -isnot [ValueType]) {
-                                $allNumeric = $false
-                            }
-                            if ($null -eq $priority -or $priority -isnot [string]) {
-                                $allStrings = $false
-                            }
-                        }
-                        if (-not $allNumeric -and -not $allStrings) {
-                            throw 'Registry priorities are not mutually orderable'
-                        }
                     }
                     $sortedPresets = $presetEntries |
                         Where-Object { $_.Value -is [PSCustomObject] } |
@@ -447,7 +447,7 @@ function Resolve-Template {
                             -not $enabled -or [bool]$enabled.Value
                         } |
                         Where-Object { $_.Name -cmatch '^[a-z0-9-]+$' } |
-                        Sort-Object { & $priorityFor $_ } |
+                        Sort-Object @{ Expression = { & $priorityFor $_ } }, @{ Expression = { $_.Name } } |
                         ForEach-Object { $_.Name }
                 }
                 $registryParsed = $true
@@ -539,25 +539,11 @@ function Resolve-TemplateContent {
                         param($Entry)
                         if ($Entry.Value -is [PSCustomObject]) {
                             $priorityProperty = $Entry.Value.PSObject.Properties['priority']
-                            if ($priorityProperty) { return $priorityProperty.Value }
+                            if ($priorityProperty) {
+                                return Get-NormalizedPriority -Value $priorityProperty.Value
+                            }
                         }
                         return 10
-                    }
-                    if ($presetEntries.Count -gt 1) {
-                        $allNumeric = $true
-                        $allStrings = $true
-                        foreach ($entry in $presetEntries) {
-                            $priority = & $priorityFor $entry
-                            if ($null -eq $priority -or $priority -isnot [ValueType]) {
-                                $allNumeric = $false
-                            }
-                            if ($null -eq $priority -or $priority -isnot [string]) {
-                                $allStrings = $false
-                            }
-                        }
-                        if (-not $allNumeric -and -not $allStrings) {
-                            throw 'Registry priorities are not mutually orderable'
-                        }
                     }
                     $sortedPresets = $presetEntries |
                         Where-Object { $_.Value -is [PSCustomObject] } |
@@ -566,7 +552,7 @@ function Resolve-TemplateContent {
                             -not $enabled -or [bool]$enabled.Value
                         } |
                         Where-Object { $_.Name -cmatch '^[a-z0-9-]+$' } |
-                        Sort-Object { & $priorityFor $_ } |
+                        Sort-Object @{ Expression = { & $priorityFor $_ } }, @{ Expression = { $_.Name } } |
                         ForEach-Object { $_.Name }
                 }
                 $registryParsed = $true

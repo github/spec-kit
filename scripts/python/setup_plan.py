@@ -68,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
         if template_content is not None:
-            paths.impl_plan.write_text(template_content, encoding="utf-8")
+            paths.impl_plan.write_bytes(template_content.encode("utf-8"))
             print(f"Copied plan template to {paths.impl_plan}", file=status_stream)
         else:
             print("Warning: Plan template not found", file=status_stream)

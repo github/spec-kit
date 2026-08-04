@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -199,6 +200,95 @@ def test_all_variants_honor_extension_registry_state_and_priority(
     assert all(result.returncode == 0 for result in results)
     assert all(
         json_stdout(result)["TEMPLATE_CONTENT"] == "# High priority\n"
+        for result in results
+    )
+
+
+@requires_bash
+@pytest.mark.parametrize(
+    ("entries", "expected"),
+    [
+        (
+            [
+                ("disabled-pack", {"enabled": False, "priority": 0}),
+                ("numeric-pack", {"enabled": True, "priority": 2}),
+                ("string-pack", {"enabled": True, "priority": "1"}),
+            ],
+            "# string-pack\n",
+        ),
+        (
+            [
+                ("z-pack", {"enabled": True}),
+                ("a-pack", {"enabled": True}),
+            ],
+            "# a-pack\n",
+        ),
+        (
+            [
+                ("float-pack", {"enabled": True, "priority": 5.9}),
+                ("six-pack", {"enabled": True, "priority": 6}),
+            ],
+            "# float-pack\n",
+        ),
+        (
+            [
+                ("a-huge-pack", {"enabled": True, "priority": 2147483648}),
+                ("z-default-pack", {"enabled": True, "priority": "invalid"}),
+            ],
+            "# z-default-pack\n",
+        ),
+        (
+            [
+                ("decimal-string-pack", {"enabled": True, "priority": "5.9"}),
+                ("exponent-string-pack", {"enabled": True, "priority": "1e3"}),
+                ("hex-string-pack", {"enabled": True, "priority": "0x10"}),
+                ("six-pack", {"enabled": True, "priority": 6}),
+            ],
+            "# six-pack\n",
+        ),
+    ],
+    ids=[
+        "mixed_priorities",
+        "equal_priority_id_tiebreaker",
+        "float_priority",
+        "large_integer_priority",
+        "non_integer_numeric_strings",
+    ],
+)
+def test_all_variants_normalize_and_tiebreak_preset_priorities(
+    tmp_path: Path,
+    entries: list[tuple[str, dict[str, object]]],
+    expected: str,
+) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    presets = repo / ".specify" / "presets"
+    registry: dict[str, object] = {"presets": {}}
+    registry_presets = registry["presets"]
+    assert isinstance(registry_presets, dict)
+    for preset_id, metadata in entries:
+        template_dir = presets / preset_id / "templates"
+        template_dir.mkdir(parents=True)
+        (template_dir / f"{TEMPLATE}.md").write_text(
+            f"# {preset_id}\n",
+            encoding="utf-8",
+        )
+        registry_presets[preset_id] = metadata
+    (presets / ".registry").write_text(
+        json.dumps(registry, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["TEMPLATE_CONTENT"] == expected
         for result in results
     )
 

@@ -501,7 +501,15 @@ try:
     with open(os.environ['SPECKIT_REGISTRY']) as f:
         data = json.load(f)
     presets = data.get('presets', {})
-    for pid, meta in sorted(presets.items(), key=lambda x: x[1].get('priority', 10) if isinstance(x[1], dict) else 10):
+    def priority(meta):
+        if not isinstance(meta, dict) or isinstance(meta.get('priority'), bool):
+            return 10
+        try:
+            value = int(meta.get('priority', 10))
+            return value if value >= 1 else 10
+        except (TypeError, ValueError, OverflowError):
+            return 10
+    for pid, meta in sorted(presets.items(), key=lambda x: (priority(x[1]), x[0])):
         if isinstance(meta, dict) and bool(meta.get('enabled', True)) and re.fullmatch(r'[a-z0-9-]+', pid):
             print(pid)
 except Exception:
@@ -604,7 +612,15 @@ try:
     with open(os.environ['SPECKIT_REGISTRY']) as f:
         data = json.load(f)
     presets = data.get('presets', {})
-    for pid, meta in sorted(presets.items(), key=lambda x: x[1].get('priority', 10) if isinstance(x[1], dict) else 10):
+    def priority(meta):
+        if not isinstance(meta, dict) or isinstance(meta.get('priority'), bool):
+            return 10
+        try:
+            value = int(meta.get('priority', 10))
+            return value if value >= 1 else 10
+        except (TypeError, ValueError, OverflowError):
+            return 10
+    for pid, meta in sorted(presets.items(), key=lambda x: (priority(x[1]), x[0])):
         if isinstance(meta, dict) and bool(meta.get('enabled', True)) and re.fullmatch(r'[a-z0-9-]+', pid):
             print(pid)
 except Exception:
