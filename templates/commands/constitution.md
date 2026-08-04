@@ -4,6 +4,10 @@ handoffs:
   - label: Build Specification
     agent: speckit.specify
     prompt: Implement the feature specification based on the updated constitution. I want to build...
+scripts:
+  sh: scripts/bash/resolve-template.sh constitution-template --json
+  ps: scripts/powershell/resolve-template.ps1 constitution-template -Json
+  py: scripts/python/resolve_template.py constitution-template --json
 ---
 
 ## User Input
@@ -76,10 +80,9 @@ preset/template resolution stack.
 
 Follow this execution flow:
 
-1. Run `specify preset resolve constitution-template --content` from the repository root and use its
-   stdout as the active template.
-   - This command applies project overrides, composing preset layers, and extension layers before the
-     core template fallback. It MUST succeed before continuing.
+1. Run `{SCRIPT}` from the repository root and parse `TEMPLATE_CONTENT` as the active template.
+   - The shared resolver applies project overrides, composing preset layers, and extension layers
+     before the core template fallback. It MUST succeed before continuing.
    - If it fails, stop and report the resolution error; do not continue with only one contributing
      template layer.
    - If `.specify/memory/constitution.md` exists, load it as the source of current project-specific

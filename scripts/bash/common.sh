@@ -492,6 +492,10 @@ resolve_template_content() {
     local repo_root="$2"
     local base="$repo_root/.specify/templates"
 
+    case "$template_name" in
+        ""|*[!a-z0-9-]*|-*|*-|*--*) return 1 ;;
+    esac
+
     # Collect all layers (highest priority first)
     local -a layer_paths=()
     local -a layer_strategies=()
@@ -508,104 +512,110 @@ resolve_template_content() {
     if [ -d "$presets_dir" ]; then
         local registry_file="$presets_dir/.registry"
         local sorted_presets=""
+        local registry_parsed=false
         if [ -f "$registry_file" ] && command -v python3 >/dev/null 2>&1; then
             if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" python3 -c "
-import json, sys, os
+import json, re, sys, os
 try:
     with open(os.environ['SPECKIT_REGISTRY']) as f:
         data = json.load(f)
     presets = data.get('presets', {})
     for pid, meta in sorted(presets.items(), key=lambda x: x[1].get('priority', 10) if isinstance(x[1], dict) else 10):
-        if isinstance(meta, dict) and meta.get('enabled', True) is not False:
+        if isinstance(meta, dict) and meta.get('enabled', True) is not False and re.fullmatch(r'[a-z0-9-]+', pid):
             print(pid)
 except Exception:
     sys.exit(1)
 " 2>/dev/null); then
-                if [ -n "$sorted_presets" ]; then
-                    local yaml_warned=false
-                    while IFS= read -r preset_id; do
-                        # Read strategy and file path from preset manifest
-                        local strategy="replace"
-                        local manifest_file=""
-                        local manifest="$presets_dir/$preset_id/preset.yml"
-                        if [ -f "$manifest" ] && command -v python3 >/dev/null 2>&1; then
-                            # Requires PyYAML; falls back to replace/convention if unavailable
-                            local result
-                            local py_stderr
-                            py_stderr=$(mktemp)
-                            result=$(SPECKIT_MANIFEST="$manifest" SPECKIT_TMPL="$template_name" python3 -c "
+                registry_parsed=true
+            fi
+        fi
+        if [ "$registry_parsed" = false ]; then
+            for preset in "$presets_dir"/*/; do
+                [ -d "$preset" ] || continue
+                local fallback_id
+                fallback_id=$(basename "$preset")
+                case "$fallback_id" in *[!a-z0-9-]*) continue ;; esac
+                sorted_presets+="${sorted_presets:+$'\n'}$fallback_id"
+            done
+        fi
+
+        if [ -n "$sorted_presets" ]; then
+            while IFS= read -r preset_id; do
+                local strategy="replace"
+                local manifest_file=""
+                local manifest="$presets_dir/$preset_id/preset.yml"
+                local manifest_declared=false
+                if [ -f "$manifest" ]; then
+                    if ! command -v python3 >/dev/null 2>&1; then
+                        echo "Error: Python 3 and PyYAML are required to resolve preset template composition" >&2
+                        return 2
+                    fi
+                    local result
+                    local py_stderr
+                    local parse_status
+                    py_stderr=$(mktemp)
+                    if result=$(SPECKIT_MANIFEST="$manifest" SPECKIT_TMPL="$template_name" python3 -c "
 import sys, os
 try:
     import yaml
 except ImportError:
     print('yaml_missing', file=sys.stderr)
-    print('replace\t')
-    sys.exit(0)
+    sys.exit(2)
 try:
     with open(os.environ['SPECKIT_MANIFEST']) as f:
         data = yaml.safe_load(f)
+    if not isinstance(data, dict):
+        raise ValueError('manifest root must be a mapping')
     for t in data.get('provides', {}).get('templates', []):
         if t.get('name') == os.environ['SPECKIT_TMPL'] and t.get('type', 'template') == 'template':
-            print(t.get('strategy', 'replace') + '\t' + t.get('file', ''))
+            print('found\t' + t.get('strategy', 'replace') + '\t' + t.get('file', ''))
             sys.exit(0)
-    print('replace\t')
-except Exception:
-    print('replace\t')
-" 2>"$py_stderr")
-                            local parse_status=$?
-                            if [ $parse_status -eq 0 ] && [ -n "$result" ]; then
-                                IFS=$'\t' read -r strategy manifest_file <<< "$result"
-                                strategy=$(printf '%s' "$strategy" | tr '[:upper:]' '[:lower:]')
-                            fi
-                            if [ "$yaml_warned" = false ] && grep -q 'yaml_missing' "$py_stderr" 2>/dev/null; then
-                                echo "Warning: PyYAML not available; composition strategies may be ignored" >&2
-                                yaml_warned=true
-                            fi
-                            rm -f "$py_stderr"
-                        fi
-                        # Try manifest file path first, then convention path
-                        local candidate=""
-                        if [ -n "$manifest_file" ]; then
-                            # Reject absolute paths and parent traversal
-                            case "$manifest_file" in
-                                /*|*../*|../*) manifest_file="" ;;
-                            esac
-                        fi
-                        if [ -n "$manifest_file" ]; then
-                            local mf="$presets_dir/$preset_id/$manifest_file"
-                            [ -f "$mf" ] && candidate="$mf"
-                        fi
-                        if [ -z "$candidate" ]; then
-                            local cf="$presets_dir/$preset_id/templates/${template_name}.md"
-                            [ -f "$cf" ] && candidate="$cf"
-                        fi
-                        if [ -n "$candidate" ]; then
-                            layer_paths+=("$candidate")
-                            layer_strategies+=("$strategy")
-                        fi
-                    done <<< "$sorted_presets"
-                fi
-            else
-                # python3 failed — fall back to unordered directory scan (replace only)
-                for preset in "$presets_dir"/*/; do
-                    [ -d "$preset" ] || continue
-                    local candidate="$preset/templates/${template_name}.md"
-                    if [ -f "$candidate" ]; then
-                        layer_paths+=("$candidate")
-                        layer_strategies+=("replace")
+    print('absent\treplace\t')
+except Exception as exc:
+    print(f'manifest_invalid: {exc}', file=sys.stderr)
+    sys.exit(3)
+" 2>"$py_stderr"); then
+                        parse_status=0
+                    else
+                        parse_status=$?
                     fi
-                done
-            fi
-        else
-            # No python3 or registry — fall back to unordered directory scan (replace only)
-            for preset in "$presets_dir"/*/; do
-                [ -d "$preset" ] || continue
-                local candidate="$preset/templates/${template_name}.md"
-                if [ -f "$candidate" ]; then
-                    layer_paths+=("$candidate")
-                    layer_strategies+=("replace")
+                    if [ "$parse_status" -ne 0 ]; then
+                        if [ "$parse_status" -eq 2 ]; then
+                            echo "Error: PyYAML is required to resolve preset template composition" >&2
+                        else
+                            echo "Error: invalid preset manifest $manifest" >&2
+                        fi
+                        rm -f "$py_stderr"
+                        return 2
+                    fi
+                    if [ -n "$result" ]; then
+                        local declaration
+                        IFS=$'\t' read -r declaration strategy manifest_file <<< "$result"
+                        [ "$declaration" = "found" ] && manifest_declared=true
+                        strategy=$(printf '%s' "$strategy" | tr '[:upper:]' '[:lower:]')
+                    fi
+                    rm -f "$py_stderr"
                 fi
-            done
+
+                local candidate=""
+                if [ -n "$manifest_file" ]; then
+                    case "$manifest_file" in
+                        /*|*../*|../*) manifest_file="" ;;
+                    esac
+                fi
+                if [ -n "$manifest_file" ]; then
+                    local mf="$presets_dir/$preset_id/$manifest_file"
+                    [ -f "$mf" ] && candidate="$mf"
+                fi
+                if [ -z "$candidate" ] && [ "$manifest_declared" = false ]; then
+                    local cf="$presets_dir/$preset_id/templates/${template_name}.md"
+                    [ -f "$cf" ] && candidate="$cf"
+                fi
+                if [ -n "$candidate" ]; then
+                    layer_paths+=("$candidate")
+                    layer_strategies+=("$strategy")
+                fi
+            done <<< "$sorted_presets"
         fi
     fi
 
@@ -663,7 +673,8 @@ except Exception:
     done
 
     if [ $base_idx -lt 0 ]; then
-        return 1  # no base layer found
+        echo "Error: template '$template_name' has composing layers but no replace base" >&2
+        return 2
     fi
 
     # Read the base content; compose layers above the base (higher priority)
@@ -681,12 +692,18 @@ except Exception:
 
         case "$strat" in
             replace) content="$layer_content" ;;
-            prepend) content="$(printf '%s\n\n%s' "$layer_content" "$content")" ;;
-            append)  content="$(printf '%s\n\n%s' "$content" "$layer_content")" ;;
+            prepend)
+                content=$(printf '%s\n\n%s' "$layer_content" "$content"; printf x)
+                content="${content%x}"
+                ;;
+            append)
+                content=$(printf '%s\n\n%s' "$content" "$layer_content"; printf x)
+                content="${content%x}"
+                ;;
             wrap)
                 case "$layer_content" in
                     *'{CORE_TEMPLATE}'*) ;;
-                    *) echo "Error: wrap strategy missing {CORE_TEMPLATE} placeholder" >&2; return 1 ;;
+                    *) echo "Error: wrap strategy missing {CORE_TEMPLATE} placeholder" >&2; return 2 ;;
                 esac
                 while [[ "$layer_content" == *'{CORE_TEMPLATE}'* ]]; do
                     local before="${layer_content%%\{CORE_TEMPLATE\}*}"
@@ -695,7 +712,7 @@ except Exception:
                 done
                 content="$layer_content"
                 ;;
-            *) echo "Error: unknown strategy '$strat'" >&2; return 1 ;;
+            *) echo "Error: unknown strategy '$strat'" >&2; return 2 ;;
         esac
     done
 

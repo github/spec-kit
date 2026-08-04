@@ -57,12 +57,17 @@ if (Test-Path $paths.QUICKSTART) { $docs += 'quickstart.md' }
 
 # Resolve tasks template through override stack
 $tasksTemplate = Resolve-Template -TemplateName 'tasks-template' -RepoRoot $paths.REPO_ROOT
-if (-not $tasksTemplate -or -not (Test-Path -LiteralPath $tasksTemplate -PathType Leaf)) {
+$tasksTemplateContent = Resolve-TemplateContent -TemplateName 'tasks-template' -RepoRoot $paths.REPO_ROOT
+if ($null -eq $tasksTemplateContent) {
     [Console]::Error.WriteLine("ERROR: Could not resolve required tasks-template from the template override stack for $($paths.REPO_ROOT)")
     [Console]::Error.WriteLine("Template 'tasks-template' was not found in any supported location (overrides, presets, extensions, or shared core). Add an override at .specify/templates/overrides/tasks-template.md, or run 'specify init' / reinstall shared infra to restore the core .specify/templates/tasks-template.md template.")
     exit 1
 }
-$tasksTemplate = (Resolve-Path -LiteralPath $tasksTemplate).Path
+if ($tasksTemplate -and (Test-Path -LiteralPath $tasksTemplate -PathType Leaf)) {
+    $tasksTemplate = (Resolve-Path -LiteralPath $tasksTemplate).Path
+} else {
+    $tasksTemplate = ''
+}
 
 # Output results
 if ($Json) {
@@ -70,6 +75,7 @@ if ($Json) {
         FEATURE_DIR    = $paths.FEATURE_DIR
         AVAILABLE_DOCS = $docs
         TASKS_TEMPLATE = $tasksTemplate
+        TASKS_TEMPLATE_CONTENT = $tasksTemplateContent
     } | ConvertTo-Json -Compress
 } else {
     Write-Output "FEATURE_DIR: $($paths.FEATURE_DIR)"

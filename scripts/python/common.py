@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -252,6 +253,145 @@ def resolve_template(template_name: str, repo_root: Path) -> Path | None:
     if core.is_file():
         return core
     return None
+
+
+class TemplateResolutionError(RuntimeError):
+    """Raised when template layers exist but cannot be composed safely."""
+
+
+def _preset_template_layer(
+    preset_dir: Path, template_name: str
+) -> tuple[Path, str] | None:
+    """Return the preset template path and composition strategy."""
+    manifest_path = preset_dir / "preset.yml"
+    conventional = preset_dir / "templates" / f"{template_name}.md"
+
+    try:
+        import yaml
+    except ImportError as exc:
+        if manifest_path.is_file():
+            raise TemplateResolutionError(
+                "PyYAML is required to resolve preset template composition"
+            ) from exc
+        return (conventional, "replace") if conventional.is_file() else None
+
+    if manifest_path.is_file():
+        try:
+            manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+            if not isinstance(manifest, dict):
+                raise ValueError("manifest root must be a mapping")
+            provides = manifest.get("provides", {})
+            if not isinstance(provides, dict):
+                raise ValueError("manifest provides must be a mapping")
+            templates = provides.get("templates", [])
+            if not isinstance(templates, list):
+                raise ValueError("manifest templates must be a list")
+            for entry in templates:
+                if (
+                    not isinstance(entry, dict)
+                    or entry.get("name") != template_name
+                    or entry.get("type", "template") != "template"
+                ):
+                    continue
+                relative = Path(str(entry.get("file", "")))
+                if (
+                    not relative
+                    or relative.is_absolute()
+                    or ".." in relative.parts
+                ):
+                    return None
+                candidate = preset_dir / relative
+                if not candidate.is_file():
+                    return None
+                return candidate, str(entry.get("strategy", "replace")).lower()
+        except (OSError, UnicodeError, ValueError, yaml.YAMLError) as exc:
+            raise TemplateResolutionError(
+                f"Failed to parse preset manifest {manifest_path}: {exc}"
+            ) from exc
+
+    return (conventional, "replace") if conventional.is_file() else None
+
+
+def resolve_template_content(template_name: str, repo_root: Path) -> str | None:
+    """Resolve and compose template content through the project layer stack."""
+    if re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", template_name) is None:
+        return None
+
+    layers: list[tuple[Path, str]] = []
+
+    override = (
+        repo_root
+        / ".specify"
+        / "templates"
+        / "overrides"
+        / f"{template_name}.md"
+    )
+    if override.is_file():
+        layers.append((override, "replace"))
+
+    presets_dir = repo_root / ".specify" / "presets"
+    for preset_id in _sorted_preset_ids(presets_dir):
+        layer = _preset_template_layer(presets_dir / preset_id, template_name)
+        if layer is not None:
+            layers.append(layer)
+
+    extensions_dir = repo_root / ".specify" / "extensions"
+    try:
+        extension_dirs = sorted(
+            path
+            for path in extensions_dir.iterdir()
+            if path.is_dir() and not path.name.startswith(".")
+        )
+    except OSError:
+        extension_dirs = []
+    for extension_dir in extension_dirs:
+        candidate = extension_dir / "templates" / f"{template_name}.md"
+        if candidate.is_file():
+            layers.append((candidate, "replace"))
+
+    core = repo_root / ".specify" / "templates" / f"{template_name}.md"
+    if core.is_file():
+        layers.append((core, "replace"))
+
+    if not layers:
+        return None
+
+    base_index = next(
+        (index for index, (_, strategy) in enumerate(layers) if strategy == "replace"),
+        None,
+    )
+    if base_index is None:
+        raise TemplateResolutionError(
+            f"Template '{template_name}' has composing layers but no replace base"
+        )
+
+    try:
+        content = layers[base_index][0].read_text(encoding="utf-8")
+        for path, strategy in reversed(layers[:base_index]):
+            layer_content = path.read_text(encoding="utf-8")
+            if strategy == "prepend":
+                content = f"{layer_content}\n\n{content}"
+            elif strategy == "append":
+                content = f"{content}\n\n{layer_content}"
+            elif strategy == "wrap":
+                placeholder = "{CORE_TEMPLATE}"
+                if placeholder not in layer_content:
+                    raise TemplateResolutionError(
+                        f"Wrap layer {path} is missing {placeholder}"
+                    )
+                content = layer_content.replace(placeholder, content)
+            elif strategy == "replace":
+                content = layer_content
+            else:
+                raise TemplateResolutionError(
+                    f"Unknown template composition strategy '{strategy}' in {path}"
+                )
+    except (OSError, UnicodeError) as exc:
+        raise TemplateResolutionError(
+            f"Failed to read template layer for '{template_name}': {exc}"
+        ) from exc
+
+    return content
 
 
 def get_invoke_separator(repo_root: Path) -> str:

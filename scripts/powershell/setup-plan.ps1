@@ -41,10 +41,8 @@ if (Test-Path $paths.IMPL_PLAN -PathType Leaf) {
         Write-Output "Plan already exists at $($paths.IMPL_PLAN), skipping template copy"
     }
 } else {
-    $template = Resolve-Template -TemplateName 'plan-template' -RepoRoot $paths.REPO_ROOT
-    if ($template -and (Test-Path $template)) {
-        # Read the template content and write it to the implementation plan file with UTF-8 encoding without BOM
-        $content = [System.IO.File]::ReadAllText($template)
+    $content = Resolve-TemplateContent -TemplateName 'plan-template' -RepoRoot $paths.REPO_ROOT
+    if ($null -ne $content) {
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText($paths.IMPL_PLAN, $content, $utf8NoBom)
         # Emit the copy status like the bash twin (setup-plan.sh); route to stderr

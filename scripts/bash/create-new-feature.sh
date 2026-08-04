@@ -342,10 +342,14 @@ if [ "$DRY_RUN" != true ]; then
     mkdir -p "$FEATURE_DIR"
 
     if [ ! -f "$SPEC_FILE" ]; then
-        TEMPLATE=$(resolve_template "spec-template" "$REPO_ROOT") || true
-        if [ -n "$TEMPLATE" ] && [ -f "$TEMPLATE" ]; then
-            cp "$TEMPLATE" "$SPEC_FILE"
+        if resolve_template_content "spec-template" "$REPO_ROOT" > "$SPEC_FILE"; then
+            :
         else
+            resolve_status=$?
+            rm -f "$SPEC_FILE"
+            if [ "$resolve_status" -ne 1 ]; then
+                exit "$resolve_status"
+            fi
             echo "Warning: Spec template not found; created empty spec file" >&2
             touch "$SPEC_FILE"
         fi

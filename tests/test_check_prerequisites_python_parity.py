@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from tests.conftest import requires_bash
+from tests.parity_helpers import install_composition_stack
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
@@ -134,6 +135,49 @@ def _normalize_help_text(text: str) -> str:
         "check-prerequisites.sh", "check_prerequisites.py"
     )
     return "\n".join("" if not line.strip() else line for line in normalized.split("\n"))
+
+
+@requires_bash
+@pytest.mark.parametrize("missing", [False, True], ids=["composed", "missing"])
+def test_all_variants_resolve_requested_template(
+    prereq_repo: Path, missing: bool
+) -> None:
+    _write_feature_json(prereq_repo)
+    feature = prereq_repo / "specs" / "001-my-feature"
+    feature.mkdir(parents=True)
+    (feature / "plan.md").write_text("# Plan\n", encoding="utf-8")
+    template_name = "missing-template" if missing else "checklist-template"
+    expected = install_composition_stack(
+        prereq_repo, "checklist-template", "# Checklist\n"
+    )
+
+    results = [
+        _run(
+            _bash_cmd(prereq_repo, "--json", "--template", template_name),
+            prereq_repo,
+        ),
+        _run(
+            _py_cmd(prereq_repo, "--json", "--template", template_name),
+            prereq_repo,
+        ),
+    ]
+    if HAS_PWSH or _WINDOWS_POWERSHELL:
+        results.append(
+            _run(
+                _ps_cmd(prereq_repo, "-Json", "-Template", template_name),
+                prereq_repo,
+            )
+        )
+
+    expected_status = 1 if missing else 0
+    assert all(result.returncode == expected_status for result in results)
+    if missing:
+        assert all(result.stdout == "" for result in results)
+    else:
+        assert all(
+            _json_stdout(result)["TEMPLATE_CONTENT"] == expected
+            for result in results
+        )
 
 
 @requires_bash
