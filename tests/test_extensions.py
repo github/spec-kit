@@ -410,6 +410,55 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match="Invalid version"):
             ExtensionManifest(manifest_path)
 
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            1.0,            # unquoted YAML float -- the likeliest authoring slip
+            5,              # unquoted int
+            True,           # YAML `yes`/`true`
+            None,           # `speckit_version:` written but left empty
+            [">=0.1.0"],    # iterable: slips past SpecifierSet() entirely
+            {"min": "0.1"},  # iterable: same
+        ],
+    )
+    def test_non_string_speckit_version(self, temp_dir, valid_manifest_data, bad):
+        """A non-string requires.speckit_version must be a ValidationError.
+
+        It was presence-checked only, so it reached ``SpecifierSet(required)`` in
+        check_compatibility(), which is guarded by ``except InvalidSpecifier``
+        alone. A non-string escapes that guard two ways: scalars raise TypeError
+        from the constructor, and a list/dict is iterable so SpecifierSet accepts
+        it and the failure surfaces later as ``AttributeError: 'str' object has no
+        attribute 'filter'`` from inside .contains().
+        """
+        import yaml
+
+        valid_manifest_data["requires"]["speckit_version"] = bad
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(
+            ValidationError, match="Invalid requires.speckit_version"
+        ):
+            ExtensionManifest(manifest_path)
+
+    def test_empty_speckit_version(self, temp_dir, valid_manifest_data):
+        """A blank requires.speckit_version must be rejected, not treated as any."""
+        import yaml
+
+        valid_manifest_data["requires"]["speckit_version"] = "   "
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(
+            ValidationError, match="Invalid requires.speckit_version"
+        ):
+            ExtensionManifest(manifest_path)
+
     def test_valid_category(self, temp_dir, valid_manifest_data):
         """Test manifest with various category values (free-form string)."""
         import yaml
@@ -1264,6 +1313,28 @@ class TestExtensionManager:
         # Requires >=0.1.0, but we have 0.0.1
         with pytest.raises(CompatibilityError, match="Extension requires spec-kit"):
             manager.check_compatibility(manifest, "0.0.1")
+
+    @pytest.mark.parametrize(
+        "bad",
+        [1.0, 5, True, None, [">=0.1.0"], {"min": "0.1"}],
+    )
+    def test_check_compatibility_non_string_specifier(self, project_dir, bad):
+        """check_compatibility() must report a non-string as CompatibilityError.
+
+        Defense in depth for the validator check above: this method is public and
+        reachable with a hand-built manifest, and ``except InvalidSpecifier`` does
+        not cover a non-string. Without the guard, scalars raise a bare TypeError
+        and iterables construct fine only to break inside .contains() -- neither
+        is a CompatibilityError, so both bypass the CLI's "Compatibility Error"
+        handler and exit 1 with a raw traceback naming no field.
+        """
+        from types import SimpleNamespace
+
+        manager = ExtensionManager(project_dir)
+        manifest = SimpleNamespace(requires_speckit_version=bad)
+
+        with pytest.raises(CompatibilityError, match="Invalid version specifier"):
+            manager.check_compatibility(manifest, "0.15.2")
 
     def test_check_compatibility_allows_prerelease_builds(self, extension_dir, project_dir):
         """Prerelease spec-kit builds should satisfy compatible version ranges."""

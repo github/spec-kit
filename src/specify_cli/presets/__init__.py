@@ -344,6 +344,25 @@ class PresetManifest:
         requires = self.data["requires"]
         if "speckit_version" not in requires:
             raise PresetValidationError("Missing requires.speckit_version")
+        # Presence alone is not enough: check_compatibility() feeds this value to
+        # ``SpecifierSet(required)``, guarded only by ``except InvalidSpecifier``,
+        # which a non-string escapes two different ways. A float/int/bool/None
+        # raises TypeError from the constructor, while a list or dict is an
+        # *iterable*, so SpecifierSet accepts it and the failure surfaces much
+        # later as ``AttributeError: 'str' object has no attribute 'filter'`` from
+        # inside .contains(). Neither is a PresetCompatibilityError, so both
+        # bypass the CLI's "Compatibility Error" handler and exit 1 with a raw
+        # traceback naming no field. An unquoted ``speckit_version: 1.0`` is an
+        # easy YAML slip. Mirrors the sibling IntegrationDescriptor, which already
+        # requires a non-empty string here.
+        if (
+            not isinstance(requires["speckit_version"], str)
+            or not requires["speckit_version"].strip()
+        ):
+            raise PresetValidationError(
+                "Invalid requires.speckit_version: expected a non-empty string, "
+                f"got {type(requires['speckit_version']).__name__}"
+            )
 
         # Validate provides section
         provides = self.data["provides"]
@@ -756,6 +775,18 @@ class PresetManager:
             PresetCompatibilityError: If pack is incompatible
         """
         required = manifest.requires_speckit_version
+        # Defense in depth: the manifest validator now rejects a non-string
+        # requires.speckit_version, but this method is public and also reachable
+        # with a hand-built manifest object. ``InvalidSpecifier`` alone does not
+        # cover a non-string -- scalars raise TypeError from the constructor, and
+        # a list/dict is iterable so it constructs here and only breaks inside
+        # .contains(). Reject up front so this always reports a
+        # PresetCompatibilityError.
+        if not isinstance(required, str):
+            raise PresetCompatibilityError(
+                "Invalid version specifier: expected a string, got "
+                f"{type(required).__name__} ({required!r})"
+            )
         try:
             SpecifierSet(required)  # Just to validate
         except InvalidSpecifier:
