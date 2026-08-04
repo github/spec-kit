@@ -262,10 +262,15 @@ if (-not $DryRun) {
         exit 1
     }
 
+    $needsSpec = -not (Test-Path -PathType Leaf $specFile)
+    $content = $null
+    if ($needsSpec) {
+        $content = Resolve-TemplateContent -TemplateName 'spec-template' -RepoRoot $repoRoot
+    }
+
     New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
 
-    if (-not (Test-Path -PathType Leaf $specFile)) {
-        $content = Resolve-TemplateContent -TemplateName 'spec-template' -RepoRoot $repoRoot
+    if ($needsSpec) {
         if ($null -ne $content) {
             $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
             [System.IO.File]::WriteAllText($specFile, $content, $utf8NoBom)

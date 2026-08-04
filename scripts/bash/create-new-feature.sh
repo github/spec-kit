@@ -339,17 +339,28 @@ if [ "$DRY_RUN" != true ]; then
         exit 1
     fi
 
-    mkdir -p "$FEATURE_DIR"
-
+    NEEDS_SPEC=false
+    SPEC_TEMPLATE_FOUND=false
+    SPEC_TEMPLATE_CONTENT=""
     if [ ! -f "$SPEC_FILE" ]; then
-        if resolve_template_content "spec-template" "$REPO_ROOT" > "$SPEC_FILE"; then
-            :
+        NEEDS_SPEC=true
+        if SPEC_TEMPLATE_CONTENT=$(resolve_template_content "spec-template" "$REPO_ROOT"; status=$?; printf x; exit "$status"); then
+            SPEC_TEMPLATE_CONTENT="${SPEC_TEMPLATE_CONTENT%x}"
+            SPEC_TEMPLATE_FOUND=true
         else
             resolve_status=$?
-            rm -f "$SPEC_FILE"
             if [ "$resolve_status" -ne 1 ]; then
                 exit "$resolve_status"
             fi
+        fi
+    fi
+
+    mkdir -p "$FEATURE_DIR"
+
+    if [ "$NEEDS_SPEC" = true ]; then
+        if [ "$SPEC_TEMPLATE_FOUND" = true ]; then
+            printf '%s' "$SPEC_TEMPLATE_CONTENT" > "$SPEC_FILE"
+        else
             echo "Warning: Spec template not found; created empty spec file" >&2
             touch "$SPEC_FILE"
         fi

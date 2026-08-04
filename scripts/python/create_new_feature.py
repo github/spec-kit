@@ -383,14 +383,20 @@ def main(argv: list[str] | None = None) -> int:
                 )
             return 1
 
-        feature_dir.mkdir(parents=True, exist_ok=True)
-
-        if not spec_file.is_file():
+        template_content = None
+        needs_spec = not spec_file.is_file()
+        if needs_spec:
             try:
-                template_content = resolve_template_content("spec-template", repo_root)
+                template_content = resolve_template_content(
+                    "spec-template", repo_root
+                )
             except TemplateResolutionError as exc:
                 print(f"Error: {exc}", file=sys.stderr)
                 return 1
+
+        feature_dir.mkdir(parents=True, exist_ok=True)
+
+        if needs_spec:
             if template_content is not None:
                 spec_file.write_bytes(template_content.encode("utf-8"))
             else:

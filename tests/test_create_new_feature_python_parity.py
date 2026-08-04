@@ -470,11 +470,20 @@ def test_all_variants_fail_for_broken_spec_composition(tmp_path: Path) -> None:
 
     bash = run(bash_cmd(repos[0], SCRIPT, "--json", "x"), repos[0])
     py = run(py_cmd(repos[2], SCRIPT, "--json", "x"), repos[2])
-    results = [bash, py]
+    results = [(bash, repos[0]), (py, repos[2])]
     if HAS_POWERSHELL:
-        results.append(run(ps_cmd(repos[1], SCRIPT, "-Json", "x"), repos[1]))
+        results.append(
+            (
+                run(ps_cmd(repos[1], SCRIPT, "-Json", "x"), repos[1]),
+                repos[1],
+            )
+        )
 
-    assert all(result.returncode != 0 for result in results)
+    assert all(result.returncode != 0 for result, _ in results)
+    assert all(
+        not (current / "specs" / "001-x").exists()
+        for _, current in results
+    )
 
 
 @requires_bash
