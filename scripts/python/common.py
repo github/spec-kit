@@ -370,7 +370,13 @@ def _preset_template_layer(
                     or entry.get("type", "template") != "template"
                 ):
                     continue
-                relative = Path(str(entry.get("file", "")))
+                file_value = entry.get("file", "")
+                strategy = entry.get("strategy", "replace")
+                if not isinstance(file_value, str):
+                    raise ValueError("manifest template file must be a string")
+                if not isinstance(strategy, str):
+                    raise ValueError("manifest template strategy must be a string")
+                relative = Path(file_value)
                 if (
                     not relative
                     or relative.is_absolute()
@@ -380,7 +386,7 @@ def _preset_template_layer(
                 candidate = preset_dir / relative
                 if not candidate.is_file():
                     return None
-                return candidate, str(entry.get("strategy", "replace")).lower()
+                return candidate, strategy.lower()
         except (OSError, UnicodeError, ValueError, yaml.YAMLError) as exc:
             raise TemplateResolutionError(
                 f"Failed to parse preset manifest {manifest_path}: {exc}"

@@ -385,7 +385,7 @@ function Get-SortedExtensionIds {
     }
 
     foreach ($directory in Get-ChildItem -Path $ExtensionsDir -Directory -ErrorAction SilentlyContinue) {
-        if ($directory.Name -cmatch '^[a-z0-9-]+$' -and $directory.Name -notin $registeredNames) {
+        if ($directory.Name -cmatch '^[a-z0-9-]+$' -and $directory.Name -cnotin $registeredNames) {
             $ranked += [PSCustomObject]@{ Priority = 10; Id = $directory.Name }
         }
     }
@@ -612,7 +612,13 @@ try:
         if not isinstance(t, dict):
             raise ValueError('manifest template entries must be mappings')
         if t.get('name') == sys.argv[2] and t.get('type', 'template') == 'template':
-            print('found\t' + t.get('strategy', 'replace') + '\t' + t.get('file', ''))
+            file_value = t.get('file', '')
+            strategy = t.get('strategy', 'replace')
+            if not isinstance(file_value, str):
+                raise ValueError('manifest template file must be a string')
+            if not isinstance(strategy, str):
+                raise ValueError('manifest template strategy must be a string')
+            print('found\t' + strategy + '\t' + file_value)
             sys.exit(0)
     print('absent\treplace\t')
 except Exception as exc:

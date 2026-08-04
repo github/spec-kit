@@ -236,6 +236,37 @@ def test_all_variants_support_root_level_extension_convention(
 
 
 @requires_bash
+def test_all_variants_treat_extension_registry_ids_case_sensitively(
+    tmp_path: Path,
+) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    extension = repo / ".specify" / "extensions" / "foo" / "templates"
+    extension.mkdir(parents=True)
+    (extension / f"{TEMPLATE}.md").write_text(
+        "# Lowercase extension\n",
+        encoding="utf-8",
+    )
+    (repo / ".specify" / "extensions" / ".registry").write_text(
+        '{"extensions":{"FOO":{"enabled":true,"priority":1}}}\n',
+        encoding="utf-8",
+    )
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["TEMPLATE_CONTENT"] == "# Lowercase extension\n"
+        for result in results
+    )
+
+
+@requires_bash
 @pytest.mark.parametrize("base_kind", ["override", "preset"])
 def test_all_variants_ignore_malformed_layers_below_replace_base(
     tmp_path: Path,
@@ -447,12 +478,28 @@ def test_all_variants_fail_when_yaml_parser_is_unavailable(
         "",
         "provides:\n  templates:\n    - null\n",
         "provides:\n  templates: {}\n",
+        f"""provides:
+  templates:
+    - type: template
+      name: {TEMPLATE}
+      file: null
+      strategy: wrap
+""",
+        f"""provides:
+  templates:
+    - type: template
+      name: {TEMPLATE}
+      file: templates/{TEMPLATE}.md
+      strategy: 123
+""",
     ],
     ids=[
         "invalid_yaml",
         "empty_document",
         "non_mapping_template_entry",
         "non_list_templates",
+        "non_string_file",
+        "non_string_strategy",
     ],
 )
 def test_all_variants_fail_for_malformed_preset_manifest(
