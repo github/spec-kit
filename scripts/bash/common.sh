@@ -419,8 +419,10 @@ _sorted_extension_ids() {
     if python_spec=$(_python3_command); then
         local -a python_cmd
         read -r -a python_cmd <<< "$python_spec"
-        SPECKIT_EXTENSIONS="$ext_dir" "${python_cmd[@]}" -c "
-import json, os, re
+        local py_stderr sorted_ids
+        py_stderr=$(mktemp)
+        if sorted_ids=$(SPECKIT_EXTENSIONS="$ext_dir" "${python_cmd[@]}" -c "
+import json, os, re, sys
 from pathlib import Path
 
 root = Path(os.environ['SPECKIT_EXTENSIONS'])
@@ -429,10 +431,17 @@ registry = root / '.registry'
 if registry.is_file():
     try:
         data = json.loads(registry.read_text(encoding='utf-8'))
-        value = data.get('extensions', {}) if isinstance(data, dict) else {}
-        registered = value if isinstance(value, dict) else {}
-    except Exception:
-        registered = {}
+    except Exception as exc:
+        print('registry_invalid: ' + str(exc), file=sys.stderr)
+        sys.exit(1)
+    if not isinstance(data, dict):
+        print('registry_invalid: root must be a mapping', file=sys.stderr)
+        sys.exit(1)
+    raw_extensions = data.get('extensions', {})
+    if not isinstance(raw_extensions, dict):
+        print('registry_invalid: extensions must be a mapping', file=sys.stderr)
+        sys.exit(1)
+    registered = raw_extensions
 
 def priority(value):
     if isinstance(value, bool):
@@ -445,15 +454,22 @@ def priority(value):
 
 ranked = []
 for ext_id, meta in registered.items():
-    if re.fullmatch(r'[a-z0-9-]+', ext_id) and isinstance(meta, dict) and bool(meta.get('enabled', True)):
+    if isinstance(ext_id, str) and re.fullmatch(r'[a-z0-9-]+', ext_id) and isinstance(meta, dict) and bool(meta.get('enabled', True)):
         ranked.append((priority(meta.get('priority')), ext_id))
 for path in root.iterdir():
     if path.is_dir() and re.fullmatch(r'[a-z0-9-]+', path.name) and path.name not in registered:
         ranked.append((10, path.name))
 for _, ext_id in sorted(ranked):
     print(ext_id)
-" 2>/dev/null
-        return
+" 2>"$py_stderr"); then
+            rm -f "$py_stderr"
+            printf '%s\n' "$sorted_ids"
+            return 0
+        else
+            echo "Error: invalid extension registry $ext_dir/.registry" >&2
+            rm -f "$py_stderr"
+            return 1
+        fi
     fi
 
     if [ -f "$ext_dir/.registry" ]; then
@@ -679,12 +695,18 @@ try:
         data = yaml.safe_load(f)
     if not isinstance(data, dict):
         raise ValueError('manifest root must be a mapping')
-    provides = data.get('provides', {})
+    if 'provides' not in data:
+        raise ValueError('manifest missing provides section')
+    provides = data['provides']
     if not isinstance(provides, dict):
         raise ValueError('manifest provides must be a mapping')
-    templates = provides.get('templates', [])
+    if 'templates' not in provides:
+        raise ValueError('manifest provides missing templates')
+    templates = provides['templates']
     if not isinstance(templates, list):
         raise ValueError('manifest templates must be a list')
+    if not templates:
+        raise ValueError('manifest must provide at least one template')
     valid_types = ('template', 'command', 'script')
     valid_strategies = ('replace', 'prepend', 'append', 'wrap')
     for t in templates:

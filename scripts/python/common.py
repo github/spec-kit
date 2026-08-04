@@ -246,13 +246,24 @@ def _sorted_extension_ids(extensions_dir: Path) -> list[str]:
     if registry.is_file():
         try:
             data = json.loads(registry.read_text(encoding="utf-8"))
-            if isinstance(data, dict) and isinstance(data.get("extensions"), dict):
-                extensions = data["extensions"]
-                registered_ids = {
-                    ext_id for ext_id in extensions if isinstance(ext_id, str)
-                }
-        except (OSError, UnicodeError, json.JSONDecodeError):
-            pass
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise TemplateResolutionError(
+                f"Failed to parse extension registry {registry}: {exc}"
+            ) from exc
+        if not isinstance(data, dict):
+            raise TemplateResolutionError(
+                f"Invalid extension registry {registry}: root must be a mapping"
+            )
+        raw_extensions = data.get("extensions", {})
+        if not isinstance(raw_extensions, dict):
+            raise TemplateResolutionError(
+                f"Invalid extension registry {registry}: "
+                "'extensions' must be a mapping"
+            )
+        extensions = raw_extensions
+        registered_ids = {
+            ext_id for ext_id in extensions if isinstance(ext_id, str)
+        }
 
     ranked: list[tuple[int, str]] = []
     for ext_id, metadata in extensions.items():
@@ -386,12 +397,18 @@ def _preset_template_layer(
             manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
             if not isinstance(manifest, dict):
                 raise ValueError("manifest root must be a mapping")
-            provides = manifest.get("provides", {})
+            if "provides" not in manifest:
+                raise ValueError("manifest missing provides section")
+            provides = manifest["provides"]
             if not isinstance(provides, dict):
                 raise ValueError("manifest provides must be a mapping")
-            templates = provides.get("templates", [])
+            if "templates" not in provides:
+                raise ValueError("manifest provides missing templates")
+            templates = provides["templates"]
             if not isinstance(templates, list):
                 raise ValueError("manifest templates must be a list")
+            if not templates:
+                raise ValueError("manifest must provide at least one template")
             for entry in templates:
                 _validate_manifest_template_entry(entry)
             for entry in templates:

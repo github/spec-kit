@@ -357,30 +357,35 @@ function Get-SortedExtensionIds {
     $registryFile = Join-Path $ExtensionsDir '.registry'
     if (Test-Path $registryFile) {
         try {
-            $data = Get-Content $registryFile -Raw | ConvertFrom-Json
-            $extensionsProperty = if ($data -is [PSCustomObject]) {
-                $data.PSObject.Properties['extensions']
-            } else { $null }
-            $extensions = if ($extensionsProperty -and $extensionsProperty.Value -is [PSCustomObject]) {
-                $extensionsProperty.Value
-            } else { [PSCustomObject]@{} }
-            $registeredNames = @($extensions.PSObject.Properties | ForEach-Object { $_.Name })
-            foreach ($entry in $extensions.PSObject.Properties) {
-                if ($entry.Name -cnotmatch '^[a-z0-9-]+$' -or $entry.Value -isnot [PSCustomObject]) {
-                    continue
-                }
-                $enabledProperty = $entry.Value.PSObject.Properties['enabled']
-                if ($enabledProperty -and -not [bool]$enabledProperty.Value) { continue }
-                $priority = 10
-                $priorityProperty = $entry.Value.PSObject.Properties['priority']
-                if ($priorityProperty) {
-                    $priority = Get-NormalizedPriority -Value $priorityProperty.Value
-                }
-                $ranked += [PSCustomObject]@{ Priority = $priority; Id = $entry.Name }
-            }
+            $data = [System.IO.File]::ReadAllText($registryFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
         } catch {
-            $registeredNames = @()
-            $ranked = @()
+            throw "Invalid extension registry ${registryFile}: $($_.Exception.Message)"
+        }
+        if ($null -eq $data -or $data -isnot [PSCustomObject]) {
+            throw "Invalid extension registry ${registryFile}: root must be a mapping"
+        }
+        $extensionsProperty = $data.PSObject.Properties['extensions']
+        if ($extensionsProperty) {
+            if ($extensionsProperty.Value -isnot [PSCustomObject]) {
+                throw "Invalid extension registry ${registryFile}: 'extensions' must be a mapping"
+            }
+            $extensions = $extensionsProperty.Value
+        } else {
+            $extensions = [PSCustomObject]@{}
+        }
+        $registeredNames = @($extensions.PSObject.Properties | ForEach-Object { $_.Name })
+        foreach ($entry in $extensions.PSObject.Properties) {
+            if ($entry.Name -cnotmatch '^[a-z0-9-]+$' -or $entry.Value -isnot [PSCustomObject]) {
+                continue
+            }
+            $enabledProperty = $entry.Value.PSObject.Properties['enabled']
+            if ($enabledProperty -and -not [bool]$enabledProperty.Value) { continue }
+            $priority = 10
+            $priorityProperty = $entry.Value.PSObject.Properties['priority']
+            if ($priorityProperty) {
+                $priority = Get-NormalizedPriority -Value $priorityProperty.Value
+            }
+            $ranked += [PSCustomObject]@{ Priority = $priority; Id = $entry.Name }
         }
     }
 
@@ -419,7 +424,7 @@ function Resolve-Template {
         $registryParsed = $false
         if (Test-Path $registryFile) {
             try {
-                $registryData = Get-Content $registryFile -Raw | ConvertFrom-Json
+                $registryData = [System.IO.File]::ReadAllText($registryFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
                 if ($null -eq $registryData -or $registryData -isnot [PSCustomObject]) {
                     throw 'Registry root must be an object'
                 }
@@ -531,7 +536,7 @@ function Resolve-TemplateContent {
         $registryParsed = $false
         if (Test-Path $registryFile) {
             try {
-                $registryData = Get-Content $registryFile -Raw | ConvertFrom-Json
+                $registryData = [System.IO.File]::ReadAllText($registryFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
                 if ($null -eq $registryData -or $registryData -isnot [PSCustomObject]) {
                     throw 'Registry root must be an object'
                 }
@@ -602,12 +607,18 @@ try:
         data = yaml.safe_load(f)
     if not isinstance(data, dict):
         raise ValueError('manifest root must be a mapping')
-    provides = data.get('provides', {})
+    if 'provides' not in data:
+        raise ValueError('manifest missing provides section')
+    provides = data['provides']
     if not isinstance(provides, dict):
         raise ValueError('manifest provides must be a mapping')
-    templates = provides.get('templates', [])
+    if 'templates' not in provides:
+        raise ValueError('manifest provides missing templates')
+    templates = provides['templates']
     if not isinstance(templates, list):
         raise ValueError('manifest templates must be a list')
+    if not templates:
+        raise ValueError('manifest must provide at least one template')
     valid_types = ('template', 'command', 'script')
     valid_strategies = ('replace', 'prepend', 'append', 'wrap')
     for t in templates:

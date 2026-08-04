@@ -321,6 +321,41 @@ def test_all_variants_treat_extension_registry_ids_case_sensitively(
 
 
 @requires_bash
+@pytest.mark.parametrize(
+    "registry_content",
+    ["{ not valid json", '{"extensions":[]}\n', "[]\n"],
+    ids=["invalid_json", "non_mapping_extensions", "non_mapping_root"],
+)
+def test_all_variants_fail_for_malformed_extension_registry(
+    tmp_path: Path, registry_content: str
+) -> None:
+    """A corrupt extension registry must fail closed, not silently enable
+    every on-disk extension directory as unregistered."""
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    extensions = repo / ".specify" / "extensions"
+    template_dir = extensions / "sneaky-ext" / "templates"
+    template_dir.mkdir(parents=True)
+    (template_dir / f"{TEMPLATE}.md").write_text(
+        "# Should not be served\n", encoding="utf-8"
+    )
+    (extensions / ".registry").write_text(registry_content, encoding="utf-8")
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode != 0 for result in results)
+    assert all(result.stdout == "" for result in results)
+    assert all(
+        "Should not be served" not in result.stdout for result in results
+    )
+
+
+@requires_bash
 @pytest.mark.parametrize("base_kind", ["override", "preset"])
 def test_all_variants_ignore_malformed_layers_below_replace_base(
     tmp_path: Path,
@@ -560,6 +595,8 @@ def test_bash_fails_when_override_read_fails(tmp_path: Path) -> None:
         "",
         "provides:\n  templates:\n    - null\n",
         "provides:\n  templates: {}\n",
+        "preset:\n  id: wrap-pack\n",
+        "provides:\n  templates: []\n",
         f"""provides:
   templates:
     - type: template
@@ -630,6 +667,8 @@ def test_bash_fails_when_override_read_fails(tmp_path: Path) -> None:
         "empty_document",
         "non_mapping_template_entry",
         "non_list_templates",
+        "missing_provides",
+        "empty_templates",
         "non_string_file",
         "non_string_strategy",
         "malformed_entry_after_match",
