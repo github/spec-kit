@@ -598,7 +598,10 @@ resolve_template_content() {
     # Priority 1: Project overrides (always "replace")
     local override="$base/overrides/${template_name}.md"
     if [ -f "$override" ]; then
-        cat "$override"
+        if ! cat "$override"; then
+            echo "Error: failed to read template layer $override" >&2
+            return 2
+        fi
         return 0
     fi
 
@@ -685,13 +688,16 @@ try:
     for t in templates:
         if not isinstance(t, dict):
             raise ValueError('manifest template entries must be mappings')
+        file_value = t.get('file', '')
+        strategy = t.get('strategy', 'replace')
+        if not isinstance(file_value, str):
+            raise ValueError('manifest template file must be a string')
+        if not isinstance(strategy, str):
+            raise ValueError('manifest template strategy must be a string')
+    for t in templates:
         if t.get('name') == os.environ['SPECKIT_TMPL'] and t.get('type', 'template') == 'template':
             file_value = t.get('file', '')
             strategy = t.get('strategy', 'replace')
-            if not isinstance(file_value, str):
-                raise ValueError('manifest template file must be a string')
-            if not isinstance(strategy, str):
-                raise ValueError('manifest template strategy must be a string')
             print('found\t' + strategy + '\t' + file_value)
             sys.exit(0)
     print('absent\treplace\t')
@@ -791,12 +797,18 @@ except Exception as exc:
     # If the top (highest-priority) layer is replace, it wins entirely —
     # lower layers are irrelevant regardless of their strategies.
     if [ "${layer_strategies[0]}" = "replace" ]; then
-        cat "${layer_paths[0]}"
+        if ! cat "${layer_paths[0]}"; then
+            echo "Error: failed to read template layer ${layer_paths[0]}" >&2
+            return 2
+        fi
         return 0
     fi
 
     if [ "$has_composition" = false ]; then
-        cat "${layer_paths[0]}"
+        if ! cat "${layer_paths[0]}"; then
+            echo "Error: failed to read template layer ${layer_paths[0]}" >&2
+            return 2
+        fi
         return 0
     fi
 
@@ -818,7 +830,10 @@ except Exception as exc:
 
     # Read the base content; compose layers above the base (higher priority)
     local content
-    content=$(cat "${layer_paths[$base_idx]}"; printf x)
+    if ! content=$(cat "${layer_paths[$base_idx]}"; status=$?; printf x; exit "$status"); then
+        echo "Error: failed to read template layer ${layer_paths[$base_idx]}" >&2
+        return 2
+    fi
     content="${content%x}"
 
     for (( i=base_idx-1; i>=0; i-- )); do
@@ -826,7 +841,10 @@ except Exception as exc:
         local strat="${layer_strategies[$i]}"
         local layer_content
         # Preserve trailing newlines
-        layer_content=$(cat "$path"; printf x)
+        if ! layer_content=$(cat "$path"; status=$?; printf x; exit "$status"); then
+            echo "Error: failed to read template layer $path" >&2
+            return 2
+        fi
         layer_content="${layer_content%x}"
 
         case "$strat" in

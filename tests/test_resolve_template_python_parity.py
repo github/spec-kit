@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -471,6 +472,34 @@ def test_all_variants_fail_when_yaml_parser_is_unavailable(
 
 
 @requires_bash
+def test_bash_fails_when_override_read_fails(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    override = repo / ".specify" / "templates" / "overrides"
+    override.mkdir(parents=True)
+    (override / f"{TEMPLATE}.md").write_text("# Override\n", encoding="utf-8")
+    shim_dir = tmp_path / "bin"
+    shim_dir.mkdir()
+    cat_shim = shim_dir / "cat"
+    cat_shim.write_text(
+        "#!/bin/sh\n"
+        "case \"$1\" in\n"
+        "  */.specify/templates/overrides/*) exit 1 ;;\n"
+        "esac\n"
+        "exec /bin/cat \"$@\"\n",
+        encoding="utf-8",
+    )
+    cat_shim.chmod(0o755)
+    env = clean_env()
+    env["PATH"] = f"{shim_dir}{os.pathsep}{env.get('PATH', '')}"
+
+    result = run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env)
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+
+
+@requires_bash
 @pytest.mark.parametrize(
     "manifest_content",
     [
@@ -492,6 +521,17 @@ def test_all_variants_fail_when_yaml_parser_is_unavailable(
       file: templates/{TEMPLATE}.md
       strategy: 123
 """,
+        f"""provides:
+  templates:
+    - type: template
+      name: {TEMPLATE}
+      file: templates/{TEMPLATE}.md
+      strategy: wrap
+    - type: template
+      name: unrelated-template
+      file: null
+      strategy: append
+""",
     ],
     ids=[
         "invalid_yaml",
@@ -500,6 +540,7 @@ def test_all_variants_fail_when_yaml_parser_is_unavailable(
         "non_list_templates",
         "non_string_file",
         "non_string_strategy",
+        "malformed_entry_after_match",
     ],
 )
 def test_all_variants_fail_for_malformed_preset_manifest(

@@ -365,6 +365,13 @@ def _preset_template_layer(
             for entry in templates:
                 if not isinstance(entry, dict):
                     raise ValueError("manifest template entries must be mappings")
+                file_value = entry.get("file", "")
+                strategy = entry.get("strategy", "replace")
+                if not isinstance(file_value, str):
+                    raise ValueError("manifest template file must be a string")
+                if not isinstance(strategy, str):
+                    raise ValueError("manifest template strategy must be a string")
+            for entry in templates:
                 if (
                     entry.get("name") != template_name
                     or entry.get("type", "template") != "template"
@@ -372,10 +379,6 @@ def _preset_template_layer(
                     continue
                 file_value = entry.get("file", "")
                 strategy = entry.get("strategy", "replace")
-                if not isinstance(file_value, str):
-                    raise ValueError("manifest template file must be a string")
-                if not isinstance(strategy, str):
-                    raise ValueError("manifest template strategy must be a string")
                 relative = Path(file_value)
                 if (
                     not relative
