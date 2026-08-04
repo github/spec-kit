@@ -56,6 +56,7 @@ from ..shared_infra import (
 
 
 _CONSTITUTION_PROVENANCE_FILE = ".constitution-template.json"
+_CONSTITUTION_SYNC_PRESET_ID = "constitution-sync"
 
 
 def _content_sha256(content: bytes) -> str:
@@ -3550,13 +3551,10 @@ class PresetManager:
                     stacklevel=2,
                 )
 
-        # Seed/re-seed memory/constitution.md from a preset-provided
-        # constitution-template. The constitution is the only template that is
-        # materialized to a live file rather than resolved on demand, so a
-        # preset that ships one (e.g. strategy: replace with a ratified
-        # constitution) must be propagated here. Guard against clobbering an
-        # already-authored constitution by only replacing a file whose recorded
-        # hash (or exact legacy core-template content) proves it was generated.
+        # Materialize constitution-template changes only for projects that opt
+        # into the constitution-sync preset. The core /constitution command
+        # resolves this template on demand; constitution-sync preserves the
+        # previous install-time behavior for teams that want reviewed snapshots.
         self._seed_constitution_from_preset(manifest, dest_dir)
 
         return manifest
@@ -3564,14 +3562,13 @@ class PresetManager:
     def _seed_constitution_from_preset(
         self, manifest: PresetManifest, preset_dir: Path
     ) -> None:
-        """Seed memory/constitution.md from a preset constitution-template.
+        """Seed memory/constitution.md when constitution-sync opts into snapshots.
 
-        Only runs when the preset declares a ``type: template`` entry named
-        ``constitution-template`` or provides one at a convention path, and the
-        live memory file is either missing or is an unchanged generated file.
-        Authored constitutions are never overwritten.
+        Installing constitution-sync itself materializes the currently resolved
+        stack. Later preset installs only reconcile when they provide a
+        ``constitution-template``. Authored constitutions are never overwritten.
         """
-        provides_constitution = any(
+        provides_constitution = manifest.id == _CONSTITUTION_SYNC_PRESET_ID or any(
             t.get("type") == "template" and t.get("name") == "constitution-template"
             for t in manifest.templates
         ) or any(
@@ -3592,7 +3589,7 @@ class PresetManager:
     def reconcile_constitution(
         self, failure_context: str, *, create_if_missing: bool = False
     ) -> None:
-        """Reconcile generated constitution content without failing a persisted change."""
+        """Reconcile an opted-in generated constitution without failing a change."""
         try:
             self._reconcile_constitution(create_if_missing=create_if_missing)
         except (OSError, UnicodeDecodeError, PresetValidationError, ValueError) as exc:
@@ -3604,7 +3601,11 @@ class PresetManager:
             )
 
     def _reconcile_constitution(self, *, create_if_missing: bool = False) -> None:
-        """Materialize the winning constitution layer when the live file is generated."""
+        """Materialize the winning layer when constitution-sync is enabled."""
+        sync_metadata = self.registry.get(_CONSTITUTION_SYNC_PRESET_ID)
+        if sync_metadata is None or not sync_metadata.get("enabled", True):
+            return
+
         memory_constitution = (
             self.project_root / ".specify" / "memory" / "constitution.md"
         )

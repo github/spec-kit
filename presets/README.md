@@ -15,6 +15,16 @@ If no preset is installed, core templates are used — exactly the same behavior
 
 Template resolution happens **at runtime** — although preset files are copied into `.specify/presets/<id>/` during installation, Spec Kit walks the resolution stack on every template lookup rather than merging templates into a single location.
 
+`constitution-template` follows the same runtime model. Project initialization seeds
+`.specify/memory/constitution.md` once so downstream commands always have a constitution to read.
+After that, installing, removing, enabling, disabling, or reprioritizing presets does not rewrite the
+live constitution. Each `/constitution` run resolves the current composed `constitution-template`,
+then applies existing project values and amendments to that scaffold.
+
+Teams that intentionally want preset stack changes to refresh an unchanged generated constitution can
+install the bundled `constitution-sync` preset. It restores guarded install-time materialization in
+addition to its command-time propagation behavior; authored constitutions remain protected.
+
 For detailed resolution and command registration flows, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Command Overrides
