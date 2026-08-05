@@ -56,6 +56,7 @@ from ..shared_infra import (
 
 
 _CONSTITUTION_PROVENANCE_FILE = ".constitution-template.json"
+_CONSTITUTION_SYNC_PRESET_ID = "constitution-sync"
 
 
 def _content_sha256(content: bytes) -> str:
@@ -3586,13 +3587,10 @@ class PresetManager:
                     stacklevel=2,
                 )
 
-        # Seed/re-seed memory/constitution.md from a preset-provided
-        # constitution-template. The constitution is the only template that is
-        # materialized to a live file rather than resolved on demand, so a
-        # preset that ships one (e.g. strategy: replace with a ratified
-        # constitution) must be propagated here. Guard against clobbering an
-        # already-authored constitution by only replacing a file whose recorded
-        # hash (or exact legacy core-template content) proves it was generated.
+        # Materialize constitution-template changes only for projects that opt
+        # into the constitution-sync preset. The core /constitution command
+        # resolves this template on demand; constitution-sync preserves the
+        # previous install-time behavior for teams that want reviewed snapshots.
         self._seed_constitution_from_preset(manifest, dest_dir)
 
         return manifest
@@ -3600,14 +3598,13 @@ class PresetManager:
     def _seed_constitution_from_preset(
         self, manifest: PresetManifest, preset_dir: Path
     ) -> None:
-        """Seed memory/constitution.md from a preset constitution-template.
+        """Seed memory/constitution.md when constitution-sync opts into snapshots.
 
-        Only runs when the preset declares a ``type: template`` entry named
-        ``constitution-template`` or provides one at a convention path, and the
-        live memory file is either missing or is an unchanged generated file.
-        Authored constitutions are never overwritten.
+        Installing constitution-sync itself materializes the currently resolved
+        stack. Later preset installs only reconcile when they provide a
+        ``constitution-template``. Authored constitutions are never overwritten.
         """
-        provides_constitution = any(
+        provides_constitution = manifest.id == _CONSTITUTION_SYNC_PRESET_ID or any(
             t.get("type") == "template" and t.get("name") == "constitution-template"
             for t in manifest.templates
         ) or any(
@@ -3628,7 +3625,7 @@ class PresetManager:
     def reconcile_constitution(
         self, failure_context: str, *, create_if_missing: bool = False
     ) -> None:
-        """Reconcile generated constitution content without failing a persisted change."""
+        """Reconcile an opted-in generated constitution without failing a change."""
         try:
             self._reconcile_constitution(create_if_missing=create_if_missing)
         except (OSError, UnicodeDecodeError, PresetValidationError, ValueError) as exc:
@@ -3640,7 +3637,11 @@ class PresetManager:
             )
 
     def _reconcile_constitution(self, *, create_if_missing: bool = False) -> None:
-        """Materialize the winning constitution layer when the live file is generated."""
+        """Materialize the winning layer when constitution-sync is enabled."""
+        sync_metadata = self.registry.get(_CONSTITUTION_SYNC_PRESET_ID)
+        if sync_metadata is None or not sync_metadata.get("enabled", True):
+            return
+
         memory_constitution = (
             self.project_root / ".specify" / "memory" / "constitution.md"
         )
@@ -4946,6 +4947,18 @@ class PresetResolver:
                 self._manifest_cache[key] = None
         return self._manifest_cache[key]
 
+    @staticmethod
+    def _is_safe_registry_id(value: object) -> bool:
+        return isinstance(value, str) and re.fullmatch(r"[a-z0-9-]+", value) is not None
+
+    def _get_all_presets_by_priority(self) -> List[tuple[str, dict]]:
+        registry = PresetRegistry(self.presets_dir)
+        return [
+            (pack_id, metadata)
+            for pack_id, metadata in registry.list_by_priority()
+            if self._is_safe_registry_id(pack_id)
+        ]
+
     def _manifest_declared_template(
         self, pack_dir: Path, template_name: str, template_type: str
     ) -> tuple[dict | None, Path | None]:
@@ -4993,6 +5006,16 @@ class PresetResolver:
             return []
 
         registry = ExtensionRegistry(self.extensions_dir)
+        # Fail closed on a corrupt registry. ExtensionRegistry._load() recovers
+        # by normalizing an unreadable registry to an empty mapping, which would
+        # otherwise cause the directory scan below to admit every on-disk
+        # directory as an unregistered, enabled extension — a fail-open path
+        # that could supply constitution content from an invalid registry state.
+        if registry.is_corrupt():
+            raise PresetValidationError(
+                f"Invalid extension registry {registry.registry_path}: "
+                "refusing to enumerate extensions"
+            )
         # Use keys() to track ALL extensions (including corrupted entries) without deep copy
         # This prevents corrupted entries from being picked up as "unregistered" dirs
         registered_extension_ids = registry.keys()
@@ -5004,6 +5027,8 @@ class PresetResolver:
 
         # Only include enabled extensions in the result
         for ext_id, metadata in all_registered:
+            if not self._is_safe_registry_id(ext_id):
+                continue
             # Skip disabled extensions
             if not metadata.get("enabled", True):
                 continue
@@ -5012,7 +5037,7 @@ class PresetResolver:
 
         # Add unregistered directories with implicit priority=10
         for ext_dir in self.extensions_dir.iterdir():
-            if not ext_dir.is_dir() or ext_dir.name.startswith("."):
+            if not ext_dir.is_dir() or not self._is_safe_registry_id(ext_dir.name):
                 continue
             if ext_dir.name not in registered_extension_ids:
                 all_extensions.append((10, ext_dir.name, None))
@@ -5078,8 +5103,7 @@ class PresetResolver:
 
         # Priority 2: Installed presets (sorted by priority — lower number wins)
         if not skip_presets and self.presets_dir.exists():
-            registry = PresetRegistry(self.presets_dir)
-            for pack_id, _metadata in registry.list_by_priority():
+            for pack_id, _metadata in self._get_all_presets_by_priority():
                 pack_dir = self.presets_dir / pack_id
                 # The preset manifest is authoritative: if it declares this
                 # template with an explicit ``file:``, resolve to that path —
@@ -5272,13 +5296,11 @@ class PresetResolver:
             return {"path": resolved_str, "source": "project override"}
 
         if str(self.presets_dir) in resolved_str and self.presets_dir.exists():
-            registry = PresetRegistry(self.presets_dir)
-            for pack_id, _metadata in registry.list_by_priority():
+            for pack_id, metadata in self._get_all_presets_by_priority():
                 pack_dir = self.presets_dir / pack_id
                 try:
                     resolved.relative_to(pack_dir)
-                    meta = registry.get(pack_id)
-                    version = meta.get("version", "?") if meta else "?"
+                    version = metadata.get("version", "?")
                     return {
                         "path": resolved_str,
                         "source": f"{pack_id} v{version}",
@@ -5364,8 +5386,7 @@ class PresetResolver:
 
         # Priority 2: Installed presets (sorted by priority — lower number = higher precedence)
         if self.presets_dir.exists():
-            registry = PresetRegistry(self.presets_dir)
-            for pack_id, metadata in registry.list_by_priority():
+            for pack_id, metadata in self._get_all_presets_by_priority():
                 pack_dir = self.presets_dir / pack_id
                 # Read strategy and manifest file path from preset manifest
                 strategy = "replace"

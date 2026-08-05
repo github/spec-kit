@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -182,12 +183,30 @@ def get_feature_paths(
     )
 
 
+_SAFE_COMPONENT_PATTERN = re.compile(r"[a-z0-9-]+")
+
+
+def _is_safe_component(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and _SAFE_COMPONENT_PATTERN.fullmatch(value) is not None
+    )
+
+
+def _normalize_priority(value: object) -> int:
+    if isinstance(value, bool):
+        return 10
+    try:
+        priority = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 10
+    return priority if priority >= 1 else 10
+
+
 def _sorted_preset_ids(presets_dir: Path) -> list[str]:
     registry = presets_dir / ".registry"
     if registry.is_file():
-        # Mirrors bash: any failure while reading or sorting the registry
-        # (invalid JSON, non-dict shapes, unorderable priority values) falls
-        # back to the directory scan below.
+        # Invalid JSON or registry shapes fall back to the directory scan below.
         try:
             data = json.loads(registry.read_text(encoding="utf-8"))
             presets = data.get("presets", {})
@@ -195,11 +214,18 @@ def _sorted_preset_ids(presets_dir: Path) -> list[str]:
                 pid
                 for pid, meta in sorted(
                     presets.items(),
-                    key=lambda kv: kv[1].get("priority", 10)
-                    if isinstance(kv[1], dict)
-                    else 10,
+                    key=lambda kv: (
+                        _normalize_priority(kv[1].get("priority"))
+                        if isinstance(kv[1], dict)
+                        else 10,
+                        kv[0],
+                    ),
                 )
-                if isinstance(meta, dict) and meta.get("enabled", True) is not False
+                if (
+                    _is_safe_component(pid)
+                    and isinstance(meta, dict)
+                    and bool(meta.get("enabled", True))
+                )
             ]
         except Exception:
             pass
@@ -207,10 +233,76 @@ def _sorted_preset_ids(presets_dir: Path) -> list[str]:
         return sorted(
             p.name
             for p in presets_dir.iterdir()
-            if p.is_dir() and not p.name.startswith(".")
+            if p.is_dir() and _is_safe_component(p.name)
         )
     except OSError:
         return []
+
+
+def _sorted_extension_ids(extensions_dir: Path) -> list[str]:
+    registry = extensions_dir / ".registry"
+    registered_ids: set[str] = set()
+    extensions: dict[object, object] = {}
+    if os.path.lexists(registry):
+        if not registry.is_file():
+            raise TemplateResolutionError(
+                f"Invalid extension registry {registry}: not a regular file"
+            )
+        try:
+            data = json.loads(registry.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise TemplateResolutionError(
+                f"Failed to parse extension registry {registry}: {exc}"
+            ) from exc
+        if not isinstance(data, dict):
+            raise TemplateResolutionError(
+                f"Invalid extension registry {registry}: root must be a mapping"
+            )
+        raw_extensions = data.get("extensions", {})
+        if not isinstance(raw_extensions, dict):
+            raise TemplateResolutionError(
+                f"Invalid extension registry {registry}: "
+                "'extensions' must be a mapping"
+            )
+        extensions = raw_extensions
+        registered_ids = {
+            ext_id for ext_id in extensions if isinstance(ext_id, str)
+        }
+
+    ranked: list[tuple[int, str]] = []
+    for ext_id, metadata in extensions.items():
+        if (
+            _is_safe_component(ext_id)
+            and isinstance(metadata, dict)
+            and bool(metadata.get("enabled", True))
+        ):
+            ranked.append((_normalize_priority(metadata.get("priority")), ext_id))
+
+    try:
+        ranked.extend(
+            (10, path.name)
+            for path in extensions_dir.iterdir()
+            if (
+                path.is_dir()
+                and _is_safe_component(path.name)
+                and path.name not in registered_ids
+            )
+        )
+    except OSError:
+        pass
+    return [ext_id for _, ext_id in sorted(ranked)]
+
+
+def _conventional_template(
+    base_dir: Path, template_name: str
+) -> Path | None:
+    for candidate in (
+        base_dir / "templates" / f"{template_name}.md",
+        base_dir / f"{template_name}.md",
+    ):
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def resolve_template(template_name: str, repo_root: Path) -> Path | None:
@@ -222,6 +314,9 @@ def resolve_template(template_name: str, repo_root: Path) -> Path | None:
       3. .specify/extensions/<ext-id>/templates/ (hidden directories skipped)
       4. .specify/templates/ (core)
     """
+    if not _is_safe_component(template_name):
+        return None
+
     base = repo_root / ".specify" / "templates"
 
     override = base / "overrides" / f"{template_name}.md"
@@ -231,27 +326,193 @@ def resolve_template(template_name: str, repo_root: Path) -> Path | None:
     presets_dir = repo_root / ".specify" / "presets"
     if presets_dir.is_dir():
         for preset_id in _sorted_preset_ids(presets_dir):
-            candidate = presets_dir / preset_id / "templates" / f"{template_name}.md"
-            if candidate.is_file():
+            candidate = _conventional_template(
+                presets_dir / preset_id, template_name
+            )
+            if candidate is not None:
                 return candidate
 
     ext_dir = repo_root / ".specify" / "extensions"
     if ext_dir.is_dir():
-        try:
-            extensions = sorted(p for p in ext_dir.iterdir() if p.is_dir())
-        except OSError:
-            extensions = []
-        for ext in extensions:
-            if ext.name.startswith("."):
-                continue
-            candidate = ext / "templates" / f"{template_name}.md"
-            if candidate.is_file():
+        for extension_id in _sorted_extension_ids(ext_dir):
+            ext = ext_dir / extension_id
+            candidate = _conventional_template(ext, template_name)
+            if candidate is not None:
                 return candidate
 
     core = base / f"{template_name}.md"
     if core.is_file():
         return core
     return None
+
+
+class TemplateResolutionError(RuntimeError):
+    """Raised when template layers exist but cannot be composed safely."""
+
+
+# Mirror the canonical PresetManifest contract (see src/specify_cli/presets)
+# so runtime resolution rejects the same structurally malformed manifests.
+_VALID_TEMPLATE_TYPES = ("template", "command", "script")
+_VALID_TEMPLATE_STRATEGIES = ("replace", "prepend", "append", "wrap")
+_VALID_SCRIPT_STRATEGIES = ("replace", "wrap")
+
+
+def _validate_manifest_template_entry(entry: object) -> None:
+    """Validate a single manifest template entry against the canonical rules."""
+    if not isinstance(entry, dict):
+        raise ValueError("manifest template entries must be mappings")
+    if "type" not in entry or "name" not in entry or "file" not in entry:
+        raise ValueError("manifest template entry missing type, name, or file")
+    for field in ("type", "name", "file"):
+        if not isinstance(entry[field], str):
+            raise ValueError(f"manifest template {field} must be a string")
+    if entry["type"] not in _VALID_TEMPLATE_TYPES:
+        raise ValueError(f"invalid manifest template type '{entry['type']}'")
+    strategy = entry.get("strategy", "replace")
+    if not isinstance(strategy, str):
+        raise ValueError("manifest template strategy must be a string")
+    strategy = strategy.lower()
+    if strategy not in _VALID_TEMPLATE_STRATEGIES:
+        raise ValueError(f"invalid manifest template strategy '{strategy}'")
+    if entry["type"] == "script" and strategy not in _VALID_SCRIPT_STRATEGIES:
+        raise ValueError(
+            f"invalid manifest script strategy '{strategy}'"
+        )
+
+
+def _preset_template_layer(
+    preset_dir: Path, template_name: str
+) -> tuple[Path, str] | None:
+    """Return the preset template path and composition strategy."""
+    manifest_path = preset_dir / "preset.yml"
+    conventional = _conventional_template(preset_dir, template_name)
+
+    try:
+        import yaml
+    except ImportError as exc:
+        if manifest_path.is_file():
+            raise TemplateResolutionError(
+                "PyYAML is required to resolve preset template composition"
+            ) from exc
+        return (conventional, "replace") if conventional is not None else None
+
+    if manifest_path.is_file():
+        try:
+            manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+            if not isinstance(manifest, dict):
+                raise ValueError("manifest root must be a mapping")
+            if "provides" not in manifest:
+                raise ValueError("manifest missing provides section")
+            provides = manifest["provides"]
+            if not isinstance(provides, dict):
+                raise ValueError("manifest provides must be a mapping")
+            if "templates" not in provides:
+                raise ValueError("manifest provides missing templates")
+            templates = provides["templates"]
+            if not isinstance(templates, list):
+                raise ValueError("manifest templates must be a list")
+            if not templates:
+                raise ValueError("manifest must provide at least one template")
+            for entry in templates:
+                _validate_manifest_template_entry(entry)
+            for entry in templates:
+                if (
+                    entry.get("name") != template_name
+                    or entry.get("type", "template") != "template"
+                ):
+                    continue
+                file_value = entry.get("file", "")
+                strategy = entry.get("strategy", "replace")
+                relative = Path(file_value)
+                if (
+                    not relative
+                    or relative.is_absolute()
+                    or ".." in relative.parts
+                ):
+                    return None
+                candidate = preset_dir / relative
+                if not candidate.is_file():
+                    return None
+                return candidate, strategy.lower()
+        except (OSError, UnicodeError, ValueError, yaml.YAMLError) as exc:
+            raise TemplateResolutionError(
+                f"Failed to parse preset manifest {manifest_path}: {exc}"
+            ) from exc
+
+    return (conventional, "replace") if conventional is not None else None
+
+
+def resolve_template_content(template_name: str, repo_root: Path) -> str | None:
+    """Resolve and compose template content through the project layer stack."""
+    if not _is_safe_component(template_name):
+        return None
+
+    layers: list[tuple[Path, str]] = []
+
+    def compose_from_base() -> str:
+        try:
+            content = layers[-1][0].read_bytes().decode("utf-8")
+            for path, strategy in reversed(layers[:-1]):
+                layer_content = path.read_bytes().decode("utf-8")
+                if strategy == "prepend":
+                    content = f"{layer_content}\n\n{content}"
+                elif strategy == "append":
+                    content = f"{content}\n\n{layer_content}"
+                elif strategy == "wrap":
+                    placeholder = "{CORE_TEMPLATE}"
+                    if placeholder not in layer_content:
+                        raise TemplateResolutionError(
+                            f"Wrap layer {path} is missing {placeholder}"
+                        )
+                    content = layer_content.replace(placeholder, content)
+                else:
+                    raise TemplateResolutionError(
+                        f"Unknown template composition strategy '{strategy}' in {path}"
+                    )
+        except (OSError, UnicodeError) as exc:
+            raise TemplateResolutionError(
+                f"Failed to read template layer for '{template_name}': {exc}"
+            ) from exc
+        return content
+
+    override = (
+        repo_root
+        / ".specify"
+        / "templates"
+        / "overrides"
+        / f"{template_name}.md"
+    )
+    if override.is_file():
+        layers.append((override, "replace"))
+        return compose_from_base()
+
+    presets_dir = repo_root / ".specify" / "presets"
+    for preset_id in _sorted_preset_ids(presets_dir):
+        layer = _preset_template_layer(presets_dir / preset_id, template_name)
+        if layer is not None:
+            layers.append(layer)
+            if layer[1] == "replace":
+                return compose_from_base()
+
+    extensions_dir = repo_root / ".specify" / "extensions"
+    for extension_id in _sorted_extension_ids(extensions_dir):
+        extension_dir = extensions_dir / extension_id
+        candidate = _conventional_template(extension_dir, template_name)
+        if candidate is not None:
+            layers.append((candidate, "replace"))
+            return compose_from_base()
+
+    core = repo_root / ".specify" / "templates" / f"{template_name}.md"
+    if core.is_file():
+        layers.append((core, "replace"))
+        return compose_from_base()
+
+    if not layers:
+        return None
+
+    raise TemplateResolutionError(
+        f"Template '{template_name}' has composing layers but no replace base"
+    )
 
 
 def get_invoke_separator(repo_root: Path) -> str:

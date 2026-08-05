@@ -59,6 +59,19 @@ Content resolution functions for composition:
 - **Bash**: `resolve_template_content()` in `scripts/bash/common.sh` (templates only; command/script composition is handled by the Python resolver)
 - **PowerShell**: `Resolve-TemplateContent` in `scripts/powershell/common.ps1` (templates only; command/script composition is handled by the Python resolver)
 
+### Constitution lifecycle
+
+Initialization resolves `constitution-template` through the full stack and seeds
+`.specify/memory/constitution.md` once. Existing files are preserved byte-for-byte. On subsequent
+`/constitution` runs, the command resolves the current composed template at runtime and uses the live
+constitution as the source of project-specific values and amendments.
+
+Preset installation, removal, enablement, disablement, and priority changes do not materialize
+`constitution-template` by default. When the enabled preset registry contains `constitution-sync`,
+those operations may reconcile the live file, but only if its provenance hash proves it is still
+generated content. Missing files may be seeded when the preset is installed; authored or edited
+constitutions are never overwritten.
+
 ## Command Registration
 
 When a preset is installed with `type: "command"` entries, the `PresetManager` registers them into all detected agent directories using the shared `CommandRegistrar` from `src/specify_cli/agents.py`.

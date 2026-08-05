@@ -10,17 +10,21 @@ from pathlib import Path
 try:
     from common import (
         FeaturePaths,
+        TemplateResolutionError,
         format_speckit_command,
         get_feature_paths,
         resolve_template,
+        resolve_template_content,
     )
 except ImportError:  # pragma: no cover - direct execution from unusual cwd
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from common import (
         FeaturePaths,
+        TemplateResolutionError,
         format_speckit_command,
         get_feature_paths,
         resolve_template,
+        resolve_template_content,
     )
 
 
@@ -120,8 +124,14 @@ def main(argv: list[str] | None = None) -> int:
 
     docs = _available_docs(paths)
 
-    tasks_template = resolve_template("tasks-template", paths.repo_root)
-    if tasks_template is None or not tasks_template.is_file():
+    try:
+        tasks_template_content = resolve_template_content(
+            "tasks-template", paths.repo_root
+        )
+    except TemplateResolutionError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    if tasks_template_content is None:
         print(
             "ERROR: Could not resolve required tasks-template from the template "
             f"override stack for {paths.repo_root}",
@@ -138,18 +148,21 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if json_mode:
+        tasks_template = resolve_template("tasks-template", paths.repo_root)
         sys.stdout.write(
             _json_line(
                 {
                     "FEATURE_DIR": str(paths.feature_dir),
                     "AVAILABLE_DOCS": docs,
-                    "TASKS_TEMPLATE": str(tasks_template),
+                    "TASKS_TEMPLATE": str(tasks_template) if tasks_template else "",
+                    "TASKS_TEMPLATE_CONTENT": tasks_template_content,
                 }
             )
         )
     else:
+        tasks_template = resolve_template("tasks-template", paths.repo_root)
         print(f"FEATURE_DIR: {paths.feature_dir}")
-        print(f"TASKS_TEMPLATE: {tasks_template}")
+        print(f"TASKS_TEMPLATE: {tasks_template or 'not found'}")
         print("AVAILABLE_DOCS:")
         _check_file(paths.research, "research.md")
         _check_file(paths.data_model, "data-model.md")

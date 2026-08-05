@@ -4,15 +4,22 @@
 from __future__ import annotations
 
 import json
-import shutil
 import sys
 from pathlib import Path
 
 try:
-    from common import get_feature_paths, resolve_template
+    from common import (
+        TemplateResolutionError,
+        get_feature_paths,
+        resolve_template_content,
+    )
 except ImportError:  # pragma: no cover - direct execution from unusual cwd
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from common import get_feature_paths, resolve_template
+    from common import (
+        TemplateResolutionError,
+        get_feature_paths,
+        resolve_template_content,
+    )
 
 
 def _json_line(payload: object) -> str:
@@ -55,9 +62,13 @@ def main(argv: list[str] | None = None) -> int:
             file=status_stream,
         )
     else:
-        template = resolve_template("plan-template", paths.repo_root)
-        if template is not None and template.is_file():
-            shutil.copy(template, paths.impl_plan)
+        try:
+            template_content = resolve_template_content("plan-template", paths.repo_root)
+        except TemplateResolutionError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+        if template_content is not None:
+            paths.impl_plan.write_bytes(template_content.encode("utf-8"))
             print(f"Copied plan template to {paths.impl_plan}", file=status_stream)
         else:
             print("Warning: Plan template not found", file=status_stream)

@@ -1,9 +1,9 @@
 ---
 description: Generate a custom checklist for the current feature based on user requirements.
 scripts:
-  sh: scripts/bash/check-prerequisites.sh --json
-  ps: scripts/powershell/check-prerequisites.ps1 -Json
-  py: scripts/python/check_prerequisites.py --json
+  sh: scripts/bash/check-prerequisites.sh --json --template checklist-template
+  ps: scripts/powershell/check-prerequisites.ps1 -Json -Template checklist-template
+  py: scripts/python/check_prerequisites.py --json --template checklist-template
 ---
 
 ## Checklist Purpose: "Unit Tests for English"
@@ -72,7 +72,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Execution Steps
 
-1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_DIR and AVAILABLE_DOCS list.
+1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_DIR, AVAILABLE_DOCS list, and TEMPLATE_CONTENT.
    - All file paths must be absolute.
    - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
@@ -127,7 +127,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Use progressive disclosure: add follow-on retrieval only if gaps detected
    - If source docs are large, generate interim summary items instead of embedding raw text
 
-6. **Generate checklist** - Create "Unit Tests for Requirements":
+6. **Generate checklist** - Use TEMPLATE_CONTENT as the structural template and create "Unit Tests for Requirements":
    - Create `FEATURE_DIR/checklists/` directory if it doesn't exist
    - Generate unique checklist filename:
      - Use short, descriptive name based on domain (e.g., `ux.md`, `api.md`, `security.md`)

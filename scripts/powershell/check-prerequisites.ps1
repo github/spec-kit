@@ -12,6 +12,7 @@
 #   -RequireTasks       Require tasks.md to exist (for implementation phase)
 #   -IncludeTasks       Include tasks.md in AVAILABLE_DOCS list
 #   -PathsOnly          Only output path variables (no validation)
+#   -Template NAME      Include composed template content in JSON output
 #   -Help, -h           Show help message
 
 [CmdletBinding()]
@@ -20,6 +21,7 @@ param(
     [switch]$RequireTasks,
     [switch]$IncludeTasks,
     [switch]$PathsOnly,
+    [string]$Template,
     [switch]$Help
 )
 
@@ -37,6 +39,7 @@ OPTIONS:
   -RequireTasks       Require tasks.md to exist (for implementation phase)
   -IncludeTasks       Include tasks.md in AVAILABLE_DOCS list
   -PathsOnly          Only output path variables (no prerequisite validation)
+  -Template NAME      Include composed template content in JSON output
   -Help, -h           Show this help message
 
 EXAMPLES:
@@ -129,13 +132,26 @@ if ($IncludeTasks -and (Test-Path $paths.TASKS)) {
     $docs += 'tasks.md'
 }
 
+$templateContent = $null
+if ($Template) {
+    $templateContent = Resolve-TemplateContent -TemplateName $Template -RepoRoot $paths.REPO_ROOT
+    if ($null -eq $templateContent) {
+        [Console]::Error.WriteLine("ERROR: Could not resolve required $Template from the template override stack for $($paths.REPO_ROOT)")
+        exit 1
+    }
+}
+
 # Output results
 if ($Json) {
     # JSON output
-    [PSCustomObject]@{
+    $result = [ordered]@{
         FEATURE_DIR = $paths.FEATURE_DIR
         AVAILABLE_DOCS = $docs
-    } | ConvertTo-Json -Compress
+    }
+    if ($Template) {
+        $result.TEMPLATE_CONTENT = $templateContent
+    }
+    [PSCustomObject]$result | ConvertTo-Json -Compress
 } else {
     # Text output
     Write-Output "FEATURE_DIR:$($paths.FEATURE_DIR)"
