@@ -1409,6 +1409,45 @@ class TestPresetResolver:
         result = resolver.resolve("unique-disabled-template")
         assert result is None, "Disabled extension should not be picked up as unregistered"
 
+    @pytest.mark.parametrize(
+        "registry_bytes",
+        [b"{ not valid json", b'{"extensions": []}', b"[]"],
+        ids=["invalid_json", "non_mapping_extensions", "non_mapping_root"],
+    )
+    def test_resolve_fails_closed_on_corrupt_extension_registry(
+        self, project_dir, registry_bytes
+    ):
+        """A corrupt extension registry must fail closed rather than let the
+        directory scan admit every on-disk extension as enabled."""
+        extensions_dir = project_dir / ".specify" / "extensions"
+        ext_templates_dir = extensions_dir / "sneaky-ext" / "templates"
+        ext_templates_dir.mkdir(parents=True)
+        (ext_templates_dir / "custom-template.md").write_text(
+            "# Should not be served\n"
+        )
+        (extensions_dir / ".registry").write_bytes(registry_bytes)
+
+        resolver = PresetResolver(project_dir)
+        with pytest.raises(PresetValidationError, match="Invalid extension registry"):
+            resolver._get_all_extensions_by_priority()
+        with pytest.raises(PresetValidationError, match="Invalid extension registry"):
+            resolver.resolve("custom-template")
+
+    def test_resolve_fails_closed_when_registry_is_directory(self, project_dir):
+        """A directory at the registry path must fail closed, not be treated as
+        an absent registry that enables every on-disk extension."""
+        extensions_dir = project_dir / ".specify" / "extensions"
+        ext_templates_dir = extensions_dir / "sneaky-ext" / "templates"
+        ext_templates_dir.mkdir(parents=True)
+        (ext_templates_dir / "custom-template.md").write_text(
+            "# Should not be served\n"
+        )
+        (extensions_dir / ".registry").mkdir()
+
+        resolver = PresetResolver(project_dir)
+        with pytest.raises(PresetValidationError, match="Invalid extension registry"):
+            resolver.resolve("custom-template")
+
     def test_resolve_pack_over_extension(self, project_dir, pack_dir, temp_dir, valid_pack_data):
         """Test that pack templates take priority over extension templates."""
         # Create extension with templates

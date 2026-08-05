@@ -641,9 +641,38 @@ class ExtensionRegistry:
             if not isinstance(data.get("extensions"), dict):
                 data["extensions"] = {}
             return data
-        except (json.JSONDecodeError, FileNotFoundError):
-            # Corrupted or missing registry, start fresh
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+            # Corrupted, unreadable, or missing registry, start fresh. Callers
+            # that must fail closed (resolution paths) consult is_corrupt()
+            # instead of relying on this recovery.
             return {"schema_version": self.SCHEMA_VERSION, "extensions": {}}
+
+    def is_corrupt(self) -> bool:
+        """Report whether an existing registry file is present but unreadable.
+
+        ``_load`` deliberately recovers from a corrupt registry by normalizing
+        it to an empty mapping so install/enable/disable flows keep working.
+        Resolution paths, however, must fail closed: a corrupt registry that
+        normalizes to ``{}`` would otherwise cause every on-disk extension
+        directory to be admitted as an unregistered, enabled extension. This
+        probe lets those callers distinguish "no registry" (safe) from
+        "registry exists but is invalid" (unsafe) without changing recovery
+        behavior. An absent registry returns ``False``; a directory, broken
+        file, non-mapping root, or non-mapping ``extensions`` value returns
+        ``True``.
+        """
+        if not self.registry_path.exists():
+            return False
+        try:
+            with open(self.registry_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+            return True
+        if not isinstance(data, dict):
+            return True
+        if "extensions" in data and not isinstance(data["extensions"], dict):
+            return True
+        return False
 
     def _save(self):
         """Save registry to disk."""

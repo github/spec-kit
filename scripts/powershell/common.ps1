@@ -355,7 +355,15 @@ function Get-SortedExtensionIds {
     $registeredNames = @()
     $ranked = @()
     $registryFile = Join-Path $ExtensionsDir '.registry'
-    if (Test-Path -LiteralPath $registryFile) {
+    # Detect any filesystem entry at the registry path without following symlinks.
+    # Test-Path follows links and reports $false for a dangling symlink, so a
+    # broken .registry symlink would otherwise bypass this guard and let the
+    # directory scan below enable every on-disk extension. Enumerating the parent
+    # directory still observes a broken symlink as an entry.
+    $registryEntry = Get-ChildItem -LiteralPath $ExtensionsDir -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -eq '.registry' } |
+        Select-Object -First 1
+    if ($registryEntry) {
         if (-not (Test-Path -LiteralPath $registryFile -PathType Leaf)) {
             throw "Invalid extension registry ${registryFile}: not a regular file"
         }

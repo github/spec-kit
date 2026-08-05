@@ -4970,6 +4970,16 @@ class PresetResolver:
             return []
 
         registry = ExtensionRegistry(self.extensions_dir)
+        # Fail closed on a corrupt registry. ExtensionRegistry._load() recovers
+        # by normalizing an unreadable registry to an empty mapping, which would
+        # otherwise cause the directory scan below to admit every on-disk
+        # directory as an unregistered, enabled extension — a fail-open path
+        # that could supply constitution content from an invalid registry state.
+        if registry.is_corrupt():
+            raise PresetValidationError(
+                f"Invalid extension registry {registry.registry_path}: "
+                "refusing to enumerate extensions"
+            )
         # Use keys() to track ALL extensions (including corrupted entries) without deep copy
         # This prevents corrupted entries from being picked up as "unregistered" dirs
         registered_extension_ids = registry.keys()

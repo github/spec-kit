@@ -384,11 +384,11 @@ def test_all_variants_fail_when_registry_is_a_directory(
 
 
 @requires_bash
-def test_bash_and_python_fail_when_registry_is_broken_symlink(
+def test_all_variants_fail_when_registry_is_broken_symlink(
     tmp_path: Path,
 ) -> None:
-    """A broken symlink at the extension registry path must fail closed in the
-    Bash and Python resolvers rather than being treated as absent."""
+    """A broken symlink at the extension registry path must fail closed across
+    Bash, Python, and PowerShell resolvers rather than being treated as absent."""
     repo = make_repo(tmp_path)
     install_scripts(repo, SCRIPT)
     extensions = repo / ".specify" / "extensions"
@@ -403,6 +403,8 @@ def test_bash_and_python_fail_when_registry_is_broken_symlink(
         run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
         run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
     ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
 
     assert all(result.returncode != 0 for result in results)
     assert all(result.stdout == "" for result in results)
