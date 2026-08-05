@@ -661,12 +661,23 @@ class TestIntegrationListCatalog:
             def __init__(self, data, url=""):
                 self._data = json.dumps(data).encode()
                 self._url = url if isinstance(url, str) else url.full_url
-            def read(self):
-                return self._data
+                self._offset = 0
+
+            def read(self, size=-1):
+                if size == -1:
+                    chunk = self._data[self._offset:]
+                    self._offset = len(self._data)
+                else:
+                    chunk = self._data[self._offset:self._offset + size]
+                    self._offset += len(chunk)
+                return chunk
+
             def geturl(self):
                 return self._url
+
             def __enter__(self):
                 return self
+
             def __exit__(self, *a):
                 pass
 

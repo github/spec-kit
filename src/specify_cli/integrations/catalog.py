@@ -23,7 +23,6 @@ from packaging import version as pkg_version
 
 from .._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
 from ..catalogs import CatalogEntry, CatalogStackBase
-from .._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
 
 
 # ---------------------------------------------------------------------------
