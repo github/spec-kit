@@ -660,8 +660,13 @@ class ExtensionRegistry:
             if not isinstance(data.get("extensions"), dict):
                 data["extensions"] = {}
             return data
-        except (json.JSONDecodeError, FileNotFoundError):
-            # Corrupted or missing registry, start fresh
+        except (json.JSONDecodeError, UnicodeDecodeError, FileNotFoundError):
+            # Corrupted or missing registry, start fresh. A registry whose
+            # bytes cannot be decoded as UTF-8 is the same corruption class as
+            # malformed JSON — only the exception type differs, and it is
+            # raised by the text-mode read before JSON parsing begins. OSError
+            # is deliberately not caught: the data may be intact on disk, and
+            # starting fresh would let a later _save() wipe it.
             return {"schema_version": self.SCHEMA_VERSION, "extensions": {}}
 
     def _save(self):
@@ -4310,11 +4315,10 @@ class ConfigManager:
         Returns an empty list if the registry is missing or corrupted
         (fresh project, ad-hoc test harness) so ``_get_env_config`` degrades
         to its pre-fix behaviour rather than crashing. ``UnicodeError`` is
-        caught alongside ``OSError`` because ``ExtensionRegistry._load()``
-        opens the file in text mode and only handles ``JSONDecodeError`` /
-        ``FileNotFoundError``, so a registry file with non-UTF-8 bytes would
-        otherwise surface a ``UnicodeDecodeError`` here and break *every*
-        config read instead of degrading gracefully.
+        kept alongside ``OSError`` as belt-and-braces: ``_load()`` now starts
+        fresh on non-UTF-8 registry bytes itself, but catching it here too
+        keeps this call site degrading gracefully rather than breaking *every*
+        config read if that handling ever regresses.
 
         Used by ``_get_env_config`` to detect env vars whose remainder claims
         a longer, sibling-owned prefix (e.g. ``SPECKIT_GIT_HOOKS_URL`` is
