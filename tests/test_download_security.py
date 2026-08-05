@@ -539,48 +539,77 @@ def test_safe_extract_archive_rejects_truncated_tar_gz(tmp_path):
         safe_extract_archive(archive_path, tmp_path / "out")
 
 
+#: Bytes of the first member's data that decompress cleanly before the invalid
+#: deflate block. Must exceed the gzip read buffer so ``tarfile`` has to seek
+#: forward over member data to reach the second header -- see
+#: ``_corrupt_deflate_tar_gz_bytes``. The members are twice this size, so the
+#: corruption stays well inside the first member's data.
+_CORRUPT_DEFLATE_CLEAN_BYTES = 256 * 1024
+_CORRUPT_DEFLATE_MEMBER_BYTES = 2 * _CORRUPT_DEFLATE_CLEAN_BYTES
+
+
 def _corrupt_deflate_tar_gz_bytes():
     """Return a tar.gz whose deflate stream is corrupt mid-member.
 
-    Unlike truncation, which the gzip layer reports as ``EOFError``, mangling
-    bytes inside a deflate block raises ``zlib.error``. ``tarfile`` converts
-    that to ``ReadError`` when it surfaces while reading a member *header*, but
-    the forward seek it performs to skip over member *data* sits outside that
+    Unlike truncation, which the gzip layer reports as ``EOFError``, an invalid
+    deflate block raises ``zlib.error``. ``tarfile`` converts that to
+    ``ReadError`` when it surfaces while reading a member *header*, but the
+    forward seek it performs to skip over member *data* sits outside that
     conversion, so the raw ``zlib.error`` escapes from there.
 
-    Reaching that seek requires members larger than the gzip read buffer --
-    with small members the whole stream is decompressed during the first header
-    read, and the error is wrapped. Hence two 256 KiB members, stored at
-    ``compresslevel=1`` so the fixture stays a few kilobytes on disk, with the
-    corruption placed past the midpoint so the first header still reads clean.
+    Two details keep this deterministic across zlib versions:
+
+    * The corruption is a block header whose ``BTYPE`` is the reserved value
+      ``0b11``, which every zlib rejects as "invalid block type". Mangling
+      arbitrary bytes instead is *not* portable -- the garbage may still decode
+      structurally and fail the later gzip CRC check as ``BadGzipFile`` (an
+      ``OSError``, which the handler already caught) rather than raising
+      ``zlib.error`` at all.
+    * The stream is assembled by hand so the invalid block lands after
+      ``_CORRUPT_DEFLATE_CLEAN_BYTES`` of valid data. That is past the gzip read
+      buffer, so the first header reads clean and the failure happens during the
+      seek over member data rather than during a header read.
     """
-    buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w:gz", compresslevel=1) as archive:
+    plain = io.BytesIO()
+    with tarfile.open(fileobj=plain, mode="w") as archive:
         for index in range(2):
             info = tarfile.TarInfo(f"file{index}.txt")
-            content = bytes((i * 7 + index) % 256 for i in range(1024)) * 256
+            content = bytes((i * 7 + index) % 256 for i in range(1024)) * (
+                _CORRUPT_DEFLATE_MEMBER_BYTES // 1024
+            )
             info.size = len(content)
             archive.addfile(info, io.BytesIO(content))
 
-    raw = bytearray(buffer.getvalue())
-    midpoint = len(raw) // 2
-    for offset in range(midpoint, min(midpoint + 64, len(raw) - 8)):
-        raw[offset] ^= 0xA5
-    return bytes(raw)
+    clean_prefix = plain.getvalue()[:_CORRUPT_DEFLATE_CLEAN_BYTES]
+    compressor = zlib.compressobj(1, zlib.DEFLATED, -15)
+    deflate = compressor.compress(clean_prefix)
+    deflate += compressor.flush(zlib.Z_SYNC_FLUSH)
+    deflate += b"\x06"  # BTYPE=0b11 (reserved) -> "invalid block type"
+
+    gzip_header = b"\x1f\x8b\x08\x00" + b"\x00" * 4 + b"\x00\xff"
+    trailer = struct.pack("<II", zlib.crc32(clean_prefix), len(clean_prefix))
+    return gzip_header + deflate + trailer
 
 
 def test_corrupt_deflate_fixture_raises_bare_zlib_error():
     # Guards the fixture itself: the tests below are only meaningful while this
     # archive reaches the module as a bare zlib.error -- neither a TarError nor
     # an OSError, so a (TarError, OSError) handler would miss it. If a future
-    # Python wraps it, this fails loudly instead of the coverage silently
-    # decaying into a duplicate of the EOFError cases.
+    # Python or zlib wraps it, this fails loudly instead of the coverage
+    # silently decaying into a duplicate of the EOFError cases.
     archive_file = io.BytesIO(_corrupt_deflate_tar_gz_bytes())
 
     with tarfile.open(fileobj=archive_file, mode="r:gz") as archive:
-        with pytest.raises(zlib.error):
+        with pytest.raises(zlib.error) as excinfo:
             for _member in archive:
                 pass
+
+    # The whole point of the zlib.error arm: a (TarError, OSError) handler --
+    # what the two extraction sites had before the fix -- does not catch this.
+    # tarfile.ReadError and gzip.BadGzipFile would both be caught already, so
+    # if the fixture ever degrades into one of those it proves nothing.
+    assert not isinstance(excinfo.value, tarfile.TarError)
+    assert not isinstance(excinfo.value, OSError)
 
 
 def test_detect_archive_format_accepts_corrupt_deflate_tar_gz(tmp_path):
