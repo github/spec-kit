@@ -635,6 +635,30 @@ def register(app: typer.Typer) -> None:
                 )
                 manifest.save()
 
+                if force:
+                    from ..integrations._helpers import (
+                        _register_extensions_for_agent,
+                        _register_presets_for_agent,
+                    )
+
+                    _register_extensions_for_agent(
+                        project_path,
+                        resolved_integration.key,
+                        force=True,
+                        continuing=(
+                            "The project was re-initialized, but installed extensions"
+                            " may need re-registration."
+                        ),
+                    )
+                    _register_presets_for_agent(
+                        project_path,
+                        resolved_integration.key,
+                        continuing=(
+                            "The project was re-initialized, but installed presets"
+                            " may need re-registration."
+                        ),
+                    )
+
                 integration_settings = _with_integration_setting(
                     {},
                     resolved_integration.key,
