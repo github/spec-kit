@@ -4727,6 +4727,82 @@ class TestPresetSkills:
         parsed = yaml.safe_load(skill_file.read_text(encoding="utf-8").split("---", 2)[1])
         assert "argument-hint" not in parsed
 
+    def test_wrap_preset_inherits_argument_hint_from_core(self, project_dir, temp_dir):
+        """A wrap-strategy preset that omits argument-hint must inherit it from the core template.
+
+        Regression for issue #3991: the wrap-composition path in _register_skills
+        previously inherited only scripts/agent_scripts from core_frontmatter,
+        silently discarding argument-hint and leaking its value into description.
+        """
+        core_arg_hint = "Describe the feature you want to specify"
+        preset_description = "Wrapped speckit.specify — extra project context added"
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        # Place a core template that declares argument-hint
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\n"
+            "description: Core specify description.\n"
+            f'argument-hint: "{core_arg_hint}"\n'
+            "---\n\n"
+            "Core specify body.\n",
+            encoding="utf-8",
+        )
+
+        # Wrap preset: only declares description (no argument-hint)
+        preset_dir = temp_dir / "wrap-hint-preset"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.specify.md").write_text(
+            "---\n"
+            f'description: "{preset_description}"\n'
+            "strategy: wrap\n"
+            "---\n\n"
+            "{CORE_TEMPLATE}\n",
+            encoding="utf-8",
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "wrap-hint-preset",
+                "name": "Wrap Hint Preset",
+                "version": "1.0.0",
+                "description": "Test wrap hint inheritance",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.specify",
+                        "file": "commands/speckit.specify.md",
+                        "strategy": "wrap",
+                    }
+                ]
+            },
+        }
+        import yaml as _yaml
+        with open(preset_dir / "preset.yml", "w") as f:
+            _yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "1.0.0")
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert skill_file.exists()
+        parsed = yaml.safe_load(skill_file.read_text(encoding="utf-8").split("---", 2)[1])
+        # argument-hint must be inherited from core, not dropped
+        assert parsed.get("argument-hint") == core_arg_hint, (
+            f"argument-hint was not inherited from core; parsed={parsed}"
+        )
+        # description must be exactly the preset's declared value, not concatenated
+        assert parsed["description"] == preset_description, (
+            f"description was corrupted; parsed={parsed}"
+        )
+
     def test_register_skills_resolves_command_refs(self, project_dir, temp_dir):
         """Preset skill overrides must resolve __SPECKIT_COMMAND_*__ tokens (issue #2717).
 
