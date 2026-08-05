@@ -428,7 +428,10 @@ from pathlib import Path
 root = Path(os.environ['SPECKIT_EXTENSIONS'])
 registered = {}
 registry = root / '.registry'
-if registry.is_file():
+if os.path.lexists(registry):
+    if not registry.is_file():
+        print('registry_invalid: not a regular file', file=sys.stderr)
+        sys.exit(1)
     try:
         data = json.loads(registry.read_text(encoding='utf-8'))
     except Exception as exc:
@@ -472,7 +475,11 @@ for _, ext_id in sorted(ranked):
         fi
     fi
 
-    if [ -f "$ext_dir/.registry" ]; then
+    if [ -e "$ext_dir/.registry" ] || [ -L "$ext_dir/.registry" ]; then
+        if [ ! -f "$ext_dir/.registry" ] || [ ! -r "$ext_dir/.registry" ]; then
+            echo "Error: invalid extension registry $ext_dir/.registry" >&2
+            return 1
+        fi
         echo "Error: Python 3 is required to honor the extension registry" >&2
         return 2
     fi

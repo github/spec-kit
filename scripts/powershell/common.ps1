@@ -355,7 +355,10 @@ function Get-SortedExtensionIds {
     $registeredNames = @()
     $ranked = @()
     $registryFile = Join-Path $ExtensionsDir '.registry'
-    if (Test-Path $registryFile) {
+    if (Test-Path -LiteralPath $registryFile) {
+        if (-not (Test-Path -LiteralPath $registryFile -PathType Leaf)) {
+            throw "Invalid extension registry ${registryFile}: not a regular file"
+        }
         try {
             $data = [System.IO.File]::ReadAllText($registryFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
         } catch {

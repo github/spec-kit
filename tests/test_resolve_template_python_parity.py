@@ -356,6 +356,59 @@ def test_all_variants_fail_for_malformed_extension_registry(
 
 
 @requires_bash
+def test_all_variants_fail_when_registry_is_a_directory(
+    tmp_path: Path,
+) -> None:
+    """A directory at the extension registry path must fail closed, not be
+    treated as an absent registry that enables every on-disk extension."""
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    extensions = repo / ".specify" / "extensions"
+    template_dir = extensions / "sneaky-ext" / "templates"
+    template_dir.mkdir(parents=True)
+    (template_dir / f"{TEMPLATE}.md").write_text(
+        "# Should not be served\n", encoding="utf-8"
+    )
+    # Create ``.registry`` as a directory rather than a regular file.
+    (extensions / ".registry").mkdir()
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode != 0 for result in results)
+    assert all(result.stdout == "" for result in results)
+
+
+@requires_bash
+def test_bash_and_python_fail_when_registry_is_broken_symlink(
+    tmp_path: Path,
+) -> None:
+    """A broken symlink at the extension registry path must fail closed in the
+    Bash and Python resolvers rather than being treated as absent."""
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    extensions = repo / ".specify" / "extensions"
+    template_dir = extensions / "sneaky-ext" / "templates"
+    template_dir.mkdir(parents=True)
+    (template_dir / f"{TEMPLATE}.md").write_text(
+        "# Should not be served\n", encoding="utf-8"
+    )
+    (extensions / ".registry").symlink_to(extensions / "does-not-exist")
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+
+    assert all(result.returncode != 0 for result in results)
+    assert all(result.stdout == "" for result in results)
+
+
+@requires_bash
 @pytest.mark.parametrize("base_kind", ["override", "preset"])
 def test_all_variants_ignore_malformed_layers_below_replace_base(
     tmp_path: Path,

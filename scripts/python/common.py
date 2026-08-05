@@ -243,7 +243,11 @@ def _sorted_extension_ids(extensions_dir: Path) -> list[str]:
     registry = extensions_dir / ".registry"
     registered_ids: set[str] = set()
     extensions: dict[object, object] = {}
-    if registry.is_file():
+    if os.path.lexists(registry):
+        if not registry.is_file():
+            raise TemplateResolutionError(
+                f"Invalid extension registry {registry}: not a regular file"
+            )
         try:
             data = json.loads(registry.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
