@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.16.0] - 2026-08-05
+
+### Changed
+
+- fix: keep long frontmatter values on a single line (#3989)
+- fix: skip corrupted run state files in list_runs (#3817)
+- fix: skip corrupted run state files in list_runs (#3814)
+- Add July 2026 newsletter (#3987)
+- fix(presets): start fresh on a non-UTF-8 preset registry (#3955)
+- docs: clarify agent PR review prioritization (#3985)
+- fix(events): preserve a non-UTF-8 config.toml on hook install/teardown (#3963)
+- fix(extensions): treat an unreadable staged backup as a conflict (#3962)
+- fix(manifests): reject non-string requires.speckit_version (#3980)
+- fix(extensions): reject reinstall when a kept config cannot be read (#3960)
+- [extension] Update Charter extension to v0.5.1 (#3983)
+- fix(events): return None for an unparseable script command (#3957)
+- feat(events): context injection for opencode and JSON-envelope agent hooks (#3934)
+- Add TDD Extension to community catalog (#3982)
+- Update Archive Extension to v1.1.0 (#3981)
+- feat(copilot): default integration to skills (#3976)
+- fix(events): ignore non-UTF-8 event overrides (#3897)
+- fix: cap stdin read at 1 MiB to prevent DoS (#3857)
+- fix(workflows): reject mismatched run state IDs (#3899)
+- chore: release 0.15.2, begin 0.15.3.dev0 development (#3953)
+
 ## [0.15.2] - 2026-08-03
 
 ### Changed
