@@ -24,7 +24,6 @@ import re
 
 import yaml
 from packaging import version as pkg_version
-from .._download_security import MAX_DOWNLOAD_BYTES, MAX_JSON_METADATA_BYTES, read_response_limited
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 from .._download_security import (
