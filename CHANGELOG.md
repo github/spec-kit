@@ -2,9 +2,6 @@
 
 <!-- insert new changelog below this comment -->
 
-- feat(init): scaffold a managed `.specify/.gitignore` that excludes machine-local state (`feature.json`, `extensions/*/local-config.yml`) while keeping shareable project files tracked (#2304)
-
-
 ## [0.15.2] - 2026-08-03
 
 ### Changed
