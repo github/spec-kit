@@ -197,7 +197,12 @@ def test_python_text_output_survives_a_legacy_stdout_code_page(
     feat = prereq_repo / "specs" / "001-my-feature"
     feat.mkdir(parents=True)
     (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
-    (feat / "contracts").mkdir()
+    # research.md is present and the rest are not, so BOTH status markers are
+    # produced in the same cp1252 subprocess: U+2713 for the available document
+    # and U+2717 for the missing ones. Asserting only one of them would let a
+    # fallback that always returned "[FAIL]" pass.
+    (feat / "research.md").write_text("# research\n", encoding="utf-8")
+    (feat / "contracts").mkdir()  # present but empty -> reported missing
     _write_feature_json(prereq_repo)
 
     env = _clean_env()
@@ -208,7 +213,7 @@ def test_python_text_output_survives_a_legacy_stdout_code_page(
     assert "UnicodeEncodeError" not in result.stderr
     assert "AVAILABLE_DOCS:" in result.stdout
     # Every per-document line must still be there, not truncated away by the
-    # encode error, and rendered with the ASCII markers.
+    # encode error.
     for doc in (
         "research.md",
         "data-model.md",
@@ -217,7 +222,9 @@ def test_python_text_output_survives_a_legacy_stdout_code_page(
         "tasks.md",
     ):
         assert doc in result.stdout, (doc, result.stdout)
-    assert "[OK]" in result.stdout or "[FAIL]" in result.stdout, result.stdout
+    # Both fallback markers, so neither branch of _status_marker can regress.
+    assert "[OK] research.md" in result.stdout, result.stdout
+    assert "[FAIL] quickstart.md" in result.stdout, result.stdout
 
 
 @requires_bash
