@@ -628,7 +628,9 @@ def install_shared_infra(
     # ``feature.json`` pointer and per-machine ``local-config.yml`` overrides)
     # out of git while leaving everything else shareable. Routed through the
     # same overwrite/skip/preserve policy as templates so ``--force`` refreshes
-    # it, user edits are preserved, and uninstall removes it via the manifest.
+    # it and user edits are preserved. Like every other shared-infra file it is
+    # tracked in ``speckit.manifest.json`` (not the per-integration manifest) and
+    # is therefore intentionally left in place by ``integration uninstall``.
     specify_dir = project_path / ".specify"
     if _ensure_or_bucket_dir(specify_dir):
         gitignore_dst = specify_dir / ".gitignore"
