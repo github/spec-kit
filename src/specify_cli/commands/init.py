@@ -599,8 +599,6 @@ def register(app: typer.Typer) -> None:
             tracker.add(key, label)
 
         if extensions:
-            from rich.markup import escape as _escape_markup
-
             for i, ext_spec in enumerate(extensions):
                 tracker.add(
                     f"extension-{i}", f"Install extension: {_escape_markup(ext_spec)}"
@@ -855,8 +853,6 @@ def register(app: typer.Typer) -> None:
 
                 # Install extensions specified via --extension
                 if extensions:
-                    from rich.markup import escape as _escape_markup
-
                     from ..extensions._commands import _refresh_events_and_warn
 
                     speckit_ver = get_speckit_version()
