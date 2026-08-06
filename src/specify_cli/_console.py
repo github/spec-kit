@@ -7,6 +7,7 @@ layer, not out of it, to avoid circular imports.
 """
 from __future__ import annotations
 
+import logging
 import sys
 from collections.abc import Callable
 
@@ -20,6 +21,8 @@ from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
 from typer.core import TyperGroup
+
+logger = logging.getLogger(__name__)
 
 BANNER = """
 ███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗
@@ -85,7 +88,7 @@ class StepTracker:
             try:
                 self._refresh_cb()
             except Exception:
-                pass
+                logger.debug("Progress tracker refresh failed", exc_info=True)
 
     def render(self):
         tree = Tree(f"[cyan]{self.title}[/cyan]", guide_style="grey50")
