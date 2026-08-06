@@ -1316,6 +1316,38 @@ class TestExtensionRegistry:
         assert registry.list() == {}
         assert not registry.is_installed("test-ext")
 
+    def test_load_fails_closed_for_dangling_registry_symlink(self, temp_dir):
+        """A dangling ``.registry`` symlink must fail closed, not start fresh.
+
+        ``Path.exists()`` follows symlinks, so a broken symlink returns
+        ``False`` and would be mistaken for an absent registry — after which
+        callers scan every on-disk extension directory as an unregistered,
+        enabled extension (the fail-open path). Detect the entry lexically and
+        require a readable regular file so a dangling symlink raises instead.
+        """
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+        registry_path = extensions_dir / ExtensionRegistry.REGISTRY_FILE
+        if not can_create_symlink(extensions_dir):
+            pytest.skip("platform/user cannot create symlinks")
+        os.symlink(extensions_dir / "does-not-exist.json", registry_path)
+        assert registry_path.is_symlink()
+        assert not registry_path.exists()
+
+        with pytest.raises(OSError):
+            ExtensionRegistry(extensions_dir)
+
+    def test_load_fails_closed_for_directory_registry(self, temp_dir):
+        """A directory at the ``.registry`` path is not a readable regular
+        file and must fail closed rather than be treated as an absent
+        registry."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+        (extensions_dir / ExtensionRegistry.REGISTRY_FILE).mkdir()
+
+        with pytest.raises(OSError):
+            ExtensionRegistry(extensions_dir)
+
 
 # ===== ExtensionManager Tests =====
 

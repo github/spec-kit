@@ -647,8 +647,30 @@ class ExtensionRegistry:
 
     def _load(self) -> dict:
         """Load registry from disk."""
-        if not self.registry_path.exists():
+        # A dangling symlink's target doesn't exist, so Path.exists() (which
+        # follows symlinks) returns False even though the path itself is
+        # present as a broken/corrupted entry. Treat any symlink as "present"
+        # so a dangling one is not mistaken for "no registry at all" — that
+        # would let every on-disk extension directory be scanned as an
+        # unregistered, enabled extension (the fail-open path this guard is
+        # meant to close).
+        if not self.registry_path.is_symlink() and not self.registry_path.exists():
             return {"schema_version": self.SCHEMA_VERSION, "extensions": {}}
+
+        # The registry path exists lexically. Require a readable regular file
+        # before parsing: a directory, a dangling symlink, or a symlink to a
+        # non-file cannot be parsed, and silently starting fresh here would
+        # reopen the fail-open directory scan. Fail closed instead so callers
+        # (e.g. runtime resolution) surface the tampered/broken registry
+        # rather than treating every on-disk extension as enabled. (A
+        # directory already raised IsADirectoryError from the read below; this
+        # makes broken symlinks consistent with that behavior.)
+        if not self.registry_path.is_file():
+            raise OSError(
+                errno.EINVAL,
+                "Extension registry is not a readable regular file",
+                str(self.registry_path),
+            )
 
         try:
             with open(self.registry_path, "r", encoding="utf-8") as f:

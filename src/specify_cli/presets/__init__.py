@@ -5420,44 +5420,59 @@ class PresetResolver:
                     })
 
         # Priority 3: Extension-provided templates (always "replace")
-        for _priority, ext_id, ext_meta in self._get_all_extensions_by_priority():
-            ext_dir = self.extensions_dir / ext_id
-            if not ext_dir.is_dir():
-                continue
-            # Try convention-based lookup first
-            candidate = _find_in_subdirs(ext_dir)
-            # If not found and this is a command, check extension manifest
-            if candidate is None and template_type == "command":
-                ext_manifest_path = ext_dir / "extension.yml"
-                if ext_manifest_path.exists():
-                    try:
-                        from ..extensions import ExtensionManifest, ValidationError as ExtValidationError
-                        ext_manifest = ExtensionManifest(ext_manifest_path)
-                        for cmd in ext_manifest.commands:
-                            if cmd.get("name") == template_name:
-                                cmd_file = cmd.get("file")
-                                if cmd_file:
-                                    c = ext_dir / cmd_file
-                                    if c.exists():
-                                        candidate = c
+        # Extensions (priority 3) and core (priority 4) sit below the override
+        # (priority 1) and preset (priority 2) tiers. Once one of those higher
+        # tiers has already contributed an effective "replace" base, no lower
+        # tier can change the composed result (resolve_content stops at the
+        # highest-priority "replace" layer). Skip enumerating the extension
+        # tier in that case so a corrupt, unreadable, or otherwise broken
+        # lower extension registry cannot fail resolution that a winning
+        # override or preset has already decided — matching the priority
+        # parity of the runtime resolvers. Only the extension tier is gated
+        # here: its enumeration is the sole lower-tier step that reads the
+        # extension registry and can therefore fail on a tampered/broken one.
+        base_already_won = any(
+            layer["strategy"] == "replace" for layer in layers
+        )
+        if not base_already_won:
+            for _priority, ext_id, ext_meta in self._get_all_extensions_by_priority():
+                ext_dir = self.extensions_dir / ext_id
+                if not ext_dir.is_dir():
+                    continue
+                # Try convention-based lookup first
+                candidate = _find_in_subdirs(ext_dir)
+                # If not found and this is a command, check extension manifest
+                if candidate is None and template_type == "command":
+                    ext_manifest_path = ext_dir / "extension.yml"
+                    if ext_manifest_path.exists():
+                        try:
+                            from ..extensions import ExtensionManifest, ValidationError as ExtValidationError
+                            ext_manifest = ExtensionManifest(ext_manifest_path)
+                            for cmd in ext_manifest.commands:
+                                if cmd.get("name") == template_name:
+                                    cmd_file = cmd.get("file")
+                                    if cmd_file:
+                                        c = ext_dir / cmd_file
+                                        if c.exists():
+                                            candidate = c
                                 break
-                    except (ExtValidationError, yaml.YAMLError):
-                        # Invalid extension manifest — fall back to
-                        # convention-based lookup (already attempted above).
-                        pass
-            if candidate:
-                if ext_meta:
-                    version = ext_meta.get("version", "?")
-                    source = f"extension:{ext_id} v{version}"
-                else:
-                    source = f"extension:{ext_id} (unregistered)"
-                layers.append({
-                    "path": candidate,
-                    "source": source,
-                    "strategy": "replace",
-                    "extension_id": ext_id,
-                    "extension_dir": ext_dir,
-                })
+                        except (ExtValidationError, yaml.YAMLError):
+                            # Invalid extension manifest — fall back to
+                            # convention-based lookup (already attempted above).
+                            pass
+                if candidate:
+                    if ext_meta:
+                        version = ext_meta.get("version", "?")
+                        source = f"extension:{ext_id} v{version}"
+                    else:
+                        source = f"extension:{ext_id} (unregistered)"
+                    layers.append({
+                        "path": candidate,
+                        "source": source,
+                        "strategy": "replace",
+                        "extension_id": ext_id,
+                        "extension_dir": ext_dir,
+                    })
 
         # Priority 4: Core templates (always "replace")
         core = None

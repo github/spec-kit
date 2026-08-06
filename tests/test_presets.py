@@ -12088,6 +12088,51 @@ class TestCollectAllLayers:
         # Core layer should be replace
         assert layers[1]["strategy"] == "replace"
 
+    def test_winning_replace_preset_skips_broken_extension_registry(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A winning ``replace`` preset must not be invalidated by a broken
+        lower extension registry.
+
+        Extensions sit below presets in the priority stack, so once a
+        higher-priority ``replace`` preset resolves the template, the
+        extension tier is irrelevant. ``collect_all_layers`` must therefore
+        skip enumerating extensions in that case, so a corrupt/unreadable
+        extension registry (which fails closed when read) cannot break
+        resolution the preset has already decided.
+        """
+        # Highest-priority preset provides spec-template with default replace.
+        pack_dir = _create_pack(
+            temp_dir, valid_pack_data, "win-pack", "# From Pack\n"
+        )
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
+
+        # A broken extension registry: a directory at the ``.registry`` path
+        # is not a readable regular file and makes ExtensionRegistry() raise.
+        extensions_dir = project_dir / ".specify" / "extensions"
+        (extensions_dir / ".registry").mkdir(parents=True)
+        # Also drop an extension that would otherwise provide the template, to
+        # prove it is never consulted.
+        ext_templates = extensions_dir / "ext-a" / "templates"
+        ext_templates.mkdir(parents=True)
+        (ext_templates / "spec-template.md").write_text("# From Extension\n")
+
+        resolver = PresetResolver(project_dir)
+
+        # Enumerating the extension tier would raise on the broken registry.
+        with pytest.raises(OSError):
+            resolver._get_all_extensions_by_priority()
+
+        # collect_all_layers/resolve_content must not raise, and must resolve
+        # to the winning preset content — the extension tier is skipped.
+        layers = resolver.collect_all_layers("spec-template")
+        assert "win-pack" in layers[0]["source"]
+        assert layers[0]["strategy"] == "replace"
+        assert not any(
+            str(layer["source"]).startswith("extension:") for layer in layers
+        )
+        assert resolver.resolve_content("spec-template") == "# From Pack\n"
+
 
 class TestRemoveReconciliation:
     """Test that removing a preset re-registers the next layer's command."""
