@@ -16705,6 +16705,57 @@ steps:
         assert "corrupt run state" not in captured.out
         assert captured.out.strip() == ""
 
+    def test_status_unreadable_run_state_exits_cleanly(
+        self, project_dir, monkeypatch
+    ):
+        """`workflow status <run_id>` gained a ValueError boundary to match
+        `workflow resume`, but not resume's OSError one -- so an unreadable
+        state.json (bad permissions, a directory in its place, an I/O error)
+        still leaked a raw traceback. exists() is True for a directory, so
+        the guard passes and open() raises OSError."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runs_dir = project_dir / ".specify" / "workflows" / "runs" / "abc123"
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        # A directory where state.json should be: exists() passes, open() fails.
+        (runs_dir / "state.json").mkdir(exist_ok=True)
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "status", "abc123"])
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Error" in result.output
+
+    def test_status_json_unreadable_run_state_error_goes_to_stderr(
+        self, project_dir, monkeypatch, capsys
+    ):
+        """The OSError handler must route to stderr under --json too, so the
+        stdout JSON stream stays parseable -- mirroring the sibling
+        FileNotFoundError/ValueError handlers."""
+        import typer
+        from specify_cli.workflows import _commands
+        from specify_cli.workflows.engine import RunState
+
+        (project_dir / ".specify" / "workflows").mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(
+            _commands, "_require_specify_project", lambda: project_dir
+        )
+
+        def _raise_os_error(*args, **kwargs):
+            raise PermissionError(13, "Permission denied")
+
+        monkeypatch.setattr(RunState, "load", _raise_os_error)
+
+        with pytest.raises(typer.Exit) as exc:
+            _commands.workflow_status("some-run", json_output=True)
+        assert exc.value.exit_code == 1
+        captured = capsys.readouterr()
+        assert "Permission denied" in captured.err
+        assert "Permission denied" not in captured.out
+        assert captured.out.strip() == ""
+
     def test_status_no_run_id_list_path_unaffected(self, project_dir, monkeypatch):
         """The no-run-id list-all-runs path must remain unaffected by the
         new single-run ValueError boundary."""
