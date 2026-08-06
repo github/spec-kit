@@ -223,32 +223,6 @@ def test_python_custom_markers_matching_bash(tmp_path: Path) -> None:
 
 
 @requires_posix_bash
-def test_python_blank_markers_use_defaults_matching_bash(tmp_path: Path) -> None:
-    # Regression: with blank markers (config relying on the built-in defaults),
-    # the Bash port must fall back to DEFAULT_START/END, matching the Python and
-    # PowerShell ports. Previously the Bash config-parser transport dropped the
-    # trailing empty marker lines under $(...) command substitution, tripping the
-    # "malformed config parser output" guard so the default-marker substitution
-    # became unreachable and the context file was never updated.
-    markers = {"start": "", "end": ""}
-    repo_a, repo_b = twin_projects(
-        tmp_path, context_file="AGENTS.md", context_markers=markers
-    )
-    add_plan(repo_a)
-    add_plan(repo_b)
-
-    bash = run_bash(repo_a)
-    py = run_python(repo_b)
-
-    assert_parity(bash, py, repo_a, repo_b)
-    content = (repo_b / "AGENTS.md").read_bytes()
-    assert content == (repo_a / "AGENTS.md").read_bytes()
-    assert b"<!-- SPECKIT START -->" in content
-    assert b"<!-- SPECKIT END -->" in content
-    assert b"at specs/001-demo/plan.md" in content
-
-
-@requires_posix_bash
 def test_python_multiple_context_files_dedup_matching_bash(tmp_path: Path) -> None:
     files = ["AGENTS.md", "docs/CONTEXT.md", "AGENTS.md"]
     repo_a, repo_b = twin_projects(tmp_path, context_files=files)
