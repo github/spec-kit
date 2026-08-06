@@ -662,12 +662,13 @@ class ExtensionRegistry:
         # non-file cannot be parsed, and silently starting fresh here would
         # reopen the fail-open directory scan. Fail closed instead so callers
         # (e.g. runtime resolution) surface the tampered/broken registry
-        # rather than treating every on-disk extension as enabled. (A
-        # directory already raised IsADirectoryError from the read below; this
-        # makes broken symlinks consistent with that behavior.)
+        # rather than treating every on-disk extension as enabled. This raises
+        # the same error open() would: EISDIR for a directory (as before) and
+        # ENOENT for a dangling symlink whose target is missing.
         if not self.registry_path.is_file():
+            code = errno.EISDIR if self.registry_path.is_dir() else errno.ENOENT
             raise OSError(
-                errno.EINVAL,
+                code,
                 "Extension registry is not a readable regular file",
                 str(self.registry_path),
             )
