@@ -237,15 +237,6 @@ class IntegrationCatalog(CatalogStackBase):
             raise IntegrationCatalogError(
                 f"Failed to fetch catalog from {entry.url}: {exc}"
             )
-        except UnicodeDecodeError as exc:
-            # A non-UTF-8 response body fails at .decode() before json.loads()
-            # ever runs, so JSONDecodeError below does not cover it (the two are
-            # sibling ValueError subclasses, not parent/child). Without this the
-            # raw UnicodeDecodeError escapes _get_merged_integrations()'s
-            # "warn and skip this catalog" handler and kills the whole command.
-            raise IntegrationCatalogError(
-                f"Catalog from {entry.url} is not valid UTF-8: {exc}"
-            )
         except json.JSONDecodeError as exc:
             raise IntegrationCatalogError(
                 f"Invalid JSON in catalog from {entry.url}: {exc}"

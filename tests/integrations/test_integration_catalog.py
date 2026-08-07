@@ -392,11 +392,12 @@ class TestCatalogFetch:
         with pytest.raises(IntegrationCatalogError, match="exceeds maximum size"):
             cat._fetch_single_catalog(entry, force_refresh=True)
 
-    def _patch_open_url_bytes(self, monkeypatch, bodies):
-        """Patch ``open_url`` to serve raw *bodies* keyed by URL substring.
+    def _patch_urlopen_bytes(self, monkeypatch, bodies):
+        """Patch urlopen to serve raw *bodies* keyed by URL substring.
 
-        The catalog fetch decodes the response itself, so these stubs yield raw
-        bytes rather than the JSON-encoded payloads ``_patch_urlopen`` produces.
+        Mirrors ``_patch_urlopen`` but passes the bytes through verbatim: these
+        tests need a body that is not valid UTF-8, which ``json.dumps`` cannot
+        produce.
         """
 
         class _RawResponse:
@@ -423,14 +424,15 @@ class TestCatalogFetch:
             def __exit__(self, *a):
                 pass
 
-        def fake_open_url(url, timeout=10, **kwargs):
+        def fake_urlopen(req, timeout=10):
+            url = req if isinstance(req, str) else req.full_url
             for marker, body in bodies.items():
                 if marker in url:
                     return _RawResponse(body, url)
             raise AssertionError(f"unexpected URL requested: {url}")
 
         import specify_cli.authentication.http as _auth_http
-        monkeypatch.setattr(_auth_http, "open_url", fake_open_url)
+        monkeypatch.setattr(_auth_http.urllib.request, "urlopen", fake_urlopen)
 
     def test_fetch_wraps_non_utf8_catalog_response(self, tmp_path, monkeypatch):
         """Regression: a non-UTF-8 response body must raise IntegrationCatalogError.
@@ -445,7 +447,7 @@ class TestCatalogFetch:
         (tmp_path / ".specify").mkdir(exist_ok=True)
         cat = IntegrationCatalog(tmp_path)
 
-        self._patch_open_url_bytes(
+        self._patch_urlopen_bytes(
             monkeypatch,
             {"catalog.json": b'{"schema_version": "1.0", "name": "\xff\xfe"}'},
         )
@@ -495,7 +497,7 @@ class TestCatalogFetch:
             }
         ).encode("utf-8")
 
-        self._patch_open_url_bytes(
+        self._patch_urlopen_bytes(
             monkeypatch,
             {
                 "broken.json": b'{"schema_version": "1.0", "name": "\xff\xfe"}',
