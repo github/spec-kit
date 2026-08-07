@@ -5024,10 +5024,14 @@ class PresetResolver:
             rel_path = Path(file_rel)
             if rel_path.is_absolute():
                 return entry, None
+            candidate = ext_dir / rel_path
             try:
-                ext_root = ext_dir.resolve()
-                candidate = (ext_root / rel_path).resolve()
-                candidate.relative_to(ext_root)  # raises ValueError if outside
+                # Resolve only for the containment check, not for the
+                # returned path -- resolving the returned path would follow
+                # symlinks in ext_dir's ancestors (e.g. a symlinked tmp dir
+                # on macOS) and diverge from the unresolved paths convention
+                # lookup returns for the same directory.
+                candidate.resolve().relative_to(ext_dir.resolve())  # raises ValueError if outside
             except (OSError, ValueError):
                 return entry, None
             return entry, (candidate if candidate.is_file() else None)
