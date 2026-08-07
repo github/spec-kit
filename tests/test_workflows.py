@@ -8196,6 +8196,148 @@ class TestWorkflowCatalog:
         with pytest.raises(WorkflowValidationError, match="Failed to write catalog config"):
             catalog.remove_catalog(0)
 
+    def test_oversized_workflow_catalog_response_rejected(self, project_dir, monkeypatch):
+        """WorkflowCatalog._fetch_single_catalog rejects responses exceeding
+        MAX_JSON_METADATA_BYTES instead of reading unbounded into memory."""
+        from specify_cli.workflows.catalog import (
+            WorkflowCatalog,
+            WorkflowCatalogEntry,
+            WorkflowCatalogError,
+        )
+        from specify_cli.authentication import http as auth_http
+
+        monkeypatch.setattr(
+            "specify_cli.workflows.catalog.MAX_JSON_METADATA_BYTES", 512
+        )
+
+        class _OversizedResponse:
+            def __init__(self):
+                self._data = b"x" * 1024
+                self._pos = 0
+
+            def read(self, n=-1):
+                if n < 0:
+                    chunk = self._data[self._pos:]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + n]
+                self._pos += len(chunk)
+                return chunk
+
+            def geturl(self):
+                return "https://example.com/catalog.json"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+        monkeypatch.setattr(
+            auth_http,
+            "open_url",
+            lambda url, timeout=30, redirect_validator=None: _OversizedResponse(),
+        )
+
+        catalog = WorkflowCatalog(project_dir)
+        entry = WorkflowCatalogEntry(
+            url="https://example.com/catalog.json",
+            name="test",
+            priority=1,
+            install_allowed=True,
+        )
+        with pytest.raises(WorkflowCatalogError, match="exceeds maximum size"):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+
+    def test_oversized_workflow_catalog_does_not_block_healthy_one(self, project_dir, monkeypatch):
+        """A healthy catalog still works after an oversized one was rejected."""
+        from specify_cli.workflows.catalog import (
+            WorkflowCatalog,
+            WorkflowCatalogEntry,
+            WorkflowCatalogError,
+        )
+        from specify_cli.authentication import http as auth_http
+
+        monkeypatch.setattr(
+            "specify_cli.workflows.catalog.MAX_JSON_METADATA_BYTES", 512
+        )
+
+        call_count = [0]
+
+        class _OversizedResponse:
+            def __init__(self):
+                self._data = b"x" * 1024
+                self._pos = 0
+
+            def read(self, n=-1):
+                if n < 0:
+                    chunk = self._data[self._pos:]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + n]
+                self._pos += len(chunk)
+                return chunk
+
+            def geturl(self):
+                return "https://bad.example.com/catalog.json"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+        class _HealthyResponse:
+            def __init__(self):
+                self._data = b'{"workflows": {}}'
+                self._pos = 0
+
+            def read(self, n=-1):
+                if n < 0:
+                    chunk = self._data[self._pos:]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + n]
+                self._pos += len(chunk)
+                return chunk
+
+            def geturl(self):
+                return "https://good.example.com/catalog.json"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+        def fake_open(url, timeout=30, redirect_validator=None):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _OversizedResponse()
+            return _HealthyResponse()
+
+        monkeypatch.setattr(auth_http, "open_url", fake_open)
+
+        catalog = WorkflowCatalog(project_dir)
+
+        bad_entry = WorkflowCatalogEntry(
+            url="https://bad.example.com/catalog.json",
+            name="bad",
+            priority=1,
+            install_allowed=True,
+        )
+        with pytest.raises(WorkflowCatalogError, match="exceeds maximum size"):
+            catalog._fetch_single_catalog(bad_entry, force_refresh=True)
+
+        good_entry = WorkflowCatalogEntry(
+            url="https://good.example.com/catalog.json",
+            name="good",
+            priority=1,
+            install_allowed=True,
+        )
+        result = catalog._fetch_single_catalog(good_entry, force_refresh=True)
+        assert isinstance(result, dict)
+
 
 # ===== Integration Test =====
 
@@ -8983,6 +9125,148 @@ class TestStepCatalog:
 
         missing = catalog.get_step_info("nonexistent")
         assert missing is None
+
+    def test_oversized_step_catalog_response_rejected(self, project_dir, monkeypatch):
+        """StepCatalog._fetch_single_catalog rejects responses exceeding
+        MAX_JSON_METADATA_BYTES instead of reading unbounded into memory."""
+        from specify_cli.workflows.catalog import (
+            StepCatalog,
+            StepCatalogEntry,
+            StepCatalogError,
+        )
+        from specify_cli.authentication import http as auth_http
+
+        monkeypatch.setattr(
+            "specify_cli.workflows.catalog.MAX_JSON_METADATA_BYTES", 512
+        )
+
+        class _OversizedResponse:
+            def __init__(self):
+                self._data = b"x" * 1024
+                self._pos = 0
+
+            def read(self, n=-1):
+                if n < 0:
+                    chunk = self._data[self._pos:]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + n]
+                self._pos += len(chunk)
+                return chunk
+
+            def geturl(self):
+                return "https://example.com/steps.json"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+        monkeypatch.setattr(
+            auth_http,
+            "open_url",
+            lambda url, timeout=30, redirect_validator=None: _OversizedResponse(),
+        )
+
+        catalog = StepCatalog(project_dir)
+        entry = StepCatalogEntry(
+            url="https://example.com/steps.json",
+            name="test",
+            priority=1,
+            install_allowed=True,
+        )
+        with pytest.raises(StepCatalogError, match="exceeds maximum size"):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+
+    def test_oversized_step_catalog_does_not_block_healthy_one(self, project_dir, monkeypatch):
+        """A healthy step catalog still works after an oversized one was rejected."""
+        from specify_cli.workflows.catalog import (
+            StepCatalog,
+            StepCatalogEntry,
+            StepCatalogError,
+        )
+        from specify_cli.authentication import http as auth_http
+
+        monkeypatch.setattr(
+            "specify_cli.workflows.catalog.MAX_JSON_METADATA_BYTES", 512
+        )
+
+        call_count = [0]
+
+        class _OversizedResponse:
+            def __init__(self):
+                self._data = b"x" * 1024
+                self._pos = 0
+
+            def read(self, n=-1):
+                if n < 0:
+                    chunk = self._data[self._pos:]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + n]
+                self._pos += len(chunk)
+                return chunk
+
+            def geturl(self):
+                return "https://bad.example.com/steps.json"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+        class _HealthyResponse:
+            def __init__(self):
+                self._data = b'{"steps": {}}'
+                self._pos = 0
+
+            def read(self, n=-1):
+                if n < 0:
+                    chunk = self._data[self._pos:]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + n]
+                self._pos += len(chunk)
+                return chunk
+
+            def geturl(self):
+                return "https://good.example.com/steps.json"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+        def fake_open(url, timeout=30, redirect_validator=None):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _OversizedResponse()
+            return _HealthyResponse()
+
+        monkeypatch.setattr(auth_http, "open_url", fake_open)
+
+        catalog = StepCatalog(project_dir)
+
+        bad_entry = StepCatalogEntry(
+            url="https://bad.example.com/steps.json",
+            name="bad",
+            priority=1,
+            install_allowed=True,
+        )
+        with pytest.raises(StepCatalogError, match="exceeds maximum size"):
+            catalog._fetch_single_catalog(bad_entry, force_refresh=True)
+
+        good_entry = StepCatalogEntry(
+            url="https://good.example.com/steps.json",
+            name="good",
+            priority=1,
+            install_allowed=True,
+        )
+        result = catalog._fetch_single_catalog(good_entry, force_refresh=True)
+        assert isinstance(result, dict)
 
 
 # ===== Load Custom Steps Tests =====
