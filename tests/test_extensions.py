@@ -1020,6 +1020,245 @@ provides:
         assert len(hash_value) > 10
 
 
+class TestExtensionManifestTemplatesAndScripts:
+    """Tests for the optional provides.templates / provides.scripts sections."""
+
+    def test_templates_and_scripts_declared(self, temp_dir, valid_manifest_data):
+        """A manifest declaring templates and scripts exposes them via properties."""
+        import yaml
+
+        valid_manifest_data["provides"]["templates"] = [
+            {
+                "name": "myext-template",
+                "file": "templates/myext-template.md",
+                "description": "Report scaffold contributed by myext",
+            }
+        ]
+        valid_manifest_data["provides"]["scripts"] = [
+            {
+                "name": "myext-collect",
+                "file": "scripts/bash/myext-collect.sh",
+                "description": "Data-collection helper",
+                "runtimes": ["bash", "python"],
+            }
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.templates == valid_manifest_data["provides"]["templates"]
+        assert manifest.scripts == valid_manifest_data["provides"]["scripts"]
+        assert manifest.warnings == []
+
+    def test_templates_only_extension_is_valid(self, temp_dir, valid_manifest_data):
+        """An extension with only a declared template (no commands/hooks/events) is valid."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"] = []
+        valid_manifest_data.pop("hooks", None)
+        valid_manifest_data["provides"]["templates"] = [
+            {"name": "myext-template", "file": "templates/myext-template.md"}
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+        assert len(manifest.templates) == 1
+        assert len(manifest.commands) == 0
+
+    def test_scripts_only_extension_is_valid(self, temp_dir, valid_manifest_data):
+        """An extension with only a declared script (no commands/hooks/events) is valid."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"] = []
+        valid_manifest_data.pop("hooks", None)
+        valid_manifest_data["provides"]["scripts"] = [
+            {"name": "myext-collect", "file": "scripts/bash/myext-collect.sh"}
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+        assert len(manifest.scripts) == 1
+
+    def test_no_provides_at_all_still_rejected(self, temp_dir, valid_manifest_data):
+        """Without commands, hooks, events, templates, or scripts the manifest is
+        still rejected — the relaxed rule only widens what counts, it doesn't
+        drop the requirement that an extension provide *something*."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"] = []
+        valid_manifest_data.pop("hooks", None)
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="must provide at least one command, hook, or event"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("section", ["templates", "scripts"])
+    def test_provides_section_must_be_a_list(self, temp_dir, valid_manifest_data, section):
+        """provides.templates / provides.scripts must be a list, not e.g. a mapping."""
+        import yaml
+
+        valid_manifest_data["provides"][section] = {"not": "a list"}
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match=f"Invalid provides.{section}: expected a list"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("section", ["templates", "scripts"])
+    def test_provides_entry_must_be_a_mapping(self, temp_dir, valid_manifest_data, section):
+        """Each provides.templates / provides.scripts entry must be a mapping."""
+        import yaml
+
+        valid_manifest_data["provides"][section] = ["not-a-mapping"]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match=f"Each entry in 'provides.{section}' must be a mapping"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("section", ["templates", "scripts"])
+    def test_provides_entry_missing_name_or_file(self, temp_dir, valid_manifest_data, section):
+        """Each entry requires both 'name' and 'file'."""
+        import yaml
+
+        valid_manifest_data["provides"][section] = [{"name": "only-a-name"}]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="missing 'name' or 'file'"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("section", ["templates", "scripts"])
+    def test_provides_entry_invalid_name_format(self, temp_dir, valid_manifest_data, section):
+        """Names must be lowercase alphanumeric with hyphens only."""
+        import yaml
+
+        valid_manifest_data["provides"][section] = [
+            {"name": "Bad_Name", "file": f"{section}/bad.txt"}
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="must be lowercase alphanumeric with hyphens only"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("section", ["templates", "scripts"])
+    def test_provides_entry_path_traversal_rejected(self, temp_dir, valid_manifest_data, section):
+        """The 'file' field is checked with the same path-safety policy as commands."""
+        import yaml
+
+        valid_manifest_data["provides"][section] = [
+            {"name": "escape", "file": "../evil"}
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="relative path within the extension directory"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("section", ["templates", "scripts"])
+    def test_provides_entry_strategy_rejected(self, temp_dir, valid_manifest_data, section):
+        """'strategy' is preset-only; extension-provided artifacts are always 'replace'."""
+        import yaml
+
+        valid_manifest_data["provides"][section] = [
+            {"name": "has-strategy", "file": f"{section}/x.txt", "strategy": "replace"}
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="'strategy' is not authorable"):
+            ExtensionManifest(manifest_path)
+
+    def test_script_runtimes_accepted(self, temp_dir, valid_manifest_data):
+        """A valid 'runtimes' list on a script entry is accepted as-is."""
+        import yaml
+
+        valid_manifest_data["provides"]["scripts"] = [
+            {
+                "name": "myext-collect",
+                "file": "scripts/bash/myext-collect.sh",
+                "runtimes": ["bash", "powershell", "python"],
+            }
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+        assert manifest.scripts[0]["runtimes"] == ["bash", "powershell", "python"]
+
+    def test_script_runtimes_must_be_a_list_of_strings(self, temp_dir, valid_manifest_data):
+        """A non-list 'runtimes' value is rejected."""
+        import yaml
+
+        valid_manifest_data["provides"]["scripts"] = [
+            {"name": "myext-collect", "file": "scripts/bash/myext-collect.sh", "runtimes": "bash"}
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="expected a list of strings"):
+            ExtensionManifest(manifest_path)
+
+    def test_script_runtimes_rejects_unknown_runtime(self, temp_dir, valid_manifest_data):
+        """An unrecognized runtime name is rejected with the valid set in the message."""
+        import yaml
+
+        valid_manifest_data["provides"]["scripts"] = [
+            {"name": "myext-collect", "file": "scripts/bash/myext-collect.sh", "runtimes": ["ruby"]}
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid runtimes.*must be one of"):
+            ExtensionManifest(manifest_path)
+
+    def test_provides_entry_description_must_be_a_string(self, temp_dir, valid_manifest_data):
+        """An optional 'description' field must be a string when present."""
+        import yaml
+
+        valid_manifest_data["provides"]["templates"] = [
+            {"name": "myext-template", "file": "templates/myext-template.md", "description": 123}
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="expected a string"):
+            ExtensionManifest(manifest_path)
+
+
 # ===== ExtensionRegistry Tests =====
 
 class TestExtensionRegistry:
