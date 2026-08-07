@@ -80,9 +80,9 @@ def test_search_json_null_fields_render_placeholders_not_none(project_dir, monke
 def test_search_renders_only_string_list_tags(project_dir, monkeypatch):
     """`extension search` must treat catalog tags as untrusted data.
 
-    Non-list tags are ignored entirely; list tags render only string members.
-    This prevents scalar tags from crashing or printing as comma-separated
-    characters.
+    Non-list tags are ignored entirely; list tags render only non-blank string
+    members. This prevents scalar tags from crashing or printing as
+    comma-separated characters.
     """
     monkeypatch.chdir(project_dir)
 
@@ -109,7 +109,7 @@ def test_search_renders_only_string_list_tags(project_dir, monkeypatch):
                 "name": "Mixed Tags",
                 "version": "1.0.0",
                 "description": "d",
-                "tags": ["safe", None, 123, "ok"],
+                "tags": ["safe", None, 123, " ", "ok"],
             },
         ],
     )
@@ -270,6 +270,31 @@ def test_search_escapes_markup_in_stars(project_dir, monkeypatch):
     assert "[red]999[/red]" in result.output
 
 
+def test_search_omits_malformed_download_count(project_dir, monkeypatch):
+    """A nonnumeric catalog downloads value must not crash search rendering."""
+    monkeypatch.chdir(project_dir)
+
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "search",
+        lambda self, **kwargs: [{
+            "id": "bad-downloads",
+            "name": "Bad Downloads",
+            "version": "1.0.0",
+            "description": "d",
+            "downloads": "many",
+            "stars": "[red]999[/red]",
+        }],
+    )
+
+    result = runner.invoke(app, ["extension", "search"], obj={"project_root": project_dir})
+
+    assert result.exit_code == 0, result.output
+    assert "bad-downloads" in result.output
+    assert "Downloads:" not in result.output
+    assert "[red]999[/red]" in result.output
+
+
 def test_add_download_status_null_name_version_no_none(project_dir, monkeypatch):
     """The catalog download status line must not render the literal "None".
 
@@ -342,6 +367,32 @@ def test_info_tolerates_missing_fields_and_non_dict_sections(project_dir, monkey
     assert "[bold]42[/bold]" in result.output
 
 
+def test_info_omits_malformed_download_count(project_dir, monkeypatch):
+    """A nonnumeric catalog downloads value must not crash info rendering."""
+    monkeypatch.chdir(project_dir)
+
+    monkeypatch.setattr(ExtensionManager, "list_installed", lambda self: [])
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "get_extension_info",
+        lambda self, ext_id: {
+            "id": "bad-downloads",
+            "name": "Bad Downloads",
+            "version": "1.0.0",
+            "description": "d",
+            "downloads": "many",
+            "stars": "[bold]42[/bold]",
+        },
+    )
+
+    result = runner.invoke(app, ["extension", "info", "bad-downloads"], obj={"project_root": project_dir})
+
+    assert result.exit_code == 0, result.output
+    assert "bad-downloads" in result.output
+    assert "Downloads:" not in result.output
+    assert "[bold]42[/bold]" in result.output
+
+
 def test_info_renders_only_string_list_tags(project_dir, monkeypatch):
     """`extension info` uses the same untrusted tag rendering as search."""
     monkeypatch.chdir(project_dir)
@@ -355,7 +406,7 @@ def test_info_renders_only_string_list_tags(project_dir, monkeypatch):
             "name": "Mixed Tags",
             "version": "1.0.0",
             "description": "d",
-            "tags": ["safe", None, 123, "ok"],
+            "tags": ["safe", None, 123, " ", "ok"],
         },
     )
 
@@ -443,6 +494,30 @@ def test_info_display_name_resolution_ignores_malformed_catalog_entries(
 
     assert result.exit_code == 1, result.output
     assert f"Extension '{argument}' not found" in result.output
+
+
+def test_info_direct_id_resolution_rejects_invalid_catalog_id(project_dir, monkeypatch):
+    """Direct catalog lookup must not bypass the shared catalog-id validation."""
+    monkeypatch.chdir(project_dir)
+
+    monkeypatch.setattr(ExtensionManager, "list_installed", lambda self: [])
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "get_extension_info",
+        lambda self, ext_id: {
+            "id": "../bad",
+            "name": "Hidden Name",
+            "version": "1.0.0",
+            "description": "Invalid ID",
+        },
+    )
+    monkeypatch.setattr(ExtensionCatalog, "search", lambda self, **kwargs: [])
+
+    result = runner.invoke(app, ["extension", "info", "../bad"], obj={"project_root": project_dir})
+
+    assert result.exit_code == 1, result.output
+    assert "Extension '../bad' not found" in result.output
+    assert "Hidden Name" not in result.output
 
 
 def test_info_json_null_fields_render_placeholders_not_none(project_dir, monkeypatch):
