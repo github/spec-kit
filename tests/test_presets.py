@@ -484,7 +484,10 @@ provides:
         manifest = PresetManifest(pack_dir / "preset.yml")
         hash_val = manifest.get_hash()
         assert hash_val.startswith("sha256:")
-        assert len(hash_val) > 10
+        import hashlib
+        content = (pack_dir / "preset.yml").read_bytes()
+        expected = f"sha256:{hashlib.sha256(content).hexdigest()}"
+        assert hash_val == expected
 
     def test_multiple_templates(self, temp_dir, valid_pack_data):
         """Test pack with multiple templates of different types."""

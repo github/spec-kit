@@ -850,5 +850,8 @@ class IntegrationDescriptor:
 
     def get_hash(self) -> str:
         """SHA-256 hash of the descriptor file."""
+        h = hashlib.sha256()
         with open(self.path, "rb") as fh:
-            return f"sha256:{hashlib.sha256(fh.read()).hexdigest()}"
+            for chunk in iter(lambda: fh.read(8192), b""):
+                h.update(chunk)
+        return f"sha256:{h.hexdigest()}"
