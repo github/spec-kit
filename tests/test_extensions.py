@@ -1163,6 +1163,29 @@ class TestExtensionManifestTemplatesAndScripts:
             ExtensionManifest(manifest_path)
 
     @pytest.mark.parametrize("section", ["templates", "scripts"])
+    def test_provides_entry_duplicate_name_rejected(self, temp_dir, valid_manifest_data, section):
+        """Two entries in the same section sharing a name are rejected.
+
+        The resolver (PresetResolver._extension_manifest_declared_template)
+        returns the first entry matching a name, so a later duplicate would
+        be silently unreachable while still counted by ExtensionManifest
+        properties -- reject it up front instead.
+        """
+        import yaml
+
+        valid_manifest_data["provides"][section] = [
+            {"name": "dup", "file": f"{section}/a.txt"},
+            {"name": "dup", "file": f"{section}/b.txt"},
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match=f"Duplicate .* name 'dup' in 'provides.{section}'"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("section", ["templates", "scripts"])
     def test_provides_entry_path_traversal_rejected(self, temp_dir, valid_manifest_data, section):
         """The 'file' field is checked with the same path-safety policy as commands."""
         import yaml
