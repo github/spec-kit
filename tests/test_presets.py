@@ -11220,6 +11220,84 @@ class TestWrapStrategy:
         assert "# Selftest Core" in result
         assert "{CORE_TEMPLATE}" not in result
 
+    def test_extension_template_resolves_via_manifest_when_filename_differs(self, project_dir):
+        """provides.templates entries resolve via extension.yml when the file
+        doesn't sit at the conventional path.
+
+        Regression coverage for #4010: manifest-declared templates/scripts
+        must actually be consulted by the resolver, not just accepted by
+        manifest validation.
+        """
+        ext_dir = project_dir / ".specify" / "extensions" / "reportext"
+        tmpl_dir = ext_dir / "templates" / "nested"
+        tmpl_dir.mkdir(parents=True, exist_ok=True)
+
+        # File lives at a path convention-based lookup (templates/<name>.md)
+        # would never find.
+        (tmpl_dir / "actual.md").write_text("# Report Scaffold\n")
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: reportext\n  name: Report Ext\n  version: 1.0.0\n"
+            "  description: test\n  author: test\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n"
+            "  templates:\n"
+            "    - name: report-scaffold\n"
+            "      file: templates/nested/actual.md\n"
+            "      description: Report scaffold\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("report-scaffold", "template")
+        assert layers, "expected the manifest-declared template to resolve"
+        assert layers[0]["path"] == tmpl_dir / "actual.md"
+        assert layers[0]["strategy"] == "replace"
+
+    def test_extension_script_resolves_via_manifest_when_filename_differs(self, project_dir):
+        """provides.scripts entries resolve via extension.yml when the file
+        doesn't sit at the conventional path."""
+        ext_dir = project_dir / ".specify" / "extensions" / "collectext"
+        script_dir = ext_dir / "scripts" / "bash"
+        script_dir.mkdir(parents=True, exist_ok=True)
+
+        # File is under scripts/bash/, not directly under scripts/, so
+        # convention-based lookup (scripts/<name>.sh) would never find it.
+        (script_dir / "collect.sh").write_text("#!/usr/bin/env bash\necho collect\n")
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: collectext\n  name: Collect Ext\n  version: 1.0.0\n"
+            "  description: test\n  author: test\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n"
+            "  scripts:\n"
+            "    - name: myext-collect\n"
+            "      file: scripts/bash/collect.sh\n"
+            "      description: Data-collection helper\n"
+            "      runtimes: [bash]\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("myext-collect", "script")
+        assert layers, "expected the manifest-declared script to resolve"
+        assert layers[0]["path"] == script_dir / "collect.sh"
+        assert layers[0]["strategy"] == "replace"
+
+    def test_extension_template_convention_lookup_unaffected_when_undeclared(self, project_dir):
+        """An extension template with no manifest entry still resolves via
+        the pre-existing filename convention (no regression)."""
+        ext_dir = project_dir / ".specify" / "extensions" / "conventionext"
+        tmpl_dir = ext_dir / "templates"
+        tmpl_dir.mkdir(parents=True, exist_ok=True)
+        (tmpl_dir / "legacy-template.md").write_text("# Legacy Template\n")
+        # No extension.yml at all -- purely convention-based, unregistered extension.
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("legacy-template", "template")
+        assert layers, "expected convention-based lookup to still find the template"
+        assert layers[0]["path"] == tmpl_dir / "legacy-template.md"
+
 
 # ===== _replay_wraps_for_command Tests =====
 

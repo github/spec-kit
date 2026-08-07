@@ -5426,18 +5426,25 @@ class PresetResolver:
                 continue
             # Try convention-based lookup first
             candidate = _find_in_subdirs(ext_dir)
-            # If not found and this is a command, check extension manifest
-            if candidate is None and template_type == "command":
+            # If not found, check the extension manifest for a declared
+            # command/template/script entry with this name.
+            if candidate is None and template_type in ("command", "template", "script"):
                 ext_manifest_path = ext_dir / "extension.yml"
                 if ext_manifest_path.exists():
                     try:
                         from ..extensions import ExtensionManifest, ValidationError as ExtValidationError
                         ext_manifest = ExtensionManifest(ext_manifest_path)
-                        for cmd in ext_manifest.commands:
-                            if cmd.get("name") == template_name:
-                                cmd_file = cmd.get("file")
-                                if cmd_file:
-                                    c = ext_dir / cmd_file
+                        if template_type == "command":
+                            entries = ext_manifest.commands
+                        elif template_type == "template":
+                            entries = ext_manifest.templates
+                        else:
+                            entries = ext_manifest.scripts
+                        for entry in entries:
+                            if entry.get("name") == template_name:
+                                entry_file = entry.get("file")
+                                if entry_file:
+                                    c = ext_dir / entry_file
                                     if c.exists():
                                         candidate = c
                                 break
