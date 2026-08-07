@@ -177,11 +177,16 @@ Compatibility requirements.
 
 What the extension provides.
 
-**Optional sub-fields** (at least one of `commands`, `templates`, `scripts`, `hooks`, or `events` is required):
+**Optional sub-fields:**
 
 - `commands`: Array of command objects
 - `templates`: Array of template objects
 - `scripts`: Array of script objects
+
+`hooks` and `events` are separate top-level manifest fields (siblings of
+`provides`, not nested under it — see [`hooks`](#hooks) below). At least one
+of `provides.commands`, `provides.templates`, `provides.scripts`, `hooks`, or
+`events` is required.
 
 **Command object**:
 
