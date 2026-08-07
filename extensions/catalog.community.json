@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-04T00:00:00Z",
+  "updated_at": "2026-08-05T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -389,6 +389,44 @@
       "stars": 0,
       "created_at": "2026-03-14T00:00:00Z",
       "updated_at": "2026-08-04T00:00:00Z"
+    },
+    "atlas": {
+      "name": "spec-kit-atlas",
+      "id": "atlas",
+      "description": "Synthesize spec-kit specs into faithful, interactive architecture storybooks & doc portals.",
+      "author": "Ash Brener",
+      "version": "0.1.0",
+      "download_url": "https://github.com/ashbrener/spec-kit-atlas/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/ashbrener/spec-kit-atlas",
+      "homepage": "https://github.com/ashbrener/spec-kit-atlas",
+      "documentation": "https://github.com/ashbrener/spec-kit-atlas/blob/main/README.md",
+      "changelog": "https://github.com/ashbrener/spec-kit-atlas/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-only",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          { "name": "python", "version": ">=3.11", "required": true },
+          { "name": "uv", "required": true }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "documentation",
+        "architecture",
+        "storybook",
+        "traceability",
+        "atlas"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-05T00:00:00Z",
+      "updated_at": "2026-08-05T00:00:00Z"
     },
     "azure-devops": {
       "name": "Azure DevOps Integration",
