@@ -899,3 +899,33 @@ def test_bundle_info_resolves_ghes_browser_release_url(project: Path):
 
     payload = json.loads(result.output)
     assert payload["id"] == "demo-bundle"
+
+
+def test_bundle_download_rejects_oversized_response(project: Path, monkeypatch):
+    """Bundle download rejects responses exceeding MAX_DOWNLOAD_BYTES."""
+    # Monkeypatch to a small limit so the test is fast and low-memory.
+    monkeypatch.setattr(
+        "specify_cli.commands.bundle.MAX_DOWNLOAD_BYTES", 100
+    )
+
+    api_asset_url = "https://api.github.com/repos/org/repo/releases/assets/99"
+
+    def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+        # Return a response that exceeds 100 bytes.
+        return FakeBundleResponse(b"x" * 200, url=api_asset_url)
+
+    catalog = project / "catalog.json"
+    write_catalog_file(
+        catalog,
+        {"demo-bundle": catalog_entry_dict("demo-bundle", download_url=api_asset_url)},
+    )
+    _make_catalog_config(catalog, project)
+
+    with patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+        result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json"])
+
+    # Must fail with a size-limit error, not an unhandled traceback.
+    assert result.exit_code == 1
+    # Rich may wrap the message across lines; normalise whitespace before checking.
+    output_flat = " ".join(result.output.split())
+    assert "exceeds maximum size of 100 bytes" in output_flat
