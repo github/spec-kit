@@ -30,6 +30,61 @@ def _write_overlay_file(project_dir: Path, workflow_id: str, overlay_id: str, da
     return path
 
 
+class TestProjectOverlaySourceManifestShape:
+    """A non-mapping overlay manifest is reported as a shape error."""
+
+    @pytest.mark.parametrize(
+        "content", ["[]", "false", "0", "''", "null", "~", "NULL"]
+    )
+    def test_falsy_non_mapping_manifest_reports_shape_error(
+        self, project_dir: Path, content: str
+    ) -> None:
+        """Every non-mapping document reports the mapping-shape error.
+
+        `validate_overlay_yaml` opens with an `isinstance(data, dict)` check, so a
+        truthy non-mapping (`- a`, `hello`) correctly reports "Overlay manifest
+        must be a mapping." Two things masked that for other documents:
+
+        * `yaml.safe_load(...) or {}` replaced the falsy shapes `[]`, `false`,
+          `0` and `''` with an empty mapping.
+        * `safe_load` returns `None` for an explicit null scalar (`null`, `~`,
+          `NULL`) as well as for an empty document, so a `data is None` check
+          swallowed those too.
+
+        Both now reach the validator unchanged; only a genuinely empty document
+        is normalised to `{}` (pinned separately below), using `yaml.compose`,
+        which yields no node only for an empty document.
+        """
+        ov_dir = project_dir / ".specify" / "workflows" / "overlays" / "wf"
+        ov_dir.mkdir(parents=True, exist_ok=True)
+        (ov_dir / "ov.yml").write_text(content, encoding="utf-8")
+
+        source = ProjectOverlaySource(project_dir)
+        with pytest.raises(OverlayLoadError) as exc_info:
+            source.collect("wf")
+
+        assert exc_info.value.errors == ["Overlay manifest must be a mapping."], (
+            exc_info.value.errors
+        )
+
+    def test_empty_document_still_reports_missing_fields(
+        self, project_dir: Path
+    ) -> None:
+        """An empty document is not a wrong shape — it is a mapping with no keys,
+        so the missing-field errors must still be what is reported."""
+        ov_dir = project_dir / ".specify" / "workflows" / "overlays" / "wf"
+        ov_dir.mkdir(parents=True, exist_ok=True)
+        (ov_dir / "ov.yml").write_text("", encoding="utf-8")
+
+        source = ProjectOverlaySource(project_dir)
+        with pytest.raises(OverlayLoadError) as exc_info:
+            source.collect("wf")
+
+        assert any("is required" in err for err in exc_info.value.errors), (
+            exc_info.value.errors
+        )
+
+
 class TestProjectOverlaySourceFileReadErrors:
     """File-read errors must be wrapped in OverlayLoadError, not leaked as raw tracebacks."""
 
