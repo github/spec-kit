@@ -213,7 +213,7 @@ def handle_vscode_settings(sub_item, dest_file, rel_path, verbose=False, tracker
             shutil.copy2(sub_item, dest_file)
             log("Copied (no existing settings.json):", "blue")
 
-    except Exception as e:
+    except (OSError, ValueError, KeyError) as e:
         log(f"Warning: Could not merge settings: {e}", "yellow")
         if not dest_file.exists():
             shutil.copy2(sub_item, dest_file)
