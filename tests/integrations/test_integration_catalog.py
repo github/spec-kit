@@ -392,6 +392,125 @@ class TestCatalogFetch:
         with pytest.raises(IntegrationCatalogError, match="exceeds maximum size"):
             cat._fetch_single_catalog(entry, force_refresh=True)
 
+    def _patch_urlopen_bytes(self, monkeypatch, bodies):
+        """Patch urlopen to serve raw *bodies* keyed by URL substring.
+
+        Mirrors ``_patch_urlopen`` but passes the bytes through verbatim: these
+        tests need a body that is not valid UTF-8, which ``json.dumps`` cannot
+        produce.
+        """
+
+        class _RawResponse:
+            def __init__(self, data, url):
+                self._data = data
+                self._url = url
+                self._offset = 0
+
+            def read(self, size=-1):
+                if size == -1:
+                    chunk = self._data[self._offset:]
+                    self._offset = len(self._data)
+                else:
+                    chunk = self._data[self._offset:self._offset + size]
+                    self._offset += len(chunk)
+                return chunk
+
+            def geturl(self):
+                return self._url
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+        def fake_urlopen(req, timeout=10):
+            url = req if isinstance(req, str) else req.full_url
+            for marker, body in bodies.items():
+                if marker in url:
+                    return _RawResponse(body, url)
+            raise AssertionError(f"unexpected URL requested: {url}")
+
+        import specify_cli.authentication.http as _auth_http
+        monkeypatch.setattr(_auth_http.urllib.request, "urlopen", fake_urlopen)
+
+    def test_fetch_wraps_non_utf8_catalog_response(self, tmp_path, monkeypatch):
+        """Regression: a non-UTF-8 response body must raise IntegrationCatalogError.
+
+        ``.decode("utf-8")`` runs before ``json.loads``, so the resulting
+        UnicodeDecodeError is not a JSONDecodeError and slipped past both
+        handlers as a raw traceback.
+        """
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+        (tmp_path / ".specify").mkdir(exist_ok=True)
+        cat = IntegrationCatalog(tmp_path)
+
+        self._patch_urlopen_bytes(
+            monkeypatch,
+            {"catalog.json": b'{"schema_version": "1.0", "name": "\xff\xfe"}'},
+        )
+
+        entry = IntegrationCatalogEntry(
+            url="https://example.com/catalog.json",
+            name="test",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with pytest.raises(IntegrationCatalogError, match="not valid UTF-8"):
+            cat._fetch_single_catalog(entry, force_refresh=True)
+
+    def test_search_skips_non_utf8_catalog(self, tmp_path, monkeypatch, capsys):
+        """A single non-UTF-8 catalog must not take down the whole search.
+
+        ``_get_merged_integrations`` is built to warn and continue on a bad
+        catalog; an unwrapped UnicodeDecodeError defeated that entirely.
+        """
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+        specify = tmp_path / ".specify"
+        specify.mkdir(exist_ok=True)
+        (specify / "integration-catalogs.yml").write_text(
+            "catalogs:\n"
+            "  - name: broken\n"
+            "    url: https://example.com/broken.json\n"
+            "    priority: 1\n"
+            "  - name: healthy\n"
+            "    url: https://example.com/healthy.json\n"
+            "    priority: 2\n",
+            encoding="utf-8",
+        )
+
+        healthy = json.dumps(
+            {
+                "schema_version": "1.0",
+                "integrations": {
+                    "acme-coder": {
+                        "name": "Acme Coder",
+                        "version": "1.0.0",
+                        "description": "Acme integration",
+                    }
+                },
+            }
+        ).encode("utf-8")
+
+        self._patch_urlopen_bytes(
+            monkeypatch,
+            {
+                "broken.json": b'{"schema_version": "1.0", "name": "\xff\xfe"}',
+                "healthy.json": healthy,
+            },
+        )
+
+        cat = IntegrationCatalog(tmp_path)
+        results = cat.search()
+
+        assert "acme-coder" in [r["id"] for r in results]
+        assert "broken" in capsys.readouterr().err
+
     def test_search_by_tag(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("USERPROFILE", str(tmp_path))
