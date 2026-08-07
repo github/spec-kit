@@ -4995,6 +4995,64 @@ class PresetResolver:
                 return tmpl, None
         return None, None
 
+    def _extension_manifest_declared_template(
+        self, ext_dir: Path, template_name: str, template_type: str
+    ) -> tuple[dict | None, Path | None]:
+        """Resolve an extension's manifest-declared command/template/script entry and usable file.
+
+        Mirrors ``_manifest_declared_template`` (for presets): returns ``(entry, candidate)``
+        where ``entry`` is the matching ``provides.<type>`` mapping, or ``None`` if the
+        extension has no (valid) manifest or doesn't declare this ``(name, type)``.
+        ``candidate`` is the declared ``file:`` resolved under ``ext_dir`` IFF it is a
+        regular file that stays within ``ext_dir`` (guards against path traversal via a
+        malformed manifest, mirroring ``resolve_extension_command_via_manifest``);
+        ``None`` otherwise.
+
+        The manifest is authoritative: when ``entry`` is not ``None`` but ``candidate`` is
+        ``None``, callers must NOT fall back to convention-based lookup — that would mask
+        a typo or pick up an undeclared file. Shared by ``resolve()`` and
+        ``collect_all_layers()`` so their manifest-first resolution cannot silently
+        diverge (the divergence flagged in review on #4012).
+        """
+        if template_type not in ("command", "template", "script"):
+            return None, None
+        ext_manifest_path = ext_dir / "extension.yml"
+        if not ext_manifest_path.exists():
+            return None, None
+        from ..extensions import ExtensionManifest, ValidationError as ExtValidationError
+
+        try:
+            ext_manifest = ExtensionManifest(ext_manifest_path)
+        except (ExtValidationError, yaml.YAMLError, OSError, TypeError, AttributeError):
+            return None, None
+        if template_type == "command":
+            entries = ext_manifest.commands
+        elif template_type == "template":
+            entries = ext_manifest.templates
+        else:
+            entries = ext_manifest.scripts
+        for entry in entries:
+            if entry.get("name") != template_name:
+                continue
+            file_rel = entry.get("file")
+            if not file_rel:
+                return entry, None
+            rel_path = Path(file_rel)
+            if rel_path.is_absolute():
+                return entry, None
+            candidate = ext_dir / rel_path
+            try:
+                # Resolve only for the containment check, not for the
+                # returned path -- resolving the returned path would follow
+                # symlinks in ext_dir's ancestors (e.g. a symlinked tmp dir
+                # on macOS) and diverge from the unresolved paths convention
+                # lookup returns for the same directory.
+                candidate.resolve().relative_to(ext_dir.resolve())  # raises ValueError if outside
+            except (OSError, ValueError):
+                return entry, None
+            return entry, (candidate if candidate.is_file() else None)
+        return None, None
+
     def _get_all_extensions_by_priority(self) -> list[tuple[int, str, dict | None]]:
         """Build unified list of registered and unregistered extensions sorted by priority.
 
@@ -5130,6 +5188,16 @@ class PresetResolver:
         for _priority, ext_id, _metadata in self._get_all_extensions_by_priority():
             ext_dir = self.extensions_dir / ext_id
             if not ext_dir.is_dir():
+                continue
+            # The extension manifest is authoritative, same as preset manifests
+            # above: check it before convention-based lookup so a declared entry
+            # at a non-conventional path wins over a stale conventional file.
+            entry, manifest_candidate = self._extension_manifest_declared_template(
+                ext_dir, template_name, template_type
+            )
+            if manifest_candidate is not None:
+                return manifest_candidate
+            if entry is not None:
                 continue
             for subdir in subdirs:
                 if subdir:
@@ -5440,27 +5508,15 @@ class PresetResolver:
             ext_dir = self.extensions_dir / ext_id
             if not ext_dir.is_dir():
                 continue
-            # Try convention-based lookup first
-            candidate = _find_in_subdirs(ext_dir)
-            # If not found and this is a command, check extension manifest
-            if candidate is None and template_type == "command":
-                ext_manifest_path = ext_dir / "extension.yml"
-                if ext_manifest_path.exists():
-                    try:
-                        from ..extensions import ExtensionManifest, ValidationError as ExtValidationError
-                        ext_manifest = ExtensionManifest(ext_manifest_path)
-                        for cmd in ext_manifest.commands:
-                            if cmd.get("name") == template_name:
-                                cmd_file = cmd.get("file")
-                                if cmd_file:
-                                    c = ext_dir / cmd_file
-                                    if c.exists():
-                                        candidate = c
-                                break
-                    except (ExtValidationError, yaml.YAMLError):
-                        # Invalid extension manifest — fall back to
-                        # convention-based lookup (already attempted above).
-                        pass
+            # The extension manifest is authoritative, same as preset manifests
+            # above: check it before convention-based lookup so a declared entry
+            # at a non-conventional path wins over a stale conventional file, and
+            # a declared-but-missing file isn't silently masked by convention.
+            entry, candidate = self._extension_manifest_declared_template(
+                ext_dir, template_name, template_type
+            )
+            if entry is None:
+                candidate = _find_in_subdirs(ext_dir)
             if candidate:
                 if ext_meta:
                     version = ext_meta.get("version", "?")
