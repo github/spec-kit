@@ -1,0 +1,41 @@
+# GitHub Issues Integration Configuration
+# Copy this to github-issues-config.yml and customize
+
+# GitHub repository settings
+repository:
+  # Default repository owner (can be overridden per command)
+  owner: ""
+  # Default repository name (can be overridden per command)
+  name: ""
+
+# Import settings
+import:
+  # Include issue comments in the generated spec
+  include_comments: true
+  # Maximum number of comments to include (0 = unlimited)
+  max_comments: 0
+  # Include issue labels as tags in spec
+  include_labels: true
+
+# Sync settings
+sync:
+  # Automatically detect changes in linked issues
+  auto_detect: true
+  # Prompt before applying changes
+  prompt_before_sync: true
+
+# Link settings
+link:
+  # Add issue link to spec frontmatter
+  add_to_frontmatter: true
+  # Add issue reference to spec body
+  add_to_body: true
+  # Link format in spec body
+  link_format: "**Source Issue:** [{repo}#{number}]({url})"
+
+# Authentication
+# Use GitHub CLI authentication (gh auth login)
+# Or set GITHUB_TOKEN environment variable
+auth:
+  # Use gh CLI for authentication (recommended)
+  use_gh_cli: true
