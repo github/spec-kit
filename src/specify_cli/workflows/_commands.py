@@ -1383,7 +1383,7 @@ def workflow_run(
         err.print(f"[red]Error:[/red] Workflow not found: {source}")
         raise typer.Exit(1)
     except ValueError as exc:
-        err.print(f"[red]Error:[/red] Invalid workflow: {exc}")
+        err.print(f"[red]Error:[/red] Invalid workflow: {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     # Validate
