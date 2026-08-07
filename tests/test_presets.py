@@ -11298,6 +11298,103 @@ class TestWrapStrategy:
         assert layers, "expected convention-based lookup to still find the template"
         assert layers[0]["path"] == tmpl_dir / "legacy-template.md"
 
+    def test_extension_manifest_wins_over_stale_conventional_file(self, project_dir):
+        """A declared entry is authoritative even when a stale file also sits at
+        the conventional path (templates/<name>.md) — the manifest must win,
+        not the convention lookup, per #4010's acceptance criteria."""
+        ext_dir = project_dir / ".specify" / "extensions" / "bothpathsext"
+        (ext_dir / "templates").mkdir(parents=True, exist_ok=True)
+        (ext_dir / "custom").mkdir(parents=True, exist_ok=True)
+
+        # Stale file at the conventional path -- must NOT win.
+        (ext_dir / "templates" / "report-scaffold.md").write_text("# Stale\n")
+        # Declared file at a non-conventional path -- must win.
+        (ext_dir / "custom" / "bar.md").write_text("# Actual\n")
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: bothpathsext\n  name: Both Paths Ext\n  version: 1.0.0\n"
+            "  description: test\n  author: test\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n"
+            "  templates:\n"
+            "    - name: report-scaffold\n"
+            "      file: custom/bar.md\n"
+            "      description: Report scaffold\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+
+        layers = resolver.collect_all_layers("report-scaffold", "template")
+        assert layers, "expected the manifest-declared template to resolve"
+        assert layers[0]["path"] == ext_dir / "custom" / "bar.md"
+
+        resolved = resolver.resolve("report-scaffold", "template")
+        assert resolved == ext_dir / "custom" / "bar.md"
+
+        with_source = resolver.resolve_with_source("report-scaffold", "template")
+        assert with_source["path"] == str(ext_dir / "custom" / "bar.md")
+
+    def test_extension_manifest_declared_but_missing_file_does_not_fall_back(self, project_dir):
+        """A declared entry whose file is missing is authoritative -- the
+        resolver must not silently mask the typo by falling back to a
+        conventional file that happens to also exist."""
+        ext_dir = project_dir / ".specify" / "extensions" / "missingfileext"
+        (ext_dir / "scripts").mkdir(parents=True, exist_ok=True)
+
+        # A conventional file exists, but the manifest declares a different,
+        # non-existent file for the same name.
+        (ext_dir / "scripts" / "myext-collect.sh").write_text("#!/usr/bin/env bash\necho legacy\n")
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: missingfileext\n  name: Missing File Ext\n  version: 1.0.0\n"
+            "  description: test\n  author: test\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n"
+            "  scripts:\n"
+            "    - name: myext-collect\n"
+            "      file: scripts/does-not-exist.sh\n"
+            "      description: Data-collection helper\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+
+        assert resolver.collect_all_layers("myext-collect", "script") == []
+        assert resolver.resolve("myext-collect", "script") is None
+
+    def test_extension_script_resolve_and_resolve_with_source_parity(self, project_dir):
+        """resolve() and resolve_with_source() must find a manifest-declared
+        script at a non-conventional path, matching collect_all_layers()."""
+        ext_dir = project_dir / ".specify" / "extensions" / "collectext2"
+        script_dir = ext_dir / "scripts" / "bash"
+        script_dir.mkdir(parents=True, exist_ok=True)
+
+        (script_dir / "collect.sh").write_text("#!/usr/bin/env bash\necho collect\n")
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: collectext2\n  name: Collect Ext 2\n  version: 1.0.0\n"
+            "  description: test\n  author: test\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n"
+            "  scripts:\n"
+            "    - name: myext-collect2\n"
+            "      file: scripts/bash/collect.sh\n"
+            "      description: Data-collection helper\n"
+            "      runtimes: [bash]\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+
+        resolved = resolver.resolve("myext-collect2", "script")
+        assert resolved == script_dir / "collect.sh"
+
+        with_source = resolver.resolve_with_source("myext-collect2", "script")
+        assert with_source is not None
+        assert with_source["path"] == str(script_dir / "collect.sh")
+        assert with_source["source"] == "extension:collectext2 (unregistered)"
+
 
 # ===== _replay_wraps_for_command Tests =====
 
