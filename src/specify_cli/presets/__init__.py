@@ -1801,7 +1801,7 @@ class PresetManager:
                                     )
                                     record_written(written)
                                     registered = True
-                            except Exception:
+                            except (ImportError, FileNotFoundError, OSError, ValueError, TypeError):
                                 # Extension registration failed; fall back to
                                 # generic path-based registration below.
                                 pass
