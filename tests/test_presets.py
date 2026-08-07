@@ -10790,6 +10790,35 @@ class TestWrapStrategy:
         assert "{CORE_TEMPLATE}" in result
         assert core_fm == {}
 
+    def test_substitute_core_template_unreadable_core_treated_as_missing(
+        self, project_dir
+    ):
+        """An undecodable core template must not crash substitution.
+
+        The wrap-strategy callers (``CommandRegistrar.register_pack`` and
+        ``_register_commands``) skip an unreadable preset source with a
+        warning, but the core template read inside
+        ``_substitute_core_template`` had no boundary, so one corrupted
+        project-owned override in ``.specify/templates/commands/`` crashed
+        the whole registration with a raw ``UnicodeDecodeError``. An
+        unreadable core is treated like a missing one.
+        """
+        from specify_cli.presets import _substitute_core_template
+        from specify_cli.agents import CommandRegistrar
+
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_bytes(b"\xff\xfe not utf-8")
+
+        registrar = CommandRegistrar()
+        body = "Pre.\n\n{CORE_TEMPLATE}\n\nPost.\n"
+        with pytest.warns(UserWarning, match="Ignoring core template"):
+            result, core_fm = _substitute_core_template(
+                body, "specify", project_dir, registrar
+            )
+        assert result == body
+        assert core_fm == {}
+
     def test_register_commands_substitutes_core_template_for_wrap_strategy(self, project_dir):
         """register_commands substitutes {CORE_TEMPLATE} when strategy: wrap."""
         from specify_cli.agents import CommandRegistrar

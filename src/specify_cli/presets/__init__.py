@@ -178,7 +178,7 @@ def _substitute_core_template(
         by the core template body and core_frontmatter holds the core template's parsed
         frontmatter (so callers can inherit scripts/agent_scripts from it).  Both are
         unchanged / empty when the placeholder is absent or the core template file does
-        not exist.
+        not exist or cannot be read.
     """
     if "{CORE_TEMPLATE}" not in body:
         return body, {}
@@ -208,7 +208,23 @@ def _substitute_core_template(
     if core_file is None:
         return body, {}
 
-    core_frontmatter, core_body = registrar.parse_frontmatter(core_file.read_text(encoding="utf-8"))
+    # Treat an unreadable/undecodable core template like a missing one so a
+    # single corrupted project override cannot crash command registration —
+    # the wrap-strategy callers already skip an unreadable preset source with
+    # a warning (CommandRegistrar.register_pack).
+    try:
+        core_content = core_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        import warnings
+
+        warnings.warn(
+            f"Ignoring core template for command '{cmd_name}': could not read "
+            f"'{core_file.name}' ({exc.__class__.__name__}: {exc}).",
+            stacklevel=2,
+        )
+        return body, {}
+
+    core_frontmatter, core_body = registrar.parse_frontmatter(core_content)
     return body.replace("{CORE_TEMPLATE}", core_body), core_frontmatter
 
 
