@@ -62,6 +62,23 @@ def _content_sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+def _atomic_write_text(path: Path, content: str) -> None:
+    """Write *content* to *path* atomically via mkstemp + os.replace."""
+    fd, tmp = tempfile.mkstemp(
+        dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def _constitution_is_generated(
     project_root: Path,
     memory_constitution: Path,
@@ -900,7 +917,7 @@ class PresetManager:
                             composed_dir = preset_dir / ".composed"
                             composed_dir.mkdir(parents=True, exist_ok=True)
                         composed_file = composed_dir / f"{cmd['name']}.md"
-                        composed_file.write_text(composed, encoding="utf-8")
+                        _atomic_write_text(composed_file, composed)
                         commands_to_register.append({
                             **cmd,
                             "file": f".composed/{cmd['name']}.md",
@@ -1890,7 +1907,7 @@ class PresetManager:
                             composed_dir = pack_dir / ".composed"
                             composed_dir.mkdir(parents=True, exist_ok=True)
                             composed_file = composed_dir / f"{cmd_name}.md"
-                            composed_file.write_text(composed, encoding="utf-8")
+                            _atomic_write_text(composed_file, composed)
                             written = self._register_for_non_skill_agents(
                                 registrar,
                                 [{**tmpl, "file": f".composed/{cmd_name}.md"}],
@@ -1910,7 +1927,7 @@ class PresetManager:
                     shared_composed = self.presets_dir / ".composed"
                     shared_composed.mkdir(parents=True, exist_ok=True)
                     composed_file = shared_composed / f"{cmd_name}.md"
-                    composed_file.write_text(composed, encoding="utf-8")
+                    _atomic_write_text(composed_file, composed)
                     source = layers[0]["source"]
                     if source.startswith("extension:"):
                         source_id = source.split(":", 1)[1].split(" ", 1)[0]
