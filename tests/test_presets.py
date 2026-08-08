@@ -9174,6 +9174,91 @@ class TestPresetSkills:
             "---\nname: speckit-specify\n---\n\nuser-owned content\n"
         )
 
+    def test_unregister_skills_in_dir_unreadable_core_template_skips(
+        self, project_dir
+    ):
+        """An undecodable core template must not crash `preset remove`.
+
+        Every other failure in the restore loop — an unsafe registry name,
+        a missing skill subdirectory, a foreign owner — skips the skill
+        with ``continue``. The core-template read was outside that
+        boundary, so one non-UTF-8 project-owned override in
+        ``.specify/templates/commands/`` raised a raw ``UnicodeDecodeError``
+        straight out of ``PresetManager.remove()``, which has no handler
+        for it. Sibling reads of the very same directory are already
+        guarded (``_substitute_core_template``, the provenance reads in
+        ``_infer_legacy_skill_provenance``).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = project_dir / ".claude" / "skills"
+        skill_dir = self._create_skill(
+            skills_dir, "speckit-specify", "installed content"
+        )
+        core_commands = project_dir / ".specify" / "templates" / "commands"
+        core_commands.mkdir(parents=True, exist_ok=True)
+        (core_commands / "specify.md").write_bytes(
+            b"---\ndescription: \xff\xfe not utf-8\n---\n\nCore body\n"
+        )
+
+        manager = PresetManager(project_dir)
+        mutated = manager._unregister_skills_in_dir(
+            ["speckit-specify"], skills_dir, "claude"
+        )
+
+        assert mutated == [], (
+            "a skill whose restore source could not be read was not "
+            "restored, so it must not be reported as mutated"
+        )
+        assert (skill_dir / "SKILL.md").read_text(encoding="utf-8") == (
+            "---\nname: speckit-specify\n---\n\ninstalled content\n"
+        ), (
+            "an unreadable core template must leave the skill untouched — "
+            "falling through to the rmtree branch would delete it exactly "
+            "when its replacement cannot be generated"
+        )
+
+    def test_unregister_skills_in_dir_unreadable_core_template_oserror_skips(
+        self, project_dir, monkeypatch
+    ):
+        """The same boundary must cover ``OSError`` (e.g. permission denied).
+
+        Mocked rather than chmod-based so the case also holds under
+        privileged CI, where permission bits are not enforced.
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = project_dir / ".claude" / "skills"
+        skill_dir = self._create_skill(
+            skills_dir, "speckit-specify", "installed content"
+        )
+        core_commands = project_dir / ".specify" / "templates" / "commands"
+        core_commands.mkdir(parents=True, exist_ok=True)
+        core_template = core_commands / "specify.md"
+        core_template.write_text(
+            "---\ndescription: Core specify\n---\n\nCore body\n",
+            encoding="utf-8",
+        )
+
+        original_read_text = Path.read_text
+
+        def failing_read_text(self_path, *args, **kwargs):
+            if self_path == core_template:
+                raise PermissionError(13, "Permission denied")
+            return original_read_text(self_path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", failing_read_text)
+
+        manager = PresetManager(project_dir)
+        mutated = manager._unregister_skills_in_dir(
+            ["speckit-specify"], skills_dir, "claude"
+        )
+
+        monkeypatch.undo()
+
+        assert mutated == []
+        assert (skill_dir / "SKILL.md").read_text(encoding="utf-8") == (
+            "---\nname: speckit-specify\n---\n\ninstalled content\n"
+        )
+
     def test_unregister_skills_in_dir_rejects_absolute_registry_name(
         self, project_dir
     ):
