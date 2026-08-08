@@ -84,6 +84,15 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli", "skills"]
     },
+    "command-code": {
+      "id": "command-code",
+      "name": "Command Code",
+      "version": "1.0.0",
+      "description": "Command Code CLI skills-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "skills"]
+    },
     "devin": {
       "id": "devin",
       "name": "Devin for Terminal",

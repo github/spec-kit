@@ -56,6 +56,7 @@ def _register_builtins() -> None:
     from .cline import ClineIntegration
     from .codebuddy import CodebuddyIntegration
     from .codex import CodexIntegration
+    from .command_code import CommandCodeIntegration
     from .copilot import CopilotIntegration
     from .cursor_agent import CursorAgentIntegration
     from .devin import DevinIntegration
@@ -95,6 +96,7 @@ def _register_builtins() -> None:
     _register(ClineIntegration())
     _register(CodebuddyIntegration())
     _register(CodexIntegration())
+    _register(CommandCodeIntegration())
     _register(CopilotIntegration())
     _register(CursorAgentIntegration())
     _register(DevinIntegration())
