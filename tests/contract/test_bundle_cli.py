@@ -217,6 +217,31 @@ def test_catalog_remove_builtin_is_refused(project: Path):
     assert "built-in" in result.output
 
 
+# Every ``bundle`` error path funnels through ``_fail(str(exc))``, and the
+# BundlerError messages interpolate untrusted data -- including the command's
+# own argument. An unbalanced closer used to raise MarkupError instead of the
+# error, leaving the user with a traceback and no message at all.
+@pytest.mark.parametrize(
+    "argv, expected",
+    [
+        (
+            ["bundle", "catalog", "add", "ssh://ex[/red]ample.com/c.json"],
+            "ssh://ex[/red]ample.com/c.json",
+        ),
+        (["bundle", "catalog", "remove", "no[/red]such"], "no[/red]such"),
+        (["bundle", "update", "no[/red]such"], "no[/red]such"),
+        (["bundle", "remove", "no[/red]such"], "no[/red]such"),
+    ],
+)
+def test_error_paths_escape_rich_markup(project: Path, argv: list, expected: str):
+    result = runner.invoke(app, argv)
+
+    assert result.exit_code == 1
+    # A MarkupError would surface here as an exception rather than a clean exit.
+    assert isinstance(result.exception, SystemExit)
+    assert expected in strip_ansi(result.output)
+
+
 def test_validate_reports_invalid_manifest(project: Path):
     data = valid_manifest_dict()
     del data["bundle"]["license"]
@@ -235,6 +260,33 @@ def test_validate_accepts_valid_manifest(project: Path):
     result = runner.invoke(app, ["bundle", "validate", "--offline"])
     assert result.exit_code == 0, result.output
     assert "valid" in result.output
+
+
+def test_validate_escapes_manifest_markup_in_errors(project: Path):
+    data = valid_manifest_dict()
+    # An invalid constraint is echoed back inside the validation error.
+    data["requires"] = {"speckit_version": ">=1.0[/bold]"}
+    (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    result = runner.invoke(app, ["bundle", "validate", "--offline"])
+
+    assert result.exit_code == 1
+    assert isinstance(result.exception, SystemExit)
+    assert ">=1.0[/bold]" in strip_ansi(result.output)
+
+
+def test_validate_escapes_manifest_markup_in_warnings(project: Path):
+    data = valid_manifest_dict()
+    # Step ids are not charset-validated, and the unresolved-reference warning
+    # echoes them -- so an otherwise *valid* manifest crashed just as readily as
+    # an invalid one, on the success path.
+    data["provides"]["steps"] = [{"id": "step[/bold]a"}]
+    (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    result = runner.invoke(app, ["bundle", "validate", "--offline"])
+
+    assert result.exit_code == 0, repr(result.exception)
+    assert "step[/bold]a" in strip_ansi(result.output)
 
 
 def test_validate_rejects_broken_reference(project: Path):
