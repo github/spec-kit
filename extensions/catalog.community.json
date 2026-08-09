@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-04T00:00:00Z",
+  "updated_at": "2026-08-09T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -2106,6 +2106,40 @@
       "stars": 0,
       "created_at": "2026-06-08T00:00:00Z",
       "updated_at": "2026-06-24T00:00:00Z"
+    },
+    "keel": {
+      "name": "Keel Discovery",
+      "id": "keel",
+      "description": "A Spec Kit extension that puts customer evidence upstream of /speckit.specify, and audits what you shipped against it afterwards.",
+      "author": "Keel Discovery",
+      "version": "0.1.1",
+      "download_url": "https://github.com/keeldiscovery/spec-kit-keel/archive/refs/tags/v0.1.1.zip",
+      "repository": "https://github.com/keeldiscovery/spec-kit-keel",
+      "homepage": "https://keeldiscovery.com",
+      "documentation": "https://github.com/keeldiscovery/spec-kit-keel/blob/main/README.md",
+      "changelog": "https://github.com/keeldiscovery/spec-kit-keel/blob/main/CHANGELOG.md",
+      "license": "Apache-2.0",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.15.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 2
+      },
+      "tags": [
+        "discovery",
+        "evidence",
+        "customer-research",
+        "validation",
+        "traceability"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-09T00:00:00Z",
+      "updated_at": "2026-08-09T00:00:00Z"
     },
     "learn": {
       "name": "Learning Extension",
