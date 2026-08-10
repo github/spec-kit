@@ -7086,6 +7086,27 @@ class TestRunState:
         with pytest.raises(FileNotFoundError):
             RunState.load("nonexistent", project_dir)
 
+    def test_load_not_found_custom_message(self, project_dir):
+        """Regression: RunState.load() must raise FileNotFoundError with
+        the custom 'Run state not found:' message, not a raw OSError."""
+        from specify_cli.workflows.engine import RunState
+
+        with pytest.raises(FileNotFoundError, match=r"Run state not found:.*nonexistent"):
+            RunState.load("nonexistent", project_dir)
+
+    def test_load_not_found_no_exists_probe(self, project_dir):
+        """Regression: RunState.load() must not call exists() before open(),
+        so it cannot be tricked by a TOCTOU race where the file disappears
+        between the check and the read."""
+        from unittest.mock import patch
+        from specify_cli.workflows.engine import RunState
+
+        # Verify that a nonexistent state.json raises FileNotFoundError
+        # with the custom message even when we can't check exists() first.
+        with patch("builtins.open", side_effect=FileNotFoundError):
+            with pytest.raises(FileNotFoundError, match="Run state not found:"):
+                RunState.load("nonexistent", project_dir)
+
     def test_load_rejects_stored_run_id_mismatch(self, project_dir):
         """The state payload cannot redirect later writes to another run."""
         from specify_cli.workflows.engine import RunState

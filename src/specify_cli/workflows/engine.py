@@ -733,11 +733,10 @@ class RunState:
         the lookup path. Without this guard, a caller passing a value like
         ``../escape`` (e.g. via ``specify workflow resume`` CLI argument)
         would interpolate path-traversal segments into
-        ``runs_dir`` below, letting ``state_path.exists()`` probe arbitrary
-        paths and ``json.load`` read attacker-planted JSON from outside
-        the project's ``runs/`` directory. ``__init__`` already runs this
-        check on the stored ``state_data["run_id"]``, but that fires
-        *after* the file lookup — too late to prevent the disclosure.
+        ``runs_dir`` below, letting ``open()`` read attacker-planted JSON
+        from outside the project's ``runs/`` directory. ``__init__`` already
+        runs this check on the stored ``state_data["run_id"]``, but that
+        fires *after* the file lookup — too late to prevent the disclosure.
         Mirrors the precedent in ``agents._ensure_within_directory``.
         """
         cls._validate_run_id(run_id)
