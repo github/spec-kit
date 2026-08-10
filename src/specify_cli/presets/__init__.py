@@ -2759,7 +2759,7 @@ class PresetManager:
             if frontmatter.get("strategy") == "wrap":
                 body, core_frontmatter = _substitute_core_template(body, cmd_name, self.project_root, registrar)
                 frontmatter = dict(frontmatter)
-                for key in ("scripts", "agent_scripts"):
+                for key in ("scripts", "agent_scripts", "argument-hint"):
                     if key not in frontmatter and key in core_frontmatter:
                         frontmatter[key] = core_frontmatter[key]
 
@@ -5814,7 +5814,7 @@ class PresetResolver:
             # Inherit scripts/agent_scripts from base frontmatter if missing
             if base_frontmatter_text and base_frontmatter_text != top_frontmatter_text:
                 base_fm = _parse_fm_yaml(base_frontmatter_text)
-                for key in ("scripts", "agent_scripts"):
+                for key in ("scripts", "agent_scripts", "argument-hint"):
                     if key not in top_fm and key in base_fm:
                         top_fm[key] = base_fm[key]
 
