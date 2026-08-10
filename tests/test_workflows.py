@@ -7453,6 +7453,71 @@ steps:
         assert len(runs) == 1
         assert runs[0]["workflow_id"] == "good-run"
 
+    def test_list_skips_invalid_utf8_with_valid_sibling(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        bad_dir = runs_dir / "bad-utf8"
+        bad_dir.mkdir(parents=True)
+        (bad_dir / "state.json").write_bytes(b"\xff\xfe invalid utf8")
+
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "good-run-utf8"
+  name: "Good Run UTF8"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    type: shell
+    run: "echo test"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        engine.execute(definition)
+
+        runs = engine.list_runs()
+        assert len(runs) == 1
+        assert runs[0]["workflow_id"] == "good-run-utf8"
+
+    def test_list_skips_oserror_with_valid_sibling(self, project_dir, monkeypatch):
+        import builtins
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        bad_dir = runs_dir / "bad-oserror"
+        bad_dir.mkdir(parents=True)
+        state_file = bad_dir / "state.json"
+        state_file.write_text('{"run_id": "bad"}', encoding="utf-8")
+
+        original_open = builtins.open
+
+        def _mock_open(path, *args, **kwargs):
+            if str(path).endswith("state.json") and "bad-oserror" in str(path):
+                raise OSError("permission denied")
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", _mock_open)
+
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "good-run-oserror"
+  name: "Good Run OSError"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    type: shell
+    run: "echo test"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        engine.execute(definition)
+
+        runs = engine.list_runs()
+        assert len(runs) == 1
+        assert runs[0]["workflow_id"] == "good-run-oserror"
+
 
 # ===== Workflow Registry Tests =====
 
