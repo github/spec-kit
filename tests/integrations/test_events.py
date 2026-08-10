@@ -868,6 +868,59 @@ class TestTomlMatcherEscaping:
         assert group["matcher"] == 'Ba"sh'
 
 
+class TestTomlUnreadableConfig:
+    """An undecodable user config.toml must not crash install or teardown.
+
+    Every JSON merge/remove path goes through ``_load_user_json``, which
+    skips on an unreadable or malformed file to preserve user content (#22).
+    The TOML merge and remove read the user's config.toml with no boundary,
+    so a non-UTF-8 (or otherwise unreadable) file crashed
+    ``install_integration_events``/``remove_integration_events`` with a raw
+    ``UnicodeDecodeError`` — and the merge path would have regenerated the
+    file, discarding the user's bytes, had it not crashed first.
+    """
+
+    def test_merge_skips_unreadable_config_and_preserves_bytes(self, tmp_path):
+        from specify_cli.integrations.codex import CodexIntegration
+
+        integration = CodexIntegration()
+        manifest = _claude_manifest(tmp_path)
+        config_path = tmp_path / ".codex" / "config.toml"
+        config_path.parent.mkdir(parents=True)
+        user_bytes = b"# codex config \xff\xfe not utf-8\n"
+        config_path.write_bytes(user_bytes)
+
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"pre_tool_use": [{"command": "speckit.tdd.validate"}]},
+        )
+
+        # User bytes preserved and the skipped file is not tracked (S5).
+        assert config_path.read_bytes() == user_bytes
+        manifest.record_existing.assert_not_called()
+
+    def test_teardown_skips_unreadable_config_and_preserves_bytes(self, tmp_path):
+        from specify_cli.integrations.codex import CodexIntegration
+
+        integration = CodexIntegration()
+        manifest = _claude_manifest(tmp_path)
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"pre_tool_use": [{"command": "speckit.tdd.validate"}]},
+        )
+        config_path = tmp_path / ".codex" / "config.toml"
+        assert config_path.is_file()
+
+        # The user (or another tool) rewrites the config as non-UTF-8
+        # between install and uninstall.
+        user_bytes = b"# rewritten \xff\xfe not utf-8\n"
+        config_path.write_bytes(user_bytes)
+
+        remove_integration_events(integration, tmp_path, manifest)
+
+        assert config_path.read_bytes() == user_bytes
+
+
 # -- Opencode TS Plugin merging ---------------------------------------------
 
 class TestOpencodePluginMerging:

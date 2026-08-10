@@ -341,6 +341,25 @@ class ExtensionManifest:
             )
         if "speckit_version" not in requires:
             raise ValidationError("Missing requires.speckit_version")
+        # Presence alone is not enough: check_compatibility() feeds this value to
+        # ``SpecifierSet(required)``, guarded only by ``except InvalidSpecifier``,
+        # which a non-string escapes two different ways. A float/int/bool/None
+        # raises TypeError from the constructor, while a list or dict is an
+        # *iterable*, so SpecifierSet accepts it and the failure surfaces much
+        # later as ``AttributeError: 'str' object has no attribute 'filter'`` from
+        # inside .contains(). Neither is a CompatibilityError, so both bypass the
+        # CLI's "Compatibility Error" handler and exit 1 with a raw traceback
+        # naming no field. An unquoted ``speckit_version: 1.0`` is an easy YAML
+        # slip. Mirrors the sibling IntegrationDescriptor, which already requires
+        # a non-empty string here.
+        if (
+            not isinstance(requires["speckit_version"], str)
+            or not requires["speckit_version"].strip()
+        ):
+            raise ValidationError(
+                "Invalid requires.speckit_version: expected a non-empty string, "
+                f"got {type(requires['speckit_version']).__name__}"
+            )
 
         # Validate provides section
         provides = self.data["provides"]
@@ -1885,6 +1904,17 @@ class ExtensionManager:
         required = manifest.requires_speckit_version
 
         # Parse version specifier (e.g., ">=0.1.0,<2.0.0")
+        # Defense in depth: the manifest validator now rejects a non-string
+        # requires.speckit_version, but this method is public and also reachable
+        # with a hand-built manifest object. ``InvalidSpecifier`` alone does not
+        # cover a non-string -- scalars raise TypeError from the constructor, and
+        # a list/dict is iterable so it constructs here and only breaks inside
+        # .contains(). Reject up front so this always reports a CompatibilityError.
+        if not isinstance(required, str):
+            raise CompatibilityError(
+                "Invalid version specifier: expected a string, got "
+                f"{type(required).__name__} ({required!r})"
+            )
         try:
             SpecifierSet(required)  # Just to validate
         except InvalidSpecifier:
@@ -2127,8 +2157,19 @@ class ExtensionManager:
                         _staged_modes = _loaded_modes
             for staged_name in sorted(staged_names):
                 staged_file = rescue_staging_dir / staged_name
-                staged_stat = staged_file.stat()
-                staged_bytes = staged_file.read_bytes()
+                # A staged backup that cannot be read or stat'ed must not
+                # crash the retry with a raw OSError: like an uncomparable
+                # live config below, treat it as a conflict so both copies
+                # are preserved and the user resolves it while dest_dir is
+                # still untouched. Every sibling read in this path (live
+                # twin, packaged baseline, mode sidecar) already catches
+                # OSError.
+                try:
+                    staged_stat = staged_file.stat()
+                    staged_bytes = staged_file.read_bytes()
+                except OSError:
+                    conflicting.add(staged_name)
+                    continue
                 # Prefer the sidecar-recorded mode; fall back to the staged
                 # file's own mode for backwards-compat with staging dirs
                 # written before the sidecar was introduced.
@@ -2220,10 +2261,24 @@ class ExtensionManager:
                         "a regular file or remove it — then reinstall."
                     )
                 if cfg_file.is_file():
-                    stranded_configs[cfg_file.name] = (
-                        cfg_file.read_bytes(),
-                        cfg_file.stat().st_mode,
-                    )
+                    # A kept config that cannot be read or stat'ed must not
+                    # crash the reinstall with a raw OSError — and must not
+                    # reach the rmtree below unrescued. Like the symlink
+                    # guard above, reject while dest_dir is untouched so the
+                    # preserved bytes are never lost.
+                    try:
+                        stranded_configs[cfg_file.name] = (
+                            cfg_file.read_bytes(),
+                            cfg_file.stat().st_mode,
+                        )
+                    except OSError as exc:
+                        raise ValidationError(
+                            "Preserved extension config for "
+                            f"'{manifest.id}' cannot be read "
+                            f"({cfg_file.name}) in {dest_dir}: {exc}. "
+                            "Resolve manually — fix its permissions or "
+                            "remove it — then reinstall."
+                        ) from exc
 
         if stranded_configs and not staging_is_complete:
             # Write a durable backup outside dest_dir before any

@@ -406,6 +406,37 @@ provides:
         with pytest.raises(PresetValidationError, match="Missing requires.speckit_version"):
             PresetManifest(manifest_path)
 
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            1.0,            # unquoted YAML float -- the likeliest authoring slip
+            5,              # unquoted int
+            True,           # YAML `yes`/`true`
+            None,           # `speckit_version:` written but left empty
+            [">=0.1.0"],    # iterable: slips past SpecifierSet() entirely
+            {"min": "0.1"},  # iterable: same
+            "   ",          # blank string must not mean "any version"
+        ],
+    )
+    def test_non_string_speckit_version(self, temp_dir, valid_pack_data, bad):
+        """A non-string requires.speckit_version must be a PresetValidationError.
+
+        It was presence-checked only, so it reached ``SpecifierSet(required)`` in
+        check_compatibility(), which is guarded by ``except InvalidSpecifier``
+        alone. A non-string escapes that guard two ways: scalars raise TypeError
+        from the constructor, and a list/dict is iterable so SpecifierSet accepts
+        it and the failure surfaces later as ``AttributeError: 'str' object has no
+        attribute 'filter'`` from inside .contains().
+        """
+        valid_pack_data["requires"]["speckit_version"] = bad
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        with pytest.raises(
+            PresetValidationError, match="Invalid requires.speckit_version"
+        ):
+            PresetManifest(manifest_path)
+
     def test_no_templates_provided(self, temp_dir, valid_pack_data):
         """Test pack with no templates."""
         valid_pack_data["provides"]["templates"] = []
@@ -961,6 +992,26 @@ class TestPresetManager:
         manager = PresetManager(temp_dir)
         manifest = PresetManifest(pack_dir / "preset.yml")
         manifest.data["requires"]["speckit_version"] = "not-a-specifier"
+        with pytest.raises(PresetCompatibilityError, match="Invalid version specifier"):
+            manager.check_compatibility(manifest, "0.1.5")
+
+    @pytest.mark.parametrize(
+        "bad",
+        [1.0, 5, True, None, [">=0.1.0"], {"min": "0.1"}],
+    )
+    def test_check_compatibility_non_string_specifier(self, pack_dir, temp_dir, bad):
+        """check_compatibility() must report a non-string as a compatibility error.
+
+        Defense in depth for the validator check: this method is public and the
+        specifier is read back out of mutable manifest data, and ``except
+        InvalidSpecifier`` does not cover a non-string. Without the guard, scalars
+        raise a bare TypeError and iterables construct fine only to break inside
+        .contains() -- neither is a PresetCompatibilityError, so both bypass the
+        CLI's "Compatibility Error" handler and exit 1 with a raw traceback.
+        """
+        manager = PresetManager(temp_dir)
+        manifest = PresetManifest(pack_dir / "preset.yml")
+        manifest.data["requires"]["speckit_version"] = bad
         with pytest.raises(PresetCompatibilityError, match="Invalid version specifier"):
             manager.check_compatibility(manifest, "0.1.5")
 

@@ -501,6 +501,11 @@ When an issue exists, include its number immediately after the prefix — this i
 
 Disclosure is **continuous**, not a one-time event. A single AI-disclosure paragraph in the PR body does **not** cover the commits and replies you add during review rounds. Each of the following must independently attest to agent authorship.
 
+### Opening pull requests
+
+- Before opening a pull request, check whether the account that will file it already has three open pull requests in this repository.
+- If so, alert the user that additional submissions may receive lower review priority and ask for explicit permission to proceed. Do not assume consent.
+
 ### Commits
 
 - **Every commit you author must carry an `Assisted-by:` trailer** identifying the agent and whether it acted autonomously or under direct human supervision, for example:
