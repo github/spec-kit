@@ -319,6 +319,65 @@ def test_build_produces_artifact(project: Path):
     assert len(artifacts) == 1
 
 
+def test_build_escapes_markup_in_output_path(project: Path):
+    """The build success line echoes a caller-supplied ``--output`` path.
+
+    Brackets are legal in a directory name on both POSIX and Windows, so the
+    artifact is built and *then* misreported: ``[bold]`` is consumed as a style
+    tag, and the success line names a path that does not exist on disk.
+
+    A closing tag (``[/red]``) would raise MarkupError outright, but ``/`` is a
+    path separator on Windows, so this uses the silent-swallow form to keep the
+    fixture portable.
+    """
+    (project / "bundle.yml").write_text(
+        yaml.safe_dump(valid_manifest_dict()), encoding="utf-8"
+    )
+    (project / "README.md").write_text("# Demo", encoding="utf-8")
+    out_dir = project / "dist[bold]out"
+
+    result = runner.invoke(app, ["bundle", "build", "--output", str(out_dir)])
+
+    assert result.exit_code == 0, repr(result.exception)
+    assert list(out_dir.glob("*.zip")), "the artifact should still be built"
+    assert "dist[bold]out" in strip_ansi(result.output), (
+        "the reported path must match the directory actually written"
+    )
+
+
+def test_list_escapes_markup_in_records(project: Path):
+    """``bundle list`` renders record fields that are never charset-validated.
+
+    ``InstalledBundleRecord.from_dict`` accepts any non-empty string for
+    ``bundle_id``/``version`` and any string for ``installed_at``, so a records
+    file that *loads cleanly* could still crash the command that displays it.
+    """
+    (project / ".specify" / "bundle-records.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "bundles": [
+                    {
+                        "bundle_id": "demo[/red]id",
+                        "version": "1.0.0[/bold]",
+                        "installed_at": "2026-01-01T00:00:00Z[/dim]",
+                        "contributed_components": [],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["bundle", "list"])
+
+    assert result.exit_code == 0, repr(result.exception)
+    output = strip_ansi(result.output)
+    assert "demo[/red]id" in output
+    assert "1.0.0[/bold]" in output
+    assert "2026-01-01T00:00:00Z[/dim]" in output
+
+
 def _mock_manifest_download(monkeypatch, source_path: Path) -> None:
     """Mock the HTTPS manifest fetch to return a locally-authored manifest.
 

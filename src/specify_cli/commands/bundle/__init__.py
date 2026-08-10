@@ -337,9 +337,10 @@ def bundle_list(
     console.print("\n[bold cyan]Installed bundles:[/bold cyan]\n")
     for record in records:
         console.print(
-            f"  [bold]{record.bundle_id}[/bold] v{record.version} "
+            f"  [bold]{_escape_markup(str(record.bundle_id))}[/bold] "
+            f"v{_escape_markup(str(record.version))} "
             f"[dim]({len(record.contributed_components)} components, "
-            f"installed {record.installed_at})[/dim]"
+            f"installed {_escape_markup(str(record.installed_at))})[/dim]"
         )
 
 
@@ -582,8 +583,9 @@ def bundle_build(
         return
 
     console.print(
-        f"[green]✓[/green] Built {result.artifact_path.name} "
-        f"({result.file_count} files) → {result.artifact_path}"
+        f"[green]✓[/green] Built {_escape_markup(result.artifact_path.name)} "
+        f"({result.file_count} files) → "
+        f"{_escape_markup(str(result.artifact_path))}"
     )
 
 
