@@ -14,6 +14,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Cline](https://github.com/cline/cline)                                              | `cline`          | IDE-based agent                                                                                                                           |
 | [CodeBuddy CLI](https://www.codebuddy.cn/docs/cli/installation)                      | `codebuddy`      |                                                                                                                                           |
 | [Codex CLI](https://github.com/openai/codex)                                         | `codex`          | Skills-based integration; installs skills into `.agents/skills` and invokes them as `$speckit-<command>` |
+| [Command Code](https://commandcode.ai/docs)                                          | `command-code`   | Skills-based integration; installs skills into `.commandcode/skills/` and invokes them as `$speckit-<command>` |
 | [Cursor](https://cursor.sh/)                                                         | `cursor-agent`   |                                                                                                                                           |
 | [Devin for Terminal](https://cli.devin.ai/docs)                                      | `devin`          | Skills-based integration; installs skills into `.devin/skills/` and invokes them as `/speckit-<command>` |
 | [Factory Droid](https://docs.factory.ai/cli/getting-started/overview)               | `droid`          | Skills-based integration; installs skills into `.factory/skills/` and invokes them as `/speckit-<command>`                               |
@@ -279,6 +280,7 @@ The currently declared multi-install safe integrations are:
 | `cline` | `.clinerules/workflows` |
 | `codebuddy` | `.codebuddy/commands` |
 | `codex` | `.agents/skills` |
+| `command-code` | `.commandcode/skills` |
 | `cursor-agent` | `.cursor/skills` |
 | `droid` | `.factory/skills` |
 | `firebender` | `.firebender/commands` |

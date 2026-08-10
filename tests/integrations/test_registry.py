@@ -28,7 +28,7 @@ ALL_INTEGRATION_KEYS = [
     "gemini", "tabnine",
     # Stage 5 — skills, generic & option-driven integrations
     "codex", "kimi", "agy", "zed", "generic",
-    "droid",
+    "droid", "command-code",
 ]
 
 
