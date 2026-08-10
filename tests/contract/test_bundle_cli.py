@@ -217,6 +217,31 @@ def test_catalog_remove_builtin_is_refused(project: Path):
     assert "built-in" in result.output
 
 
+# Every ``bundle`` error path funnels through ``_fail(str(exc))``, and the
+# BundlerError messages interpolate untrusted data -- including the command's
+# own argument. An unbalanced closer used to raise MarkupError instead of the
+# error, leaving the user with a traceback and no message at all.
+@pytest.mark.parametrize(
+    "argv, expected",
+    [
+        (
+            ["bundle", "catalog", "add", "ssh://ex[/red]ample.com/c.json"],
+            "ssh://ex[/red]ample.com/c.json",
+        ),
+        (["bundle", "catalog", "remove", "no[/red]such"], "no[/red]such"),
+        (["bundle", "update", "no[/red]such"], "no[/red]such"),
+        (["bundle", "remove", "no[/red]such"], "no[/red]such"),
+    ],
+)
+def test_error_paths_escape_rich_markup(project: Path, argv: list, expected: str):
+    result = runner.invoke(app, argv)
+
+    assert result.exit_code == 1
+    # A MarkupError would surface here as an exception rather than a clean exit.
+    assert isinstance(result.exception, SystemExit)
+    assert expected in strip_ansi(result.output)
+
+
 def test_validate_reports_invalid_manifest(project: Path):
     data = valid_manifest_dict()
     del data["bundle"]["license"]
@@ -235,6 +260,33 @@ def test_validate_accepts_valid_manifest(project: Path):
     result = runner.invoke(app, ["bundle", "validate", "--offline"])
     assert result.exit_code == 0, result.output
     assert "valid" in result.output
+
+
+def test_validate_escapes_manifest_markup_in_errors(project: Path):
+    data = valid_manifest_dict()
+    # An invalid constraint is echoed back inside the validation error.
+    data["requires"] = {"speckit_version": ">=1.0[/bold]"}
+    (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    result = runner.invoke(app, ["bundle", "validate", "--offline"])
+
+    assert result.exit_code == 1
+    assert isinstance(result.exception, SystemExit)
+    assert ">=1.0[/bold]" in strip_ansi(result.output)
+
+
+def test_validate_escapes_manifest_markup_in_warnings(project: Path):
+    data = valid_manifest_dict()
+    # Step ids are not charset-validated, and the unresolved-reference warning
+    # echoes them -- so an otherwise *valid* manifest crashed just as readily as
+    # an invalid one, on the success path.
+    data["provides"]["steps"] = [{"id": "step[/bold]a"}]
+    (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    result = runner.invoke(app, ["bundle", "validate", "--offline"])
+
+    assert result.exit_code == 0, repr(result.exception)
+    assert "step[/bold]a" in strip_ansi(result.output)
 
 
 def test_validate_rejects_broken_reference(project: Path):
@@ -265,6 +317,65 @@ def test_build_produces_artifact(project: Path):
     assert result.exit_code == 0, result.output
     artifacts = list((project / "dist").glob("*.zip"))
     assert len(artifacts) == 1
+
+
+def test_build_escapes_markup_in_output_path(project: Path):
+    """The build success line echoes a caller-supplied ``--output`` path.
+
+    Brackets are legal in a directory name on both POSIX and Windows, so the
+    artifact is built and *then* misreported: ``[bold]`` is consumed as a style
+    tag, and the success line names a path that does not exist on disk.
+
+    A closing tag (``[/red]``) would raise MarkupError outright, but ``/`` is a
+    path separator on Windows, so this uses the silent-swallow form to keep the
+    fixture portable.
+    """
+    (project / "bundle.yml").write_text(
+        yaml.safe_dump(valid_manifest_dict()), encoding="utf-8"
+    )
+    (project / "README.md").write_text("# Demo", encoding="utf-8")
+    out_dir = project / "dist[bold]out"
+
+    result = runner.invoke(app, ["bundle", "build", "--output", str(out_dir)])
+
+    assert result.exit_code == 0, repr(result.exception)
+    assert list(out_dir.glob("*.zip")), "the artifact should still be built"
+    assert "dist[bold]out" in strip_ansi(result.output), (
+        "the reported path must match the directory actually written"
+    )
+
+
+def test_list_escapes_markup_in_records(project: Path):
+    """``bundle list`` renders record fields that are never charset-validated.
+
+    ``InstalledBundleRecord.from_dict`` accepts any non-empty string for
+    ``bundle_id``/``version`` and any string for ``installed_at``, so a records
+    file that *loads cleanly* could still crash the command that displays it.
+    """
+    (project / ".specify" / "bundle-records.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "bundles": [
+                    {
+                        "bundle_id": "demo[/red]id",
+                        "version": "1.0.0[/bold]",
+                        "installed_at": "2026-01-01T00:00:00Z[/dim]",
+                        "contributed_components": [],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["bundle", "list"])
+
+    assert result.exit_code == 0, repr(result.exception)
+    output = strip_ansi(result.output)
+    assert "demo[/red]id" in output
+    assert "1.0.0[/bold]" in output
+    assert "2026-01-01T00:00:00Z[/dim]" in output
 
 
 def _mock_manifest_download(monkeypatch, source_path: Path) -> None:
