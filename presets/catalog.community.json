@@ -96,40 +96,30 @@
     "architecture-governance": {
       "name": "Architecture Governance",
       "id": "architecture-governance",
-      "version": "0.5.1",
-      "description": "Adds secure software architecture, resumable remote-transaction boundaries, STRIDE+CAPEC threat modeling, arc42 security cross-cutting concepts, S-ADRs, Zero Trust applicability, OWASP SAMM governance, BSI C3A cloud autonomy, BSI C5 cloud compliance assurance, and audit-ready Spec Kit run evidence.",
+      "version": "0.5.2",
+      "description": "Adds secure architecture, STRIDE/CAPEC threat modeling, arc42/S-ADR guidance, Zero Trust, SAMM, BSI cloud assurance, audit evidence, and provider-neutral model routing.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-architecture-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-architecture-governance/archive/refs/tags/v0.5.1.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-architecture-governance/archive/refs/tags/v0.5.2.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-architecture-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-architecture-governance/blob/v0.5.1/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-architecture-governance/blob/v0.5.2/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
       },
       "provides": {
-        "templates": 13,
+        "templates": 14,
         "commands": 3
       },
       "tags": [
         "architecture",
         "governance",
         "threat-modeling",
-        "stride",
-        "capec",
-        "arc42",
-        "adr",
-        "zero-trust",
-        "samm",
-        "isaqb",
         "cloud",
-        "sovereignty",
-        "c3a",
-        "c5",
-        "assurance"
+        "model-routing"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-07-23T00:00:00Z"
+      "updated_at": "2026-08-10T00:00:00Z"
     },
     "autonomous-run-governance": {
       "name": "Autonomous Run Governance",
