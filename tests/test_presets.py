@@ -9201,9 +9201,10 @@ class TestPresetSkills:
         )
 
         manager = PresetManager(project_dir)
-        mutated = manager._unregister_skills_in_dir(
-            ["speckit-specify"], skills_dir, "claude"
-        )
+        with pytest.warns(UserWarning, match="speckit-specify"):
+            mutated = manager._unregister_skills_in_dir(
+                ["speckit-specify"], skills_dir, "claude"
+            )
 
         assert mutated == [], (
             "a skill whose restore source could not be read was not "
@@ -9248,15 +9249,78 @@ class TestPresetSkills:
         monkeypatch.setattr(Path, "read_text", failing_read_text)
 
         manager = PresetManager(project_dir)
-        mutated = manager._unregister_skills_in_dir(
-            ["speckit-specify"], skills_dir, "claude"
-        )
+        with pytest.warns(UserWarning, match="speckit-specify"):
+            mutated = manager._unregister_skills_in_dir(
+                ["speckit-specify"], skills_dir, "claude"
+            )
 
         monkeypatch.undo()
 
         assert mutated == []
         assert (skill_dir / "SKILL.md").read_text(encoding="utf-8") == (
             "---\nname: speckit-specify\n---\n\ninstalled content\n"
+        )
+
+    def test_unregister_skills_in_dir_unreadable_extension_source_skips(
+        self, project_dir
+    ):
+        """The extension-restore arm needs the same boundary as the core arm.
+
+        The two restore reads are independent branches — a skill backed by an
+        installed extension never reaches the core-template read — so this
+        half of the guard can regress on its own. An undecodable extension
+        command file must warn, leave the skill byte-for-byte intact, and stay
+        out of ``mutated_names``.
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = project_dir / ".claude" / "skills"
+        skill_dir = self._create_skill(
+            skills_dir, "speckit-fakeext-cmd", "installed content"
+        )
+
+        extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
+        (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "commands" / "cmd.md").write_bytes(
+            b"---\ndescription: \xff\xfe not utf-8\n---\n\nExtension body\n"
+        )
+        extension_manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "fakeext",
+                "name": "Fake Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/cmd.md",
+                        "description": "Fake extension command",
+                    }
+                ]
+            },
+        }
+        with open(extension_dir / "extension.yml", "w") as f:
+            yaml.dump(extension_manifest, f)
+
+        manager = PresetManager(project_dir)
+        with pytest.warns(UserWarning, match="speckit-fakeext-cmd"):
+            mutated = manager._unregister_skills_in_dir(
+                ["speckit-fakeext-cmd"], skills_dir, "claude"
+            )
+
+        assert mutated == [], (
+            "a skill whose extension restore source could not be read was "
+            "not restored, so it must not be reported as mutated"
+        )
+        assert (skill_dir / "SKILL.md").read_text(encoding="utf-8") == (
+            "---\nname: speckit-fakeext-cmd\n---\n\ninstalled content\n"
+        ), (
+            "an unreadable extension source must leave the skill untouched — "
+            "falling through to the rmtree branch would delete it exactly "
+            "when its replacement cannot be generated"
         )
 
     def test_unregister_skills_in_dir_rejects_absolute_registry_name(
