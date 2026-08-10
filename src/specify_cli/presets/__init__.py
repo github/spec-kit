@@ -3268,6 +3268,30 @@ class PresetManager:
             if source in owned_sources:
                 shutil.rmtree(skill_subdir)
 
+    @staticmethod
+    def _warn_unrestored_skill(
+        skill_name: str, source_file: Path, exc: BaseException
+    ) -> None:
+        """Warn that a skill kept preset content because its restore source is unreadable.
+
+        Skipping the restore is the safe recovery — the alternative branch
+        deletes the skill outright — but it is still a partial removal: the
+        preset directory and registry entry go away while this ``SKILL.md``
+        keeps the removed preset's content, and reconciliation never revisits
+        it because the name is left out of ``mutated_names``. Name the skill
+        and the source so the condition is actionable instead of silent.
+        """
+        import warnings
+
+        warnings.warn(
+            f"Skill '{skill_name}' still contains the removed preset's content: "
+            f"its restore source '{source_file}' could not be read "
+            f"({exc.__class__.__name__}: {exc}). The skill was left in place "
+            f"rather than deleted. Fix or remove that file and re-run "
+            f"'specify preset add'/'specify preset remove' to refresh it.",
+            stacklevel=2,
+        )
+
     def _unregister_skills_in_dir(
         self,
         skill_names: List[str],
@@ -3394,8 +3418,20 @@ class PresetManager:
                 core_file = None
 
             if core_file:
-                # Restore from core template
-                content = core_file.read_text(encoding="utf-8")
+                # Restore from core template. An unreadable/undecodable
+                # source cannot produce restored content, so leave the
+                # existing skill untouched rather than leaking a raw
+                # OSError/UnicodeDecodeError out of `preset remove` — and
+                # rather than falling through to the rmtree below, which
+                # would delete a skill precisely when its replacement
+                # cannot be generated. Matches the `continue` guards above
+                # (unsafe name, missing subdir, foreign owner), which also
+                # skip without recording the name as mutated.
+                try:
+                    content = core_file.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError) as exc:
+                    self._warn_unrestored_skill(skill_name, core_file, exc)
+                    continue
                 frontmatter, body = registrar.parse_frontmatter(content)
                 if isinstance(selected_ai, str):
                     body = registrar.resolve_skill_placeholders(
@@ -3436,7 +3472,16 @@ class PresetManager:
                 continue
 
             if extension_restore:
-                content = extension_restore["source_file"].read_text(encoding="utf-8")
+                # Same boundary as the core-template branch above: an
+                # unreadable extension source leaves the skill in place
+                # instead of crashing or being deleted.
+                try:
+                    content = extension_restore["source_file"].read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError) as exc:
+                    self._warn_unrestored_skill(
+                        skill_name, extension_restore["source_file"], exc
+                    )
+                    continue
                 frontmatter, body = registrar.parse_frontmatter(content)
                 # Mirror the register-time rewrite (#2101): resolve
                 # extension-relative subdir references (agents/,
