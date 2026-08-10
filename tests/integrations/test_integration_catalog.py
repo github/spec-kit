@@ -646,6 +646,57 @@ class TestIntegrationDescriptor:
         h = desc.get_hash()
         assert h.startswith("sha256:")
 
+    def test_get_hash_incremental_chunking(self, tmp_path):
+        """Regression: get_hash() must read in bounded chunks, not f.read().
+
+        Creates a file larger than 64 KiB to exercise multiple chunk
+        iterations, verifies the digest matches hashlib.sha256(content),
+        and asserts that raw read() is never called with no size limit.
+        """
+        import hashlib
+        from unittest.mock import patch
+
+        # Build valid YAML content larger than 64 KiB. The padding field
+        # inflates the file without breaking YAML structure.
+        padding = "P" * (200 * 1024)  # 200 KiB
+        data = {**VALID_DESCRIPTOR, "description": padding}
+        content = yaml.dump(data).encode("utf-8")
+        assert len(content) > 65536  # Ensure multi-chunk coverage.
+
+        p = tmp_path / "integration.yml"
+        p.write_bytes(content)
+        desc = IntegrationDescriptor(p)
+
+        # Spy on read() to reject unbounded calls.
+        original_open = open
+        read_sizes: list[int] = []
+
+        def tracking_open(path, *args, **kwargs):
+            fh = original_open(path, *args, **kwargs)
+            if (args and args[0] == "rb") or kwargs.get("mode") == "rb":
+                orig_read = fh.read
+
+                def tracking_read(n=-1):
+                    if n == -1 or n is None:
+                        raise RuntimeError(
+                            "f.read() called without size limit — "
+                            "use bounded chunked reads instead"
+                        )
+                    read_sizes.append(n)
+                    return orig_read(n)
+
+                fh.read = tracking_read
+            return fh
+
+        with patch("builtins.open", side_effect=tracking_open):
+            result = desc.get_hash()
+
+        expected = f"sha256:{hashlib.sha256(content).hexdigest()}"
+        assert result == expected
+        # Verify bounded reads happened (at least 3 chunks of <= 65536 bytes).
+        assert len(read_sizes) >= 3
+        assert all(s <= 65536 for s in read_sizes)
+
     def test_tools_accessor(self, tmp_path):
         data = {**VALID_DESCRIPTOR, "requires": {
             "speckit_version": ">=0.6.0",
