@@ -61,6 +61,30 @@ CANONICAL_EVENTS = frozenset({
     "stop",
 })
 
+# -- Stdin bounded read ---------------------------------------------------
+
+_MAX_STDIN_BYTES = 10 * 1024 * 1024  # 10 MiB
+
+
+def _read_stdin_bounded(max_bytes: int = _MAX_STDIN_BYTES) -> str:
+    """Read at most *max_bytes* from stdin to prevent unbounded memory use.
+
+    Uses ``sys.stdin.buffer`` so the limit is enforced on raw bytes rather
+    than Unicode code points — a 4-byte UTF-8 sequence counts as 4 bytes,
+    not 1 character.
+    """
+    if sys.stdin.isatty():
+        return "{}"
+    chunks: list[bytes] = []
+    total = 0
+    while total < max_bytes:
+        chunk = sys.stdin.buffer.read(min(max_bytes - total, 65536))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+    return b"".join(chunks).decode("utf-8", errors="replace")
+
 # -- Events Dispatcher template ---------------------------------------------
 
 _EVENTS_DISPATCHER_TEMPLATE = '''#!/usr/bin/env python3
@@ -347,7 +371,7 @@ def main():
     # hookEventName field (required by Qwen's hooks spec; included by
     # Gemini/Tabnine/Devin which derive from the same protocol).
     native_event = sys.argv[5] if len(sys.argv) >= 6 else ""
-    payload = sys.stdin.read() if not sys.stdin.isatty() else "{}"
+    payload = _read_stdin_bounded()
     project_root = Path(__file__).parent.parent.resolve()
 
     # Preferred path: specify_cli is importable (durable install) — delegate to
