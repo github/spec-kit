@@ -75,14 +75,14 @@ def test_bug_test_workflow_provisions_python_dependencies():
         "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0"
     )
 
-    assert "pypi.org" in source_text
-    assert "files.pythonhosted.org" in source_text
+    assert "    - pypi.org" in source_text
+    assert "    - files.pythonhosted.org" in source_text
     assert setup_uv in source_text
     assert setup_python in source_text
     assert "run: uv sync --extra test" in source_text
 
-    assert "pypi.org" in compiled_text
-    assert "files.pythonhosted.org" in compiled_text
+    assert '"pypi.org"' in compiled_text
+    assert '"files.pythonhosted.org"' in compiled_text
     checkout_index = compiled_text.index("- name: Checkout repository")
     uv_index = compiled_text.index("- name: Setup uv")
     python_index = compiled_text.index("- name: Set up Python")
