@@ -21,6 +21,7 @@ ISSUE_TEMPLATE_AGENT_KEYS = [
     "cline",
     "codebuddy",
     "codex",
+    "command-code",
     "cursor-agent",
     "devin",
     "droid",
