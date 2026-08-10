@@ -60,6 +60,22 @@ permissions:
 checkout:
   fetch-depth: 0
 
+network:
+  allowed:
+    - defaults
+    - pypi.org
+    - files.pythonhosted.org
+
+steps:
+  - name: Setup uv
+    uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+  - name: Set up Python
+    uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+    with:
+      python-version: "3.14"
+  - name: Install Python test dependencies
+    run: uv pip install --system -e ".[test]"
+
 safe-outputs:
   noop:
     report-as-issue: false
