@@ -83,7 +83,7 @@ Generates the design artifacts from the spec. This is where implementation detai
 
 ### Step 5: `/speckit.checklist` — validate the spec
 
-Generates a quality checklist — "unit tests for your requirements" — to confirm the spec is complete, clear, and consistent before you break the work down.
+Generates a custom quality checklist — "unit tests for your requirements" — to confirm the spec is complete, clear, and consistent before you break the work down. These custom checklists are reviewer-owned requirements-quality review artifacts: mark an item `[x]` only when the reviewer determines that requirement-quality criterion is satisfied. Checked custom items do not mean implementation work is complete.
 
 ```text
 /speckit.checklist
@@ -107,7 +107,7 @@ Reports conflicts, gaps, and ambiguities across `spec.md`, `plan.md`, and `tasks
 
 ### Step 8: `/speckit.implement` — build it
 
-Executes the tasks in `tasks.md` in dependency order. Run it once to build everything, or scope it to one phase at a time for large features.
+Executes the tasks in `tasks.md` in dependency order. Before implementation, it reads checklist checkbox state as a gate and asks before proceeding if any checklist items are unchecked; it does not change custom checklist markers. Run it once to build everything, or scope it to one phase at a time for large features.
 
 ```text
 /speckit.implement
