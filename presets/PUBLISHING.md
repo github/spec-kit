@@ -300,6 +300,12 @@ git push origin add-your-preset
 
 ## Verification Process
 
+> **How submissions get picked up:** the automated catalog-validation workflow only runs
+> once the `preset-submission` label is on the issue. On this public repository, contributors
+> cannot apply that label themselves — a maintainer applies it during issue triage. Until then
+> the issue simply waits in triage; there is no action required from you, and there is no need to
+> re-request the label in a comment.
+
 After submission, maintainers will review:
 
 1. **Manifest validation** — valid `preset.yml`, all files exist
