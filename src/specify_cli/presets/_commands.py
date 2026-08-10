@@ -818,8 +818,8 @@ def preset_catalog_remove(
 
     try:
         config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    except Exception:
-        console.print("[red]Error:[/red] Failed to read preset catalog config.")
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Failed to read preset catalog config: {e}")
         raise typer.Exit(1)
 
     catalogs = config.get("catalogs", [])
