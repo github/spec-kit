@@ -577,8 +577,13 @@ class ExtensionManifest:
         behavior for extension layers in presets/__init__.py). A present
         'strategy' key is rejected rather than silently ignored, so an author
         who copies a preset-style entry gets a clear error instead of a
-        silently-dropped field.
+        silently-dropped field. Duplicate names within a section are also
+        rejected: the resolver returns the first matching entry by name
+        (``PresetResolver._extension_manifest_declared_template``), so a
+        later duplicate would be silently unreachable while still being
+        exposed by ``ExtensionManifest.templates``/``.scripts``.
         """
+        seen_names: set[str] = set()
         for entry in entries:
             if not isinstance(entry, dict):
                 raise ValidationError(
@@ -597,6 +602,11 @@ class ExtensionManifest:
                     f"Invalid {singular} name '{name}': "
                     "must be lowercase alphanumeric with hyphens only"
                 )
+            if name in seen_names:
+                raise ValidationError(
+                    f"Duplicate {singular} name '{name}' in 'provides.{section}'"
+                )
+            seen_names.add(name)
 
             file_value = entry["file"]
             reason = relative_extension_path_violation(file_value)
