@@ -515,6 +515,27 @@ class TestPresetRegistry:
         assert registry.list() == {}
         assert not registry.is_installed("test-pack")
 
+    def test_load_starts_fresh_for_non_utf8_registry(self, temp_dir):
+        """A registry file with undecodable bytes must start fresh, not raise.
+
+        ``_load()`` already treats malformed JSON as "corrupted registry,
+        start fresh", but a registry whose *bytes* cannot be decoded as UTF-8
+        raised a raw ``UnicodeDecodeError`` from the same boundary — the same
+        corruption class reaching a different exception type.
+        """
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        (packs_dir / PresetRegistry.REGISTRY_FILE).write_bytes(
+            b"\xff\xfe not utf-8 \xc3\x28"
+        )
+
+        registry = PresetRegistry(packs_dir)
+
+        assert registry.data == {
+            "schema_version": PresetRegistry.SCHEMA_VERSION,
+            "presets": {},
+        }
+
     def test_add_and_get(self, temp_dir):
         """Test adding and retrieving a pack."""
         packs_dir = temp_dir / "packs"
@@ -10915,6 +10936,35 @@ class TestWrapStrategy:
         assert "{CORE_TEMPLATE}" in result
         assert core_fm == {}
 
+    def test_substitute_core_template_unreadable_core_treated_as_missing(
+        self, project_dir
+    ):
+        """An undecodable core template must not crash substitution.
+
+        The wrap-strategy callers (``CommandRegistrar.register_pack`` and
+        ``_register_commands``) skip an unreadable preset source with a
+        warning, but the core template read inside
+        ``_substitute_core_template`` had no boundary, so one corrupted
+        project-owned override in ``.specify/templates/commands/`` crashed
+        the whole registration with a raw ``UnicodeDecodeError``. An
+        unreadable core is treated like a missing one.
+        """
+        from specify_cli.presets import _substitute_core_template
+        from specify_cli.agents import CommandRegistrar
+
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_bytes(b"\xff\xfe not utf-8")
+
+        registrar = CommandRegistrar()
+        body = "Pre.\n\n{CORE_TEMPLATE}\n\nPost.\n"
+        with pytest.warns(UserWarning, match="Ignoring core template"):
+            result, core_fm = _substitute_core_template(
+                body, "specify", project_dir, registrar
+            )
+        assert result == body
+        assert core_fm == {}
+
     def test_register_commands_substitutes_core_template_for_wrap_strategy(self, project_dir):
         """register_commands substitutes {CORE_TEMPLATE} when strategy: wrap."""
         from specify_cli.agents import CommandRegistrar
@@ -11345,6 +11395,181 @@ class TestWrapStrategy:
         assert "# Selftest Core" in result
         assert "{CORE_TEMPLATE}" not in result
 
+    def test_extension_template_resolves_via_manifest_when_filename_differs(self, project_dir):
+        """provides.templates entries resolve via extension.yml when the file
+        doesn't sit at the conventional path.
+
+        Regression coverage for #4010: manifest-declared templates/scripts
+        must actually be consulted by the resolver, not just accepted by
+        manifest validation.
+        """
+        ext_dir = project_dir / ".specify" / "extensions" / "reportext"
+        tmpl_dir = ext_dir / "templates" / "nested"
+        tmpl_dir.mkdir(parents=True, exist_ok=True)
+
+        # File lives at a path convention-based lookup (templates/<name>.md)
+        # would never find.
+        (tmpl_dir / "actual.md").write_text("# Report Scaffold\n")
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: reportext\n  name: Report Ext\n  version: 1.0.0\n"
+            "  description: test\n  author: test\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n"
+            "  templates:\n"
+            "    - name: report-scaffold\n"
+            "      file: templates/nested/actual.md\n"
+            "      description: Report scaffold\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("report-scaffold", "template")
+        assert layers, "expected the manifest-declared template to resolve"
+        assert layers[0]["path"] == tmpl_dir / "actual.md"
+        assert layers[0]["strategy"] == "replace"
+
+    def test_extension_script_resolves_via_manifest_when_filename_differs(self, project_dir):
+        """provides.scripts entries resolve via extension.yml when the file
+        doesn't sit at the conventional path."""
+        ext_dir = project_dir / ".specify" / "extensions" / "collectext"
+        script_dir = ext_dir / "scripts" / "bash"
+        script_dir.mkdir(parents=True, exist_ok=True)
+
+        # File is under scripts/bash/, not directly under scripts/, so
+        # convention-based lookup (scripts/<name>.sh) would never find it.
+        (script_dir / "collect.sh").write_text("#!/usr/bin/env bash\necho collect\n")
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: collectext\n  name: Collect Ext\n  version: 1.0.0\n"
+            "  description: test\n  author: test\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n"
+            "  scripts:\n"
+            "    - name: myext-collect\n"
+            "      file: scripts/bash/collect.sh\n"
+            "      description: Data-collection helper\n"
+            "      runtimes: [bash]\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("myext-collect", "script")
+        assert layers, "expected the manifest-declared script to resolve"
+        assert layers[0]["path"] == script_dir / "collect.sh"
+        assert layers[0]["strategy"] == "replace"
+
+    def test_extension_template_convention_lookup_unaffected_when_undeclared(self, project_dir):
+        """An extension template with no manifest entry still resolves via
+        the pre-existing filename convention (no regression)."""
+        ext_dir = project_dir / ".specify" / "extensions" / "conventionext"
+        tmpl_dir = ext_dir / "templates"
+        tmpl_dir.mkdir(parents=True, exist_ok=True)
+        (tmpl_dir / "legacy-template.md").write_text("# Legacy Template\n")
+        # No extension.yml at all -- purely convention-based, unregistered extension.
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("legacy-template", "template")
+        assert layers, "expected convention-based lookup to still find the template"
+        assert layers[0]["path"] == tmpl_dir / "legacy-template.md"
+
+    def test_extension_manifest_wins_over_stale_conventional_file(self, project_dir):
+        """A declared entry is authoritative even when a stale file also sits at
+        the conventional path (templates/<name>.md) — the manifest must win,
+        not the convention lookup, per #4010's acceptance criteria."""
+        ext_dir = project_dir / ".specify" / "extensions" / "bothpathsext"
+        (ext_dir / "templates").mkdir(parents=True, exist_ok=True)
+        (ext_dir / "custom").mkdir(parents=True, exist_ok=True)
+
+        # Stale file at the conventional path -- must NOT win.
+        (ext_dir / "templates" / "report-scaffold.md").write_text("# Stale\n")
+        # Declared file at a non-conventional path -- must win.
+        (ext_dir / "custom" / "bar.md").write_text("# Actual\n")
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: bothpathsext\n  name: Both Paths Ext\n  version: 1.0.0\n"
+            "  description: test\n  author: test\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n"
+            "  templates:\n"
+            "    - name: report-scaffold\n"
+            "      file: custom/bar.md\n"
+            "      description: Report scaffold\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+
+        layers = resolver.collect_all_layers("report-scaffold", "template")
+        assert layers, "expected the manifest-declared template to resolve"
+        assert layers[0]["path"] == ext_dir / "custom" / "bar.md"
+
+        resolved = resolver.resolve("report-scaffold", "template")
+        assert resolved == ext_dir / "custom" / "bar.md"
+
+        with_source = resolver.resolve_with_source("report-scaffold", "template")
+        assert with_source["path"] == str(ext_dir / "custom" / "bar.md")
+
+    def test_extension_manifest_declared_but_missing_file_does_not_fall_back(self, project_dir):
+        """A declared entry whose file is missing is authoritative -- the
+        resolver must not silently mask the typo by falling back to a
+        conventional file that happens to also exist."""
+        ext_dir = project_dir / ".specify" / "extensions" / "missingfileext"
+        (ext_dir / "scripts").mkdir(parents=True, exist_ok=True)
+
+        # A conventional file exists, but the manifest declares a different,
+        # non-existent file for the same name.
+        (ext_dir / "scripts" / "myext-collect.sh").write_text("#!/usr/bin/env bash\necho legacy\n")
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: missingfileext\n  name: Missing File Ext\n  version: 1.0.0\n"
+            "  description: test\n  author: test\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n"
+            "  scripts:\n"
+            "    - name: myext-collect\n"
+            "      file: scripts/does-not-exist.sh\n"
+            "      description: Data-collection helper\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+
+        assert resolver.collect_all_layers("myext-collect", "script") == []
+        assert resolver.resolve("myext-collect", "script") is None
+
+    def test_extension_script_resolve_and_resolve_with_source_parity(self, project_dir):
+        """resolve() and resolve_with_source() must find a manifest-declared
+        script at a non-conventional path, matching collect_all_layers()."""
+        ext_dir = project_dir / ".specify" / "extensions" / "collectext2"
+        script_dir = ext_dir / "scripts" / "bash"
+        script_dir.mkdir(parents=True, exist_ok=True)
+
+        (script_dir / "collect.sh").write_text("#!/usr/bin/env bash\necho collect\n")
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: collectext2\n  name: Collect Ext 2\n  version: 1.0.0\n"
+            "  description: test\n  author: test\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n"
+            "  scripts:\n"
+            "    - name: myext-collect2\n"
+            "      file: scripts/bash/collect.sh\n"
+            "      description: Data-collection helper\n"
+            "      runtimes: [bash]\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+
+        resolved = resolver.resolve("myext-collect2", "script")
+        assert resolved == script_dir / "collect.sh"
+
+        with_source = resolver.resolve_with_source("myext-collect2", "script")
+        assert with_source is not None
+        assert with_source["path"] == str(script_dir / "collect.sh")
+        assert with_source["source"] == "extension:collectext2 (unregistered)"
+
 
 # ===== _replay_wraps_for_command Tests =====
 
@@ -11549,6 +11774,113 @@ class TestResolveContent:
         resolver = PresetResolver(project_dir)
         content = resolver.resolve_content("nonexistent")
         assert content is None
+
+    def test_resolve_content_unreadable_winning_layer_returns_none(self, project_dir):
+        """An undecodable winning layer must yield None, not a raw traceback.
+
+        ``collect_all_layers`` deliberately keeps a non-UTF-8 legacy command
+        layer (with its ``replace`` default) so unrelated commands still
+        resolve. ``resolve_content`` then read that same file without a
+        boundary, so the tolerated layer crashed with ``UnicodeDecodeError``
+        at composition time — reachable from ``specify preset add`` via
+        ``_register_commands``. The documented contract is "Composed content
+        string, or None if not found".
+        """
+        presets_dir = project_dir / ".specify" / "presets"
+        command_path = (
+            presets_dir / "legacy-pack" / "commands" / "speckit.legacy.md"
+        )
+        command_path.parent.mkdir(parents=True)
+        command_path.write_bytes(b"\xff\xfe")
+        PresetRegistry(presets_dir).add(
+            "legacy-pack", {"version": "1.0.0", "priority": 10}
+        )
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("speckit.legacy", "command")
+        assert content is None
+
+    def test_resolve_content_unreadable_base_under_composing_layer(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """An undecodable base beneath a valid composing layer yields None.
+
+        Covers the base-read guard: the winning layer composes (append), so
+        resolution reads the base layer beneath it — here the core template,
+        corrupted to non-UTF-8 — and must return None instead of crashing.
+        """
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "append-pack", "name": "Append"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "append",
+            }]
+        }
+        pack_dir = temp_dir / "append-pack"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "templates").mkdir()
+        (pack_dir / "templates" / "spec-template.md").write_text("## Appended Section\n")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        core_spec = project_dir / ".specify" / "templates" / "spec-template.md"
+        core_spec.write_bytes(b"\xff\xfe")
+
+        resolver = PresetResolver(project_dir)
+        assert resolver.resolve_content("spec-template") is None
+
+    def test_resolve_content_unreadable_composing_layer(
+        self, project_dir, temp_dir, valid_pack_data, monkeypatch
+    ):
+        """An unreadable composing layer over a valid base yields None.
+
+        Covers the composition-loop read and the ``OSError`` half of the
+        boundary: the base (core template) reads fine, but the append layer
+        raises a mocked ``PermissionError`` — mocked so the case also holds
+        under privileged CI where permission bits are not enforced.
+        """
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "append-pack", "name": "Append"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "append",
+            }]
+        }
+        pack_dir = temp_dir / "append-pack"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "templates").mkdir()
+        (pack_dir / "templates" / "spec-template.md").write_text("## Appended Section\n")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        layer_path = (
+            project_dir / ".specify" / "presets" / "append-pack"
+            / "templates" / "spec-template.md"
+        )
+        assert layer_path.is_file()
+        original_read_text = Path.read_text
+
+        def failing_read_text(self_path, *args, **kwargs):
+            if self_path == layer_path:
+                raise PermissionError(13, "Permission denied")
+            return original_read_text(self_path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", failing_read_text)
+
+        resolver = PresetResolver(project_dir)
+        assert resolver.resolve_content("spec-template") is None
 
     def test_resolve_content_replace_strategy(self, project_dir, temp_dir, valid_pack_data):
         """Test resolve_content with default replace strategy."""

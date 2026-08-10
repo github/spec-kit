@@ -192,8 +192,8 @@ def handle_vscode_settings(sub_item, dest_file, rel_path, verbose=False, tracker
 
             os.replace(temp_path, target_file)
         except Exception:
-            if temp_path and temp_path.exists():
-                temp_path.unlink()
+            if temp_path:
+                temp_path.unlink(missing_ok=True)
             raise
 
     try:

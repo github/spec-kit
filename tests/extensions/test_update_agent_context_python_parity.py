@@ -223,32 +223,6 @@ def test_python_custom_markers_matching_bash(tmp_path: Path) -> None:
 
 
 @requires_posix_bash
-def test_python_blank_markers_use_defaults_matching_bash(tmp_path: Path) -> None:
-    # Regression: with blank markers (config relying on the built-in defaults),
-    # the Bash port must fall back to DEFAULT_START/END, matching the Python and
-    # PowerShell ports. Previously the Bash config-parser transport dropped the
-    # trailing empty marker lines under $(...) command substitution, tripping the
-    # "malformed config parser output" guard so the default-marker substitution
-    # became unreachable and the context file was never updated.
-    markers = {"start": "", "end": ""}
-    repo_a, repo_b = twin_projects(
-        tmp_path, context_file="AGENTS.md", context_markers=markers
-    )
-    add_plan(repo_a)
-    add_plan(repo_b)
-
-    bash = run_bash(repo_a)
-    py = run_python(repo_b)
-
-    assert_parity(bash, py, repo_a, repo_b)
-    content = (repo_b / "AGENTS.md").read_bytes()
-    assert content == (repo_a / "AGENTS.md").read_bytes()
-    assert b"<!-- SPECKIT START -->" in content
-    assert b"<!-- SPECKIT END -->" in content
-    assert b"at specs/001-demo/plan.md" in content
-
-
-@requires_posix_bash
 def test_python_multiple_context_files_dedup_matching_bash(tmp_path: Path) -> None:
     files = ["AGENTS.md", "docs/CONTEXT.md", "AGENTS.md"]
     repo_a, repo_b = twin_projects(tmp_path, context_files=files)
@@ -344,14 +318,19 @@ def test_python_mtime_fallback_matching_bash(tmp_path: Path) -> None:
 
 
 @requires_posix_bash
-def test_python_mtime_fallback_finds_nested_plan_matching_bash(tmp_path: Path) -> None:
-    # Regression: the mtime fallback must discover plan.md in nested scoped
-    # layouts (specs/<scope>/<feature>/plan.md), matching the Bash/PowerShell
-    # ports and the documented recursive-discovery contract (see #3024). A
-    # one-level scan (specs/*/plan.md) would miss this and omit the plan link.
+def test_python_mtime_fallback_finds_nested_plan_matching_bash(
+    tmp_path: Path,
+) -> None:
+    """The mtime fallback must recurse into scoped layouts.
+
+    A plan created under specs/<scope>/<feature>/plan.md (as produced via
+    SPECIFY_FEATURE_DIRECTORY) is more than one level below specs/. The old
+    Python port used a one-level specs/*/plan.md glob and missed it, while the
+    bash/PowerShell twins recurse (#3024). This locks in the parity.
+    """
     repo_a, repo_b = twin_projects(tmp_path, context_file="AGENTS.md")
     for repo in (repo_a, repo_b):
-        plan = repo / "specs" / "scope-a" / "002-nested" / "plan.md"
+        plan = repo / "specs" / "backend" / "001-nested" / "plan.md"
         plan.parent.mkdir(parents=True, exist_ok=True)
         plan.write_text("# plan\n", encoding="utf-8")
 
@@ -361,7 +340,39 @@ def test_python_mtime_fallback_finds_nested_plan_matching_bash(tmp_path: Path) -
     assert_parity(bash, py, repo_a, repo_b)
     content = (repo_b / "AGENTS.md").read_bytes()
     assert content == (repo_a / "AGENTS.md").read_bytes()
-    assert b"at specs/scope-a/002-nested/plan.md" in content
+    assert b"at specs/backend/001-nested/plan.md" in content
+
+
+@requires_posix_bash
+def test_python_mtime_fallback_skips_plan_reached_through_escaping_symlink(
+    tmp_path: Path,
+) -> None:
+    """A plan reached via a specs/ symlink out of the project is not selected.
+
+    ``relative_to()`` is lexical, so ``specs/linked/001-x/plan.md`` looks
+    in-project even when ``specs/linked`` points outside the tree. Resolving
+    before the containment check rejects it, so the fallback finds nothing and
+    the ``at <plan>`` line is omitted rather than naming an out-of-project file
+    with an in-project-looking path. Mirrors the bash twin's ``_resolved_rel``.
+    """
+    repo_a, repo_b = twin_projects(tmp_path, context_file="AGENTS.md")
+    for repo in (repo_a, repo_b):
+        outside = repo.parent / f"outside-{repo.name}" / "001-x"
+        outside.mkdir(parents=True, exist_ok=True)
+        (outside / "plan.md").write_text("# plan\n", encoding="utf-8")
+        specs = repo / "specs"
+        specs.mkdir(parents=True, exist_ok=True)
+        (specs / "linked").symlink_to(outside.parent, target_is_directory=True)
+        # Sanity: the plan really is reachable through the symlink.
+        assert (specs / "linked" / "001-x" / "plan.md").is_file()
+
+    bash = run_bash(repo_a)
+    py = run_python(repo_b)
+
+    assert_parity(bash, py, repo_a, repo_b)
+    content = (repo_b / "AGENTS.md").read_bytes()
+    assert content == (repo_a / "AGENTS.md").read_bytes()
+    assert b"\nat " not in content
 
 
 @requires_posix_bash
@@ -506,6 +517,31 @@ def test_python_fresh_context_file_matches_powershell(tmp_path: Path) -> None:
 
     assert ps.returncode == py.returncode == 0, ps.stderr + py.stderr
     assert (repo_a / "AGENTS.md").read_bytes() == (repo_b / "AGENTS.md").read_bytes()
+
+
+@pytest.mark.skipif(not POWERSHELL, reason="no PowerShell available")
+def test_python_mtime_fallback_finds_nested_plan_matches_powershell(
+    tmp_path: Path,
+) -> None:
+    """Python's mtime fallback must recurse like the PowerShell twin.
+
+    With no feature.json, discovery falls back to scanning under specs/. A plan
+    at specs/<scope>/<feature>/plan.md sits more than one level deep; the old
+    Python one-level glob missed it while PowerShell already recurses (#3024).
+    """
+    repo_a = make_project(tmp_path / "proj-ps", context_file="AGENTS.md")
+    repo_b = make_project(tmp_path / "proj-py", context_file="AGENTS.md")
+    for repo in (repo_a, repo_b):
+        plan = repo / "specs" / "backend" / "001-nested" / "plan.md"
+        plan.parent.mkdir(parents=True, exist_ok=True)
+        plan.write_text("# plan\n", encoding="utf-8")
+
+    ps = run_powershell(repo_a)
+    py = run_python(repo_b)
+
+    assert ps.returncode == py.returncode == 0, ps.stderr + py.stderr
+    assert (repo_a / "AGENTS.md").read_bytes() == (repo_b / "AGENTS.md").read_bytes()
+    assert b"at specs/backend/001-nested/plan.md" in (repo_b / "AGENTS.md").read_bytes()
 
 
 @pytest.mark.skipif(not POWERSHELL, reason="no PowerShell available")

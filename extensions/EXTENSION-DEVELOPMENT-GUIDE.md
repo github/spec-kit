@@ -177,9 +177,11 @@ Compatibility requirements.
 
 What the extension provides.
 
-**Optional sub-fields**:
+**Optional sub-fields** (at least one of `commands`, `templates`, `scripts`, `hooks`, or `events` is required):
 
-- `commands`: Array of command objects (at least one command or hook is required)
+- `commands`: Array of command objects
+- `templates`: Array of template objects
+- `scripts`: Array of script objects
 
 **Command object**:
 
@@ -187,6 +189,21 @@ What the extension provides.
 - `file`: Path to command file (relative to extension root)
 - `description`: Command description (optional)
 - `aliases`: Alternative command names (optional, array; each must match `speckit.{ext-id}.{command}`)
+
+**Template object**:
+
+- `name`: Template name (lowercase, alphanumeric, hyphens — e.g. `myext-template`)
+- `file`: Path to template file (relative to extension root)
+- `description`: Template description (optional)
+
+**Script object**:
+
+- `name`: Script name (lowercase, alphanumeric, hyphens — e.g. `myext-collect`)
+- `file`: Path to script file (relative to extension root)
+- `description`: Script description (optional)
+- `runtimes`: Runtimes the script supports (optional, array; subset of `bash`, `powershell`, `python` — informational only, not used to select or invoke the script)
+
+Extension-provided templates and scripts always resolve as `replace`; a manifest that includes a `strategy` key on one of these entries is rejected with a `ValidationError`. Composable strategies (`wrap`/`prepend`/`append`) are preset-only.
 
 ### Optional Fields
 

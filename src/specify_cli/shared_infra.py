@@ -16,6 +16,22 @@ from .integrations.manifest import IntegrationManifest
 
 logger = logging.getLogger(__name__)
 
+# Managed ``.specify/.gitignore``. Keeps machine-local Spec Kit state out of
+# version control while leaving shareable project files (specs, constitution,
+# templates, scripts, extension config) tracked. Patterns are relative to the
+# ``.specify/`` directory the file lives in.
+SPECIFY_GITIGNORE_CONTENT = """\
+# Machine-local Spec Kit state — not meant to be shared.
+# Managed by the Specify CLI; safe to edit (your changes are preserved on refresh).
+
+# Local pointer to the current feature directory. Rewritten every time you
+# switch features, so it is per-checkout state rather than something to share.
+feature.json
+
+# Per-machine extension config overrides.
+extensions/*/local-config.yml
+"""
+
 # Matches a SHA-256 digest in its normalized form: exactly 64 hexadecimal
 # characters. Callers lowercase the declared value before matching (see
 # ``expected_hex = raw.lower()`` below), so an uppercase digest is accepted and
@@ -262,8 +278,7 @@ def _write_shared_bytes(
         _ensure_safe_shared_destination(project_path, dest)
         os.replace(temp_path, dest)
     finally:
-        if temp_path.exists():
-            temp_path.unlink()
+        temp_path.unlink(missing_ok=True)
 
 
 _BASH_FORMAT_COMMAND_RE = re.compile(
@@ -607,6 +622,36 @@ def install_shared_infra(
                     content, invoke_separator, invoke_prefix
                 )
                 planned_templates.append((dst, rel, content))
+
+    # Managed ``.specify/.gitignore`` — keeps machine-local state (the
+    # ``feature.json`` pointer and per-machine ``local-config.yml`` overrides)
+    # out of git while leaving everything else shareable. Routed through the
+    # same overwrite/skip/preserve policy as templates so ``--force`` refreshes
+    # it and user edits are preserved. Like every other shared-infra file it is
+    # tracked in ``speckit.manifest.json`` (not the per-integration manifest) and
+    # is therefore intentionally left in place by ``integration uninstall``.
+    specify_dir = project_path / ".specify"
+    if _ensure_or_bucket_dir(specify_dir):
+        gitignore_dst = specify_dir / ".gitignore"
+        gitignore_rel = gitignore_dst.relative_to(project_path).as_posix()
+        seen_rels.add(gitignore_rel)
+        if _safe_dest_or_bucket(gitignore_dst, gitignore_rel):
+            write, bucket = _decide_overwrite(gitignore_rel, gitignore_dst)
+            if write:
+                planned_templates.append(
+                    (gitignore_dst, gitignore_rel, SPECIFY_GITIGNORE_CONTENT)
+                )
+            elif bucket == "preserved":
+                preserved_user_files.append(gitignore_rel)
+            else:
+                skipped_files.append(gitignore_rel)
+                if gitignore_dst.is_file() and gitignore_rel not in prior_hashes:
+                    try:
+                        manifest.record_existing(gitignore_rel, recovered=True)
+                    except (OSError, ValueError) as exc:
+                        console.print(
+                            f"[yellow]⚠[/yellow]  could not record {gitignore_rel} in manifest: {exc}"
+                        )
 
     for dst_path, rel, content, mode in planned_copies:
         if not _ensure_or_bucket_dir(dst_path.parent):

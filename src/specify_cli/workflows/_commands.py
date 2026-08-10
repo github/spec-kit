@@ -1594,6 +1594,12 @@ def workflow_status(
         except ValueError as exc:
             err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
             raise typer.Exit(1)
+        except OSError as exc:
+            # An unreadable state.json (bad permissions, a directory in its
+            # place, I/O error) must fail as cleanly as the malformed-JSON
+            # case above -- `workflow resume` already handles OSError here.
+            err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+            raise typer.Exit(1)
 
         if json_output:
             # Build on the shared run/resume payload so the common fields

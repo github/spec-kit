@@ -274,6 +274,7 @@ class TestCopilotCommandsMode:
             ".specify/init-options.json",
             ".specify/integrations/copilot.manifest.json",
             ".specify/integrations/speckit.manifest.json",
+            ".specify/.gitignore",
             ".specify/scripts/bash/check-prerequisites.sh",
             ".specify/scripts/bash/common.sh",
             ".specify/scripts/bash/create-new-feature.sh",
@@ -338,6 +339,7 @@ class TestCopilotCommandsMode:
             ".specify/init-options.json",
             ".specify/integrations/copilot.manifest.json",
             ".specify/integrations/speckit.manifest.json",
+            ".specify/.gitignore",
             ".specify/scripts/powershell/check-prerequisites.ps1",
             ".specify/scripts/powershell/common.ps1",
             ".specify/scripts/powershell/create-new-feature.ps1",
@@ -849,6 +851,7 @@ class TestCopilotSkillsMode:
             ".specify/integration.json",
             ".specify/integrations/copilot.manifest.json",
             ".specify/integrations/speckit.manifest.json",
+            ".specify/.gitignore",
             # Scripts (sh)
             ".specify/scripts/bash/check-prerequisites.sh",
             ".specify/scripts/bash/common.sh",

@@ -7332,6 +7332,94 @@ steps:
         assert len(runs) == 1
         assert runs[0]["workflow_id"] == "list-test"
 
+    def test_list_skips_malformed_json(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        bad_dir = runs_dir / "bad-run"
+        bad_dir.mkdir(parents=True)
+        (bad_dir / "state.json").write_text("{invalid json", encoding="utf-8")
+
+        engine = WorkflowEngine(project_dir)
+        assert engine.list_runs() == []
+
+    def test_list_skips_unreadable_file(self, project_dir):
+        import sys
+        import subprocess
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        bad_dir = runs_dir / "bad-run"
+        bad_dir.mkdir(parents=True)
+        state_file = bad_dir / "state.json"
+        state_file.write_text('{"run_id": "x"}', encoding="utf-8")
+
+        if sys.platform == "win32":
+            subprocess.run(["attrib", "+R", str(state_file)], check=True)
+        else:
+            state_file.chmod(0o000)
+
+        try:
+            engine = WorkflowEngine(project_dir)
+            if sys.platform == "win32":
+                assert engine.list_runs() == [{"run_id": "x"}]
+            else:
+                assert engine.list_runs() == []
+        finally:
+            if sys.platform == "win32":
+                subprocess.run(["attrib", "-R", str(state_file)], check=True)
+            else:
+                state_file.chmod(0o644)
+
+    def test_list_skips_non_dict_payload(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        bad_dir = runs_dir / "bad-run"
+        bad_dir.mkdir(parents=True)
+        (bad_dir / "state.json").write_text('["not", "a", "dict"]', encoding="utf-8")
+
+        engine = WorkflowEngine(project_dir)
+        assert engine.list_runs() == []
+
+    def test_list_skips_empty_dict_payload(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        bad_dir = runs_dir / "bad-run"
+        bad_dir.mkdir(parents=True)
+        (bad_dir / "state.json").write_text('{}', encoding="utf-8")
+
+        engine = WorkflowEngine(project_dir)
+        assert engine.list_runs() == []
+
+    def test_list_skips_bad_file_with_valid_sibling(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        bad_dir = runs_dir / "bad-run"
+        bad_dir.mkdir(parents=True)
+        (bad_dir / "state.json").write_text("{bad", encoding="utf-8")
+
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "good-run"
+  name: "Good Run"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    type: shell
+    run: "echo test"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        engine.execute(definition)
+
+        runs = engine.list_runs()
+        assert len(runs) == 1
+        assert runs[0]["workflow_id"] == "good-run"
+
 
 # ===== Workflow Registry Tests =====
 
@@ -16615,6 +16703,57 @@ steps:
         captured = capsys.readouterr()
         assert "corrupt run state" in captured.err
         assert "corrupt run state" not in captured.out
+        assert captured.out.strip() == ""
+
+    def test_status_unreadable_run_state_exits_cleanly(
+        self, project_dir, monkeypatch
+    ):
+        """`workflow status <run_id>` gained a ValueError boundary to match
+        `workflow resume`, but not resume's OSError one -- so an unreadable
+        state.json (bad permissions, a directory in its place, an I/O error)
+        still leaked a raw traceback. exists() is True for a directory, so
+        the guard passes and open() raises OSError."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runs_dir = project_dir / ".specify" / "workflows" / "runs" / "abc123"
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        # A directory where state.json should be: exists() passes, open() fails.
+        (runs_dir / "state.json").mkdir(exist_ok=True)
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "status", "abc123"])
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Error" in result.output
+
+    def test_status_json_unreadable_run_state_error_goes_to_stderr(
+        self, project_dir, monkeypatch, capsys
+    ):
+        """The OSError handler must route to stderr under --json too, so the
+        stdout JSON stream stays parseable -- mirroring the sibling
+        FileNotFoundError/ValueError handlers."""
+        import typer
+        from specify_cli.workflows import _commands
+        from specify_cli.workflows.engine import RunState
+
+        (project_dir / ".specify" / "workflows").mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(
+            _commands, "_require_specify_project", lambda: project_dir
+        )
+
+        def _raise_os_error(*args, **kwargs):
+            raise PermissionError(13, "Permission denied")
+
+        monkeypatch.setattr(RunState, "load", _raise_os_error)
+
+        with pytest.raises(typer.Exit) as exc:
+            _commands.workflow_status("some-run", json_output=True)
+        assert exc.value.exit_code == 1
+        captured = capsys.readouterr()
+        assert "Permission denied" in captured.err
+        assert "Permission denied" not in captured.out
         assert captured.out.strip() == ""
 
     def test_status_no_run_id_list_path_unaffected(self, project_dir, monkeypatch):

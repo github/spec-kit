@@ -157,7 +157,11 @@ class CommandRegistrar:
             return ""
 
         yaml_str = yaml.dump(
-            fm, default_flow_style=False, sort_keys=False, allow_unicode=True
+            fm,
+            default_flow_style=False,
+            sort_keys=False,
+            allow_unicode=True,
+            width=float("inf"),
         )
         return f"---\n{yaml_str}---\n"
 

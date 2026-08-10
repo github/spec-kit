@@ -121,13 +121,27 @@ class HermesIntegration(SkillsIntegration):
             command_name = src_file.stem  # e.g. "plan"
             skill_name = f"speckit-{command_name.replace('.', '-')}"
 
-            # Parse frontmatter for description
+            # Parse frontmatter for description. Locate the closing ``---`` on
+            # its own line rather than with ``raw.split("---", 2)`` — a bare
+            # substring split stops at the first ``---`` *anywhere*, including
+            # one inside a value such as ``description: Separate sections
+            # with ---``, which truncates the frontmatter and drops later keys.
+            # The block between the delimiters is parsed unstripped so trailing
+            # newlines in literal (``|``) block scalars survive.
             frontmatter: dict[str, Any] = {}
             if raw.startswith("---"):
-                parts = raw.split("---", 2)
-                if len(parts) >= 3:
+                fm_lines = raw.splitlines(keepends=True)
+                fm_close = next(
+                    (
+                        i
+                        for i in range(1, len(fm_lines))
+                        if fm_lines[i].rstrip() == "---"
+                    ),
+                    None,
+                )
+                if fm_close is not None:
                     try:
-                        fm = yaml.safe_load(parts[1])
+                        fm = yaml.safe_load("".join(fm_lines[1:fm_close]))
                         if isinstance(fm, dict):
                             frontmatter = fm
                     except yaml.YAMLError:
@@ -143,10 +157,26 @@ class HermesIntegration(SkillsIntegration):
                 project_root=project_root,
             )
             # Strip the processed frontmatter — we rebuild it for skills.
+            # Scan for the closing ``---`` on its own line rather than
+            # ``split("---", 2)`` so a ``---`` embedded in a value does not
+            # truncate the frontmatter and spill it into the body.
             if processed_body.startswith("---"):
-                parts = processed_body.split("---", 2)
-                if len(parts) >= 3:
-                    processed_body = parts[2]
+                body_lines = processed_body.splitlines(keepends=True)
+                close_idx = next(
+                    (
+                        i
+                        for i in range(1, len(body_lines))
+                        if body_lines[i].rstrip() == "---"
+                    ),
+                    None,
+                )
+                if close_idx is not None:
+                    # Keep whatever trails the ``---`` marker on the closing
+                    # line so the body stays byte-for-byte identical to
+                    # ``split("---", 2)[2]`` for well-formed templates.
+                    processed_body = body_lines[close_idx][3:] + "".join(
+                        body_lines[close_idx + 1 :]
+                    )
 
             # Select description
             description = frontmatter.get("description", "")

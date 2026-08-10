@@ -179,7 +179,7 @@ def _substitute_core_template(
         by the core template body and core_frontmatter holds the core template's parsed
         frontmatter (so callers can inherit scripts/agent_scripts from it).  Both are
         unchanged / empty when the placeholder is absent or the core template file does
-        not exist.
+        not exist or cannot be read.
     """
     if "{CORE_TEMPLATE}" not in body:
         return body, {}
@@ -209,7 +209,23 @@ def _substitute_core_template(
     if core_file is None:
         return body, {}
 
-    core_frontmatter, core_body = registrar.parse_frontmatter(core_file.read_text(encoding="utf-8"))
+    # Treat an unreadable/undecodable core template like a missing one so a
+    # single corrupted project override cannot crash command registration —
+    # the wrap-strategy callers already skip an unreadable preset source with
+    # a warning (CommandRegistrar.register_pack).
+    try:
+        core_content = core_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        import warnings
+
+        warnings.warn(
+            f"Ignoring core template for command '{cmd_name}': could not read "
+            f"'{core_file.name}' ({exc.__class__.__name__}: {exc}).",
+            stacklevel=2,
+        )
+        return body, {}
+
+    core_frontmatter, core_body = registrar.parse_frontmatter(core_content)
     return body.replace("{CORE_TEMPLATE}", core_body), core_frontmatter
 
 
@@ -551,7 +567,12 @@ class PresetRegistry:
             if not isinstance(data.get("presets"), dict):
                 data["presets"] = {}
             return data
-        except (json.JSONDecodeError, FileNotFoundError):
+        except (json.JSONDecodeError, UnicodeDecodeError, FileNotFoundError):
+            # Corrupted or missing registry, start fresh. A registry whose
+            # bytes cannot be decoded as UTF-8 is the same corruption class
+            # as malformed JSON — only the exception type differs. OSError is
+            # deliberately not caught: the data may be intact on disk, and
+            # starting fresh would let a later _save() wipe it.
             return {
                 "schema_version": self.SCHEMA_VERSION,
                 "presets": {}
@@ -4987,6 +5008,64 @@ class PresetResolver:
                 return tmpl, None
         return None, None
 
+    def _extension_manifest_declared_template(
+        self, ext_dir: Path, template_name: str, template_type: str
+    ) -> tuple[dict | None, Path | None]:
+        """Resolve an extension's manifest-declared command/template/script entry and usable file.
+
+        Mirrors ``_manifest_declared_template`` (for presets): returns ``(entry, candidate)``
+        where ``entry`` is the matching ``provides.<type>`` mapping, or ``None`` if the
+        extension has no (valid) manifest or doesn't declare this ``(name, type)``.
+        ``candidate`` is the declared ``file:`` resolved under ``ext_dir`` IFF it is a
+        regular file that stays within ``ext_dir`` (guards against path traversal via a
+        malformed manifest, mirroring ``resolve_extension_command_via_manifest``);
+        ``None`` otherwise.
+
+        The manifest is authoritative: when ``entry`` is not ``None`` but ``candidate`` is
+        ``None``, callers must NOT fall back to convention-based lookup — that would mask
+        a typo or pick up an undeclared file. Shared by ``resolve()`` and
+        ``collect_all_layers()`` so their manifest-first resolution cannot silently
+        diverge (the divergence flagged in review on #4012).
+        """
+        if template_type not in ("command", "template", "script"):
+            return None, None
+        ext_manifest_path = ext_dir / "extension.yml"
+        if not ext_manifest_path.exists():
+            return None, None
+        from ..extensions import ExtensionManifest, ValidationError as ExtValidationError
+
+        try:
+            ext_manifest = ExtensionManifest(ext_manifest_path)
+        except (ExtValidationError, yaml.YAMLError, OSError, TypeError, AttributeError):
+            return None, None
+        if template_type == "command":
+            entries = ext_manifest.commands
+        elif template_type == "template":
+            entries = ext_manifest.templates
+        else:
+            entries = ext_manifest.scripts
+        for entry in entries:
+            if entry.get("name") != template_name:
+                continue
+            file_rel = entry.get("file")
+            if not file_rel:
+                return entry, None
+            rel_path = Path(file_rel)
+            if rel_path.is_absolute():
+                return entry, None
+            candidate = ext_dir / rel_path
+            try:
+                # Resolve only for the containment check, not for the
+                # returned path -- resolving the returned path would follow
+                # symlinks in ext_dir's ancestors (e.g. a symlinked tmp dir
+                # on macOS) and diverge from the unresolved paths convention
+                # lookup returns for the same directory.
+                candidate.resolve().relative_to(ext_dir.resolve())  # raises ValueError if outside
+            except (OSError, ValueError):
+                return entry, None
+            return entry, (candidate if candidate.is_file() else None)
+        return None, None
+
     def _get_all_extensions_by_priority(self) -> list[tuple[int, str, dict | None]]:
         """Build unified list of registered and unregistered extensions sorted by priority.
 
@@ -5133,6 +5212,16 @@ class PresetResolver:
         for _priority, ext_id, _metadata in self._get_all_extensions_by_priority():
             ext_dir = self.extensions_dir / ext_id
             if not ext_dir.is_dir():
+                continue
+            # The extension manifest is authoritative, same as preset manifests
+            # above: check it before convention-based lookup so a declared entry
+            # at a non-conventional path wins over a stale conventional file.
+            entry, manifest_candidate = self._extension_manifest_declared_template(
+                ext_dir, template_name, template_type
+            )
+            if manifest_candidate is not None:
+                return manifest_candidate
+            if entry is not None:
                 continue
             for subdir in subdirs:
                 if subdir:
@@ -5440,27 +5529,15 @@ class PresetResolver:
             ext_dir = self.extensions_dir / ext_id
             if not ext_dir.is_dir():
                 continue
-            # Try convention-based lookup first
-            candidate = _find_in_subdirs(ext_dir)
-            # If not found and this is a command, check extension manifest
-            if candidate is None and template_type == "command":
-                ext_manifest_path = ext_dir / "extension.yml"
-                if ext_manifest_path.exists():
-                    try:
-                        from ..extensions import ExtensionManifest, ValidationError as ExtValidationError
-                        ext_manifest = ExtensionManifest(ext_manifest_path)
-                        for cmd in ext_manifest.commands:
-                            if cmd.get("name") == template_name:
-                                cmd_file = cmd.get("file")
-                                if cmd_file:
-                                    c = ext_dir / cmd_file
-                                    if c.exists():
-                                        candidate = c
-                                break
-                    except (ExtValidationError, yaml.YAMLError):
-                        # Invalid extension manifest — fall back to
-                        # convention-based lookup (already attempted above).
-                        pass
+            # The extension manifest is authoritative, same as preset manifests
+            # above: check it before convention-based lookup so a declared entry
+            # at a non-conventional path wins over a stale conventional file, and
+            # a declared-but-missing file isn't silently masked by convention.
+            entry, candidate = self._extension_manifest_declared_template(
+                ext_dir, template_name, template_type
+            )
+            if entry is None:
+                candidate = _find_in_subdirs(ext_dir)
             if candidate:
                 if ext_meta:
                     version = ext_meta.get("version", "?")
@@ -5592,7 +5669,7 @@ class PresetResolver:
         if not layers:
             return None
 
-        def _read_layer_content(layer: Dict[str, Any]) -> str:
+        def _read_layer_content(layer: Dict[str, Any]) -> Optional[str]:
             """Read a layer's raw text, rewriting extension-relative subdir
             references (agents/, knowledge-base/, etc.) to their installed
             location when the layer is extension-provided (#2101).
@@ -5602,8 +5679,18 @@ class PresetResolver:
             rewrite when it wins outright above or serves as the
             composition base below — never as a mid-stack composing
             (append/prepend/wrap) layer.
+
+            Returns None when the layer cannot be read or decoded:
+            collect_all_layers deliberately keeps a non-UTF-8 legacy layer
+            (with its "replace" default) so unrelated commands still
+            resolve, so the same tolerance must apply here — the documented
+            contract is "Composed content string, or None if not found",
+            not a raw UnicodeDecodeError at composition time.
             """
-            text = layer["path"].read_text(encoding="utf-8")
+            try:
+                text = layer["path"].read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                return None
             extension_id = layer.get("extension_id")
             extension_dir = layer.get("extension_dir")
             if extension_id and extension_dir:
@@ -5641,6 +5728,8 @@ class PresetResolver:
         # Convert to reversed_layers index
         base_reversed_idx = len(layers) - 1 - base_layer_idx
         content = _read_layer_content(layers[base_layer_idx])
+        if content is None:
+            return None
         # Compose only the layers above the base (higher priority = lower index in layers,
         # higher index in reversed_layers). Process bottom-up from base+1.
         start_idx = base_reversed_idx + 1
@@ -5684,7 +5773,12 @@ class PresetResolver:
 
         # Apply composition layers from bottom to top
         for layer in reversed_layers[start_idx:]:
-            layer_content = layer["path"].read_text(encoding="utf-8")
+            try:
+                layer_content = layer["path"].read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                # Same tolerance as _read_layer_content: an unreadable layer
+                # means the composed result cannot be produced.
+                return None
             strategy = layer["strategy"]
 
             if is_command:

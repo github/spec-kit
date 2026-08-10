@@ -771,7 +771,17 @@ def _local_manifest_source(arg: str):
                 error_type=BundlerError,
                 label="bundle manifest",
             )
-        data = _yaml.safe_load(io.BytesIO(raw))
+        try:
+            data = _yaml.safe_load(io.BytesIO(raw))
+        except _yaml.YAMLError as exc:
+            # The sibling directory/bundle.yml branches reach YAML through
+            # load_yaml(), which turns a parse failure into a BundlerError. This
+            # branch parses inline, so without this it raises a raw YAMLError --
+            # neither a ValueError nor an OSError -- which escapes
+            # bundle_install()'s `except BundlerError` as a traceback.
+            raise BundlerError(
+                f"Invalid YAML in bundle.yml inside '{candidate}': {exc}"
+            ) from exc
         return BundleManifest.from_dict(data)
 
     if candidate.name == "bundle.yml" or candidate.suffix in (".yml", ".yaml"):

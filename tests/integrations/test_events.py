@@ -1263,6 +1263,53 @@ class TestCommandRunner:
         )
 
         argv = _resolve_event_command_argv(cmd_dir / "boot.md", tmp_path, None)
+
+        assert argv is None
+
+    def test_unreadable_template_returns_none(self, tmp_path):
+        """A command template that cannot be read must resolve to no argv.
+
+        Every other failure inside ``_resolve_event_command_argv`` — missing
+        frontmatter, malformed YAML, absent scripts — degrades to ``None`` so
+        the dispatcher treats the command as declaring no runnable script.
+        The initial ``read_text`` was the one step outside that boundary: a
+        non-UTF-8 template raised a raw ``UnicodeDecodeError`` through
+        ``resolve_and_run_event_command`` and out of ``specify event run``.
+        """
+        from specify_cli.events import _resolve_event_command_argv
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "boot.md").write_bytes(
+            b"---\ndescription: \"B\xff\xfeoot\"\n---\nBody\n"
+        )
+
+        argv = _resolve_event_command_argv(cmd_dir / "boot.md", tmp_path, None)
+        assert argv is None
+
+    def test_permission_denied_template_returns_none(self, tmp_path, monkeypatch):
+        """The same boundary must cover ``OSError`` (e.g. permission denied).
+
+        Mocked rather than chmod-based so the case also holds under
+        privileged CI where permission bits are not enforced.
+        """
+        from specify_cli.events import _resolve_event_command_argv
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        template = cmd_dir / "boot.md"
+        template.write_text("---\ndescription: Boot\n---\nBody\n")
+
+        original_read_text = Path.read_text
+
+        def failing_read_text(self_path, *args, **kwargs):
+            if self_path == template:
+                raise PermissionError(13, "Permission denied")
+            return original_read_text(self_path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", failing_read_text)
+
+        argv = _resolve_event_command_argv(template, tmp_path, None)
         assert argv is None
 
     def test_ps_variant_prefixed_with_powershell_launcher(self, tmp_path):

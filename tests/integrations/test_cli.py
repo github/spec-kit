@@ -1067,6 +1067,99 @@ class TestInitIntegrationFlag:
         assert "not updated" in result.output
 
 
+    def test_init_here_force_reapplies_installed_presets(self, tmp_path, monkeypatch):
+        """Regression for #3990: init --here --force must call _register_presets_for_agent
+        after setup() so preset-composed files are not silently reverted to core."""
+        from unittest.mock import MagicMock, patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        project = tmp_path / "force-preset-reapply"
+        project.mkdir()
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+
+            # First init to create a valid project structure.
+            result = runner.invoke(app, [
+                "init", "--here", "--force",
+                "--integration", "claude",
+                "--script", "sh",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
+            assert result.exit_code == 0, result.output
+
+            # Second init --here --force: verify _register_presets_for_agent is called.
+            # Patch at the source module since init.py does a lazy import of these functions.
+            mock_presets = MagicMock()
+            mock_extensions = MagicMock()
+            with (
+                patch(
+                    "specify_cli.integrations._helpers._register_presets_for_agent",
+                    mock_presets,
+                ),
+                patch(
+                    "specify_cli.integrations._helpers._register_extensions_for_agent",
+                    mock_extensions,
+                ),
+            ):
+                result2 = runner.invoke(app, [
+                    "init", "--here", "--force",
+                    "--integration", "claude",
+                    "--script", "sh",
+                    "--ignore-agent-tools",
+                ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result2.exit_code == 0, result2.output
+        assert mock_presets.called, (
+            "_register_presets_for_agent was not called during init --here --force"
+        )
+        assert mock_extensions.called, (
+            "_register_extensions_for_agent was not called during init --here --force"
+        )
+
+    def test_init_here_without_force_does_not_reapply_presets(self, tmp_path):
+        """Without --force (fresh project), _register_presets_for_agent should NOT be called."""
+        from unittest.mock import MagicMock, patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        project = tmp_path / "no-force-preset"
+        project.mkdir()
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            mock_presets = MagicMock()
+            with patch(
+                "specify_cli.integrations._helpers._register_presets_for_agent",
+                mock_presets,
+            ):
+                result = runner.invoke(app, [
+                    "init", "--here",
+                    "--integration", "claude",
+                    "--script", "sh",
+                    "--ignore-agent-tools",
+                ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        # On a fresh project without --force the reapply guard should not fire.
+        assert not mock_presets.called, (
+            "_register_presets_for_agent should not be called on a fresh init without --force"
+        )
+
+
 class TestForceExistingDirectory:
     """Tests for --force merging into an existing named directory."""
 

@@ -50,7 +50,7 @@ pipx install specify-cli
 pip install specify-cli
 ```
 
-To install a specific release, pin the version — for example `uv tool install specify-cli==0.12.11`. See the [PyPI installation guide](install/pypi.md) for details, including how to upgrade.
+To install a specific release, pin the version — for example `uv tool install specify-cli==0.12.11`. See the [PyPI installation guide](install/pypi.md) for details, including how to upgrade and how to [install from a custom or private package index](install/pypi.md#install-from-a-custom-or-private-package-index).
 
 ### One-time Usage
 
