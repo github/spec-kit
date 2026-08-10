@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.16.2] - 2026-08-10
+
+### Changed
+
+- Add Command Code integration to spec-kit (#4019)
+- fix(workflows): strip a resolved condition before the true/false check (#3883)
+- fix(workflows): guard a non-string overlay edit 'operation' (#3881)
+- fix: bound response read in integration catalog fetch (#3818)
+- Fix bug-test Python dependency provisioning (#4030)
+- fix(bundle): escape Rich markup in bundle CLI error and status output (#4023)
+- fix(presets): skip an unreadable restore source in `preset remove` (#4020)
+- Add Keel Discovery extension to community catalog (#4035)
+- fix: show error details in preset catalog config read failure (#3840)
+- Update Reconcile Extension to v1.1.0 (#4034)
+- Add Model Routing Governance preset to community catalog (#4033)
+- fix: use missing_ok=True in integration JSON removal (#3846)
+- fix: use missing_ok=True in extension cache clear (#3845)
+- fix(extensions): reject duplicate provides.templates/scripts names (#4016)
+- feat(presets): resolve constitution templates at command time (#3984)
+- [bug-fix] Fix preset-wrap-drops-argument-hint: inherit argument-hint from core template (#3996)
+- docs: document installing specify-cli from a custom package index (#4032)
+- feat(extensions): accept provides.templates and provides.scripts in manifest (#4012)
+- fix(presets): treat an unreadable core template as missing (#3961)
+- chore: release 0.16.1, begin 0.16.2.dev0 development (#4014)
+
 ## [0.16.1] - 2026-08-07
 
 ### Changed
