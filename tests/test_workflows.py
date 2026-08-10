@@ -786,6 +786,39 @@ class TestExpressions:
         assert evaluate_condition("{{ inputs.ready }}", ctx) is True
         assert evaluate_condition("{{ inputs.missing }}", ctx) is False
 
+    def test_condition_strips_captured_command_output(self):
+        """A condition resolving to captured stdout must honour "false".
+
+        A ``shell`` step stores ``proc.stdout`` verbatim, so ``run: echo false``
+        resolves to ``"false\\n"``. Without stripping, the trailing newline
+        matched neither the "false" nor the "true" branch and fell through to
+        ``bool("false\\n")`` -> True, so an ``if`` step took its ``then`` branch
+        on a step that printed "false". There is no ``trim`` filter, so a
+        workflow author cannot strip it themselves.
+        """
+        from specify_cli.workflows.expressions import evaluate_condition
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(steps={"check": {"output": {"stdout": "false\n"}}})
+        assert evaluate_condition("{{ steps.check.output.stdout }}", ctx) is False
+
+        for raw in ("false\n", "false\r\n", " false", "false ", "FALSE\n"):
+            assert evaluate_condition(raw, StepContext()) is False, raw
+        for raw in ("true\n", " true ", "TRUE\r\n"):
+            assert evaluate_condition(raw, StepContext()) is True, raw
+
+    def test_condition_whitespace_only_string_stays_truthy(self):
+        """Stripping must not turn a whitespace-only string into False.
+
+        Only the "false"/"true" special case is stripped; everything else still
+        falls through to ``bool(result)`` on the raw string.
+        """
+        from specify_cli.workflows.expressions import evaluate_condition
+        from specify_cli.workflows.base import StepContext
+
+        assert evaluate_condition("   ", StepContext()) is True
+        assert evaluate_condition("falsey", StepContext()) is True
+
     def test_non_string_passthrough(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
