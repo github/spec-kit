@@ -745,6 +745,13 @@ class ExtensionRegistry:
         if not self.registry_path.exists():
             return {"schema_version": self.SCHEMA_VERSION, "extensions": {}}
 
+        # A non-regular file (e.g. a directory at the registry path) is not a
+        # readable registry. Recover to empty so construction — used by the
+        # install/enable/disable flows — does not crash. Resolution paths that
+        # must fail closed consult is_corrupt() instead of relying on this.
+        if not self.registry_path.is_file():
+            return {"schema_version": self.SCHEMA_VERSION, "extensions": {}}
+
         try:
             with open(self.registry_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -763,6 +770,38 @@ class ExtensionRegistry:
             # is deliberately not caught: the data may be intact on disk, and
             # starting fresh would let a later _save() wipe it.
             return {"schema_version": self.SCHEMA_VERSION, "extensions": {}}
+
+    def is_corrupt(self) -> bool:
+        """Report whether an existing registry file is present but unreadable.
+
+        ``_load`` deliberately recovers from a corrupt registry by normalizing
+        it to an empty mapping so install/enable/disable flows keep working.
+        Resolution paths, however, must fail closed: a corrupt registry that
+        normalizes to ``{}`` would otherwise cause every on-disk extension
+        directory to be admitted as an unregistered, enabled extension. This
+        probe lets those callers distinguish "no registry" (safe) from
+        "registry exists but is invalid" (unsafe) without changing recovery
+        behavior. An absent registry returns ``False``; a directory, broken
+        or dangling symlink, non-regular file, unreadable file, non-mapping
+        root, or non-mapping ``extensions`` value returns ``True``.
+        """
+        # os.path.lexists (not Path.exists) so a dangling symlink is detected
+        # rather than followed to a non-existent target and mistaken for an
+        # absent registry — which would reopen the fail-open directory scan.
+        if not os.path.lexists(self.registry_path):
+            return False
+        if not self.registry_path.is_file():
+            return True
+        try:
+            with open(self.registry_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+            return True
+        if not isinstance(data, dict):
+            return True
+        if "extensions" in data and not isinstance(data["extensions"], dict):
+            return True
+        return False
 
     def _save(self):
         """Save registry to disk."""

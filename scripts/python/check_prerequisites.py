@@ -9,10 +9,22 @@ from dataclasses import dataclass
 from pathlib import Path
 
 try:
-    from common import FeaturePaths, format_speckit_command, get_feature_paths
+    from common import (
+        FeaturePaths,
+        TemplateResolutionError,
+        format_speckit_command,
+        get_feature_paths,
+        resolve_template_content,
+    )
 except ImportError:  # pragma: no cover - direct execution from unusual cwd
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from common import FeaturePaths, format_speckit_command, get_feature_paths
+    from common import (
+        FeaturePaths,
+        TemplateResolutionError,
+        format_speckit_command,
+        get_feature_paths,
+        resolve_template_content,
+    )
 
 
 def _json_line(payload: object) -> str:
@@ -28,6 +40,7 @@ OPTIONS:
   --require-tasks     Require tasks.md to exist (for implementation phase)
   --include-tasks     Include tasks.md in AVAILABLE_DOCS list
   --paths-only        Only output path variables (no prerequisite validation)
+  --template NAME     Include composed template content in JSON output
   --help, -h          Show this help message
 
 EXAMPLES:
@@ -49,6 +62,7 @@ class Args:
     require_tasks: bool = False
     include_tasks: bool = False
     paths_only: bool = False
+    template_name: str | None = None
 
 
 def _parse_args(argv: list[str]) -> Args:
@@ -56,8 +70,11 @@ def _parse_args(argv: list[str]) -> Args:
     require_tasks = False
     include_tasks = False
     paths_only = False
+    template_name = None
 
-    for arg in argv:
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
         if arg == "--json":
             json_mode = True
         elif arg == "--require-tasks":
@@ -66,6 +83,15 @@ def _parse_args(argv: list[str]) -> Args:
             include_tasks = True
         elif arg == "--paths-only":
             paths_only = True
+        elif arg == "--template":
+            index += 1
+            if index >= len(argv):
+                print(
+                    "ERROR: --template requires a template name",
+                    file=sys.stderr,
+                )
+                raise SystemExit(1)
+            template_name = argv[index]
         elif arg in {"--help", "-h"}:
             sys.stdout.write(HELP_TEXT)
             raise SystemExit(0)
@@ -75,12 +101,14 @@ def _parse_args(argv: list[str]) -> Args:
                 file=sys.stderr,
             )
             raise SystemExit(1)
+        index += 1
 
     return Args(
         json_mode=json_mode,
         require_tasks=require_tasks,
         include_tasks=include_tasks,
         paths_only=paths_only,
+        template_name=template_name,
     )
 
 
@@ -211,9 +239,32 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     docs = _available_docs(paths, args.include_tasks)
+    template_content = None
+    if args.template_name:
+        try:
+            template_content = resolve_template_content(
+                args.template_name, paths.repo_root
+            )
+        except TemplateResolutionError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        if template_content is None:
+            print(
+                f"ERROR: Could not resolve required {args.template_name} from "
+                f"the template override stack for {paths.repo_root}",
+                file=sys.stderr,
+            )
+            return 1
+
     if args.json_mode:
+        payload: dict[str, object] = {
+            "FEATURE_DIR": str(paths.feature_dir),
+            "AVAILABLE_DOCS": docs,
+        }
+        if args.template_name:
+            payload["TEMPLATE_CONTENT"] = template_content
         sys.stdout.write(
-            _json_line({"FEATURE_DIR": str(paths.feature_dir), "AVAILABLE_DOCS": docs})
+            _json_line(payload)
         )
     else:
         _print_text_results(paths, args.include_tasks)

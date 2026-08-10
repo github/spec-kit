@@ -719,7 +719,7 @@ def test_setup_tasks_ps_core_template_resolved(tasks_repo: Path) -> None:
         [exe, "-NoProfile", "-File", str(script), "-Json"],
         cwd=tasks_repo,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         check=False,
         env=_clean_env(),
     )

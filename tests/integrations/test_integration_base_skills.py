@@ -494,6 +494,7 @@ class SkillsIntegrationTests:
                 ".specify/scripts/bash/check-prerequisites.sh",
                 ".specify/scripts/bash/common.sh",
                 ".specify/scripts/bash/create-new-feature.sh",
+                ".specify/scripts/bash/resolve-template.sh",
                 ".specify/scripts/bash/setup-plan.sh",
                 ".specify/scripts/bash/setup-tasks.sh",
             ]
@@ -502,6 +503,7 @@ class SkillsIntegrationTests:
                 ".specify/scripts/powershell/check-prerequisites.ps1",
                 ".specify/scripts/powershell/common.ps1",
                 ".specify/scripts/powershell/create-new-feature.ps1",
+                ".specify/scripts/powershell/resolve-template.ps1",
                 ".specify/scripts/powershell/setup-plan.ps1",
                 ".specify/scripts/powershell/setup-tasks.ps1",
             ]

@@ -13,6 +13,8 @@ from tests.conftest import requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
     bash_cmd,
+    break_wrap_layer,
+    install_composition_stack,
     install_scripts,
     json_stdout,
     make_repo,
@@ -382,10 +384,106 @@ def test_python_full_run_matches_bash(repo_pair: tuple[Path, Path]) -> None:
     branch = json_stdout(py)["BRANCH_NAME"]
     for repo in repo_pair:
         spec = repo / "specs" / branch / "spec.md"
-        assert spec.read_text(encoding="utf-8") == TEMPLATE_BODY
+        assert spec.read_bytes() == TEMPLATE_BODY.encode("utf-8")
     assert (repo_b / ".specify" / "feature.json").read_bytes() == (
         repo_a / ".specify" / "feature.json"
     ).read_bytes()
+
+
+@requires_bash
+def test_all_variants_materialize_composed_spec_template(tmp_path: Path) -> None:
+    repos = [
+        _setup_repo(tmp_path, "bash"),
+        _setup_repo(tmp_path, "powershell"),
+        _setup_repo(tmp_path, "python"),
+    ]
+    expected = ""
+    for current in repos:
+        expected = install_composition_stack(
+            current, "spec-template", TEMPLATE_BODY
+        )
+
+    bash = run(
+        bash_cmd(
+            repos[0],
+            SCRIPT,
+            "--json",
+            "--number",
+            "1",
+            "--short-name",
+            "composed",
+            "x",
+        ),
+        repos[0],
+    )
+    py = run(
+        py_cmd(
+            repos[2],
+            SCRIPT,
+            "--json",
+            "--number",
+            "1",
+            "--short-name",
+            "composed",
+            "x",
+        ),
+        repos[2],
+    )
+    results = [bash, py]
+    checked_repos = [repos[0], repos[2]]
+    if HAS_POWERSHELL:
+        results.insert(
+            1,
+            run(
+                ps_cmd(
+                    repos[1],
+                    SCRIPT,
+                    "-Json",
+                    "-Number",
+                    "1",
+                    "-ShortName",
+                    "composed",
+                    "x",
+                ),
+                repos[1],
+            ),
+        )
+        checked_repos.insert(1, repos[1])
+
+    assert all(result.returncode == 0 for result in results)
+    for current in checked_repos:
+        assert (
+            current / "specs" / "001-composed" / "spec.md"
+        ).read_text(encoding="utf-8") == expected
+
+
+@requires_bash
+def test_all_variants_fail_for_broken_spec_composition(tmp_path: Path) -> None:
+    repos = [
+        _setup_repo(tmp_path, "bash"),
+        _setup_repo(tmp_path, "powershell"),
+        _setup_repo(tmp_path, "python"),
+    ]
+    for current in repos:
+        install_composition_stack(current, "spec-template", TEMPLATE_BODY)
+        break_wrap_layer(current, "spec-template")
+
+    bash = run(bash_cmd(repos[0], SCRIPT, "--json", "x"), repos[0])
+    py = run(py_cmd(repos[2], SCRIPT, "--json", "x"), repos[2])
+    results = [(bash, repos[0]), (py, repos[2])]
+    if HAS_POWERSHELL:
+        results.append(
+            (
+                run(ps_cmd(repos[1], SCRIPT, "-Json", "x"), repos[1]),
+                repos[1],
+            )
+        )
+
+    assert all(result.returncode != 0 for result, _ in results)
+    assert all(
+        not (current / "specs" / "001-x").exists()
+        for _, current in results
+    )
 
 
 @requires_bash

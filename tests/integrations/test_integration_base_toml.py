@@ -495,6 +495,7 @@ class TomlIntegrationTests:
                 "check-prerequisites.sh",
                 "common.sh",
                 "create-new-feature.sh",
+                "resolve-template.sh",
                 "setup-plan.sh",
                 "setup-tasks.sh",
             ]:
@@ -504,6 +505,7 @@ class TomlIntegrationTests:
                 "check-prerequisites.ps1",
                 "common.ps1",
                 "create-new-feature.ps1",
+                "resolve-template.ps1",
                 "setup-plan.ps1",
                 "setup-tasks.ps1",
             ]:

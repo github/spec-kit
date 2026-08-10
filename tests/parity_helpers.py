@@ -109,6 +109,67 @@ def write_feature_json(
     )
 
 
+def install_composition_stack(
+    repo: Path, template_name: str, core_content: str
+) -> str:
+    """Install wrap/prepend/append presets over a core template."""
+    templates = repo / ".specify" / "templates"
+    templates.mkdir(parents=True, exist_ok=True)
+    (templates / f"{template_name}.md").write_text(core_content, encoding="utf-8")
+
+    layers = [
+        ("wrap-pack", 1, "wrap", "## Wrapper\n{CORE_TEMPLATE}\n## End\n"),
+        ("prepend-pack", 2, "prepend", "# Prepended\n"),
+        ("append-pack", 3, "append", "# Appended\n"),
+    ]
+    registry: dict[str, object] = {"presets": {}}
+    registry_presets = registry["presets"]
+    assert isinstance(registry_presets, dict)
+
+    for preset_id, priority, strategy, content in layers:
+        preset_dir = repo / ".specify" / "presets" / preset_id
+        template_dir = preset_dir / "templates"
+        template_dir.mkdir(parents=True)
+        (template_dir / f"{template_name}.md").write_text(content, encoding="utf-8")
+        (preset_dir / "preset.yml").write_text(
+            "provides:\n"
+            "  templates:\n"
+            "    - type: template\n"
+            f"      name: {template_name}\n"
+            f"      file: templates/{template_name}.md\n"
+            f"      strategy: {strategy}\n",
+            encoding="utf-8",
+        )
+        registry_presets[preset_id] = {
+            "enabled": True,
+            "priority": priority,
+        }
+
+    (repo / ".specify" / "presets" / ".registry").write_text(
+        json.dumps(registry, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+
+    appended = "# Appended\n"
+    prepended = "# Prepended\n"
+    wrapper = "## Wrapper\n{CORE_TEMPLATE}\n## End\n"
+    composed = f"{core_content}\n\n{appended}"
+    composed = f"{prepended}\n\n{composed}"
+    return wrapper.replace("{CORE_TEMPLATE}", composed)
+
+
+def break_wrap_layer(repo: Path, template_name: str) -> None:
+    """Replace the installed wrap layer with one missing its placeholder."""
+    (
+        repo
+        / ".specify"
+        / "presets"
+        / "wrap-pack"
+        / "templates"
+        / f"{template_name}.md"
+    ).write_text("# Broken wrapper\n", encoding="utf-8")
+
+
 def normalize_repo_paths(text: str, repo: Path) -> str:
     """Replace the repo path with a placeholder so two-repo runs compare equal."""
     repo_paths = sorted({str(repo), str(repo.resolve())}, key=len, reverse=True)

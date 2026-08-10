@@ -7,16 +7,25 @@ import datetime
 import json
 import re
 import shlex
-import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 try:
-    from common import get_repo_root, persist_feature_json, resolve_template
+    from common import (
+        TemplateResolutionError,
+        get_repo_root,
+        persist_feature_json,
+        resolve_template_content,
+    )
 except ImportError:  # pragma: no cover - direct execution from unusual cwd
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from common import get_repo_root, persist_feature_json, resolve_template
+    from common import (
+        TemplateResolutionError,
+        get_repo_root,
+        persist_feature_json,
+        resolve_template_content,
+    )
 
 
 def _json_line(payload: object) -> str:
@@ -374,12 +383,22 @@ def main(argv: list[str] | None = None) -> int:
                 )
             return 1
 
+        template_content = None
+        needs_spec = not spec_file.is_file()
+        if needs_spec:
+            try:
+                template_content = resolve_template_content(
+                    "spec-template", repo_root
+                )
+            except TemplateResolutionError as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                return 1
+
         feature_dir.mkdir(parents=True, exist_ok=True)
 
-        if not spec_file.is_file():
-            template = resolve_template("spec-template", repo_root)
-            if template is not None and template.is_file():
-                shutil.copy(template, spec_file)
+        if needs_spec:
+            if template_content is not None:
+                spec_file.write_bytes(template_content.encode("utf-8"))
             else:
                 print(
                     "Warning: Spec template not found; created empty spec file",

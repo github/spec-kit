@@ -10,7 +10,9 @@ from tests.conftest import requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
     bash_cmd,
+    break_wrap_layer,
     clean_env,
+    install_composition_stack,
     install_scripts,
     json_stdout,
     make_repo,
@@ -85,6 +87,42 @@ def test_python_override_template_wins_matches_bash(repo: Path) -> None:
     assert py.returncode == bash.returncode == 0
     assert json_stdout(py) == json_stdout(bash)
     assert json_stdout(py)["TASKS_TEMPLATE"].endswith("overrides/tasks-template.md")
+
+
+@requires_bash
+def test_all_variants_return_composed_tasks_template(repo: Path) -> None:
+    expected = install_composition_stack(
+        repo, "tasks-template", "# Tasks Template\n"
+    )
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, "-Json"), repo))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["TASKS_TEMPLATE_CONTENT"] == expected
+        for result in results
+    )
+
+
+@requires_bash
+def test_all_variants_fail_for_broken_tasks_composition(repo: Path) -> None:
+    install_composition_stack(repo, "tasks-template", "# Tasks Template\n")
+    break_wrap_layer(repo, "tasks-template")
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, "-Json"), repo))
+
+    assert all(result.returncode != 0 for result in results)
+    assert all(result.stdout == "" for result in results)
 
 
 @requires_bash
