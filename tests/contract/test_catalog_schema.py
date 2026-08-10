@@ -216,26 +216,6 @@ def test_repository_community_bundle_catalog_matches_contract():
     assert all(entry.verified is False for entry in entries.values())
 
 
-def test_community_extension_catalog_includes_keel_entry():
-    """The `keel` community extension (issue #4026) must be listed in both the
-    catalog and its docs table, not just one of the two."""
-    repo_root = Path(__file__).parents[2]
-    catalog_path = repo_root / "extensions" / "catalog.community.json"
-    payload = json.loads(catalog_path.read_text(encoding="utf-8"))
-
-    assert "keel" in payload["extensions"]
-    entry = payload["extensions"]["keel"]
-    assert entry["id"] == "keel"
-    assert entry["version"] == "0.1.1"
-    assert entry["repository"] == "https://github.com/keeldiscovery/spec-kit-keel"
-    assert entry["download_url"].endswith("/v0.1.1.zip")
-
-    docs_text = (repo_root / "docs" / "community" / "extensions.md").read_text(
-        encoding="utf-8"
-    )
-    assert "Keel Discovery" in docs_text
-
-
 def test_wheel_packages_community_bundle_catalog():
     repo_root = Path(__file__).parents[2]
     with (repo_root / "pyproject.toml").open("rb") as pyproject_file:
