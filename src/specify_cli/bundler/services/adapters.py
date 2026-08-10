@@ -147,6 +147,8 @@ def make_catalog_fetcher(*, allow_network: bool = True):
                 return loads_json(path.read_text(encoding="utf-8"), origin=str(path))
             except FileNotFoundError:
                 raise BundlerError(f"Catalog file not found: {path}") from None
+            except (OSError, UnicodeError) as exc:
+                raise BundlerError(f"Could not read {path}: {exc}") from exc
 
         if scheme == "" or _is_windows_drive_path(url):
             path = Path(url)
@@ -154,6 +156,8 @@ def make_catalog_fetcher(*, allow_network: bool = True):
                 return loads_json(path.read_text(encoding="utf-8"), origin=str(path))
             except FileNotFoundError:
                 raise BundlerError(f"Catalog file not found: {path}") from None
+            except (OSError, UnicodeError) as exc:
+                raise BundlerError(f"Could not read {path}: {exc}") from exc
 
         if scheme in ("http", "https"):
             if not allow_network:
