@@ -339,6 +339,73 @@ class TestPresetManifest:
         assert hash_val.startswith("sha256:")
         assert len(hash_val) > 10
 
+    def test_get_hash_incremental_chunking(self, temp_dir):
+        """Regression: get_hash() must read in bounded chunks, not f.read().
+
+        Creates a file larger than 64 KiB to exercise multiple chunk
+        iterations, verifies the digest matches hashlib.sha256(content),
+        and asserts that raw read() is never called with no size limit.
+        """
+        import hashlib
+        from unittest.mock import patch
+
+        # Build valid YAML content larger than 64 KiB. The padding field
+        # is a long string that inflates the file without breaking YAML.
+        padding = "P" * (200 * 1024)  # 200 KiB
+        yaml_content = (
+            "schema_version: '1.0'\n"
+            "preset:\n"
+            "  id: large-test\n"
+            "  name: Large Test\n"
+            "  version: '1.0.0'\n"
+            "  description: chunking test\n"
+            "  author: test\n"
+            "requires:\n"
+            "  speckit_version: '>=0.1.0'\n"
+            "provides:\n"
+            "  templates:\n"
+            "    - type: template\n"
+            "      name: test\n"
+            "      file: test.md\n"
+            f"  padding: \"{padding}\"\n"
+        )
+        content = yaml_content.encode("utf-8")
+        assert len(content) > 65536  # Ensure multi-chunk coverage.
+
+        manifest_path = temp_dir / "large_preset.yml"
+        manifest_path.write_bytes(content)
+
+        manifest = PresetManifest(manifest_path)
+
+        # Spy on read() to reject unbounded calls.
+        original_open = open
+
+        read_sizes: list[int] = []
+
+        def tracking_open(path, *args, **kwargs):
+            fh = original_open(path, *args, **kwargs)
+            if args and args[0] == "rb" or kwargs.get("mode") == "rb":
+                orig_read = fh.read
+                def tracking_read(n=-1):
+                    if n == -1 or n is None:
+                        raise RuntimeError(
+                            "f.read() called without size limit — "
+                            "use bounded chunked reads instead"
+                        )
+                    read_sizes.append(n)
+                    return orig_read(n)
+                fh.read = tracking_read
+            return fh
+
+        with patch("builtins.open", side_effect=tracking_open):
+            result = manifest.get_hash()
+
+        expected = f"sha256:{hashlib.sha256(content).hexdigest()}"
+        assert result == expected
+        # Verify bounded reads happened (at least 3 chunks of <= 65536 bytes).
+        assert len(read_sizes) >= 3
+        assert all(s <= 65536 for s in read_sizes)
+
     def test_multiple_templates(self, temp_dir, valid_pack_data):
         """Test pack with multiple templates of different types."""
         valid_pack_data["provides"]["templates"] = [
