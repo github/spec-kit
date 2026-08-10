@@ -74,7 +74,7 @@ steps:
     with:
       python-version: "3.14"
   - name: Install Python test dependencies
-    run: uv sync --extra test
+    run: uv pip install --system -e ".[test]"
 
 safe-outputs:
   noop:

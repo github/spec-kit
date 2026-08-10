@@ -79,7 +79,7 @@ def test_bug_test_workflow_provisions_python_dependencies():
     assert "    - files.pythonhosted.org" in source_text
     assert setup_uv in source_text
     assert setup_python in source_text
-    assert "run: uv sync --extra test" in source_text
+    assert 'run: uv pip install --system -e ".[test]"' in source_text
 
     assert '"pypi.org"' in compiled_text
     assert '"files.pythonhosted.org"' in compiled_text
@@ -91,4 +91,4 @@ def test_bug_test_workflow_provisions_python_dependencies():
     assert checkout_index < uv_index < python_index < sync_index < agent_index
     assert setup_uv in compiled_text
     assert setup_python in compiled_text
-    assert "run: uv sync --extra test" in compiled_text
+    assert 'run: uv pip install --system -e ".[test]"' in compiled_text
