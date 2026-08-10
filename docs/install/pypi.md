@@ -54,7 +54,7 @@ pip install specify-cli --index-url https://your-index.example.com/pypi/simple/
 ```
 
 > [!NOTE]
-> The same index configuration applies to pinned installs, upgrades (`--force`/`--upgrade`), and one-time usage — set the environment variable or flag on those commands too. If your index requires authentication, follow your tool's documentation for supplying credentials (for example, embedding them in the URL or using a keyring/netrc), and avoid committing secrets. For fully offline installs, see the [air-gapped installation guide](air-gapped.md).
+> The same index configuration applies to pinned installs, upgrades (`--force`/`--upgrade`), and one-time usage — set the environment variable or flag on those commands too. If your index requires authentication, follow your tool's documentation and prefer credential environment variables, keyring, or netrc; do not embed secrets in command-line URLs because they can leak through shell history, process listings, or logs. Avoid committing secrets. For fully offline installs, see the [air-gapped installation guide](air-gapped.md).
 
 ## Verify
 
