@@ -1448,6 +1448,26 @@ class TestPresetResolver:
         with pytest.raises(PresetValidationError, match="Invalid extension registry"):
             resolver.resolve("custom-template")
 
+    def test_resolve_fails_closed_when_registry_is_broken_symlink(self, project_dir):
+        """A dangling ``.registry`` symlink must fail closed. ``Path.exists()``
+        follows symlinks and would mistake it for an absent registry, reopening
+        the fail-open directory scan."""
+        extensions_dir = project_dir / ".specify" / "extensions"
+        ext_templates_dir = extensions_dir / "sneaky-ext" / "templates"
+        ext_templates_dir.mkdir(parents=True)
+        (ext_templates_dir / "custom-template.md").write_text(
+            "# Should not be served\n"
+        )
+        (extensions_dir / ".registry").symlink_to(
+            extensions_dir / "does-not-exist"
+        )
+
+        registry = ExtensionRegistry(extensions_dir)
+        assert registry.is_corrupt()
+        resolver = PresetResolver(project_dir)
+        with pytest.raises(PresetValidationError, match="Invalid extension registry"):
+            resolver.resolve("custom-template")
+
     def test_resolve_pack_over_extension(self, project_dir, pack_dir, temp_dir, valid_pack_data):
         """Test that pack templates take priority over extension templates."""
         # Create extension with templates

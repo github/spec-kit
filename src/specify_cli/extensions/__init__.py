@@ -658,11 +658,16 @@ class ExtensionRegistry:
         probe lets those callers distinguish "no registry" (safe) from
         "registry exists but is invalid" (unsafe) without changing recovery
         behavior. An absent registry returns ``False``; a directory, broken
-        file, non-mapping root, or non-mapping ``extensions`` value returns
-        ``True``.
+        or dangling symlink, non-regular file, unreadable file, non-mapping
+        root, or non-mapping ``extensions`` value returns ``True``.
         """
-        if not self.registry_path.exists():
+        # os.path.lexists (not Path.exists) so a dangling symlink is detected
+        # rather than followed to a non-existent target and mistaken for an
+        # absent registry — which would reopen the fail-open directory scan.
+        if not os.path.lexists(self.registry_path):
             return False
+        if not self.registry_path.is_file():
+            return True
         try:
             with open(self.registry_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
