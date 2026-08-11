@@ -283,9 +283,11 @@ specify bundle validate --path ./my-bundle      # structural + reference checks
 specify bundle build --path ./my-bundle         # produce a versioned .zip artifact
 ```
 
-Four ready-to-read example manifests live under
+Four ready-to-read example bundle manifests live under
 [`examples/bundles/`](examples/bundles/) (product manager, business analyst,
-security researcher, developer).
+security researcher, developer). These are bundle packaging examples, not
+filled generated feature specs; for end-to-end community examples, see the
+[community walkthroughs](https://github.github.io/spec-kit/community/walkthroughs.html).
 
 Key guarantees: `info` shows exactly what `install` adds (transparency);
 installs are idempotent and confined to the project root; `remove` never touches
