@@ -5,8 +5,7 @@ This guide will help you get started with Spec-Driven Development using Spec Kit
 > [!NOTE]
 > Automation scripts are provided as Bash (`.sh`), PowerShell (`.ps1`), and Python (`.py`) variants. Interactive `specify init` prompts you to choose one; non-interactive runs default to a shell variant for your OS. Pass `--script sh|ps|py` to select explicitly.
 
-> [!NOTE]
-> Commands are shown here in `/speckit.*` form, but the exact invocation depends on your agent. Some skills-based agents use `$speckit-*` (e.g. Codex, ZCode) or `/skill:speckit-*` (e.g. Kimi). Use whichever form your agent exposes — the steps are otherwise identical.
+Commands are shown here in `/speckit.*` form, but the exact invocation depends on your agent. Some skills-based agents use `$speckit-*` (e.g. Codex, ZCode) or `/skill:speckit-*` (e.g. Kimi). Use whichever form your agent exposes — the steps are otherwise identical.
 
 ## Recommended Process
 
@@ -136,5 +135,6 @@ Checks the codebase against the spec, plan, and tasks. If it finds gaps, it appe
 
 - See the [Agentic SDD](reference/agentic-sdd.md) reference for full detail on every command
 - Read the [complete methodology](https://github.com/github/spec-kit/blob/main/spec-driven.md) for in-depth guidance
-- Check out [more examples](https://github.com/github/spec-kit/tree/main/templates) in the repository
+- Compare the [core templates](https://github.com/github/spec-kit/tree/main/templates) with
+  [community walkthroughs](community/walkthroughs.md) to see how Spec-Driven Development is used in real projects
 - Explore the [source code on GitHub](https://github.com/github/spec-kit)
