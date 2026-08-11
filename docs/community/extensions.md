@@ -146,6 +146,7 @@ The following community-contributed extensions are available in [`catalog.commun
 | Spec-Kit BDD | ATDD/BDD extension: convert specs to Gherkin scenarios, scaffold step definitions, and verify acceptance test coverage | `process` | Read+Write | [spec-kit-bdd](https://github.com/RSginer/spec-kit-bdd) |
 | Spec2Cloud | Spec-driven workflow tuned for shipping to Azure | `process` | Read+Write | [spec2cloud](https://github.com/Azure-Samples/Spec2Cloud) |
 | SpecKit Companion | Live spec-driven progress — lifecycle capture, status, resume, and a turbo pipeline profile | `visibility` | Read+Write | [speckit-companion](https://github.com/alfredoperez/speckit-companion) |
+| SpecKit Grill Me | Exhaustively resolve specification ambiguities and decisions before planning | `process` | Read+Write | [speckit-grill-me](https://github.com/yoshi1220/speckit-grill-me) |
 | SpecTest | Auto-generate test scaffolds from spec criteria, map coverage, and find untested requirements | `code` | Read+Write | [spec-kit-spectest](https://github.com/Quratulain-bilal/spec-kit-spectest) |
 | Squad Bridge | Bootstrap and synchronize a Squad agent team from your Speckit spec and tasks. | `process` | Read+Write | [spec-kit-squad](https://github.com/jwill824/spec-kit-squad) |
 | Staff Review Extension | Staff-engineer-level code review that validates implementation against spec, checks security, performance, and test coverage | `code` | Read-only | [spec-kit-staff-review](https://github.com/arunt14/spec-kit-staff-review) |
