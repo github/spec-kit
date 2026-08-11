@@ -67,7 +67,14 @@ class ClaudeIntegration(SkillsIntegration):
 
     @staticmethod
     def inject_argument_hint(content: str, hint: str) -> str:
-        """Insert ``argument-hint`` after the first ``description:`` in YAML frontmatter.
+        """Insert ``argument-hint`` after the ``description:`` scalar in YAML frontmatter.
+
+        A long ``description`` gets folded by the YAML dumper across
+        indented continuation lines (plain or quoted). Inserting the new
+        line right after the *first* line of that scalar — instead of after
+        the whole scalar — either produces invalid YAML or gets silently
+        absorbed into the description string (#4044), so every continuation
+        line (anything more indented than the key itself) is skipped first.
 
         Skips injection if ``argument-hint:`` already exists in the
         frontmatter to avoid duplicate keys.
@@ -90,15 +97,25 @@ class ClaudeIntegration(SkillsIntegration):
         in_fm = False
         dash_count = 0
         injected = False
-        for line in lines:
+        i = 0
+        n = len(lines)
+        while i < n:
+            line = lines[i]
             stripped = line.rstrip("\n\r")
             if stripped == "---":
                 dash_count += 1
                 in_fm = dash_count == 1
                 out.append(line)
+                i += 1
                 continue
             if in_fm and not injected and stripped.startswith("description:"):
                 out.append(line)
+                i += 1
+                # Skip past folded/quoted continuation lines of the scalar
+                # before inserting, so the new key lands after it ends.
+                while i < n and lines[i][:1] in (" ", "\t"):
+                    out.append(lines[i])
+                    i += 1
                 # Preserve the exact line-ending style (\r\n vs \n)
                 if line.endswith("\r\n"):
                     eol = "\r\n"
@@ -111,6 +128,7 @@ class ClaudeIntegration(SkillsIntegration):
                 injected = True
                 continue
             out.append(line)
+            i += 1
         return "".join(out)
 
     def _render_skill(self, template_name: str, frontmatter: dict[str, Any], body: str) -> str:
