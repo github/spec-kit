@@ -9377,7 +9377,59 @@ class TestPresetSkills:
         assert outside_file.read_text(encoding="utf-8") == "do-not-touch"
         assert (skill_dir / "SKILL.md").is_symlink()
 
-    def test_is_safe_registry_skill_name_rejects_unsafe_values(self, project_dir):
+    def test_symlinked_skill_file_reconcile_gracefully_skips(self, project_dir, temp_dir):
+        """SymlinkedSharedPathError from _write_shared_text during override
+        reconciliation must be caught, not abort the entire reconcile pass.
+
+        The narrowed except clause catches (OSError, SymlinkedSharedPathError)
+        so best-effort skill restoration continues for remaining commands."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        skill_dir = (
+            project_dir / ".github" / "skills" / "speckit-specify"
+        )
+        skill_dir.mkdir(parents=True)
+        outside_file = temp_dir / "precious.md"
+        outside_file.write_text("do-not-touch", encoding="utf-8")
+        (skill_dir / "SKILL.md").symlink_to(outside_file)
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "symlink-skip-preset",
+            "speckit.specify",
+            "Preset",
+            "Preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.registry.add(
+            "symlink-skip-preset",
+            {
+                "version": "1.0.0",
+                "source": "local",
+                "enabled": True,
+                "priority": 10,
+                "registered_commands": {},
+                "registered_skills": {
+                    "copilot": ["speckit-specify"]
+                },
+            },
+        )
+        installed_dir = manager.presets_dir / "symlink-skip-preset"
+        shutil.copytree(preset_dir, installed_dir)
+        overrides_dir = (
+            project_dir / ".specify" / "templates" / "overrides"
+        )
+        overrides_dir.mkdir(parents=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Override\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+
+        # Must not raise SymlinkedSharedPathError — the narrowed except
+        # clause catches it and continues gracefully
+        manager._reconcile_skills(["speckit.specify"])
+
+        assert outside_file.read_text(encoding="utf-8") == "do-not-touch"
+        assert (skill_dir / "SKILL.md").is_symlink()
         """Unit-test the centralized registry skill-name boundary guard.
 
         ``registered_skills`` entries are persisted registry data, not
