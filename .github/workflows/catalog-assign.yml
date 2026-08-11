@@ -1,11 +1,11 @@
-name: "Catalog: Auto-assign submission"
+name: "Catalog: Notify submission"
 
 on:
   issues:
     types: [opened, labeled]
 
 jobs:
-  assign:
+  notify:
     if: >
       (github.event.action == 'opened' && (
         contains(github.event.issue.labels.*.name, 'extension-submission') ||
@@ -24,23 +24,7 @@ jobs:
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
-            const issue = context.payload.issue;
-            const assigned = (issue.assignees || []).map(a => a.login);
             const marker = '<!-- catalog-assign-bot -->';
-
-            // Assign mnriem if not already assigned
-            if (!assigned.includes('mnriem')) {
-              try {
-                await github.rest.issues.addAssignees({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: context.issue.number,
-                  assignees: ['mnriem'],
-                });
-              } catch (e) {
-                console.log(`Warning: could not assign mnriem: ${e.message}`);
-              }
-            }
 
             // Post team notification if not already posted
             const comments = await github.paginate(
