@@ -756,6 +756,33 @@
       "created_at": "2026-04-30T00:00:00Z",
       "updated_at": "2026-04-30T00:00:00Z"
     },
+    "specassay": {
+      "name": "SpecAssay",
+      "id": "specassay",
+      "version": "0.2.0",
+      "description": "Appends durable-ID, Carries, and SpecAssay vocabulary onto Spec Kit spec, tasks, and constitution templates.",
+      "author": "Rik Dryfoos",
+      "repository": "https://github.com/rdryfoos/specassay",
+      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.3.1/specassay-preset-0.2.0.zip",
+      "homepage": "https://github.com/rdryfoos/specassay",
+      "documentation": "https://github.com/rdryfoos/specassay/blob/main/presets/specassay/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.14.0"
+      },
+      "provides": {
+        "templates": 3,
+        "commands": 0
+      },
+      "tags": [
+        "traceability",
+        "durable-ids",
+        "governance",
+        "sdd"
+      ],
+      "created_at": "2026-08-11T00:00:00Z",
+      "updated_at": "2026-08-11T00:00:00Z"
+    },
     "test-first-governance": {
       "name": "Test-First Governance",
       "id": "test-first-governance",
