@@ -107,7 +107,7 @@ Reports conflicts, gaps, and ambiguities across `spec.md`, `plan.md`, and `tasks
 
 ### Step 8: `/speckit.implement` — build it
 
-Executes the tasks in `tasks.md` in dependency order. Before implementation, it reads checklist checkbox state as a gate and asks before proceeding if any checklist items are unchecked; it does not change custom checklist markers. Run it once to build everything, or scope it to one phase at a time for large features.
+Executes the tasks in `tasks.md` in dependency order. Before implementation, it reads checklist checkbox state as a gate and asks before proceeding if any checklist items are unchecked; it does not change any checklist files or markers. The built-in `checklists/requirements.md` checklist is maintained by `/speckit.specify` and `/speckit.clarify`, while custom checklists remain reviewer-owned. Run it once to build everything, or scope it to one phase at a time for large features.
 
 ```text
 /speckit.implement
