@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-10T00:00:00Z",
+  "updated_at": "2026-08-11T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -362,8 +362,8 @@
       "id": "archive",
       "description": "Archive merged features into main project memory, resolving gaps and conflicts.",
       "author": "Stanislav Deviatov",
-      "version": "1.1.0",
-      "download_url": "https://github.com/stn1slv/spec-kit-archive/archive/refs/tags/v1.1.0.zip",
+      "version": "1.2.2",
+      "download_url": "https://github.com/stn1slv/spec-kit-archive/archive/refs/tags/v1.2.2.zip",
       "repository": "https://github.com/stn1slv/spec-kit-archive",
       "homepage": "https://github.com/stn1slv/spec-kit-archive",
       "documentation": "https://github.com/stn1slv/spec-kit-archive/blob/main/README.md",
@@ -388,7 +388,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-14T00:00:00Z",
-      "updated_at": "2026-08-04T00:00:00Z"
+      "updated_at": "2026-08-11T00:00:00Z"
     },
     "azure-devops": {
       "name": "Azure DevOps Integration",
