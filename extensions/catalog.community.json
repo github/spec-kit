@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-10T00:00:00Z",
+  "updated_at": "2026-08-11T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -1814,6 +1814,41 @@
       "stars": 0,
       "created_at": "2026-06-24T00:00:00Z",
       "updated_at": "2026-07-07T00:00:00Z"
+    },
+    "grill": {
+      "name": "SpecKit Grill Me",
+      "id": "grill",
+      "description": "Exhaustively resolve specification ambiguities and decisions before planning.",
+      "author": "yoshi1220",
+      "version": "1.0.0",
+      "download_url": "https://github.com/yoshi1220/speckit-grill-me/releases/download/v1.0.0/speckit-grill-me-extension-v1.0.0.zip",
+      "repository": "https://github.com/yoshi1220/speckit-grill-me",
+      "homepage": "https://github.com/yoshi1220/speckit-grill-me/tree/main/spec-kit-extension",
+      "documentation": "https://github.com/yoshi1220/speckit-grill-me/blob/main/spec-kit-extension/README.md",
+      "changelog": "https://github.com/yoshi1220/speckit-grill-me/blob/main/spec-kit-extension/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.16.2",
+        "tools": [{ "name": "bash", "required": true }]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "clarification",
+        "requirements",
+        "specification",
+        "elicitation",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-11T00:00:00Z",
+      "updated_at": "2026-08-11T00:00:00Z"
     },
     "harness": {
       "name": "Research Harness",
