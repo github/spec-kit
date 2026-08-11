@@ -70,11 +70,13 @@ class ClaudeIntegration(SkillsIntegration):
         """Insert ``argument-hint`` after the ``description:`` scalar in YAML frontmatter.
 
         A long ``description`` gets folded by the YAML dumper across
-        indented continuation lines (plain or quoted). Inserting the new
-        line right after the *first* line of that scalar — instead of after
-        the whole scalar — either produces invalid YAML or gets silently
-        absorbed into the description string (#4044), so every continuation
-        line (anything more indented than the key itself) is skipped first.
+        indented continuation lines (plain or quoted), and an embedded
+        paragraph break can add unindented blank lines inside a quoted
+        scalar. Inserting the new line right after the *first* line of
+        that scalar — instead of after the whole scalar — either produces
+        invalid YAML or gets silently absorbed into the description
+        string (#4044), so every continuation line (indented, or blank)
+        is skipped first.
 
         Skips injection if ``argument-hint:`` already exists in the
         frontmatter to avoid duplicate keys.
@@ -113,7 +115,11 @@ class ClaudeIntegration(SkillsIntegration):
                 i += 1
                 # Skip past folded/quoted continuation lines of the scalar
                 # before inserting, so the new key lands after it ends.
-                while i < n and lines[i][:1] in (" ", "\t"):
+                # Blank lines count too: PyYAML emits unindented blank
+                # lines for embedded "\n\n" inside a quoted scalar.
+                while i < n and (
+                    lines[i][:1] in (" ", "\t") or lines[i].rstrip("\r\n") == ""
+                ):
                     out.append(lines[i])
                     i += 1
                 # Preserve the exact line-ending style (\r\n vs \n)

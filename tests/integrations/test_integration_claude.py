@@ -506,6 +506,38 @@ class TestClaudeArgumentHints:
         assert parsed["argument-hint"] == "Describe the feature"
         assert parsed["description"] == frontmatter["description"]
 
+    def test_inject_argument_hint_survives_multi_paragraph_description(self):
+        """A description with an embedded blank line must not absorb the hint.
+
+        PyYAML serializes an embedded ``\\n\\n`` inside a quoted scalar as
+        unindented blank lines, not indented ones, so a fix that only skips
+        indented continuation lines still fails on this case.
+        """
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        frontmatter = {
+            "name": "speckit-specify",
+            "description": (
+                "First paragraph of a fairly long description that will "
+                "need to wrap across multiple lines when dumped by PyYAML."
+                "\n\n"
+                "Second paragraph continues the description after a blank "
+                "line separator to force embedded newlines in the scalar."
+            ),
+            "compatibility": "Requires spec-kit project structure with .specify/ directory",
+        }
+        frontmatter_text = yaml.safe_dump(
+            frontmatter, sort_keys=False, allow_unicode=True
+        ).strip()
+        content = f"---\n{frontmatter_text}\n---\n\nBody text\n"
+        assert "\n\n" in frontmatter_text, "fixture must produce a blank continuation line"
+
+        result = ClaudeIntegration.inject_argument_hint(content, "Describe the feature")
+
+        parsed = yaml.safe_load(result.split("---")[1])
+        assert parsed["argument-hint"] == "Describe the feature"
+        assert parsed["description"] == frontmatter["description"]
+
 
 class TestClaudeDisableModelInvocation:
     """Verify disable-model-invocation is false for Claude skills."""
