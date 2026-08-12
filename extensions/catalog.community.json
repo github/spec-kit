@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-11T00:00:00Z",
+  "updated_at": "2026-08-12T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -285,6 +285,45 @@
       "stars": 0,
       "created_at": "2026-05-14T00:00:00Z",
       "updated_at": "2026-06-30T00:00:00Z"
+    },
+    "arch-governance": {
+      "name": "spec-kit-arch-governance",
+      "id": "arch-governance",
+      "description": "Keep specs, code & ADRs in sync: citation slots + a read-only, fail-closed validator.",
+      "author": "Ash Brener",
+      "version": "1.2.2",
+      "download_url": "https://github.com/ashbrener/spec-kit-arch-governance/archive/refs/tags/v1.2.2.zip",
+      "repository": "https://github.com/ashbrener/spec-kit-arch-governance",
+      "homepage": "https://github.com/ashbrener/spec-kit-arch-governance",
+      "documentation": "https://github.com/ashbrener/spec-kit-arch-governance/blob/main/README.md",
+      "changelog": "https://github.com/ashbrener/spec-kit-arch-governance/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          { "name": "python", "version": ">=3.11", "required": true },
+          { "name": "uv", "required": true },
+          { "name": "git", "required": false }
+        ]
+      },
+      "provides": {
+        "commands": 6,
+        "hooks": 3
+      },
+      "tags": [
+        "architecture",
+        "governance",
+        "adr",
+        "citations",
+        "spec-sync"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-12T00:00:00Z",
+      "updated_at": "2026-08-12T00:00:00Z"
     },
     "architect-preview": {
       "name": "Architect Impact Previewer",
