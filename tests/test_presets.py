@@ -3324,6 +3324,17 @@ class TestPresetCatalogMultiCatalog:
         result = catalog._load_catalog_config(config_path)
         assert result is None
 
+    @pytest.mark.parametrize("bad", [[], False, 0, ""])
+    def test_load_catalog_config_rejects_falsy_non_mapping_root(
+        self, project_dir, bad
+    ):
+        config_path = project_dir / ".specify" / "preset-catalogs.yml"
+        config_path.write_text(yaml.safe_dump(bad), encoding="utf-8")
+
+        catalog = PresetCatalog(project_dir)
+        with pytest.raises(PresetValidationError, match="expected a mapping"):
+            catalog._load_catalog_config(config_path)
+
     def test_load_catalog_config_invalid_yaml(self, project_dir):
         """Test loading invalid YAML raises error."""
         config_path = project_dir / ".specify" / "preset-catalogs.yml"
