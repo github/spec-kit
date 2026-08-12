@@ -21,7 +21,7 @@ Instead of letting `/speckit.implement` run through every task at once, tell it
 to stop early:
 
 ```text
-/speckit.implement only execute tasks T001-T010, then stop and report progress
+/speckit.implement only execute tasks T1000-T1090, then stop and report progress
 ```
 
 or scope by phase:

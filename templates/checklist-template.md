@@ -22,17 +22,28 @@
   ============================================================================
 -->
 
+<!--
+  ID NUMBERING — SPARSE AND PERMANENT: CHK identifiers are references cited by other
+  artifacts, commits, and review comments, so never renumber one.
+    - Each category starts at the next multiple of 1000 (CHK1000, CHK2000, ...) and items
+      step by 10 within it.
+    - Insert using the gap: an item belonging between CHK1010 and CHK1020 becomes CHK1015.
+    - Append at the next free multiple of 10.
+    - Removing an item leaves a permanent hole — delete the line, do not close the gap,
+      do not renumber, and never re-issue a retired number.
+-->
+
 ## [Category 1]
 
-- [ ] CHK001 First checklist item with clear action
-- [ ] CHK002 Second checklist item
-- [ ] CHK003 Third checklist item
+- [ ] CHK1000 First checklist item with clear action
+- [ ] CHK1010 Second checklist item
+- [ ] CHK1020 Third checklist item
 
 ## [Category 2]
 
-- [ ] CHK004 Another category item
-- [ ] CHK005 Item with specific criteria
-- [ ] CHK006 Final item in this category
+- [ ] CHK2000 Another category item
+- [ ] CHK2010 Item with specific criteria
+- [ ] CHK2020 Final item in this category
 
 ## Notes
 
@@ -42,4 +53,4 @@
 - `checklists/requirements.md` has a separate built-in lifecycle maintained by `__SPECKIT_COMMAND_SPECIFY__` and `__SPECKIT_COMMAND_CLARIFY__`
 - Add comments or findings inline
 - Link to relevant resources or documentation
-- Items are numbered sequentially for easy reference
+- Item numbers are stable references — do not renumber them when editing the list

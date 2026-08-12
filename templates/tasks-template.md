@@ -18,6 +18,20 @@ description: "Task list template for feature implementation"
 - **[P]**: Can run in parallel (different files, no dependencies)
 - **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3)
 - Include exact file paths in descriptions
+- **[ID] numbering — sparse and permanent**: each phase starts at the next multiple of
+  1000 (Phase 1 → `T1000`, Phase 2 → `T2000`, …) and tasks step by **10** within the phase
+  (`T1000`, `T1010`, `T1020`, …). Task IDs are permanent references — dependency lines,
+  checklists, commits, and the GitHub issues created by `__SPECKIT_COMMAND_TASKSTOISSUES__`
+  all cite them — so **never renumber an existing task**, and retire a removed task's
+  number rather than reusing it.
+  - Insert between two tasks using the gap: a task added between `T1010` and `T1020`
+    becomes `T1015`. Ordering stays readable and no later task shifts.
+  - Append to a phase at the next free multiple of 10; start a new phase at the next
+    unused multiple of 1000. Editing one phase never touches another.
+  - **Removing a task leaves a permanent hole.** Delete the line and stop — do not close
+    the gap, do not renumber anything after it, and never re-issue the number to a
+    different task. Gaps are the expected steady state, not damage to repair. Ranges like
+    `(T1000-T1090)` in summaries MUST NOT be treated as an invariant to restore.
 
 ## Path Conventions
 
@@ -49,9 +63,9 @@ description: "Task list template for feature implementation"
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Create project structure per implementation plan
-- [ ] T002 Initialize [language] project with [framework] dependencies
-- [ ] T003 [P] Configure linting and formatting tools
+- [ ] T1000 Create project structure per implementation plan
+- [ ] T1010 Initialize [language] project with [framework] dependencies
+- [ ] T1020 [P] Configure linting and formatting tools
 
 ---
 
@@ -63,12 +77,12 @@ description: "Task list template for feature implementation"
 
 Examples of foundational tasks (adjust based on your project):
 
-- [ ] T004 Setup database schema and migrations framework
-- [ ] T005 [P] Implement authentication/authorization framework
-- [ ] T006 [P] Setup API routing and middleware structure
-- [ ] T007 Create base models/entities that all stories depend on
-- [ ] T008 Configure error handling and logging infrastructure
-- [ ] T009 Setup environment configuration management
+- [ ] T2000 Setup database schema and migrations framework
+- [ ] T2010 [P] Implement authentication/authorization framework
+- [ ] T2020 [P] Setup API routing and middleware structure
+- [ ] T2030 Create base models/entities that all stories depend on
+- [ ] T2040 Configure error handling and logging infrastructure
+- [ ] T2050 Setup environment configuration management
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -84,17 +98,17 @@ Examples of foundational tasks (adjust based on your project):
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T010 [P] [US1] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T011 [P] [US1] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T3000 [P] [US1] Contract test for [endpoint] in tests/contract/test_[name].py
+- [ ] T3010 [P] [US1] Integration test for [user journey] in tests/integration/test_[name].py
 
 ### Implementation for User Story 1
 
-- [ ] T012 [P] [US1] Create [Entity1] model in src/models/[entity1].py
-- [ ] T013 [P] [US1] Create [Entity2] model in src/models/[entity2].py
-- [ ] T014 [US1] Implement [Service] in src/services/[service].py (depends on T012, T013)
-- [ ] T015 [US1] Implement [endpoint/feature] in src/[location]/[file].py
-- [ ] T016 [US1] Add validation and error handling
-- [ ] T017 [US1] Add logging for user story 1 operations
+- [ ] T3020 [P] [US1] Create [Entity1] model in src/models/[entity1].py
+- [ ] T3030 [P] [US1] Create [Entity2] model in src/models/[entity2].py
+- [ ] T3040 [US1] Implement [Service] in src/services/[service].py (depends on T3020, T3030)
+- [ ] T3050 [US1] Implement [endpoint/feature] in src/[location]/[file].py
+- [ ] T3060 [US1] Add validation and error handling
+- [ ] T3070 [US1] Add logging for user story 1 operations
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -108,15 +122,15 @@ Examples of foundational tasks (adjust based on your project):
 
 ### Tests for User Story 2 (OPTIONAL - only if tests requested) ⚠️
 
-- [ ] T018 [P] [US2] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T019 [P] [US2] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T4000 [P] [US2] Contract test for [endpoint] in tests/contract/test_[name].py
+- [ ] T4010 [P] [US2] Integration test for [user journey] in tests/integration/test_[name].py
 
 ### Implementation for User Story 2
 
-- [ ] T020 [P] [US2] Create [Entity] model in src/models/[entity].py
-- [ ] T021 [US2] Implement [Service] in src/services/[service].py
-- [ ] T022 [US2] Implement [endpoint/feature] in src/[location]/[file].py
-- [ ] T023 [US2] Integrate with User Story 1 components (if needed)
+- [ ] T4020 [P] [US2] Create [Entity] model in src/models/[entity].py
+- [ ] T4030 [US2] Implement [Service] in src/services/[service].py
+- [ ] T4040 [US2] Implement [endpoint/feature] in src/[location]/[file].py
+- [ ] T4050 [US2] Integrate with User Story 1 components (if needed)
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 
@@ -130,14 +144,14 @@ Examples of foundational tasks (adjust based on your project):
 
 ### Tests for User Story 3 (OPTIONAL - only if tests requested) ⚠️
 
-- [ ] T024 [P] [US3] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T025 [P] [US3] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T5000 [P] [US3] Contract test for [endpoint] in tests/contract/test_[name].py
+- [ ] T5010 [P] [US3] Integration test for [user journey] in tests/integration/test_[name].py
 
 ### Implementation for User Story 3
 
-- [ ] T026 [P] [US3] Create [Entity] model in src/models/[entity].py
-- [ ] T027 [US3] Implement [Service] in src/services/[service].py
-- [ ] T028 [US3] Implement [endpoint/feature] in src/[location]/[file].py
+- [ ] T5020 [P] [US3] Create [Entity] model in src/models/[entity].py
+- [ ] T5030 [US3] Implement [Service] in src/services/[service].py
+- [ ] T5040 [US3] Implement [endpoint/feature] in src/[location]/[file].py
 
 **Checkpoint**: All user stories should now be independently functional
 

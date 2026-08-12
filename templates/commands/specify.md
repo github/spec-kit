@@ -132,6 +132,12 @@ Given that feature description, do this:
     5. Generate Functional Requirements
        Each requirement must be testable
        Use reasonable defaults for unspecified details (document assumptions in Assumptions section)
+       Group requirements under category headings. Each category starts at the next
+       multiple of 1000 (FR-1000, FR-2000, FR-3000...) and requirements step by 10 within
+       it (FR-1000, FR-1010, FR-1020...). SC identifiers use the same scheme.
+       FR and SC identifiers are permanent references: never renumber an existing one,
+       insert into the gap instead (FR-1015 between FR-1010 and FR-1020), and when one is
+       removed leave the hole — do not close the gap or re-issue the retired number.
     6. Define Success Criteria
        Create measurable, technology-agnostic outcomes
        Include both quantitative metrics (time, performance, volume) and qualitative measures (user satisfaction, task completion)

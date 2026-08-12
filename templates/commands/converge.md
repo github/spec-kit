@@ -183,7 +183,7 @@ Before appending anything, output a compact, severity-graded summary (no file wr
 
 | ID | Gap Type | Severity | Source | Evidence | Remaining Work |
 |----|----------|----------|--------|----------|----------------|
-| F1 | missing  | HIGH     | FR-008 | Example: no append-only guard detected in path/to/module.py when writing tasks.md | Add append-only enforcement |
+| F1 | missing  | HIGH     | FR-1070 | Example: no append-only guard detected in path/to/module.py when writing tasks.md | Add append-only enforcement |
 
 **Summary metrics:**
 
@@ -202,22 +202,28 @@ Append to the **end** of `tasks.md`, per the append contract:
 1. Scan all existing task IDs; let `M` be the maximum. Determine the next phase number `N`
    (highest existing phase + 1).
 2. Write a single new section header `## Phase N: Convergence`.
-3. Emit one checklist item per actionable finding, ordered CRITICAL/HIGH first, assigning
-   zero-padded IDs `T{M+1:03d}, T{M+2:03d}, …`:
+3. Emit one checklist item per actionable finding, ordered CRITICAL/HIGH first. A
+   Convergence phase is a phase like any other, so it opens its own block: let `B` be the
+   next unused multiple of 1000 above every existing task ID, and assign `TB, TB+10,
+   TB+20, …`:
 
    ```markdown
-   - [ ] T042 <imperative description> per <source-ref> (<gap-type>)
+   - [ ] T7000 <imperative description> per <source-ref> (<gap-type>)
    ```
 
-   `<source-ref>` traces the task to its origin: e.g. `FR-003`, `SC-002`,
+   Task IDs are therefore at least four digits and always a multiple of 10; consumers MUST
+   match them with `\bT\d{3,}\b` rather than assuming a fixed width.
+
+   `<source-ref>` traces the task to its origin: e.g. `FR-1020`, `SC-1010`,
    `US1/AC2`, `plan: storage decision`, `Constitution II`.
 
    `<gap-type>` is one of `missing`, `partial`, `contradicts`, `unrequested`.
 
    Constitution-violation tasks MUST be emitted first and described as
    `CRITICAL`.
-4. Never reuse or renumber existing IDs. If a prior Convergence phase exists, add a new,
-   separately-numbered one below it — do not touch the old one.
+4. Never reuse or renumber existing IDs, and never close a gap left by a removed task. If a
+   prior Convergence phase exists, add a new one in its own block below it — do not touch
+   the old one.
 
 **If there are no actionable findings** (`converged` outcome):
 

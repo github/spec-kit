@@ -157,7 +157,10 @@ Every task MUST strictly follow this format:
 **Format Components**:
 
 1. **Checkbox**: ALWAYS start with `- [ ]` (markdown checkbox)
-2. **Task ID**: Sequential number (T001, T002, T003...) in execution order
+2. **Task ID**: Sparse, phase-blocked number in execution order. Each phase starts at the next multiple of 1000 (Phase 1: `T1000`; Phase 2: `T2000`; Phase 3: `T3000`...) and tasks step by **10** within the phase (`T1000`, `T1010`, `T1020`...). Task IDs are permanent references cited by dependency lines, checklists, commit messages, and the GitHub issues created by `__SPECKIT_COMMAND_TASKSTOISSUES__`, so:
+   - **Never renumber an existing task.** Insert into the gap instead — a task belonging between `T1010` and `T1020` becomes `T1015`.
+   - **Append** at the next free multiple of 10 in that phase; **start a new phase** at the next unused multiple of 1000. Editing one phase never touches another.
+   - **Removing a task leaves a permanent hole.** Delete the line and stop: do not close the gap, do not renumber anything after it, and never re-issue a retired number to a different task. Gaps are the expected steady state, not damage to repair.
 3. **[P] marker**: Include ONLY if task is parallelizable (different files, no dependencies on incomplete tasks)
 4. **[Story] label**: REQUIRED for user story phase tasks only
    - Format: [US1], [US2], [US3], etc. (maps to user stories from spec.md)
@@ -169,14 +172,16 @@ Every task MUST strictly follow this format:
 
 **Examples**:
 
-- ✅ CORRECT: `- [ ] T001 Create project structure per implementation plan`
-- ✅ CORRECT: `- [ ] T005 [P] Implement authentication middleware in src/middleware/auth.py`
-- ✅ CORRECT: `- [ ] T012 [P] [US1] Create User model in src/models/user.py`
-- ✅ CORRECT: `- [ ] T014 [US1] Implement UserService in src/services/user_service.py`
+- ✅ CORRECT: `- [ ] T1000 Create project structure per implementation plan` (first task of Phase 1)
+- ✅ CORRECT: `- [ ] T2010 [P] Implement authentication middleware in src/middleware/auth.py` (Phase 2)
+- ✅ CORRECT: `- [ ] T3020 [P] [US1] Create User model in src/models/user.py` (Phase 3)
+- ✅ CORRECT: `- [ ] T3025 [US1] Implement UserService in src/services/user_service.py` (added later, between T3020 and T3030)
 - ❌ WRONG: `- [ ] Create User model` (missing ID and Story label)
-- ❌ WRONG: `T001 [US1] Create model` (missing checkbox)
+- ❌ WRONG: `T1000 [US1] Create model` (missing checkbox)
 - ❌ WRONG: `- [ ] [US1] Create User model` (missing Task ID)
-- ❌ WRONG: `- [ ] T001 [US1] Create model` (missing file path)
+- ❌ WRONG: `- [ ] T1000 [US1] Create model` (missing file path)
+- ❌ WRONG: `- [ ] T1001, T1002, T1003 ...` (step is 10, not 1 — leaves no room to insert)
+- ❌ WRONG: `- [ ] T1030 ...` as the first task of Phase 2 (must start that phase's own block: T2000)
 
 ### Task Organization
 

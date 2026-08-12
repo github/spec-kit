@@ -193,6 +193,7 @@ Execution steps:
        - Edge case / negative flow → Add a new bullet under Edge Cases / Error Handling (or create such subsection if template provides placeholder for it).
        - Terminology conflict → Normalize term across spec; retain original only if necessary by adding `(formerly referred to as "X")` once.
     - If the clarification invalidates an earlier ambiguous statement, replace that statement instead of duplicating; leave no obsolete contradictory text.
+    - **Never renumber existing identifiers.** Plans, tasks, checklists, and review comments cite FR/SC IDs, so renumbering silently invalidates those references. A requirement that belongs between FR-1010 and FR-1020 is numbered FR-1015 (IDs step by 10 precisely to leave that room); one appended to a category takes the next free multiple of 10. A removed requirement leaves a permanent hole — do not close the gap, do not renumber, and never re-issue a retired number.
     - Save the spec file AFTER each integration to minimize risk of context loss (atomic overwrite).
     - Preserve formatting: do not reorder unrelated sections; keep heading hierarchy intact.
     - Keep each inserted clarification minimal and testable (avoid narrative drift).
