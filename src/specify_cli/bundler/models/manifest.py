@@ -247,7 +247,9 @@ def _parse_str_list(raw: Any, field_name: str) -> tuple[str, ...]:
         return ()
     if isinstance(raw, (str, bytes)) or not isinstance(raw, (list, tuple)):
         raise BundlerError(f"'{field_name}' must be a list of strings when present.")
-    return tuple(str(item) for item in raw)
+    if any(not isinstance(item, str) for item in raw):
+        raise BundlerError(f"'{field_name}' must be a list of strings when present.")
+    return tuple(raw)
 
 
 def _parse_refs(kind: str, raw: Any) -> list[ComponentRef]:
