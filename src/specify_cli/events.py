@@ -1357,6 +1357,31 @@ def install_integration_events(
                 manifest.record_existing(rel)
             created.append(config_path)
 
+    elif fmt == "toml-vibe":
+        # Vibe hooks.toml custom merge. Flat [[hooks]] array with type field.
+        # Vibe expects type = "pre_tool" | "post_tool" | "post_agent" (and others).
+        lines: list[str] = []
+        for ev, handlers in filtered.items():
+            native = canonical_to_native[ev]
+            for cfg in handlers:
+                command = cfg.get("command", "")
+                dispatcher_cmd = _dispatcher_command(integration, project_root, command, ev, timeout_seconds=cfg.get("timeout", 60))
+                lines.append("[[hooks]]")
+                lines.append(f'type = {_toml_quote(native)}')
+                matcher = cfg.get("matcher", "*")
+                if matcher != "*":
+                    lines.append(f'matcher = {_toml_quote(matcher)}')
+                lines.append(f'command = {_toml_quote(dispatcher_cmd)}')
+                lines.append(f'timeout = {_native_timeout(integration, cfg.get("timeout", 60) + EVENT_TIMEOUT_BUFFER)}')
+                lines.append('speckit_marker = true')
+                lines.append('')
+        # S5: only track when the merge wrote (skips on unreadable file).
+        if _merge_vibe_toml_fragment(config_path, "\n".join(lines)):
+            rel = str(config_path.relative_to(project_root))
+            if rel not in manifest.files:
+                manifest.record_existing(rel)
+            created.append(config_path)
+
     elif fmt == "json-flat":
         # Cursor hooks.json custom merge. Flat command-string entries, one
         # per handler (#2), single resolved command string (#6/#16).
@@ -1479,6 +1504,8 @@ def _remove_native_event_hooks(
         _remove_copilot_entries(config_path)
     elif fmt == "toml":
         _remove_toml_entries(config_path)
+    elif fmt == "toml-vibe":
+        _remove_vibe_toml_entries(config_path)
     elif fmt in ("json-nested", "json-flat"):
         _remove_json_entries(config_path)
     elif fmt == "json-root-nested":
@@ -1973,6 +2000,42 @@ def _merge_toml_fragment(dst: Path, fragment: str) -> bool:
     return True
 
 
+def _merge_vibe_toml_fragment(dst: Path, fragment: str) -> bool:
+    """Merge Specify-owned Vibe TOML hook entries into *dst*, regenerating the file.
+
+    Vibe uses a flat [[hooks]] array with type/matcher/command fields.
+    This removes any existing Specify-marked hooks and appends the new fragment.
+    An unreadable or undecodable pre-existing file aborts the merge instead
+    of discarding the user's bytes, mirroring ``_load_user_json`` (#22).
+    Returns False when skipped so callers avoid tracking the untouched file
+    (S5).
+    """
+    _ensure_safe_destination(dst)
+    existing = ""
+    if dst.exists():
+        try:
+            existing = dst.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            logger.warning(
+                "Could not read %s (it may be unreadable or not UTF-8); "
+                "skipping event-config merge to preserve user content.",
+                dst,
+            )
+            logger.debug("Read error detail: %s", exc)
+            return False
+    # Remove existing Specify-marked [[hooks]] blocks
+    # Match [[hooks]] ... speckit_marker = true (with any content in between)
+    existing = re.sub(
+        r'\[\[hooks\]\]\n(?:(?!\\[\}[^:]*\]).)*?speckit_marker = true\n*',
+        "",
+        existing,
+        flags=re.DOTALL,
+    )
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_text(existing.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
+    return True
+
+
 def _remove_toml_entries(dst: Path) -> bool:
     """Remove Specify-marked TOML entries; delete the file if now empty (#14).
 
@@ -2005,6 +2068,43 @@ def _remove_toml_entries(dst: Path) -> bool:
     )
     # If only whitespace/comments remain, the file had no user content —
     # delete it rather than leaving an empty stub that confuses uninstall.
+    stripped = "\n".join(
+        line for line in cleaned.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    )
+    if not stripped:
+        dst.unlink(missing_ok=True)
+        return True
+    dst.write_text(cleaned, encoding="utf-8")
+    return False
+
+
+def _remove_vibe_toml_entries(dst: Path) -> bool:
+    """Remove Specify-marked Vibe TOML hook entries; delete the file if now empty.
+
+    Returns True if the file was deleted (no user content remained).
+    """
+    if not dst.exists():
+        return False
+    _ensure_safe_destination(dst)
+    try:
+        existing = dst.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        logger.warning(
+            "Could not read %s (it may be unreadable or not UTF-8); "
+            "skipping event-config cleanup to preserve user content.",
+            dst,
+        )
+        logger.debug("Read error detail: %s", exc)
+        return False
+    # Remove Specify-marked [[hooks]] blocks
+    cleaned = re.sub(
+        r'\[\[hooks\]\]\n(?:(?!\\[\}[^:]*\]).)*?speckit_marker = true\n*',
+        "",
+        existing,
+        flags=re.DOTALL,
+    )
+    # If only whitespace/comments remain, the file had no user content
     stripped = "\n".join(
         line for line in cleaned.splitlines()
         if line.strip() and not line.strip().startswith("#")

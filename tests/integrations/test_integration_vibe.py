@@ -1,42 +1,22 @@
 """Tests for VibeIntegration."""
 
-import json
-import os
-from pathlib import Path
-from unittest.mock import patch
-
 import yaml
 
-from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
-from specify_cli.integrations.base import IntegrationBase, SkillsIntegration
+from specify_cli.integrations import get_integration
+from specify_cli.integrations.base import IntegrationBase
 from specify_cli.integrations.manifest import IntegrationManifest
-from specify_cli.integrations.vibe import ARGUMENT_HINTS, FORK_CONTEXT_COMMANDS
 
 from .test_integration_base_skills import SkillsIntegrationTests
 
 
-class TestVibeIntegration:
-    def test_registered(self):
-        assert "vibe" in INTEGRATION_REGISTRY
-        assert get_integration("vibe") is not None
+class TestVibeIntegration(SkillsIntegrationTests):
+    KEY = "vibe"
+    FOLDER = ".vibe/"
+    COMMANDS_SUBDIR = "skills"
+    REGISTRAR_DIR = ".vibe/skills"
 
     def test_is_base_integration(self):
         assert isinstance(get_integration("vibe"), IntegrationBase)
-
-    def test_is_skills_integration(self):
-        assert isinstance(get_integration("vibe"), SkillsIntegration)
-
-    def test_config_uses_skills(self):
-        integration = get_integration("vibe")
-        assert integration.config["folder"] == ".vibe/"
-        assert integration.config["commands_subdir"] == "skills"
-
-    def test_registrar_config_uses_skill_layout(self):
-        integration = get_integration("vibe")
-        assert integration.registrar_config["dir"] == ".vibe/skills"
-        assert integration.registrar_config["format"] == "markdown"
-        assert integration.registrar_config["args"] == "$ARGUMENTS"
-        assert integration.registrar_config["extension"] == "/SKILL.md"
 
     def test_multi_install_safe(self):
         integration = get_integration("vibe")
@@ -45,17 +25,17 @@ class TestVibeIntegration:
     def test_canonical_to_native_events(self):
         integration = get_integration("vibe")
         assert integration.CANONICAL_TO_NATIVE is not None
-        assert integration.CANONICAL_TO_NATIVE.get("session_start") == "SessionStart"
-        assert integration.CANONICAL_TO_NATIVE.get("pre_tool_use") == "PreToolUse"
-        assert integration.CANONICAL_TO_NATIVE.get("post_tool_use") == "PostToolUse"
-        assert integration.CANONICAL_TO_NATIVE.get("session_end") == "SessionEnd"
-        assert integration.CANONICAL_TO_NATIVE.get("user_prompt_submit") == "UserPromptSubmit"
-        assert integration.CANONICAL_TO_NATIVE.get("stop") == "Stop"
+        assert integration.CANONICAL_TO_NATIVE.get("session_start") == "session_start"
+        assert integration.CANONICAL_TO_NATIVE.get("pre_tool_use") == "pre_tool"
+        assert integration.CANONICAL_TO_NATIVE.get("post_tool_use") == "post_tool"
+        assert integration.CANONICAL_TO_NATIVE.get("session_end") == "session_end"
+        assert integration.CANONICAL_TO_NATIVE.get("user_prompt_submit") == "user_prompt_submit"
+        assert integration.CANONICAL_TO_NATIVE.get("stop") == "post_agent"
 
     def test_events_config(self):
         integration = get_integration("vibe")
-        assert integration.events_config_file == ".vibe/settings.json"
-        assert integration.events_format == "json-nested"
+        assert integration.events_config_file == ".vibe/hooks.toml"
+        assert integration.events_format == "toml-vibe"
 
     def test_setup_creates_skill_files(self, tmp_path):
         integration = get_integration("vibe")
@@ -120,148 +100,18 @@ class TestVibeIntegration:
 
         assert ctx_path.read_text(encoding="utf-8") == original
 
-
-class TestVibeArgumentHints:
-    """Verify that argument-hint frontmatter is injected for Vibe skills."""
-
-    def test_converge_has_no_argument_hint(self):
-        """Converge should not advertise unsupported feature-name arguments."""
-        assert "converge" not in ARGUMENT_HINTS
-
-    def test_all_skills_have_hints(self, tmp_path):
-        """Every skill with a configured hint must contain an argument-hint line."""
-        i = get_integration("vibe")
-        m = IntegrationManifest("vibe", tmp_path)
-        created = i.setup(tmp_path, m, script_type="sh")
+    def test_skills_do_not_have_argument_hint(self, tmp_path):
+        """Vibe does not support argument-hint in skill frontmatter, so it must not be injected."""
+        integration = get_integration("vibe")
+        manifest = IntegrationManifest("vibe", tmp_path)
+        created = integration.setup(tmp_path, manifest, script_type="sh")
         skill_files = [f for f in created if f.name == "SKILL.md"]
-        assert len(skill_files) > 0
-        for f in skill_files:
-            stem = f.parent.name
-            if stem.startswith("speckit-"):
-                stem = stem[len("speckit-"):]
-            content = f.read_text(encoding="utf-8")
-            if stem in ARGUMENT_HINTS:
-                assert "argument-hint:" in content, (
-                    f"{f.parent.name}/SKILL.md is missing argument-hint frontmatter"
-                )
-            else:
-                assert "argument-hint:" not in content, (
-                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
-                )
-
-    def test_hints_match_expected_values(self, tmp_path):
-        """Each skill's argument-hint must match the expected text."""
-        i = get_integration("vibe")
-        m = IntegrationManifest("vibe", tmp_path)
-        created = i.setup(tmp_path, m, script_type="sh")
-        skill_files = [f for f in created if f.name == "SKILL.md"]
-        for f in skill_files:
-            # Extract stem: speckit-plan -> plan
-            stem = f.parent.name
-            if stem.startswith("speckit-"):
-                stem = stem[len("speckit-"):]
-            expected_hint = ARGUMENT_HINTS.get(stem)
-            content = f.read_text(encoding="utf-8")
-            if expected_hint is None:
-                assert "argument-hint:" not in content, (
-                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
-                )
-            else:
-                assert f'argument-hint: "{expected_hint}"' in content, (
-                    f"{f.parent.name}/SKILL.md: expected hint '{expected_hint}' not found"
-                )
-
-    def test_hint_is_inside_frontmatter(self, tmp_path):
-        """argument-hint must appear between the --- delimiters, not in the body."""
-        i = get_integration("vibe")
-        m = IntegrationManifest("vibe", tmp_path)
-        created = i.setup(tmp_path, m, script_type="sh")
-        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert skill_files
         for f in skill_files:
             content = f.read_text(encoding="utf-8")
-            parts = content.split("---", 2)
-            assert len(parts) >= 3, f"No frontmatter in {f.parent.name}/SKILL.md"
-            frontmatter = parts[1]
-            body = parts[2]
-            stem = f.parent.name
-            if stem.startswith("speckit-"):
-                stem = stem[len("speckit-"):]
-            if stem in ARGUMENT_HINTS:
-                assert "argument-hint:" in frontmatter, (
-                    f"{f.parent.name}/SKILL.md: argument-hint not in frontmatter section"
-                )
-                assert "argument-hint:" not in body, (
-                    f"{f.parent.name}/SKILL.md: argument-hint leaked into body"
-                )
-            else:
-                assert "argument-hint:" not in content, (
-                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
-                )
-
-    def test_hint_appears_after_description(self, tmp_path):
-        """argument-hint must immediately follow the description line."""
-        i = get_integration("vibe")
-        m = IntegrationManifest("vibe", tmp_path)
-        created = i.setup(tmp_path, m, script_type="sh")
-        skill_files = [f for f in created if f.name == "SKILL.md"]
-        for f in skill_files:
-            content = f.read_text(encoding="utf-8")
-            lines = content.splitlines()
-            stem = f.parent.name
-            if stem.startswith("speckit-"):
-                stem = stem[len("speckit-"):]
-            if stem not in ARGUMENT_HINTS:
-                assert "argument-hint:" not in content, (
-                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
-                )
-                continue
-            found_description = False
-            for idx, line in enumerate(lines):
-                if line.startswith("description:"):
-                    found_description = True
-                    assert idx + 1 < len(lines), (
-                        f"{f.parent.name}/SKILL.md: description is last line"
-                    )
-                    assert lines[idx + 1].startswith("argument-hint:"), (
-                        f"{f.parent.name}/SKILL.md: argument-hint does not follow description"
-                    )
-                    break
-            assert found_description, (
-                f"{f.parent.name}/SKILL.md: no description: line found in output"
+            assert "argument-hint:" not in content, (
+                f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
             )
-
-    def test_inject_argument_hint_only_in_frontmatter(self):
-        """inject_argument_hint must not modify description: lines in the body."""
-        from specify_cli.integrations.vibe import VibeIntegration
-
-        content = (
-            "---\n"
-            "description: My command\n"
-            "---\n"
-            "\n"
-            "description: this is body text\n"
-        )
-        result = VibeIntegration.inject_argument_hint(content, "Test hint")
-        lines = result.splitlines()
-        hint_count = sum(1 for ln in lines if ln.startswith("argument-hint:"))
-        assert hint_count == 1, (
-            f"Expected exactly 1 argument-hint line, found {hint_count}"
-        )
-
-    def test_inject_argument_hint_skips_if_already_present(self):
-        """inject_argument_hint must not duplicate if argument-hint already exists."""
-        from specify_cli.integrations.vibe import VibeIntegration
-
-        content = (
-            "---\n"
-            "description: My command\n"
-            'argument-hint: "Existing hint"\n'
-            "---\n"
-            "\n"
-            "Body text\n"
-        )
-        result = VibeIntegration.inject_argument_hint(content, "New hint")
-        assert result == content, "Content should be unchanged when hint already exists"
 
 
 class TestVibeUserInvocable:
