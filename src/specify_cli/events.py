@@ -1366,7 +1366,11 @@ def install_integration_events(
             for cfg in handlers:
                 command = cfg.get("command", "")
                 dispatcher_cmd = _dispatcher_command(integration, project_root, command, ev, timeout_seconds=cfg.get("timeout", 60))
+                # Vibe requires a name field for each hook
+                command_stem = command.split('.')[-1] if command else "unknown"
+                hook_name = f"speckit-{native}-{command_stem}"
                 lines.append("[[hooks]]")
+                lines.append(f'name = {_toml_quote(hook_name)}')
                 lines.append(f'type = {_toml_quote(native)}')
                 matcher = cfg.get("matcher", "*")
                 if matcher != "*":
@@ -2026,7 +2030,7 @@ def _merge_vibe_toml_fragment(dst: Path, fragment: str) -> bool:
     # Remove existing Specify-marked [[hooks]] blocks
     # Match [[hooks]] ... speckit_marker = true (with any content in between)
     existing = re.sub(
-        r'\[\[hooks\]\]\n(?:(?!\\[\}[^:]*\]).)*?speckit_marker = true\n*',
+        r'\[\[hooks\]\]\n(?:(?!\[\[hooks\]\]).)*?speckit_marker = true\n*',
         "",
         existing,
         flags=re.DOTALL,
@@ -2099,7 +2103,7 @@ def _remove_vibe_toml_entries(dst: Path) -> bool:
         return False
     # Remove Specify-marked [[hooks]] blocks
     cleaned = re.sub(
-        r'\[\[hooks\]\]\n(?:(?!\\[\}[^:]*\]).)*?speckit_marker = true\n*',
+        r'\[\[hooks\]\]\n(?:(?!\[\[hooks\]\]).)*?speckit_marker = true\n*',
         "",
         existing,
         flags=re.DOTALL,
