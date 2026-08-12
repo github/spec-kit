@@ -62,6 +62,32 @@ def test_pinned_integration_with_indeterminate_active_fails():
         )
 
 
+@pytest.mark.parametrize("blank", ["", "   ", "\t"])
+def test_pinned_integration_with_blank_active_fails(blank):
+    """A blank active integration is indeterminate, not a match.
+
+    The clash guard is a truthiness test and the indeterminate guard is an
+    `is None` test, so `""` satisfied neither and fell through to
+    `effective_integration = required` — silently adopting the bundle's pinned
+    integration, the exact outcome the docstring says the guard prevents.
+    """
+    manifest = _manifest(integration={"id": "claude"})
+    with pytest.raises(BundlerError, match="could not be determined"):
+        resolve_install_plan(
+            manifest, speckit_version="0.11.2", active_integration=blank
+        )
+
+
+def test_padded_active_integration_is_not_a_clash_with_itself():
+    """A padded value must strip, like the writer's clean_integration_key,
+    rather than be reported as clashing with its own unpadded form."""
+    manifest = _manifest(integration={"id": "claude"})
+    plan = resolve_install_plan(
+        manifest, speckit_version="0.11.2", active_integration="  claude  "
+    )
+    assert plan.effective_integration == "claude"
+
+
 def test_pinned_integration_with_indeterminate_active_allows_explicit_override():
     manifest = _manifest(integration={"id": "claude"})
     plan = resolve_install_plan(
