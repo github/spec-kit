@@ -4712,6 +4712,7 @@ class HookExecutor:
         kimi_skill_mode = selected_ai == "kimi"
         cline_mode = selected_ai == "cline"
         forge_mode = selected_ai == "forge"
+        junie_mode = selected_ai == "junie"
 
         skill_name = self._skill_name_from_command(command_id)
         if dollar_skill_mode and skill_name:
@@ -4726,6 +4727,10 @@ class HookExecutor:
             from ..integrations.forge import format_forge_command_name
 
             return f"/{format_forge_command_name(command_id)}"
+        if junie_mode:
+            from ..integrations.junie import format_junie_command_name
+
+            return f"/{format_junie_command_name(command_id)}"
 
         use_slash = is_slash_skills_agent(selected_ai, ai_skills_enabled)
 
