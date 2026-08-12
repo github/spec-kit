@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-# Note injected into hook sections so Cline maps dot-notation command
+# Note injected into hook sections so Junie maps dot-notation command
 # names (from extensions.yml) to the hyphenated slash commands it uses.
 _HOOK_COMMAND_NOTE = (
     "- When constructing slash commands from hook command names, "
@@ -18,7 +18,7 @@ _HOOK_COMMAND_NOTE = (
 
 
 def format_junie_command_name(cmd_name: str) -> str:
-    """Convert command name to Cline-compatible hyphenated format.
+    """Convert command name to Junie-compatible hyphenated format.
 
     Junie does not allow dots inside of slash-commands.
     This function converts dot-notation command names to hyphenated format.
@@ -75,9 +75,9 @@ class JunieIntegration(MarkdownIntegration):
     def build_command_invocation(self, command_name: str, args: str = "") -> str:
         """Junie installs hyphenated slash-commands (``/speckit-<name>``), so the
         dispatch invocation must match. The inherited MarkdownIntegration default
-        builds the dotted ``/speckit.<name>``, which references a command Cline
+        builds the dotted ``/speckit.<name>``, which references a command Junie
         never registered. Reuse the same hyphenation as command_filename /
-        the injected frontmatter name (see ``format_cline_command_name``),
+        the injected frontmatter name (see ``format_junie_command_name``),
         mirroring the forge integration.
         """
         invocation = "/" + format_junie_command_name(command_name)

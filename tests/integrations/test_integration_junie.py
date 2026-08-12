@@ -8,7 +8,7 @@ from specify_cli.integrations import get_integration
 from specify_cli.integrations.junie import format_junie_command_name
 from .test_integration_base_markdown import MarkdownIntegrationTests
 
-class TestjunieCommandNameFormatter:
+class TestJunieCommandNameFormatter:
     """Test the junie command name formatter."""
 
     def test_simple_name_without_prefix(self):
