@@ -471,6 +471,101 @@ class TestAlquimiaArgumentHints:
         hint_count = sum(1 for ln in lines if ln.startswith("argument-hint:"))
         assert hint_count == 1
 
+    def test_inject_argument_hint_survives_folded_description(self):
+        """A long description folded across lines must not corrupt the YAML (#4044).
+
+        A description long enough for the YAML dumper to fold it into a
+        multi-line plain scalar previously had ``argument-hint:`` spliced
+        into the *middle* of that scalar, producing invalid YAML.
+        """
+        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
+
+        frontmatter = {
+            "name": "speckit-specify",
+            "description": (
+                "Create or update the feature specification from a natural "
+                "language feature description. Also accepts an issue URL "
+                "resolved via gh CLI (demo customization)."
+            ),
+            "compatibility": "Requires spec-kit project structure with .specify/ directory",
+        }
+        frontmatter_text = yaml.safe_dump(
+            frontmatter, sort_keys=False, allow_unicode=True
+        ).strip()
+        content = f"---\n{frontmatter_text}\n---\n\nBody text\n"
+        assert "\n  " in content, "fixture description must actually fold across lines"
+
+        result = AlquimiaAIIntegration.inject_argument_hint(
+            content, "Describe the feature"
+        )
+
+        parsed = yaml.safe_load(result.split("---")[1])
+        assert parsed["argument-hint"] == "Describe the feature"
+        assert parsed["description"] == frontmatter["description"]
+
+    def test_inject_argument_hint_survives_quoted_folded_description(self):
+        """A folded description forced into quotes must not absorb the hint (#4044)."""
+        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
+
+        frontmatter = {
+            "name": "speckit-specify",
+            "description": (
+                "Create or update the feature specification from a natural "
+                "language feature description. Also accepts a GitHub "
+                "issue/PR URL or #N reference resolved via gh CLI (demo)."
+            ),
+            "compatibility": "Requires spec-kit project structure with .specify/ directory",
+        }
+        frontmatter_text = yaml.safe_dump(
+            frontmatter, sort_keys=False, allow_unicode=True
+        ).strip()
+        content = f"---\n{frontmatter_text}\n---\n\nBody text\n"
+        assert "\n  " in content, "fixture description must actually fold across lines"
+
+        result = AlquimiaAIIntegration.inject_argument_hint(
+            content, "Describe the feature"
+        )
+
+        parsed = yaml.safe_load(result.split("---")[1])
+        assert parsed["argument-hint"] == "Describe the feature"
+        assert parsed["description"] == frontmatter["description"]
+
+    def test_inject_argument_hint_survives_multi_paragraph_description(self):
+        """A description with an embedded blank line must not absorb the hint.
+
+        PyYAML serializes an embedded ``\\n\\n`` inside a quoted scalar as
+        unindented blank lines, not indented ones, so a fix that only skips
+        indented continuation lines still fails on this case.
+        """
+        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
+
+        frontmatter = {
+            "name": "speckit-specify",
+            "description": (
+                "First paragraph of a fairly long description that will "
+                "need to wrap across multiple lines when dumped by PyYAML."
+                "\n\n"
+                "Second paragraph continues the description after a blank "
+                "line separator to force embedded newlines in the scalar."
+            ),
+            "compatibility": "Requires spec-kit project structure with .specify/ directory",
+        }
+        frontmatter_text = yaml.safe_dump(
+            frontmatter, sort_keys=False, allow_unicode=True
+        ).strip()
+        content = f"---\n{frontmatter_text}\n---\n\nBody text\n"
+        assert "\n\n" in frontmatter_text, (
+            "fixture must produce a blank continuation line"
+        )
+
+        result = AlquimiaAIIntegration.inject_argument_hint(
+            content, "Describe the feature"
+        )
+
+        parsed = yaml.safe_load(result.split("---")[1])
+        assert parsed["argument-hint"] == "Describe the feature"
+        assert parsed["description"] == frontmatter["description"]
+
 
 class TestAlquimiaDisableModelInvocation:
     """Verify disable-model-invocation is false for Alquimia skills."""
