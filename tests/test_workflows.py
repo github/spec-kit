@@ -9090,6 +9090,23 @@ class TestStepCatalog:
         assert len(data["catalogs"]) == 1
         assert data["catalogs"][0]["url"] == "https://example.com/steps.json"
 
+    @pytest.mark.parametrize("bad", [[], False, 0, ""])
+    def test_add_catalog_rejects_falsy_non_mapping_config(
+        self, project_dir, bad
+    ):
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        original = yaml.safe_dump(bad)
+        config_path.write_text(original, encoding="utf-8")
+
+        with pytest.raises(StepValidationError, match="expected a mapping"):
+            StepCatalog(project_dir).add_catalog(
+                "https://example.com/steps.json", "my-steps"
+            )
+
+        assert config_path.read_text(encoding="utf-8") == original
+
     def test_add_catalog_duplicate_rejected(self, project_dir):
         from specify_cli.workflows.catalog import StepCatalog, StepValidationError
 

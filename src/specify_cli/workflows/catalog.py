@@ -1394,12 +1394,14 @@ class StepCatalog:
         data: dict[str, Any] = {"catalogs": []}
         if config_path.exists():
             try:
-                raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+                raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
             except (yaml.YAMLError, OSError, UnicodeDecodeError) as exc:
                 raise StepValidationError(
                     f"Catalog config file is unreadable or malformed: {exc}"
                 ) from exc
-            if not isinstance(raw, dict):
+            if raw is None:
+                raw = {}
+            elif not isinstance(raw, dict):
                 raise StepValidationError(
                     "Catalog config file is corrupted (expected a mapping)."
                 )
