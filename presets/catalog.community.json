@@ -1,39 +1,35 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-11T00:00:00Z",
+  "updated_at": "2026-08-12T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
       "name": "A11Y Governance",
       "id": "a11y-governance",
-      "version": "0.4.2",
-      "description": "Adds accessibility (WCAG 2.2 AA), accessible text and JSON status parity, bilingual DE/EN delivery, CEFR-B2 readability, inclusive-content governance, didactic inline-code-comment review, and audit-ready Spec-Kit run evidence to Spec Kit.",
+      "version": "0.4.3",
+      "description": "Adds WCAG 2.2 AA, accessible status output, bilingual CEFR-B2 delivery, inclusive-content and didactic-comment governance, and provider-neutral model routing.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-a11y-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-a11y-governance/archive/refs/tags/v0.4.2.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-a11y-governance/archive/refs/tags/v0.4.3.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-a11y-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-a11y-governance/blob/v0.4.2/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-a11y-governance/blob/v0.4.3/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
       },
       "provides": {
-        "templates": 10,
+        "templates": 11,
         "commands": 3
       },
       "tags": [
         "a11y",
         "accessibility",
-        "bilingual",
         "wcag",
-        "wcag-2-2",
-        "cefr-b2",
         "inclusion",
-        "include-everyone",
-        "didactic-comments"
+        "model-routing"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-07-28T00:00:00Z"
+      "updated_at": "2026-08-12T00:00:00Z"
     },
     "agent-parity-governance": {
       "name": "Agent Parity Governance",
