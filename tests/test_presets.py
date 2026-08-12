@@ -6305,6 +6305,69 @@ class TestPresetSkills:
             "rescaffold must keep the self-contained namespaced command's skill"
         )
 
+    def test_uncomposable_wrap_command_skips_skill_in_skills_mode(
+        self, project_dir, temp_dir
+    ):
+        """A wrap command with no base layer must not materialize a broken
+        skill in skills mode.
+
+        When ``_register_commands`` skips an uncomposable wrap command (no
+        base to compose onto — e.g. the command it wraps comes from an
+        uninstalled extension), ``_register_skills`` must skip it too. Before
+        this fix, skills mode fell back to the raw preset body and wrote a
+        SKILL.md containing a literal ``{CORE_TEMPLATE}`` placeholder.
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        skills_dir = project_dir / ".github" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        preset_dir = temp_dir / "uncomposable-wrap"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        # speckit.git.feature has no core command template and no installed
+        # extension, so there is no base layer to wrap.
+        (preset_dir / "commands" / "speckit.git.feature.md").write_text(
+            "---\ndescription: Wrap\nstrategy: wrap\n---\n\n"
+            "wrap start\n{CORE_TEMPLATE}\nwrap end\n"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "uncomposable-wrap",
+                "name": "uncomposable-wrap",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.git.feature",
+                        "file": "commands/speckit.git.feature.md",
+                        "strategy": "wrap",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        with pytest.warns(UserWarning, match="no base command layer"):
+            manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-git-feature" / "SKILL.md"
+        assert not skill_file.exists(), (
+            "an uncomposable wrap command must not be rendered as a skill"
+        )
+        # Belt-and-suspenders: no artifact anywhere may leak the raw placeholder.
+        leaked = [
+            p for p in skills_dir.rglob("*")
+            if p.is_file() and "{CORE_TEMPLATE}" in p.read_text(encoding="utf-8")
+        ]
+        assert not leaked, f"literal {{CORE_TEMPLATE}} leaked into {leaked}"
+
     def test_same_mode_partial_command_rescaffold_keeps_skipped_tracking(
         self, project_dir, temp_dir
     ):

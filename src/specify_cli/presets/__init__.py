@@ -2639,6 +2639,8 @@ class PresetManager:
         if not skills_dir:
             return {}
 
+        resolver = PresetResolver(self.project_root)
+
         from .. import SKILL_DESCRIPTIONS, load_init_options
         from ..agents import CommandRegistrar
         from ..integrations import get_integration
@@ -2707,6 +2709,29 @@ class PresetManager:
             # Parse the command file
             content = source_file.read_text(encoding="utf-8")
             frontmatter, body = registrar.parse_frontmatter(content)
+
+            # A composition-strategy command (wrap/prepend/append) needs a
+            # base layer to compose onto. When _register_commands produced no
+            # composed file for it and the stack still has no base
+            # (resolve_content is None) — e.g. the command it wraps comes from
+            # an extension that isn't installed — rendering the raw preset
+            # fragment as a skill would emit broken output: a literal
+            # {CORE_TEMPLATE} for wrap, or only the preset's own fragment for
+            # prepend/append. Skip it here too so command mode and skills mode
+            # agree (mirrors _register_commands, which skips the same command).
+            # _register_commands already warned for this command in the same
+            # pass, so the skip is silent here to avoid a duplicate warning.
+            effective_strategy = (
+                cmd_tmpl.get("strategy")
+                or frontmatter.get("strategy")
+                or "replace"
+            )
+            if (
+                effective_strategy != "replace"
+                and not composed_file.exists()
+                and resolver.resolve_content(cmd_name, "command") is None
+            ):
+                continue
 
             if frontmatter.get("strategy") == "wrap":
                 body, core_frontmatter = _substitute_core_template(body, cmd_name, self.project_root, registrar)
