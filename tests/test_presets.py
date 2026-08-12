@@ -4118,8 +4118,14 @@ class TestSelfTestPreset:
         assert manifest.id == "invalid-wrap"
         assert manager.registry.is_installed("invalid-wrap")
 
-    def test_extension_command_skipped_when_extension_missing(self, project_dir, temp_dir):
-        """Test that extension command overrides are skipped if the extension isn't installed."""
+    def test_selfcontained_namespaced_command_scaffolds_without_extension(self, project_dir, temp_dir):
+        """A preset shipping a self-contained ``speckit.<ns>.<cmd>`` command
+        scaffolds even when no matching extension is installed.
+
+        The command template ships its own body, so it is self-contained and
+        must render just like a short ``speckit.<cmd>`` command. It is not
+        dropped merely because ``.specify/extensions/fakeext/`` is absent.
+        """
         claude_dir = project_dir / ".claude" / "skills"
         claude_dir.mkdir(parents=True)
 
@@ -4155,11 +4161,13 @@ class TestSelfTestPreset:
         manager = PresetManager(project_dir)
         manager.install_from_directory(preset_dir, "0.1.5")
 
-        # Extension not installed — command should NOT be registered
-        cmd_file = claude_dir / "speckit.fakeext.cmd.md"
-        assert not cmd_file.exists(), "Command registered for missing extension"
+        # Extension not installed, but the preset ships its own command body —
+        # it must scaffold (as a native-skill SKILL.md for claude) and be
+        # tracked in the preset's registered_commands.
+        skill_file = claude_dir / "speckit-fakeext-cmd" / "SKILL.md"
+        assert skill_file.exists(), "Self-contained namespaced command was dropped"
         metadata = manager.registry.get("ext-override")
-        assert metadata["registered_commands"] == {}
+        assert metadata["registered_commands"] != {}
 
     def test_extension_command_registered_when_extension_present(self, project_dir, temp_dir):
         """Test that extension command overrides ARE registered when the extension is installed."""
@@ -6229,17 +6237,16 @@ class TestPresetSkills:
             "sanity: the new skills-mode artifact should still be written"
         )
 
-    def test_rescaffold_skips_extension_commands_when_extension_not_installed(
+    def test_rescaffold_scaffolds_selfcontained_namespaced_commands(
         self, project_dir, temp_dir
     ):
-        """Rescaffold must not materialize extension-scoped commands
-        (``speckit.<ext>.<cmd>``) when the extension isn't installed.
+        """A self-contained ``speckit.<ns>.<cmd>`` preset command scaffolds and
+        survives rescaffold, even when no matching extension is installed.
 
-        ``_register_commands`` refuses them, but the rescaffold seeded its
-        final reconciliation pass with every command template name
-        unfiltered, so ``_reconcile_composed_commands`` wrote the command
-        file anyway — an artifact no registry entry tracks (review
-        3623357358).
+        The preset ships the command body itself, so it is materialized just
+        like a short ``speckit.<cmd>`` command — both at install and through a
+        later reconciliation/rescaffold pass. It is not dropped by the
+        ``speckit.<ns>.<cmd>`` name shape (#4076).
         """
         self._write_init_options(project_dir, ai="copilot", ai_skills=False)
         commands_dir = project_dir / ".github" / "agents"
@@ -6253,24 +6260,24 @@ class TestPresetSkills:
         manager.install_from_directory(preset_dir, "0.1.5")
 
         ext_cmd = commands_dir / "speckit.git.feature.agent.md"
-        assert not ext_cmd.exists(), (
-            "sanity: install must not write an extension command when the "
-            "extension isn't installed"
+        assert ext_cmd.exists(), (
+            "sanity: install must scaffold a self-contained namespaced command "
+            "even when its like-named extension isn't installed"
         )
 
         manager.register_enabled_presets_for_agent("copilot")
 
-        assert not ext_cmd.exists(), (
-            "rescaffold must not materialize an extension-scoped command "
-            "whose extension isn't installed"
+        assert ext_cmd.exists(), (
+            "rescaffold must keep the self-contained namespaced command"
         )
         metadata = manager.registry.get("ext-scoped-preset")
-        assert not (metadata.get("registered_commands") or {}).get("copilot")
+        assert (metadata.get("registered_commands") or {}).get("copilot")
 
-    def test_rescaffold_skips_extension_skills_when_extension_not_installed(
+    def test_rescaffold_scaffolds_selfcontained_namespaced_skills(
         self, project_dir, temp_dir
     ):
-        """Historical tracking must not recreate a missing extension's skill."""
+        """A self-contained ``speckit.<ns>.<cmd>`` preset command renders its
+        skill even when no matching extension is installed."""
         self._write_init_options(project_dir, ai="copilot", ai_skills=True)
         skills_dir = project_dir / ".github" / "skills"
         skills_dir.mkdir(parents=True)
@@ -6287,26 +6294,15 @@ class TestPresetSkills:
 
         skill_name = "speckit-git-feature"
         skill_file = skills_dir / skill_name / "SKILL.md"
-        assert not skill_file.exists()
-
-        manager.registry.update(
-            "ext-scoped-skill-preset",
-            {"registered_skills": {"copilot": [skill_name]}},
-        )
-        overrides_dir = (
-            project_dir / ".specify" / "templates" / "overrides"
-        )
-        overrides_dir.mkdir(parents=True)
-        (overrides_dir / "speckit.git.feature.md").write_text(
-            "---\ndescription: Project override\n---\n\nOverride body\n",
-            encoding="utf-8",
+        assert skill_file.exists(), (
+            "install must render a self-contained namespaced command's skill "
+            "even when its like-named extension isn't installed"
         )
 
         manager.register_enabled_presets_for_agent("copilot")
 
-        assert not skill_file.exists(), (
-            "rescaffold must not materialize an extension-scoped skill "
-            "whose extension isn't installed"
+        assert skill_file.exists(), (
+            "rescaffold must keep the self-contained namespaced command's skill"
         )
 
     def test_same_mode_partial_command_rescaffold_keeps_skipped_tracking(
@@ -9568,6 +9564,43 @@ class TestPresetSkills:
         assert "claude" in registered_skills and "speckit-specify" in registered_skills["claude"], (
             "claude's real ownership must be preserved in the migrated tracking"
         )
+
+    def test_short_and_namespaced_commands_scaffold_consistently(
+        self, project_dir, temp_dir
+    ):
+        """A preset's ``speckit.<cmd>`` and ``speckit.<ns>.<cmd>`` commands must
+        scaffold identically in command mode, with no installed extension.
+
+        Regression: the 3-part (``speckit.<ns>.<cmd>``) form was silently
+        dropped by a name-shape guard whenever ``.specify/extensions/<ns>/``
+        was absent, even though the preset ships the command body itself. The
+        2-part form always scaffolded. Both are self-contained and must behave
+        the same (#4076).
+        """
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        gemini_commands_dir = project_dir / ".gemini" / "commands"
+        gemini_commands_dir.mkdir(parents=True)
+
+        short_preset = self._create_command_preset(
+            temp_dir, "short-cmd", "speckit.newcmd", "Short", "short body",
+        )
+        ns_preset = self._create_command_preset(
+            temp_dir, "ns-cmd", "speckit.fakeext.newcmd", "Namespaced", "ns body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(short_preset, "0.1.5")
+        manager.install_from_directory(ns_preset, "0.1.5")
+
+        short_file = gemini_commands_dir / "speckit.newcmd.toml"
+        ns_file = gemini_commands_dir / "speckit.fakeext.newcmd.toml"
+        assert short_file.exists(), "2-part command should scaffold"
+        assert ns_file.exists(), (
+            "3-part namespaced command must scaffold too, even without the "
+            "matching extension installed"
+        )
+        assert manager.registry.get("short-cmd")["registered_commands"] != {}
+        assert manager.registry.get("ns-cmd")["registered_commands"] != {}
 
 
 class TestPresetSetPriority:
