@@ -784,6 +784,30 @@ class TestPresetRegistry:
 # ===== PresetManager Tests =====
 
 
+def test_unreadable_constitution_provenance_fails_closed(
+    project_dir, monkeypatch
+):
+    from specify_cli.presets import _constitution_provenance_matches_preset
+
+    memory = project_dir / ".specify" / "memory" / "constitution.md"
+    memory.parent.mkdir(parents=True, exist_ok=True)
+    memory.write_text("# Constitution\n", encoding="utf-8")
+    provenance = memory.parent / ".constitution-template.json"
+    provenance.write_text("{}", encoding="utf-8")
+    real_read_text = Path.read_text
+
+    def unreadable(path, *args, **kwargs):
+        if path == provenance:
+            raise OSError("simulated read failure")
+        return real_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", unreadable)
+
+    assert not _constitution_provenance_matches_preset(
+        project_dir, memory, "example", "1.0.0"
+    )
+
+
 class TestPresetManager:
     """Test PresetManager installation and removal."""
 
