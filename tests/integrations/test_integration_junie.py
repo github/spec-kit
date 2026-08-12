@@ -1,6 +1,5 @@
 """Tests for JunieIntegration."""
 
-from .test_integration_base_markdown import MarkdownIntegrationTests
 import os
 import pytest
 
