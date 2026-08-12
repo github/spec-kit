@@ -1709,7 +1709,7 @@ class PresetManager:
                         ext_manifest_path = ext_dir / "extension.yml"
                         if ext_manifest_path.exists():
                             try:
-                                from ..extensions import ExtensionManifest
+                                from ..extensions import ExtensionManifest, ValidationError
                                 ext_manifest = ExtensionManifest(ext_manifest_path)
                                 # Filter to only the command being reconciled
                                 matching_cmds = [
@@ -1727,7 +1727,7 @@ class PresetManager:
                                     )
                                     record_written(written)
                                     registered = True
-                            except (TypeError, ValueError, KeyError):
+                            except (TypeError, ValueError, KeyError, ValidationError):
                                 # Extension registration failed; fall back to
                                 # generic path-based registration below.
                                 pass
