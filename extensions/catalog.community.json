@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-11T00:00:00Z",
+  "updated_at": "2026-08-12T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -4147,6 +4147,40 @@
       "stars": 0,
       "created_at": "2026-04-30T00:00:00Z",
       "updated_at": "2026-04-30T00:00:00Z"
+    },
+    "specassay-check": {
+      "name": "SpecAssay Check",
+      "id": "specassay-check",
+      "description": "Gate 2 refuses silent gaps and emits a trace-manifest (`trace-manifest.json`).",
+      "author": "Rik Dryfoos",
+      "version": "0.3.1",
+      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.3.1/specassay-check-0.3.1.zip",
+      "repository": "https://github.com/rdryfoos/specassay",
+      "homepage": "https://www.specassay.com",
+      "documentation": "https://github.com/rdryfoos/specassay/blob/main/extensions/specassay-check/README.md",
+      "changelog": "https://github.com/rdryfoos/specassay/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "visibility",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.14.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "traceability",
+        "gate",
+        "ci",
+        "governance",
+        "sdd"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-12T00:00:00Z",
+      "updated_at": "2026-08-12T00:00:00Z"
     },
     "speckit-superpowers-bridge": {
       "name": "Superpowers Implementation Bridge",
