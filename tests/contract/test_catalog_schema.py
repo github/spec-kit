@@ -238,6 +238,15 @@ def test_catalog_entry_rejects_string_tags():
         CatalogEntry.from_dict(data)
 
 
+def test_catalog_entry_rejects_non_string_tag_members():
+    from specify_cli.bundler.models.catalog import CatalogEntry
+
+    data = catalog_entry_dict("demo")
+    data["tags"] = ["valid", 1]
+    with pytest.raises(BundlerError, match="'tags' must be a list of strings"):
+        CatalogEntry.from_dict(data)
+
+
 def test_catalog_entry_rejects_non_boolean_verified():
     from specify_cli.bundler.models.catalog import CatalogEntry
 
