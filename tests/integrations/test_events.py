@@ -188,6 +188,22 @@ class TestCollectExtensionEvents:
 
         assert collect_extension_events(tmp_path) == {}
 
+    def test_unreadable_manifest_skipped(self, tmp_path, monkeypatch):
+        ext_dir = tmp_path / ".specify" / "extensions" / "my-ext"
+        ext_dir.mkdir(parents=True)
+        manifest = ext_dir / "extension.yml"
+        manifest.write_text("events: {}\n", encoding="utf-8")
+        real_read_text = Path.read_text
+
+        def unreadable(path, *args, **kwargs):
+            if path == manifest:
+                raise OSError("simulated read failure")
+            return real_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", unreadable)
+
+        assert collect_extension_events(tmp_path) == {}
+
     def test_event_command_ref_canonicalized_via_manifest(self, tmp_path):
         """R1: events are read from a validated ExtensionManifest, so an
         obsolete command ref (e.g. my-ext.boot) is canonicalized
