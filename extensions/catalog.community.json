@@ -4186,6 +4186,40 @@
       "created_at": "2026-04-30T00:00:00Z",
       "updated_at": "2026-04-30T00:00:00Z"
     },
+    "specjudge": {
+      "name": "SpecJudge — right-size the model before you implement",
+      "id": "specjudge",
+      "description": "Recommends the model that fits your tasks, citing the spec fragment behind every level.",
+      "author": "Joaquín Ruiz",
+      "version": "0.5.4",
+      "download_url": "https://github.com/JoaquinRuiz/SpecJudge/releases/download/v0.5.4/spec-kit-specjudge.zip",
+      "repository": "https://github.com/JoaquinRuiz/SpecJudge",
+      "homepage": "https://github.com/JoaquinRuiz/SpecJudge",
+      "documentation": "https://github.com/JoaquinRuiz/SpecJudge/blob/main/extensions/spec-kit/README.md",
+      "changelog": "https://github.com/JoaquinRuiz/SpecJudge/blob/main/extensions/spec-kit/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-only",
+      "requires": {
+        "speckit_version": ">=0.13.0",
+        "tools": [{ "name": "specjudge", "version": ">=0.5.0", "required": true }]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "cost",
+        "model-selection",
+        "local-first",
+        "ollama"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-12T00:00:00Z",
+      "updated_at": "2026-08-12T00:00:00Z"
+    },
     "speckit-superpowers-bridge": {
       "name": "Superpowers Implementation Bridge",
       "id": "speckit-superpowers-bridge",
