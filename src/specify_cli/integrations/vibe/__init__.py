@@ -46,12 +46,14 @@ class VibeIntegration(SkillsIntegration):
     }
     multi_install_safe = True
 
+    # Vibe's hooks schema supports exactly three hook types (HookConfig
+    # rejects anything else): pre_tool, post_tool, post_agent. Unsupported
+    # canonical events (session_start/session_end/user_prompt_submit) are
+    # intentionally absent so install_integration_events skips them with a
+    # warning instead of writing entries Vibe would refuse to load.
     CANONICAL_TO_NATIVE = {
-        "session_start": "session_start",
         "pre_tool_use": "pre_tool",
         "post_tool_use": "post_tool",
-        "session_end": "session_end",
-        "user_prompt_submit": "user_prompt_submit",
         "stop": "post_agent",
     }
     events_config_file = ".vibe/hooks.toml"

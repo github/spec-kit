@@ -1358,23 +1358,39 @@ def install_integration_events(
             created.append(config_path)
 
     elif fmt == "toml-vibe":
-        # Vibe hooks.toml custom merge. Flat [[hooks]] array with type field.
-        # Vibe expects type = "pre_tool" | "post_tool" | "post_agent" (and others).
+        # Vibe hooks.toml custom merge. Flat [[hooks]] array; Vibe's
+        # HookConfig schema is name/type/command/match/timeout, with type
+        # limited to "pre_tool" | "post_tool" | "post_agent". Hook names must
+        # be unique (Vibe silently drops duplicates by name), so a per-file
+        # counter suffix disambiguates handlers whose commands share a final
+        # segment (e.g. speckit.a.validate vs speckit.b.validate).
         lines: list[str] = []
+        used_names: set[str] = set()
         for ev, handlers in filtered.items():
             native = canonical_to_native[ev]
             for cfg in handlers:
                 command = cfg.get("command", "")
                 dispatcher_cmd = _dispatcher_command(integration, project_root, command, ev, timeout_seconds=cfg.get("timeout", 60))
-                # Vibe requires a name field for each hook
                 command_stem = command.split('.')[-1] if command else "unknown"
-                hook_name = f"speckit-{native}-{command_stem}"
+                command_stem = re.sub(r'[^A-Za-z0-9_-]+', '-', command_stem) or "unknown"
+                base_name = f"speckit-{native}-{command_stem}"
+                hook_name = base_name
+                suffix = 2
+                while hook_name in used_names:
+                    hook_name = f"{base_name}-{suffix}"
+                    suffix += 1
+                used_names.add(hook_name)
                 lines.append("[[hooks]]")
                 lines.append(f'name = {_toml_quote(hook_name)}')
                 lines.append(f'type = {_toml_quote(native)}')
+                # Vibe's field is `match` (fnmatch glob, or `re:`-prefixed
+                # regex, case-insensitive) and it is only valid on tool
+                # hooks — HookConfig rejects `match` on post_agent. Canonical
+                # matchers are Claude-style regexes ("Edit|Write"), so
+                # non-wildcard matchers are emitted as `re:` patterns.
                 matcher = cfg.get("matcher", "*")
-                if matcher != "*":
-                    lines.append(f'matcher = {_toml_quote(matcher)}')
+                if matcher and matcher != "*" and native in ("pre_tool", "post_tool"):
+                    lines.append(f'match = {_toml_quote("re:" + matcher)}')
                 lines.append(f'command = {_toml_quote(dispatcher_cmd)}')
                 lines.append(f'timeout = {_native_timeout(integration, cfg.get("timeout", 60) + EVENT_TIMEOUT_BUFFER)}')
                 lines.append('speckit_marker = true')

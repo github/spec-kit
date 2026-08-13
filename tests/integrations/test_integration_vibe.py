@@ -1,12 +1,28 @@
 """Tests for VibeIntegration."""
 
+from unittest.mock import MagicMock
+
 import yaml
 
+from specify_cli.events import install_integration_events, remove_integration_events
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.base import IntegrationBase
 from specify_cli.integrations.manifest import IntegrationManifest
 
 from .test_integration_base_skills import SkillsIntegrationTests
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python < 3.11
+    import tomli as tomllib  # type: ignore
+
+
+def _vibe_manifest() -> MagicMock:
+    manifest = MagicMock(spec=IntegrationManifest)
+    manifest.files = {}
+    manifest.record_file = MagicMock()
+    manifest.record_existing = MagicMock()
+    return manifest
 
 
 class TestVibeIntegration(SkillsIntegrationTests):
@@ -23,14 +39,13 @@ class TestVibeIntegration(SkillsIntegrationTests):
         assert integration.multi_install_safe is True
 
     def test_canonical_to_native_events(self):
+        """Vibe supports exactly three hook types: pre_tool, post_tool, post_agent."""
         integration = get_integration("vibe")
-        assert integration.CANONICAL_TO_NATIVE is not None
-        assert integration.CANONICAL_TO_NATIVE.get("session_start") == "session_start"
-        assert integration.CANONICAL_TO_NATIVE.get("pre_tool_use") == "pre_tool"
-        assert integration.CANONICAL_TO_NATIVE.get("post_tool_use") == "post_tool"
-        assert integration.CANONICAL_TO_NATIVE.get("session_end") == "session_end"
-        assert integration.CANONICAL_TO_NATIVE.get("user_prompt_submit") == "user_prompt_submit"
-        assert integration.CANONICAL_TO_NATIVE.get("stop") == "post_agent"
+        assert integration.CANONICAL_TO_NATIVE == {
+            "pre_tool_use": "pre_tool",
+            "post_tool_use": "post_tool",
+            "stop": "post_agent",
+        }
 
     def test_events_config(self):
         integration = get_integration("vibe")
@@ -112,6 +127,114 @@ class TestVibeIntegration(SkillsIntegrationTests):
             assert "argument-hint:" not in content, (
                 f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
             )
+
+
+class TestVibeTomlMerging:
+    """Behavioral tests for the toml-vibe hooks.toml generation and cleanup."""
+
+    def _install(self, tmp_path, events):
+        integration = get_integration("vibe")
+        manifest = _vibe_manifest()
+        install_integration_events(integration, tmp_path, manifest, events)
+        return integration, manifest
+
+    def _parse(self, tmp_path):
+        return tomllib.loads((tmp_path / ".vibe" / "hooks.toml").read_text(encoding="utf-8"))
+
+    def test_generated_toml_is_valid_and_schema_conformant(self, tmp_path):
+        self._install(tmp_path, {
+            "pre_tool_use": [{"command": "speckit.tdd.validate", "matcher": "Edit|Write"}],
+            "stop": [{"command": "speckit.session.finish"}],
+        })
+        data = self._parse(tmp_path)
+        hooks = data["hooks"]
+        assert len(hooks) == 2
+        by_type = {h["type"]: h for h in hooks}
+        assert set(by_type) == {"pre_tool", "post_agent"}
+        for h in hooks:
+            assert h["name"].startswith("speckit-")
+            assert isinstance(h["command"], str) and h["command"]
+            assert isinstance(h["timeout"], int)
+        # Canonical Claude-style regex matcher lands in Vibe's `match`
+        # field with the `re:` escape — never in a `matcher` field.
+        assert by_type["pre_tool"]["match"] == "re:Edit|Write"
+        assert "matcher" not in by_type["pre_tool"]
+        # HookConfig rejects `match` on post_agent hooks.
+        assert "match" not in by_type["post_agent"]
+
+    def test_wildcard_matcher_omitted(self, tmp_path):
+        self._install(tmp_path, {
+            "pre_tool_use": [{"command": "speckit.tdd.validate", "matcher": "*"}],
+        })
+        (hook,) = self._parse(tmp_path)["hooks"]
+        assert "match" not in hook
+
+    def test_unsupported_events_are_skipped(self, tmp_path, capsys):
+        self._install(tmp_path, {
+            "session_start": [{"command": "speckit.agent-context.update"}],
+            "pre_tool_use": [{"command": "speckit.tdd.validate"}],
+        })
+        hooks = self._parse(tmp_path)["hooks"]
+        assert [h["type"] for h in hooks] == ["pre_tool"]
+        assert "does not support 'session_start'" in capsys.readouterr().err
+
+    def test_multiple_handlers_get_unique_names(self, tmp_path):
+        """Vibe drops duplicate hook names, so shared command stems must not collide."""
+        self._install(tmp_path, {
+            "pre_tool_use": [
+                {"command": "speckit.tdd.validate"},
+                {"command": "speckit.other.validate"},
+            ],
+        })
+        hooks = self._parse(tmp_path)["hooks"]
+        assert len(hooks) == 2
+        names = [h["name"] for h in hooks]
+        assert len(set(names)) == 2
+        commands = " ".join(h["command"] for h in hooks)
+        assert "speckit.tdd.validate" in commands
+        assert "speckit.other.validate" in commands
+
+    def test_reinstall_is_idempotent(self, tmp_path):
+        events = {
+            "pre_tool_use": [{"command": "speckit.tdd.validate", "matcher": "Bash"}],
+            "stop": [{"command": "speckit.session.finish"}],
+        }
+        self._install(tmp_path, events)
+        first = self._parse(tmp_path)["hooks"]
+        self._install(tmp_path, events)
+        second = self._parse(tmp_path)["hooks"]
+        assert second == first
+
+    def test_merge_and_teardown_preserve_user_hooks(self, tmp_path):
+        config_path = tmp_path / ".vibe" / "hooks.toml"
+        config_path.parent.mkdir(parents=True)
+        user_block = (
+            '[[hooks]]\n'
+            'name = "deny-rm-rf"\n'
+            'type = "pre_tool"\n'
+            'match = "bash"\n'
+            'command = "guard-bash"\n'
+        )
+        config_path.write_text(user_block, encoding="utf-8")
+
+        integration, manifest = self._install(tmp_path, {
+            "pre_tool_use": [{"command": "speckit.tdd.validate"}],
+        })
+        merged = self._parse(tmp_path)["hooks"]
+        assert len(merged) == 2
+        assert any(h["name"] == "deny-rm-rf" for h in merged)
+
+        remove_integration_events(integration, tmp_path, manifest)
+        remaining = self._parse(tmp_path)["hooks"]
+        assert [h["name"] for h in remaining] == ["deny-rm-rf"]
+
+    def test_teardown_deletes_file_without_user_content(self, tmp_path):
+        integration, manifest = self._install(tmp_path, {
+            "pre_tool_use": [{"command": "speckit.tdd.validate"}],
+        })
+        assert (tmp_path / ".vibe" / "hooks.toml").is_file()
+        remove_integration_events(integration, tmp_path, manifest)
+        assert not (tmp_path / ".vibe" / "hooks.toml").exists()
 
 
 class TestVibeUserInvocable:
