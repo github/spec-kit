@@ -62,6 +62,39 @@ def test_local_source_rejects_unknown_file(tmp_path: Path):
         _local_manifest_source(str(weird))
 
 
+def test_local_source_zip_non_utf8_manifest_raises_bundler_error(tmp_path: Path):
+    """Undecodable bundle.yml bytes inside a .zip must raise BundlerError.
+
+    The manifest bytes are decoded as UTF-8 explicitly, matching
+    ``yamlio.load_yaml``'s "Could not read ..." contract, instead of
+    escaping as a raw ``UnicodeDecodeError``/``ReaderError`` traceback.
+    """
+    artifact = tmp_path / "demo.zip"
+    with zipfile.ZipFile(artifact, "w") as archive:
+        archive.writestr("bundle.yml", b"\xff\xfe bundle \xc3\x28\n")
+
+    with pytest.raises(BundlerError, match="Could not read"):
+        _local_manifest_source(str(artifact))
+
+
+def test_local_source_zip_utf16_manifest_rejected_like_directory(tmp_path: Path):
+    """A well-formed UTF-16 manifest must fail the same way in a .zip.
+
+    ``yamlio.load_yaml`` decodes strictly as UTF-8, so a UTF-16 bundle.yml
+    (the realistic PowerShell ``Out-File`` output) is rejected when read
+    from a directory. Feeding the zip bytes straight to PyYAML would let
+    its Reader honour the UTF-16 BOM and *accept* the same manifest,
+    making zip and directory sources diverge.
+    """
+    artifact = tmp_path / "demo.zip"
+    manifest_text = "bundle:\n  id: demo-bundle\n  version: 1.0.0\n"
+    with zipfile.ZipFile(artifact, "w") as archive:
+        archive.writestr("bundle.yml", manifest_text.encode("utf-16"))
+
+    with pytest.raises(BundlerError, match="Could not read"):
+        _local_manifest_source(str(artifact))
+
+
 def test_install_bundled_extension_from_zip_offline(tmp_path: Path):
     """End-to-end: build → install (offline, local .zip) → list → remove."""
     project = make_project(tmp_path / "proj")

@@ -772,8 +772,6 @@ def _local_manifest_source(arg: str):
         return BundleManifest.from_file(manifest_path)
 
     if candidate.suffix == ".zip":
-        import io
-
         import yaml as _yaml
 
         from ..._download_security import open_zip_bounded, read_zip_member_limited
@@ -791,8 +789,20 @@ def _local_manifest_source(arg: str):
                 error_type=BundlerError,
                 label="bundle manifest",
             )
+        # The bounded-zip helpers above keep archive failures inside the
+        # BundlerError contract, but the manifest bytes need the same
+        # treatment as yamlio.load_yaml: decode as UTF-8 explicitly —
+        # feeding PyYAML the byte stream would let its Reader auto-detect
+        # a UTF-16 BOM and accept a manifest the directory and bundle.yml
+        # sources reject.
         try:
-            data = _yaml.safe_load(io.BytesIO(raw))
+            text = raw.decode("utf-8")
+        except UnicodeError as exc:
+            raise BundlerError(
+                f"Could not read bundle.yml inside '{candidate}': {exc}"
+            ) from exc
+        try:
+            data = _yaml.safe_load(text)
         except _yaml.YAMLError as exc:
             # The sibling directory/bundle.yml branches reach YAML through
             # load_yaml(), which turns a parse failure into a BundlerError. This
