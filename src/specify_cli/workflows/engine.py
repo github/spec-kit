@@ -366,6 +366,17 @@ def _validate_steps(
 
         # Determine step type
         step_type = step_config.get("type", "command")
+        if not isinstance(step_type, str):
+            # Registry keys are strings. Checking an unhashable YAML value
+            # (for example ``type: [shell]`` or a mapping) against the set
+            # below raises a raw TypeError before validation can report the
+            # authoring mistake. Guard every non-string shape first, matching
+            # the typed validation already applied to workflow and step IDs.
+            errors.append(
+                f"Step {step_id!r}: 'type' must be a string, got "
+                f"{type(step_type).__name__} ({step_type!r})."
+            )
+            continue
         if step_type not in _get_valid_step_types():
             errors.append(
                 f"Step {step_id!r} has invalid type {step_type!r}."
