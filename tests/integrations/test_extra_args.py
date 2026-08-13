@@ -565,6 +565,49 @@ def test_executable_env_var_devin_integration(monkeypatch):
     assert args[0] == "/opt/devin"
 
 
+def test_goose_integration_honours_extra_args(monkeypatch):
+    """Goose gained ``build_exec_args()`` (the Goose item in #2416), so it must
+    honour the shared extra-args hook like every other dispatching integration."""
+    from specify_cli.integrations.goose import GooseIntegration
+
+    monkeypatch.setenv("SPECKIT_INTEGRATION_GOOSE_EXTRA_ARGS", "--debug")
+    args = GooseIntegration().build_exec_args("hi", output_json=False)
+    assert args == ["goose", "run", "--debug", "-t", "hi"]
+
+
+def test_goose_extra_args_precede_canonical_flags(monkeypatch):
+    """Extra args are applied before Spec Kit's canonical flags, matching the
+    opencode / codex / cursor-agent ordering.
+
+    Ordering parity only. This deliberately does not assert that a duplicated
+    canonical flag gets overridden: ``goose run`` is clap-derive based, and its
+    ``--recipe`` / ``--model`` / ``--output-format`` are single-value args with
+    no ``args_override_self``, so duplicating one makes goose exit with "cannot
+    be used multiple times" regardless of which side wins the ordering.
+    """
+    from specify_cli.integrations.goose import GooseIntegration
+
+    monkeypatch.setenv("SPECKIT_INTEGRATION_GOOSE_EXTRA_ARGS", "--debug")
+    args = GooseIntegration().build_exec_args("/speckit.specify", model="gpt-4o")
+    assert args[:3] == ["goose", "run", "--debug"]
+    assert args.index("--debug") < args.index("--model")
+    assert args.index("--debug") < args.index("--output-format")
+    assert args.index("--debug") < args.index("--recipe")
+    # Spec Kit itself must never emit a duplicate single-value flag.
+    for flag in ("--recipe", "--model", "--output-format"):
+        assert args.count(flag) == 1
+
+
+def test_executable_env_var_goose_integration(monkeypatch):
+    """GooseIntegration honours the executable env var."""
+    from specify_cli.integrations.goose import GooseIntegration
+
+    monkeypatch.setenv("SPECKIT_INTEGRATION_GOOSE_EXECUTABLE", "/opt/goose")
+    args = GooseIntegration().build_exec_args("hi")
+    assert args[0] == "/opt/goose"
+    assert args[1] == "run"
+
+
 def test_executable_env_var_opencode_integration(monkeypatch):
     """OpencodeIntegration honours the executable env var."""
     from specify_cli.integrations.opencode import OpencodeIntegration
