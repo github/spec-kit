@@ -144,6 +144,42 @@ flowchart TD
 
 Catalogs are fetched with a 1-hour cache (per-URL, SHA256-hashed cache files). Each catalog entry has a `priority` (for merge ordering) and `install_allowed` flag.
 
+## Preset Stacks
+
+`.specify/preset-stacks.yml` holds named, ordered lists of preset entries (`preset`, `priority`,
+optional `source`). `load_stacks_config()` parses and validates the file (unique stack names,
+`default`/`none` reserved, no duplicate `preset` within a stack); `apply_stack()` then drives the
+same install path as `specify preset add` for each entry, in priority order.
+
+```mermaid
+flowchart TD
+    A["apply_stack(project_root, stack)"] --> B["load stack-state.json\n(prior applied stack, if any)"]
+    B --> C{"entry has explicit source?"}
+    C -- Yes --> D["install_from_directory / install_from_archive"]
+    C -- No --> E["catalog.download_pack(bypass_install_allowed=True)"]
+    E --> D
+    D --> F["record entry result (success/error)"]
+    F --> G{"more entries?"}
+    G -- Yes --> C
+    G -- No --> H["diff this stack's preset IDs vs\nprior stack-state for this name"]
+    H --> I["uninstall presets dropped from the stack,\nunless still listed by another applied stack"]
+    I --> J["write updated stack-state.json"]
+```
+
+Per-entry failures are collected but never abort the run — `apply_stack()` returns a result with
+one entry per attempted install plus the list of removed preset IDs; the caller (CLI command or
+`specify init`) renders success/failure lines and exits non-zero only if at least one entry failed.
+
+`specify init`'s implicit-default behavior and `specify preset stack install <name>` share this
+same `apply_stack()` call — resolving which stack to apply (named, implicit `default`, or none) is
+the only logic that differs between the two entry points.
+
+- **Python**: `load_stacks_config()`, `apply_stack()`, `_resolve_entry_source()` in
+  `src/specify_cli/presets/stacks.py`
+- **CLI**: `specify preset stack list/install/add/remove` in
+  `src/specify_cli/presets/_commands.py`; `--preset-stack` on `specify init` in
+  `src/specify_cli/commands/init.py`
+
 ## Repository Layout
 
 ```
@@ -178,10 +214,14 @@ presets/
 
 ```
 src/specify_cli/
-├── agents.py       # CommandRegistrar — shared infrastructure for writing
-│                    #   command files to agent directories
-├── presets.py       # PresetManifest, PresetRegistry, PresetManager,
-│                    #   PresetCatalog, PresetCatalogEntry, PresetResolver
-└── __init__.py      # CLI commands: specify preset list/add/remove/search/
-                     #   resolve/info, specify preset catalog list/add/remove
+├── agents.py               # CommandRegistrar — shared infrastructure for writing
+│                            #   command files to agent directories
+└── presets/
+    ├── __init__.py          # PresetManifest, PresetRegistry, PresetManager,
+    │                        #   PresetCatalog, PresetCatalogEntry, PresetResolver
+    ├── _commands.py         # CLI commands: specify preset list/add/remove/search/
+    │                        #   resolve/info, specify preset catalog list/add/remove,
+    │                        #   specify preset stack list/install/add/remove
+    └── stacks.py            # PresetStackEntry, PresetStack, PresetStacksConfig,
+                             #   load_stacks_config(), apply_stack()
 ```

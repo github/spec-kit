@@ -121,6 +121,56 @@ specify preset catalog add https://example.com/catalog.json --name my-org --inst
 specify preset catalog remove my-org
 ```
 
+## Preset Stacks
+
+A preset stack is a named, ordered list of `specify preset add` calls saved to
+`.specify/preset-stacks.yml`, so a team can apply its whole preset lineup in one step instead of
+running each `add` by hand:
+
+```yaml
+stacks:
+  - name: team-baseline
+    entries:
+      - preset: healthcare-compliance
+        priority: 10
+      - preset: enterprise-safe
+        priority: 5
+  - name: default
+    entries:
+      - preset: healthcare-compliance
+        priority: 10
+```
+
+A stack named `default` is applied automatically by `specify init` — no `--preset` or
+`--preset-stack` flag needed. `default` and `none` are reserved stack names.
+
+```bash
+# List every defined stack
+specify preset stack list
+
+# Apply a stack on demand (also re-syncs: entries no longer in the stack are
+# uninstalled, unless another applied stack still lists them)
+specify preset stack install team-baseline
+
+# Add or update one entry in a stack's definition (never installs anything)
+specify preset stack add team-baseline --preset enterprise-safe --priority 5
+
+# Remove a whole stack, or just one entry, from the definition (never uninstalls anything)
+specify preset stack remove team-baseline --preset enterprise-safe
+specify preset stack remove team-baseline
+
+# Skip the implicit default stack at init time
+specify init --preset-stack none
+
+# Apply a specific named stack at init time instead of the default
+specify init --preset-stack team-baseline
+```
+
+`--preset` and `--preset-stack` are mutually exclusive on `specify init`. A stack entry can pin an
+explicit `source` (local directory or archive URL); without one, the preset is resolved through the
+normal catalog lookup — and, unlike a bare `specify preset add`, bypasses `install_allowed` for
+discovery-only catalogs, since listing a preset in a stack is itself the trust decision.
+
 ## Creating a Preset
 
 See [scaffold/](scaffold/) for a scaffold you can copy to create your own preset.
@@ -159,6 +209,7 @@ The token is attached automatically to requests targeting GitHub domains. Non-Gi
 |------|-------|-------------|
 | `.specify/preset-catalogs.yml` | Project | Custom catalog stack for this project |
 | `~/.specify/preset-catalogs.yml` | User | Custom catalog stack for all projects |
+| `.specify/preset-stacks.yml` | Project | Named, reusable preset stacks (see [Preset Stacks](#preset-stacks)) |
 
 ## Future Considerations
 
