@@ -297,6 +297,10 @@ def _emit(output, envelope, native_event=""):
       hookSpecificOutput → {"hookSpecificOutput": {"hookEventName": ..., "additionalContext": ...}}
       additionalContext  → {"additionalContext": ...}   (top-level, Copilot)
       additional_context → {"additional_context": ...}  (top-level, Cursor)
+      hook_specific_output → {"decision": "allow", "hook_specific_output":
+                           {"additional_context": ...}} (Vibe: any non-empty
+                           stdout must parse as a HookStructuredResponse or
+                           the hook is reported failed and output dropped)
       suppress           → emit nothing (strict-JSON agents on events whose
                            output can't be used)
       plain (default)    → passthrough (Claude/Codex inject plain stdout)
@@ -320,6 +324,9 @@ def _emit(output, envelope, native_event=""):
     if envelope == "additional_context":
         sys.stdout.write(json.dumps({"additional_context": output}) + "\\n")
         return
+    if envelope == "hook_specific_output":
+        sys.stdout.write(json.dumps({"decision": "allow", "hook_specific_output": {"additional_context": output}}) + "\\n")
+        return
     sys.stdout.write(output)
 
 
@@ -339,9 +346,10 @@ def main():
             timeout = 120
     # Optional 5th arg: context-injection envelope for stdout (C13): plain
     # (default), hookSpecificOutput, additionalContext, additional_context,
-    # or suppress. Unknown values fall back to plain passthrough.
+    # hook_specific_output, or suppress. Unknown values fall back to plain
+    # passthrough.
     envelope = sys.argv[4] if len(sys.argv) >= 5 else "plain"
-    if envelope not in ("plain", "hookSpecificOutput", "additionalContext", "additional_context", "suppress"):
+    if envelope not in ("plain", "hookSpecificOutput", "additionalContext", "additional_context", "hook_specific_output", "suppress"):
         envelope = "plain"
     # Optional 6th arg: native event name for hookSpecificOutput's
     # hookEventName field (required by Qwen's hooks spec; included by
@@ -672,8 +680,10 @@ def resolve_and_run_event_command(
     context-injection protocol (C13): ``plain`` passthrough (Claude/Codex
     inject plain stdout), ``hookSpecificOutput``/``additionalContext``/
     ``additional_context`` JSON wrappers (Gemini/Tabnine/Qwen/Devin, Copilot,
-    Cursor respectively), or ``suppress`` (strict-JSON agents on events whose
-    output can't be used).
+    Cursor respectively), ``hook_specific_output`` (Vibe's
+    HookStructuredResponse — any non-empty stdout that isn't valid JSON is
+    reported as a hook failure and dropped), or ``suppress`` (strict-JSON
+    agents on events whose output can't be used).
 
     *native_event* is the agent's native hookEventName (e.g. ``"SessionStart"``),
     required inside ``hookSpecificOutput`` by Qwen's hooks spec (and included
@@ -737,6 +747,13 @@ def _emit_event_stdout(output: str, envelope: str, native_event: str = "") -> No
         return
     if envelope == "additional_context":
         sys.stdout.write(json.dumps({"additional_context": output}) + "\n")
+        return
+    if envelope == "hook_specific_output":
+        # Vibe parses any non-empty hook stdout as a HookStructuredResponse;
+        # plain text would be reported as a hook failure. Wrap it as an
+        # explicit allow with additional_context (injected on post_tool,
+        # harmlessly ignored on pre_tool/post_agent).
+        sys.stdout.write(json.dumps({"decision": "allow", "hook_specific_output": {"additional_context": output}}) + "\n")
         return
     sys.stdout.write(output)
 

@@ -228,6 +228,39 @@ class TestVibeTomlMerging:
         remaining = self._parse(tmp_path)["hooks"]
         assert [h["name"] for h in remaining] == ["deny-rm-rf"]
 
+    def test_commands_carry_structured_output_envelope(self, tmp_path):
+        """Vibe parses non-empty hook stdout as JSON (HookStructuredResponse);
+        plain text is reported as a hook failure. Every generated hook command
+        must therefore pass the hook_specific_output envelope to the dispatcher."""
+        self._install(tmp_path, {
+            "pre_tool_use": [{"command": "speckit.tdd.validate"}],
+            "stop": [{"command": "speckit.session.finish"}],
+        })
+        for hook in self._parse(tmp_path)["hooks"]:
+            assert hook["command"].endswith(" hook_specific_output"), hook["name"]
+
+    def test_envelope_resolution(self):
+        from specify_cli.events import _context_envelope_for
+        integration = get_integration("vibe")
+        for event in ("pre_tool_use", "post_tool_use", "stop"):
+            assert _context_envelope_for(integration, event) == "hook_specific_output"
+
+    def test_emit_wraps_stdout_as_structured_response(self, capsys):
+        import json
+
+        from specify_cli.events import _emit_event_stdout
+
+        _emit_event_stdout("context line", "hook_specific_output")
+        data = json.loads(capsys.readouterr().out)
+        assert data == {
+            "decision": "allow",
+            "hook_specific_output": {"additional_context": "context line"},
+        }
+
+        # Empty stdout stays empty — Vibe treats it as "no response".
+        _emit_event_stdout("", "hook_specific_output")
+        assert capsys.readouterr().out == ""
+
     def test_teardown_deletes_file_without_user_content(self, tmp_path):
         integration, manifest = self._install(tmp_path, {
             "pre_tool_use": [{"command": "speckit.tdd.validate"}],

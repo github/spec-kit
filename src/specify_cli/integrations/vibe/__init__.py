@@ -58,6 +58,13 @@ class VibeIntegration(SkillsIntegration):
     }
     events_config_file = ".vibe/hooks.toml"
     events_format = "toml-vibe"
+    # Vibe parses any non-empty hook stdout as a JSON HookStructuredResponse;
+    # plain text is reported as a hook failure and its output dropped. The
+    # dispatcher therefore wraps handler stdout as {"decision": "allow",
+    # "hook_specific_output": {"additional_context": ...}} for every event:
+    # post_tool injects additional_context, pre_tool/post_agent ignore it but
+    # still parse cleanly.
+    events_context_envelope = {"*": "hook_specific_output"}
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
