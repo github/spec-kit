@@ -258,6 +258,9 @@ class TestVibeTomlMerging:
     def test_posix_host_keeps_shlex_quoting(self, tmp_path, monkeypatch):
         import specify_cli.events as events_mod
 
+        # Pin the target: on a Windows CI runner _vibe_target_os() would
+        # return "cmd" and this test asserts the POSIX-host quoting path.
+        monkeypatch.setattr(events_mod, "_vibe_target_os", lambda: "host")
         monkeypatch.setattr(
             events_mod, "_resolve_interpreter",
             lambda root: "/opt/my venv/bin/python3",
