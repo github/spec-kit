@@ -13,13 +13,18 @@ from __future__ import annotations
 
 import urllib.error
 import urllib.request
-from fnmatch import fnmatch
 from typing import Callable
 from urllib.parse import urlparse
 
 from .._download_security import is_safe_download_redirect
 from . import get_provider
-from .config import AuthConfigEntry, _default_config_path, find_entries_for_url, load_auth_config
+from .config import (
+    AuthConfigEntry,
+    _default_config_path,
+    _host_matches_pattern,
+    find_entries_for_url,
+    load_auth_config,
+)
 
 
 _config_override: list[AuthConfigEntry] | None = None
@@ -54,8 +59,7 @@ def _load_config() -> list[AuthConfigEntry]:
 
 def _hostname_in_hosts(hostname: str, hosts: tuple[str, ...]) -> bool:
     """Return True if *hostname* matches any pattern in *hosts*."""
-    hostname = hostname.lower()
-    return any(p == hostname or fnmatch(hostname, p) for p in hosts)
+    return any(_host_matches_pattern(hostname, pattern) for pattern in hosts)
 
 
 RedirectValidator = Callable[[str, str], None]
