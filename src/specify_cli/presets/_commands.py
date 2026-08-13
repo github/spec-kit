@@ -39,6 +39,13 @@ preset_catalog_app = typer.Typer(
 )
 preset_app.add_typer(preset_catalog_app, name="catalog")
 
+preset_stack_app = typer.Typer(
+    name="stack",
+    help="Manage and apply reusable preset stacks",
+    add_completion=False,
+)
+preset_app.add_typer(preset_stack_app, name="stack")
+
 
 # ===== Preset Commands =====
 
@@ -842,6 +849,214 @@ def preset_catalog_remove(
     console.print(f"[green]✓[/green] Removed catalog '{safe_name}'")
     if not catalogs:
         console.print("\n[dim]No catalogs remain in config. Built-in defaults will be used.[/dim]")
+
+
+@preset_stack_app.command("install")
+def preset_stack_install(
+    name: str = typer.Argument(help="Stack name to apply"),
+):
+    """Apply a named stack from .specify/preset-stacks.yml."""
+    from .. import _require_specify_project, get_speckit_version
+    from . import PresetValidationError
+    from .stacks import apply_stack, load_stacks_config
+
+    project_root = _require_specify_project()
+
+    try:
+        config = load_stacks_config(project_root)
+    except PresetValidationError as e:
+        console.print(f"[red]Error:[/red] {_escape_markup(str(e))}")
+        raise typer.Exit(1)
+
+    stack = next((s for s in config.stacks if s.name == name), None)
+    if stack is None:
+        known = ", ".join(s.name for s in config.stacks) or "(none defined)"
+        console.print(f"[red]Error:[/red] Stack '{_escape_markup(name)}' is not defined in .specify/preset-stacks.yml")
+        console.print(f"Defined stacks: {_escape_markup(known)}")
+        raise typer.Exit(1)
+
+    result = apply_stack(project_root, stack, get_speckit_version())
+
+    for entry in result.entries:
+        if entry.success:
+            console.print(f"[green]✓[/green] Preset '{_escape_markup(entry.preset)}' installed")
+        else:
+            console.print(f"[red]✗[/red] Preset '{_escape_markup(entry.preset)}' failed: {_escape_markup(entry.error or '')}")
+
+    for pid in result.removed:
+        console.print(f"[dim]- Removed preset '{_escape_markup(pid)}' (no longer in stack '{_escape_markup(name)}')[/dim]")
+
+    if not result.success:
+        raise typer.Exit(1)
+
+    console.print(f"\n[green]✓[/green] Stack '{_escape_markup(name)}' applied")
+
+
+@preset_stack_app.command("list")
+def preset_stack_list():
+    """List every stack defined in .specify/preset-stacks.yml."""
+    from .. import _require_specify_project
+    from . import PresetValidationError
+    from .stacks import load_stacks_config
+
+    project_root = _require_specify_project()
+
+    try:
+        config = load_stacks_config(project_root)
+    except PresetValidationError as e:
+        console.print(f"[red]Error:[/red] {_escape_markup(str(e))}")
+        raise typer.Exit(1)
+
+    if not config.stacks:
+        console.print("[dim]No stacks defined in .specify/preset-stacks.yml[/dim]")
+        return
+
+    console.print("\n[bold cyan]Preset Stacks:[/bold cyan]\n")
+    for stack in config.stacks:
+        marker = " [green](default)[/green]" if stack.name == "default" else ""
+        console.print(f"  [bold]{_escape_markup(stack.name)}[/bold]{marker}")
+        for entry in stack.entries:
+            source_suffix = f" (source: {_escape_markup(entry.source)})" if entry.source else ""
+            console.print(
+                f"     - {_escape_markup(entry.preset)} (priority {entry.priority}){source_suffix}"
+            )
+        console.print()
+
+
+@preset_stack_app.command("add")
+def preset_stack_add(
+    name: str = typer.Argument(help="Stack name to add or update"),
+    preset: str = typer.Option(..., "--preset", help="Preset ID to add to the stack"),
+    priority: int = typer.Option(10, "--priority", help="Install priority (lower = higher priority)"),
+    source: str = typer.Option(None, "--source", help="Explicit source: local directory path or archive URL"),
+):
+    """Add or update one entry in a stack's definition. Never installs anything."""
+    from .. import _display_project_path, _require_specify_project
+    from .stacks import RESERVED_STACK_NAMES
+
+    project_root = _require_specify_project()
+    specify_dir = project_root / ".specify"
+
+    if name in RESERVED_STACK_NAMES:
+        console.print(f"[red]Error:[/red] Stack name '{_escape_markup(name)}' is reserved and cannot be used")
+        raise typer.Exit(1)
+
+    config_path = specify_dir / "preset-stacks.yml"
+
+    if config_path.exists():
+        try:
+            config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        except Exception as e:
+            console.print(f"[red]Error:[/red] Failed to read {_escape_markup(str(config_path))}: {_escape_markup(str(e))}")
+            raise typer.Exit(1)
+    else:
+        config = {}
+
+    stacks = config.get("stacks", [])
+    if not isinstance(stacks, list):
+        console.print("[red]Error:[/red] Invalid preset-stacks.yml: 'stacks' must be a list.")
+        raise typer.Exit(1)
+
+    safe_name = _escape_markup(name)
+    safe_preset = _escape_markup(preset)
+
+    stack = next((s for s in stacks if isinstance(s, dict) and s.get("name") == name), None)
+    if stack is None:
+        stack = {"name": name, "entries": []}
+        stacks.append(stack)
+
+    entries = stack.setdefault("entries", [])
+    if not isinstance(entries, list):
+        console.print(f"[red]Error:[/red] Invalid preset-stacks.yml: stack '{safe_name}' has entries that must be a list.")
+        raise typer.Exit(1)
+
+    entry = next((e for e in entries if isinstance(e, dict) and e.get("preset") == preset), None)
+    entry_data = {"preset": preset, "priority": priority}
+    if source:
+        entry_data["source"] = source
+
+    if entry is None:
+        entries.append(entry_data)
+        verb = "Added"
+    else:
+        entry.clear()
+        entry.update(entry_data)
+        verb = "Updated"
+
+    config["stacks"] = stacks
+    config_path.write_text(
+        yaml.safe_dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+
+    console.print(f"[green]✓[/green] {verb} preset '{safe_preset}' in stack '{safe_name}' (priority {priority})")
+    config_label = _escape_markup(str(_display_project_path(project_root, config_path)))
+    console.print(f"\nConfig saved to {config_label}")
+
+
+@preset_stack_app.command("remove")
+def preset_stack_remove(
+    name: str = typer.Argument(help="Stack name to remove or edit"),
+    preset: str = typer.Option(None, "--preset", help="If given, remove only this preset entry from the stack"),
+):
+    """Remove a stack definition, or one entry from it. Never uninstalls anything."""
+    from .. import _require_specify_project
+
+    project_root = _require_specify_project()
+    specify_dir = project_root / ".specify"
+
+    config_path = specify_dir / "preset-stacks.yml"
+    if not config_path.exists():
+        console.print("[red]Error:[/red] No .specify/preset-stacks.yml found. Nothing to remove.")
+        raise typer.Exit(1)
+
+    try:
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Failed to read {_escape_markup(str(config_path))}: {_escape_markup(str(e))}")
+        raise typer.Exit(1)
+
+    stacks = config.get("stacks", [])
+    if not isinstance(stacks, list):
+        console.print("[red]Error:[/red] Invalid preset-stacks.yml: 'stacks' must be a list.")
+        raise typer.Exit(1)
+
+    safe_name = _escape_markup(name)
+
+    stack = next((s for s in stacks if isinstance(s, dict) and s.get("name") == name), None)
+    if stack is None:
+        console.print(f"[red]Error:[/red] Stack '{safe_name}' not found.")
+        raise typer.Exit(1)
+
+    if preset is None:
+        stacks = [s for s in stacks if s is not stack]
+        config["stacks"] = stacks
+        config_path.write_text(
+            yaml.safe_dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+        console.print(f"[green]✓[/green] Removed stack '{safe_name}'")
+        return
+
+    entries = stack.get("entries", [])
+    if not isinstance(entries, list):
+        console.print(f"[red]Error:[/red] Invalid preset-stacks.yml: stack '{safe_name}' has entries that must be a list.")
+        raise typer.Exit(1)
+
+    safe_preset = _escape_markup(preset)
+    original_count = len(entries)
+    entries = [e for e in entries if not (isinstance(e, dict) and e.get("preset") == preset)]
+    if len(entries) == original_count:
+        console.print(f"[red]Error:[/red] Preset '{safe_preset}' not found in stack '{safe_name}'.")
+        raise typer.Exit(1)
+
+    stack["entries"] = entries
+    config["stacks"] = stacks
+    config_path.write_text(
+        yaml.safe_dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    console.print(f"[green]✓[/green] Removed preset '{safe_preset}' from stack '{safe_name}'")
 
 
 def register(app: typer.Typer) -> None:
