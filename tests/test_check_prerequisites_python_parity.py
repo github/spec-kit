@@ -564,3 +564,38 @@ class TestGetInvokeSeparatorTolerance:
             "integration_settings": {"droid": {"invoke_separator": "-"}},
         })
         assert common.get_invoke_separator(self._repo(tmp_path, body)) == "-"
+
+
+@pytest.mark.skipif(
+    not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available"
+)
+def test_powershell_text_output_lists_available_docs(prereq_repo: Path) -> None:
+    """Text mode must print a status line per document, like the twins.
+
+    `Test-FileExists` / `Test-DirHasFiles` report their line with `Write-Output`
+    and ALSO `return $true/$false`, both on the Success stream. The callers piped
+    the whole call to `| Out-Null` to discard the boolean, which discarded the
+    report line too — so `AVAILABLE_DOCS:` was emitted with nothing under it
+    while the bash and Python twins list every document.
+    """
+    feat = prereq_repo / "specs" / "001-my-feature"
+    feat.mkdir(parents=True)
+    (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
+    (feat / "research.md").write_text("# research\n", encoding="utf-8")
+    _write_feature_json(prereq_repo)
+
+    ps = _run(_ps_cmd(prereq_repo, "-IncludeTasks"), prereq_repo)
+
+    assert ps.returncode == 0, ps.stderr
+    assert "AVAILABLE_DOCS:" in ps.stdout
+    for doc in (
+        "research.md",
+        "data-model.md",
+        "contracts/",
+        "quickstart.md",
+        "tasks.md",
+    ):
+        assert doc in ps.stdout, (doc, ps.stdout)
+    # The existing file reports [OK], the missing ones [FAIL].
+    assert "[OK] research.md" in _normalize_status_text(ps.stdout), ps.stdout
+    assert "[FAIL] quickstart.md" in _normalize_status_text(ps.stdout), ps.stdout
