@@ -1110,11 +1110,31 @@ def _shell_quote(value: str, target_os: str) -> str:
     """
     if target_os == "windows":
         return "'" + value.replace("'", "''") + "'"
+    if target_os == "cmd":
+        # cmd.exe (Vibe launches hooks via create_subprocess_shell, which is
+        # %COMSPEC% on Windows): single quotes are not quoting there, so a
+        # POSIX-quoted path with spaces would break apart. Double-quote only
+        # when needed; embedded double quotes are doubled (MSVCRT argv
+        # parsing treats "" inside a quoted string as a literal quote).
+        if re.fullmatch(r"[A-Za-z0-9_.\-\\/:]+", value):
+            return value
+        return '"' + value.replace('"', '""') + '"'
     # "host" and "posix" both use POSIX quoting. On Windows the single-
     # command-string formats (Claude/Gemini/Qwen/Devin/Tabnine) are run via
     # Git Bash or the agent's POSIX-ish shell, so POSIX quoting is correct and
     # avoids emitting 'python' (which PowerShell wouldn't invoke without &).
     return shlex.quote(value)
+
+
+def _vibe_target_os() -> str:
+    """Quoting target for Vibe hook commands.
+
+    Vibe launches hooks with ``asyncio.create_subprocess_shell`` — the host's
+    native shell: POSIX ``sh`` on Unix, ``cmd.exe`` (%COMSPEC%) on Windows,
+    where POSIX single-quoting is not quoting at all and an interpreter or
+    dispatcher path containing spaces would split.
+    """
+    return "cmd" if os.name == "nt" else "host"
 
 
 def _dispatcher_command(
@@ -1139,6 +1159,8 @@ def _dispatcher_command(
     both POSIX and Windows variants into one checked-in file (Copilot): ``host``
     uses the host-resolved interpreter (venv-aware), while ``posix``/``windows``
     emit portable interpreters so the config works on either OS (#S4).
+    ``cmd`` also uses the host-resolved interpreter but quotes for cmd.exe —
+    for agents that launch hooks through the native Windows shell (Vibe).
 
     Each component is shell-quoted for the target shell (R2) so an interpreter
     path with spaces or a command/event containing shell metacharacters is
@@ -1164,7 +1186,10 @@ def _dispatcher_command(
     shape the agent's hook protocol requires. Plain-passthrough agents
     (Claude/Codex) declare no envelope and get no extra argument.
     """
-    if target_os == "host":
+    if target_os in ("host", "cmd"):
+        # "cmd" is host-resolved too (venv-aware): it is selected only when
+        # generating on a Windows host for an agent that runs hooks through
+        # cmd.exe (Vibe), and differs from "host" purely in quoting style.
         interpreter = _resolve_interpreter(project_root)
     else:
         interpreter = _resolve_interpreter_for_target(target_os)
@@ -1387,7 +1412,11 @@ def install_integration_events(
             native = canonical_to_native[ev]
             for cfg in handlers:
                 command = cfg.get("command", "")
-                dispatcher_cmd = _dispatcher_command(integration, project_root, command, ev, timeout_seconds=cfg.get("timeout", 60))
+                dispatcher_cmd = _dispatcher_command(
+                    integration, project_root, command, ev,
+                    target_os=_vibe_target_os(),
+                    timeout_seconds=cfg.get("timeout", 60),
+                )
                 command_stem = command.split('.')[-1] if command else "unknown"
                 command_stem = re.sub(r'[^A-Za-z0-9_-]+', '-', command_stem) or "unknown"
                 base_name = f"speckit-{native}-{command_stem}"

@@ -239,6 +239,33 @@ class TestVibeTomlMerging:
         for hook in self._parse(tmp_path)["hooks"]:
             assert hook["command"].endswith(" hook_specific_output"), hook["name"]
 
+    def test_windows_host_uses_cmd_quoting(self, tmp_path, monkeypatch):
+        """Vibe runs hooks via create_subprocess_shell — cmd.exe on Windows,
+        where POSIX single quotes don't quote. A host interpreter path with
+        spaces must be double-quoted, never shlex-quoted."""
+        import specify_cli.events as events_mod
+
+        monkeypatch.setattr(events_mod, "_vibe_target_os", lambda: "cmd")
+        monkeypatch.setattr(
+            events_mod, "_resolve_interpreter",
+            lambda root: r"C:\Program Files\Python\python.exe",
+        )
+        self._install(tmp_path, {"pre_tool_use": [{"command": "speckit.tdd.validate"}]})
+        (hook,) = self._parse(tmp_path)["hooks"]
+        assert hook["command"].startswith('"C:\\Program Files\\Python\\python.exe" ')
+        assert "'" not in hook["command"]
+
+    def test_posix_host_keeps_shlex_quoting(self, tmp_path, monkeypatch):
+        import specify_cli.events as events_mod
+
+        monkeypatch.setattr(
+            events_mod, "_resolve_interpreter",
+            lambda root: "/opt/my venv/bin/python3",
+        )
+        self._install(tmp_path, {"pre_tool_use": [{"command": "speckit.tdd.validate"}]})
+        (hook,) = self._parse(tmp_path)["hooks"]
+        assert hook["command"].startswith("'/opt/my venv/bin/python3' ")
+
     def test_envelope_resolution(self):
         from specify_cli.events import _context_envelope_for
         integration = get_integration("vibe")
