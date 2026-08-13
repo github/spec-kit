@@ -11,7 +11,6 @@ import json
 import os
 import stat
 from dataclasses import dataclass
-from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -48,10 +47,21 @@ def _is_valid_host_pattern(pattern: str) -> bool:
     * ``*.example.com``         — leading ``*.`` wildcard; matches subdomains
       such as ``myorg.example.com`` but not ``example.com`` itself
     """
+    if any(char in pattern for char in "?[]"):
+        return False
     if "*" not in pattern:
         return True  # exact hostname — already validated as non-empty
     # Only *.suffix is allowed; no other wildcard positions
-    return pattern.startswith("*.") and "*" not in pattern[2:]
+    return pattern.startswith("*.") and len(pattern) > 2 and "*" not in pattern[2:]
+
+
+def _host_matches_pattern(hostname: str, pattern: str) -> bool:
+    """Match a hostname against an exact host or leading ``*.`` wildcard."""
+    hostname = hostname.lower()
+    pattern = pattern.lower()
+    if pattern.startswith("*.") and _is_valid_host_pattern(pattern):
+        return hostname.endswith(pattern[1:])
+    return hostname == pattern
 
 
 def _norm(value: Any) -> Any:
@@ -224,8 +234,5 @@ def find_entries_for_url(
     return [
         e
         for e in entries
-        if any(
-            pattern == hostname or fnmatch(hostname, pattern)
-            for pattern in e.hosts
-        )
+        if any(_host_matches_pattern(hostname, pattern) for pattern in e.hosts)
     ]

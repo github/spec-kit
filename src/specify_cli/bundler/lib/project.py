@@ -82,7 +82,21 @@ def active_integration(project_root: Path) -> str | None:
     except BundlerError:
         return None
     if isinstance(data, dict):
-        value = data.get("integration") or data.get("id") or data.get("active")
+        # ``default_integration`` first, matching the canonical reader in
+        # ``integration_state`` (line 199):
+        # ``state.get("default_integration") or state.get("integration")``.
+        # ``write_integration_json`` writes both keys, so a marker produced by
+        # the current CLI already resolved through the ``integration`` alias --
+        # this is about which field is authoritative when they disagree, and
+        # about resolving a marker that carries only ``default_integration``
+        # (hand-edited, or written by anything that follows the canonical
+        # reader's shape). ``integration``/``id``/``active`` stay as fallbacks.
+        value = (
+            data.get("default_integration")
+            or data.get("integration")
+            or data.get("id")
+            or data.get("active")
+        )
         if isinstance(value, str) and value:
             return value
     return None
