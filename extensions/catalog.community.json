@@ -407,7 +407,7 @@
       "requires": {
         "speckit_version": ">=0.1.0",
         "tools": [
-          { "name": "python", "required": true },
+          { "name": "python", "version": ">=3.11", "required": true },
           { "name": "uv", "required": true }
         ]
       },
