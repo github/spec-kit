@@ -146,6 +146,7 @@ The following community-contributed extensions are available in [`catalog.commun
 | Spec Validate | Comprehension validation, review gating, and approval state for spec-kit artifacts — staged quizzes, peer review SLA, and a hard gate before /speckit.implement | `process` | Read+Write | [spec-kit-spec-validate](https://github.com/aeltayeb/spec-kit-spec-validate) |
 | Spec-Kit BDD | ATDD/BDD extension: convert specs to Gherkin scenarios, scaffold step definitions, and verify acceptance test coverage | `process` | Read+Write | [spec-kit-bdd](https://github.com/RSginer/spec-kit-bdd) |
 | Spec2Cloud | Spec-driven workflow tuned for shipping to Azure | `process` | Read+Write | [spec2cloud](https://github.com/Azure-Samples/Spec2Cloud) |
+| SpecAssay Check | Gate 2 refuses silent gaps and emits a trace-manifest (trace-manifest.json). | `visibility` | Read+Write | [specassay](https://github.com/rdryfoos/specassay) |
 | SpecJudge — right-size the model before you implement | Recommends the model that fits your tasks, citing the spec fragment behind every level. | `process` | Read-only | [SpecJudge](https://github.com/JoaquinRuiz/SpecJudge) |
 | SpecKit Companion | Live spec-driven progress — lifecycle capture, status, resume, and a turbo pipeline profile | `visibility` | Read+Write | [speckit-companion](https://github.com/alfredoperez/speckit-companion) |
 | SpecKit Grill Me | Exhaustively resolve specification ambiguities and decisions before planning | `process` | Read+Write | [speckit-grill-me](https://github.com/yoshi1220/speckit-grill-me) |
