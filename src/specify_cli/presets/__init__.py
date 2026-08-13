@@ -4804,13 +4804,19 @@ class PresetCatalog:
         return None
 
     def download_pack(
-        self, pack_id: str, target_dir: Optional[Path] = None
+        self,
+        pack_id: str,
+        target_dir: Optional[Path] = None,
+        bypass_install_allowed: bool = False,
     ) -> Path:
         """Download a preset archive from a catalog.
 
         Args:
             pack_id: ID of the preset to download
             target_dir: Directory to save the archive
+            bypass_install_allowed: Skip the `install_allowed` gate. Used only by
+                stack-driven installs, where listing a preset in one's own stack is
+                itself the trust decision (FR-2025).
 
         Returns:
             Path to the downloaded archive
@@ -4836,7 +4842,7 @@ class PresetCatalog:
                 f"or reinstall spec-kit if the bundled files are missing: {REINSTALL_COMMAND}"
             )
 
-        if not pack_info.get("_install_allowed", True):
+        if not bypass_install_allowed and not pack_info.get("_install_allowed", True):
             catalog_name = pack_info.get("_catalog_name", "unknown")
             raise PresetError(
                 f"Preset '{pack_id}' is from the '{catalog_name}' catalog which does not allow installation. "
