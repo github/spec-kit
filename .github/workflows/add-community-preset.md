@@ -31,6 +31,9 @@ safe-outputs:
     labels: [preset-submission, automated]
     draft: true
     max: 1
+    allowed-files:
+      - presets/catalog.community.json
+      - docs/community/presets.md
     protected-files:
       policy: blocked
       exclude:
