@@ -59,7 +59,15 @@ def preset_list():
         console.print("  [cyan]specify preset add <pack-name>[/cyan]")
         return
 
-    console.print("\n[bold cyan]Installed Presets:[/bold cyan]\n")
+    # Sort by actual resolution precedence: lower priority number wins, ties
+    # broken by preset id (matching PresetRegistry.list_by_priority()). This
+    # keeps the printed order aligned with how presets are composed/resolved.
+    installed = sorted(
+        installed,
+        key=lambda pack: (pack.get("priority", 10), str(pack.get("id", ""))),
+    )
+
+    console.print("\n[bold cyan]Installed Presets[/bold cyan] [dim](in resolution order — highest precedence first)[/dim]\n")
     for pack in installed:
         status = "[green]enabled[/green]" if pack.get("enabled", True) else "[red]disabled[/red]"
         pri = pack.get('priority', 10)
@@ -74,6 +82,8 @@ def preset_list():
             console.print(f"    [dim]Tags: {tags_str}[/dim]")
         console.print(f"    [dim]Templates: {pack['template_count']}[/dim]")
         console.print()
+
+    console.print("[dim]Lower priority number = higher precedence. Ties are broken by preset id (alphabetical).[/dim]")
 
 
 @preset_app.command("add")

@@ -47,6 +47,8 @@ specify preset list
 
 Lists installed presets with their versions, descriptions, template counts, and current status.
 
+Presets are printed in **resolution/precedence order**: the highest-precedence preset (lowest priority number) is listed first, and ties on priority are broken alphabetically by preset id. This matches the order used when composing commands and resolving templates, so the top entry is the one that wins for overlapping files.
+
 ## Preset Info
 
 ```bash
