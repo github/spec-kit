@@ -141,8 +141,12 @@ stacks:
         priority: 10
 ```
 
+Entries are installed in the order they are listed; `priority` is the resolution precedence the
+preset is installed with (lower wins), not an install order.
+
 A stack named `default` is applied automatically by `specify init` — no `--preset` or
-`--preset-stack` flag needed. `default` and `none` are reserved stack names.
+`--preset-stack` flag needed. `default` is otherwise an ordinary stack you define like any other;
+only `none` is reserved, since `--preset-stack none` means "apply no stack".
 
 ```bash
 # List every defined stack
@@ -170,6 +174,12 @@ specify init --preset-stack team-baseline
 explicit `source` (local directory or archive URL); without one, the preset is resolved through the
 normal catalog lookup — and, unlike a bare `specify preset add`, bypasses `install_allowed` for
 discovery-only catalogs, since listing a preset in a stack is itself the trust decision.
+
+If an entry fails (unreachable source, unresolvable ID), the other entries still install and the
+failure is reported per entry. `specify preset stack install` then exits non-zero; `specify init`
+prints a warning and continues, the same way a failing `--preset` is handled. A failed run also
+skips the uninstall half of the re-sync — presets dropped from the stack stay installed until the
+stack applies cleanly, so a transient failure can never uninstall a working preset.
 
 ## Creating a Preset
 

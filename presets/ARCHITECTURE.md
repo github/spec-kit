@@ -148,8 +148,11 @@ Catalogs are fetched with a 1-hour cache (per-URL, SHA256-hashed cache files). E
 
 `.specify/preset-stacks.yml` holds named, ordered lists of preset entries (`preset`, `priority`,
 optional `source`). `load_stacks_config()` parses and validates the file (unique stack names,
-`default`/`none` reserved, no duplicate `preset` within a stack); `apply_stack()` then drives the
-same install path as `specify preset add` for each entry, in priority order.
+`none` reserved, no duplicate `preset` within a stack); `apply_stack()` then drives the same
+install path as `specify preset add` for each entry, in the order the entries are listed. An
+entry's `priority` is passed through to the install so the resolver knows its precedence — it does
+not reorder installs. `default` is an ordinary, definable stack name; it is only special in that
+`select_stack()` picks it when `specify init` runs without `--preset-stack`.
 
 ```mermaid
 flowchart TD
@@ -158,24 +161,36 @@ flowchart TD
     C -- Yes --> D["install_from_directory / install_from_archive"]
     C -- No --> E["catalog.download_pack(bypass_install_allowed=True)"]
     E --> D
-    D --> F["record entry result (success/error)"]
+    D --> F["record entry result (success/error)\nplus the installed manifest ID"]
     F --> G{"more entries?"}
     G -- Yes --> C
-    G -- No --> H["diff this stack's preset IDs vs\nprior stack-state for this name"]
-    H --> I["uninstall presets dropped from the stack,\nunless still listed by another applied stack"]
-    I --> J["write updated stack-state.json"]
+    G -- No --> H["diff this stack's member IDs vs\nprior stack-state for this name"]
+    H --> K{"did any entry fail?"}
+    K -- Yes --> L["defer all uninstalls\n(keep prior IDs in state)"]
+    K -- No --> I["uninstall presets dropped from the stack,\nunless still listed by another applied stack"]
+    L --> J["write updated stack-state.json"]
+    I --> J
 ```
 
+Membership in `stack-state.json` follows `stack.entries`, not the outcome of a given run: a
+successful entry is tracked under the ID its manifest actually declares (which is what
+`PresetManager` installs and removes under), and a failed entry stays a member so a transient
+failure never makes a still-listed preset look dropped. Because a failed entry never yields a
+manifest ID, a run with any failure also defers uninstalls entirely (`deferred_removals`) rather
+than risk removing a working preset; the next clean apply performs them.
+
 Per-entry failures are collected but never abort the run — `apply_stack()` returns a result with
-one entry per attempted install plus the list of removed preset IDs; the caller (CLI command or
-`specify init`) renders success/failure lines and exits non-zero only if at least one entry failed.
+one entry per attempted install, the removed preset IDs, and any deferred ones. `specify preset
+stack install <name>` renders those lines and exits non-zero if any entry failed. `specify init`
+renders the same lines but treats stack application as best-effort — failures print warnings and
+init still exits zero, matching how `--preset` failures are handled there.
 
 `specify init`'s implicit-default behavior and `specify preset stack install <name>` share this
 same `apply_stack()` call — resolving which stack to apply (named, implicit `default`, or none) is
 the only logic that differs between the two entry points.
 
-- **Python**: `load_stacks_config()`, `apply_stack()`, `_resolve_entry_source()` in
-  `src/specify_cli/presets/stacks.py`
+- **Python**: `load_stacks_config()`, `select_stack()`, `apply_stack()`, `_resolve_entry_source()`
+  in `src/specify_cli/presets/stacks.py`
 - **CLI**: `specify preset stack list/install/add/remove` in
   `src/specify_cli/presets/_commands.py`; `--preset-stack` on `specify init` in
   `src/specify_cli/commands/init.py`
