@@ -123,10 +123,15 @@ def test_community_submission_allowed_files_do_not_include_other_catalogs_or_doc
         for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS
     }
 
-    all_allowed_files = set().union(*allowed_by_workflow.values())
+    workflow_allowed_files = list(allowed_by_workflow.items())
 
-    for workflow, allowed_files in allowed_by_workflow.items():
-        assert allowed_files.isdisjoint(all_allowed_files - allowed_files)
+    for index, (workflow, allowed_files) in enumerate(workflow_allowed_files):
+        for other_workflow, other_allowed_files in workflow_allowed_files[index + 1 :]:
+            overlapping_files = allowed_files & other_allowed_files
+            assert overlapping_files == set(), (
+                f"{workflow} and {other_workflow} share allowed files: "
+                f"{sorted(overlapping_files)}"
+            )
 
 
 def test_bug_test_workflow_provisions_python_dependencies():
