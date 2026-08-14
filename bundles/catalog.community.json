@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-22T00:00:00Z",
+  "updated_at": "2026-08-14T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/bundles/catalog.community.json",
   "bundles": {
     "sicario-spec": {
@@ -29,6 +29,28 @@
         "appsec",
         "threat-modeling"
       ],
+      "verified": false
+    },
+    "specassay": {
+      "name": "SpecAssay",
+      "id": "specassay",
+      "version": "0.3.4",
+      "role": "developer",
+      "description": "Durable-ID promotion for stock Spec Kit: templates, Gate 2 refusal, and trace-manifest emission.",
+      "author": "Rik Dryfoos",
+      "license": "MIT",
+      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.3.4/specassay-0.3.4.zip",
+      "repository": "https://github.com/rdryfoos/specassay",
+      "requires": {
+        "speckit_version": ">=0.14.0"
+      },
+      "provides": {
+        "extensions": 1,
+        "presets": 1,
+        "steps": 0,
+        "workflows": 0
+      },
+      "tags": ["traceability", "governance", "durable-ids", "gate", "sdd"],
       "verified": false
     }
   }
