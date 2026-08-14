@@ -862,69 +862,26 @@ def register(app: typer.Typer) -> None:
                             continuing="Continuing without the optional preset.",
                         )
                 else:
-                    from ..presets import PresetValidationError
-                    from ..presets.stacks import apply_stack, load_stacks_config
+                    from ..presets import PresetError
+                    from ..presets.stacks import apply_stack, render_apply_result, select_stack
 
-                    stack_to_apply = None
-                    if preset_stack != "none":
-                        try:
-                            stacks_config = load_stacks_config(project_path)
-                        except PresetValidationError as stacks_err:
-                            console.print(
-                                f"[red]Error:[/red] {_escape_markup(str(stacks_err))}"
-                            )
-                            raise typer.Exit(1)
-
-                        if preset_stack:
-                            stack_to_apply = next(
-                                (
-                                    s
-                                    for s in stacks_config.stacks
-                                    if s.name == preset_stack
-                                ),
-                                None,
-                            )
-                            if stack_to_apply is None:
-                                known = ", ".join(
-                                    s.name for s in stacks_config.stacks
-                                ) or "(none defined)"
-                                console.print(
-                                    f"[red]Error:[/red] Stack '{_escape_markup(preset_stack)}' "
-                                    f"is not defined in .specify/preset-stacks.yml"
-                                )
-                                console.print(
-                                    f"Defined stacks: {_escape_markup(known)}"
-                                )
-                                raise typer.Exit(1)
-                        else:
-                            stack_to_apply = next(
-                                (
-                                    s
-                                    for s in stacks_config.stacks
-                                    if s.name == "default"
-                                ),
-                                None,
-                            )
+                    try:
+                        stack_to_apply = select_stack(project_path, preset_stack)
+                    except PresetError as stacks_err:
+                        console.print(f"[red]Error:[/red] {_escape_markup(str(stacks_err))}")
+                        raise typer.Exit(1)
 
                     if stack_to_apply is not None:
                         try:
                             result = apply_stack(
                                 project_path, stack_to_apply, get_speckit_version()
                             )
-                            for entry in result.entries:
-                                if entry.success:
-                                    console.print(
-                                        f"[green]✓[/green] Preset '{_escape_markup(entry.preset)}' installed"
-                                    )
-                                else:
-                                    console.print(
-                                        f"[yellow]Warning:[/yellow] {_escape_markup(entry.error or '')}"
-                                    )
-                            for pid in result.removed:
-                                console.print(
-                                    f"[dim]- Removed preset '{_escape_markup(pid)}' "
-                                    f"(no longer in stack '{_escape_markup(stack_to_apply.name)}')[/dim]"
-                                )
+                            # Stack application is best-effort here, like --preset
+                            # above: failures warn and init still succeeds. Use
+                            # `specify preset stack install <name>` for a non-zero
+                            # exit on failure.
+                            for line in render_apply_result(result, failure_style="warning"):
+                                console.print(line)
                         except Exception as stack_err:
                             _print_cli_warning(
                                 "install",

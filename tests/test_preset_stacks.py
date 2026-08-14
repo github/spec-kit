@@ -9,6 +9,7 @@ Tests cover:
 - `specify init --preset-stack` / implicit-default resolution
 """
 
+import json
 import os
 import tempfile
 import shutil
@@ -107,6 +108,12 @@ def _make_preset_dir(base_dir: Path, pack_id: str, version: str = "1.0.0") -> Pa
     templates_dir.mkdir()
     (templates_dir / "spec-template.md").write_text(f"# {pack_id} template\n")
     return p_dir
+
+
+def _read_stack_state(project_dir: Path) -> dict:
+    return json.loads(
+        (project_dir / ".specify" / "presets" / ".stack-state.json").read_text(encoding="utf-8")
+    )
 
 
 def _zip_preset_dir(pack_dir: Path, zip_path: Path) -> Path:
@@ -368,6 +375,74 @@ class TestApplyStack:
         assert result.success
         assert result.removed == []
         assert PresetManager(project_dir).registry.is_installed("beta")
+
+    def test_failed_entry_is_not_treated_as_dropped(self, project_dir, temp_dir):
+        """A transient failure must not make a still-listed preset look dropped."""
+        alpha_dir = _make_preset_dir(temp_dir, "alpha")
+        beta_dir = _make_preset_dir(temp_dir, "beta")
+        stack = PresetStack(name="default", entries=[
+            PresetStackEntry(preset="alpha", priority=5, source=str(alpha_dir)),
+            PresetStackEntry(preset="beta", priority=10, source=str(beta_dir)),
+        ])
+        apply_stack(project_dir, stack, "0.1.5")
+
+        # Same stack definition, but beta's source is momentarily unreachable.
+        stack.entries[1].source = str(temp_dir / "gone")
+        result = apply_stack(project_dir, stack, "0.1.5")
+
+        assert not result.success
+        assert result.removed == []
+        assert PresetManager(project_dir).registry.is_installed("beta")
+        assert set(_read_stack_state(project_dir)["default"]) == {"alpha", "beta"}
+
+    def test_dropped_entry_removal_is_deferred_while_another_entry_fails(
+        self, project_dir, temp_dir
+    ):
+        """A run with a failing entry defers uninstalls instead of guessing."""
+        alpha_dir = _make_preset_dir(temp_dir, "alpha")
+        beta_dir = _make_preset_dir(temp_dir, "beta")
+        stack = PresetStack(name="default", entries=[
+            PresetStackEntry(preset="alpha", priority=5, source=str(alpha_dir)),
+            PresetStackEntry(preset="beta", priority=10, source=str(beta_dir)),
+        ])
+        apply_stack(project_dir, stack, "0.1.5")
+
+        stack.entries = [PresetStackEntry(preset="alpha", priority=5, source=str(temp_dir / "gone"))]
+        result = apply_stack(project_dir, stack, "0.1.5")
+
+        assert result.removed == []
+        assert result.deferred_removals == ["beta"]
+        assert PresetManager(project_dir).registry.is_installed("beta")
+
+        # Once the stack applies cleanly, the deferred removal happens.
+        stack.entries = [PresetStackEntry(preset="alpha", priority=5, source=str(alpha_dir))]
+        result = apply_stack(project_dir, stack, "0.1.5")
+
+        assert result.success
+        assert result.removed == ["beta"]
+        assert not PresetManager(project_dir).registry.is_installed("beta")
+
+    def test_manifest_id_differing_from_entry_is_tracked_and_removed(
+        self, project_dir, temp_dir
+    ):
+        """A source whose manifest declares another ID is tracked under that ID."""
+        real_dir = _make_preset_dir(temp_dir, "real-id")
+        stack = PresetStack(name="default", entries=[
+            PresetStackEntry(preset="requested-id", priority=10, source=str(real_dir)),
+        ])
+
+        result = apply_stack(project_dir, stack, "0.1.5")
+
+        assert result.success
+        assert result.entries[0].installed_id == "real-id"
+        assert _read_stack_state(project_dir)["default"] == ["real-id"]
+        assert PresetManager(project_dir).registry.is_installed("real-id")
+
+        stack.entries = []
+        result = apply_stack(project_dir, stack, "0.1.5")
+
+        assert result.removed == ["real-id"]
+        assert not PresetManager(project_dir).registry.is_installed("real-id")
 
     def test_independently_installed_preset_is_never_touched(self, project_dir, temp_dir):
         """AC5/FR-2035: a preset installed outside of any stack is left alone."""

@@ -858,7 +858,7 @@ def preset_stack_install(
     """Apply a named stack from .specify/preset-stacks.yml."""
     from .. import _require_specify_project, get_speckit_version
     from . import PresetValidationError
-    from .stacks import apply_stack, load_stacks_config
+    from .stacks import apply_stack, load_stacks_config, render_apply_result
 
     project_root = _require_specify_project()
 
@@ -877,14 +877,8 @@ def preset_stack_install(
 
     result = apply_stack(project_root, stack, get_speckit_version())
 
-    for entry in result.entries:
-        if entry.success:
-            console.print(f"[green]✓[/green] Preset '{_escape_markup(entry.preset)}' installed")
-        else:
-            console.print(f"[red]✗[/red] Preset '{_escape_markup(entry.preset)}' failed: {_escape_markup(entry.error or '')}")
-
-    for pid in result.removed:
-        console.print(f"[dim]- Removed preset '{_escape_markup(pid)}' (no longer in stack '{_escape_markup(name)}')[/dim]")
+    for line in render_apply_result(result):
+        console.print(line)
 
     if not result.success:
         raise typer.Exit(1)

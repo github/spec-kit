@@ -19,7 +19,9 @@ import yaml
 
 STACK_STATE_FILENAME = ".stack-state.json"
 STACKS_CONFIG_FILENAME = "preset-stacks.yml"
-RESERVED_STACK_NAMES = ("none",)
+DEFAULT_STACK_NAME = "default"
+NO_STACK_NAME = "none"
+RESERVED_STACK_NAMES = (NO_STACK_NAME,)
 
 
 @dataclass
@@ -150,6 +152,33 @@ def load_stacks_config(project_root: Path) -> PresetStacksConfig:
     return PresetStacksConfig(stacks=stacks)
 
 
+def select_stack(project_root: Path, requested: Optional[str]) -> Optional[PresetStack]:
+    """Resolve which stack `specify init` should apply.
+
+    `None` selects the `default` stack when one is defined, `'none'` selects
+    nothing, and any other name must exist in the config.
+
+    Raises:
+        PresetValidationError: If the config file exists but is invalid.
+        PresetError: If an explicitly named stack is not defined.
+    """
+    from . import PresetError
+
+    if requested == NO_STACK_NAME:
+        return None
+
+    config = load_stacks_config(project_root)
+    name = requested or DEFAULT_STACK_NAME
+    stack = next((s for s in config.stacks if s.name == name), None)
+    if stack is None and requested is not None:
+        known = ", ".join(s.name for s in config.stacks) or "(none defined)"
+        raise PresetError(
+            f"Stack '{name}' is not defined in .specify/{STACKS_CONFIG_FILENAME}. "
+            f"Defined stacks: {known}"
+        )
+    return stack
+
+
 def _stack_state_path(project_root: Path) -> Path:
     return project_root / ".specify" / "presets" / STACK_STATE_FILENAME
 
@@ -187,7 +216,6 @@ def _download_archive(url: str) -> Path:
     from urllib.parse import urlparse
 
     from .._download_security import (
-        archive_format_from_name,
         archive_suffix,
         detect_archive_format,
         is_https_or_localhost_http,
@@ -309,6 +337,10 @@ class StackEntryResult:
     preset: str
     success: bool
     error: Optional[str] = None
+    installed_id: Optional[str] = None
+    """The preset ID the manifest actually declared, set on success. Usually
+    identical to `preset`, but a source can ship a manifest with a different ID,
+    and it is that ID `PresetManager` installs and removes under."""
 
 
 @dataclass
@@ -318,10 +350,60 @@ class StackApplyResult:
     stack_name: str
     entries: list[StackEntryResult] = field(default_factory=list)
     removed: list[str] = field(default_factory=list)
+    deferred_removals: list[str] = field(default_factory=list)
+    """Presets that look dropped but were left installed because this run had a
+    failing entry, so the tracked IDs could not be attributed reliably."""
 
     @property
     def success(self) -> bool:
         return all(e.success for e in self.entries)
+
+
+def _dedupe(ids: list[str]) -> list[str]:
+    """Order-preserving de-duplication (two entries can resolve to one manifest ID)."""
+    seen: set[str] = set()
+    return [i for i in ids if not (i in seen or seen.add(i))]
+
+
+def render_apply_result(result: StackApplyResult, failure_style: str = "error") -> list[str]:
+    """Render an apply result as Rich markup lines, shared by `init` and the CLI verb.
+
+    `failure_style="warning"` is used by `specify init`, where a failing entry is
+    a warning rather than a command failure.
+    """
+    from rich.markup import escape
+
+    lines: list[str] = []
+    for entry in result.entries:
+        if entry.success:
+            installed_as = (
+                f" (as '{escape(entry.installed_id)}')"
+                if entry.installed_id and entry.installed_id != entry.preset
+                else ""
+            )
+            lines.append(f"[green]✓[/green] Preset '{escape(entry.preset)}' installed{installed_as}")
+        elif failure_style == "warning":
+            lines.append(f"[yellow]Warning:[/yellow] {escape(entry.error or '')}")
+        else:
+            lines.append(
+                f"[red]✗[/red] Preset '{escape(entry.preset)}' failed: {escape(entry.error or '')}"
+            )
+
+    for pid in result.removed:
+        lines.append(
+            f"[dim]- Removed preset '{escape(pid)}' "
+            f"(no longer in stack '{escape(result.stack_name)}')[/dim]"
+        )
+
+    if result.deferred_removals:
+        deferred = ", ".join(escape(pid) for pid in result.deferred_removals)
+        lines.append(
+            f"[dim]- Kept preset(s) {deferred}: no longer listed in stack "
+            f"'{escape(result.stack_name)}', but removal is deferred until the stack "
+            f"applies cleanly[/dim]"
+        )
+
+    return lines
 
 
 def apply_stack(project_root: Path, stack: PresetStack, speckit_version: str) -> StackApplyResult:
@@ -331,28 +413,38 @@ def apply_stack(project_root: Path, stack: PresetStack, speckit_version: str) ->
     `install_from_zip` (with `force=True`, which already removes-then-reinstalls
     a present pack, per `presets/__init__.py:3567-3573`) and `PresetManager.remove`
     — no new install/uninstall logic lives here.
+
+    Stack membership follows `stack.entries`, never this run's install outcomes,
+    so a transient failure cannot make a still-listed preset look dropped.
     """
     from . import PresetError, PresetManager
 
     manager = PresetManager(project_root)
     entries: list[StackEntryResult] = []
-    current_ids: list[str] = []
+    member_ids: list[str] = []
+    any_failed = False
 
     for entry in stack.entries:
         cleanup: Optional[Path] = None
         try:
             source_path, is_directory, cleanup = _resolve_entry_source(project_root, entry)
             if is_directory:
-                manager.install_from_directory(
+                manifest = manager.install_from_directory(
                     source_path, speckit_version, priority=entry.priority, force=True
                 )
             else:
-                manager.install_from_zip(
+                manifest = manager.install_from_zip(
                     source_path, speckit_version, priority=entry.priority, force=True
                 )
-            entries.append(StackEntryResult(preset=entry.preset, success=True))
-            current_ids.append(entry.preset)
+            # Track the ID that was really installed: `PresetManager` keys the
+            # registry off the manifest, so tracking the requested ID instead
+            # would later remove the wrong preset and orphan the installed one.
+            entries.append(
+                StackEntryResult(preset=entry.preset, success=True, installed_id=manifest.id)
+            )
+            member_ids.append(manifest.id)
         except PresetError as e:
+            any_failed = True
             entries.append(
                 StackEntryResult(
                     preset=entry.preset,
@@ -360,6 +452,7 @@ def apply_stack(project_root: Path, stack: PresetStack, speckit_version: str) ->
                     error=f"stack '{stack.name}', preset '{entry.preset}': {e}",
                 )
             )
+            member_ids.append(entry.preset)
         finally:
             if cleanup is not None:
                 if cleanup.is_dir():
@@ -368,19 +461,36 @@ def apply_stack(project_root: Path, stack: PresetStack, speckit_version: str) ->
                     cleanup.unlink(missing_ok=True)
 
     state = _load_stack_state(project_root)
-    previous_ids = set(state.get(stack.name, []))
+    previous_ids = state.get(stack.name, [])
+    members = set(member_ids)
     other_stacks_ids: set[str] = set()
     for other_name, other_ids in state.items():
         if other_name != stack.name:
             other_stacks_ids.update(other_ids)
 
+    dropped = [
+        pid for pid in previous_ids if pid not in members and pid not in other_stacks_ids
+    ]
+
     removed: list[str] = []
-    for pid in previous_ids - set(current_ids):
-        if pid not in other_stacks_ids:
+    deferred_removals: list[str] = []
+    if any_failed:
+        # A failed entry never yielded a manifest ID, so a previously tracked ID
+        # that differs from the requested one cannot be attributed to it.
+        # Uninstalling is destructive: defer it to the next fully successful run.
+        deferred_removals = dropped
+        member_ids.extend(pid for pid in previous_ids if pid not in members)
+    else:
+        for pid in dropped:
             manager.remove(pid)
             removed.append(pid)
 
-    state[stack.name] = current_ids
+    state[stack.name] = _dedupe(member_ids)
     _save_stack_state(project_root, state)
 
-    return StackApplyResult(stack_name=stack.name, entries=entries, removed=removed)
+    return StackApplyResult(
+        stack_name=stack.name,
+        entries=entries,
+        removed=removed,
+        deferred_removals=deferred_removals,
+    )
