@@ -12,6 +12,49 @@ WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 # inline shorthand (`      - uses: x@sha`) used in catalog-assign.yml.
 USES_RE = re.compile(r"^\s*(?:-\s*)?uses:\s*(?P<ref>\S+)", re.MULTILINE)
 PINNED_SHA_RE = re.compile(r"@[0-9a-f]{40}$", re.IGNORECASE)
+COMMUNITY_SUBMISSION_WORKFLOWS = (
+    (
+        "bundle",
+        "bundle-submission",
+        "bundles/catalog.community.json",
+        "docs/community/bundles.md",
+        "Modify only `bundles/catalog.community.json`",
+    ),
+    (
+        "extension",
+        "extension-submission",
+        "extensions/catalog.community.json",
+        "docs/community/extensions.md",
+        "Do not modify any other files",
+    ),
+    (
+        "preset",
+        "preset-submission",
+        "presets/catalog.community.json",
+        "docs/community/presets.md",
+        "Do not modify any other files",
+    ),
+)
+
+
+def _create_pull_request_allowed_files(source_text: str) -> list[str]:
+    create_pr_match = re.search(
+        r"(?m)^  create-pull-request:\n(?P<body>(?:^    [^\n]*\n?)+)",
+        source_text,
+    )
+    assert create_pr_match is not None
+
+    allowed_files_match = re.search(
+        r"(?m)^    allowed-files:\n(?P<files>(?:^      - [^\n]+\n?)+)",
+        create_pr_match.group("body"),
+    )
+    assert allowed_files_match is not None
+
+    return [
+        line.strip().removeprefix("- ")
+        for line in allowed_files_match.group("files").splitlines()
+        if line.strip()
+    ]
 
 
 def test_github_actions_are_pinned_to_full_commit_shas():
@@ -41,22 +84,54 @@ def test_pinned_action_ref_accepts_uppercase_hex_sha():
     )
 
 
-def test_community_bundle_submission_automation_is_wired():
-    source = WORKFLOWS_DIR / "add-community-bundle.md"
-    compiled = WORKFLOWS_DIR / "add-community-bundle.lock.yml"
+def test_community_submission_automation_is_wired_to_allowed_files():
     assignment = WORKFLOWS_DIR / "catalog-assign.yml"
-
-    assert source.is_file()
-    assert compiled.is_file()
-    source_text = source.read_text(encoding="utf-8")
     assignment_text = assignment.read_text(encoding="utf-8")
 
-    assert "names: [bundle-submission]" in source_text
-    assert "bundles/catalog.community.json" in source_text
-    assert "docs/community/bundles.md" in source_text
-    assert "verified: false" in source_text
-    assert "allowed-files:" in source_text
-    assert "bundle-submission" in assignment_text
+    for workflow, label, catalog_file, docs_file, instruction in (
+        COMMUNITY_SUBMISSION_WORKFLOWS
+    ):
+        source = WORKFLOWS_DIR / f"add-community-{workflow}.md"
+        compiled = WORKFLOWS_DIR / f"add-community-{workflow}.lock.yml"
+
+        assert source.is_file()
+        assert compiled.is_file()
+        source_text = source.read_text(encoding="utf-8")
+        compiled_text = compiled.read_text(encoding="utf-8")
+
+        assert f"names: [{label}]" in source_text
+        assert catalog_file in source_text
+        assert docs_file in source_text
+        assert instruction in source_text
+        assert _create_pull_request_allowed_files(source_text) == [
+            catalog_file,
+            docs_file,
+        ]
+        assert f'"allowed_files":["{catalog_file}","{docs_file}"]' in compiled_text
+        assert label in assignment_text
+
+
+def test_community_submission_allowed_files_do_not_include_other_catalogs_or_docs():
+    allowed_by_workflow = {
+        workflow: set(
+            _create_pull_request_allowed_files(
+                (WORKFLOWS_DIR / f"add-community-{workflow}.md").read_text(
+                    encoding="utf-8"
+                )
+            )
+        )
+        for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS
+    }
+
+    workflow_allowed_files = list(allowed_by_workflow.items())
+
+    for index, (workflow, allowed_files) in enumerate(workflow_allowed_files):
+        for other_workflow, other_allowed_files in workflow_allowed_files[index + 1 :]:
+            overlapping_files = allowed_files & other_allowed_files
+            assert overlapping_files == set(), (
+                f"{workflow} and {other_workflow} share allowed files: "
+                f"{sorted(overlapping_files)}"
+            )
 
 
 def test_bug_test_workflow_provisions_python_dependencies():
