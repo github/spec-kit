@@ -1166,12 +1166,24 @@ class TestExtensionSkillRegistration:
         assert "__SPECKIT_COMMAND_PLAN__" not in content
         assert expected_invocation in content
 
-    def test_skill_registration_does_not_rewrite_literal_speckit_text(
-        self, project_dir, temp_dir
+    @pytest.mark.parametrize(
+        ("ai", "expected_invocation"),
+        [
+            ("claude", "/speckit-foo-bar"),
+            ("copilot", "/speckit-foo-bar"),
+            ("codex", "$speckit-foo-bar"),
+            ("command-code", "$speckit-foo-bar"),
+            ("kimi", "/skill:speckit-foo-bar"),
+            ("zcode", "$speckit-foo-bar"),
+            ("bob", "/speckit-foo-bar"),
+        ],
+    )
+    def test_skill_registration_rewrites_literal_slash_command_refs(
+        self, project_dir, temp_dir, ai, expected_invocation
     ):
-        """Auto-registered skills should leave literal speckit text untouched."""
-        _create_init_options(project_dir, ai="codex", ai_skills=True)
-        skills_dir = _create_skills_dir(project_dir, ai="codex")
+        """Auto-registered skills should normalize literal slash-dot refs."""
+        _create_init_options(project_dir, ai=ai, ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai=ai)
 
         ext_dir = temp_dir / "literal-ref-ext"
         ext_dir.mkdir()
@@ -1202,20 +1214,27 @@ class TestExtensionSkillRegistration:
             "---\n"
             "description: Run command\n"
             "---\n\n"
-            "Literal slash form: /speckit.foo.bar\n"
-            "Literal skill form: /speckit-plan\n"
+            "Literal slash form: /speckit.foo.bar --flag value\n"
+            "Native slash form: /speckit-foo-bar\n"
+            "Native dollar form: $speckit-foo-bar\n"
+            "Native skill form: /skill:speckit-foo-bar\n"
             "Literal bare form: speckit.foo.bar\n"
+            "Path-like form: https://example.com/speckit.foo.bar\n"
+            "File-like form: /speckit.foo.bar.md\n"
         )
 
         manager = ExtensionManager(project_dir)
         manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
         content = (skills_dir / "speckit-literal-ref-ext-run" / "SKILL.md").read_text()
-        assert "/speckit.foo.bar" in content
-        assert "/speckit-plan" in content
+        assert f"Literal slash form: {expected_invocation} --flag value" in content
+        assert "Literal slash form: /speckit.foo.bar --flag value" not in content
+        assert "Native slash form: /speckit-foo-bar" in content
+        assert "Native dollar form: $speckit-foo-bar" in content
+        assert "Native skill form: /skill:speckit-foo-bar" in content
         assert "speckit.foo.bar" in content
-        assert "/speckit-foo-bar" not in content
-        assert "$speckit-plan" not in content
+        assert "https://example.com/speckit.foo.bar" in content
+        assert "/speckit.foo.bar.md" in content
 
     def test_missing_command_file_skipped(self, skills_project, temp_dir):
         """Commands with missing source files should be skipped gracefully."""

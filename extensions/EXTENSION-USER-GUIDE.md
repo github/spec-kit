@@ -202,6 +202,16 @@ Jira Integration (v1.0.0)
 
 When an extension is removed, its corresponding skills are also cleaned up automatically. Pre-existing skills that were manually customized are never overwritten.
 
+When one extension command needs to reference another Spec Kit command, prefer the
+portable command token form, such as `__SPECKIT_COMMAND_PLAN__`, instead of
+hard-coding a slash command. Spec Kit renders these tokens to the active
+integration's command style. For skills-based integrations, generated extension
+skills also normalize literal slash-dot command references such as
+`/speckit.jira.specstoissues` to the active skill invocation form, for example
+`$speckit-jira-specstoissues` for Codex or `/speckit-jira-specstoissues` for
+slash-skills agents. Avoid using bare prose like `speckit.jira.specstoissues`
+when you intend the agent to invoke a command.
+
 ---
 
 ## Using Extensions

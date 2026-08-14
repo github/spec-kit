@@ -1562,7 +1562,6 @@ class ExtensionManager:
         from .. import load_init_options
         from ..agents import CommandRegistrar
         from ..integrations import get_integration
-        from ..integrations.base import IntegrationBase
 
         written: List[str] = []
         opts = load_init_options(self.project_root)
@@ -1576,27 +1575,60 @@ class ExtensionManager:
         integration = get_integration(selected_ai)
         ai_skills_enabled = is_ai_skills_enabled(opts)
 
+        def _render_skill_command_invocation(command_name: str) -> str:
+            """Render a command name with the active skill invocation style."""
+
+            if is_dollar_skills_agent(selected_ai, ai_skills_enabled):
+                return "$" + command_name.replace("speckit.", "speckit-").replace(
+                    ".", "-"
+                )
+            if is_slash_skills_agent(selected_ai, ai_skills_enabled):
+                return "/" + command_name.replace("speckit.", "speckit-").replace(
+                    ".", "-"
+                )
+            if integration is not None:
+                return integration.build_command_invocation(command_name)
+
+            separator = agent_config.get("invoke_separator", ".")
+            if not isinstance(separator, str) or not separator:
+                separator = "."
+            return "/" + command_name.replace(".", separator)
+
         def _resolve_command_ref_tokens(body: str) -> str:
             """Resolve explicit command-ref tokens with the active skill style."""
 
             def _replacement(match: re.Match[str]) -> str:
                 command_name = "speckit." + match.group(1).lower().replace("_", ".")
-                if is_dollar_skills_agent(selected_ai, ai_skills_enabled):
-                    return "$" + command_name.replace("speckit.", "speckit-").replace(
-                        ".", "-"
-                    )
-                if is_slash_skills_agent(selected_ai, ai_skills_enabled):
-                    return "/" + command_name.replace("speckit.", "speckit-").replace(
-                        ".", "-"
-                    )
-                if integration is not None:
-                    return integration.build_command_invocation(command_name)
-                return IntegrationBase.resolve_command_refs(
-                    match.group(0), agent_config.get("invoke_separator", ".")
-                )
+                return _render_skill_command_invocation(command_name)
 
             return re.sub(
                 r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_]*)__", _replacement, body
+            )
+
+        def _normalize_literal_slash_command_refs(body: str) -> str:
+            """Normalize literal /speckit.foo refs in generated skill bodies."""
+
+            def _replacement(match: re.Match[str]) -> str:
+                command_name = match.group("command")
+                if command_name.rsplit(".", 1)[-1] in {
+                    "json",
+                    "md",
+                    "toml",
+                    "txt",
+                    "yaml",
+                    "yml",
+                }:
+                    return match.group(0)
+                return _render_skill_command_invocation(command_name)
+
+            return re.sub(
+                (
+                    r"(?<![\w$:/-])"
+                    r"/(?P<command>speckit\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+)"
+                    r"(?![A-Za-z0-9_.-])"
+                ),
+                _replacement,
+                body,
             )
 
         for cmd_info in manifest.commands:
@@ -1678,6 +1710,7 @@ class ExtensionManager:
                 selected_ai, frontmatter, body, self.project_root, extension_id=manifest.id
             )
             body = _resolve_command_ref_tokens(body)
+            body = _normalize_literal_slash_command_refs(body)
 
             original_desc = frontmatter.get("description", "")
             description = original_desc or f"Extension command: {cmd_name}"
