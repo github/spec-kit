@@ -293,6 +293,11 @@ def register(app: typer.Typer) -> None:
             "--preset",
             help="Install a preset during initialization (by preset ID)",
         ),
+        preset_stack: str = typer.Option(
+            None,
+            "--preset-stack",
+            help="Apply a named preset stack from .specify/preset-stacks.yml during initialization ('none' to suppress the implicit 'default' stack)",
+        ),
         integration: str = typer.Option(
             None,
             "--integration",
@@ -380,6 +385,12 @@ def register(app: typer.Typer) -> None:
                 available = ", ".join(sorted(INTEGRATION_REGISTRY))
                 console.print(f"[yellow]Available integrations:[/yellow] {available}")
                 raise typer.Exit(1)
+
+        if preset and preset_stack:
+            console.print(
+                "[red]Error:[/red] Cannot specify both --preset and --preset-stack"
+            )
+            raise typer.Exit(1)
 
         if project_name == ".":
             here = True
@@ -850,6 +861,78 @@ def register(app: typer.Typer) -> None:
                             preset_err,
                             continuing="Continuing without the optional preset.",
                         )
+                else:
+                    from ..presets import PresetValidationError
+                    from ..presets.stacks import apply_stack, load_stacks_config
+
+                    stack_to_apply = None
+                    if preset_stack != "none":
+                        try:
+                            stacks_config = load_stacks_config(project_path)
+                        except PresetValidationError as stacks_err:
+                            console.print(
+                                f"[red]Error:[/red] {_escape_markup(str(stacks_err))}"
+                            )
+                            raise typer.Exit(1)
+
+                        if preset_stack:
+                            stack_to_apply = next(
+                                (
+                                    s
+                                    for s in stacks_config.stacks
+                                    if s.name == preset_stack
+                                ),
+                                None,
+                            )
+                            if stack_to_apply is None:
+                                known = ", ".join(
+                                    s.name for s in stacks_config.stacks
+                                ) or "(none defined)"
+                                console.print(
+                                    f"[red]Error:[/red] Stack '{_escape_markup(preset_stack)}' "
+                                    f"is not defined in .specify/preset-stacks.yml"
+                                )
+                                console.print(
+                                    f"Defined stacks: {_escape_markup(known)}"
+                                )
+                                raise typer.Exit(1)
+                        else:
+                            stack_to_apply = next(
+                                (
+                                    s
+                                    for s in stacks_config.stacks
+                                    if s.name == "default"
+                                ),
+                                None,
+                            )
+
+                    if stack_to_apply is not None:
+                        try:
+                            result = apply_stack(
+                                project_path, stack_to_apply, get_speckit_version()
+                            )
+                            for entry in result.entries:
+                                if entry.success:
+                                    console.print(
+                                        f"[green]✓[/green] Preset '{_escape_markup(entry.preset)}' installed"
+                                    )
+                                else:
+                                    console.print(
+                                        f"[yellow]Warning:[/yellow] {_escape_markup(entry.error or '')}"
+                                    )
+                            for pid in result.removed:
+                                console.print(
+                                    f"[dim]- Removed preset '{_escape_markup(pid)}' "
+                                    f"(no longer in stack '{_escape_markup(stack_to_apply.name)}')[/dim]"
+                                )
+                        except Exception as stack_err:
+                            _print_cli_warning(
+                                "install",
+                                "preset stack",
+                                stack_to_apply.name,
+                                stack_err,
+                                continuing="Continuing without the full preset stack.",
+                            )
 
                 # Install extensions specified via --extension
                 if extensions:

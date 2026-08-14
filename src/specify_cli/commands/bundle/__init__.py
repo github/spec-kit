@@ -122,6 +122,7 @@ def _run_init(integration: str, *, script_type: str, offline: bool = False) -> N
             github_token=None,
             offline=offline,
             preset=None,
+            preset_stack=None,
             integration=integration,
             integration_options=None,
             extensions=None,
