@@ -2,6 +2,32 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.16.4] - 2026-08-14
+
+### Changed
+
+- Add SpecAssay preset to community catalog (#4123)
+- Update Intake Authoring Governance preset to v0.3.1 (#4121)
+- Update Superspec extension to v1.0.2 (#4120)
+- fix(taskstoissues): widen task-ID regex to match IDs longer than 3 digits (#4101)
+- Add Architecture Governance extension to community catalog (#4122)
+- fix(workflows): validate non-string step types (#4111)
+- Harden community submission workflow output allowlists (#4103)
+- chore(deps): bump github/codeql-action (init + analyze) from 4.37.5 to 4.37.6 (#4114)
+- Add SpecAssay Check extension to community catalog (#4113)
+- fix(integrations): dispatch goose commands via `goose run` (#2416) (#3781)
+- fix(powershell): stop Out-Null swallowing the AVAILABLE_DOCS status lines (#3891)
+- fix: remove TOCTOU race in RunState.load (#3839)
+- fix: decode the zipped manifest as UTF-8 before parsing (#3958)
+- Update Agent Parity Governance preset to v0.4.2 (#4110)
+- fix: log progress tracker refresh errors instead of silently swallowing (#3975)
+- [extension] Add SpecJudge extension to community catalog (#4079)
+- fix(bundler): read the authoritative `default_integration` field, not only its legacy aliases (#3880)
+- fix(auth): treat exact host patterns literally (#4108)
+- feat: add Mistral Vibe integration with Claude parity (#4075)
+- [extension] Add spec-kit-atlas extension to community catalog (#4105)
+- chore: release 0.16.3, begin 0.16.4.dev0 development (#4107)
+
 ## [0.16.3] - 2026-08-13
 
 ### Changed
