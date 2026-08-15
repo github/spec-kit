@@ -1737,7 +1737,13 @@ def workflow_add(
         try:
             with yaml_path.open("rb") as source_file:
                 source_mode = os.fstat(source_file.fileno()).st_mode & 0o7777
-                source_content = source_file.read()
+                source_content = source_file.read(_MAX_WORKFLOW_YAML_BYTES + 1)
+            if len(source_content) > _MAX_WORKFLOW_YAML_BYTES:
+                console.print(
+                    f"[red]Error:[/red] Workflow YAML file exceeds "
+                    f"{_MAX_WORKFLOW_YAML_BYTES}-byte limit"
+                )
+                raise typer.Exit(1)
             definition = WorkflowDefinition.from_string(
                 source_content.decode("utf-8")
             )
