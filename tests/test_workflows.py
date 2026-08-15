@@ -3128,6 +3128,55 @@ class TestIfThenStep:
 class TestSwitchStep:
     """Test the switch step type."""
 
+    def test_execute_matches_case_ignoring_surrounding_whitespace(self):
+        """A shell step's stdout keeps its trailing newline; the case must match.
+
+        `ShellStep` stores `proc.stdout` verbatim, so `run: echo approve`
+        resolves to "approve" plus a newline. Unstripped, that matched no
+        `approve:` case and the switch silently fell through to `default:`
+        while still reporting COMPLETED. There is no `trim` filter, so a
+        workflow author cannot strip it themselves.
+        """
+        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        config = {
+            "id": "route",
+            "expression": "{{ steps.check.output.stdout }}",
+            "cases": {
+                "approve": [{"id": "approved", "type": "command", "command": "echo"}],
+                "reject": [{"id": "rejected", "type": "command", "command": "echo"}],
+            },
+            "default": [{"id": "fallback", "type": "command", "command": "echo"}],
+        }
+        for raw in ("approve\n", "approve\r\n", "  approve  ", "approve"):
+            ctx = StepContext(steps={"check": {"output": {"stdout": raw}}})
+            result = SwitchStep().execute(config, ctx)
+            assert result.status == StepStatus.COMPLETED
+            assert result.output["matched_case"] == "approve", repr(raw)
+            assert [s["id"] for s in result.next_steps] == ["approved"], repr(raw)
+            # The raw value is still reported unchanged.
+            assert result.output["expression_value"] == raw
+
+    def test_execute_still_falls_through_for_a_genuine_mismatch(self):
+        """Stripping must not make unrelated values match."""
+        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.base import StepContext
+
+        config = {
+            "id": "route",
+            "expression": "{{ steps.check.output.stdout }}",
+            "cases": {
+                "approve": [{"id": "approved", "type": "command", "command": "echo"}]
+            },
+            "default": [{"id": "fallback", "type": "command", "command": "echo"}],
+        }
+        ctx = StepContext(steps={"check": {"output": {"stdout": "approve-later\n"}}})
+        result = SwitchStep().execute(config, ctx)
+
+        assert result.output["matched_case"] == "__default__"
+        assert [s["id"] for s in result.next_steps] == ["fallback"]
+
     def test_execute_matches_case(self):
         from specify_cli.workflows.steps.switch import SwitchStep
         from specify_cli.workflows.base import StepContext

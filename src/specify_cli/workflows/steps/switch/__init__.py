@@ -12,7 +12,8 @@ class SwitchStep(StepBase):
     """Multi-branch dispatch on an expression.
 
     Evaluates ``expression:`` once, matches against ``cases:`` keys
-    (exact match, string-coerced).  Falls through to ``default:`` if
+    (exact match; the resolved value is string-coerced and stripped of
+    surrounding whitespace first).  Falls through to ``default:`` if
     no case matches.
     """
 
@@ -22,8 +23,18 @@ class SwitchStep(StepBase):
         expression = config.get("expression", "")
         value = evaluate_expression(expression, context)
 
-        # String-coerce for matching
-        str_value = str(value) if value is not None else ""
+        # String-coerce for matching, stripping surrounding whitespace first.
+        # The value a switch dispatches on is most often captured command
+        # output, and a ``shell`` step stores ``proc.stdout`` verbatim, so
+        # ``run: echo approve`` resolves to ``"approve\n"`` and matches no
+        # ``approve:`` case -- the switch silently falls through to ``default:``
+        # while still reporting COMPLETED. A workflow cannot strip it itself:
+        # the registered filters are default/join/map/contains/from_json, there
+        # is no ``trim``. ``evaluate_condition`` and ``InitStep._resolve_bool``
+        # already strip before matching a resolved string against declared
+        # literals, and case keys are exactly such literals. ``expression_value``
+        # below still reports the raw value, so nothing downstream loses it.
+        str_value = str(value).strip() if value is not None else ""
 
         cases = config.get("cases", {})
         if not isinstance(cases, dict):
