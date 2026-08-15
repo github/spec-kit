@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,8 @@ import pytest
 from tests.conftest import requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
+    POWERSHELL_EXE,
+    PROJECT_ROOT,
     bash_cmd,
     clean_env,
     install_composition_stack,
@@ -751,3 +755,101 @@ def test_all_variants_fail_for_malformed_preset_manifest(
 
     assert all(result.returncode != 0 for result in results)
     assert all(result.stdout == "" for result in results)
+
+
+# -- Get-Python3Command interpreter selection -----------------------------
+
+_STORE_ALIAS_STUB = (
+    "@echo off\r\n"
+    "echo Python was not found; run without arguments to install from the "
+    "Microsoft Store. 1>&2\r\n"
+    "exit /b 9009\r\n"
+)
+_WORKING_PYTHON3 = "@echo off\r\necho Python 3.12.0\r\nexit /b 0\r\n"
+_WORKING_PY_LAUNCHER = (
+    "@echo off\r\n"
+    'if "%1"=="-3" (echo Python 3.12.0 & exit /b 0)\r\n'
+    "exit /b 1\r\n"
+)
+
+
+def _run_get_python3_command(tmp_path: Path, shims: dict[str, str]) -> str:
+    """Dot-source common.ps1 with a PATH of *shims* and report the selection.
+
+    Returns the selected command joined by spaces, ``""`` when nothing usable
+    was found, or ``THREW: <reason>`` if the call raised. Callers run with
+    ``$ErrorActionPreference = 'Stop'``, so this mirrors real usage.
+    """
+    shim_dir = tmp_path / "shims"
+    shim_dir.mkdir()
+    for name, body in shims.items():
+        (shim_dir / f"{name}.cmd").write_text(body, encoding="ascii")
+
+    common_ps = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
+    driver = tmp_path / "probe.ps1"
+    driver.write_text(
+        "$ErrorActionPreference = 'Stop'\r\n"
+        f"$env:PATH = '{shim_dir}'\r\n"
+        f". '{common_ps}'\r\n"
+        "try { $r = Get-Python3Command; 'RESULT=[' + ($r -join ' ') + ']' }\r\n"
+        "catch { 'RESULT=[THREW: ' + $_.CategoryInfo.Reason + ']' }\r\n",
+        encoding="ascii",
+    )
+
+    result = subprocess.run(
+        [POWERSHELL_EXE, "-NoProfile", "-File", str(driver)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=clean_env(),
+    )
+    match = re.search(r"RESULT=\[(.*)\]", result.stdout)
+    assert match, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    return match.group(1)
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="PowerShell not available")
+def test_get_python3_command_skips_unusable_python3(tmp_path: Path) -> None:
+    """A 'python3' that Get-Command finds but that fails to run must be skipped.
+
+    On Windows 'python3' commonly resolves to the Microsoft Store App Execution
+    Alias stub. The first branch used to return @('python3') on mere
+    Get-Command presence, with no execution probe -- unlike its own second and
+    third branches -- so callers invoked the dead stub instead of falling
+    through to a working interpreter.
+    """
+    selected = _run_get_python3_command(
+        tmp_path,
+        {"python3": _STORE_ALIAS_STUB, "python": _WORKING_PYTHON3},
+    )
+    assert selected == "python"
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="PowerShell not available")
+def test_get_python3_command_probe_does_not_throw_under_stop(
+    tmp_path: Path,
+) -> None:
+    """Probing must fail the match, not raise, when a candidate writes stderr.
+
+    Callers set $ErrorActionPreference = 'Stop', and redirecting a native
+    command's stderr into the success stream wraps each line in an ErrorRecord,
+    so the probe raised a terminating NativeCommandError instead of moving on.
+    """
+    selected = _run_get_python3_command(tmp_path, {"python": _STORE_ALIAS_STUB})
+    assert selected == ""
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="PowerShell not available")
+def test_get_python3_command_falls_through_to_py_launcher(
+    tmp_path: Path,
+) -> None:
+    """A working 'py -3' must still be reached past two unusable candidates."""
+    selected = _run_get_python3_command(
+        tmp_path,
+        {
+            "python3": _STORE_ALIAS_STUB,
+            "python": _STORE_ALIAS_STUB,
+            "py": _WORKING_PY_LAUNCHER,
+        },
+    )
+    assert selected == "py -3"
