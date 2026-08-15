@@ -96,6 +96,19 @@ class SwitchStep(StepBase):
                 f"Switch step {config.get('id', '?')!r} is missing "
                 f"'expression' field."
             )
+        # Every other control-flow step requires its branch payload: ``if``
+        # requires ``then``, ``fan-out`` requires ``items`` and ``step``,
+        # ``fan-in`` a non-empty ``wait_for``, ``gate`` a ``message``. Without
+        # the same check, a switch whose ``cases:`` block is missing or mistyped
+        # (``case:`` is the obvious slip) validates clean and then reports
+        # COMPLETED with ``matched_case: "__default__"`` -- a default it may not
+        # even declare -- having dispatched nothing. That is the "silent empty
+        # result + COMPLETED" wiring bug the fan-in guard exists to prevent.
+        if "cases" not in config:
+            errors.append(
+                f"Switch step {config.get('id', '?')!r} is missing "
+                f"'cases' field."
+            )
         cases = config.get("cases", {})
         if not isinstance(cases, dict):
             errors.append(

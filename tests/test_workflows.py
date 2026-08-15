@@ -3309,6 +3309,38 @@ class TestSwitchStep:
         errors = step.validate({"id": "test", "cases": {}})
         assert any("missing 'expression'" in e for e in errors)
 
+    def test_validate_missing_cases(self):
+        """`cases` is the switch's branch payload and must be required.
+
+        Every other control-flow step requires its own: `if` requires `then`,
+        `fan-out` requires `items` and `step`, `fan-in` a non-empty `wait_for`,
+        `gate` a `message`. Without it, a `case:` typo validated clean and then
+        reported COMPLETED with `matched_case: "__default__"` having dispatched
+        nothing.
+        """
+        from specify_cli.workflows.steps.switch import SwitchStep
+
+        step = SwitchStep()
+
+        # Absent entirely.
+        errors = step.validate({"id": "route", "expression": "{{ inputs.x }}"})
+        assert any("missing 'cases'" in e for e in errors), errors
+
+        # The realistic slip: `case:` instead of `cases:`.
+        errors = step.validate(
+            {"id": "route", "expression": "{{ inputs.x }}", "case": {"a": []}}
+        )
+        assert any("missing 'cases'" in e for e in errors), errors
+
+    def test_validate_accepts_an_empty_cases_mapping(self):
+        """An explicitly declared but empty `cases:` is still a declaration."""
+        from specify_cli.workflows.steps.switch import SwitchStep
+
+        errors = SwitchStep().validate(
+            {"id": "route", "expression": "{{ inputs.x }}", "cases": {}}
+        )
+        assert not any("missing 'cases'" in e for e in errors), errors
+
     def test_validate_invalid_cases_and_default(self):
         from specify_cli.workflows.steps.switch import SwitchStep
 
