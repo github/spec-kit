@@ -82,6 +82,7 @@ def run_command(
     cmd: list[str],
     check_return: bool = True,
     capture: bool = False,
+    timeout: int = 120,
 ) -> str | None:
     """Run a command without invoking a shell and optionally capture output.
 
@@ -89,19 +90,30 @@ def run_command(
     argv ``list[str]``. There is deliberately no ``shell`` parameter: the
     argv-list contract makes shell interpolation impossible by construction, so
     the shell-injection surface cannot be re-enabled at a call site.
+
+    Args:
+        cmd: Command and arguments as a list (argv-style).
+        check_return: If True, raise on non-zero exit codes.
+        capture: If True, capture and return stdout.
+        timeout: Maximum seconds to wait for the process (default 120).
     """
     try:
         if capture:
-            result = subprocess.run(cmd, check=check_return, capture_output=True, text=True)
+            result = subprocess.run(
+                cmd, check=check_return, capture_output=True, text=True, timeout=timeout,
+            )
             return result.stdout.strip()
         else:
-            subprocess.run(cmd, check=check_return)
+            subprocess.run(cmd, check=check_return, timeout=timeout)
             return None
+    except subprocess.TimeoutExpired:
+        console.print(f"[red]Command timed out after {timeout}s:[/red] {' '.join(cmd)}")
+        raise
     except subprocess.CalledProcessError as e:
         if check_return:
             console.print(f"[red]Error running command:[/red] {' '.join(cmd)}")
             console.print(f"[red]Exit code:[/red] {e.returncode}")
-            if hasattr(e, 'stderr') and e.stderr:
+            if e.stderr:
                 console.print(f"[red]Error output:[/red] {e.stderr}")
             raise
         return None
