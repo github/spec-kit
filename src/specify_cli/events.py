@@ -1731,8 +1731,9 @@ def _merge_toml_fragment(dst: Path, fragment: str) -> None:
     fd, tmp = tempfile.mkstemp(
         dir=str(dst.parent), prefix=f".{dst.name}.", suffix=".tmp"
     )
-    os.chmod(tmp, 0o644)
     try:
+        if dst.exists() and hasattr(os, "fchmod"):
+            os.fchmod(fd, dst.stat(follow_symlinks=False).st_mode & 0o7777)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(existing.rstrip() + "\n\n" + fragment + "\n")
         os.replace(tmp, dst)
@@ -1774,8 +1775,9 @@ def _remove_toml_entries(dst: Path) -> bool:
     fd, tmp = tempfile.mkstemp(
         dir=str(dst.parent), prefix=f".{dst.name}.", suffix=".tmp"
     )
-    os.chmod(tmp, 0o644)
     try:
+        if dst.exists() and hasattr(os, "fchmod"):
+            os.fchmod(fd, dst.stat(follow_symlinks=False).st_mode & 0o7777)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(cleaned)
         os.replace(tmp, dst)
