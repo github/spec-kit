@@ -67,6 +67,7 @@ def _atomic_write_text(path: Path, content: str) -> None:
     fd, tmp = tempfile.mkstemp(
         dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
     )
+    os.chmod(tmp, 0o644)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(content)
