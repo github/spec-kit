@@ -317,18 +317,45 @@ function Format-SpecKitCommand {
     return "/speckit$separator$name"
 }
 
+# Probe a candidate interpreter by running it, returning $true only when it
+# really is a Python 3. Selection must be by execution success, not by mere
+# availability: on Windows 'python3' (and often 'python') resolves to the
+# Microsoft Store App Execution Alias stub, which Get-Command finds but which
+# fails at runtime -- the same hazard scripts/bash/common.sh documents and
+# defends against in _python3_command.
+#
+# The probe is deliberately non-throwing. Callers set
+# $ErrorActionPreference = 'Stop', and in Windows PowerShell redirecting a
+# native command's stderr into the success stream wraps each line in an
+# ErrorRecord, so '& python --version 2>&1' raised a terminating
+# NativeCommandError against the stub rather than simply failing the match.
+function Test-Python3Command {
+    param(
+        [Parameter(Mandatory = $true)][string]$Executable,
+        [string[]]$Arguments = @()
+    )
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'SilentlyContinue'
+    try {
+        $versionOutput = & $Executable @Arguments --version 2>&1
+        return (($versionOutput -join ' ') -match 'Python 3')
+    } catch {
+        return $false
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+}
+
 # Find a usable Python 3 executable (python3, python, or py -3).
 # Returns the command/arguments as an array, or $null if none found.
 function Get-Python3Command {
-    if (Get-Command python3 -ErrorAction SilentlyContinue) { return @('python3') }
-    if (Get-Command python -ErrorAction SilentlyContinue) {
-        $ver = & python --version 2>&1
-        if ($ver -match 'Python 3') { return @('python') }
-    }
-    if (Get-Command py -ErrorAction SilentlyContinue) {
-        $ver = & py -3 --version 2>&1
-        if ($ver -match 'Python 3') { return @('py', '-3') }
-    }
+    if ((Get-Command python3 -ErrorAction SilentlyContinue) -and
+        (Test-Python3Command -Executable 'python3')) { return @('python3') }
+    if ((Get-Command python -ErrorAction SilentlyContinue) -and
+        (Test-Python3Command -Executable 'python')) { return @('python') }
+    if ((Get-Command py -ErrorAction SilentlyContinue) -and
+        (Test-Python3Command -Executable 'py' -Arguments @('-3'))) { return @('py', '-3') }
     return $null
 }
 
