@@ -67,8 +67,9 @@ def _atomic_write_text(path: Path, content: str) -> None:
     fd, tmp = tempfile.mkstemp(
         dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
     )
-    os.chmod(tmp, 0o644)
     try:
+        if path.exists() and hasattr(os, "fchmod"):
+            os.fchmod(fd, path.stat(follow_symlinks=False).st_mode & 0o7777)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(content)
         os.replace(tmp, path)
