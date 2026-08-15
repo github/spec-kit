@@ -107,6 +107,18 @@ class WhileStep(StepBase):
                     f"While step {config.get('id', '?')!r}: "
                     f"'max_iterations' must be an integer >= 1."
                 )
+        if "steps" not in config:
+            # A loop with no body is never what the author meant, but it used to
+            # validate clean and then report COMPLETED at run time while
+            # returning no next_steps -- so the engine's ``if result.next_steps:``
+            # block never fired and the loop the workflow is built around never
+            # ran once. The mistype is easy: fan-out's payload key is the
+            # singular ``step:``, so writing ``step:`` on a ``while`` produced a
+            # silent no-op. ``if`` already requires ``then`` and fan-out already
+            # requires both ``items`` and ``step``; require a body here too.
+            errors.append(
+                f"While step {config.get('id', '?')!r} is missing 'steps' field."
+            )
         nested = config.get("steps", [])
         if not isinstance(nested, list):
             errors.append(

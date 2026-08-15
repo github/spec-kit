@@ -3411,6 +3411,33 @@ class TestWhileStep:
         assert any("missing 'condition'" in e for e in errors)
         # max_iterations is optional (defaults to 10)
 
+    def test_validate_requires_steps_body(self):
+        """A while loop with no body must be rejected, not silently a no-op.
+
+        Without this, ``step:`` written instead of ``steps:`` -- an easy slip,
+        since fan-out's payload key really is the singular ``step:`` -- passed
+        ``specify workflow validate`` with zero errors, and then reported
+        COMPLETED at run time while returning no ``next_steps``, so the loop
+        never ran even once.
+        """
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.steps.while_loop import WhileStep
+
+        step = WhileStep()
+        config = {
+            "id": "retry",
+            "condition": "true",
+            # The mistype: singular 'step' instead of 'steps'.
+            "step": {"id": "x", "type": "command", "command": "echo"},
+        }
+        errors = step.validate(config)
+        assert errors == ["While step 'retry' is missing 'steps' field."], errors
+
+        # Demonstrates why it matters: execution is a silent no-op.
+        result = step.execute(config, StepContext())
+        assert result.status == StepStatus.COMPLETED
+        assert result.next_steps == []
+
     @pytest.mark.parametrize("bad", [["a", "b"], {"k": "v"}, 5, 1.5])
     def test_validate_rejects_non_string_non_bool_condition(self, bad):
         from specify_cli.workflows.steps.while_loop import WhileStep
@@ -3542,6 +3569,25 @@ class TestDoWhileStep:
         errors = step.validate({"id": "test", "steps": []})
         assert any("missing 'condition'" in e for e in errors)
         # max_iterations is optional (defaults to 10)
+
+    def test_validate_requires_steps_body(self):
+        """A do-while with no body must be rejected, not silently a no-op.
+
+        The step's own docstring promises "The first invocation always returns
+        the nested steps for execution" -- with no body it validated clean and
+        then returned none, so the loop never ran even once.
+        """
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.steps.do_while import DoWhileStep
+
+        step = DoWhileStep()
+        config = {"id": "refine", "condition": "true", "max_iterations": 3}
+        errors = step.validate(config)
+        assert errors == ["Do-while step 'refine' is missing 'steps' field."], errors
+
+        result = step.execute(config, StepContext())
+        assert result.status == StepStatus.COMPLETED
+        assert result.next_steps == []
 
     @pytest.mark.parametrize("bad", [["a", "b"], {"k": "v"}, 5, 1.5])
     def test_validate_rejects_non_string_non_bool_condition(self, bad):
