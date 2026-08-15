@@ -367,13 +367,14 @@ def _print_cli_warning(
 # Constants kept for backward compatibility with presets and extensions.
 DEFAULT_SKILLS_DIR = ".agents/skills"
 SKILL_DESCRIPTIONS = {
-    "specify": "Create or update feature specifications from natural language descriptions.",
+    "specify": "Create a new feature specification from a natural language description.",
     "plan": "Generate technical implementation plans from feature specifications.",
     "tasks": "Break down implementation plans into actionable task lists.",
     "implement": "Execute all tasks from the task breakdown to build the feature.",
     "converge": "Assess the codebase against spec.md, plan.md, and tasks.md and append remaining work as new tasks.",
     "analyze": "Perform cross-artifact consistency analysis across spec.md, plan.md, and tasks.md.",
     "clarify": "Structured clarification workflow for underspecified requirements.",
+    "revise": "Revise the current feature spec in place and cascade the change into plan and tasks.",
     "constitution": "Create or update project governing principles and development guidelines.",
     "checklist": "Generate custom quality checklists for validating requirements completeness and clarity.",
     "taskstoissues": "Convert tasks from tasks.md into GitHub issues.",

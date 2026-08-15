@@ -468,6 +468,7 @@ class TomlIntegrationTests:
         "implement",
         "plan",
         "checklist",
+        "revise",
         "specify",
         "tasks",
         "taskstoissues",

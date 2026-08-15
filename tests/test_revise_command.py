@@ -23,6 +23,44 @@ def test_revise_template_exists():
     assert REVISE.is_file()
 
 
+def test_list_command_templates_includes_revise():
+    from specify_cli.integrations.base import MarkdownIntegration
+
+    class _Probe(MarkdownIntegration):
+        key = "probe"
+        config = {
+            "name": "Probe",
+            "folder": ".probe/",
+            "commands_subdir": "commands",
+            "install_url": None,
+            "requires_cli": False,
+        }
+        registrar_config = {
+            "dir": ".probe/commands",
+            "format": "markdown",
+            "args": "$ARGUMENTS",
+            "extension": ".md",
+        }
+
+    stems = {p.stem for p in _Probe().list_command_templates()}
+    assert "revise" in stems
+    assert "specify" in stems
+
+
+def test_revise_command_ref_resolves_to_speckit_revise():
+    resolved = IntegrationBase.resolve_command_refs(
+        "next: __SPECKIT_COMMAND_REVISE__", separator=".", prefix="/"
+    )
+    assert resolved == "next: /speckit.revise"
+
+
+def test_skill_descriptions_include_revise():
+    from specify_cli import SKILL_DESCRIPTIONS
+
+    assert "revise" in SKILL_DESCRIPTIONS
+    assert "Create a new feature specification" in SKILL_DESCRIPTIONS["specify"]
+
+
 def test_revise_has_scripts_frontmatter():
     text = REVISE.read_text(encoding="utf-8")
     assert "sh: scripts/bash/check-prerequisites.sh --json --paths-only" in text
@@ -81,6 +119,11 @@ class TestReviseInvariants:
 
     def test_uses_script_placeholder(self):
         assert "{SCRIPT}" in self.text
+
+    def test_has_mandatory_post_execution_hooks(self):
+        assert "hooks.after_revise" in self.text
+        assert "EXECUTE_COMMAND:" in self.text
+        assert "## Done When" in self.text
 
 
 class TestCascadeContracts:

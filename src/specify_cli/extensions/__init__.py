@@ -54,6 +54,7 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset(
         "converge",
         "implement",
         "plan",
+        "revise",
         "specify",
         "tasks",
         "taskstoissues",
