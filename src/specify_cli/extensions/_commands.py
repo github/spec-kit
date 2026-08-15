@@ -1030,8 +1030,7 @@ def extension_add(
                                 force=force,
                             )
                         finally:
-                            if archive_path.exists():
-                                archive_path.unlink()
+                            archive_path.unlink(missing_ok=True)
 
         console.print("\n[green]✓[/green] Extension installed successfully!")
         console.print(f"\n[bold]{_escape_markup(str(manifest.name))}[/bold] (v{_escape_markup(str(manifest.version))})")
@@ -2234,11 +2233,10 @@ def extension_update(
                     # Archive cleanup is housekeeping: never replace an install
                     # error or roll back an already committed update because a
                     # scanner temporarily locks the download on Windows.
-                    if archive_path.exists():
-                        try:
-                            archive_path.unlink()
-                        except OSError as error:
-                            zip_cleanup_error = error
+                    try:
+                        archive_path.unlink(missing_ok=True)
+                    except OSError as error:
+                        zip_cleanup_error = error
 
                 # 10. Clean up backup on success. The update has committed at
                 # this point, so a locked backup file must not trigger rollback
