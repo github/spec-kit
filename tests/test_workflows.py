@@ -12343,6 +12343,46 @@ steps:
         leaked = list(scratch_tmp.glob("*.yml"))
         assert leaked == [], f"leaked temp files: {leaked}"
 
+    def test_add_from_url_interrupt_during_read_leaves_no_temp_file(
+        self, project_dir, monkeypatch, tmp_path
+    ):
+        """A KeyboardInterrupt while streaming the response body must still
+        unlink the already-created (delete=False) temp file. Unlike a
+        download ``ValueError``, ``KeyboardInterrupt`` is a ``BaseException``
+        and is not caught by ``except Exception`` -- only a ``BaseException``
+        handler around the temp-file lifetime can clean it up."""
+        import tempfile as tempfile_mod
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows import _commands as wf_commands
+
+        monkeypatch.chdir(project_dir)
+        scratch_tmp = tmp_path / "scratch-tmp"
+        scratch_tmp.mkdir()
+        monkeypatch.setattr(tempfile_mod, "tempdir", str(scratch_tmp))
+
+        def _boom(*args, **kwargs):
+            raise KeyboardInterrupt()
+
+        monkeypatch.setattr(wf_commands, "_read_response_within_limit", _boom)
+        body = b"id: align-wf\n"
+        runner = CliRunner()
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
+                body, url
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+                input="y\n",
+            )
+        assert result.exit_code != 0
+        leaked = list(scratch_tmp.glob("*.yml"))
+        assert leaked == [], f"leaked temp files: {leaked}"
+
     def test_add_from_url_oversized_content_length_leaves_no_temp_file(
         self, project_dir, monkeypatch, tmp_path
     ):
