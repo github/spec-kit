@@ -17,7 +17,7 @@ import shutil
 import sys
 import subprocess
 import platform
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -83,7 +83,22 @@ import shlex
 import shutil
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
+
+
+def _script_under_base(base, token, project_root):
+    """Return token resolved under base, or None if it leaves the project."""
+    posix_path = PurePosixPath(token)
+    win_path = PureWindowsPath(token)
+    if posix_path.anchor or win_path.anchor:
+        return None
+    try:
+        root = project_root.resolve()
+        candidate = (base / token).resolve()
+        candidate.relative_to(root)
+    except (OSError, ValueError):
+        return None
+    return candidate
 
 
 def _find_command_template(command_name, project_root):
@@ -228,8 +243,8 @@ def _resolve_argv(template_path, project_root, ext_id):
         return None
     if not tokens:
         return None
-    script_abs = base / tokens[0]
-    if not script_abs.exists():
+    script_abs = _script_under_base(base, tokens[0], project_root)
+    if script_abs is None or not script_abs.exists():
         return None
     rest = tokens[1:]
 
@@ -541,6 +556,30 @@ def _find_command_template(command_name: str, project_root: Path) -> tuple[Path 
     return None, None
 
 
+def _confine_event_script_path(
+    project_root: Path, base: Path, token: str
+) -> Path | None:
+    """Resolve *token* under *base*, or None if it leaves the project.
+
+    Rejects anchored tokens (absolute, drive, UNC) so ``Path`` cannot
+    discard *base*. ``..`` is allowed when the resolved path stays inside
+    *project_root*, which is how extension templates reach core scripts
+    via ``../../scripts/...``. Keep the generated ``_script_under_base``
+    in sync.
+    """
+    posix_path = PurePosixPath(token)
+    win_path = PureWindowsPath(token)
+    if posix_path.anchor or win_path.anchor:
+        return None
+    try:
+        root = project_root.resolve()
+        candidate = (base / token).resolve()
+        candidate.relative_to(root)
+    except (OSError, ValueError):
+        return None
+    return candidate
+
+
 def _resolve_event_command_argv(
     template_path: Path, project_root: Path, ext_id: str | None
 ) -> list[str] | None:
@@ -609,8 +648,8 @@ def _resolve_event_command_argv(
         return None
     if not tokens:
         return None
-    script_abs = base / tokens[0]
-    if not script_abs.exists():
+    script_abs = _confine_event_script_path(project_root, base, tokens[0])
+    if script_abs is None or not script_abs.exists():
         return None
     rest_args = tokens[1:]
 
