@@ -667,25 +667,42 @@ class TestIntegrationDescriptor:
         p.write_bytes(content)
         desc = IntegrationDescriptor(p)
 
-        # Spy on read() to reject unbounded calls.
+        # Spy on read() to reject unbounded calls.  We cannot assign
+        # directly to fh.read on a BufferedReader (read-only attribute),
+        # so wrap the file in a proxy that intercepts read() while
+        # delegating everything else — including context-manager cleanup
+        # — to the real file object.
         original_open = open
         read_sizes: list[int] = []
+
+        class _ReadTrackingProxy:
+            """Proxy that intercepts read() calls on a file object."""
+
+            def __init__(self, fh):
+                self._fh = fh
+
+            def read(self, n=-1):
+                if n == -1 or n is None:
+                    raise RuntimeError(
+                        "f.read() called without size limit — "
+                        "use bounded chunked reads instead"
+                    )
+                read_sizes.append(n)
+                return self._fh.read(n)
+
+            def __getattr__(self, name):
+                return getattr(self._fh, name)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return self._fh.__exit__(*args)
 
         def tracking_open(path, *args, **kwargs):
             fh = original_open(path, *args, **kwargs)
             if (args and args[0] == "rb") or kwargs.get("mode") == "rb":
-                orig_read = fh.read
-
-                def tracking_read(n=-1):
-                    if n == -1 or n is None:
-                        raise RuntimeError(
-                            "f.read() called without size limit — "
-                            "use bounded chunked reads instead"
-                        )
-                    read_sizes.append(n)
-                    return orig_read(n)
-
-                fh.read = tracking_read
+                return _ReadTrackingProxy(fh)
             return fh
 
         with patch("builtins.open", side_effect=tracking_open):
