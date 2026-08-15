@@ -276,6 +276,8 @@ Then append:
 
 Omit empty subsections. Never edit or delete earlier `R#` entries.
 
+If `FEATURE_DIR/checklists/requirements.md` exists, re-evaluate its items against the revised spec and update pass/fail markers **before** post-execution hooks so a git auto-commit includes those edits. Do not invent a new checklist.
+
 ## Mandatory Post-Execution Hooks
 
 **You MUST complete this section before reporting completion to the user.**
@@ -333,8 +335,6 @@ Open revision tasks: {task ids or "none"}
 Also include:
 - Cascade result for `plan.md` and `tasks.md`
 - Next command (`__SPECKIT_COMMAND_IMPLEMENT__`, `__SPECKIT_COMMAND_PLAN__`, or `__SPECKIT_COMMAND_TASKS__`)
-
-If `FEATURE_DIR/checklists/requirements.md` exists, re-evaluate its items against the revised spec and update pass/fail markers. Do not invent a new checklist.
 
 ## Done When
 
