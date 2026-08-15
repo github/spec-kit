@@ -5936,6 +5936,39 @@ class TestExtensionCatalog:
         assert archive_path.name == "test-ext-1.0.0.tar.gz"
         assert archive_path.read_bytes() == archive_bytes
 
+    def test_catalog_fetch_failure_logged_as_warning(self, temp_dir, caplog):
+        """When a catalog fetch fails, the error must be logged at WARNING
+        level instead of being silently swallowed or printed to stderr."""
+        import logging
+        from pathlib import Path
+        from unittest.mock import patch
+        from specify_cli.extensions import ExtensionCatalog, ExtensionError
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        catalog = ExtensionCatalog(project_dir)
+
+        entry = CatalogEntry(
+            url="https://example.com/broken-catalog.json",
+            name="broken",
+            priority=1,
+            install_allowed=True,
+        )
+
+        # Force _fetch_single_catalog to raise for all catalogs
+        with patch.object(catalog, "get_active_catalogs", return_value=[entry]), \
+             patch.object(catalog, "_fetch_single_catalog", side_effect=ExtensionError("network error")):
+            with caplog.at_level(logging.WARNING):
+                try:
+                    catalog._get_merged_extensions()
+                except ExtensionError:
+                    pass  # may still raise if all catalogs fail
+
+        assert any("broken" in record.message and "network error" in record.message
+                    for record in caplog.records if record.levelno == logging.WARNING)
+
 
 
 # ===== CatalogEntry Tests =====
