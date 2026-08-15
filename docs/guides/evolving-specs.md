@@ -38,19 +38,26 @@ Use living spec when `spec.md` is the contract and `plan.md` and `tasks.md` are
 derived from it.
 
 When intended behavior changes, revise the existing `spec.md` first. Then
-regenerate or manually revise downstream artifacts so they match the updated
-spec:
+bring `plan.md` and `tasks.md` in line with that contract:
 
 1. Start from a clean working tree or a dedicated branch so every generated
    change is reviewable.
-2. Update `spec.md` with `/speckit.clarify` or an explicit edit.
-3. Rerun `/speckit.plan` or revise `plan.md` so the technical approach matches
-   the revised spec.
-4. Rerun `/speckit.tasks` or revise `tasks.md` so implementation work matches
-   the revised plan.
-5. Run `/speckit.analyze` before implementation resumes to catch gaps between
-   the spec, plan, and tasks.
+2. Apply the delta with `/speckit.revise`. Pass the change as arguments — add,
+   remove, or reword acceptance criteria, functional requirements, stories, or
+   success criteria. The command edits the **current** `spec.md`, appends
+   `revisions.md`, patches `plan.md` when it can, and appends or cancels tasks.
+   Do **not** run `/speckit.specify` (that opens a new feature directory) and do
+   not use `/speckit.clarify` for a delta you already know — clarify only fills
+   pre-plan gaps by asking questions.
+3. If revise reports `plan_status: needs-rebuild`, rerun `/speckit.plan`.
+   Otherwise keep the patched plan.
+4. Do not rerun `/speckit.tasks` unless there is no `tasks.md` yet. Revise
+   appends a `Revision R#` phase and cancels open tasks that only served a
+   retired ID.
+5. Run `/speckit.analyze` before implementation resumes to catch gaps and
+   references to retired IDs.
 6. Run `/speckit.implement`, then review the code and artifact diffs together.
+   Implement skips cancelled tasks.
 7. Run `/speckit.converge` to assess completion and append any remaining work to `tasks.md`. If tasks are appended, repeat `/speckit.implement` and `/speckit.converge` until the feature is fully complete.
 
 Preserve important implementation rationale before replacing derived artifacts.

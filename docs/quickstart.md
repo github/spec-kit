@@ -120,6 +120,14 @@ Checks the codebase against the spec, plan, and tasks. If it finds gaps, it appe
 /speckit.converge
 ```
 
+### After shipping: `/speckit.revise` — change the current spec
+
+When requirements change on the **same** feature (add or drop an acceptance criterion, retire an FR), do **not** run `/speckit.specify` again. That opens a new feature directory. Use `/speckit.revise` instead, then analyze, implement, and converge.
+
+```text
+/speckit.revise Remove password login. Add AC: Given an expired session, When the user submits, Then redirect to SSO
+```
+
 > [!TIP]
 > For a full reference on each command — arguments, output, phased implementation, and how they interact — see [Agentic SDD](reference/agentic-sdd.md).
 

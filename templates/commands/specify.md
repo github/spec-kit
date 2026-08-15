@@ -1,5 +1,5 @@
 ---
-description: Create or update the feature specification from a natural language feature description.
+description: Create a new feature specification from a natural language feature description.
 handoffs:
   - label: Build Technical Plan
     agent: speckit.plan
@@ -109,6 +109,7 @@ Given that feature description, do this:
    - You must only create one feature per `__SPECKIT_COMMAND_SPECIFY__` invocation
    - The spec directory name and the git branch name are independent — they may be the same but that is the user's choice
    - The spec directory and file are always created by this command, never by the hook
+   - This command starts a **new** feature. If the user wants to add, remove, or reword acceptance criteria / requirements on the **current** spec, do not create another directory — recommend `__SPECKIT_COMMAND_REVISE__` instead
 
 4. Load the resolved active `spec-template` file to understand required sections.
 

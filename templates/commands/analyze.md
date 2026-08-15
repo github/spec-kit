@@ -68,6 +68,7 @@ Run `{SCRIPT}` once from repo root and parse JSON for FEATURE_DIR and AVAILABLE_
 - SPEC = FEATURE_DIR/spec.md
 - PLAN = FEATURE_DIR/plan.md
 - TASKS = FEATURE_DIR/tasks.md
+- REVISIONS = FEATURE_DIR/revisions.md (optional; living-spec history)
 
 Abort with an error message if any required file is missing (instruct the user to run missing prerequisite command).
 For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
@@ -98,6 +99,12 @@ Load only the minimal necessary context from each artifact:
 - Phase grouping
 - Parallel markers [P]
 - Referenced file paths
+- Cancelled tasks (`CANCELLED` / struck-through IDs) — exclude them from coverage gaps
+
+**From revisions.md (if present):**
+
+- Retired IDs (`FR-###`, `SC-###`, `US#/AC#`) listed under **Removed (retired)**
+- Treat those IDs as **historical**, not current requirements. `spec.md` is the source of truth.
 
 **From constitution:**
 
@@ -149,6 +156,9 @@ Focus on high-signal findings. Limit to 50 findings total; aggregate remainder i
 - Data entities referenced in plan but absent in spec (or vice versa)
 - Task ordering contradictions (e.g., integration tasks before foundational setup tasks without dependency note)
 - Conflicting requirements (e.g., one requires Next.js while other specifies Vue)
+- Plan or tasks still treating a **retired** ID from `revisions.md` as in-scope (the current `spec.md` no longer requires it)
+
+If requirement problems need a follow-up edit: use `__SPECKIT_COMMAND_SPECIFY__` only for a **new** feature; use `__SPECKIT_COMMAND_CLARIFY__` to fill pre-plan gaps; if the user already knows the delta (add/remove AC or FR), recommend `__SPECKIT_COMMAND_REVISE__`.
 
 ### 5. Severity Assignment
 

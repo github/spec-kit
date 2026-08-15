@@ -35,6 +35,7 @@ This extension provides Git operations as an optional, self-contained module. It
 | `before_checklist` | `speckit.git.commit` | Yes | Commit outstanding changes before checklist |
 | `before_analyze` | `speckit.git.commit` | Yes | Commit outstanding changes before analysis |
 | `before_taskstoissues` | `speckit.git.commit` | Yes | Commit outstanding changes before issue sync |
+| `before_revise` | `speckit.git.commit` | Yes | Commit outstanding changes before living-spec revision |
 | `after_constitution` | `speckit.git.commit` | Yes | Auto-commit after constitution update |
 | `after_specify` | `speckit.git.commit` | Yes | Auto-commit after specification |
 | `after_clarify` | `speckit.git.commit` | Yes | Auto-commit after clarification |
@@ -44,6 +45,7 @@ This extension provides Git operations as an optional, self-contained module. It
 | `after_checklist` | `speckit.git.commit` | Yes | Auto-commit after checklist |
 | `after_analyze` | `speckit.git.commit` | Yes | Auto-commit after analysis |
 | `after_taskstoissues` | `speckit.git.commit` | Yes | Auto-commit after issue sync |
+| `after_revise` | `speckit.git.commit` | Yes | Auto-commit after living-spec revision |
 
 ## Configuration
 

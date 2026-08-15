@@ -5409,7 +5409,7 @@ class TestPresetSkills:
         content = skill_file.read_text(encoding="utf-8")
         assert "preset:self-test" not in content
         assert "templates/commands/specify.md" in content
-        assert "Create or update the feature specification" in content
+        assert "Create a new feature specification" in content
 
     def test_extension_wins_over_bundled_core_on_preset_remove(
         self, project_dir, monkeypatch

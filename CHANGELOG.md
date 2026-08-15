@@ -2,6 +2,18 @@
 
 <!-- insert new changelog below this comment -->
 
+## [Unreleased]
+
+### Added
+
+- feat(commands): add `/speckit.revise` to edit the current feature spec in place (add/remove/reword ACs, FRs, stories) and cascade into plan/tasks
+
+### Changed
+
+- teach `/speckit.implement` and `/speckit.taskstoissues` to skip cancelled revision tasks
+- hook git auto-commit on `before_revise` / `after_revise`
+- document living-spec revise in evolving-specs, spec-persistence, and agentic-sdd
+
 ## [0.16.4] - 2026-08-14
 
 ### Changed

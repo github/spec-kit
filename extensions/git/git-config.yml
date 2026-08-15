@@ -50,6 +50,9 @@ auto_commit:
   before_taskstoissues:
     enabled: false
     message: "[Spec Kit] Save progress before issue sync"
+  before_revise:
+    enabled: false
+    message: "[Spec Kit] Save progress before spec revision"
   after_constitution:
     enabled: false
     message: "[Spec Kit] Add project constitution"
@@ -77,3 +80,6 @@ auto_commit:
   after_taskstoissues:
     enabled: false
     message: "[Spec Kit] Sync tasks to issues"
+  after_revise:
+    enabled: false
+    message: "[Spec Kit] Revise specification"

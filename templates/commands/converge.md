@@ -68,6 +68,13 @@ of remaining work as a new, traceable task** at the bottom of `tasks.md` so that
 This is **not** a diff tool and does **not** track changes. It assesses the present state
 of the code relative to the feature's artifacts — no git, no branch comparison, no history.
 
+If the user just stated a requirement change (add/remove/reword an AC, FR, story, or
+success criterion), or `spec.md` has a `Last Revised` stamp and `revisions.md` is newer
+than the last implement pass, **STOP** and recommend `__SPECKIT_COMMAND_REVISE__`
+instead of converging. Converge assumes the
+**spec is stable** and the code lagged. Re-appending tasks for behavior the spec just
+retired would undo a living-spec edit.
+
 ## Operating Constraints
 
 **APPEND-ONLY, NEVER REWRITE**: The command's **only** write is appending a new

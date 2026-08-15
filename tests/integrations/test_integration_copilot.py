@@ -192,7 +192,7 @@ class TestCopilotCommandsMode:
 
         specify_file = tmp_path / ".github" / "agents" / "speckit.specify.agent.md"
         content = specify_file.read_text(encoding="utf-8")
-        assert "Create or update the feature specification" in content
+        assert "Create a new feature specification" in content
         assert "preset override content" not in content
 
     def test_setup_uses_preset_command_override_when_present(self, tmp_path):

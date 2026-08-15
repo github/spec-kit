@@ -68,10 +68,12 @@ that make the lineage easy to follow.
 Use living spec when `spec.md` is the contract and the other artifacts are
 derived from it.
 
-In this model, teams update `spec.md` first and then regenerate or revise
+In this model, teams update `spec.md` first and then revise
 `plan.md` and `tasks.md` from that source. The plan and task list are still
 valuable, but they are treated as disposable derivations rather than permanent
-sources of truth.
+sources of truth. `/speckit.revise` is the command for that loop: it edits the
+current spec in place, records the delta in `revisions.md`, and cascades into
+plan and tasks without opening a new feature directory.
 
 Living spec works well when:
 
@@ -93,7 +95,7 @@ applies.
 |---|---|---|---|
 | Flow-back spec | Edit any artifact, then reconcile | Fast iteration and close collaboration | Silent drift between artifacts |
 | Flow-forward spec | Create a new feature directory for new requirements | Audit trails and historical clarity | Duplicate or fragmented context |
-| Living spec | Edit `spec.md`; regenerate derived artifacts | Spec as contract | Lost rationale in regenerated files |
+| Living spec | Edit `spec.md` (via `/speckit.revise`); patch derived artifacts | Spec as contract | Lost rationale if the plan is fully rebuilt |
 
 If your team has not chosen a model yet, start by answering two questions:
 
