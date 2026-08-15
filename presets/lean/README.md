@@ -20,6 +20,8 @@ Use Lean when you want the structured specify → plan → tasks → implement p
 
 Lean overrides the five core workflow commands with self-contained prompts that produce each artifact directly — no separate template files involved. The result is a shorter, more direct workflow.
 
+Living-spec edits still use the unmodified core `/speckit.revise` (lean does not replace it).
+
 ## Installation
 
 ```bash

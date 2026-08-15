@@ -123,6 +123,7 @@ After initialization, you should see the following commands available in your co
 - `/speckit.implement` - Execute implementation tasks
 - `/speckit.analyze` - Validate cross-artifact consistency
 - `/speckit.clarify` - Identify and resolve ambiguities
+- `/speckit.revise` - Revise the current spec in place and cascade into plan/tasks
 - `/speckit.checklist` - Generate quality checklists
 - `/speckit.constitution` - Create or update project principles
 - `/speckit.converge` - Assess codebase against artifacts and append remaining tasks

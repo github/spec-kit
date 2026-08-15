@@ -57,6 +57,8 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 Goal: Detect and reduce ambiguity or missing decision points in the active feature specification and record the clarifications directly in the spec file.
 
+If the user already stated a **concrete delta** (add, remove, or reword a named AC, FR, story, or success criterion), do **not** start a clarification question loop. Recommend `__SPECKIT_COMMAND_REVISE__` and stop.
+
 Note: This clarification workflow is expected to run (and be completed) BEFORE invoking `__SPECKIT_COMMAND_PLAN__`. If the user explicitly states they are skipping clarification (e.g., exploratory spike), you may proceed, but must warn that downstream rework risk increases.
 
 Execution steps:

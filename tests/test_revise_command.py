@@ -151,3 +151,8 @@ class TestCascadeContracts:
     def test_converge_defers_to_revise_when_spec_changed(self):
         text = (COMMANDS / "converge.md").read_text(encoding="utf-8")
         assert "__SPECKIT_COMMAND_REVISE__" in text
+
+    def test_clarify_defers_known_deltas_to_revise(self):
+        text = (COMMANDS / "clarify.md").read_text(encoding="utf-8")
+        assert "__SPECKIT_COMMAND_REVISE__" in text
+        assert "concrete delta" in text

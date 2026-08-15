@@ -276,24 +276,6 @@ Then append:
 
 Omit empty subsections. Never edit or delete earlier `R#` entries.
 
-### 8. Report
-
-```text
-## Revision R{N} Applied
-
-Feature: {FEATURE_DIR}
-Spec: {SPEC}
-
-| Op | ID | Result |
-|----|----|--------|
-| add | US1/AC3 | written to spec.md |
-| remove | FR-004 | retired; T012 cancelled |
-
-Next: {command}
-
-Open revision tasks: {task ids or "none"}
-```
-
 ## Mandatory Post-Execution Hooks
 
 **You MUST complete this section before reporting completion to the user.**
@@ -330,10 +312,25 @@ Check if `.specify/extensions.yml` exists in the project root.
 
 ## Completion Report
 
-Report completion to the user with:
-- `FEATURE_DIR` / `SPEC_FILE`
-- Revision number `R{N}`
-- Added / removed / reworded IDs
+After hooks, report completion once:
+
+```text
+## Revision R{N} Applied
+
+Feature: {FEATURE_DIR}
+Spec: {SPEC}
+
+| Op | ID | Result |
+|----|----|--------|
+| add | US1/AC3 | written to spec.md |
+| remove | FR-004 | retired; T012 cancelled |
+
+Next: {command}
+
+Open revision tasks: {task ids or "none"}
+```
+
+Also include:
 - Cascade result for `plan.md` and `tasks.md`
 - Next command (`__SPECKIT_COMMAND_IMPLEMENT__`, `__SPECKIT_COMMAND_PLAN__`, or `__SPECKIT_COMMAND_TASKS__`)
 
