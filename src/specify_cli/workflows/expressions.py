@@ -476,15 +476,28 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         # way, so an ambiguous expression is reported instead of quietly
         # producing the answer the author did not ask for.
         head = segments[0].strip()
-        for _op in ("!=", "==", ">=", "<=", ">", "<", " not in ", " in ",
-                    " or ", " and "):
-            if _find_top_level(head, _op) != -1:
-                raise ValueError(
-                    f"ambiguous filter precedence in '{expr}': "
-                    f"'| {segments[1].strip()}' would apply to the result of "
-                    f"'{head}', not to an operand of '{_op.strip()}'. Filter the "
-                    f"operand in its own expression instead."
-                )
+        # Unary ``not`` is a leading prefix, not an infix token, so it has no
+        # surrounding space for the scan below to match -- it has to be checked
+        # the same way the parser itself does (``expr.startswith("not ")``).
+        # Without this, ``not inputs.missing | default(1)`` still evaluated
+        # ``not inputs.missing`` first and applied the filter to that boolean,
+        # which is the exact mis-binding this guard exists to reject.
+        # (A ``not`` that follows ``and``/``or`` is already caught by those
+        # tokens below.)
+        _ambiguous_op = "not" if head.startswith("not ") else None
+        if _ambiguous_op is None:
+            for _op in ("!=", "==", ">=", "<=", ">", "<", " not in ", " in ",
+                        " or ", " and "):
+                if _find_top_level(head, _op) != -1:
+                    _ambiguous_op = _op.strip()
+                    break
+        if _ambiguous_op is not None:
+            raise ValueError(
+                f"ambiguous filter precedence in '{expr}': "
+                f"'| {segments[1].strip()}' would apply to the result of "
+                f"'{head}', not to an operand of '{_ambiguous_op}'. Filter the "
+                f"operand in its own expression instead."
+            )
         value = _evaluate_simple_expression(head, namespace)
         for segment in segments[1:]:
             value = _apply_filter(value, segment.strip(), namespace)

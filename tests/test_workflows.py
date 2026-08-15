@@ -738,6 +738,34 @@ class TestExpressions:
         with pytest.raises(ValueError, match="ambiguous filter precedence"):
             evaluate_expression("{{ inputs.a and inputs.b | default(1) }}", ctx)
 
+    def test_filter_after_a_unary_not_is_refused(self):
+        """Unary `not` mis-binds the same way and must be caught too.
+
+        `not` is a leading prefix rather than an infix token (the parser tests
+        it with `expr.startswith("not ")`), so it has no surrounding space for
+        the operator scan to match. Without an explicit check,
+        `not inputs.missing | default(1)` evaluated `not inputs.missing` first
+        and applied `default` to that boolean — a no-op — silently returning
+        True where the author meant `not 1` = False.
+        """
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"value": 0, "flag": True})
+        with pytest.raises(ValueError, match="ambiguous filter precedence"):
+            evaluate_expression("{{ not inputs.missing | default(1) }}", ctx)
+        with pytest.raises(ValueError, match="ambiguous filter precedence"):
+            evaluate_expression("{{ not inputs.value | default(1) }}", ctx)
+        # A `not` that follows and/or is already caught by that token.
+        with pytest.raises(ValueError, match="ambiguous filter precedence"):
+            evaluate_expression(
+                "{{ inputs.flag and not inputs.value | default(1) }}", ctx
+            )
+        # Plain unary `not`, with no filter, is untouched.
+        assert evaluate_expression("{{ not inputs.value }}", ctx) is True
+        assert evaluate_expression("{{ not inputs.flag }}", ctx) is False
+
     def test_plain_filters_and_chains_are_unaffected(self):
         """Only a filter mixed with an operator is refused."""
         from specify_cli.workflows.expressions import evaluate_expression
