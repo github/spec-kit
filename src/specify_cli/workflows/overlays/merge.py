@@ -230,6 +230,38 @@ def _build_attribution(
     return result
 
 
+def _winning_fate_edit(
+    edits: list[tuple[OverlayLayer, OverlayEdit]],
+) -> tuple[OverlayLayer, OverlayEdit] | None:
+    """Return the edit that decides an anchor's fate.
+
+    Normally that is simply the last edit in merge order. The exception this
+    helper exists for: when the last edit is an ``insert_*``, the same overlay
+    may *also* have declared a ``replace`` on the anchor earlier in the file.
+    Declaration order inside one overlay is not a precedence signal -- priority
+    is a per-overlay property -- so the trailing insert must not cancel that
+    overlay's own replacement, which previously reverted the anchor to the base
+    step and discarded the replacement silently.
+
+    A ``replace`` leaves the anchor in place, so both edits can be honoured.
+    ``remove`` is deliberately NOT rescued here: it destroys the anchor, so an
+    insert relative to it cannot also apply, and choosing between them is a
+    separate question. That combination keeps its existing behaviour.
+
+    Returns ``None`` only when there are no edits.
+    """
+    if not edits:
+        return None
+    winning_layer, last_edit = edits[-1]
+    if last_edit.operation not in ("insert_after", "insert_before"):
+        return edits[-1]
+    replacement: tuple[OverlayLayer, OverlayEdit] | None = None
+    for layer, edit in edits:
+        if layer is winning_layer and edit.operation == "replace":
+            replacement = (layer, edit)
+    return replacement if replacement is not None else edits[-1]
+
+
 def _traverse_and_apply(
     steps: list[dict[str, Any]],
     edits_by_anchor: dict[str, list[tuple[OverlayLayer, OverlayEdit]]],
@@ -255,7 +287,8 @@ def _traverse_and_apply(
 
         step_id = step.get("id")
         edits = edits_by_anchor.get(step_id, []) if isinstance(step_id, str) else []
-        winning_edit = edits[-1][1] if edits else None
+        fate = _winning_fate_edit(edits)
+        winning_edit = fate[1] if fate is not None else None
 
         if winning_edit is not None and winning_edit.operation == "remove":
             # Winning edit removes this step; ignore all other edits on this anchor.
@@ -274,7 +307,7 @@ def _traverse_and_apply(
                 result.append(new_step)
 
         if winning_edit is not None and winning_edit.operation == "replace":
-            winning_layer = edits[-1][0]
+            winning_layer = fate[0]
             new_step = copy.deepcopy(winning_edit.step)
             _remove_sources_recursively(step, sources)
             _record_sources_recursively(new_step, winning_layer.source, sources)
@@ -352,10 +385,20 @@ def merge_steps(
     # the ancestor edit replaces or removes its subtree — those produce
     # order-dependent results.  Pure insert edits on an ancestor are safe because
     # the ancestor step (and its descendants) remain intact.
-    anchor_winning_ops = {
-        anchor: anchor_edits[-1][1].operation
-        for anchor, anchor_edits in edits_by_anchor.items()
-    }
+    # Must agree with ``_traverse_and_apply``: use the same fate rule, or the
+    # conflict guard stops firing for a subtree that is in fact replaced.
+    # Every anchor stays in the mapping even when its fate is a pure insert --
+    # ``_check_anchor_conflicts`` reads the key set to find *descendant*
+    # anchors, so dropping insert-only anchors would stop conflicts being
+    # detected against them.
+    anchor_winning_ops = {}
+    for anchor, anchor_edits in edits_by_anchor.items():
+        anchor_fate = _winning_fate_edit(anchor_edits)
+        anchor_winning_ops[anchor] = (
+            anchor_fate[1].operation
+            if anchor_fate is not None
+            else anchor_edits[-1][1].operation
+        )
     anchor_conflicts = _check_anchor_conflicts(anchor_winning_ops, base_steps)
     if anchor_conflicts:
         raise ValueError(
