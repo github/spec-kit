@@ -2017,6 +2017,7 @@ def _safe_write_json(dst: Path, data: dict) -> None:
     fd, tmp = tempfile.mkstemp(
         dir=str(dst.parent), prefix=f".{dst.name}.", suffix=".tmp"
     )
+    os.chmod(tmp, 0o644)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
