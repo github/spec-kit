@@ -18,6 +18,7 @@ ALWAYS_SLASH_AGENTS: frozenset[str] = frozenset({"devin", "droid", "grok", "trae
 CONDITIONAL_SLASH_AGENTS: frozenset[str] = frozenset(
     {
         "agy",
+        "alquimia",
         "bob",
         "claude",
         "copilot",

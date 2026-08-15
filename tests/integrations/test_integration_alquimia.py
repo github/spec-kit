@@ -37,6 +37,36 @@ class TestAlquimiaAIIntegration:
         assert integration.config["requires_cli"] is True
         assert integration.multi_install_safe is True
 
+    def test_is_slash_skills_agent(self):
+        """Alquimia installs `.alquimia/skills/speckit-<name>/SKILL.md`, so the
+        invocation helper must report the hyphenated form when skills are on.
+
+        It was the only `SkillsIntegration` subclass absent from every set in
+        `_invocation_style`, so `is_slash_skills_agent` returned False and the
+        two callers that consult it — `HookExecutor._render_hook_invocation`
+        and `specify init`'s Next Steps panel — emitted the dotted
+        `/speckit.<name>` form Alquimia never registers.
+        """
+        from specify_cli._invocation_style import is_slash_skills_agent
+
+        assert is_slash_skills_agent("alquimia", True) is True
+        # Conditional, not always: with skills disabled the dotted form is
+        # correct, which is what distinguishes this from an ALWAYS_SLASH agent.
+        assert is_slash_skills_agent("alquimia", False) is False
+
+    def test_build_command_invocation_matches_the_invocation_helper(self):
+        """The integration's own renderer and the helper must agree.
+
+        `SkillsIntegration.build_command_invocation` already returned
+        `/speckit-plan`; only the helper disagreed, which is why the two
+        outputs diverged for the same on-disk layout.
+        """
+        from specify_cli._invocation_style import is_slash_skills_agent
+
+        integration = get_integration("alquimia")
+        assert integration.build_command_invocation("plan") == "/speckit-plan"
+        assert is_slash_skills_agent("alquimia", True) is True
+
     def test_build_exec_args_uses_headless_prompt_flag(self):
         """Workflow dispatch relies on the inherited
         ``SkillsIntegration.build_exec_args()`` — pin its argv shape so a
