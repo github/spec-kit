@@ -8102,6 +8102,67 @@ class TestWorkflowCatalog:
         assert requested_sizes
         assert not catalog.cache_dir.exists()
 
+    def test_fetch_skips_json_parse_on_oversized_response(
+        self, project_dir, monkeypatch
+    ):
+        """Regression: json.loads must never be reached when the response
+        exceeds MAX_JSON_CATALOG_BYTES — the bounded reader must reject it
+        first."""
+        from specify_cli.authentication import http as auth_http
+        from specify_cli.workflows import catalog as catalog_module
+        from specify_cli.workflows.catalog import (
+            WorkflowCatalog,
+            WorkflowCatalogEntry,
+            WorkflowCatalogError,
+        )
+
+        monkeypatch.setattr(catalog_module, "MAX_JSON_CATALOG_BYTES", 32)
+
+        class _FakeResponse:
+            def __init__(self):
+                self.body = b"x" * 64
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def geturl(self):
+                return "https://example.com/catalog.json"
+
+            def read(self, size=-1):
+                return self.body[:size]
+
+        monkeypatch.setattr(
+            auth_http,
+            "open_url",
+            lambda url, timeout=30, redirect_validator=None: _FakeResponse(),
+        )
+
+        json_loads_called = False
+        original_json_loads = json.loads
+
+        def _tracking_json_loads(*args, **kwargs):
+            nonlocal json_loads_called
+            json_loads_called = True
+            return original_json_loads(*args, **kwargs)
+
+        monkeypatch.setattr(json, "loads", _tracking_json_loads)
+
+        catalog = WorkflowCatalog(project_dir)
+        entry = WorkflowCatalogEntry(
+            url="https://example.com/catalog.json",
+            name="test",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with pytest.raises(WorkflowCatalogError, match="exceeds maximum size"):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+
+        assert not json_loads_called, "json.loads was called despite oversized response"
+
     def test_add_catalog(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog
 
@@ -8800,6 +8861,67 @@ class TestStepCatalog:
 
         assert requested_sizes
         assert not catalog.cache_dir.exists()
+
+    def test_fetch_skips_json_parse_on_oversized_response(
+        self, project_dir, monkeypatch
+    ):
+        """Regression: json.loads must never be reached when the response
+        exceeds MAX_JSON_CATALOG_BYTES — the bounded reader must reject it
+        first."""
+        from specify_cli.authentication import http as auth_http
+        from specify_cli.workflows import catalog as catalog_module
+        from specify_cli.workflows.catalog import (
+            StepCatalog,
+            StepCatalogEntry,
+            StepCatalogError,
+        )
+
+        monkeypatch.setattr(catalog_module, "MAX_JSON_CATALOG_BYTES", 32)
+
+        class _FakeResponse:
+            def __init__(self):
+                self.body = b"x" * 64
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def geturl(self):
+                return "https://example.com/steps.json"
+
+            def read(self, size=-1):
+                return self.body[:size]
+
+        monkeypatch.setattr(
+            auth_http,
+            "open_url",
+            lambda url, timeout=30, redirect_validator=None: _FakeResponse(),
+        )
+
+        json_loads_called = False
+        original_json_loads = json.loads
+
+        def _tracking_json_loads(*args, **kwargs):
+            nonlocal json_loads_called
+            json_loads_called = True
+            return original_json_loads(*args, **kwargs)
+
+        monkeypatch.setattr(json, "loads", _tracking_json_loads)
+
+        catalog = StepCatalog(project_dir)
+        entry = StepCatalogEntry(
+            url="https://example.com/steps.json",
+            name="test",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with pytest.raises(StepCatalogError, match="exceeds maximum size"):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+
+        assert not json_loads_called, "json.loads was called despite oversized response"
 
     def test_add_catalog(self, project_dir):
         from specify_cli.workflows.catalog import StepCatalog
