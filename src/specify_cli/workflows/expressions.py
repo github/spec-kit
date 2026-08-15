@@ -366,25 +366,6 @@ def _find_top_level(text: str, token: str) -> int:
     return -1
 
 
-def _has_top_level_comma(text: str) -> bool:
-    """True when *text* has a comma outside any quoted span.
-
-    Every filter in this subset takes exactly one argument, but that argument may
-    itself contain a comma -- ``join(", ")`` and ``default("a, b")`` are both
-    valid -- so the check has to be quote-aware rather than a plain ``split``.
-    """
-    quote = ""
-    for ch in text:
-        if quote:
-            if ch == quote:
-                quote = ""
-        elif ch in ("'", '"'):
-            quote = ch
-        elif ch == ",":
-            return True
-    return False
-
-
 def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> Any:
     """Apply a single pipe filter segment to *value*.
 
@@ -426,8 +407,14 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
     # None (silently wrong) and ``join(",", "extra")`` raise a message blaming
     # the separator rather than the extra argument. Fall through to the
     # unsupported-form error below instead, which names the filter and lists
-    # the accepted forms. The check is quote-aware so ``join(", ")`` still works.
-    if filter_match and _has_top_level_comma(filter_match.group(2)):
+    # the accepted forms.
+    #
+    # Use ``_find_top_level``, the same scanner the operator splitting uses: it
+    # skips commas inside quotes AND inside nested brackets, so a single
+    # argument that happens to contain a comma still works -- ``join(", ")``,
+    # ``default("a, b")``, and the list/dict literals the evaluator supports
+    # (``default([1, 2])``, ``default({"a": 1, "b": 2})``).
+    if filter_match and _find_top_level(filter_match.group(2), ",") != -1:
         filter_match = None
     if filter_match:
         fname = filter_match.group(1)
