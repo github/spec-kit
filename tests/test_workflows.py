@@ -765,6 +765,17 @@ class TestExpressions:
         ) == [1, 2]
         assert evaluate_expression("{{ inputs.missing | default([]) }}", ctx) == []
 
+    def test_multi_argument_after_a_literal_is_still_rejected(self):
+        """A real second argument is rejected even when the first is a literal."""
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        with pytest.raises(ValueError, match="unsupported form"):
+            evaluate_expression(
+                "{{ inputs.missing | default([1,2], 3) }}", StepContext(inputs={})
+            )
+
     def test_filter_on_a_comparison_operand_is_refused(self):
         """A filter mixed with a comparison must be reported, not guessed at.
 
