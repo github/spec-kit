@@ -16,104 +16,99 @@ scripts:
   py: scripts/python/check_prerequisites.py --json --paths-only
 ---
 
-# Revise Current Spec
+The user is changing the **current** feature spec — not starting a new one.
 
-Apply a **requirement delta** to the **current** feature. Edit `spec.md` in place. Cascade `plan.md` / `tasks.md` only if they exist.
+Edit `spec.md` in place. Patch `plan.md` and `tasks.md` only if they already exist. Do not write application code; leave that to `__SPECKIT_COMMAND_IMPLEMENT__`.
 
-Not `__SPECKIT_COMMAND_SPECIFY__` (new feature folder). Not `__SPECKIT_COMMAND_CONVERGE__` (code lagged an unchanged spec).
+This is not `__SPECKIT_COMMAND_SPECIFY__` (that opens a new `specs/` folder). It is not `__SPECKIT_COMMAND_CONVERGE__` (that assumes the spec is stable and the code lagged).
 
-## User Input
+## Input
 
 ```text
 $ARGUMENTS
 ```
 
-You **MUST** use the input if not empty. Empty → ask (interactive) or stop (automated). Do not invent a delta. New product (different user + outcome, no shared stories) → stop; recommend `__SPECKIT_COMMAND_SPECIFY__`.
+Use it if it isn't empty. If it is empty, ask what changed (or stop if nobody is there). Don't invent a delta.
 
-## Hook protocol
+If they described a new product — different user, different outcome, no shared stories — stop and point them at `__SPECKIT_COMMAND_SPECIFY__`.
 
-Use for `hooks.before_revise` (now) and `hooks.after_revise` (after writes, before the Completion Report).
+## Before you start (and again after you write)
 
-If `.specify/extensions.yml` is missing or unreadable, skip. Read that event key. Skip `enabled: false`. Skip hooks with a non-empty `condition` (leave those to HookExecutor). No `enabled` → enabled.
+If `.specify/extensions.yml` exists, run hooks for `hooks.before_revise` now, and `hooks.after_revise` after the files are written, before you report.
 
-- **Mandatory** (`optional: false`): emit and **run** the hook (skills-mode invocation may differ from `{command}`):
+Skip the file if it's missing or invalid. Skip any hook with `enabled: false`. Skip a hook that has a `condition` (don't evaluate it). Missing `enabled` means on.
 
-  ```text
-  ## Extension Hooks
-  **Automatic Pre-Hook**: {extension}
-  Executing: `/{command}`
-  EXECUTE_COMMAND: {command}
-  ```
+Mandatory hook (`optional: false`) — print this and **actually run** it. Skills-mode names may differ from `{command}`. Waiting on the block alone is not enough.
 
-  Wait for it. Emitting the block is not enough.
+```text
+## Extension Hooks
+**Automatic Pre-Hook**: {extension}
+Executing: `/{command}`
+EXECUTE_COMMAND: {command}
+```
 
-- **Optional** (`optional: true`):
+Optional hook (`optional: true`):
 
-  ```text
-  ## Extension Hooks
-  **Optional Pre-Hook**: {extension}
-  Command: `/{command}`
-  Description: {description}
-  Prompt: {prompt}
-  To execute: `/{command}`
-  ```
+```text
+## Extension Hooks
+**Optional Pre-Hook**: {extension}
+Command: `/{command}`
+Description: {description}
+Prompt: {prompt}
+To execute: `/{command}`
+```
 
-After writes, the same protocol uses **Automatic Hook** / **Optional Hook** labels (not Pre-Hook).
+After the write, use **Automatic Hook** / **Optional Hook** (drop "Pre-").
 
-## Rules
+## How to think about it
 
-| | |
-|---|---|
-| Folder | Same `FEATURE_DIR`. Do **not** create a new `specs/` folder, branch, or spec file. |
-| **NO APPLICATION CODE** | No product source. Implement/cleanup is `__SPECKIT_COMMAND_IMPLEMENT__`. |
-| **STABLE IDS** | Never renumber live IDs. Never reuse a retired/superseded ID. Next ID = max ever issued (include log + marked lines). |
-| Contract | `spec.md` is the only current contract. Functional only (no stack/APIs/paths). |
-| Log | `revisions.md` is a **dated log**, not a spec. IDs + one sentence. No AC prose. |
-| Live vs dead | Unmarked lines are live. `SUPERSEDED` / `RETIRED` stay visible but are not current. Never two **live** items that contradict. |
-| Constitution | Reject `add`/`supersede` that violate a `MUST`. Skip if constitution is an unfilled template. |
-| Plan/tasks | Patch only. Do not regenerate. Do not delete or uncheck completed tasks. |
+Stay in this feature directory. Do **not** create a new `specs/` folder.
 
-**Ops:** `add` | `reword` | `supersede` | `remove`
+`spec.md` is the contract. Only unmarked lines are live. Keep `SUPERSEDED` / `RETIRED` lines so people can see what changed, but don't treat them as current. Never leave two live items that contradict.
 
-- Same wording, tighter → `reword` (keep ID).
-- New behavior contradicts a live item, or swap ("SSO instead of password") → `supersede`: mark old `SUPERSEDED by {new-id} (R{N})`, **add** new ID.
-- Drop, no replacement → `remove`: mark `RETIRED (R{N})`, do not delete the line.
-- Named ID wins. Else unique live match. Ambiguous → ask or stop. New AC → named story, or the one story that fits.
+`revisions.md` is a dated log, not a spec. One sentence and IDs. No copied AC text.
 
-**DUPLICATES ARE A NO-OP** (compare to **live** `spec.md`, not the log):
+Don't renumber live IDs. Don't reuse a retired or superseded ID. The next number is one past the highest ID ever used (including struck lines and the log).
 
-- add already live / remove already dead / reword unchanged / same as latest `R#` → drop.
-- All duplicates → STOP. Report already-true items. Write nothing. Do **not** bump `R{N}`.
-- Mixed → apply only new parts; mention skips.
+Keep the spec functional — what and why, not stack or file paths.
 
-## Steps
+If a new requirement breaks a constitution `MUST`, drop that part. Ignore an unfilled constitution template.
 
-1. **Resolve.** Run `{SCRIPT}` once. Parse `FEATURE_DIR`, `FEATURE_SPEC`. Paths: `spec.md`, `plan.md`, `tasks.md`, `revisions.md`, `/memory/constitution.md`. Missing spec → `__SPECKIT_COMMAND_SPECIFY__`. Quotes: `'I'\''m Groot'`.
+Don't regenerate the plan or the whole task list. Don't delete task lines or uncheck finished work.
 
-2. **Load.** Inventory live stories/`US{n}/AC{i}`, `FR-###`, `SC-###`, edge/out-of-scope. Count issued IDs including `SUPERSEDED`/`RETIRED` and the log. Load plan headings/IDs if present; task IDs/checkboxes/phases if present (next T-id and phase). Load constitution MUST/SHOULD if real.
+## What kind of change is this?
 
-3. **Classify.** Build `Change{op, kind, target, replaces, text}`. Drop duplicates. Constitution-invalid items out; rest stay. Nothing left → stop, no writes.
+- Same idea, better wording → **reword**. Keep the ID.
+- Replaces something live ("SSO instead of password") → **supersede**. Strike the old line (`SUPERSEDED by FR-008 (R2)`) and add a new ID. Don't delete the old line.
+- Gone, nothing replaces it → **remove**. Strike it and mark `RETIRED (R2)`.
+- Brand new, no conflict → **add**. Next free ID. A new AC goes on the story they named, or the only story that fits.
 
-4. **Preview** only if user asked or a `remove` would empty a P1 story's last AC. Else continue. `N` = 1 or last `R#`+1.
+If they named `FR-004` / `US1/AC2`, use that. If the description matches exactly one live item, use that. If it's ambiguous, ask — don't guess.
 
-5. **Write `spec.md`.**
-   - `add` AC: next index on that story (holes OK). `add` FR/SC: next unused ID.
-   - `reword`: replace live text; same ID.
-   - `supersede`: keep old line, strike it, add new:
+Already true in the live spec (or the same as the last `R#`) is a duplicate. Skip it. If everything is a duplicate, stop: say so, write nothing, don't bump `R{N}`. If only part is new, do that part and mention what you skipped.
 
-     `- **FR-004** ~~password login~~ — SUPERSEDED by **FR-008** (R2)`
-   - `remove`: strike + `RETIRED (R2)`.
-   - Set `**Last Revised**: {date} (R{N})`. Do not change `**Created**`. No new sections, no checklists in the spec.
+## Do the work
 
-6. **Cascade (files that exist only).**
-   - `plan.md`: strike old (`SUPERSEDED by {new}` / `RETIRED (R{N})`); add smallest new bullet. Architecture break → do not rewrite; `needs-rebuild` → `__SPECKIT_COMMAND_PLAN__`. Missing plan → next is plan.
-   - `tasks.md`: append `## Phase {n}: Revision R{N}`. New T-ids from max+1.
-     - supersede open task: `- [ ] ~~T012~~ SUPERSEDED (R{N} → T020)` and add T020.
-     - remove open task: `- [ ] ~~T012~~ CANCELLED (R{N}: retired {id})`.
-     - completed work on old ID → one cleanup task.
-     Missing tasks → `__SPECKIT_COMMAND_TASKS__` (or plan if no plan).
+1. Run `{SCRIPT}` once. Read `FEATURE_DIR` and `FEATURE_SPEC`. You need `spec.md`. Also look at `plan.md`, `tasks.md`, `revisions.md`, and `/memory/constitution.md` if they're there. No spec → `__SPECKIT_COMMAND_SPECIFY__`. Awkward quotes: `'I'\''m Groot'`.
 
-7. **Log.** Create `revisions.md` if needed (`# Spec Revisions` + one line: spec is truth). Append only:
+2. List live stories, ACs (`US{n}/AC{i}`), FRs, SCs. Remember every ID ever issued. Note the next task id and phase if `tasks.md` exists.
+
+3. Turn the input into changes. Drop duplicates and constitution clashes. Nothing left → stop.
+
+4. Only preview if they asked, or if a remove would wipe the last AC on a P1 story. Otherwise just do it. `N` is 1, or last `R#` plus one.
+
+5. Edit `spec.md`. Holes in AC numbers are fine. Set `**Last Revised**: {today} (R{N})`. Leave `**Created**` alone.
+
+   Supersede looks like: `- **FR-004** ~~password login~~ — SUPERSEDED by **FR-008** (R2)`
+
+6. If `plan.md` exists, strike the old bullet and add a small new one. If the architecture is actually invalid, don't rewrite the plan — say `needs-rebuild` and send them to `__SPECKIT_COMMAND_PLAN__`. No plan → that's the next command.
+
+7. If `tasks.md` exists, append `## Phase {n}: Revision R{N}` with new T-ids.
+   - Open task for an old ID: `- [ ] ~~T012~~ SUPERSEDED (R{N} → T020)` and add T020. Or `CANCELLED` if nothing replaces it.
+   - Finished work for an old ID: one cleanup task.
+   - No tasks file → `__SPECKIT_COMMAND_TASKS__` (or plan first).
+
+8. Append to `revisions.md` (create it if needed: title + "spec.md is the source of truth"):
 
    ```markdown
    ## R{N} — {YYYY-MM-DD}
@@ -124,29 +119,18 @@ After writes, the same protocol uses **Automatic Hook** / **Optional Hook** labe
    - reworded: {id}
    ```
 
-   Omit empty bullets. Never edit prior `R#`. No-op → do not append.
+   Skip empty bullets. Don't edit old entries. Don't append on a no-op.
 
-8. If `checklists/requirements.md` exists, refresh pass/fail **before** after-hooks (so git commit includes it).
+9. If `checklists/requirements.md` exists, update its checkboxes before after-hooks so a git commit includes them.
 
-9. Run **after_revise** via Hook protocol.
+10. Run `hooks.after_revise`.
 
-## Completion Report
-
-Once, after hooks:
-
-```text
-## Revision R{N} Applied
-Feature: {FEATURE_DIR}
-| Op | ID | Result |
-Next: {command}
-```
-
-Next is `__SPECKIT_COMMAND_IMPLEMENT__`, `__SPECKIT_COMMAND_PLAN__`, or `__SPECKIT_COMMAND_TASKS__`. On no-op, say so and skip hooks that would commit empty work if none ran.
+Then tell them once what changed, and what to run next (`__SPECKIT_COMMAND_IMPLEMENT__`, `__SPECKIT_COMMAND_PLAN__`, or `__SPECKIT_COMMAND_TASKS__`). If it was a no-op, say that.
 
 ## Done When
 
-- [ ] Same feature dir; `spec.md` updated or explicit no-op
-- [ ] New `R{N}` only if something changed; IDs not reused
-- [ ] Dead lines marked SUPERSEDED/RETIRED; replacements added
-- [ ] Plan/tasks patched or skipped; no app code
-- [ ] Hooks run or skipped; user reported
+- [ ] Same feature folder; spec updated or you said it was already true
+- [ ] New `R{N}` only when something actually changed
+- [ ] Old lines marked SUPERSEDED/RETIRED; new IDs added; none reused
+- [ ] Plan/tasks patched or skipped; no application code
+- [ ] Hooks handled; user got a short report
