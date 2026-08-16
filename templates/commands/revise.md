@@ -172,19 +172,24 @@ If `CONSTITUTION` exists and is not an unfilled template, load `MUST` / `SHOULD`
 
 Turn the user input into a list of `Change` records. Each record has:
 
-- `op`: `add` | `remove` | `reword`
+- `op`: `add` | `remove` | `reword` | `supersede`
 - `kind`: `acceptance-scenario` | `functional-requirement` | `success-criterion` | `user-story` | `edge-case` | `scope`
 - `target`: existing ID if the user named or uniquely described one; empty for a new item
-- `text`: the new wording (add/reword) or the retired wording (remove)
+- `replaces`: old ID when `op` is `supersede`
+- `text`: the new wording (add/reword/supersede) or the retired wording (remove)
+
+Ignore inventory lines already marked `SUPERSEDED` or `RETIRED` when matching current behavior. Still count those IDs as issued so they are never reused.
 
 Resolution rules:
 
 - If the user names `FR-004`, `SC-002`, `US1`, or `US2/AC1`, use that ID.
-- If they describe behavior ("password login", "CSV export") and exactly one inventory item matches, use that item.
+- If they describe behavior ("password login", "CSV export") and exactly one **live** inventory item matches, use that item.
 - If several items match, ask (interactive) or STOP listing the candidates (automated). Do not guess.
 - Adding an AC: attach it to the user story the user named. If they did not name a story and exactly one story fits, use that. Otherwise ask / STOP.
-- Removing a whole user story also removes its ACs (each AC is its own `remove` record).
-- Reword vs remove+add: if the user is tightening wording of the same behavior, `reword` and **keep the ID**. If they are replacing behavior with different behavior, `remove` the old ID and `add` a new ID.
+- **Conflict / replacement (prefer this over silent delete):** if the new behavior **contradicts** a live item, or the user is swapping one behavior for another ("SSO instead of password"), use `supersede`: keep the old ID in place marked `SUPERSEDED by {new-id} (R{N})`, and **add** a new ID for the new text. Do not leave two live items that disagree.
+- Tightening wording of the **same** behavior → `reword` (keep the ID). Do not supersede.
+- Dropping something with **no** replacement → `remove` (mark `RETIRED (R{N})`, do not delete the line).
+- Removing a whole user story: `remove` the story and `remove` or `supersede` each of its ACs depending on whether replacements were given.
 
 Reject any `add` that conflicts with a constitution `MUST`. Leave the rest of the delta intact if some items are valid.
 
@@ -199,36 +204,48 @@ Output a compact table and wait only if the user asked to preview or if any `rem
 
 | Op | Kind | ID | Summary |
 |----|------|----|---------|
+| supersede | functional-requirement | FR-004 → FR-008 | Password login → SSO only |
 | add | acceptance-scenario | US1/AC3 | Expired session → SSO redirect |
-| remove | functional-requirement | FR-004 | Password login |
 ```
 
 `N` is 1 if `revisions.md` does not exist, otherwise one more than the highest `R#` already recorded.
 
 ### 5. Edit `spec.md`
 
-Apply every `Change` to `spec.md`:
+Apply every `Change` to `spec.md`. **Live** items are unmarked lines. `SUPERSEDED` / `RETIRED` lines stay visible but are **not** current requirements.
 
-- **add AC**: append a numbered **Given / When / Then** scenario under that story's Acceptance Scenarios. Use the next index for that story only (`US1/AC3` if AC1 and AC2 exist). Do not renumber earlier ACs.
-- **remove AC**: delete that numbered scenario from the story. Do **not** renumber the ACs that remain (a hole such as AC1, AC3 is correct). If the story now has zero ACs, keep the story and add an HTML comment `<!-- no remaining acceptance scenarios; see revisions.md R{N} -->` so the gap is visible.
+- **add AC**: append a numbered **Given / When / Then** under that story. Next index for that story only. Do not renumber earlier ACs (holes are correct).
 - **add FR / SC**: append with the next unused ID.
-- **remove FR / SC / story / edge case**: delete the item from the active spec.
-- **reword**: replace the text; keep the ID and position.
+- **reword**: replace the live text; keep the ID and position. Do not add a sibling ID.
+- **supersede**: do **not** delete the old line. Strike it and point at the new ID, then add the new item next to it (or at the end of that section):
+
+  ```markdown
+  - **FR-004** ~~Users MUST sign in with email and password~~ — SUPERSEDED by **FR-008** (R2)
+  - **FR-008**: Users MUST sign in with company SSO only
+  ```
+
+  Same pattern for ACs (`US1/AC2` → `US1/AC4`) and SCs (`SC-001` → `SC-005`).
+- **remove** (no replacement): do **not** delete the line. Strike it and mark retired:
+
+  ```markdown
+  - **SC-003** ~~90% first-attempt success~~ — RETIRED (R2)
+  ```
 
 Also:
 
 - Set or update `**Last Revised**: {today's date} (R{N})` near the spec header. Do not change `**Created**`.
 - If `**Status**` is `Draft` and a plan already exists, leave Status as-is unless the spec had a custom status; do not invent a new status vocabulary.
-- Keep the spec's existing section structure. Do not add a "changelog" section inside `spec.md` — that belongs in `revisions.md`.
+- Keep the spec's existing section structure. Do not add a changelog section — `revisions.md` stays the small dated log.
 - Do not embed implementation checklists in the spec.
+- Never leave two **live** items that contradict each other.
 
 ### 6. Cascade to plan and tasks (only if those files exist)
 
 **`plan.md` present:**
 
-- Remove or strike bullets that exist only to serve a `remove` target.
-- Add the smallest possible bullets for each `add` that the plan must acknowledge (data, flow, or constraint — still no new stack unless the user asked for a technical change).
-- If the delta cannot be expressed as a small patch (for example it invalidates the chosen architecture), do **not** rewrite the plan. Record `plan_status: needs-rebuild` in the revision entry and tell the user to run `__SPECKIT_COMMAND_PLAN__`.
+- For `supersede` / `remove`: strike the old bullet in place and mark `SUPERSEDED by {new}` or `RETIRED (R{N})`. Do not delete it.
+- For `add` / `supersede`: add the smallest new bullet the plan must acknowledge (data, flow, or constraint — still no new stack unless the user asked for a technical change).
+- If the delta cannot be expressed as a small patch (for example it invalidates the chosen architecture), do **not** rewrite the plan. Record `plan_status: needs-rebuild` and tell the user to run `__SPECKIT_COMMAND_PLAN__`.
 
 **`plan.md` absent:** skip. Next step after this command is `__SPECKIT_COMMAND_PLAN__`.
 
@@ -244,15 +261,22 @@ Also:
   - [ ] T{next} [US{{n}}] {concrete task with file path if plan has one}
   ```
 
-  One task per added AC or FR unless two adds are the same code change. Continue task IDs from the current maximum (`T014` after `T013`). Do not reuse cancelled IDs.
+  One task per added or superseding AC/FR unless two changes are the same code change. Continue task IDs from the current maximum (`T014` after `T013`). Do not reuse cancelled or superseded IDs.
 
-- **Removals**: for each open (`- [ ]`) task that traces only to a removed ID, mark it cancelled **in place**:
+- **Supersede**: for each open (`- [ ]`) task that traces only to the old ID, mark it **in place** (do not delete, do not uncheck completed work):
 
   ```markdown
-  - [ ] ~~T012~~ CANCELLED (R{N}: removed US1/AC2)
+  - [ ] ~~T012~~ SUPERSEDED (R{N} → T020)
   ```
 
-  Do not delete the line. Do not uncheck a completed task. If a **completed** task implemented a removed AC, append one new task under the Revision phase: `Review/remove leftover behavior for {retired ID}` so implement can clean it up.
+  Add `T020` in the Revision phase for the new ID.
+- **Remove** (no replacement): mark open tasks cancelled:
+
+  ```markdown
+  - [ ] ~~T012~~ CANCELLED (R{N}: retired US1/AC2)
+  ```
+
+  If a **completed** task implemented a retired or superseded ID, append one cleanup task under the Revision phase: `Review/remove leftover behavior for {old-id}`.
 
 **`tasks.md` absent:** skip. Next step is `__SPECKIT_COMMAND_TASKS__` (or `__SPECKIT_COMMAND_PLAN__` if there is no plan either).
 
@@ -274,6 +298,7 @@ Then append **only** this small block (IDs and a one-line summary — no full AC
 {one sentence}
 
 - added: {id, id}
+- superseded: {old-id} → {new-id}
 - retired: {id, id}
 - reworded: {id, id}
 ```

@@ -99,13 +99,17 @@ Load only the minimal necessary context from each artifact:
 - Phase grouping
 - Parallel markers [P]
 - Referenced file paths
-- Cancelled tasks (`CANCELLED` / struck-through IDs) — exclude them from coverage gaps
+- Cancelled or superseded tasks (`CANCELLED` / `SUPERSEDED` / struck-through IDs) — exclude them from coverage gaps
+
+**From spec.md (current contract):**
+
+- Only **live** FRs, ACs, and SCs count. Lines marked `SUPERSEDED` or `RETIRED` (usually struck through) are historical. Do not require tasks or plan coverage for them.
 
 **From revisions.md (if present):**
 
 - This file is a **dated log only**, not a spec. Ignore summaries except for ID lists.
-- Collect retired IDs (`retired:` / removed). Treat those IDs as **historical**.
-- Current requirements come only from `spec.md`.
+- Collect `superseded:` and `retired:` IDs as historical.
+- Current requirements come only from **live** lines in `spec.md`.
 
 **From constitution:**
 

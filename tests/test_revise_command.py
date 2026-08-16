@@ -109,11 +109,17 @@ class TestReviseInvariants:
 
     def test_handles_add_and_remove_acceptance_criteria(self):
         assert "**add AC**" in self.text
-        assert "**remove AC**" in self.text
+        assert "**remove**" in self.text
+        assert "RETIRED" in self.text
 
     def test_cancels_open_tasks_instead_of_deleting_them(self):
         assert "CANCELLED" in self.text
-        assert "Do not delete the line" in self.text
+        assert "SUPERSEDED" in self.text
+
+    def test_supersede_marks_old_and_adds_new(self):
+        assert "op`: `add` | `remove` | `reword` | `supersede`" in self.text
+        assert "SUPERSEDED by" in self.text
+        assert "two **live** items that contradict" in self.text
 
     def test_does_not_write_application_code(self):
         assert "NO APPLICATION CODE" in self.text
@@ -136,6 +142,7 @@ class TestCascadeContracts:
     def test_implement_skips_cancelled_tasks(self):
         text = (COMMANDS / "implement.md").read_text(encoding="utf-8")
         assert "CANCELLED" in text
+        assert "SUPERSEDED" in text
         assert "not executable" in text
 
     def test_taskstoissues_skips_cancelled_tasks(self):

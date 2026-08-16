@@ -145,11 +145,11 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Task dependencies**: Sequential vs parallel execution rules
    - **Task details**: ID, description, file paths, parallel markers [P]
    - **Execution flow**: Order and dependency requirements
-   - **Cancelled tasks**: A task line is cancelled if it contains `CANCELLED` or a struck-through task ID (`~~T012~~`). Treat cancelled tasks as **not executable**, even when the checkbox is still `- [ ]`. Do not implement them, do not mark them `[X]`, and do not count them as remaining work.
+   - **Cancelled or superseded tasks**: A task line is not executable if it contains `CANCELLED`, `SUPERSEDED`, or a struck-through task ID (`~~T012~~`), even when the checkbox is still `- [ ]`. Do not implement them, do not mark them `[X]`, and do not count them as remaining work.
 
 6. Execute implementation following the task plan:
-   - **Skip cancelled tasks**: never execute a cancelled line
-   - **Revision phases**: after earlier open (non-cancelled) work, prefer the latest `Phase N: Revision R#` plus any cleanup tasks it added
+   - **Skip cancelled/superseded tasks**: never execute those lines; do the replacement task (`T020` in `SUPERSEDED (R2 → T020)`) instead
+   - **Revision phases**: after earlier open (live) work, prefer the latest `Phase N: Revision R#` plus any cleanup tasks it added
    - **Phase-by-phase execution**: Complete each phase before moving to the next
    - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together
    - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks
@@ -172,9 +172,9 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **IMPORTANT** For completed tasks, make sure to mark the task off as [X] in the tasks file.
 
 9. Completion validation:
-   - Verify all required **non-cancelled** tasks are completed
-   - Ignore cancelled tasks when deciding whether work remains
-   - Check that implemented features match the current specification (retired IDs in `revisions.md` are not required)
+   - Verify all required **live** tasks are completed
+   - Ignore `CANCELLED` / `SUPERSEDED` tasks when deciding whether work remains
+   - Check that implemented features match **live** items in `spec.md` (struck `SUPERSEDED` / `RETIRED` lines are not required)
    - Validate that tests pass and coverage meets requirements
    - Confirm the implementation follows the technical plan
 
@@ -220,7 +220,7 @@ Report final status with summary of completed work.
 
 ## Done When
 
-- [ ] All non-cancelled tasks in tasks.md completed and marked `[X]`
+- [ ] All live (non-cancelled, non-superseded) tasks in tasks.md completed and marked `[X]`
 - [ ] Implementation validated against specification, plan, and test coverage
 - [ ] Extension hooks dispatched or skipped according to the rules in Mandatory Post-Execution Hooks above
 - [ ] Completion reported to user with summary of completed work
