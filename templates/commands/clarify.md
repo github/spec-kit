@@ -205,7 +205,7 @@ Execution steps:
    - Clarifications session contains exactly one bullet per accepted answer (no duplicates).
    - Total asked (accepted) questions ≤ 5.
    - Updated sections contain no lingering vague placeholders the new answer was meant to resolve.
-   - No contradictory earlier statement remains (scan for now-invalid alternative choices removed).
+   - No contradictory earlier statement remains (scan for now-invalid alternative choices removed). If `revisions.md` / `plan.md` / `tasks.md` exist, do not remove the old live line to satisfy this check — recommend `__SPECKIT_COMMAND_REVISE__` instead.
    - Markdown structure valid; only allowed new headings: `## Clarifications`, `### Session YYYY-MM-DD`.
    - Terminology consistency: same canonical term used across all updated sections.
 

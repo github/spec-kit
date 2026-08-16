@@ -257,6 +257,7 @@ class TestCascadeContracts:
         assert "concrete delta" in text
         assert "do **not** replace or delete live FR/AC/SC lines" in text
         assert "do **not** drop `SUPERSEDED` / `RETIRED` history" in text
+        assert "do not remove the old live line" in text
 
     def test_checklist_inventories_only_live_ids(self):
         text = (COMMANDS / "checklist.md").read_text(encoding="utf-8")
