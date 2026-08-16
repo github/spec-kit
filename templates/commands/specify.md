@@ -18,6 +18,8 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+If a current feature already exists (`.specify/feature.json` or an active `spec.md`) and the user stated a **concrete delta** (add, remove, or reword a named AC, FR, story, or success criterion) on that spec, do **not** create another directory and do **not** run `before_specify` hooks. Recommend `__SPECKIT_COMMAND_REVISE__` and stop. A genuinely new product (different user, different outcome, no shared stories) continues below.
+
 ## Pre-Execution Checks
 
 **Check for extension hooks (before specification)**:

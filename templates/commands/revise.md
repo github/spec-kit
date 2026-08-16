@@ -6,7 +6,7 @@ handoffs:
     prompt: Implement only the new and cleanup tasks from the latest revision phase
   - label: Create Tasks
     agent: speckit.tasks
-    prompt: Create tasks from the revised spec and plan
+    prompt: Only if tasks.md does not exist. Never regenerate an existing task list — revise already appended a Revision phase.
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json --paths-only
   ps: scripts/powershell/check-prerequisites.ps1 -Json -PathsOnly
@@ -73,9 +73,9 @@ Spec stays functional (what/why, not stack). Drop anything that violates a const
 
 ## Already implemented?
 
-Treat implementation as done if any task is `[x]` / `[X]`, or they said they already shipped. Then plan and tasks must cover **new code** and **removing old code** — not just "the spec now says X".
+An ID is implemented only if a task that **references that ID** is `[x]` / `[X]`, or they said that behavior already shipped. A checked setup or foundational task does **not** mean later stories shipped. Any `[x]` on the feature is only a hint that *some* code exists — not a blanket remove-code trigger.
 
-| Change | Spec | If not implemented yet | If already implemented |
+| Change | Spec | If that ID is not implemented yet | If that ID is already implemented |
 |---|---|---|---|
 | New requirement | Add a new ID | Plan + tasks to **build** it | Same: plan + tasks to **add** the new code |
 | Replaces a live item | SUPERSEDE old, add new ID | Plan + tasks for the new behavior; cancel open tasks for the old ID | Plan + tasks to **add** new code **and remove** the old code |
@@ -95,9 +95,9 @@ Already true on a **live** line (or same as last `R#`) is a duplicate. Skip it. 
 
 ## Do the work
 
-1. Run `{SCRIPT}` once. Need `spec.md`. Also read `plan.md`, `tasks.md`, `revisions.md`, constitution if present. No spec → `__SPECKIT_COMMAND_SPECIFY__`. Quotes: `'I'\''m Groot'`.
+1. Run `{SCRIPT}` once. Need `spec.md`. Also read `plan.md`, `tasks.md`, `revisions.md`, `constitution.md` if present. No spec → `__SPECKIT_COMMAND_SPECIFY__`. Quotes: `'I'\''m Groot'`.
 
-2. List live stories, ACs, FRs, SCs. Remember every ID ever issued. If `tasks.md` exists, note next T-id, next phase, and whether anything is already `[x]`.
+2. List live stories, ACs, FRs, SCs. Remember every ID ever issued. If `tasks.md` exists, note next T-id, next phase, and which IDs already have a referencing task marked `[x]`.
 
 3. Turn the input into add / reword / supersede / remove. Drop duplicates and constitution clashes. Nothing left → stop.
 
@@ -112,19 +112,19 @@ Already true on a **live** line (or same as last `R#`) is a duplicate. Skip it. 
 
 6. **plan.md — only if it exists. Never regenerate.**
    - New / supersede: a short bullet for **adding** the new behavior.
-   - Supersede or retire **and already implemented**: a short bullet for **removing** the old behavior (what to delete, not a new architecture).
-   - Supersede or retire **and not implemented**: no remove-code bullet; just stop planning the old thing.
+   - Supersede or retire **and that old ID is implemented**: a short bullet for **removing** the old behavior (what to delete, not a new architecture).
+   - Supersede or retire **and that old ID is not implemented**: no remove-code bullet; just stop planning the old thing.
    - Strike the old plan bullet (`SUPERSEDED` / `RETIRED`). Don't delete it.
-   - Don't send them to `__SPECKIT_COMMAND_PLAN__` to rebuild. If you truly can't patch, say so in the report — still don't wipe the file.
-   - No plan yet → next command is `__SPECKIT_COMMAND_PLAN__`.
+   - Don't send them to `__SPECKIT_COMMAND_PLAN__` to rebuild. If you truly can't patch, set `plan_status: needs-rebuild` in the report — still don't wipe the file.
+   - No plan yet → `plan_status: missing`; next command is `__SPECKIT_COMMAND_PLAN__`.
 
 7. **tasks.md — only if it exists. Never regenerate. Only append.**
    - Add `## Phase {n}: Revision R{N}`.
    - New/supersede: tasks to **write the new code**.
-   - Already implemented + supersede/retire: tasks to **delete or stop using the old code**.
+   - That old ID is implemented + supersede/retire: tasks to **delete or stop using the old code**.
    - Open task for an old ID: `- [ ] ~~T012~~ SUPERSEDED (R{N} → T020)` or `CANCELLED` if nothing replaces it. Don't delete the line.
    - Finished task for an old ID: leave `[x]`; add the cleanup task in the new phase.
-   - No tasks file yet → `__SPECKIT_COMMAND_TASKS__` (or plan first). Do not invent a full task list here.
+   - No tasks file yet → `__SPECKIT_COMMAND_TASKS__` (or plan first). Do not invent a full task list here. Never hand off to tasks when `tasks.md` already exists.
 
 8. Append to `revisions.md` (create with a one-line header: spec.md is the source of truth):
 
@@ -143,7 +143,7 @@ Already true on a **live** line (or same as last `R#`) is a duplicate. Skip it. 
 
 10. Run `hooks.after_revise`.
 
-Tell them once what was marked, what was added, and whether implement should **add** code, **remove** code, or both. Next is usually `__SPECKIT_COMMAND_IMPLEMENT__` (or plan/tasks if those files are still missing).
+Tell them once what was marked, what was added, and whether implement should **add** code, **remove** code, or both. Always include `plan_status:` as one of `patched` (plan bullets added or struck), `needs-rebuild` (could not patch safely), `missing` (no `plan.md`), or `unchanged` (no-op or plan needed no edit). Next is usually `__SPECKIT_COMMAND_IMPLEMENT__` (or plan/tasks if those files are still missing).
 
 ## Done When
 

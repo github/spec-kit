@@ -11,6 +11,8 @@
 ### Changed
 
 - teach `/speckit.implement` and `/speckit.taskstoissues` to skip cancelled revision tasks
+- teach lean implement the same skip rules; refuse to regenerate `tasks.md` after a revision
+- teach `/speckit.converge` to inventory only live spec IDs and stop when revision tasks are still open
 - hook git auto-commit on `before_revise` / `after_revise`
 - document living-spec revise in evolving-specs, spec-persistence, and agentic-sdd
 

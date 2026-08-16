@@ -15,5 +15,6 @@ $ARGUMENTS
 2. **Load context**: `.specify/memory/constitution.md` and `<feature_directory>/spec.md` and `<feature_directory>/plan.md`.
 
 3. Create dependency-ordered implementation tasks and store them in `<feature_directory>/tasks.md`.
+   - If `tasks.md` already exists and has a `Revision R#` phase (or `revisions.md` is present), do **not** overwrite it. Stop and tell the user `/speckit.revise` already maintains the list.
    - Every task uses checklist format: `- [ ] [TaskID] Description with file path`
    - Organized by phase: setup, foundational, user stories in priority order, polish

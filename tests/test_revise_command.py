@@ -81,7 +81,7 @@ def test_revise_template_renders(script_type: str, monkeypatch):
     content = REVISE.read_text(encoding="utf-8")
     result = IntegrationBase.process_template(content, "agent", script_type)
     assert "{SCRIPT}" not in result
-    assert "$ARGUMENTS" in result or "{{args}}" in result or result
+    assert "$ARGUMENTS" in result or "{{args}}" in result
 
 
 class TestReviseInvariants:
@@ -125,7 +125,21 @@ class TestReviseInvariants:
 
     def test_never_rewrites_artifacts(self):
         assert "Never regenerate" in self.text or "never regenerate" in self.text.lower() or "Do **not** rewrite" in self.text
-        assert "remove the old code" in self.text or "removing old code" in self.text
+        assert "the old code" in self.text
+
+    def test_implemented_is_per_id_not_any_checked_task(self):
+        assert "references that ID" in self.text
+        assert "not a blanket remove-code trigger" in self.text
+
+    def test_reports_named_plan_status(self):
+        assert "plan_status:" in self.text
+        assert "needs-rebuild" in self.text
+        assert "patched" in self.text
+        assert "missing" in self.text
+
+    def test_tasks_handoff_refuses_to_regenerate(self):
+        assert "agent: speckit.tasks" in self.text
+        assert "Never regenerate an existing task list" in self.text
 
     def test_hands_off_to_implement_plan_or_tasks(self):
         assert "__SPECKIT_COMMAND_IMPLEMENT__" in self.text
@@ -163,10 +177,43 @@ class TestCascadeContracts:
         text = (COMMANDS / "specify.md").read_text(encoding="utf-8")
         assert "Create a new feature specification" in text
         assert "__SPECKIT_COMMAND_REVISE__" in text
+        assert "do **not** create another directory" in text
+        assert "do **not** run `before_specify` hooks" in text
 
     def test_converge_defers_to_revise_when_spec_changed(self):
         text = (COMMANDS / "converge.md").read_text(encoding="utf-8")
         assert "__SPECKIT_COMMAND_REVISE__" in text
+        assert "SUPERSEDED" in text
+        assert "RETIRED" in text
+        assert "Only **live**" in text
+        assert "Do not create keys for `SUPERSEDED` or `RETIRED` IDs" in text
+        assert "Revision R#" in text
+        assert "__SPECKIT_COMMAND_IMPLEMENT__" in text
+
+    def test_tasks_refuses_to_regenerate_after_revise(self):
+        text = (COMMANDS / "tasks.md").read_text(encoding="utf-8")
+        assert "do **not** regenerate the file" in text
+        assert "Revision R#" in text
+        assert "__SPECKIT_COMMAND_REVISE__" in text
+
+    def test_lean_implement_skips_cancelled_tasks(self):
+        text = (
+            REPO_ROOT
+            / "presets"
+            / "lean"
+            / "commands"
+            / "speckit.implement.md"
+        ).read_text(encoding="utf-8")
+        assert "CANCELLED" in text
+        assert "SUPERSEDED" in text
+        assert "not count them as remaining work" in text
+
+    def test_lean_tasks_refuses_to_overwrite_revision_list(self):
+        text = (
+            REPO_ROOT / "presets" / "lean" / "commands" / "speckit.tasks.md"
+        ).read_text(encoding="utf-8")
+        assert "do **not** overwrite it" in text
+        assert "Revision R#" in text
 
     def test_clarify_defers_known_deltas_to_revise(self):
         text = (COMMANDS / "clarify.md").read_text(encoding="utf-8")

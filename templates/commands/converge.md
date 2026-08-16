@@ -69,11 +69,13 @@ This is **not** a diff tool and does **not** track changes. It assesses the pres
 of the code relative to the feature's artifacts — no git, no branch comparison, no history.
 
 If the user just stated a requirement change (add/remove/reword an AC, FR, story, or
-success criterion), or `spec.md` has a `Last Revised` stamp and `revisions.md` is newer
-than the last implement pass, **STOP** and recommend `__SPECKIT_COMMAND_REVISE__`
-instead of converging. Converge assumes the
-**spec is stable** and the code lagged. Re-appending tasks for behavior the spec just
-retired would undo a living-spec edit.
+success criterion), **STOP** and recommend `__SPECKIT_COMMAND_REVISE__`
+instead of converging.
+
+If `tasks.md` has a `Revision R#` phase whose live (non-cancelled, non-superseded)
+tasks are still `- [ ]`, **STOP** and recommend `__SPECKIT_COMMAND_IMPLEMENT__` first.
+Converge assumes the **spec is stable** and the latest revision has been implemented.
+Re-appending tasks for behavior the spec just retired would undo a living-spec edit.
 
 ## Operating Constraints
 
@@ -115,11 +117,13 @@ Load only the minimal necessary context from each artifact:
 
 **From spec.md:**
 
-- Functional Requirements (FR-###)
-- Success Criteria (SC-###) — include only items requiring buildable work; exclude
+- Only **live** (unmarked) Functional Requirements (FR-###)
+- Only **live** Success Criteria (SC-###) — include only items requiring buildable work; exclude
   post-launch outcome metrics and business KPIs
-- User Stories and their Acceptance Scenarios
-- Edge Cases (if present)
+- Only **live** User Stories and their Acceptance Scenarios
+- Edge Cases (if present and not SUPERSEDED / RETIRED)
+- Lines marked `SUPERSEDED` or `RETIRED` (usually struck through) are historical. Do not
+  inventory them and do not append tasks to restore them.
 
 **From plan.md:**
 
@@ -127,11 +131,13 @@ Load only the minimal necessary context from each artifact:
 - Data Model references
 - Phases and named touch-points (files/components the plan says will be created or edited)
 - Technical constraints
+- Skip plan bullets marked `SUPERSEDED` or `RETIRED`
 
 **From tasks.md:**
 
 - Task IDs (to compute the next ID and next phase number)
 - Descriptions, phase grouping, and referenced file paths
+- Ignore `CANCELLED` / `SUPERSEDED` / struck-through task lines when deciding remaining work
 
 **From constitution (if not an unfilled template):**
 
@@ -141,9 +147,9 @@ Load only the minimal necessary context from each artifact:
 
 Create an internal model (do not echo raw artifacts):
 
-- **Requirements inventory**: one stable key per FR-### / SC-### / user-story acceptance
+- **Requirements inventory**: one stable key per **live** FR-### / SC-### / user-story acceptance
   scenario (e.g. `US1/AC2`), plus the plan decisions and constitution principles that
-  impose buildable obligations.
+  impose buildable obligations. Do not create keys for `SUPERSEDED` or `RETIRED` IDs.
 - **Code-scope map**: from the file paths named in `plan.md` and `tasks.md`, plus a keyword
   search for the concepts each requirement describes, derive the set of source files and
   components in scope for assessment. Bound the assessment to these — do **not** infer
