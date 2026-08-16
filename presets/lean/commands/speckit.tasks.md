@@ -16,5 +16,6 @@ $ARGUMENTS
 
 3. Create dependency-ordered implementation tasks and store them in `<feature_directory>/tasks.md`.
    - If `tasks.md` already exists and has a `Revision R#` phase (or `revisions.md` is present), do **not** overwrite it. Stop and tell the user `/speckit.revise` already maintains the list.
+   - First generation: inventory only **live** (unmarked) FRs, ACs, and SCs. Never emit tasks for `SUPERSEDED` or `RETIRED` lines.
    - Every task uses checklist format: `- [ ] [TaskID] Description with file path`
    - Organized by phase: setup, foundational, user stories in priority order, polish

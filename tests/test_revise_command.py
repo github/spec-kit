@@ -136,6 +136,8 @@ class TestReviseInvariants:
         assert "needs-rebuild" in self.text
         assert "patched" in self.text
         assert "missing" in self.text
+        assert "- plan_status:" in self.text
+        assert "Persist that same value" in self.text
 
     def test_tasks_handoff_refuses_to_regenerate(self):
         assert "agent: speckit.tasks" in self.text
@@ -145,6 +147,8 @@ class TestReviseInvariants:
         assert "__SPECKIT_COMMAND_IMPLEMENT__" in self.text
         assert "__SPECKIT_COMMAND_PLAN__" in self.text
         assert "agent: speckit.tasks" in self.text
+        assert "agent: speckit.plan" in self.text
+        assert "plan_status: needs-rebuild" in self.text
 
     def test_uses_script_placeholder(self):
         assert "{SCRIPT}" in self.text
@@ -161,6 +165,8 @@ class TestCascadeContracts:
         assert "CANCELLED" in text
         assert "SUPERSEDED" in text
         assert "not executable" in text
+        assert "only when `tasks.md` is **absent**" in text
+        assert "Do not regenerate" in text
 
     def test_taskstoissues_skips_cancelled_tasks(self):
         text = (COMMANDS / "taskstoissues.md").read_text(encoding="utf-8")
@@ -172,6 +178,9 @@ class TestCascadeContracts:
         assert "revisions.md" in text
         assert "retired" in text.lower()
         assert "__SPECKIT_COMMAND_REVISE__" in text
+        assert "Only **live**" in text
+        assert "Do not create keys for `SUPERSEDED` or `RETIRED` IDs" in text
+        assert "Skip plan bullets marked `SUPERSEDED` or `RETIRED`" in text
 
     def test_specify_is_create_not_update(self):
         text = (COMMANDS / "specify.md").read_text(encoding="utf-8")
@@ -195,6 +204,8 @@ class TestCascadeContracts:
         assert "do **not** regenerate the file" in text
         assert "Revision R#" in text
         assert "__SPECKIT_COMMAND_REVISE__" in text
+        assert "Inventory only **live**" in text
+        assert "even on first generation" in text
 
     def test_lean_implement_skips_cancelled_tasks(self):
         text = (
@@ -208,14 +219,47 @@ class TestCascadeContracts:
         assert "SUPERSEDED" in text
         assert "not count them as remaining work" in text
 
+    def test_plan_inventories_only_live_ids(self):
+        text = (COMMANDS / "plan.md").read_text(encoding="utf-8")
+        assert "SUPERSEDED" in text
+        assert "RETIRED" in text
+        assert "do not restore them" in text
+        assert "plan_status: needs-rebuild" in text
+
+    def test_lean_specify_refuses_to_overwrite_existing_spec(self):
+        text = (
+            REPO_ROOT / "presets" / "lean" / "commands" / "speckit.specify.md"
+        ).read_text(encoding="utf-8")
+        assert "/speckit.revise" in text
+        assert "Never overwrite an existing `spec.md`" in text
+        assert "do not overwrite it" in text
+
+    def test_lean_plan_skips_retired_ids(self):
+        text = (
+            REPO_ROOT / "presets" / "lean" / "commands" / "speckit.plan.md"
+        ).read_text(encoding="utf-8")
+        assert "SUPERSEDED" in text
+        assert "RETIRED" in text
+        assert "do not restore them" in text
+        assert "plan_status: needs-rebuild" in text
+
     def test_lean_tasks_refuses_to_overwrite_revision_list(self):
         text = (
             REPO_ROOT / "presets" / "lean" / "commands" / "speckit.tasks.md"
         ).read_text(encoding="utf-8")
         assert "do **not** overwrite it" in text
         assert "Revision R#" in text
+        assert "Never emit tasks for `SUPERSEDED` or `RETIRED` lines" in text
 
     def test_clarify_defers_known_deltas_to_revise(self):
         text = (COMMANDS / "clarify.md").read_text(encoding="utf-8")
         assert "__SPECKIT_COMMAND_REVISE__" in text
         assert "concrete delta" in text
+        assert "do **not** replace or delete live FR/AC/SC lines" in text
+        assert "do **not** drop `SUPERSEDED` / `RETIRED` history" in text
+
+    def test_checklist_inventories_only_live_ids(self):
+        text = (COMMANDS / "checklist.md").read_text(encoding="utf-8")
+        assert "only **live**" in text
+        assert "SUPERSEDED" in text
+        assert "__SPECKIT_COMMAND_REVISE__" in text

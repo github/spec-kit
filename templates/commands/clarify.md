@@ -59,6 +59,8 @@ Goal: Detect and reduce ambiguity or missing decision points in the active featu
 
 If the user already stated a **concrete delta** (add, remove, or reword a named AC, FR, story, or success criterion), do **not** start a clarification question loop. Recommend `__SPECKIT_COMMAND_REVISE__` and stop.
 
+If `revisions.md` exists, or `plan.md` / `tasks.md` already exist, do **not** replace or delete live FR/AC/SC lines and do **not** drop `SUPERSEDED` / `RETIRED` history. Recommend `__SPECKIT_COMMAND_REVISE__` for any add/remove/reword or anything that would invalidate an earlier requirement. You may still add a Clarifications session and tighten wording that does not change meaning.
+
 Note: This clarification workflow is expected to run (and be completed) BEFORE invoking `__SPECKIT_COMMAND_PLAN__`. If the user explicitly states they are skipping clarification (e.g., exploratory spike), you may proceed, but must warn that downstream rework risk increases.
 
 Execution steps:
@@ -194,8 +196,8 @@ Execution steps:
        - Non-functional constraint → Add/modify measurable criteria in Success Criteria > Measurable Outcomes (convert vague adjective to metric or explicit target).
        - Edge case / negative flow → Add a new bullet under Edge Cases / Error Handling (or create such subsection if template provides placeholder for it).
        - Terminology conflict → Normalize term across spec; retain original only if necessary by adding `(formerly referred to as "X")` once.
-    - If the clarification invalidates an earlier ambiguous statement, replace that statement instead of duplicating; leave no obsolete contradictory text.
-    - Save the spec file AFTER each integration to minimize risk of context loss (atomic overwrite).
+    - If the clarification invalidates an earlier ambiguous statement and there is no `revisions.md` / `plan.md` / `tasks.md` yet, replace that statement instead of duplicating. Once those exist, do **not** replace — recommend `__SPECKIT_COMMAND_REVISE__`.
+    - Save the spec file AFTER each integration to minimize risk of context loss (atomic overwrite). Do not wipe `SUPERSEDED` / `RETIRED` history.
     - Preserve formatting: do not reorder unrelated sections; keep heading hierarchy intact.
     - Keep each inserted clarification minimal and testable (avoid narrative drift).
 

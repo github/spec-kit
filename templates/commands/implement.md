@@ -178,7 +178,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Validate that tests pass and coverage meets requirements
    - Confirm the implementation follows the technical plan
 
-Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `__SPECKIT_COMMAND_TASKS__` first to regenerate the task list.
+Note: This command assumes a task list exists in `tasks.md`. Suggest `__SPECKIT_COMMAND_TASKS__` only when `tasks.md` is **absent**. If the file exists and has cancelled/superseded lines or a `Revision R#` phase, that is the current list — implement the live remainder (or tell the user to run `__SPECKIT_COMMAND_REVISE__` to add work). Do not regenerate.
 
 ## Mandatory Post-Execution Hooks
 

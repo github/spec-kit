@@ -122,7 +122,7 @@ Checks the codebase against the spec, plan, and tasks. If it finds gaps, it appe
 
 ### After shipping: `/speckit.revise` — change the current spec
 
-When requirements change on the **same** feature (add or drop an acceptance criterion, retire an FR), do **not** run `/speckit.specify` again. That opens a new feature directory. Use `/speckit.revise` instead, then analyze, implement, and converge.
+When requirements change on the **same** feature (add or drop an acceptance criterion, retire an FR), do **not** run `/speckit.specify` again. That opens a new feature directory. Use `/speckit.revise` instead. If `plan.md` or `tasks.md` is still missing, run plan then tasks. If revise reports `plan_status: needs-rebuild`, rerun `/speckit.plan`. Then analyze, implement, and converge.
 
 ```text
 /speckit.revise Remove password login. Add AC: Given an expired session, When the user submits, Then redirect to SSO

@@ -1,12 +1,15 @@
 ---
 description: "Revise the current feature spec in place (add/remove ACs, FRs, stories) and cascade the change into plan and tasks."
 handoffs:
-  - label: Implement Revision Tasks
-    agent: speckit.implement
-    prompt: Implement only the new and cleanup tasks from the latest revision phase
+  - label: Create Plan
+    agent: speckit.plan
+    prompt: Only if plan.md is missing, or the latest revisions.md entry has plan_status: needs-rebuild. Inventory only live spec IDs. Do not restore SUPERSEDED or RETIRED lines.
   - label: Create Tasks
     agent: speckit.tasks
-    prompt: Only if tasks.md does not exist. Never regenerate an existing task list — revise already appended a Revision phase.
+    prompt: Only if tasks.md does not exist. Never regenerate an existing task list — revise already appended a Revision phase. Inventory only live spec IDs.
+  - label: Implement Revision Tasks
+    agent: speckit.implement
+    prompt: Implement only the new and cleanup tasks from the latest revision phase. Skip if plan.md is missing or plan_status is needs-rebuild.
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json --paths-only
   ps: scripts/powershell/check-prerequisites.ps1 -Json -PathsOnly
@@ -115,7 +118,7 @@ Already true on a **live** line (or same as last `R#`) is a duplicate. Skip it. 
    - Supersede or retire **and that old ID is implemented**: a short bullet for **removing** the old behavior (what to delete, not a new architecture).
    - Supersede or retire **and that old ID is not implemented**: no remove-code bullet; just stop planning the old thing.
    - Strike the old plan bullet (`SUPERSEDED` / `RETIRED`). Don't delete it.
-   - Don't send them to `__SPECKIT_COMMAND_PLAN__` to rebuild. If you truly can't patch, set `plan_status: needs-rebuild` in the report — still don't wipe the file.
+   - Prefer a patch. If you truly can't patch, set `plan_status: needs-rebuild` — still don't wipe the file; next command is `__SPECKIT_COMMAND_PLAN__`.
    - No plan yet → `plan_status: missing`; next command is `__SPECKIT_COMMAND_PLAN__`.
 
 7. **tasks.md — only if it exists. Never regenerate. Only append.**
@@ -135,15 +138,18 @@ Already true on a **live** line (or same as last `R#`) is a duplicate. Skip it. 
    - superseded: {old} → {new}
    - retired: {id}
    - reworded: {id}
+   - plan_status: patched | needs-rebuild | missing | unchanged
    ```
 
-   Skip empty bullets. Don't edit old entries. Don't append on a no-op.
+   Skip empty bullets. Don't edit old entries. Don't append on a no-op. Always persist `plan_status` on a real revision so the next session can see it.
 
-9. Refresh `checklists/requirements.md` if it exists, **before** after-hooks.
+9. Refresh `checklists/requirements.md` if it exists, **before** after-hooks. Re-evaluate checkboxes against **live** spec lines only. Do not rewrite the file from scratch.
 
 10. Run `hooks.after_revise`.
 
-Tell them once what was marked, what was added, and whether implement should **add** code, **remove** code, or both. Always include `plan_status:` as one of `patched` (plan bullets added or struck), `needs-rebuild` (could not patch safely), `missing` (no `plan.md`), or `unchanged` (no-op or plan needed no edit). Next is usually `__SPECKIT_COMMAND_IMPLEMENT__` (or plan/tasks if those files are still missing).
+Tell them once what was marked, what was added, and whether implement should **add** code, **remove** code, or both. Always include `plan_status:` as one of `patched` (plan bullets added or struck), `needs-rebuild` (could not patch safely), `missing` (no `plan.md`), or `unchanged` (no-op or plan needed no edit). Persist that same value on the new `revisions.md` entry.
+
+Next command: `needs-rebuild` or `missing` → `__SPECKIT_COMMAND_PLAN__`. Then if `tasks.md` is missing → `__SPECKIT_COMMAND_TASKS__`. Otherwise `__SPECKIT_COMMAND_IMPLEMENT__`.
 
 ## Done When
 

@@ -69,10 +69,11 @@ If `tasks.md` already exists and either `revisions.md` is present or `tasks.md` 
    - **Optional**: data-model.md (entities), contracts/ (interface contracts), research.md (decisions), quickstart.md (test scenarios)
    - **IF EXISTS**: Load `/memory/constitution.md` for project principles and governance constraints
    - Note: Not all projects have all documents. Generate tasks based on what's available.
+   - Inventory only **live** (unmarked) FRs, ACs, and SCs. Never emit tasks for `SUPERSEDED` or `RETIRED` lines, even on first generation.
 
 3. **Execute task generation workflow**:
-   - Load plan.md and extract tech stack, libraries, project structure
-   - Load spec.md and extract user stories with their priorities (P1, P2, P3, etc.)
+   - Load plan.md and extract tech stack, libraries, project structure (skip `SUPERSEDED` / `RETIRED` bullets)
+   - Load spec.md and extract **live** user stories with their priorities (P1, P2, P3, etc.)
    - If data-model.md exists: Extract entities and map to user stories
    - If contracts/ exists: Map interface contracts to user stories
    - If research.md exists: Extract decisions for setup tasks

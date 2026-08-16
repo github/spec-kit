@@ -49,8 +49,8 @@ bring `plan.md` and `tasks.md` in line with that contract:
    Do **not** run `/speckit.specify` (that opens a new feature directory) and do
    not use `/speckit.clarify` for a delta you already know — clarify only fills
    pre-plan gaps by asking questions.
-3. If revise reports `plan_status: needs-rebuild`, rerun `/speckit.plan`.
-   Otherwise keep the patched plan.
+3. If the latest `revisions.md` entry has `plan_status: needs-rebuild`, rerun
+   `/speckit.plan`. Otherwise keep the patched plan.
 4. Do not rerun `/speckit.tasks` unless there is no `tasks.md` yet. Revise
    appends a `Revision R#` phase and cancels open tasks that only served a
    retired ID.

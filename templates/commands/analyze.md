@@ -80,10 +80,11 @@ Load only the minimal necessary context from each artifact:
 **From spec.md:**
 
 - Overview/Context
-- Functional Requirements
-- Success Criteria (measurable outcomes — e.g., performance, security, availability, user success, business impact)
-- User Stories
-- Edge Cases (if present)
+- Only **live** (unmarked) Functional Requirements
+- Only **live** Success Criteria (measurable outcomes — e.g., performance, security, availability, user success, business impact)
+- Only **live** User Stories
+- Edge Cases (if present and not SUPERSEDED / RETIRED)
+- Lines marked `SUPERSEDED` or `RETIRED` (usually struck through) are historical. Do not inventory them.
 
 **From plan.md:**
 
@@ -91,6 +92,7 @@ Load only the minimal necessary context from each artifact:
 - Data Model references
 - Phases
 - Technical constraints
+- Skip plan bullets marked `SUPERSEDED` or `RETIRED`. Only flag a retired ID as in-scope when a **live** (unmarked) plan bullet or live task still requires it.
 
 **From tasks.md:**
 
@@ -119,7 +121,7 @@ Load only the minimal necessary context from each artifact:
 
 Create internal representations (do not include raw artifacts in output):
 
-- **Requirements inventory**: For each Functional Requirement (FR-###) and Success Criterion (SC-###), record a stable key. Use the explicit FR-/SC- identifier as the primary key when present, and optionally also derive an imperative-phrase slug for readability (e.g., "User can upload file" → `user-can-upload-file`). Include only Success Criteria items that require buildable work (e.g., load-testing infrastructure, security audit tooling), and exclude post-launch outcome metrics and business KPIs (e.g., "Reduce support tickets by 50%").
+- **Requirements inventory**: For each **live** (unmarked) Functional Requirement (FR-###) and Success Criterion (SC-###), record a stable key. Do not create keys for `SUPERSEDED` or `RETIRED` IDs. Use the explicit FR-/SC- identifier as the primary key when present, and optionally also derive an imperative-phrase slug for readability (e.g., "User can upload file" → `user-can-upload-file`). Include only Success Criteria items that require buildable work (e.g., load-testing infrastructure, security audit tooling), and exclude post-launch outcome metrics and business KPIs (e.g., "Reduce support tickets by 50%").
 - **User story/action inventory**: Discrete user actions with acceptance criteria
 - **Task coverage mapping**: Map each task to one or more requirements or stories (inference by keyword / explicit reference patterns like IDs or key phrases)
 - **Constitution rule set**: Extract principle names and MUST/SHOULD normative statements
