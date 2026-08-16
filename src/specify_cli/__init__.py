@@ -367,7 +367,7 @@ def _print_cli_warning(
 # Constants kept for backward compatibility with presets and extensions.
 DEFAULT_SKILLS_DIR = ".agents/skills"
 SKILL_DESCRIPTIONS = {
-    "specify": "Create a new feature specification from a natural language description.",
+    "specify": "Create or update feature specifications from natural language descriptions.",
     "plan": "Generate technical implementation plans from feature specifications.",
     "tasks": "Break down implementation plans into actionable task lists.",
     "implement": "Execute all tasks from the task breakdown to build the feature.",

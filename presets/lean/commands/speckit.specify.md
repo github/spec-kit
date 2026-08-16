@@ -10,7 +10,7 @@ $ARGUMENTS
 
 ## Outline
 
-If `.specify/feature.json` or the named directory already has a `spec.md` and the user stated a **concrete delta** (add, remove, or reword a named AC, FR, story, or success criterion), do **not** write anything. Recommend `/speckit.revise` and stop. Never overwrite an existing `spec.md`.
+If `plan.md`, `tasks.md`, or implementation already exist and the user stated a **concrete delta** (add, remove, or reword a named AC, FR, SC, or story), recommend `/speckit.revise` and stop. If only `spec.md` exists, this command may **update** it.
 
 1. **Ask the user** for the feature directory path (e.g., `specs/my-feature`). Do not proceed until provided.
 
@@ -19,8 +19,8 @@ If `.specify/feature.json` or the named directory already has a `spec.md` and th
    { "feature_directory": "<feature_directory>" }
    ```
 
-3. Create a specification from the user input and store it in `<feature_directory>/spec.md`.
-   - If that path already has a `spec.md`, stop — do not overwrite it
+3. Create or update the specification from the user input and store it in `<feature_directory>/spec.md`.
+   - If that path already has a `spec.md` and `plan.md` or `tasks.md` exist, stop — recommend `/speckit.revise`. Otherwise you may update the existing spec.
    - Overview, functional requirements, user scenarios, success criteria
    - Every requirement must be testable
    - Make informed defaults for unspecified details

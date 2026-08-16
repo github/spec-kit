@@ -184,7 +184,7 @@ Additional commands for enhanced quality and validation:
 | Command              | Agent Skill            | Description                                                                                                                          |
 | -------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `/speckit.clarify`   | `speckit-clarify`      | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`)                                                |
-| `/speckit.revise`    | `speckit-revise`       | Revise the current spec in place (add/remove/reword ACs or FRs) and cascade into plan/tasks                                          |
+| `/speckit.revise`    | `speckit-revise`       | After plan/tasks/implementation, revise FRs, SCs, or ACs and cascade into related artifacts                                          |
 | `/speckit.analyze`   | `speckit-analyze`      | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`)                             |
 | `/speckit.checklist` | `speckit-checklist`    | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
 

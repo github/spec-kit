@@ -130,7 +130,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - plan.md (if exists): Technical details, dependencies (skip struck plan bullets)
    - tasks.md (if exists): Implementation tasks (skip `CANCELLED` / `SUPERSEDED` task lines)
 
-   If this is a living spec (`revisions.md` present) and the gap is an add/remove/reword, recommend `__SPECKIT_COMMAND_REVISE__` rather than `__SPECKIT_COMMAND_SPECIFY__`.
+   If `plan.md`, `tasks.md`, or implementation already exist and the gap is an add/remove/reword, recommend `__SPECKIT_COMMAND_REVISE__` rather than `__SPECKIT_COMMAND_SPECIFY__`.
 
    **Context Loading Strategy**:
    - Load only necessary portions relevant to active focus areas (avoid full-file dumping)

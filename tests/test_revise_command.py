@@ -58,7 +58,7 @@ def test_skill_descriptions_include_revise():
     from specify_cli import SKILL_DESCRIPTIONS
 
     assert "revise" in SKILL_DESCRIPTIONS
-    assert "Create a new feature specification" in SKILL_DESCRIPTIONS["specify"]
+    assert "Create or update feature specifications" in SKILL_DESCRIPTIONS["specify"]
 
 
 def test_revise_has_scripts_frontmatter():
@@ -89,7 +89,7 @@ class TestReviseInvariants:
         self.text = REVISE.read_text(encoding="utf-8")
 
     def test_does_not_create_a_new_feature_directory(self):
-        assert "new `specs/` folder" in self.text
+        assert "after `plan.md`, `tasks.md`, or implementation exist" in self.text
 
     def test_edits_spec_in_place(self):
         assert "in place" in self.text
@@ -182,12 +182,12 @@ class TestCascadeContracts:
         assert "Do not create keys for `SUPERSEDED` or `RETIRED` IDs" in text
         assert "Skip plan bullets marked `SUPERSEDED` or `RETIRED`" in text
 
-    def test_specify_is_create_not_update(self):
+    def test_specify_defers_to_revise_after_plan_tasks_or_impl(self):
         text = (COMMANDS / "specify.md").read_text(encoding="utf-8")
-        assert "Create a new feature specification" in text
+        assert "Create or update the feature specification" in text
         assert "__SPECKIT_COMMAND_REVISE__" in text
-        assert "do **not** create another directory" in text
-        assert "do **not** run `before_specify` hooks" in text
+        assert "`plan.md`, `tasks.md`, or implemented work" in text
+        assert "this command can still **update** that spec" in text
 
     def test_converge_defers_to_revise_when_spec_changed(self):
         text = (COMMANDS / "converge.md").read_text(encoding="utf-8")
@@ -226,13 +226,13 @@ class TestCascadeContracts:
         assert "do not restore them" in text
         assert "plan_status: needs-rebuild" in text
 
-    def test_lean_specify_refuses_to_overwrite_existing_spec(self):
+    def test_lean_specify_defers_to_revise_after_plan_or_tasks(self):
         text = (
             REPO_ROOT / "presets" / "lean" / "commands" / "speckit.specify.md"
         ).read_text(encoding="utf-8")
         assert "/speckit.revise" in text
-        assert "Never overwrite an existing `spec.md`" in text
-        assert "do not overwrite it" in text
+        assert "`plan.md`, `tasks.md`, or implementation already exist" in text
+        assert "this command may **update** it" in text
 
     def test_lean_plan_skips_retired_ids(self):
         text = (

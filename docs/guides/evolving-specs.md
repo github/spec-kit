@@ -39,8 +39,8 @@ derived from it.
 
 When intended behavior changes, revise the existing `spec.md` first. Then
 regenerate or manually revise downstream artifacts so they match the updated
-spec. Use `/speckit.revise` to apply a known add, remove, or reword on the
-current spec (do not run `/speckit.specify` again for that).
+spec. Use `/speckit.revise` when plan, tasks, or implementation already exist
+and you need to change FRs, SCs, or ACs and the related artifacts.
 
 1. Start from a clean working tree or a dedicated branch so every generated
    change is reviewable.

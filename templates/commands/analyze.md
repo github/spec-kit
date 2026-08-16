@@ -165,7 +165,7 @@ Focus on high-signal findings. Limit to 50 findings total; aggregate remainder i
 - Conflicting requirements (e.g., one requires Next.js while other specifies Vue)
 - Plan or tasks still treating a **retired** ID from `revisions.md` as in-scope (the current `spec.md` no longer requires it)
 
-If requirement problems need a follow-up edit: use `__SPECKIT_COMMAND_SPECIFY__` only for a **new** feature; use `__SPECKIT_COMMAND_CLARIFY__` to fill pre-plan gaps; if the user already knows the delta (add/remove AC or FR), recommend `__SPECKIT_COMMAND_REVISE__`.
+If requirement problems need a follow-up edit: use `__SPECKIT_COMMAND_SPECIFY__` to create or update a spec that is not yet planned, tasked, or implemented; use `__SPECKIT_COMMAND_CLARIFY__` to fill pre-plan gaps; if `plan.md`, `tasks.md`, or implementation already exist and the user knows the FR / SC / AC delta, recommend `__SPECKIT_COMMAND_REVISE__`.
 
 ### 5. Severity Assignment
 

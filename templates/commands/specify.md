@@ -1,5 +1,5 @@
 ---
-description: Create a new feature specification from a natural language feature description.
+description: Create or update the feature specification from a natural language feature description.
 handoffs:
   - label: Build Technical Plan
     agent: speckit.plan
@@ -18,7 +18,7 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
-If a current feature already exists (`.specify/feature.json` or an active `spec.md`) and the user stated a **concrete delta** (add, remove, or reword a named AC, FR, story, or success criterion) on that spec, do **not** create another directory and do **not** run `before_specify` hooks. Recommend `__SPECKIT_COMMAND_REVISE__` and stop. A genuinely new product (different user, different outcome, no shared stories) continues below.
+If the current feature already has `plan.md`, `tasks.md`, or implemented work, and the user stated a **concrete delta** (add, remove, or reword a named AC, FR, SC, or story), do **not** create another directory and do **not** run `before_specify` hooks. Recommend `__SPECKIT_COMMAND_REVISE__` and stop. If only `spec.md` exists (not yet planned, tasked, or implemented), this command can still **update** that spec. A genuinely new product continues below as a new feature.
 
 ## Pre-Execution Checks
 
@@ -111,7 +111,7 @@ Given that feature description, do this:
    - You must only create one feature per `__SPECKIT_COMMAND_SPECIFY__` invocation
    - The spec directory name and the git branch name are independent — they may be the same but that is the user's choice
    - The spec directory and file are always created by this command, never by the hook
-   - This command starts a **new** feature. If the user wants to add, remove, or reword acceptance criteria / requirements on the **current** spec, do not create another directory — recommend `__SPECKIT_COMMAND_REVISE__` instead
+   - This command can create a new feature or **update** a spec that has no plan, tasks, or implementation yet. If `plan.md`, `tasks.md`, or implementation already exist and the user wants to add, remove, or reword FRs / SCs / ACs, do not create another directory — recommend `__SPECKIT_COMMAND_REVISE__` instead
 
 4. Load the resolved active `spec-template` file to understand required sections.
 

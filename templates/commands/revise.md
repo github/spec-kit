@@ -20,7 +20,7 @@ The user is changing requirements on the **current** feature. That is why this c
 
 Do **not** rewrite `spec.md`. Do **not** rewrite `plan.md`. Do **not** rewrite `tasks.md`. Mid-flight requirement changes used to do that — wipe the file and regenerate — and it destroyed history. You only mark old lines, append new ones, and add a short log.
 
-This is not `__SPECKIT_COMMAND_SPECIFY__` (new `specs/` folder). Not `__SPECKIT_COMMAND_PLAN__` or `__SPECKIT_COMMAND_TASKS__` (those rebuild artifacts). Not `__SPECKIT_COMMAND_CONVERGE__` (spec unchanged, code lagged). You do not write application code; `__SPECKIT_COMMAND_IMPLEMENT__` does.
+`__SPECKIT_COMMAND_SPECIFY__` still **creates or updates** a spec when there is no plan, tasks, or implementation yet. Use **this** command after `plan.md`, `tasks.md`, or implementation exist, to revise FRs / SCs / ACs and cascade into those artifacts. Not `__SPECKIT_COMMAND_PLAN__` or `__SPECKIT_COMMAND_TASKS__` (those rebuild artifacts). Not `__SPECKIT_COMMAND_CONVERGE__` (spec unchanged, code lagged). You do not write application code; `__SPECKIT_COMMAND_IMPLEMENT__` does.
 
 ## Input
 

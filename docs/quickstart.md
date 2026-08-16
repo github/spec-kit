@@ -120,9 +120,9 @@ Checks the codebase against the spec, plan, and tasks. If it finds gaps, it appe
 /speckit.converge
 ```
 
-### After shipping: `/speckit.revise` — change the current spec
+### After plan, tasks, or implementation: `/speckit.revise` — change FRs, SCs, or ACs
 
-When requirements change on the **same** feature (add or drop an acceptance criterion, retire an FR), do **not** run `/speckit.specify` again. That opens a new feature directory. Use `/speckit.revise` instead. If `plan.md` or `tasks.md` is still missing, run plan then tasks. If revise reports `plan_status: needs-rebuild`, rerun `/speckit.plan`. Then analyze, implement, and converge.
+`/speckit.specify` can still create or update a spec before plan, tasks, or implementation exist. Once any of those exist, use `/speckit.revise` to change FRs, SCs, or ACs and cascade into the related artifacts. If revise reports `plan_status: needs-rebuild`, rerun `/speckit.plan`. Then analyze, implement, and converge.
 
 ```text
 /speckit.revise Remove password login. Add AC: Given an expired session, When the user submits, Then redirect to SSO

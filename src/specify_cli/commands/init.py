@@ -1103,7 +1103,7 @@ def register(app: typer.Typer) -> None:
             f"○ [cyan]{_display_cmd('clarify')}[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]{_display_cmd('plan')}[/] if used)",
             f"○ [cyan]{_display_cmd('analyze')}[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]{_display_cmd('tasks')}[/], before [cyan]{_display_cmd('implement')}[/])",
             f"○ [cyan]{_display_cmd('checklist')}[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]{_display_cmd('plan')}[/])",
-            f"○ [cyan]{_display_cmd('revise')}[/] [bright_black](optional)[/bright_black] - Edit the current feature spec in place when requirements change (do not run [cyan]{_display_cmd('specify')}[/] again)",
+            f"○ [cyan]{_display_cmd('revise')}[/] [bright_black](optional)[/bright_black] - Revise FRs, SCs, or ACs after plan, tasks, or implementation exist",
         ]
         enhancements_title = (
             "Enhancement Skills" if native_skill_mode else "Enhancement Commands"
