@@ -3,10 +3,7 @@ description: "Revise the current feature spec in place (add/remove ACs, FRs, sto
 handoffs:
   - label: Implement Revision Tasks
     agent: speckit.implement
-    prompt: Implement the open tasks from the latest revision phase
-  - label: Rebuild Technical Plan
-    agent: speckit.plan
-    prompt: Rebuild the plan so it matches the revised spec
+    prompt: Implement only the new and cleanup tasks from the latest revision phase
   - label: Create Tasks
     agent: speckit.tasks
     prompt: Create tasks from the revised spec and plan
@@ -16,11 +13,11 @@ scripts:
   py: scripts/python/check_prerequisites.py --json --paths-only
 ---
 
-The user is changing the **current** feature spec — not starting a new one.
+The user is changing requirements on the **current** feature. That is why this command exists.
 
-Edit `spec.md` in place. Patch `plan.md` and `tasks.md` only if they already exist. Do not write application code; leave that to `__SPECKIT_COMMAND_IMPLEMENT__`.
+Do **not** rewrite `spec.md`. Do **not** rewrite `plan.md`. Do **not** rewrite `tasks.md`. Mid-flight requirement changes used to do that — wipe the file and regenerate — and it destroyed history. You only mark old lines, append new ones, and add a short log.
 
-This is not `__SPECKIT_COMMAND_SPECIFY__` (that opens a new `specs/` folder). It is not `__SPECKIT_COMMAND_CONVERGE__` (that assumes the spec is stable and the code lagged).
+This is not `__SPECKIT_COMMAND_SPECIFY__` (new `specs/` folder). Not `__SPECKIT_COMMAND_PLAN__` or `__SPECKIT_COMMAND_TASKS__` (those rebuild artifacts). Not `__SPECKIT_COMMAND_CONVERGE__` (spec unchanged, code lagged). You do not write application code; `__SPECKIT_COMMAND_IMPLEMENT__` does.
 
 ## Input
 
@@ -28,17 +25,17 @@ This is not `__SPECKIT_COMMAND_SPECIFY__` (that opens a new `specs/` folder). It
 $ARGUMENTS
 ```
 
-Use it if it isn't empty. If it is empty, ask what changed (or stop if nobody is there). Don't invent a delta.
+Use it if it isn't empty. Empty → ask what changed, or stop. Don't invent a delta.
 
-If they described a new product — different user, different outcome, no shared stories — stop and point them at `__SPECKIT_COMMAND_SPECIFY__`.
+New product (different user, different outcome, no shared stories) → `__SPECKIT_COMMAND_SPECIFY__`.
 
 ## Before you start (and again after you write)
 
-If `.specify/extensions.yml` exists, run hooks for `hooks.before_revise` now, and `hooks.after_revise` after the files are written, before you report.
+If `.specify/extensions.yml` exists, run `hooks.before_revise` now and `hooks.after_revise` after writes, before you report.
 
-Skip the file if it's missing or invalid. Skip any hook with `enabled: false`. Skip a hook that has a `condition` (don't evaluate it). Missing `enabled` means on.
+Skip if the file is missing or invalid. Skip `enabled: false`. Skip hooks with a `condition`. Missing `enabled` means on.
 
-Mandatory hook (`optional: false`) — print this and **actually run** it. Skills-mode names may differ from `{command}`. Waiting on the block alone is not enough.
+Mandatory (`optional: false`) — print this and **run** it. Skills-mode names may differ. The block alone is not enough.
 
 ```text
 ## Extension Hooks
@@ -47,7 +44,7 @@ Executing: `/{command}`
 EXECUTE_COMMAND: {command}
 ```
 
-Optional hook (`optional: true`):
+Optional (`optional: true`):
 
 ```text
 ## Extension Hooks
@@ -58,57 +55,78 @@ Prompt: {prompt}
 To execute: `/{command}`
 ```
 
-After the write, use **Automatic Hook** / **Optional Hook** (drop "Pre-").
+After writes, drop "Pre-" from the labels.
 
-## How to think about it
+## The point
 
-Stay in this feature directory. Do **not** create a new `specs/` folder.
+Stay in this feature folder. Never create a new `specs/` directory.
 
-`spec.md` is the contract. Only unmarked lines are live. Keep `SUPERSEDED` / `RETIRED` lines so people can see what changed, but don't treat them as current. Never leave two live items that contradict.
+`spec.md` is the contract. Live lines are unmarked. Keep old lines visible as `SUPERSEDED by {new-id} (R{N})` or `RETIRED (R{N})`. Never two live items that contradict.
 
-`revisions.md` is a dated log, not a spec. One sentence and IDs. No copied AC text.
+Don't edit a live FR/AC/SC in place to mean something else. That hides the change. **Supersede or add.** Reword only for typos / tighter wording of the *same* behavior, and only if nothing has been implemented for it yet.
 
-Don't renumber live IDs. Don't reuse a retired or superseded ID. The next number is one past the highest ID ever used (including struck lines and the log).
+`revisions.md` is a dated log, not a spec. One sentence + IDs.
 
-Keep the spec functional — what and why, not stack or file paths.
+Don't renumber. Don't reuse IDs. Next ID = highest ever used + 1 (struck lines and the log count).
 
-If a new requirement breaks a constitution `MUST`, drop that part. Ignore an unfilled constitution template.
+Spec stays functional (what/why, not stack). Drop anything that violates a constitution `MUST`. Ignore an empty constitution template.
 
-Don't regenerate the plan or the whole task list. Don't delete task lines or uncheck finished work.
+## Already implemented?
 
-## What kind of change is this?
+Treat implementation as done if any task is `[x]` / `[X]`, or they said they already shipped. Then plan and tasks must cover **new code** and **removing old code** — not just "the spec now says X".
 
-- Same idea, better wording → **reword**. Keep the ID.
-- Replaces something live ("SSO instead of password") → **supersede**. Strike the old line (`SUPERSEDED by FR-008 (R2)`) and add a new ID. Don't delete the old line.
-- Gone, nothing replaces it → **remove**. Strike it and mark `RETIRED (R2)`.
-- Brand new, no conflict → **add**. Next free ID. A new AC goes on the story they named, or the only story that fits.
+| Change | Spec | If not implemented yet | If already implemented |
+|---|---|---|---|
+| New requirement | Add a new ID | Plan + tasks to **build** it | Same: plan + tasks to **add** the new code |
+| Replaces a live item | SUPERSEDE old, add new ID | Plan + tasks for the new behavior; cancel open tasks for the old ID | Plan + tasks to **add** new code **and remove** the old code |
+| No longer valid | RETIRE the old line; no new ID | Cancel open tasks for that ID | Plan + tasks to **remove** the old code |
 
-If they named `FR-004` / `US1/AC2`, use that. If the description matches exactly one live item, use that. If it's ambiguous, ask — don't guess.
+## Classify
 
-Already true in the live spec (or the same as the last `R#`) is a duplicate. Skip it. If everything is a duplicate, stop: say so, write nothing, don't bump `R{N}`. If only part is new, do that part and mention what you skipped.
+- Named `FR-004` / `US1/AC2` → that ID.
+- Description matches one live item → that item.
+- Ambiguous → ask. Don't guess.
+- Same idea, clearer words, **not** implemented → reword, keep the ID.
+- Swaps or contradicts a live item → supersede (old stays, new ID).
+- Drop, nothing replaces it → retire.
+- New, no conflict → add. New AC goes on the story they named, or the only story that fits.
+
+Already true on a **live** line (or same as last `R#`) is a duplicate. Skip it. All duplicates → stop, write nothing, don't bump `R{N}`. Mixed → do the new parts only.
 
 ## Do the work
 
-1. Run `{SCRIPT}` once. Read `FEATURE_DIR` and `FEATURE_SPEC`. You need `spec.md`. Also look at `plan.md`, `tasks.md`, `revisions.md`, and `/memory/constitution.md` if they're there. No spec → `__SPECKIT_COMMAND_SPECIFY__`. Awkward quotes: `'I'\''m Groot'`.
+1. Run `{SCRIPT}` once. Need `spec.md`. Also read `plan.md`, `tasks.md`, `revisions.md`, constitution if present. No spec → `__SPECKIT_COMMAND_SPECIFY__`. Quotes: `'I'\''m Groot'`.
 
-2. List live stories, ACs (`US{n}/AC{i}`), FRs, SCs. Remember every ID ever issued. Note the next task id and phase if `tasks.md` exists.
+2. List live stories, ACs, FRs, SCs. Remember every ID ever issued. If `tasks.md` exists, note next T-id, next phase, and whether anything is already `[x]`.
 
-3. Turn the input into changes. Drop duplicates and constitution clashes. Nothing left → stop.
+3. Turn the input into add / reword / supersede / remove. Drop duplicates and constitution clashes. Nothing left → stop.
 
-4. Only preview if they asked, or if a remove would wipe the last AC on a P1 story. Otherwise just do it. `N` is 1, or last `R#` plus one.
+4. Preview only if they asked, or a retire would wipe the last AC on a P1 story. `N` = 1 or last `R#`+1.
 
-5. Edit `spec.md`. Holes in AC numbers are fine. Set `**Last Revised**: {today} (R{N})`. Leave `**Created**` alone.
+5. **spec.md — append and mark, never replace the file.**
+   - add: next ID (AC holes are fine).
+   - reword: only the live sentence, same ID.
+   - supersede: `- **FR-004** ~~password login~~ — SUPERSEDED by **FR-008** (R2)` plus a new FR-008 line.
+   - remove: strike + `RETIRED (R2)`.
+   - Set `**Last Revised**: {today} (R{N})`. Leave `**Created**`.
 
-   Supersede looks like: `- **FR-004** ~~password login~~ — SUPERSEDED by **FR-008** (R2)`
+6. **plan.md — only if it exists. Never regenerate.**
+   - New / supersede: a short bullet for **adding** the new behavior.
+   - Supersede or retire **and already implemented**: a short bullet for **removing** the old behavior (what to delete, not a new architecture).
+   - Supersede or retire **and not implemented**: no remove-code bullet; just stop planning the old thing.
+   - Strike the old plan bullet (`SUPERSEDED` / `RETIRED`). Don't delete it.
+   - Don't send them to `__SPECKIT_COMMAND_PLAN__` to rebuild. If you truly can't patch, say so in the report — still don't wipe the file.
+   - No plan yet → next command is `__SPECKIT_COMMAND_PLAN__`.
 
-6. If `plan.md` exists, strike the old bullet and add a small new one. If the architecture is actually invalid, don't rewrite the plan — say `needs-rebuild` and send them to `__SPECKIT_COMMAND_PLAN__`. No plan → that's the next command.
+7. **tasks.md — only if it exists. Never regenerate. Only append.**
+   - Add `## Phase {n}: Revision R{N}`.
+   - New/supersede: tasks to **write the new code**.
+   - Already implemented + supersede/retire: tasks to **delete or stop using the old code**.
+   - Open task for an old ID: `- [ ] ~~T012~~ SUPERSEDED (R{N} → T020)` or `CANCELLED` if nothing replaces it. Don't delete the line.
+   - Finished task for an old ID: leave `[x]`; add the cleanup task in the new phase.
+   - No tasks file yet → `__SPECKIT_COMMAND_TASKS__` (or plan first). Do not invent a full task list here.
 
-7. If `tasks.md` exists, append `## Phase {n}: Revision R{N}` with new T-ids.
-   - Open task for an old ID: `- [ ] ~~T012~~ SUPERSEDED (R{N} → T020)` and add T020. Or `CANCELLED` if nothing replaces it.
-   - Finished work for an old ID: one cleanup task.
-   - No tasks file → `__SPECKIT_COMMAND_TASKS__` (or plan first).
-
-8. Append to `revisions.md` (create it if needed: title + "spec.md is the source of truth"):
+8. Append to `revisions.md` (create with a one-line header: spec.md is the source of truth):
 
    ```markdown
    ## R{N} — {YYYY-MM-DD}
@@ -121,16 +139,17 @@ Already true in the live spec (or the same as the last `R#`) is a duplicate. Ski
 
    Skip empty bullets. Don't edit old entries. Don't append on a no-op.
 
-9. If `checklists/requirements.md` exists, update its checkboxes before after-hooks so a git commit includes them.
+9. Refresh `checklists/requirements.md` if it exists, **before** after-hooks.
 
 10. Run `hooks.after_revise`.
 
-Then tell them once what changed, and what to run next (`__SPECKIT_COMMAND_IMPLEMENT__`, `__SPECKIT_COMMAND_PLAN__`, or `__SPECKIT_COMMAND_TASKS__`). If it was a no-op, say that.
+Tell them once what was marked, what was added, and whether implement should **add** code, **remove** code, or both. Next is usually `__SPECKIT_COMMAND_IMPLEMENT__` (or plan/tasks if those files are still missing).
 
 ## Done When
 
-- [ ] Same feature folder; spec updated or you said it was already true
-- [ ] New `R{N}` only when something actually changed
-- [ ] Old lines marked SUPERSEDED/RETIRED; new IDs added; none reused
-- [ ] Plan/tasks patched or skipped; no application code
-- [ ] Hooks handled; user got a short report
+- [ ] Same folder; spec was not rewritten from scratch
+- [ ] Old requirements SUPERSEDED or RETIRED; new ones are new IDs
+- [ ] `tasks.md` / `plan.md` were not regenerated — only patched or skipped
+- [ ] After implement: tasks exist to add new code and/or remove old code
+- [ ] Dated log only if something changed; no application code
+- [ ] Hooks handled; short report

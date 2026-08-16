@@ -121,7 +121,11 @@ class TestReviseInvariants:
         assert "contradict" in self.text
 
     def test_does_not_write_application_code(self):
-        assert "Do not write application code" in self.text or "no application code" in self.text
+        assert "application code" in self.text
+
+    def test_never_rewrites_artifacts(self):
+        assert "Never regenerate" in self.text or "never regenerate" in self.text.lower() or "Do **not** rewrite" in self.text
+        assert "remove the old code" in self.text or "removing old code" in self.text
 
     def test_hands_off_to_implement_plan_or_tasks(self):
         assert "__SPECKIT_COMMAND_IMPLEMENT__" in self.text
