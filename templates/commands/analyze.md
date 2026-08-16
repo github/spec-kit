@@ -103,8 +103,9 @@ Load only the minimal necessary context from each artifact:
 
 **From revisions.md (if present):**
 
-- Retired IDs (`FR-###`, `SC-###`, `US#/AC#`) listed under **Removed (retired)**
-- Treat those IDs as **historical**, not current requirements. `spec.md` is the source of truth.
+- This file is a **dated log only**, not a spec. Ignore summaries except for ID lists.
+- Collect retired IDs (`retired:` / removed). Treat those IDs as **historical**.
+- Current requirements come only from `spec.md`.
 
 **From constitution:**
 

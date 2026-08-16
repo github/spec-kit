@@ -86,8 +86,8 @@ If the request is clearly a **new feature** (different user, different outcome, 
 
 Keep one feature directory as the source of truth while the contract changes. After this command:
 
-- `spec.md` describes the **new** intended behavior
-- `revisions.md` lists exactly what was added, removed, or reworded
+- `spec.md` is the **only** current contract
+- `revisions.md` is a **small dated log** of what changed (not a second spec)
 - `plan.md` (if present) no longer describes retired behavior
 - `tasks.md` (if present) has new work for additions and cancelled open tasks for removals
 - no application code has been edited
@@ -107,6 +107,21 @@ Keep one feature directory as the source of truth while the contract changes. Af
 **SPEC STAYS FUNCTIONAL**: Write what users need and why. No tech stack, libraries, APIs, or file paths in `spec.md`. Those belong in `plan.md`.
 
 **CONSTITUTION AUTHORITY**: `/memory/constitution.md` is non-negotiable. A new requirement that violates a `MUST` principle is rejected: report the conflict and do not apply that part of the delta. If the constitution is an unfilled template, skip this check.
+
+**REVISIONS.MD IS A LOG, NOT SOURCE OF TRUTH**:
+- `spec.md` decides what is required now. Never treat `revisions.md` as the spec.
+- Each entry is one short dated block: `R{N}`, date, one-line summary, IDs only.
+- Do not copy AC/FR prose, plan notes, or next-command instructions into the log.
+- Implement / analyze / converge read `spec.md` (and `CANCELLED` tasks). They may consult the log only for **retired IDs**.
+
+**DUPLICATES ARE A NO-OP**:
+- Compare the requested delta to the **current** `spec.md` (not to the log).
+- `add` of behavior already in the spec → drop that change (duplicate).
+- `remove` of an ID already absent / already retired → drop that change.
+- `reword` that does not change meaning or text → drop that change.
+- Same delta as the latest `R#` (re-run) → drop the whole request.
+- If every change is a duplicate, STOP. Report which items were already true. Do **not** write `spec.md`, `revisions.md`, `plan.md`, or `tasks.md`. Do **not** bump `R{N}`.
+- Partial request: apply only the non-duplicate changes; mention skipped duplicates in the report.
 
 **MINIMAL PLAN/TASKS EDITS**:
 
@@ -173,7 +188,7 @@ Resolution rules:
 
 Reject any `add` that conflicts with a constitution `MUST`. Leave the rest of the delta intact if some items are valid.
 
-If after classification there are zero changes, STOP and say so. Do not write files.
+Drop duplicates using the **DUPLICATES ARE A NO-OP** rules above. If nothing remains, STOP. Do not write files and do not append a revision entry.
 
 ### 4. Show the planned revision (before writes)
 
@@ -243,38 +258,27 @@ Also:
 
 ### 7. Append `revisions.md`
 
-Create the file if it does not exist:
+This file is a **dated index**, not a spec. Create it if it does not exist:
 
 ```markdown
-# Spec Revisions: {feature name}
+# Spec Revisions
 
-Append-only history of in-place spec changes. IDs listed under **Retired** must never be reused.
+Dated log of in-place edits. `spec.md` is the source of truth. Retired IDs must not be reused.
 ```
 
-Then append:
+Then append **only** this small block (IDs and a one-line summary — no full AC text, no cascade, no next-command):
 
 ```markdown
 ## R{N} — {YYYY-MM-DD}
 
-**Summary**: {one sentence}
+{one sentence}
 
-**Added**:
-- `{new-id}`: {text}
-
-**Removed (retired)**:
-- `{old-id}`: {full previous text}
-
-**Reworded**:
-- `{id}`: {old text} → {new text}
-
-**Cascade**:
-- plan.md: patched | needs-rebuild | skipped (missing)
-- tasks.md: appended Phase {n} | cancelled {id list} | skipped (missing)
-
-**Next**: `__SPECKIT_COMMAND_IMPLEMENT__` | `__SPECKIT_COMMAND_PLAN__` | `__SPECKIT_COMMAND_TASKS__`
+- added: {id, id}
+- retired: {id, id}
+- reworded: {id, id}
 ```
 
-Omit empty subsections. Never edit or delete earlier `R#` entries.
+Omit empty bullets. Never edit or delete earlier `R#` entries. If this revision was a no-op (all duplicates), do not append anything.
 
 If `FEATURE_DIR/checklists/requirements.md` exists, re-evaluate its items against the revised spec and update pass/fail markers **before** post-execution hooks so a git auto-commit includes those edits. Do not invent a new checklist.
 

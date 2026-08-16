@@ -96,6 +96,12 @@ class TestReviseInvariants:
 
     def test_records_revisions_changelog(self):
         assert "revisions.md" in self.text
+        assert "dated log" in self.text.lower() or "dated index" in self.text.lower()
+        assert "not a spec" in self.text.lower() or "NOT SOURCE OF TRUTH" in self.text
+
+    def test_duplicates_are_a_noop(self):
+        assert "DUPLICATES ARE A NO-OP" in self.text
+        assert "Do **not** bump `R{N}`" in self.text or "do not append" in self.text.lower()
 
     def test_stable_ids_are_never_reused(self):
         assert "Do not reuse a retired ID" in self.text
