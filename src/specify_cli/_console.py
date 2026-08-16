@@ -162,6 +162,12 @@ def select_with_arrows(
 
     Returns:
         Selected option key
+
+    Raises:
+        ValueError: If stdin is not a TTY and no ``default_key`` is given —
+            the interactive loop would otherwise block forever waiting for
+            keypresses that will never arrive (agent harness, CI, piped
+            input). See issue #4152.
     """
     if not options:
         raise ValueError("select_with_arrows() requires at least one option.")
@@ -171,6 +177,17 @@ def select_with_arrows(
         selected_index = option_keys.index(default_key)
     else:
         selected_index = 0
+
+    # Fail fast in non-interactive environments instead of hanging on
+    # readkey() forever. With a default, resolve to it immediately.
+    if not sys.stdin.isatty():
+        if default_key and default_key in option_keys:
+            return default_key
+        raise ValueError(
+            "select_with_arrows() requires an interactive TTY, but stdin is "
+            "not a terminal. Pass an explicit option flag to pre-answer this "
+            "selection, or run in an interactive session."
+        )
 
     selected_key = None
 
