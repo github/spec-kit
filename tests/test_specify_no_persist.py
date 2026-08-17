@@ -112,3 +112,48 @@ def test_py_specify_no_persist_suppresses_write(repo: Path) -> None:
     result = run(py_cmd(repo, SCRIPT, "--json"), repo, env)
     assert result.returncode == 0, result.stderr
     assert _feature_json(repo) is None
+
+
+# create-new-feature writes .specify/feature.json directly (not via
+# get_feature_paths()), so it must honor SPECIFY_NO_PERSIST separately.
+
+CREATE_SCRIPT = "create-new-feature"
+SPEC_TEMPLATE_BODY = "# Spec Template\n\nBody.\n"
+
+
+def _create_feature_repo(tmp_path: Path, name: str = "proj") -> Path:
+    repo = make_repo(tmp_path, name)
+    install_scripts(repo, CREATE_SCRIPT)
+    templates = repo / ".specify" / "templates"
+    templates.mkdir(parents=True, exist_ok=True)
+    (templates / "spec-template.md").write_text(SPEC_TEMPLATE_BODY, encoding="utf-8")
+    return repo
+
+
+@requires_bash
+def test_bash_create_new_feature_no_persist_suppresses_write(tmp_path: Path) -> None:
+    repo = _create_feature_repo(tmp_path)
+    env = clean_env()
+    env["SPECIFY_NO_PERSIST"] = "1"
+    result = run(bash_cmd(repo, CREATE_SCRIPT, "--json", "x"), repo, env)
+    assert result.returncode == 0, result.stderr
+    assert _feature_json(repo) is None
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_ps_create_new_feature_no_persist_suppresses_write(tmp_path: Path) -> None:
+    repo = _create_feature_repo(tmp_path)
+    env = clean_env()
+    env["SPECIFY_NO_PERSIST"] = "true"
+    result = run(ps_cmd(repo, CREATE_SCRIPT, "-Json", "x"), repo, env)
+    assert result.returncode == 0, result.stderr
+    assert _feature_json(repo) is None
+
+
+def test_py_create_new_feature_no_persist_suppresses_write(tmp_path: Path) -> None:
+    repo = _create_feature_repo(tmp_path)
+    env = clean_env()
+    env["SPECIFY_NO_PERSIST"] = "1"
+    result = run(py_cmd(repo, CREATE_SCRIPT, "--json", "x"), repo, env)
+    assert result.returncode == 0, result.stderr
+    assert _feature_json(repo) is None
