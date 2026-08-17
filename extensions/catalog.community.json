@@ -2311,6 +2311,7 @@
         "linear",
         "tasks-sync",
         "lifecycle-mirror",
+        "memory",
         "cross-repo"
       ],
       "verified": false,
