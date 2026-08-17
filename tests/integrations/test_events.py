@@ -1388,8 +1388,10 @@ class TestCommandRunner:
             {"pre_tool_use": [{"command": "speckit.tdd.validate"}]},
         )
         content = (tmp_path / EVENTS_DISPATCHER_REL).read_text()
-        # Delegates to specify_cli when importable.
-        assert "from specify_cli.events import resolve_and_run_event_command" in content
+        # Delegates to specify_cli when importable and confinement is present.
+        assert "EVENT_SCRIPT_PATH_CONFINEMENT" in content
+        assert "from specify_cli.events import" in content
+        assert "resolve_and_run_event_command" in content
         assert "except (ImportError, TypeError):" in content
         # Inline stdlib fallback resolver for one-time/temporary installs.
         assert "_run_inline" in content
@@ -1453,6 +1455,53 @@ class TestCommandRunner:
         # The inline resolver ran the script with the payload.
         assert out_file.exists(), f"inline fallback did not run script; stderr={result.stderr!r} rc={result.returncode}"
         assert out_file.read_text() == '{"tool_name":"x"}'
+
+    def test_dispatcher_ignores_stale_specify_cli_without_confinement(self, tmp_path):
+        """A generated dispatcher must not delegate to an older specify_cli
+        that lacks EVENT_SCRIPT_PATH_CONFINEMENT (uvx-init plus stale
+        global install). Absolute script tokens stay rejected."""
+        import subprocess as _sp
+        import sys as _sys
+
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"session_start": [{"command": "speckit.boot"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        ran = tmp_path / "stale-ran"
+        (cmd_dir / "boot.md").write_text(
+            "---\ndescription: \"Boot\"\nscripts:\n  sh: /tmp/outside.sh\n---\nBody\n",
+            encoding="utf-8",
+        )
+
+        fake_dir = tmp_path / "_stale_pkg"
+        pkg = fake_dir / "specify_cli"
+        pkg.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+        (pkg / "events.py").write_text(
+            "def resolve_and_run_event_command(*_a, **_k):\n"
+            f"    open({str(ran)!r}, 'w').write('delegated')\n"
+            "    return 0\n",
+            encoding="utf-8",
+        )
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(fake_dir)
+        result = _sp.run(
+            [_sys.executable, str(dispatcher), "speckit.boot", "session_start", "60"],
+            input="{}",
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=str(tmp_path),
+        )
+        assert not ran.exists(), f"stale package ran; stderr={result.stderr!r}"
 
     def test_dispatcher_threads_per_handler_timeout(self, tmp_path):
         """S4: the generated dispatcher reads an optional 4th timeout arg and

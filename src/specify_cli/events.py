@@ -30,6 +30,11 @@ logger = logging.getLogger(__name__)
 
 # -- Constants -------------------------------------------------------------
 
+# Generated hook dispatchers refuse to delegate unless this name is True.
+# An older installed specify_cli.events (uvx-init plus a stale global
+# install) would otherwise run unconfined script tokens.
+EVENT_SCRIPT_PATH_CONFINEMENT = True
+
 EVENTS_DISPATCHER_DIR = Path(".specify")
 EVENTS_DISPATCHER_FILENAME = "events.py"
 # POSIX-form (forward-slash) relative path so it matches manifest keys, which
@@ -376,8 +381,15 @@ def main():
     # Preferred path: specify_cli is importable (durable install) — delegate to
     # the full resolver, which also handles extension manifests whose file stem
     # differs from the command name and the project's custom script selection.
+    # Require EVENT_SCRIPT_PATH_CONFINEMENT so a stale global install cannot
+    # bypass the generated dispatcher's path guard.
     try:
-        from specify_cli.events import resolve_and_run_event_command
+        from specify_cli.events import (
+            EVENT_SCRIPT_PATH_CONFINEMENT as _confine_ok,
+            resolve_and_run_event_command,
+        )
+        if _confine_ok is not True:
+            raise ImportError("specify_cli.events lacks script path confinement")
         sys.exit(
             resolve_and_run_event_command(
                 command_name, _event_name, payload, project_root, timeout=timeout, envelope=envelope, native_event=native_event
