@@ -32,13 +32,16 @@ def _invoke_select_with_arrows(platform: str) -> bool:
         captured.update(kwargs)
         return mock_live_instance
 
-    # Patch readchar so the loop immediately returns "enter"
+    # Patch readchar so the loop immediately returns "enter". Tests run without
+    # a TTY, so also pretend stdin is interactive — otherwise the helper now
+    # fails fast instead of opening Live.
     import readchar
 
     with (
         patch("sys.platform", platform),
         patch("specify_cli._console.Live", side_effect=fake_live),
         patch("specify_cli._console.readchar.readkey", return_value=readchar.key.ENTER),
+        patch("sys.stdin.isatty", return_value=True),
     ):
         from specify_cli._console import select_with_arrows
 

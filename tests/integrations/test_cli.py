@@ -122,6 +122,127 @@ class TestInitIntegrationFlag:
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == specify_cli.DEFAULT_INIT_INTEGRATION
 
+    def test_noninteractive_flag_skips_pickers_when_stdin_is_a_tty(
+        self, tmp_path, monkeypatch
+    ):
+        """Agent harnesses often allocate a PTY (isatty True) but cannot send
+        arrow keys. ``--non-interactive`` must still skip both pickers and apply
+        documented defaults — the hang reported in #4152.
+        """
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli
+        import specify_cli.commands.init as init_mod
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError(
+                "--non-interactive must not open select_with_arrows even on a TTY"
+            )
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        runner = CliRunner()
+        project = tmp_path / "agent-pty"
+        result = runner.invoke(
+            app,
+            ["init", str(project), "--non-interactive", "--ignore-agent-tools"],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert f"defaulting to '{specify_cli.DEFAULT_INIT_INTEGRATION}'" in result.output
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == specify_cli.DEFAULT_INIT_INTEGRATION
+
+    def test_noninteractive_flag_here_nonempty_requires_force(
+        self, tmp_path, monkeypatch
+    ):
+        """``--non-interactive`` on a non-empty --here directory must fail fast
+        asking for --force, even when stdin looks like a TTY.
+        """
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli.commands.init as init_mod
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("picker must not run under --non-interactive")
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        project = tmp_path / "nonempty-here-flag"
+        project.mkdir()
+        (project / "existing.txt").write_text("keep me", encoding="utf-8")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--non-interactive",
+                    "--integration",
+                    "copilot",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 1, result.output
+        assert "--force" in result.output
+        assert "--non-interactive" in result.output
+        assert (project / "existing.txt").read_text(encoding="utf-8") == "keep me"
+
+    def test_noninteractive_flag_here_force_completes_without_script_flag(
+        self, tmp_path, monkeypatch
+    ):
+        """The #4152 reproduction: ``--here --force --integration`` without
+        ``--script`` must not hang on the script picker when --non-interactive
+        is set, even if stdin is a TTY.
+        """
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli.commands.init as init_mod
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("script picker must not run under --non-interactive")
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        project = tmp_path / "here-force-agent"
+        project.mkdir()
+        (project / "existing.txt").write_text("keep me", encoding="utf-8")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--force",
+                    "--non-interactive",
+                    "--integration",
+                    "claude",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert (project / ".specify" / "init-options.json").exists()
+
     def test_noninteractive_init_honors_default_integration_env_var(
         self, tmp_path, monkeypatch
     ):
@@ -164,7 +285,7 @@ class TestInitIntegrationFlag:
 
         captured = {}
 
-        def fake_select(options, prompt_text=None, default_key=None):
+        def fake_select(options, prompt_text=None, default_key=None, **_kwargs):
             # Only capture the integration picker (not the script picker).
             if "Choose your coding agent integration" in (prompt_text or ""):
                 captured["default_key"] = default_key
