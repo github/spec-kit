@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-14T00:00:00Z",
+  "updated_at": "2026-08-17T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -427,6 +427,40 @@
       "stars": 0,
       "created_at": "2026-03-14T00:00:00Z",
       "updated_at": "2026-08-11T00:00:00Z"
+    },
+    "ascii-diagram": {
+      "name": "ASCII Diagram Renderer",
+      "id": "ascii-diagram",
+      "description": "Renders hand-drawn ASCII/Unicode diagrams (state machine, architecture, flow, coverage map) of what spec/plan/tasks/analyze already say — plain text, no Mermaid renderer needed.",
+      "author": "MRZHUH",
+      "version": "1.1.0",
+      "download_url": "https://github.com/MRZHUH/spec-kit-ascii-diagram/archive/refs/tags/v1.1.0.zip",
+      "repository": "https://github.com/MRZHUH/spec-kit-ascii-diagram",
+      "homepage": "https://github.com/MRZHUH/spec-kit-ascii-diagram",
+      "documentation": "https://github.com/MRZHUH/spec-kit-ascii-diagram/blob/main/README.md",
+      "changelog": "https://github.com/MRZHUH/spec-kit-ascii-diagram/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 4
+      },
+      "tags": [
+        "diagram",
+        "ascii",
+        "visualization",
+        "coverage",
+        "traceability"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-17T00:00:00Z",
+      "updated_at": "2026-08-17T00:00:00Z"
     },
     "atlas": {
       "name": "spec-kit-atlas",
