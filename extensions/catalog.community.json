@@ -3249,6 +3249,40 @@
       "created_at": "2026-07-14T00:00:00Z",
       "updated_at": "2026-07-14T00:00:00Z"
     },
+    "pay-x402": {
+      "name": "AgentPay x402 — Spend Controls for Spec Kit Agents",
+      "id": "pay-x402",
+      "description": "Set USDC spending caps and execute x402 payments to paid APIs during spec implementation. Zero platform fee on Base L2.",
+      "author": "AgentPay Team",
+      "version": "1.0.0",
+      "download_url": "https://github.com/shawnhvac/spec-kit-pay-x402/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/shawnhvac/spec-kit-pay-x402",
+      "homepage": "https://x402-agent-pay.com",
+      "documentation": "https://github.com/shawnhvac/spec-kit-pay-x402#readme",
+      "changelog": "https://github.com/shawnhvac/spec-kit-pay-x402/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 1
+      },
+      "tags": [
+        "payments",
+        "x402",
+        "budget",
+        "usdc",
+        "api"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-17T00:00:00Z",
+      "updated_at": "2026-08-17T00:00:00Z"
+    },
     "plan-review-gate": {
       "name": "Plan Review Gate",
       "id": "plan-review-gate",
