@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-14T00:00:00Z",
+  "updated_at": "2026-08-17T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -2221,10 +2221,10 @@
     "keel": {
       "name": "Keel Discovery",
       "id": "keel",
-      "description": "A Spec Kit extension that puts customer evidence upstream of /speckit.specify, and audits what you shipped against it afterwards.",
+      "description": "Evidence-backed discovery upstream of /speckit.specify, plus round-trip drift auditing after implementation.",
       "author": "Keel Discovery",
-      "version": "0.1.1",
-      "download_url": "https://github.com/keeldiscovery/spec-kit-keel/archive/refs/tags/v0.1.1.zip",
+      "version": "0.2.0",
+      "download_url": "https://github.com/keeldiscovery/spec-kit-keel/archive/refs/tags/v0.2.0.zip",
       "repository": "https://github.com/keeldiscovery/spec-kit-keel",
       "homepage": "https://keeldiscovery.com",
       "documentation": "https://github.com/keeldiscovery/spec-kit-keel/blob/main/README.md",
@@ -2236,7 +2236,7 @@
         "speckit_version": ">=0.15.0"
       },
       "provides": {
-        "commands": 5,
+        "commands": 6,
         "hooks": 2
       },
       "tags": [
@@ -2250,7 +2250,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-10T00:00:00Z",
-      "updated_at": "2026-08-10T00:00:00Z"
+      "updated_at": "2026-08-17T00:00:00Z"
     },
     "learn": {
       "name": "Learning Extension",
