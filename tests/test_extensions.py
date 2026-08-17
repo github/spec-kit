@@ -7492,6 +7492,88 @@ class TestExtensionAddCLI:
         assert result.exit_code == 0, result.output
         assert f"Config: {display_path}" in result.output
 
+    def test_catalog_list_shows_discovery_only_guidance(self, tmp_path):
+        """A discovery-only catalog should trigger the trust-model guidance,
+        steering users to --from / their own catalog and away from flipping
+        install_allowed."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        import yaml
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        specify_dir = project_dir / ".specify"
+        specify_dir.mkdir()
+        (specify_dir / "extension-catalogs.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "community",
+                            "url": "https://example.com/catalog.json",
+                            "priority": 10,
+                            "install_allowed": False,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "catalog", "list"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        output = " ".join(result.output.split())
+        assert "not installable by design" in output
+        assert "--from <url>" in output
+        assert "Don't flip a discovery-only catalog to install_allowed" in output
+
+    def test_catalog_list_omits_guidance_when_all_installable(self, tmp_path):
+        """When every catalog is an install source, the discovery-only guidance
+        should not appear."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        import yaml
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        specify_dir = project_dir / ".specify"
+        specify_dir.mkdir()
+        (specify_dir / "extension-catalogs.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "my-org",
+                            "url": "https://example.com/catalog.json",
+                            "priority": 10,
+                            "install_allowed": True,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "catalog", "list"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "not installable by design" not in result.output
+
     def test_catalog_add_escapes_config_read_exception_markup(self, tmp_path):
         """Catalog config parse errors can include user-controlled file content."""
         import yaml

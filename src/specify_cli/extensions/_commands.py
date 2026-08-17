@@ -43,7 +43,15 @@ extension_app = typer.Typer(
 
 catalog_app = typer.Typer(
     name="catalog",
-    help="Manage extension catalogs",
+    help=(
+        "Manage extension catalogs.\n\n"
+        "Catalogs are either install sources (install_allowed) or discovery-only "
+        "search surfaces. The built-in 'community' catalog is discovery-only by "
+        "design: it is unvetted, so it is searchable but not installable. To install "
+        "something you found there, either use 'specify extension add <name> --from "
+        "<url>' after vetting it, or curate your own catalog you control. Never flip a "
+        "discovery-only catalog to install_allowed — that is the vetting boundary."
+    ),
     add_completion=False,
 )
 extension_app.add_typer(catalog_app, name="catalog")
@@ -444,6 +452,14 @@ def catalog_list():
         console.print(f"     Install: {install_str}")
         console.print()
 
+    if any(not entry.install_allowed for entry in active_catalogs):
+        console.print(
+            "[dim]Discovery-only catalogs are searchable but not installable by design "
+            "(unvetted sources). To install something you found in one, vet it and run "
+            "'specify extension add <name> --from <url>', or add it to a catalog you "
+            "control. Don't flip a discovery-only catalog to install_allowed.[/dim]\n"
+        )
+
     config_path = project_root / ".specify" / "extension-catalogs.yml"
     user_config_path = Path.home() / ".specify" / "extension-catalogs.yml"
     if os.environ.get("SPECKIT_CATALOG_URL"):
@@ -477,7 +493,11 @@ def catalog_add(
     priority: int = typer.Option(10, "--priority", help="Priority (lower = higher priority)"),
     install_allowed: bool = typer.Option(
         False, "--install-allowed/--no-install-allowed",
-        help="Allow extensions from this catalog to be installed",
+        help=(
+            "Mark this catalog as a trusted install source. Only enable this for a "
+            "catalog you own and vet; leave it off (the default) for discovery-only "
+            "search surfaces. Never enable it for an unvetted public catalog."
+        ),
     ),
     description: str = typer.Option("", "--description", help="Description of the catalog"),
 ):
@@ -1008,12 +1028,23 @@ def extension_add(
                         if not ext_info.get("_install_allowed", True):
                             catalog_name = _escape_markup(str(ext_info.get("_catalog_name", "community")))
                             console.print(
-                                f"[red]Error:[/red] '{safe_extension}' is available in the "
-                                f"'{catalog_name}' catalog but installation is not allowed from that catalog."
+                                f"[red]Error:[/red] '{safe_extension}' was found in the "
+                                f"'{catalog_name}' catalog, which is discovery-only — a search "
+                                f"surface, not an install source."
                             )
                             console.print(
-                                f"\nTo enable installation, add '{safe_extension}' to an approved catalog "
-                                f"(install_allowed: true) in .specify/extension-catalogs.yml."
+                                "\nDiscovery-only catalogs are intentionally not installable so "
+                                "unvetted extensions can't be pulled in without review. Don't flip "
+                                "such a catalog to install_allowed. Instead, once you've vetted this "
+                                "extension:"
+                            )
+                            console.print(
+                                f"  • install it directly from its archive URL:\n"
+                                f"      specify extension add {safe_extension} --from <archive-url>"
+                            )
+                            console.print(
+                                "  • or add it to a catalog you curate and control "
+                                "(install_allowed: true)."
                             )
                             raise typer.Exit(1)
 
@@ -1260,10 +1291,12 @@ def extension_search(
             if install_allowed:
                 console.print(f"\n  [cyan]Install:[/cyan] specify extension add {safe_id}")
             else:
-                console.print(f"\n  [yellow]⚠[/yellow]  Not directly installable from '{catalog_name}'.")
+                console.print(f"\n  [yellow]⚠[/yellow]  Not directly installable from '{catalog_name}' (discovery-only).")
                 console.print(
-                    f"  Add to an approved catalog with install_allowed: true, "
-                    f"or install from an archive URL: specify extension add {safe_id} --from <archive-url>"
+                    f"  Once vetted, install it directly: specify extension add {safe_id} --from <archive-url>"
+                )
+                console.print(
+                    "  Don't flip a discovery-only catalog to install_allowed — that's the vetting boundary."
                 )
             console.print()
 
@@ -1498,9 +1531,15 @@ def _print_extension_info(ext_info: dict, manager):
         catalog_name = _escape_markup(str(ext_info.get("_catalog_name", "community")))
         console.print("[yellow]Not installed[/yellow]")
         console.print(
-            f"\n[yellow]⚠[/yellow]  '{safe_id}' is available in the '{catalog_name}' catalog "
-            f"but not in your approved catalog. Add it to .specify/extension-catalogs.yml "
-            f"with install_allowed: true to enable installation."
+            f"\n[yellow]⚠[/yellow]  '{safe_id}' is in the '{catalog_name}' catalog, which is "
+            f"discovery-only (a search surface, not an install source)."
+        )
+        console.print(
+            f"Once you've vetted it, install directly: specify extension add {safe_id} --from <archive-url>"
+        )
+        console.print(
+            "Discovery-only catalogs are intentionally not install sources — don't set "
+            "install_allowed on them."
         )
 
 
