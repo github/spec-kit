@@ -2525,3 +2525,151 @@ class TestNonDestructiveRefresh:
         # The pre-existing config was NOT destroyed before the failure
         # (install handles cleanup atomically; refresh no longer pre-strips).
         assert config_path.read_text() == original
+
+
+# -- Bounded stdin reader ---------------------------------------------------
+
+class TestReadStdinBounded:
+    """Test _read_stdin_bounded byte-accurate limiting."""
+
+    def test_small_payload_passes_through(self):
+        from specify_cli.events import _read_stdin_bounded
+        from io import BytesIO
+
+        buf = BytesIO(b'{"key": "value"}')
+        stdin_mock = MagicMock()
+        stdin_mock.isatty.return_value = False
+        stdin_mock.buffer = buf
+        with patch("specify_cli.events.sys") as mock_sys:
+            mock_sys.stdin = stdin_mock
+            result = _read_stdin_bounded(max_bytes=1024)
+        assert result == '{"key": "value"}'
+
+    def test_multibyte_utf8_counted_as_bytes(self):
+        """A 4-byte UTF-8 character counts as 4 bytes, not 1 character."""
+        from specify_cli.events import _read_stdin_bounded
+        from io import BytesIO
+
+        # U+1F600 (😀) is 4 bytes in UTF-8
+        payload = "hello \U0001F600 world".encode("utf-8")
+        assert len(payload) == 16  # "hello " (6) + 😀 (4) + " world" (6)
+
+        buf = BytesIO(payload)
+        stdin_mock = MagicMock()
+        stdin_mock.isatty.return_value = False
+        stdin_mock.buffer = buf
+        with patch("specify_cli.events.sys") as mock_sys:
+            mock_sys.stdin = stdin_mock
+            result = _read_stdin_bounded(max_bytes=16)
+        assert len(result.encode("utf-8")) == 16
+
+    def test_oversized_payload_truncated(self):
+        from specify_cli.events import _read_stdin_bounded
+        from io import BytesIO
+
+        buf = BytesIO(b"x" * 200)
+        stdin_mock = MagicMock()
+        stdin_mock.isatty.return_value = False
+        stdin_mock.buffer = buf
+        with patch("specify_cli.events.sys") as mock_sys:
+            mock_sys.stdin = stdin_mock
+            result = _read_stdin_bounded(max_bytes=100)
+        assert len(result.encode("utf-8")) == 100
+        assert result == "x" * 100
+
+    def test_exact_limit_passes(self):
+        from specify_cli.events import _read_stdin_bounded
+        from io import BytesIO
+
+        buf = BytesIO(b"a" * 65536)
+        stdin_mock = MagicMock()
+        stdin_mock.isatty.return_value = False
+        stdin_mock.buffer = buf
+        with patch("specify_cli.events.sys") as mock_sys:
+            mock_sys.stdin = stdin_mock
+            result = _read_stdin_bounded(max_bytes=65536)
+        assert result == "a" * 65536
+
+    def test_tty_returns_empty_json(self):
+        from specify_cli.events import _read_stdin_bounded
+
+        stdin_mock = MagicMock()
+        stdin_mock.isatty.return_value = True
+        with patch("specify_cli.events.sys") as mock_sys:
+            mock_sys.stdin = stdin_mock
+            result = _read_stdin_bounded()
+        assert result == "{}"
+
+    def test_empty_stdin_returns_empty_string(self):
+        from specify_cli.events import _read_stdin_bounded
+        from io import BytesIO
+
+        buf = BytesIO(b"")
+        stdin_mock = MagicMock()
+        stdin_mock.isatty.return_value = False
+        stdin_mock.buffer = buf
+        with patch("specify_cli.events.sys") as mock_sys:
+            mock_sys.stdin = stdin_mock
+            result = _read_stdin_bounded()
+        assert result == ""
+
+    def test_invalid_utf8_replaced(self):
+        from specify_cli.events import _read_stdin_bounded
+        from io import BytesIO
+
+        buf = BytesIO(b"hello\xff\xfeworld")
+        stdin_mock = MagicMock()
+        stdin_mock.isatty.return_value = False
+        stdin_mock.buffer = buf
+        with patch("specify_cli.events.sys") as mock_sys:
+            mock_sys.stdin = stdin_mock
+            result = _read_stdin_bounded()
+        assert "hello" in result
+        assert "world" in result
+
+
+class TestReadStdinBoundedCLI:
+    """Test the CLI event runner's bounded stdin reader."""
+
+    def test_cli_reader_small_payload(self):
+        from specify_cli.commands.event import _read_stdin_bounded
+        from io import BytesIO
+
+        buf = BytesIO(b'{"event": "test"}')
+        stdin_mock = MagicMock()
+        stdin_mock.isatty.return_value = False
+        stdin_mock.buffer = buf
+        with patch("specify_cli.commands.event.sys") as mock_sys:
+            mock_sys.stdin = stdin_mock
+            result = _read_stdin_bounded(max_bytes=1024)
+        assert result == '{"event": "test"}'
+
+    def test_cli_reader_oversized(self):
+        from specify_cli.commands.event import _read_stdin_bounded
+        from io import BytesIO
+
+        buf = BytesIO(b"y" * 500)
+        stdin_mock = MagicMock()
+        stdin_mock.isatty.return_value = False
+        stdin_mock.buffer = buf
+        with patch("specify_cli.commands.event.sys") as mock_sys:
+            mock_sys.stdin = stdin_mock
+            result = _read_stdin_bounded(max_bytes=100)
+        assert len(result) == 100
+
+    def test_cli_reader_multibyte(self):
+        from specify_cli.commands.event import _read_stdin_bounded
+        from io import BytesIO
+
+        # U+00E9 (é) is 2 bytes in UTF-8
+        payload = "caf\u00e9".encode("utf-8")
+        assert len(payload) == 5  # c + a + f + 2
+
+        buf = BytesIO(payload)
+        stdin_mock = MagicMock()
+        stdin_mock.isatty.return_value = False
+        stdin_mock.buffer = buf
+        with patch("specify_cli.commands.event.sys") as mock_sys:
+            mock_sys.stdin = stdin_mock
+            result = _read_stdin_bounded(max_bytes=5)
+        assert result == "caf\u00e9"
