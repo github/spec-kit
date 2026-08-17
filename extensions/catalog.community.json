@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-14T00:00:00Z",
+  "updated_at": "2026-08-17T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -2288,10 +2288,10 @@
     "linear": {
       "name": "Linear Integration",
       "id": "linear",
-      "description": "Mirror spec-kit feature directories into Linear (filesystem → Linear, reconcile-based, unidirectional).",
+      "description": "Automatically mirror your spec-kit specs into Linear — one issue per spec, a sub-issue per task phase, kept in sync as you work.",
       "author": "Ash Brener",
-      "version": "0.7.0",
-      "download_url": "https://github.com/ashbrener/spec-kit-linear-sync/archive/refs/tags/v0.7.0.zip",
+      "version": "0.8.0",
+      "download_url": "https://github.com/ashbrener/spec-kit-linear-sync/archive/refs/tags/v0.8.0.zip",
       "repository": "https://github.com/ashbrener/spec-kit-linear-sync",
       "homepage": "https://github.com/ashbrener/spec-kit-linear-sync",
       "documentation": "https://github.com/ashbrener/spec-kit-linear-sync/blob/main/README.md",
@@ -2311,14 +2311,13 @@
         "linear",
         "tasks-sync",
         "lifecycle-mirror",
-        "memory",
         "cross-repo"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-01T00:00:00Z",
-      "updated_at": "2026-06-22T00:00:00Z"
+      "updated_at": "2026-08-17T00:00:00Z"
     },
     "linear-weave": {
       "name": "Linear Weave",
