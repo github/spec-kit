@@ -107,10 +107,12 @@ Catalogs come in two kinds, and the distinction is a **security boundary**, not 
 
 > **Do not flip a discovery-only catalog to `install_allowed`.** That defeats the entire point of separating discovery from installation. There are two correct ways to install something you found via `community`:
 >
-> 1. **Install a single vetted extension directly** with `--from` (no catalog authoring needed):
+> 1. **Install a single vetted extension directly** with `--from` (no catalog authoring needed). Get the candidate archive URL from `specify extension info <name>` — for a discovery-only entry it prints a "Candidate archive" URL. Review that release archive, then install it:
 >    ```bash
+>    specify extension info <name>          # shows the candidate archive URL
 >    specify extension add <name> --from <archive-url>
 >    ```
+>    Treat the URL as untrusted until you have vetted it — it comes from an unvetted catalog.
 > 2. **Curate your own catalog** you control and vet, and mark *that* catalog `install_allowed: true` — for when you want a governed, reusable install source (e.g. for an org).
 
 ### List Catalogs

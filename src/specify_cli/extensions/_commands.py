@@ -79,6 +79,27 @@ def _display_project_path(*args, **kwargs):
     return _f(*args, **kwargs)
 
 
+def _command_safe_id(raw_id: object, placeholder: str = "<extension-id>") -> str:
+    """Return an extension ID that is safe to embed in a suggested shell command.
+
+    Catalog entries (especially from discovery-only catalogs) are untrusted:
+    their keys are not validated during catalog merge, so an ``id`` like
+    ``foo; rm -rf ~`` could otherwise be interpolated into a command we
+    explicitly encourage the user to copy and run. ``rich.markup.escape`` only
+    neutralizes Rich markup, not shell metacharacters, so it is not sufficient
+    here. Only emit the real ID when it matches the same
+    lowercase-alphanumeric-and-hyphen rule ``ExtensionManifest`` enforces
+    (``^[a-z0-9-]+$``); otherwise fall back to a literal placeholder so the
+    printed command never carries catalog-controlled shell text.
+    """
+    from . import VALID_EXTENSION_ARTIFACT_NAME_PATTERN
+
+    text = str(raw_id)
+    if VALID_EXTENSION_ARTIFACT_NAME_PATTERN.match(text):
+        return text
+    return placeholder
+
+
 def _refresh_events_and_warn(project_root: Path) -> None:
     """Refresh native event config and surface failures (R3).
 
@@ -1027,7 +1048,7 @@ def extension_add(
                         # Enforce install_allowed policy
                         if not ext_info.get("_install_allowed", True):
                             catalog_name = _escape_markup(str(ext_info.get("_catalog_name", "community")))
-                            resolved_id = _escape_markup(str(ext_info["id"]))
+                            resolved_id = _command_safe_id(ext_info["id"])
                             console.print(
                                 f"[red]Error:[/red] '{safe_extension}' was found in the "
                                 f"'{catalog_name}' catalog, which is discovery-only — a search "
@@ -1288,13 +1309,13 @@ def extension_search(
                 console.print(f"  [dim]Repository:[/dim] {_escape_markup(str(ext['repository']))}")
 
             # Install command (show warning if not installable)
-            safe_id = _escape_markup(str(ext['id']))
+            cmd_id = _command_safe_id(ext['id'])
             if install_allowed:
-                console.print(f"\n  [cyan]Install:[/cyan] specify extension add {safe_id}")
+                console.print(f"\n  [cyan]Install:[/cyan] specify extension add {cmd_id}")
             else:
                 console.print(f"\n  [yellow]⚠[/yellow]  Not directly installable from '{catalog_name}' (discovery-only).")
                 console.print(
-                    f"  Once vetted, install it directly: specify extension add {safe_id} --from <archive-url>"
+                    f"  Once vetted, install it directly: specify extension add {cmd_id} --from <archive-url>"
                 )
                 console.print(
                     "  Don't flip a discovery-only catalog to install_allowed — that's the vetting boundary."
@@ -1519,15 +1540,16 @@ def _print_extension_info(ext_info: dict, manager):
     is_installed = manager.registry.is_installed(ext_info['id'])
     install_allowed = ext_info.get("_install_allowed", True)
     safe_id = _escape_markup(str(ext_info['id']))
+    cmd_id = _command_safe_id(ext_info['id'])
     if is_installed:
         console.print("[green]✓ Installed[/green]")
         metadata = manager.registry.get(ext_info['id'])
         priority = normalize_priority(metadata.get("priority") if isinstance(metadata, dict) else None)
         console.print(f"[dim]Priority:[/dim] {priority}")
-        console.print(f"\nTo remove: specify extension remove {safe_id}")
+        console.print(f"\nTo remove: specify extension remove {cmd_id}")
     elif install_allowed:
         console.print("[yellow]Not installed[/yellow]")
-        console.print(f"\n[cyan]Install:[/cyan] specify extension add {safe_id}")
+        console.print(f"\n[cyan]Install:[/cyan] specify extension add {cmd_id}")
     else:
         catalog_name = _escape_markup(str(ext_info.get("_catalog_name", "community")))
         console.print("[yellow]Not installed[/yellow]")
@@ -1535,9 +1557,19 @@ def _print_extension_info(ext_info: dict, manager):
             f"\n[yellow]⚠[/yellow]  '{safe_id}' is in the '{catalog_name}' catalog, which is "
             f"discovery-only (a search surface, not an install source)."
         )
-        console.print(
-            f"Once you've vetted it, install directly: specify extension add {safe_id} --from <archive-url>"
-        )
+        download_url = ext_info.get("download_url")
+        if download_url:
+            console.print(
+                f"Candidate archive (vet before installing): {_escape_markup(str(download_url))}"
+            )
+            console.print(
+                f"Once vetted, install directly: specify extension add {cmd_id} --from <archive-url>"
+            )
+        else:
+            console.print(
+                f"Once you've vetted its release archive, install directly: "
+                f"specify extension add {cmd_id} --from <archive-url>"
+            )
         console.print(
             "Discovery-only catalogs are intentionally not install sources — don't set "
             "install_allowed on them."

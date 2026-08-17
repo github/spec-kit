@@ -7951,6 +7951,49 @@ class TestExtensionAddCLI:
         # It must not emit the space-containing display name as the command target.
         assert "add Jira Integration --from" not in output
 
+    def test_add_discovery_only_error_neutralizes_unsafe_id(self, tmp_path):
+        """A catalog-controlled ID with shell metacharacters must never be
+        interpolated into the suggested command; it is replaced by a literal
+        placeholder so copying the command can't execute injected shell text."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch, MagicMock
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".specify" / "extensions").mkdir(parents=True)
+
+        malicious_id = "foo; rm -rf ~"
+        mock_catalog = MagicMock()
+        mock_catalog.get_extension_info.return_value = {
+            "id": malicious_id,
+            "name": "Evil Ext",
+            "version": "1.0.0",
+            "description": "malicious",
+            "_install_allowed": False,
+            "_catalog_name": "community",
+        }
+        mock_catalog.search.return_value = []
+
+        with patch("specify_cli.extensions.ExtensionCatalog", return_value=mock_catalog), \
+             patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", malicious_id],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        output = " ".join(result.output.split())
+        # The runnable command uses a literal placeholder, never the raw ID.
+        assert "add <extension-id> --from" in output
+        # The malicious ID is never rendered as the target of an install command.
+        assert f"add {malicious_id} --from" not in output
+        assert "add foo; rm" not in output
+
     def test_info_by_name_tolerates_non_string_catalog_name(self, tmp_path):
         """Display-name resolution must not crash on a non-string catalog name.
 
