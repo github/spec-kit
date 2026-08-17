@@ -923,8 +923,8 @@ def extension_add(
         # Warn about untrusted sources — default-deny confirmation
         console.print()
         console.print(Panel(
-            f"[bold]You are installing an extension from an external URL that is not\n"
-            f"listed in any of your configured extension catalogs.[/bold]\n\n"
+            f"[bold]You are installing an extension directly from an external URL,\n"
+            f"bypassing your trusted (install-allowed) extension catalogs.[/bold]\n\n"
             f"URL: {safe_url}\n\n"
             f"Only install extensions from sources you trust.",
             title="[bold yellow]⚠ Untrusted Source[/bold yellow]",
@@ -1027,6 +1027,7 @@ def extension_add(
                         # Enforce install_allowed policy
                         if not ext_info.get("_install_allowed", True):
                             catalog_name = _escape_markup(str(ext_info.get("_catalog_name", "community")))
+                            resolved_id = _escape_markup(str(ext_info["id"]))
                             console.print(
                                 f"[red]Error:[/red] '{safe_extension}' was found in the "
                                 f"'{catalog_name}' catalog, which is discovery-only — a search "
@@ -1040,7 +1041,7 @@ def extension_add(
                             )
                             console.print(
                                 f"  • install it directly from its archive URL:\n"
-                                f"      specify extension add {safe_extension} --from <archive-url>"
+                                f"      specify extension add {resolved_id} --from <archive-url>"
                             )
                             console.print(
                                 "  • or add it to a catalog you curate and control "

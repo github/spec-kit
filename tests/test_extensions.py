@@ -7909,6 +7909,48 @@ class TestExtensionAddCLI:
             f"but was called with '{download_called_with[0]}'"
         )
 
+    def test_add_discovery_only_error_suggests_resolved_id(self, tmp_path):
+        """The not-installable error must suggest a copy-pasteable command using
+        the resolved catalog ID, not a display name that may contain spaces."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch, MagicMock
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".specify" / "extensions").mkdir(parents=True)
+
+        mock_catalog = MagicMock()
+        mock_catalog.get_extension_info.return_value = None  # ID lookup fails
+        mock_catalog.search.return_value = [
+            {
+                "id": "acme-jira-integration",
+                "name": "Jira Integration",
+                "version": "1.0.0",
+                "description": "Jira integration extension",
+                "_install_allowed": False,
+                "_catalog_name": "community",
+            }
+        ]
+
+        with patch("specify_cli.extensions.ExtensionCatalog", return_value=mock_catalog), \
+             patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "Jira Integration"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        output = " ".join(result.output.split())
+        # Suggested command uses the resolved ID and stays a single token.
+        assert "add acme-jira-integration --from" in output
+        # It must not emit the space-containing display name as the command target.
+        assert "add Jira Integration --from" not in output
+
     def test_info_by_name_tolerates_non_string_catalog_name(self, tmp_path):
         """Display-name resolution must not crash on a non-string catalog name.
 
