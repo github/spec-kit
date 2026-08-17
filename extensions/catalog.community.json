@@ -1511,6 +1511,48 @@
       "created_at": "2026-07-16T00:00:00Z",
       "updated_at": "2026-07-16T00:00:00Z"
     },
+    "dubsar": {
+      "name": "DUBSAR Memory",
+      "id": "dubsar",
+      "description": "Local project memory for Spec Kit with explicit checkpoints, cross-session resume, and SHA-256 freshness for recorded specification, plan, and task references.",
+      "author": "DUBSAR",
+      "version": "0.1.4",
+      "download_url": "https://github.com/kotnisofiane-bit/dubsar-memory/releases/download/speckit-dubsar-v0.1.4/dubsar-memory-extension.zip",
+      "sha256": "55282acfd5df4f000ee75395b4eb6db68562b3fd80fe39330b67a9296435f556",
+      "repository": "https://github.com/kotnisofiane-bit/dubsar-memory",
+      "homepage": "https://github.com/kotnisofiane-bit/dubsar-memory",
+      "documentation": "https://github.com/kotnisofiane-bit/dubsar-memory/blob/main/integrations/spec-kit/dubsar-memory/README.md",
+      "changelog": "https://github.com/kotnisofiane-bit/dubsar-memory/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "visibility",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.16.4",
+        "tools": [
+          {
+            "name": "node",
+            "version": ">=20",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "memory",
+        "continuity",
+        "checkpoints",
+        "resume",
+        "offline"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-17T00:00:00Z",
+      "updated_at": "2026-08-17T00:00:00Z"
+    },
     "ears": {
       "name": "EARS Requirements Syntax",
       "id": "ears",
