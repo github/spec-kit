@@ -91,10 +91,16 @@ def _command_safe_id(raw_id: object, placeholder: str = "<extension-id>") -> str
     lowercase-alphanumeric-and-hyphen rule ``ExtensionManifest`` enforces
     (``^[a-z0-9-]+$``); otherwise fall back to a literal placeholder so the
     printed command never carries catalog-controlled shell text.
+
+    A leading hyphen is additionally rejected: an ID like ``--force`` satisfies
+    the pattern but Typer would parse it as an option rather than the positional
+    extension argument, yielding a non-copyable or option-altering command.
     """
     from . import VALID_EXTENSION_ARTIFACT_NAME_PATTERN
 
     text = str(raw_id)
+    if text.startswith("-"):
+        return placeholder
     if VALID_EXTENSION_ARTIFACT_NAME_PATTERN.match(text):
         return text
     return placeholder

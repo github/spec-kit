@@ -7994,6 +7994,101 @@ class TestExtensionAddCLI:
         assert f"add {malicious_id} --from" not in output
         assert "add foo; rm" not in output
 
+    def test_command_safe_id_rejects_leading_hyphen(self):
+        """An ID like ``--force`` matches the manifest character rule but Typer
+        would parse it as an option, not the positional extension argument, so
+        the helper must fall back to the placeholder."""
+        from specify_cli.extensions._commands import _command_safe_id
+
+        assert _command_safe_id("--force") == "<extension-id>"
+        assert _command_safe_id("-x") == "<extension-id>"
+        # A normal slug is still returned verbatim.
+        assert _command_safe_id("acme-thing") == "acme-thing"
+
+    def test_info_discovery_only_shows_candidate_archive_url(self, tmp_path):
+        """For a discovery-only entry that carries a ``download_url``, ``info``
+        surfaces the candidate archive URL (flagged for vetting) and the vetted
+        ``--from`` install guidance, so users have a CLI path to the URL."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch, MagicMock
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".specify" / "extensions").mkdir(parents=True)
+
+        archive_url = "https://example.com/acme-thing-1.0.0.zip"
+        mock_catalog = MagicMock()
+        mock_catalog.get_extension_info.return_value = {
+            "id": "acme-thing",
+            "name": "Acme Thing",
+            "version": "1.0.0",
+            "description": "A thing",
+            "download_url": archive_url,
+            "_install_allowed": False,
+            "_catalog_name": "community",
+        }
+        mock_catalog.search.return_value = []
+
+        with patch("specify_cli.extensions.ExtensionCatalog", return_value=mock_catalog), \
+             patch("specify_cli.extensions.ExtensionManager") as mock_mgr, \
+             patch.object(Path, "cwd", return_value=project_dir):
+            mock_mgr.return_value.registry.is_installed.return_value = False
+            result = runner.invoke(
+                app,
+                ["extension", "info", "acme-thing"],
+                catch_exceptions=True,
+            )
+
+        output = " ".join(result.output.split())
+        assert "discovery-only" in output
+        assert f"Candidate archive (vet before installing): {archive_url}" in output
+        assert "specify extension add acme-thing --from <archive-url>" in output
+
+    def test_info_discovery_only_without_url_falls_back(self, tmp_path):
+        """A discovery-only entry lacking ``download_url`` still gets vetted
+        ``--from`` guidance, without claiming a candidate archive it doesn't
+        have."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch, MagicMock
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".specify" / "extensions").mkdir(parents=True)
+
+        mock_catalog = MagicMock()
+        mock_catalog.get_extension_info.return_value = {
+            "id": "acme-thing",
+            "name": "Acme Thing",
+            "version": "1.0.0",
+            "description": "A thing",
+            "_install_allowed": False,
+            "_catalog_name": "community",
+        }
+        mock_catalog.search.return_value = []
+
+        with patch("specify_cli.extensions.ExtensionCatalog", return_value=mock_catalog), \
+             patch("specify_cli.extensions.ExtensionManager") as mock_mgr, \
+             patch.object(Path, "cwd", return_value=project_dir):
+            mock_mgr.return_value.registry.is_installed.return_value = False
+            result = runner.invoke(
+                app,
+                ["extension", "info", "acme-thing"],
+                catch_exceptions=True,
+            )
+
+        output = " ".join(result.output.split())
+        assert "Candidate archive" not in output
+        assert "vetted its release archive" in output
+        assert "specify extension add acme-thing --from <archive-url>" in output
+
     def test_info_by_name_tolerates_non_string_catalog_name(self, tmp_path):
         """Display-name resolution must not crash on a non-string catalog name.
 
