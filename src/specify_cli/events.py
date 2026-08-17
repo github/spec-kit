@@ -347,6 +347,24 @@ def _emit(output, envelope, native_event=""):
     sys.stdout.write(output)
 
 
+_MAX_STDIN_BYTES = 10 * 1024 * 1024  # 10 MiB
+
+
+def _read_stdin_bounded(max_bytes=_MAX_STDIN_BYTES):
+    """Read at most *max_bytes* from stdin to prevent unbounded memory use."""
+    if sys.stdin.isatty():
+        return "{}"
+    chunks = []
+    total = 0
+    while total < max_bytes:
+        chunk = sys.stdin.buffer.read(min(max_bytes - total, 65536))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+    return b"".join(chunks).decode("utf-8", errors="replace")
+
+
 def main():
     if len(sys.argv) < 3:
         sys.exit(0)
