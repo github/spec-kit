@@ -78,12 +78,48 @@ def test_offline_workflow_allows_bundled(tmp_path: Path, monkeypatch):
         assets, "_locate_bundled_workflow", lambda wid: tmp_path / "wf"
     )
     calls: list[str] = []
-    monkeypatch.setattr(specify_cli, "workflow_add", lambda wid: calls.append(wid))
+    monkeypatch.setattr(
+        specify_cli, "workflow_add", lambda wid, **kwargs: calls.append(wid)
+    )
 
     manager = primitive_manager("workflows", tmp_path, allow_network=False)
     manager.install(_component("workflows", "bundled-wf"))
 
     assert calls == ["bundled-wf"]
+
+
+def test_workflow_install_passes_explicit_typer_options(tmp_path: Path, monkeypatch):
+    """The bundler calls ``workflow_add`` in-process, so it must pass the
+    ``typer.Option`` values explicitly.
+
+    Outside Typer, an omitted option parameter keeps its ``OptionInfo``
+    sentinel as the value. That sentinel is truthy and is not ``None``, so
+    ``workflow_add``'s ``if dev:`` took the local-path branch for *every*
+    catalog install and failed with "--dev source must be a workflow YAML
+    file, supported archive, or directory containing workflow.yml".
+    """
+    import specify_cli
+    import specify_cli._assets as assets
+
+    monkeypatch.setattr(
+        assets, "_locate_bundled_workflow", lambda wid: tmp_path / "wf"
+    )
+    seen: list[dict] = []
+
+    def _capture(wid, *args, **kwargs):
+        seen.append({"id": wid, "args": args, "kwargs": kwargs})
+
+    monkeypatch.setattr(specify_cli, "workflow_add", _capture)
+
+    manager = primitive_manager("workflows", tmp_path, allow_network=False)
+    manager.install(_component("workflows", "bundled-wf"))
+
+    assert len(seen) == 1, seen
+    call = seen[0]
+    assert call["id"] == "bundled-wf"
+    # Both options must arrive as real values, never as Typer sentinels.
+    assert call["kwargs"].get("dev") is False, call["kwargs"]
+    assert call["kwargs"].get("from_url") is None, call["kwargs"]
 
 
 def test_assert_pinned_version_matches_passes():
