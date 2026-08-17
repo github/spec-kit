@@ -18,7 +18,7 @@ from urllib.request import url2pathname
 from ..._assets import _locate_core_pack, _repo_root
 from ..._download_security import MAX_JSON_CATALOG_BYTES, read_response_limited
 from .. import BundlerError
-from ..lib.yamlio import load_json, loads_json
+from ..lib.yamlio import loads_json
 from ..models.catalog import CatalogSource
 from ..models.manifest import ComponentRef
 

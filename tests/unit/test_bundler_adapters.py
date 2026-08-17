@@ -208,12 +208,11 @@ def test_validate_remote_url_rejects_malformed_url_cleanly(url):
 
 @pytest.mark.parametrize("use_file_url", [False, True], ids=["path", "file-url"])
 def test_local_catalog_toctou_race(tmp_path, use_file_url):
-    """Regression guard: a file that disappears between the old exists() pre-check
-    and read_text() must raise BundlerError, not a raw FileNotFoundError.
+    """A missing file at read time must retain the fetcher's BundlerError contract.
 
-    The mocked Path is observable as present (exists() returns True) but
-    read_text() raises FileNotFoundError, simulating a deletion between the two
-    calls — the exact race window the exists() removal eliminates."""
+    The mocked Path raises FileNotFoundError from read_text(), simulating a
+    deletion immediately before the catalog is opened while verifying that no
+    existence pre-check is needed."""
     catalog_path = tmp_path / "catalog.json"
     url = catalog_path.as_uri() if use_file_url else str(catalog_path)
 
