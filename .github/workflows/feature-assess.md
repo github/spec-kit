@@ -35,6 +35,14 @@ permissions:
 checkout:
   fetch-depth: 0
 
+steps:
+  - name: Setup uv
+    uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+  - name: Set up Python
+    uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+    with:
+      python-version: "3.14"
+
 safe-outputs:
   noop:
     report-as-issue: false
@@ -81,13 +89,15 @@ your bash tools by following the numbered steps below, in order.
 Install the `specify` CLI **from the checked-out revision**, not from a mutable
 branch, so every run uses the exact CLI and bundled `assess` instructions of the
 workflow commit under evaluation. The repository is already checked out at this
-run's revision in `$GITHUB_WORKSPACE`; install from there with `uv`:
+run's revision in `$GITHUB_WORKSPACE`. Both `uv` and Python are pre-installed on
+this runner by the workflow's setup steps, so install from the checkout with
+`uv`:
 
 ```bash
 uv tool install specify-cli --from "$GITHUB_WORKSPACE"
 ```
 
-If `uv` is not on `PATH`, install it first
+If for any reason `uv` is not on `PATH`, install it first
 (`curl -LsSf https://astral.sh/uv/install.sh | sh` and re-source your shell/
 `PATH`), or fall back to `pip install --user "$GITHUB_WORKSPACE"`. (If you ever
 need the Git source instead of the checkout, pin it to this run's commit —
