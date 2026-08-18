@@ -122,6 +122,134 @@ class TestInitIntegrationFlag:
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == specify_cli.DEFAULT_INIT_INTEGRATION
 
+    def test_noninteractive_flag_skips_pickers_when_stdin_is_a_tty(
+        self, tmp_path, monkeypatch
+    ):
+        """Agent harnesses often allocate a PTY (isatty True) but cannot send
+        arrow keys. ``--non-interactive`` must still skip both pickers and apply
+        documented defaults — the hang reported in #4152.
+        """
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli
+        import specify_cli.commands.init as init_mod
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError(
+                "--non-interactive must not open select_with_arrows even on a TTY"
+            )
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        runner = CliRunner()
+        project = tmp_path / "agent-pty"
+        result = runner.invoke(
+            app,
+            ["init", str(project), "--non-interactive", "--ignore-agent-tools"],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert f"defaulting to '{specify_cli.DEFAULT_INIT_INTEGRATION}'" in result.output
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == specify_cli.DEFAULT_INIT_INTEGRATION
+
+    def test_noninteractive_flag_here_nonempty_requires_force(
+        self, tmp_path, monkeypatch
+    ):
+        """``--non-interactive`` on a non-empty --here directory must fail fast
+        asking for --force, even when stdin looks like a TTY.
+        """
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli.commands.init as init_mod
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("picker must not run under --non-interactive")
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        def fail_confirm(*_args, **_kwargs):
+            raise AssertionError(
+                "--non-interactive must not call typer.confirm for a non-empty --here directory"
+            )
+
+        monkeypatch.setattr("typer.confirm", fail_confirm)
+
+        project = tmp_path / "nonempty-here-flag"
+        project.mkdir()
+        (project / "existing.txt").write_text("keep me", encoding="utf-8")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--non-interactive",
+                    "--integration",
+                    "copilot",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 1, result.output
+        assert "--force" in result.output
+        assert "--non-interactive" in result.output
+        assert (project / "existing.txt").read_text(encoding="utf-8") == "keep me"
+
+    def test_noninteractive_flag_here_force_completes_without_script_flag(
+        self, tmp_path, monkeypatch
+    ):
+        """The #4152 reproduction: ``--here --force --integration`` without
+        ``--script`` must not hang on the script picker when --non-interactive
+        is set, even if stdin is a TTY.
+        """
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli.commands.init as init_mod
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("script picker must not run under --non-interactive")
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        project = tmp_path / "here-force-agent"
+        project.mkdir()
+        (project / "existing.txt").write_text("keep me", encoding="utf-8")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--force",
+                    "--non-interactive",
+                    "--integration",
+                    "claude",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert (project / ".specify" / "init-options.json").exists()
+
     def test_noninteractive_init_honors_default_integration_env_var(
         self, tmp_path, monkeypatch
     ):
@@ -164,7 +292,7 @@ class TestInitIntegrationFlag:
 
         captured = {}
 
-        def fake_select(options, prompt_text=None, default_key=None):
+        def fake_select(options, prompt_text=None, default_key=None, **_kwargs):
             # Only capture the integration picker (not the script picker).
             if "Choose your coding agent integration" in (prompt_text or ""):
                 captured["default_key"] = default_key
@@ -2688,6 +2816,130 @@ class TestExtensionFlag:
         normalized = _normalize_cli_output(result.output)
         assert "untrusted url" in normalized.lower()
         assert not (project / ".specify" / "extensions" / "git").exists()
+
+    def test_noninteractive_flag_skips_url_trust_prompt_when_stdin_is_a_tty(
+        self, tmp_path, monkeypatch
+    ):
+        """``--non-interactive`` must not call ``typer.confirm`` for an HTTPS
+        ``--extension`` even when stdin is a TTY. Without
+        ``--trust-extension-urls`` the URL is denied (default-deny). Guards the
+        ``allow_prompt`` wiring added for #4152.
+        """
+        from unittest.mock import patch
+
+        import specify_cli.commands.init as init_mod
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("--non-interactive must not open select_with_arrows")
+
+        def fail_confirm(*_args, **_kwargs):
+            raise AssertionError(
+                "--non-interactive must not prompt for URL extension trust"
+            )
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        with patch("typer.confirm", side_effect=fail_confirm), patch(
+            "specify_cli.authentication.http.open_url"
+        ) as mock_open:
+            project, result = self._run_init(
+                tmp_path,
+                [
+                    "--non-interactive",
+                    "--extension",
+                    "https://example.com/git.zip",
+                ],
+                project_name="ext-url-noninteractive-tty",
+            )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+        mock_open.assert_not_called()
+        normalized = _normalize_cli_output(result.output)
+        assert "untrusted url" in normalized.lower()
+        assert "--trust-extension-urls" in result.output
+        assert not (project / ".specify" / "extensions" / "git").exists()
+
+    def test_noninteractive_flag_trust_urls_installs_without_confirm(
+        self, tmp_path, monkeypatch
+    ):
+        """``--non-interactive --trust-extension-urls`` installs an HTTPS
+        extension without calling ``typer.confirm``, even when stdin is a TTY.
+        """
+        import io
+
+        from unittest.mock import patch
+
+        from specify_cli import _locate_bundled_extension
+        import specify_cli.commands.init as init_mod
+
+        bundled_git = _locate_bundled_extension("git")
+        assert bundled_git is not None, "bundled git extension not found"
+        zip_bytes = self._zip_bytes_from_dir(bundled_git)
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def _cache_dir_stand_in(project_root):
+            d = project_root / ".specify" / "extensions" / ".cache" / "downloads"
+            d.mkdir(parents=True, exist_ok=True)
+            return d
+
+        def _open_download_zip(project_root, download_dir, zip_filename):
+            target = download_dir / zip_filename
+            o_temporary = getattr(os, "O_TEMPORARY", 0)
+            if o_temporary:
+                return os.open(
+                    target, os.O_RDWR | os.O_CREAT | os.O_EXCL | o_temporary, 0o600
+                )
+            fd = os.open(target, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                os.unlink(target)
+            except OSError:
+                os.close(fd)
+                raise
+            return fd
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("--non-interactive must not open select_with_arrows")
+
+        def fail_confirm(*_args, **_kwargs):
+            raise AssertionError(
+                "--non-interactive must not prompt for URL extension trust"
+            )
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        with patch("typer.confirm", side_effect=fail_confirm), patch(
+            "specify_cli.authentication.http.open_url",
+            return_value=FakeResponse(zip_bytes),
+        ), patch(
+            "specify_cli.extensions._commands._validate_safe_cache_dir",
+            side_effect=_cache_dir_stand_in,
+        ), patch(
+            "specify_cli.extensions._commands._safe_open_download_zip",
+            side_effect=_open_download_zip,
+        ):
+            project, result = self._run_init(
+                tmp_path,
+                [
+                    "--non-interactive",
+                    "--extension",
+                    "https://example.com/git.zip",
+                    "--trust-extension-urls",
+                ],
+                project_name="ext-url-noninteractive-trust",
+            )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+        assert (project / ".specify" / "extensions" / "git").exists()
 
     def test_url_extension_interactive_confirm_installs(self, tmp_path):
         """An interactive 'yes' to the trust prompt allows the URL install."""
