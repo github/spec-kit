@@ -1202,6 +1202,10 @@ class TestExtensionSkillRegistration:
                         "name": "speckit.literal-ref-ext.run",
                         "file": "commands/run.md",
                         "description": "Run command",
+                        "aliases": [
+                            "speckit.foo.bar",
+                            "speckit.export.json",
+                        ],
                     }
                 ]
             },
@@ -1215,6 +1219,9 @@ class TestExtensionSkillRegistration:
             "description: Run command\n"
             "---\n\n"
             "Literal slash form: /speckit.foo.bar --flag value\n"
+            "Valid suffix form: /speckit.export.json\n"
+            "Path continuation form: /speckit.foo.bar/scripts/run.sh\n"
+            "Sentence punctuation form: Run /speckit.foo.bar.\n"
             "Native slash form: /speckit-foo-bar\n"
             "Native dollar form: $speckit-foo-bar\n"
             "Native skill form: /skill:speckit-foo-bar\n"
@@ -1227,14 +1234,68 @@ class TestExtensionSkillRegistration:
         manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
         content = (skills_dir / "speckit-literal-ref-ext-run" / "SKILL.md").read_text()
+        expected_json_invocation = expected_invocation.replace("foo-bar", "export-json")
         assert f"Literal slash form: {expected_invocation} --flag value" in content
         assert "Literal slash form: /speckit.foo.bar --flag value" not in content
+        assert f"Valid suffix form: {expected_json_invocation}" in content
+        assert "Valid suffix form: /speckit.export.json" not in content
+        assert "Path continuation form: /speckit.foo.bar/scripts/run.sh" in content
+        assert f"Sentence punctuation form: Run {expected_invocation}." in content
         assert "Native slash form: /speckit-foo-bar" in content
         assert "Native dollar form: $speckit-foo-bar" in content
         assert "Native skill form: /skill:speckit-foo-bar" in content
         assert "speckit.foo.bar" in content
         assert "https://example.com/speckit.foo.bar" in content
         assert "/speckit.foo.bar.md" in content
+
+    def test_skill_registration_rewrites_multi_segment_alias_with_punctuation(
+        self, project_dir, temp_dir
+    ):
+        """Aliases can be free-form safe names with multiple dotted segments."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+
+        ext_dir = temp_dir / "multi-segment-alias-ext"
+        ext_dir.mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "multi-segment-alias-ext",
+                "name": "Multi Segment Alias Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.multi-segment-alias-ext.run",
+                        "file": "commands/run.md",
+                        "description": "Run command",
+                        "aliases": ["speckit.foo.bar.baz"],
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.safe_dump(manifest_data, f)
+
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Run command\n"
+            "---\n\n"
+            "Sentence punctuation form: Run /speckit.foo.bar.baz.\n"
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        content = (
+            skills_dir / "speckit-multi-segment-alias-ext-run" / "SKILL.md"
+        ).read_text()
+        assert "Sentence punctuation form: Run /speckit-foo-bar-baz." in content
+        assert "/speckit.foo.bar.baz." not in content
 
     def test_missing_command_file_skipped(self, skills_project, temp_dir):
         """Commands with missing source files should be skipped gracefully."""

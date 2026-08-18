@@ -1608,16 +1608,22 @@ class ExtensionManager:
         def _normalize_literal_slash_command_refs(body: str) -> str:
             """Normalize literal /speckit.foo refs in generated skill bodies."""
 
+            known_command_names = {
+                cmd["name"]
+                for cmd in manifest.commands
+                if isinstance(cmd.get("name"), str)
+            }
+            for cmd in manifest.commands:
+                aliases = cmd.get("aliases", [])
+                if not isinstance(aliases, list):
+                    continue
+                known_command_names.update(
+                    alias for alias in aliases if isinstance(alias, str)
+                )
+
             def _replacement(match: re.Match[str]) -> str:
                 command_name = match.group("command")
-                if command_name.rsplit(".", 1)[-1] in {
-                    "json",
-                    "md",
-                    "toml",
-                    "txt",
-                    "yaml",
-                    "yml",
-                }:
+                if command_name not in known_command_names:
                     return match.group(0)
                 return _render_skill_command_invocation(command_name)
 
@@ -1625,7 +1631,7 @@ class ExtensionManager:
                 (
                     r"(?<![\w$:/-])"
                     r"/(?P<command>speckit\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+)"
-                    r"(?![A-Za-z0-9_.-])"
+                    r"(?!/)"
                 ),
                 _replacement,
                 body,
