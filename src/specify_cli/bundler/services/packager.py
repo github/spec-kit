@@ -98,11 +98,20 @@ def build_bundle(
                 st = os.fstat(fh.fileno())
                 mode = 0o755 if st.st_mode & 0o111 else 0o644
                 info.external_attr = mode << 16
+                # Fast metadata rejection: skip files whose size exceeds the
+                # limit before touching the read path.  Then also bound the
+                # actual read so a TOCTOU race (file appended after fstat)
+                # cannot bypass the limit.
                 if st.st_size > MAX_ZIP_MEMBER_BYTES:
                     raise BundlerError(
                         f"Bundle file {arcname} exceeds {MAX_ZIP_MEMBER_BYTES}-byte limit"
                     )
-                archive.writestr(info, fh.read())
+                content = fh.read(MAX_ZIP_MEMBER_BYTES + 1)
+                if len(content) > MAX_ZIP_MEMBER_BYTES:
+                    raise BundlerError(
+                        f"Bundle file {arcname} exceeds {MAX_ZIP_MEMBER_BYTES}-byte limit"
+                    )
+                archive.writestr(info, content)
 
     return BuildResult(artifact_path=artifact_path, file_count=len(files))
 
