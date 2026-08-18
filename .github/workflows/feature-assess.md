@@ -23,6 +23,9 @@ network:
     - github
     - python
     - "astral.sh"
+    - "gitlab.com"
+    - "stackoverflow.com"
+    - "*.stackexchange.com"
 
 permissions:
   contents: read
@@ -72,18 +75,29 @@ your bash tools by following the numbered steps below, in order.
 
 ## Step 1 — Install the Spec Kit CLI
 
-Install the `specify` CLI with your bash tools. Prefer `uv`:
+Install the `specify` CLI **from the checked-out revision**, not from a mutable
+branch, so every run uses the exact CLI and bundled `assess` instructions of the
+workflow commit under evaluation. The repository is already checked out at this
+run's revision in `$GITHUB_WORKSPACE`; install from there with `uv`:
 
 ```bash
-uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+uv tool install specify-cli --from "$GITHUB_WORKSPACE"
 ```
 
 If `uv` is not on `PATH`, install it first
 (`curl -LsSf https://astral.sh/uv/install.sh | sh` and re-source your shell/
-`PATH`), or fall back to `pip install --user git+https://github.com/github/spec-kit.git`.
-Confirm the CLI works with `specify --version` (and optionally `specify check`).
+`PATH`), or fall back to `pip install --user "$GITHUB_WORKSPACE"`. (If you ever
+need the Git source instead of the checkout, pin it to this run's commit —
+`git+https://github.com/github/spec-kit.git@$GITHUB_SHA` — never the default
+branch.) Confirm the CLI works with `specify --version` (and optionally
+`specify check`).
+
 If the CLI cannot be installed after a reasonable attempt, **stop**: post one
-comment explaining the environment failure and add the `feature-invalid` label.
+comment explaining the **operational/environment failure** and stop **without
+applying any verdict label**. An install or network failure is an operational
+problem with the runner, not a judgment about the request — do **not** apply
+`feature-invalid` (that label is reserved for unassessable request content, per
+Step 7).
 
 ## Step 2 — Initialize Spec Kit for Copilot in the Checkout
 
