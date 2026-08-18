@@ -674,16 +674,31 @@ class IntegrationDescriptor:
     @staticmethod
     def _load(path: Path) -> dict:
         try:
-            with open(path, "r", encoding="utf-8") as fh:
-                return yaml.safe_load(fh) or {}
-        except yaml.YAMLError as exc:
-            raise IntegrationDescriptorError(f"Invalid YAML in {path}: {exc}")
+            text = path.read_text(encoding="utf-8")
         except FileNotFoundError:
             raise IntegrationDescriptorError(f"Descriptor not found: {path}")
         except (OSError, UnicodeError) as exc:
             raise IntegrationDescriptorError(
                 f"Unable to read descriptor {path}: {exc}"
             )
+        try:
+            # ``safe_load`` returns None for BOTH an empty document and an
+            # explicit null scalar (``null``, ``~``, ``Null``, ``NULL``), so it
+            # cannot tell them apart on its own. ``compose`` yields no node
+            # only for a genuinely empty document.
+            is_empty_document = yaml.compose(text) is None
+            data = yaml.safe_load(text)
+        except yaml.YAMLError as exc:
+            raise IntegrationDescriptorError(f"Invalid YAML in {path}: {exc}")
+        # Only a genuinely EMPTY document becomes an empty mapping, so its
+        # missing-field errors are reported. Every non-mapping document --
+        # including an explicit ``null``/``~`` and the falsy shapes ``[]``,
+        # ``false``, ``0``, ``''`` that a plain ``or {}`` would mask -- must
+        # reach ``_validate`` unchanged so it reports the wrong descriptor
+        # shape, like the truthy twins (``- a``, ``hello``) already do.
+        if is_empty_document:
+            data = {}
+        return data
 
     # -- Validation -------------------------------------------------------
 

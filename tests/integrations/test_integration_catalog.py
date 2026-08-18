@@ -700,6 +700,36 @@ class TestIntegrationDescriptor:
         with pytest.raises(IntegrationDescriptorError, match="expected a list"):
             IntegrationDescriptor(p)
 
+    @pytest.mark.parametrize(
+        "content", ["[]", "false", "0", "''", "null", "~", "NULL", "- a", "hello"]
+    )
+    def test_falsy_non_mapping_descriptor_reports_shape_error(self, tmp_path, content):
+        """Every non-mapping document reports the mapping-shape error.
+
+        `_validate` opens with an `isinstance(self.data, dict)` check, so a
+        truthy non-mapping (`- a`, `hello`) correctly reported "Descriptor root
+        must be a YAML mapping". `_load`'s plain `yaml.safe_load(fh) or {}`
+        masked that for the falsy shapes `[]`, `false`, `0`, `''` (coerced to
+        an empty mapping) and for an explicit null scalar (`null`, `~`, `NULL`
+        -- indistinguishable from an empty document by `safe_load` alone), so
+        those five reported "Missing required field: schema_version" instead.
+        """
+        p = tmp_path / "integration.yml"
+        p.write_text(content)
+        with pytest.raises(
+            IntegrationDescriptorError,
+            match="Descriptor root must be a YAML mapping",
+        ):
+            IntegrationDescriptor(p)
+
+    def test_empty_document_still_reports_missing_fields(self, tmp_path):
+        """An empty document is not a wrong shape -- it is a mapping with no
+        keys, so the missing-field error must still be what is reported."""
+        p = tmp_path / "integration.yml"
+        p.write_text("")
+        with pytest.raises(IntegrationDescriptorError, match="Missing required field: schema_version"):
+            IntegrationDescriptor(p)
+
     def test_file_not_found(self, tmp_path):
         with pytest.raises(IntegrationDescriptorError, match="Descriptor not found"):
             IntegrationDescriptor(tmp_path / "nonexistent.yml")
