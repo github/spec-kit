@@ -110,11 +110,17 @@ deciding pass/fail:
 - Confirm the repository contains a `LICENSE` file
 
 ### 2d. Release and download URL validation
-- The download URL should follow the pattern
+- The download URL MUST follow one of the accepted tag-pinned patterns:
   `https://github.com/<owner>/<repo>/archive/refs/tags/v<version>.zip`
   or
   `https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>.zip`
-- Verify a GitHub release exists matching the submitted version
+- If the download URL path contains `releases/latest/`, reject with an
+  explanation — this URL is floating and not acceptable. Fail immediately,
+  before any HTTP check.
+- The version segment embedded in the URL (`/tags/v<version>.zip` or
+  `/download/<tag>/`) MUST match the submitted version (`vX.Y.Z` or `X.Y.Z`).
+- Only after the pinning checks pass: verify a GitHub release exists matching
+  the submitted version, and that the download URL returns HTTP 200.
 
 ### 2e. Submission checklists
 - Confirm that all required checkboxes in the Testing Checklist and Submission

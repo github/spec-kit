@@ -118,11 +118,16 @@ Run every check and collect all failures before deciding the outcome.
 
 ### 2c. Release artifact
 
-- The download URL must be an HTTPS GitHub release asset URL under the submitted
-  repository:
+- The download URL MUST follow the accepted tag-pinned pattern under the
+  submitted repository:
   `https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>.zip`.
-- Confirm the release exists, its tag corresponds to the submitted version
-  (`vX.Y.Z` or `X.Y.Z`), and the exact ZIP asset is attached to that release.
+- If the download URL path contains `releases/latest/`, reject with an
+  explanation — this URL is floating and not acceptable. Fail immediately,
+  before any HTTP check.
+- The version segment embedded in the URL (`/download/<tag>/`) MUST match the
+  submitted version (`vX.Y.Z` or `X.Y.Z`).
+- Only after the pinning checks pass: confirm the release exists, the exact ZIP
+  asset is attached to that release, and the download URL returns HTTP 200.
 - Confirm the asset name is versioned and consistent with the submitted bundle
   ID and version.
 

@@ -111,6 +111,22 @@ def test_community_submission_automation_is_wired_to_allowed_files():
         assert label in assignment_text
 
 
+def test_community_submission_workflows_require_tag_pinned_download_urls():
+    """Catalog agents must reject floating releases/latest URLs (issue #4185)."""
+    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+        source_text = (WORKFLOWS_DIR / f"add-community-{workflow}.md").read_text(
+            encoding="utf-8"
+        )
+        lowered = source_text.lower()
+
+        assert "should follow the pattern" not in lowered
+        assert "releases/latest/" in source_text
+        assert "reject" in lowered
+        assert "vX.Y.Z" in source_text
+        assert "X.Y.Z" in source_text
+        assert "MUST" in source_text or "must" in lowered
+
+
 def test_community_submission_allowed_files_do_not_include_other_catalogs_or_docs():
     allowed_by_workflow = {
         workflow: set(
