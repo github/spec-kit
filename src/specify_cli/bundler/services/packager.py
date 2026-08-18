@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .. import BundlerError
+from ..._download_security import MAX_ZIP_MEMBER_BYTES
 from ..lib.yamlio import ensure_within
 from ..models.manifest import BundleManifest
 from .validator import validate_manifest
@@ -97,7 +98,20 @@ def build_bundle(
                 st = os.fstat(fh.fileno())
                 mode = 0o755 if st.st_mode & 0o111 else 0o644
                 info.external_attr = mode << 16
-                archive.writestr(info, fh.read())
+                # Fast metadata rejection: skip files whose size exceeds the
+                # limit before touching the read path.  Then also bound the
+                # actual read so a TOCTOU race (file appended after fstat)
+                # cannot bypass the limit.
+                if st.st_size > MAX_ZIP_MEMBER_BYTES:
+                    raise BundlerError(
+                        f"Bundle file {arcname} exceeds {MAX_ZIP_MEMBER_BYTES}-byte limit"
+                    )
+                content = fh.read(MAX_ZIP_MEMBER_BYTES + 1)
+                if len(content) > MAX_ZIP_MEMBER_BYTES:
+                    raise BundlerError(
+                        f"Bundle file {arcname} exceeds {MAX_ZIP_MEMBER_BYTES}-byte limit"
+                    )
+                archive.writestr(info, content)
 
     return BuildResult(artifact_path=artifact_path, file_count=len(files))
 
