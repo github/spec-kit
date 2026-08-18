@@ -23,6 +23,7 @@ network:
     - github
     - python
     - "astral.sh"
+    - "gist.github.com"
     - "gitlab.com"
     - "stackoverflow.com"
     - "*.stackexchange.com"
@@ -232,8 +233,12 @@ limit._`) and mark dropped content explicitly (e.g.
 `[truncated — N lines omitted]`). Never drop a `[NEEDS CLARIFICATION: …]`, a
 verdict-supporting citation, or the verdict itself to save space.
 
-If posting a stage's comment fails, still continue the pipeline; note the
-failure in the next comment you successfully post so the trail stays honest.
+If a stage's comment cannot be **queued** (the `add_comment` safe-output call
+itself errors — e.g. you exceed the comment budget), still continue the
+pipeline and note that in the next comment you successfully queue, so the trail
+stays honest. The actual posting to GitHub happens in a later job you cannot
+observe; do not attempt to detect or report a post-time delivery failure — those
+surface in the workflow run logs and conclusion, not in a follow-up comment.
 
 ## Step 7 — Apply the Verdict Label
 
