@@ -174,6 +174,13 @@ class TestInitIntegrationFlag:
 
         monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
 
+        def fail_confirm(*_args, **_kwargs):
+            raise AssertionError(
+                "--non-interactive must not call typer.confirm for a non-empty --here directory"
+            )
+
+        monkeypatch.setattr("typer.confirm", fail_confirm)
+
         project = tmp_path / "nonempty-here-flag"
         project.mkdir()
         (project / "existing.txt").write_text("keep me", encoding="utf-8")
@@ -2809,6 +2816,130 @@ class TestExtensionFlag:
         normalized = _normalize_cli_output(result.output)
         assert "untrusted url" in normalized.lower()
         assert not (project / ".specify" / "extensions" / "git").exists()
+
+    def test_noninteractive_flag_skips_url_trust_prompt_when_stdin_is_a_tty(
+        self, tmp_path, monkeypatch
+    ):
+        """``--non-interactive`` must not call ``typer.confirm`` for an HTTPS
+        ``--extension`` even when stdin is a TTY. Without
+        ``--trust-extension-urls`` the URL is denied (default-deny). Guards the
+        ``allow_prompt`` wiring added for #4152.
+        """
+        from unittest.mock import patch
+
+        import specify_cli.commands.init as init_mod
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("--non-interactive must not open select_with_arrows")
+
+        def fail_confirm(*_args, **_kwargs):
+            raise AssertionError(
+                "--non-interactive must not prompt for URL extension trust"
+            )
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        with patch("typer.confirm", side_effect=fail_confirm), patch(
+            "specify_cli.authentication.http.open_url"
+        ) as mock_open:
+            project, result = self._run_init(
+                tmp_path,
+                [
+                    "--non-interactive",
+                    "--extension",
+                    "https://example.com/git.zip",
+                ],
+                project_name="ext-url-noninteractive-tty",
+            )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+        mock_open.assert_not_called()
+        normalized = _normalize_cli_output(result.output)
+        assert "untrusted url" in normalized.lower()
+        assert "--trust-extension-urls" in result.output
+        assert not (project / ".specify" / "extensions" / "git").exists()
+
+    def test_noninteractive_flag_trust_urls_installs_without_confirm(
+        self, tmp_path, monkeypatch
+    ):
+        """``--non-interactive --trust-extension-urls`` installs an HTTPS
+        extension without calling ``typer.confirm``, even when stdin is a TTY.
+        """
+        import io
+
+        from unittest.mock import patch
+
+        from specify_cli import _locate_bundled_extension
+        import specify_cli.commands.init as init_mod
+
+        bundled_git = _locate_bundled_extension("git")
+        assert bundled_git is not None, "bundled git extension not found"
+        zip_bytes = self._zip_bytes_from_dir(bundled_git)
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def _cache_dir_stand_in(project_root):
+            d = project_root / ".specify" / "extensions" / ".cache" / "downloads"
+            d.mkdir(parents=True, exist_ok=True)
+            return d
+
+        def _open_download_zip(project_root, download_dir, zip_filename):
+            target = download_dir / zip_filename
+            o_temporary = getattr(os, "O_TEMPORARY", 0)
+            if o_temporary:
+                return os.open(
+                    target, os.O_RDWR | os.O_CREAT | os.O_EXCL | o_temporary, 0o600
+                )
+            fd = os.open(target, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                os.unlink(target)
+            except OSError:
+                os.close(fd)
+                raise
+            return fd
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("--non-interactive must not open select_with_arrows")
+
+        def fail_confirm(*_args, **_kwargs):
+            raise AssertionError(
+                "--non-interactive must not prompt for URL extension trust"
+            )
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        with patch("typer.confirm", side_effect=fail_confirm), patch(
+            "specify_cli.authentication.http.open_url",
+            return_value=FakeResponse(zip_bytes),
+        ), patch(
+            "specify_cli.extensions._commands._validate_safe_cache_dir",
+            side_effect=_cache_dir_stand_in,
+        ), patch(
+            "specify_cli.extensions._commands._safe_open_download_zip",
+            side_effect=_open_download_zip,
+        ):
+            project, result = self._run_init(
+                tmp_path,
+                [
+                    "--non-interactive",
+                    "--extension",
+                    "https://example.com/git.zip",
+                    "--trust-extension-urls",
+                ],
+                project_name="ext-url-noninteractive-trust",
+            )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+        assert (project / ".specify" / "extensions" / "git").exists()
 
     def test_url_extension_interactive_confirm_installs(self, tmp_path):
         """An interactive 'yes' to the trust prompt allows the URL install."""
