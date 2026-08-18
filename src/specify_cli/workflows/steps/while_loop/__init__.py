@@ -7,6 +7,7 @@ from typing import Any
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import (
     condition_is_never_evaluated,
+    format_condition_correction,
     evaluate_condition,
 )
 
@@ -110,9 +111,9 @@ class WhileStep(StepBase):
             # to write by habit.
             errors.append(
                 f"While step {config.get('id', '?')!r}: 'condition' "
-                f"{config['condition']!r} has no '{{{{ }}}}' block, so it is never "
-                "evaluated and is always true. Wrap the expression: "
-                '"{{ ' + str(config["condition"]).strip() + ' }}".'
+                f"{config['condition']!r} has no complete '{{{{ }}}}' block, so it is "
+                "never evaluated and is always true. Wrap the expression: "
+                + format_condition_correction(config["condition"]) + "."
             )
         max_iter = config.get("max_iterations")
         if max_iter is not None:

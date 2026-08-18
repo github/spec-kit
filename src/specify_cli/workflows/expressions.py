@@ -716,4 +716,37 @@ def condition_is_never_evaluated(condition: Any) -> bool:
     stripped = condition.strip()
     if not stripped or stripped.lower() in ("true", "false"):
         return False
-    return "{{" not in stripped
+    open_at = stripped.find("{{")
+    if open_at == -1:
+        return True
+    # An opening ``{{`` with no ``}}`` anywhere after it is never substituted
+    # either: ``_interpolate_expressions`` takes its ``raw_close == -1`` branch
+    # and appends the tail verbatim. So ``{{ inputs.count > 100`` -- and the
+    # reversed ``}} inputs.count > 100 {{``, whose only ``{{`` is last -- come
+    # back unchanged and are just as silently true as a brace-less string.
+    return stripped.find("}}", open_at + 2) == -1
+
+
+def format_condition_correction(condition: Any) -> str:
+    """Render *condition* wrapped in ``{{ }}`` as a quoted, paste-ready YAML scalar.
+
+    The validators hand this back as the corrected form, so it has to survive a
+    round trip through a YAML parser. A plain ``"{{ ... }}"`` does not: a
+    condition holding a double quote (``inputs.name == "zzz"``) closes the
+    scalar early and the workflow file no longer loads. Quoting is therefore
+    chosen from the content -- double by default, single when the expression
+    itself contains a double quote, and double with backslash escapes when it
+    contains both.
+
+    A stray delimiter is dropped rather than nested: ``{{ inputs.count > 100``
+    corrects to ``"{{ inputs.count > 100 }}"``, not to a doubled ``{{ {{ ... }} }}``.
+    """
+    core = str(condition).strip()
+    core = re.sub(r"^\s*(\{\{|\}\})\s*", "", core)
+    core = re.sub(r"\s*(\{\{|\}\})\s*$", "", core).strip()
+    wrapped = "{{ " + core + " }}"
+    if '"' not in wrapped and "\\" not in wrapped:
+        return '"' + wrapped + '"'
+    if "'" not in wrapped:
+        return "'" + wrapped + "'"
+    return '"' + wrapped.replace("\\", "\\\\").replace('"', '\\"') + '"'
