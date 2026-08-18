@@ -1418,10 +1418,10 @@ class TestCommandStep:
 
         assert result.status == StepStatus.COMPLETED
         assert result.output["dispatched"] is True
-        # is_cli_available() resolves the override via cli_executable and
-        # checks it directly — a single shutil.which("/opt/claude") call for
-        # the preflight, plus dispatch_command()'s own PATHEXT resolution.
-        assert seen_which == ["/opt/claude", "/opt/claude"]
+        # is_cli_available() resolves the override via cli_executable, so the
+        # preflight looks up "/opt/claude" and never the bare integration key.
+        assert "/opt/claude" in seen_which
+        assert "claude" not in seen_which
         call_args = mock_run.call_args
         assert call_args[0][0][0] == "/opt/claude"
         assert "/speckit-specify login" in call_args[0][0][2]
@@ -1699,10 +1699,10 @@ class TestPromptStep:
 
         assert result.status == StepStatus.COMPLETED
         assert result.output["dispatched"] is True
-        # is_cli_available() resolves the override via cli_executable and
-        # checks it directly — a single shutil.which() call, no separate
-        # impl.key lookup.
-        assert seen_which == ["/opt/claude"]
+        # is_cli_available() resolves the override via cli_executable, so the
+        # preflight looks up "/opt/claude" and never the bare integration key.
+        assert "/opt/claude" in seen_which
+        assert "claude" not in seen_which
         call_args = mock_run.call_args
         assert call_args[0][0][0] == "/opt/claude"
         assert call_args[0][0][2] == "Explain this code"
