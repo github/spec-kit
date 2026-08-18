@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-17T00:00:00Z",
+  "updated_at": "2026-08-18T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -37,6 +37,41 @@
       "stars": 0,
       "created_at": "2026-08-03T00:00:00Z",
       "updated_at": "2026-08-03T00:00:00Z"
+    },
+    "agentdocx-speckit": {
+      "name": "AgentDocx",
+      "id": "agentdocx-speckit",
+      "description": "Full-stack multi-agent specification pipeline with VS Code extension control, automated Kanban/Jira sync, and React monitoring dashboard.",
+      "author": "Abir Ommezzine and Ahmed Aziz Ammar",
+      "version": "0.0.3",
+      "download_url": "https://github.com/abir-ommezzine/extension-github-spec-kit/archive/refs/tags/v0.0.3.zip",
+      "repository": "https://github.com/abir-ommezzine/extension-github-spec-kit",
+      "homepage": "https://github.com/abir-ommezzine/extension-github-spec-kit",
+      "documentation": "https://github.com/abir-ommezzine/extension-github-spec-kit/blob/main/README.md",
+      "changelog": "",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 0,
+        "hooks": 0
+      },
+      "tags": [
+        "issue-tracking",
+        "jira",
+        "automation",
+        "workflow",
+        "pipeline",
+        "agents"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-18T00:00:00Z",
+      "updated_at": "2026-08-18T00:00:00Z"
     },
     "aide": {
       "name": "AI-Driven Engineering (AIDE)",
