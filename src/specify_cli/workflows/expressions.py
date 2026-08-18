@@ -224,6 +224,31 @@ def _is_single_expression(stripped: str) -> bool:
     return True
 
 
+def _find_block_close(text: str, start: int) -> int:
+    """Index of the ``}}`` closing the block opened by the ``{{`` at *start*, or -1.
+
+    Quote-aware, so a literal ``}}`` inside a string argument
+    (``{{ inputs.text | default('}}') }}``) does not close the block early --
+    the same rule ``_is_single_expression`` applies. Shared with
+    ``condition_is_never_evaluated`` so the validator cannot disagree with the
+    substitution it is predicting.
+    """
+    quote: str | None = None
+    i = start + 2
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if quote is not None:
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch == "}" and i + 1 < n and text[i + 1] == "}":
+            return i
+        i += 1
+    return -1
+
+
 def _interpolate_expressions(template: str, namespace: dict[str, Any]) -> str:
     """Substitute every top-level ``{{ ... }}`` block in *template*, quote-aware.
 
@@ -249,20 +274,7 @@ def _interpolate_expressions(template: str, namespace: dict[str, Any]) -> str:
             break
         out.append(template[i:start])
         # Scan for the block-closing ``}}`` that is outside any string literal.
-        j = start + 2
-        quote: str | None = None
-        close = -1
-        while j < n:
-            ch = template[j]
-            if quote is not None:
-                if ch == quote:
-                    quote = None
-            elif ch in ("'", '"'):
-                quote = ch
-            elif ch == "}" and j + 1 < n and template[j + 1] == "}":
-                close = j
-                break
-            j += 1
+        close = _find_block_close(template, start)
         if close == -1:
             # No quote-aware close. Two sub-cases, both kept identical to the old
             # regex so a malformed template is never silently hidden:
@@ -719,12 +731,15 @@ def condition_is_never_evaluated(condition: Any) -> bool:
     open_at = stripped.find("{{")
     if open_at == -1:
         return True
-    # An opening ``{{`` with no ``}}`` anywhere after it is never substituted
-    # either: ``_interpolate_expressions`` takes its ``raw_close == -1`` branch
-    # and appends the tail verbatim. So ``{{ inputs.count > 100`` -- and the
-    # reversed ``}} inputs.count > 100 {{``, whose only ``{{`` is last -- come
-    # back unchanged and are just as silently true as a brace-less string.
-    return stripped.find("}}", open_at + 2) == -1
+    # An opening ``{{`` the substituter cannot close is no better than a missing
+    # one. ``_interpolate_expressions`` closes a block with the same quote-aware
+    # scan used here, so ``{{ inputs.count > 100`` -- and the reversed
+    # ``}} inputs.count > 100 {{``, whose only ``{{`` is last -- come back
+    # verbatim, while ``{{ inputs.x == '}}'`` falls to the raw-close branch and
+    # leaves residual text (``False'``). All three are non-empty strings that
+    # ``bool()`` then makes true. A plain ``find("}}")`` would miss the third,
+    # and would also have to re-derive quote handling this module already owns.
+    return _find_block_close(stripped, open_at) == -1
 
 
 def format_condition_correction(condition: Any) -> str:
@@ -734,9 +749,15 @@ def format_condition_correction(condition: Any) -> str:
     round trip through a YAML parser. A plain ``"{{ ... }}"`` does not: a
     condition holding a double quote (``inputs.name == "zzz"``) closes the
     scalar early and the workflow file no longer loads. Quoting is therefore
-    chosen from the content -- double by default, single when the expression
-    itself contains a double quote, and double with backslash escapes when it
-    contains both.
+    chosen from the content. That enumeration was incomplete: a condition loaded
+    from a YAML literal block can carry a newline, which a double-quoted scalar
+    folds, so the correction did not round-trip.
+
+    ``json.dumps`` decides it instead. Every JSON string is a valid YAML
+    double-quoted scalar, and it escapes the quotes, backslashes, newlines and
+    other control characters that hand-rolled quoting has to enumerate.
+    ``ensure_ascii=False`` keeps non-ASCII operands readable rather than
+    expanding them into numeric escapes.
 
     A stray delimiter is dropped rather than nested: ``{{ inputs.count > 100``
     corrects to ``"{{ inputs.count > 100 }}"``, not to a doubled ``{{ {{ ... }} }}``.
@@ -744,9 +765,4 @@ def format_condition_correction(condition: Any) -> str:
     core = str(condition).strip()
     core = re.sub(r"^\s*(\{\{|\}\})\s*", "", core)
     core = re.sub(r"\s*(\{\{|\}\})\s*$", "", core).strip()
-    wrapped = "{{ " + core + " }}"
-    if '"' not in wrapped and "\\" not in wrapped:
-        return '"' + wrapped + '"'
-    if "'" not in wrapped:
-        return "'" + wrapped + "'"
-    return '"' + wrapped.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return json.dumps("{{ " + core + " }}", ensure_ascii=False)

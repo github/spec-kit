@@ -82,6 +82,10 @@ NEVER_EVALUATED = [
     "inputs.count > 100",        # no delimiter at all
     "{{ inputs.count > 100",     # opened, never closed
     "}} inputs.count > 100 {{",  # reversed: the only '{{' is last
+    # The only '}}' sits inside a string operand, so the quote-aware scan finds
+    # no close. The raw-close fallback then evaluates a truncated body and
+    # leaves residual text ("False'"), which bool() makes true just the same.
+    "{{ inputs.x == '}}'",
 ]
 
 
@@ -98,6 +102,7 @@ def test_incomplete_block_is_silently_true_and_is_flagged(condition):
         "{{ inputs.count > 100 }}",
         "{{ inputs.a }} and {{ inputs.b }}",
         "{{ inputs.text | default('}}') }}",  # literal '}}' inside an argument
+        "{{ inputs.x == '}}' }}",             # quoted '}}' then the real close
     ],
 )
 def test_complete_block_is_not_flagged(condition):
@@ -115,6 +120,13 @@ TRICKY_CONDITIONS = [
     'inputs.path == "C:' + BACKSLASH + 'tmp"',                # backslash + quote
     '{{ inputs.name == "zzz"',                                # incomplete + quote
     "}} inputs.count > 100 {{",
+    # A YAML literal block hands the loader a real newline; a folded scalar
+    # would lose it, so the correction has to escape rather than embed it.
+    "inputs.x == 1\nand inputs.name == 'abc'",
+    'he said "hi"\nthen left',                                # newline + quote
+    "inputs.a == 'x\ty'",                                     # tab
+    "inputs.a == 'x\ry'",                                     # carriage return
+    "inputs.ten == 'mười'",                                   # non-ASCII operand
 ]
 
 
@@ -148,3 +160,10 @@ def test_validator_correction_is_yaml_safe(step_cls, condition):
     suggested = errors[0].split("Wrap the expression: ", 1)[1].rstrip(".")
     loaded = yaml.safe_load("condition: " + suggested)
     assert condition_is_never_evaluated(loaded["condition"]) is False
+
+
+def test_correction_keeps_non_ascii_readable():
+    """ensure_ascii=False: an operand should not turn into numeric escapes."""
+    corrected = format_condition_correction("inputs.ten == 'mười'")
+    assert "mười" in corrected
+    assert chr(92) + "u" not in corrected
