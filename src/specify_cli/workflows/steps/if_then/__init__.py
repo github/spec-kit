@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
-from specify_cli.workflows.expressions import evaluate_condition
+from specify_cli.workflows.expressions import (
+    condition_is_never_evaluated,
+    evaluate_condition,
+)
 
 
 class IfThenStep(StepBase):
@@ -78,6 +81,20 @@ class IfThenStep(StepBase):
             errors.append(
                 f"If step {config.get('id', '?')!r}: 'condition' must be a "
                 f"string or boolean, got {type(config['condition']).__name__}."
+            )
+        elif condition_is_never_evaluated(config["condition"]):
+            # A string condition with no ``{{ }}`` block is never evaluated:
+            # evaluate_expression() returns it unchanged and bool() then makes
+            # any non-empty text true. `condition: inputs.count > 100` reads as
+            # a real comparison but always takes ``then``. This is the same
+            # silent-truthiness mistake the list/dict branch above rejects, and
+            # GitHub Actions accepts a bare expression in `if:`, so it is easy
+            # to write by habit.
+            errors.append(
+                f"If step {config.get('id', '?')!r}: 'condition' "
+                f"{config['condition']!r} has no '{{{{ }}}}' block, so it is never "
+                "evaluated and is always true. Wrap the expression: "
+                '"{{ ' + str(config["condition"]).strip() + ' }}".'
             )
         if "then" not in config:
             errors.append(

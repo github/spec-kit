@@ -690,3 +690,30 @@ def evaluate_condition(condition: str, context: Any) -> bool:
         if lower == "true":
             return True
     return bool(result)
+
+
+def condition_is_never_evaluated(condition: Any) -> bool:
+    """True when a string *condition* is silently treated as always-true text.
+
+    ``evaluate_condition`` resolves its argument through
+    ``evaluate_expression``, which only substitutes ``{{ ... }}`` blocks. A
+    string with no such block comes back unchanged, and — unless it reads
+    ``true``/``false`` — is then coerced by ``bool()``. So an expression
+    authored without the braces, e.g. ``condition: inputs.count > 100``, is
+    never evaluated at all: it is a non-empty string, so the ``if`` step always
+    takes ``then`` and a ``while``/``do-while`` step always runs to
+    ``max_iterations``.
+
+    That is the same silent-truthiness authoring mistake the step validators
+    already reject for a list/dict/number condition, and it is easy to write:
+    GitHub Actions accepts a bare expression in ``if:``.
+
+    An empty/whitespace string is excluded — it coerces to ``False``, which is
+    a definite answer rather than a silent always-true.
+    """
+    if not isinstance(condition, str):
+        return False
+    stripped = condition.strip()
+    if not stripped or stripped.lower() in ("true", "false"):
+        return False
+    return "{{" not in stripped
