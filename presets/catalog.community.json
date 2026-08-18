@@ -200,11 +200,11 @@
     "closed-vocabulary": {
       "name": "Closed Vocabulary Check",
       "id": "closed-vocabulary",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "description": "Adds a pass to /speckit.analyze that flags closed sets of values enumerated more than once with different members, and reports its own coverage.",
       "author": "Diego Gabriel Impieri",
       "repository": "https://github.com/yunusdim/spec-kit-preset-closed-vocabulary",
-      "download_url": "https://github.com/yunusdim/spec-kit-preset-closed-vocabulary/archive/refs/tags/v1.0.0.zip",
+      "download_url": "https://github.com/yunusdim/spec-kit-preset-closed-vocabulary/archive/refs/tags/v1.0.1.zip",
       "homepage": "https://github.com/yunusdim/spec-kit-preset-closed-vocabulary",
       "documentation": "https://github.com/yunusdim/spec-kit-preset-closed-vocabulary/blob/main/README.md",
       "license": "MIT",
@@ -222,7 +222,7 @@
         "verification"
       ],
       "created_at": "2026-08-17T00:00:00Z",
-      "updated_at": "2026-08-17T00:00:00Z"
+      "updated_at": "2026-08-18T00:00:00Z"
     },
     "command-density": {
       "name": "Command Density",
