@@ -409,6 +409,7 @@ class PresetManifest:
             raise PresetValidationError(
                 "Preset must provide at least one template"
             )
+        seen_name_types: set[tuple[str, str]] = set()
         for tmpl in templates:
             if not isinstance(tmpl, dict):
                 raise PresetValidationError(
@@ -437,6 +438,20 @@ class PresetManifest:
                     f"Invalid template type '{tmpl['type']}': "
                     f"must be one of {sorted(VALID_PRESET_TEMPLATE_TYPES)}"
                 )
+
+            # PresetResolver._manifest_declared_template returns the first
+            # 'provides.templates' entry matching a given (name, type) pair, so
+            # a later duplicate would be silently unreachable while still being
+            # counted by PresetManifest.templates. Reject at validation time
+            # instead, mirroring the sibling fix for ExtensionManifest's
+            # provides.templates/scripts (#4016).
+            name_type = (tmpl["name"], tmpl["type"])
+            if name_type in seen_name_types:
+                raise PresetValidationError(
+                    f"Duplicate template name '{tmpl['name']}' of type "
+                    f"'{tmpl['type']}' in 'provides.templates'"
+                )
+            seen_name_types.add(name_type)
 
             # Validate file path safety: must be relative, no parent traversal
             file_path = tmpl["file"]

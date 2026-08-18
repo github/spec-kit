@@ -500,6 +500,41 @@ provides:
         manifest = PresetManifest(manifest_path)
         assert len(manifest.templates) == 4
 
+    def test_duplicate_template_name_and_type_raises_validation_error(
+        self, temp_dir, valid_pack_data
+    ):
+        """A later entry with the same (name, type) pair must be rejected.
+
+        ``PresetResolver._manifest_declared_template`` returns the FIRST
+        'provides.templates' entry matching a given (name, type) pair, so a
+        later duplicate would be silently unreachable while still being
+        counted by ``PresetManifest.templates`` -- mirroring the sibling bug
+        fixed for ``ExtensionManifest``'s provides.templates/scripts (#4016).
+        """
+        valid_pack_data["provides"]["templates"] = [
+            {"type": "command", "name": "specify", "file": "commands/specify-v1.md"},
+            {"type": "command", "name": "specify", "file": "commands/specify-v2.md"},
+        ]
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        with pytest.raises(PresetValidationError, match="Duplicate template name"):
+            PresetManifest(manifest_path)
+
+    def test_same_name_different_type_templates_allowed(
+        self, temp_dir, valid_pack_data
+    ):
+        """The same name may recur across different template types."""
+        valid_pack_data["provides"]["templates"] = [
+            {"type": "template", "name": "specify", "file": "templates/specify.md"},
+            {"type": "command", "name": "specify", "file": "commands/specify.md"},
+        ]
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        manifest = PresetManifest(manifest_path)
+        assert len(manifest.templates) == 2
+
 
 # ===== PresetRegistry Tests =====
 
