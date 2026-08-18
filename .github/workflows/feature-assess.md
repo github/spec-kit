@@ -43,6 +43,8 @@ safe-outputs:
   add-labels:
     allowed: [feature-go, feature-needs-clarification, feature-kill, feature-invalid]
     max: 1
+  remove-labels:
+    allowed: [feature-go, feature-needs-clarification, feature-kill, feature-invalid]
 ---
 
 # Assess a Feature Request by Installing and Running Spec Kit
@@ -242,14 +244,20 @@ surface in the workflow run logs and conclusion, not in a follow-up comment.
 
 ## Step 7 — Apply the Verdict Label
 
-After the decision comment, add exactly one label reflecting the verdict:
+After the decision comment, make exactly one verdict label reflect the result.
+A run can be a **reassessment** (the label was removed and re-added after an
+earlier verdict), so first **remove any of the four verdict labels the issue
+already carries** (`feature-go`, `feature-needs-clarification`, `feature-kill`,
+`feature-invalid`), then add the single label for the current verdict:
 
 - `feature-go` — verdict is **go** (ready to hand off to `/speckit.specify`).
 - `feature-needs-clarification` — verdict is **needs-clarification**.
 - `feature-kill` — verdict is **kill**.
 
 If the request cannot be assessed at all (empty, unrelated, or spam), skip the
-verdict labels and add `feature-invalid` instead.
+verdict labels and add `feature-invalid` instead (still removing any stale
+verdict labels first). This leaves exactly one `feature-*` verdict on the issue
+regardless of any earlier result.
 
 ## Guardrails
 
