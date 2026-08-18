@@ -463,7 +463,7 @@
       "updated_at": "2026-08-17T00:00:00Z"
     },
     "atlas": {
-      "name": "spec-kit-atlas",
+      "name": "Atlas",
       "id": "atlas",
       "description": "Synthesize spec-kit specs into faithful, interactive architecture storybooks & doc portals.",
       "author": "Ash Brener",
