@@ -122,8 +122,7 @@ def test_community_submission_workflows_require_tag_pinned_download_urls():
         assert "should follow the pattern" not in lowered
         assert "releases/latest/" in source_text
         assert "reject" in lowered
-        assert "vX.Y.Z" in source_text
-        assert "X.Y.Z" in source_text
+        assert "`vX.Y.Z` or `X.Y.Z`" in source_text
         assert "MUST" in source_text or "must" in lowered
 
 
