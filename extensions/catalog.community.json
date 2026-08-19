@@ -192,7 +192,7 @@
       "documentation": "https://github.com/abir-ommezzine/extension-github-spec-kit/blob/main/README.md",
       "changelog": "",
       "license": "MIT",
-      "category": "process",
+      "category": "integration",
       "effect": "read-write",
       "requires": {
         "speckit_version": ">=0.1.0"
