@@ -61,11 +61,15 @@ class WorkflowDefinition:
         self.schema_version: str = data.get("schema_version", "1.0")
 
         # Defaults
-        self.default_integration: str | None = workflow.get("integration")
-        self.default_model: str | None = workflow.get("model")
-        self.default_options: dict[str, Any] = workflow.get("options") or {}
-        if not isinstance(self.default_options, dict):
-            self.default_options = {}
+        # Keep malformed values intact until ``validate_workflow`` can report
+        # them. ``None`` remains the supported "no defaults" form for options
+        # and retains its existing runtime representation as an empty mapping.
+        self.default_integration: Any = workflow.get("integration")
+        self.default_model: Any = workflow.get("model")
+        raw_default_options = workflow.get("options")
+        self.default_options: Any = (
+            {} if raw_default_options is None else raw_default_options
+        )
 
         # Advisory pre-conditions (spec-kit version / integrations a workflow
         # expects). Validated by ``validate_workflow`` (recognized keys only;
@@ -140,6 +144,40 @@ def _get_valid_step_types() -> set[str]:
     }
 
 
+def _dispatch_default_errors(definition: WorkflowDefinition) -> list[str]:
+    """Return validation errors for workflow defaults inherited by dispatch steps."""
+    errors: list[str] = []
+
+    if (
+        definition.default_integration is not None
+        and not isinstance(definition.default_integration, str)
+    ):
+        errors.append(
+            "'workflow.integration' must be a string or null, got "
+            f"{type(definition.default_integration).__name__} "
+            f"({definition.default_integration!r})."
+        )
+
+    if (
+        definition.default_model is not None
+        and not isinstance(definition.default_model, str)
+    ):
+        errors.append(
+            "'workflow.model' must be a string or null, got "
+            f"{type(definition.default_model).__name__} "
+            f"({definition.default_model!r})."
+        )
+
+    if not isinstance(definition.default_options, dict):
+        errors.append(
+            "'workflow.options' must be a mapping or null, got "
+            f"{type(definition.default_options).__name__} "
+            f"({definition.default_options!r})."
+        )
+
+    return errors
+
+
 def validate_workflow(definition: WorkflowDefinition) -> list[str]:
     """Validate a workflow definition and return a list of error messages.
 
@@ -196,6 +234,11 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
             f"Workflow version {definition.version!r} is not valid "
             f"semantic versioning (expected X.Y.Z)."
         )
+
+    # Workflow-level dispatch defaults are inherited by command and prompt
+    # steps. Validate their shapes before an invalid value reaches dispatch, or
+    # (for options) is silently normalized away during construction.
+    errors.extend(_dispatch_default_errors(definition))
 
     # -- Inputs -----------------------------------------------------------
     if not isinstance(definition.inputs, dict):
@@ -947,6 +990,10 @@ class WorkflowEngine:
         -------
         The final ``RunState`` after execution completes (or pauses).
         """
+        dispatch_default_errors = _dispatch_default_errors(definition)
+        if dispatch_default_errors:
+            raise ValueError(" ".join(dispatch_default_errors))
+
         from . import STEP_REGISTRY
 
         effective_run_id = run_id
@@ -1047,6 +1094,10 @@ class WorkflowEngine:
             definition = WorkflowDefinition.from_yaml(run_copy)
         else:
             definition = self.load_workflow(state.workflow_id)
+
+        dispatch_default_errors = _dispatch_default_errors(definition)
+        if dispatch_default_errors:
+            raise ValueError(" ".join(dispatch_default_errors))
 
         # Merge any newly-supplied inputs over the persisted ones and
         # re-validate through the same typing path as the initial run.

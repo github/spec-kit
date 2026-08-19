@@ -70,6 +70,13 @@ specify init my-project --integration copilot
 cd my-project
 ```
 
+For CI or AI agent harnesses (no keyboard, or a PTY that cannot send arrow keys), pass `--non-interactive` so init never hangs on a picker. Combine with `--force` when initializing into a non-empty directory:
+
+```bash
+specify init my-project --non-interactive --ignore-agent-tools
+specify init --here --force --non-interactive --integration claude
+```
+
 To check for updates or upgrade the installed CLI, use the self-management commands. See the [Upgrade Guide](./docs/upgrade.md) for detailed scenarios and customization options.
 
 ```bash
