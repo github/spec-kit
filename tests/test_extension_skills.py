@@ -1231,7 +1231,10 @@ class TestExtensionSkillRegistration:
         )
 
         manager = ExtensionManager(project_dir)
-        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+        # Exercise normal extension-add registration. Skills-native agents
+        # write their SKILL.md through CommandRegistrar before the later
+        # skill mirror reaches its existing-file guard.
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=True)
 
         content = (skills_dir / "speckit-literal-ref-ext-run" / "SKILL.md").read_text()
         expected_json_invocation = expected_invocation.replace("foo-bar", "export-json")

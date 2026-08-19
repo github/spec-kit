@@ -687,6 +687,39 @@ class CommandRegistrar:
             pass
         _prefix = get_invocation_prefix(agent_name, registrar_writes_skills)
 
+        # The later extension-skill pass normalizes literal slash-dot refs,
+        # but skills-native agents write SKILL.md through this registrar first.
+        # That later pass then preserves the file under its existing-file
+        # guard, so apply the same manifest-scoped normalization here.
+        known_command_names = {
+            command["name"]
+            for command in commands
+            if isinstance(command.get("name"), str)
+        }
+        for command in commands:
+            aliases = command.get("aliases", [])
+            if isinstance(aliases, list):
+                known_command_names.update(
+                    alias for alias in aliases if isinstance(alias, str)
+                )
+
+        def _normalize_literal_slash_command_refs(body: str) -> str:
+            def _replacement(match: re.Match[str]) -> str:
+                command_name = match.group("command")
+                if command_name not in known_command_names:
+                    return match.group(0)
+                return _prefix + command_name.replace(".", _sep)
+
+            return re.sub(
+                (
+                    r"(?<![\w$:/-])"
+                    r"/(?P<command>speckit\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+)"
+                    r"(?!/)"
+                ),
+                _replacement,
+                body,
+            )
+
         for cmd_info in commands:
             cmd_name = cmd_info["name"]
             aliases = cmd_info.get("aliases", [])
@@ -789,6 +822,8 @@ class CommandRegistrar:
             from specify_cli.integrations.base import IntegrationBase  # noqa: PLC0415
 
             body = IntegrationBase.resolve_command_refs(body, _sep, _prefix)
+            if registrar_writes_skills:
+                body = _normalize_literal_slash_command_refs(body)
 
             output_name = self._compute_output_name(agent_name, cmd_name, agent_config)
 
