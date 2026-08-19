@@ -11119,6 +11119,45 @@ steps:
         with pytest.raises(ValueError):
             engine.resume(state.run_id, {"count": "not-a-number"})
 
+    def test_resume_rejects_legacy_invalid_options_before_state_mutation(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import RunState, WorkflowDefinition
+
+        definition = WorkflowDefinition.from_string(self._WF_NUM)
+        engine = self._engine(project_dir)
+        state = engine.execute(definition)
+        assert state.status == RunStatus.PAUSED
+
+        workflow_copy = (
+            project_dir
+            / ".specify"
+            / "workflows"
+            / "runs"
+            / state.run_id
+            / "workflow.yml"
+        )
+        workflow_copy.write_text(
+            self._WF_NUM.replace(
+                'version: "1.0.0"', 'version: "1.0.0"\n  options: [max_tokens]'
+            ),
+            encoding="utf-8",
+        )
+
+        def fail_step_context(*args, **kwargs):
+            raise AssertionError("StepContext must not be created")
+
+        monkeypatch.setattr("specify_cli.workflows.engine.StepContext", fail_step_context)
+
+        with pytest.raises(ValueError, match="'workflow.options' must be a mapping or null"):
+            engine.resume(state.run_id, {"count": "5"})
+
+        reloaded = RunState.load(state.run_id, project_dir)
+        assert reloaded.status == RunStatus.PAUSED
+        assert reloaded.error is None
+        assert reloaded.inputs["count"] == 1
+
     def test_retry_verdict_input_is_consumed_and_can_be_replaced(self, project_dir):
         import json as _json
         from specify_cli.workflows.engine import WorkflowDefinition

@@ -1095,6 +1095,10 @@ class WorkflowEngine:
         else:
             definition = self.load_workflow(state.workflow_id)
 
+        dispatch_default_errors = _dispatch_default_errors(definition)
+        if dispatch_default_errors:
+            raise ValueError(" ".join(dispatch_default_errors))
+
         # Merge any newly-supplied inputs over the persisted ones and
         # re-validate through the same typing path as the initial run.
         if inputs:
