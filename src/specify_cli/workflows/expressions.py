@@ -720,13 +720,23 @@ def condition_is_never_evaluated(condition: Any) -> bool:
     already reject for a list/dict/number condition, and it is easy to write:
     GitHub Actions accepts a bare expression in ``if:``.
 
-    An empty/whitespace string is excluded — it coerces to ``False``, which is
-    a definite answer rather than a silent always-true.
+    The empty string is excluded — it coerces to ``False``, which is a definite
+    answer rather than a silent always-true. Non-empty whitespace is *not*
+    excluded: ``bool("   ")`` is true, and ``evaluate_condition`` strips only
+    while testing the ``true``/``false`` keywords before falling through to
+    ``bool()`` on the raw string. That runtime behaviour is pinned deliberately
+    by ``test_condition_whitespace_only_string_stays_truthy``, so the authoring
+    mistake has to be caught here instead: ``condition: "   "`` always takes
+    ``then``.
     """
     if not isinstance(condition, str):
         return False
+    if condition == "":
+        return False
     stripped = condition.strip()
-    if not stripped or stripped.lower() in ("true", "false"):
+    if not stripped:
+        return True
+    if stripped.lower() in ("true", "false"):
         return False
     open_at = stripped.find("{{")
     if open_at == -1:
@@ -741,6 +751,47 @@ def condition_is_never_evaluated(condition: Any) -> bool:
     # and would also have to re-derive quote handling this module already owns.
     return _find_block_close(stripped, open_at) == -1
 
+
+def _strip_stray_delimiters(text: str) -> str:
+    """Remove every ``{{``/``}}`` that lies outside a quoted operand.
+
+    Quote-aware for the same reason the rest of this module is: ``inputs.x == '}}'``
+    holds a delimiter as *data*, and a blanket ``re.sub`` would eat it and change
+    what the corrected condition compares against. Whitespace orphaned by a removed
+    delimiter collapses to one separator so the suggestion still reads as an
+    expression; whitespace inside a quoted operand is never touched.
+
+    ``_find_top_level`` cannot serve here: it counts ``{`` and ``}`` as bracket
+    depth, so it never reports a ``{{`` as a top-level token at all.
+    """
+    out: list[str] = []
+    quote: str | None = None
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if quote is not None:
+            out.append(ch)
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            out.append(ch)
+            i += 1
+            continue
+        if text.startswith("{{", i) or text.startswith("}}", i):
+            i += 2
+            while i < n and text[i].isspace():
+                i += 1
+            while out and out[-1].isspace():
+                out.pop()
+            out.append(" ")
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
 
 def format_condition_correction(condition: Any) -> str:
     """Render *condition* wrapped in ``{{ }}`` as a quoted, paste-ready YAML scalar.
@@ -761,8 +812,11 @@ def format_condition_correction(condition: Any) -> str:
 
     A stray delimiter is dropped rather than nested: ``{{ inputs.count > 100``
     corrects to ``"{{ inputs.count > 100 }}"``, not to a doubled ``{{ {{ ... }} }}``.
+    Every stray delimiter goes, not only the ones sitting at the edges. Trimming
+    just the edges left ``prefix {{ inputs.ready`` reading
+    ``"{{ prefix {{ inputs.ready }}"`` -- an unclosed inner block, and one whose
+    complete *outer* block then carried the correction straight back through
+    ``condition_is_never_evaluated`` as if it were valid.
     """
-    core = str(condition).strip()
-    core = re.sub(r"^\s*(\{\{|\}\})\s*", "", core)
-    core = re.sub(r"\s*(\{\{|\}\})\s*$", "", core).strip()
+    core = _strip_stray_delimiters(str(condition)).strip()
     return json.dumps("{{ " + core + " }}", ensure_ascii=False)

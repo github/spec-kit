@@ -42,7 +42,7 @@ def test_validator_rejects_condition_without_expression_block(step_cls):
 @pytest.mark.parametrize("step_cls", STEP_CLASSES)
 @pytest.mark.parametrize(
     "condition",
-    ["{{ inputs.count > 100 }}", "true", "false", "TRUE", True, False, "", "   "],
+    ["{{ inputs.count > 100 }}", "true", "false", "TRUE", True, False, ""],
 )
 def test_validator_accepts_evaluated_and_literal_conditions(step_cls, condition):
     """No false positives: braces, boolean literals and bools stay valid."""
@@ -59,7 +59,11 @@ def test_validator_accepts_evaluated_and_literal_conditions(step_cls, condition)
         ("true", False),
         ("False", False),
         ("", False),
-        ("   ", False),
+        # `bool("   ")` is true and evaluate_condition strips only around the
+        # true/false keywords, so whitespace is a silent always-true, not a
+        # definite False. Only "" coerces to False.
+        ("   ", True),
+        ("\t\n ", True),
         (True, False),
         (["a"], False),
         (3, False),
@@ -167,3 +171,51 @@ def test_correction_keeps_non_ascii_readable():
     corrected = format_condition_correction("inputs.ten == 'mười'")
     assert "mười" in corrected
     assert chr(92) + "u" not in corrected
+
+
+def test_whitespace_condition_is_flagged_but_the_empty_string_is_not():
+    """Whitespace is the silent always-true this validator exists to catch.
+
+    ``test_condition_whitespace_only_string_stays_truthy`` pins the runtime
+    behaviour deliberately, so the mistake can only be caught at validation time.
+    """
+    assert evaluate_condition("   ", StepContext()) is True
+    assert condition_is_never_evaluated("   ") is True
+
+    assert evaluate_condition("", StepContext()) is False
+    assert condition_is_never_evaluated("") is False
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "prefix {{ inputs.ready",
+        "inputs.ready }} suffix",
+        "{{ inputs.a }} and {{ inputs.b",
+    ],
+)
+def test_correction_removes_an_interior_delimiter_too(condition):
+    """Trimming only the edges left the correction carrying an inner block.
+
+    ``prefix {{ inputs.ready`` corrected to ``"{{ prefix {{ inputs.ready }}"``,
+    whose complete outer block then walked back past this very validator.
+    """
+    corrected = format_condition_correction(condition)
+    inner = yaml.safe_load("condition: " + corrected)["condition"]
+    assert inner.count("{{") == 1 and inner.count("}}") == 1
+    assert inner.startswith("{{ ") and inner.endswith(" }}")
+
+
+def test_correction_keeps_a_delimiter_that_is_quoted_data():
+    """``'}}'`` is an operand, not a block, so the stripper must not eat it."""
+    corrected = format_condition_correction("{{ inputs.x == '}}'")
+    inner = yaml.safe_load("condition: " + corrected)["condition"]
+    assert inner == "{{ inputs.x == '}}' }}"
+    assert condition_is_never_evaluated(inner) is False
+
+
+def test_correction_preserves_spacing_inside_a_quoted_operand():
+    """Whitespace is collapsed only where a delimiter was removed."""
+    corrected = format_condition_correction('{{ inputs.name == "a  b"')
+    inner = yaml.safe_load("condition: " + corrected)["condition"]
+    assert inner == '{{ inputs.name == "a  b" }}'
