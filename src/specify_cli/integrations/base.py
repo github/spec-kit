@@ -620,25 +620,42 @@ class IntegrationBase(ABC):
     def resolve_command_refs(
         content: str, separator: str = ".", prefix: str = "/"
     ) -> str:
-        """Replace ``__SPECKIT_COMMAND_<NAME>__`` placeholders with invocations.
+        """Replace ``__SPECKIT_COMMAND_*__`` placeholders with invocations.
 
-        Each placeholder encodes a command name in upper-case with
+        Two forms are supported:
+
+        **Uppercase form** — encodes a command name in upper-case with
         underscores (e.g. ``__SPECKIT_COMMAND_PLAN__``,
-        ``__SPECKIT_COMMAND_GIT_COMMIT__``).  The replacement uses
+        ``__SPECKIT_COMMAND_GIT_COMMIT__``).  Each underscore is replaced by
         *separator* to join the segments:
 
         * ``separator="."`` → ``/speckit.plan``, ``/speckit.git.commit``
         * ``separator="-"`` → ``/speckit-plan``, ``/speckit-git-commit``
 
+        **Verbatim form** — carries the canonical command ID verbatim inside
+        parentheses (e.g. ``__SPECKIT_COMMAND(speckit.agent-context.update)__``).
+        This form correctly handles command names that contain hyphens, which
+        the uppercase form cannot represent unambiguously.  The canonical dots
+        are replaced by *separator*; hyphens within a segment are kept as-is
+        (they become *separator* when *separator* is ``"-"``):
+
+        * ``separator="."`` → ``/speckit.agent-context.update``
+        * ``separator="-"`` → ``/speckit-agent-context-update``
+
         *prefix* defaults to ``"/"`` but may be ``"$"`` for agents whose
         native skills invocation uses dollar-prefixed chat commands.
         """
+
+        def _replace(m: re.Match) -> str:
+            if m.group(1) is not None:
+                # Uppercase form: replace underscores with separator.
+                return prefix + "speckit" + separator + m.group(1).lower().replace("_", separator)
+            # Verbatim form: replace dots with separator; hyphens are kept.
+            return prefix + m.group(2).replace(".", separator)
+
         return re.sub(
-            r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_]*)__",
-            lambda m: prefix
-            + "speckit"
-            + separator
-            + m.group(1).lower().replace("_", separator),
+            r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_]*)__|__SPECKIT_COMMAND\(([^)]+)\)__",
+            _replace,
             content,
         )
 
