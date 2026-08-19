@@ -1580,7 +1580,18 @@ class ExtensionManager:
             """Resolve explicit command-ref tokens with the active skill style."""
 
             def _replacement(match: re.Match[str]) -> str:
-                command_name = "speckit." + match.group(1).lower().replace("_", ".")
+                if match.group(1) is not None:
+                    # Uppercase form: reconstruct the id from underscores. This
+                    # cannot represent a hyphen, so a hyphenated segment is
+                    # silently split into extra segments.
+                    command_name = (
+                        "speckit." + match.group(1).lower().replace("_", ".")
+                    )
+                else:
+                    # Verbatim form: the canonical id is carried literally, so
+                    # hyphenated command names (e.g. speckit.agent-context.update)
+                    # survive intact.
+                    command_name = match.group(2)
                 if is_dollar_skills_agent(selected_ai, ai_skills_enabled):
                     return "$" + command_name.replace("speckit.", "speckit-").replace(
                         ".", "-"
@@ -1596,7 +1607,10 @@ class ExtensionManager:
                 )
 
             return re.sub(
-                r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_]*)__", _replacement, body
+                r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_]*)__"
+                r"|__SPECKIT_COMMAND\(([^)]+)\)__",
+                _replacement,
+                body,
             )
 
         for cmd_info in manifest.commands:
