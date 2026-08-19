@@ -686,8 +686,14 @@ class IntegrationDescriptor:
             # explicit null scalar (``null``, ``~``, ``Null``, ``NULL``), so it
             # cannot tell them apart on its own. ``compose`` yields no node
             # only for a genuinely empty document.
-            is_empty_document = yaml.compose(text) is None
-            data = yaml.safe_load(text)
+node = yaml.compose(text)
+data = yaml.safe_load(text)
+is_empty_document = node is None or (
+    data is None
+    and isinstance(node, yaml.nodes.ScalarNode)
+    and node.value == ""
+    and node.start_mark.index == node.end_mark.index
+)
         except yaml.YAMLError as exc:
             raise IntegrationDescriptorError(f"Invalid YAML in {path}: {exc}")
         # Only a genuinely EMPTY document becomes an empty mapping, so its
