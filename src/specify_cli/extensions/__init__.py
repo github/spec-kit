@@ -12,6 +12,7 @@ import copy
 import errno
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -44,6 +45,8 @@ from .._utils import dump_frontmatter, relative_extension_path_violation, versio
 from ..catalogs import CatalogEntry as BaseCatalogEntry
 from ..catalogs import CatalogStackBase
 from ..shared_infra import verify_archive_sha256
+
+logger = logging.getLogger(__name__)
 
 _FALLBACK_CORE_COMMAND_NAMES = frozenset(
     {
@@ -3712,18 +3715,15 @@ class ExtensionCatalog(CatalogStackBase):
         Raises:
             ValidationError: If a catalog URL is invalid
         """
-        import sys
-
         # 1. SPECKIT_CATALOG_URL env var replaces all defaults for backward compat
         if env_value := os.environ.get("SPECKIT_CATALOG_URL"):
             catalog_url = env_value.strip()
             self._validate_catalog_url(catalog_url)
             if catalog_url != self.DEFAULT_CATALOG_URL:
                 if not getattr(self, "_non_default_catalog_warning_shown", False):
-                    print(
-                        "Warning: Using non-default extension catalog. "
+                    logger.warning(
+                        "Using non-default extension catalog. "
                         "Only use catalogs from sources you trust.",
-                        file=sys.stderr,
                     )
                     self._non_default_catalog_warning_shown = True
             return [
@@ -3947,8 +3947,6 @@ class ExtensionCatalog(CatalogStackBase):
         Raises:
             ExtensionError: If all catalogs fail to fetch
         """
-        import sys
-
         active_catalogs = self.get_active_catalogs()
         merged: Dict[str, Dict[str, Any]] = {}
         any_success = False
@@ -3958,9 +3956,8 @@ class ExtensionCatalog(CatalogStackBase):
                 catalog_data = self._fetch_single_catalog(catalog_entry, force_refresh)
                 any_success = True
             except ExtensionError as e:
-                print(
-                    f"Warning: Could not fetch catalog '{catalog_entry.name}': {e}",
-                    file=sys.stderr,
+                logger.warning(
+                    "Could not fetch catalog '%s': %s", catalog_entry.name, e,
                 )
                 continue
 
