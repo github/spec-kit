@@ -1,10 +1,10 @@
 """Tests for QodercliIntegration."""
 
-from .test_integration_base_markdown import MarkdownIntegrationTests
+from .test_integration_base_skills import SkillsIntegrationTests
 
 
-class TestQodercliIntegration(MarkdownIntegrationTests):
+class TestQodercliIntegration(SkillsIntegrationTests):
     KEY = "qodercli"
     FOLDER = ".qoder/"
-    COMMANDS_SUBDIR = "commands"
-    REGISTRAR_DIR = ".qoder/commands"
+    COMMANDS_SUBDIR = "skills"
+    REGISTRAR_DIR = ".qoder/skills"
