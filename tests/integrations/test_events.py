@@ -1098,6 +1098,25 @@ class TestOpencodePluginMerging:
         assert "runEvent('speckit.x" not in content
         assert json.dumps("ed'it") in content
 
+    def test_opencode_non_numeric_timeout_uses_default(self, tmp_path):
+        """A non-numeric timeout value in event config must not crash
+        _build_opencode_plugin; it should fall back to the default (60s)."""
+        integration = OpencodeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+
+        events = {
+            "pre_tool_use": [{"command": "speckit.tdd.validate", "timeout": "not-a-number"}],
+        }
+        # Must not raise TypeError or ValueError
+        install_integration_events(integration, tmp_path, manifest, events)
+        plugin_path = tmp_path / ".opencode/plugin/speckit-events.ts"
+        assert plugin_path.is_file()
+        content = plugin_path.read_text()
+        assert "speckit.tdd.validate" in content
+
 
 # -- Command runner test (core execution) -----------------------------------
 
