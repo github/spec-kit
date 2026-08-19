@@ -59,9 +59,13 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
+Plan only **live** (unmarked) FRs, ACs, and SCs from the spec. Lines marked `SUPERSEDED` or `RETIRED` are historical — do not restore them in `plan.md`, `data-model.md`, or contracts.
+
+If `revisions.md` exists and `plan.md` was already patched, do **not** rebuild unless the latest `revisions.md` entry has `plan_status: needs-rebuild` or the user asked. Even on a rebuild, never re-plan a retired ID.
+
 1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
-2. **Load context**: Read FEATURE_SPEC and `/memory/constitution.md`. Load IMPL_PLAN template (already copied).
+2. **Load context**: Read FEATURE_SPEC and `/memory/constitution.md`. Load IMPL_PLAN template (already copied). Use only **live** spec lines; skip `SUPERSEDED` / `RETIRED`.
 
 3. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
    - Fill Technical Context (mark unknowns as "NEEDS CLARIFICATION")

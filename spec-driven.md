@@ -83,6 +83,18 @@ This command transforms a simple feature description (the user-prompt) into a co
 3. **Template-Based Generation**: Copies and customizes the feature specification template with your requirements
 4. **Directory Structure**: Creates the proper `specs/[branch-name]/` structure for all related documents
 
+This command **starts a new feature**. To change acceptance criteria or requirements on an existing spec, use `/speckit.revise` instead.
+
+### The `/speckit.revise` Command
+
+When the contract of the **current** feature changes (add, remove, or reword an acceptance criterion, functional requirement, or story), this command updates `spec.md` in place:
+
+1. **Same feature directory**: Does not create `specs/00N-…` or a new branch
+2. **Stable IDs**: Existing FR/SC/AC numbers stay; retired IDs are never reused
+3. **Revision log**: Appends `revisions.md` so the delta is reviewable
+4. **Cascade**: Patches `plan.md` and appends or cancels tasks in `tasks.md` when those files exist
+5. **No application code**: Implementation stays `/speckit.implement`
+
 ### The `/speckit.plan` Command
 
 Once a feature specification exists, this command creates a comprehensive implementation plan:

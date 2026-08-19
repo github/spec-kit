@@ -39,7 +39,8 @@ derived from it.
 
 When intended behavior changes, revise the existing `spec.md` first. Then
 regenerate or manually revise downstream artifacts so they match the updated
-spec:
+spec. Use `/speckit.revise` when plan, tasks, or implementation already exist
+and you need to change FRs, SCs, or ACs and the related artifacts.
 
 1. Start from a clean working tree or a dedicated branch so every generated
    change is reviewable.
@@ -52,6 +53,8 @@ spec:
    the spec, plan, and tasks.
 6. Run `/speckit.implement`, then review the code and artifact diffs together.
 7. Run `/speckit.converge` to assess completion and append any remaining work to `tasks.md`. If tasks are appended, repeat `/speckit.implement` and `/speckit.converge` until the feature is fully complete.
+
+If you used `/speckit.revise`, skip steps 2–4 unless `plan.md`/`tasks.md` are missing or the latest `revisions.md` entry has `plan_status: needs-rebuild`. Then continue from analyze.
 
 Preserve important implementation rationale before replacing derived artifacts.
 If a plan or task list contains decisions that still matter, carry them forward

@@ -83,6 +83,11 @@ hooks:
     optional: true
     prompt: "Commit outstanding changes before issue sync?"
     description: "Auto-commit before tasks-to-issues conversion"
+  before_revise:
+    command: speckit.git.commit
+    optional: true
+    prompt: "Commit outstanding changes before spec revision?"
+    description: "Auto-commit before living-spec revision"
   after_constitution:
     command: speckit.git.commit
     optional: true
@@ -128,6 +133,11 @@ hooks:
     optional: true
     prompt: "Commit after syncing issues?"
     description: "Auto-commit after tasks-to-issues conversion"
+  after_revise:
+    command: speckit.git.commit
+    optional: true
+    prompt: "Commit specification revision?"
+    description: "Auto-commit after living-spec revision"
 
 tags:
   - "git"

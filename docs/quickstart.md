@@ -120,6 +120,14 @@ Checks the codebase against the spec, plan, and tasks. If it finds gaps, it appe
 /speckit.converge
 ```
 
+### After plan, tasks, or implementation: `/speckit.revise` — change FRs, SCs, or ACs
+
+`/speckit.specify` can still create or update a spec before plan, tasks, or implementation exist. Once any of those exist, use `/speckit.revise` to change FRs, SCs, or ACs and cascade into the related artifacts. If revise reports `plan_status: needs-rebuild`, rerun `/speckit.plan`. Then analyze, implement, and converge.
+
+```text
+/speckit.revise Remove password login. Add AC: Given an expired session, When the user submits, Then redirect to SSO
+```
+
 > [!TIP]
 > For a full reference on each command — arguments, output, phased implementation, and how they interact — see [Agentic SDD](reference/agentic-sdd.md).
 

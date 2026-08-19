@@ -635,6 +635,8 @@ Standard events (defined by core):
 - `after_constitution` - After constitution update
 - `before_taskstoissues` - Before tasks-to-issues conversion
 - `after_taskstoissues` - After tasks-to-issues conversion
+- `before_revise` - Before `/speckit.revise` living-spec revision
+- `after_revise` - After `/speckit.revise` living-spec revision
 
 ### Hook Configuration
 

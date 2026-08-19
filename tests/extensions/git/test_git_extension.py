@@ -168,8 +168,12 @@ class TestGitExtensionManifest:
         assert "before_specify" in m.hooks
         assert "after_specify" in m.hooks
         assert "after_implement" in m.hooks
+        assert "before_revise" in m.hooks
+        assert "after_revise" in m.hooks
         assert m.hooks["before_constitution"]["command"] == "speckit.git.initialize"
         assert m.hooks["before_specify"]["command"] == "speckit.git.feature"
+        assert m.hooks["before_revise"]["command"] == "speckit.git.commit"
+        assert m.hooks["after_revise"]["command"] == "speckit.git.commit"
 
     def test_manifest_command_files_exist(self):
         """All command files referenced in the manifest exist."""

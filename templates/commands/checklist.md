@@ -34,7 +34,7 @@ scripts:
 - `[x]` does NOT mean implementation work is complete.
 - This command generates or appends checklist items; it MUST NOT mark generated items `[x]`.
 - An agent may assist with evaluating items only when explicitly asked by the reviewer.
-- `checklists/requirements.md` is a separate built-in spec-quality checklist maintained by `__SPECKIT_COMMAND_SPECIFY__` and `__SPECKIT_COMMAND_CLARIFY__`; do not treat that exception as applying to custom checklists generated here.
+- `checklists/requirements.md` is a separate built-in spec-quality checklist maintained by `__SPECKIT_COMMAND_SPECIFY__`, `__SPECKIT_COMMAND_CLARIFY__`, and `__SPECKIT_COMMAND_REVISE__` (revise re-evaluates checkboxes against live spec lines; it does not rewrite the file); do not treat that exception as applying to custom checklists generated here.
 
 ## User Input
 
@@ -126,9 +126,11 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Infer any missing context from spec/plan/tasks (do NOT hallucinate)
 
 5. **Load feature context**: Read from FEATURE_DIR:
-   - spec.md: Feature requirements and scope
-   - plan.md (if exists): Technical details, dependencies
-   - tasks.md (if exists): Implementation tasks
+   - spec.md: Feature requirements and scope — only **live** (unmarked) FRs, ACs, and SCs. Skip `SUPERSEDED` / `RETIRED` lines.
+   - plan.md (if exists): Technical details, dependencies (skip struck plan bullets)
+   - tasks.md (if exists): Implementation tasks (skip `CANCELLED` / `SUPERSEDED` task lines)
+
+   If `plan.md`, `tasks.md`, or implementation already exist and the gap is an add/remove/reword, recommend `__SPECKIT_COMMAND_REVISE__` rather than `__SPECKIT_COMMAND_SPECIFY__`.
 
    **Context Loading Strategy**:
    - Load only necessary portions relevant to active focus areas (avoid full-file dumping)

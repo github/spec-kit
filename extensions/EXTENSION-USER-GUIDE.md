@@ -406,7 +406,8 @@ settings:
 #                   before_tasks, after_tasks, before_implement, after_implement,
 #                   before_analyze, after_analyze, before_checklist, after_checklist,
 #                   before_clarify, after_clarify, before_constitution, after_constitution,
-#                   before_taskstoissues, after_taskstoissues
+#                   before_taskstoissues, after_taskstoissues,
+#                   before_revise, after_revise
 hooks:
   after_tasks:
     - extension: jira

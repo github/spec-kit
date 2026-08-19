@@ -2,6 +2,24 @@
 
 <!-- insert new changelog below this comment -->
 
+## [Unreleased]
+
+### Added
+
+- feat(commands): add `/speckit.revise` to edit the current feature spec in place (add/remove/reword ACs, FRs, stories) and cascade into plan/tasks
+
+### Changed
+
+- teach `/speckit.implement` and `/speckit.taskstoissues` to skip cancelled revision tasks
+- teach lean implement the same skip rules; refuse to regenerate `tasks.md` after a revision
+- teach `/speckit.converge` to inventory only live spec IDs and stop when revision tasks are still open
+- teach plan (core and lean) and analyze to ignore SUPERSEDED/RETIRED IDs; lean specify must not overwrite a living spec
+- stop implement from sending a Revision-phase task list back to `/speckit.tasks`
+- first-generation tasks inventory only live IDs; persist `plan_status` on `revisions.md`
+- clarify/checklist do not overwrite living-spec history; init lists `/speckit.revise`
+- hook git auto-commit on `before_revise` / `after_revise`
+- document living-spec revise in evolving-specs, spec-persistence, and agentic-sdd
+
 ## [0.16.4] - 2026-08-14
 
 ### Changed

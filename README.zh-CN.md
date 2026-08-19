@@ -184,6 +184,7 @@ Spec Kit 可与 30 多个 AI 编码助手协作 —— 既包括 CLI 工具，�
 | 命令                 | 助手技能               | 说明                                                                                              |
 | -------------------- | ---------------------- | ------------------------------------------------------------------------------------------------- |
 | `/speckit.clarify`   | `speckit-clarify`      | 澄清描述不充分的部分（建议在 `/speckit.plan` 之前使用；旧称 `/quizme`）                            |
+| `/speckit.revise`    | `speckit-revise`       | 在已有 plan/tasks/实现之后，修订 FR、SC 或 AC 并级联相关产物                           |
 | `/speckit.analyze`   | `speckit-analyze`      | 跨制品的一致性与覆盖度分析（在 `/speckit.tasks` 之后、`/speckit.implement` 之前运行）              |
 | `/speckit.checklist` | `speckit-checklist`    | 生成自定义质量清单，校验需求的完整性、清晰度与一致性（好比"为自然语言写单元测试"）                 |
 

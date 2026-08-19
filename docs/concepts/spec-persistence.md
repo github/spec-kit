@@ -71,7 +71,7 @@ derived from it.
 In this model, teams update `spec.md` first and then regenerate or revise
 `plan.md` and `tasks.md` from that source. The plan and task list are still
 valuable, but they are treated as disposable derivations rather than permanent
-sources of truth.
+sources of truth. Use `/speckit.revise` to edit the current spec in place.
 
 Living spec works well when:
 

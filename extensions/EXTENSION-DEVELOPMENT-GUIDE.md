@@ -225,6 +225,7 @@ Available hook points:
 - `before_analyze` / `after_analyze`: Before/after cross-artifact analysis
 - `before_checklist` / `after_checklist`: Before/after checklist generation
 - `before_clarify` / `after_clarify`: Before/after spec clarification
+- `before_revise` / `after_revise`: Before/after living-spec revision
 - `before_constitution` / `after_constitution`: Before/after constitution update
 - `before_taskstoissues` / `after_taskstoissues`: Before/after tasks-to-issues conversion
 

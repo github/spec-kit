@@ -141,12 +141,15 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Kubernetes/k8s**: `*.secret.yaml`, `secrets/`, `.kube/`, `kubeconfig*`, `*.key`, `*.crt`
 
 5. Parse tasks.md structure and extract:
-   - **Task phases**: Setup, Tests, Core, Integration, Polish
+   - **Task phases**: Setup, Tests, Core, Integration, Polish, Convergence, and any `Revision R#` phases
    - **Task dependencies**: Sequential vs parallel execution rules
    - **Task details**: ID, description, file paths, parallel markers [P]
    - **Execution flow**: Order and dependency requirements
+   - **Cancelled or superseded tasks**: A task line is not executable if it contains `CANCELLED`, `SUPERSEDED`, or a struck-through task ID (`~~T012~~`), even when the checkbox is still `- [ ]`. Do not implement them, do not mark them `[X]`, and do not count them as remaining work.
 
 6. Execute implementation following the task plan:
+   - **Skip cancelled/superseded tasks**: never execute those lines; do the replacement task (`T020` in `SUPERSEDED (R2 → T020)`) instead
+   - **Revision phases**: after earlier open (live) work, prefer the latest `Phase N: Revision R#` plus any cleanup tasks it added
    - **Phase-by-phase execution**: Complete each phase before moving to the next
    - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together
    - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks
@@ -169,12 +172,13 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **IMPORTANT** For completed tasks, make sure to mark the task off as [X] in the tasks file.
 
 9. Completion validation:
-   - Verify all required tasks are completed
-   - Check that implemented features match the original specification
+   - Verify all required **live** tasks are completed
+   - Ignore `CANCELLED` / `SUPERSEDED` tasks when deciding whether work remains
+   - Check that implemented features match **live** items in `spec.md` (struck `SUPERSEDED` / `RETIRED` lines are not required)
    - Validate that tests pass and coverage meets requirements
    - Confirm the implementation follows the technical plan
 
-Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `__SPECKIT_COMMAND_TASKS__` first to regenerate the task list.
+Note: This command assumes a task list exists in `tasks.md`. Suggest `__SPECKIT_COMMAND_TASKS__` only when `tasks.md` is **absent**. If the file exists and has cancelled/superseded lines or a `Revision R#` phase, that is the current list — implement the live remainder (or tell the user to run `__SPECKIT_COMMAND_REVISE__` to add work). Do not regenerate.
 
 ## Mandatory Post-Execution Hooks
 
@@ -216,7 +220,7 @@ Report final status with summary of completed work.
 
 ## Done When
 
-- [ ] All tasks in tasks.md completed and marked `[X]`
+- [ ] All live (non-cancelled, non-superseded) tasks in tasks.md completed and marked `[X]`
 - [ ] Implementation validated against specification, plan, and test coverage
 - [ ] Extension hooks dispatched or skipped according to the rules in Mandatory Post-Execution Hooks above
 - [ ] Completion reported to user with summary of completed work

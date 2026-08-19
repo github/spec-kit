@@ -68,6 +68,7 @@ Run `{SCRIPT}` once from repo root and parse JSON for FEATURE_DIR and AVAILABLE_
 - SPEC = FEATURE_DIR/spec.md
 - PLAN = FEATURE_DIR/plan.md
 - TASKS = FEATURE_DIR/tasks.md
+- REVISIONS = FEATURE_DIR/revisions.md (optional; living-spec history)
 
 Abort with an error message if any required file is missing (instruct the user to run missing prerequisite command).
 For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
@@ -79,10 +80,11 @@ Load only the minimal necessary context from each artifact:
 **From spec.md:**
 
 - Overview/Context
-- Functional Requirements
-- Success Criteria (measurable outcomes — e.g., performance, security, availability, user success, business impact)
-- User Stories
-- Edge Cases (if present)
+- Only **live** (unmarked) Functional Requirements
+- Only **live** Success Criteria (measurable outcomes — e.g., performance, security, availability, user success, business impact)
+- Only **live** User Stories
+- Edge Cases (if present and not SUPERSEDED / RETIRED)
+- Lines marked `SUPERSEDED` or `RETIRED` (usually struck through) are historical. Do not inventory them.
 
 **From plan.md:**
 
@@ -90,6 +92,7 @@ Load only the minimal necessary context from each artifact:
 - Data Model references
 - Phases
 - Technical constraints
+- Skip plan bullets marked `SUPERSEDED` or `RETIRED`. Only flag a retired ID as in-scope when a **live** (unmarked) plan bullet or live task still requires it.
 
 **From tasks.md:**
 
@@ -98,6 +101,17 @@ Load only the minimal necessary context from each artifact:
 - Phase grouping
 - Parallel markers [P]
 - Referenced file paths
+- Cancelled or superseded tasks (`CANCELLED` / `SUPERSEDED` / struck-through IDs) — exclude them from coverage gaps
+
+**From spec.md (current contract):**
+
+- Only **live** FRs, ACs, and SCs count. Lines marked `SUPERSEDED` or `RETIRED` (usually struck through) are historical. Do not require tasks or plan coverage for them.
+
+**From revisions.md (if present):**
+
+- This file is a **dated log only**, not a spec. Ignore summaries except for ID lists.
+- Collect `superseded:` and `retired:` IDs as historical.
+- Current requirements come only from **live** lines in `spec.md`.
 
 **From constitution:**
 
@@ -107,7 +121,7 @@ Load only the minimal necessary context from each artifact:
 
 Create internal representations (do not include raw artifacts in output):
 
-- **Requirements inventory**: For each Functional Requirement (FR-###) and Success Criterion (SC-###), record a stable key. Use the explicit FR-/SC- identifier as the primary key when present, and optionally also derive an imperative-phrase slug for readability (e.g., "User can upload file" → `user-can-upload-file`). Include only Success Criteria items that require buildable work (e.g., load-testing infrastructure, security audit tooling), and exclude post-launch outcome metrics and business KPIs (e.g., "Reduce support tickets by 50%").
+- **Requirements inventory**: For each **live** (unmarked) Functional Requirement (FR-###) and Success Criterion (SC-###), record a stable key. Do not create keys for `SUPERSEDED` or `RETIRED` IDs. Use the explicit FR-/SC- identifier as the primary key when present, and optionally also derive an imperative-phrase slug for readability (e.g., "User can upload file" → `user-can-upload-file`). Include only Success Criteria items that require buildable work (e.g., load-testing infrastructure, security audit tooling), and exclude post-launch outcome metrics and business KPIs (e.g., "Reduce support tickets by 50%").
 - **User story/action inventory**: Discrete user actions with acceptance criteria
 - **Task coverage mapping**: Map each task to one or more requirements or stories (inference by keyword / explicit reference patterns like IDs or key phrases)
 - **Constitution rule set**: Extract principle names and MUST/SHOULD normative statements
@@ -149,6 +163,9 @@ Focus on high-signal findings. Limit to 50 findings total; aggregate remainder i
 - Data entities referenced in plan but absent in spec (or vice versa)
 - Task ordering contradictions (e.g., integration tasks before foundational setup tasks without dependency note)
 - Conflicting requirements (e.g., one requires Next.js while other specifies Vue)
+- Plan or tasks still treating a **retired** ID from `revisions.md` as in-scope (the current `spec.md` no longer requires it)
+
+If requirement problems need a follow-up edit: use `__SPECKIT_COMMAND_SPECIFY__` to create or update a spec that is not yet planned, tasked, or implemented; use `__SPECKIT_COMMAND_CLARIFY__` to fill pre-plan gaps; if `plan.md`, `tasks.md`, or implementation already exist and the user knows the FR / SC / AC delta, recommend `__SPECKIT_COMMAND_REVISE__`.
 
 ### 5. Severity Assignment
 
@@ -195,7 +212,7 @@ At end of report, output a concise Next Actions block:
 
 - If CRITICAL issues exist: Recommend resolving before `__SPECKIT_COMMAND_IMPLEMENT__`
 - If only LOW/MEDIUM: User may proceed, but provide improvement suggestions
-- Provide explicit command suggestions: e.g., "Run __SPECKIT_COMMAND_SPECIFY__ with refinement", "Run __SPECKIT_COMMAND_PLAN__ to adjust architecture", "Manually edit tasks.md to add coverage for 'performance-metrics'"
+- Provide explicit command suggestions: e.g., "Run __SPECKIT_COMMAND_SPECIFY__ for a new feature", "Run __SPECKIT_COMMAND_REVISE__ for a known add/remove/reword on the current spec", "Run __SPECKIT_COMMAND_PLAN__ to adjust architecture", "Manually edit tasks.md to add coverage for 'performance-metrics'"
 
 ### 8. Offer Remediation
 

@@ -382,6 +382,7 @@ class YamlIntegrationTests:
         "implement",
         "plan",
         "checklist",
+        "revise",
         "specify",
         "tasks",
         "taskstoissues",

@@ -145,10 +145,10 @@ class TestCopilotCommandsMode:
         agents_dir = tmp_path / ".github" / "agents"
         assert agents_dir.is_dir()
         agent_files = sorted(agents_dir.glob("speckit.*.agent.md"))
-        assert len(agent_files) == 10
+        assert len(agent_files) == 11
         expected_commands = {
             "analyze", "clarify", "constitution", "converge", "implement",
-            "plan", "checklist", "specify", "tasks", "taskstoissues",
+            "plan", "checklist", "revise", "specify", "tasks", "taskstoissues",
         }
         actual_commands = {f.name.removeprefix("speckit.").removesuffix(".agent.md") for f in agent_files}
         assert actual_commands == expected_commands
@@ -256,6 +256,7 @@ class TestCopilotCommandsMode:
             ".github/agents/speckit.converge.agent.md",
             ".github/agents/speckit.implement.agent.md",
             ".github/agents/speckit.plan.agent.md",
+            ".github/agents/speckit.revise.agent.md",
             ".github/agents/speckit.specify.agent.md",
             ".github/agents/speckit.tasks.agent.md",
             ".github/agents/speckit.taskstoissues.agent.md",
@@ -266,6 +267,7 @@ class TestCopilotCommandsMode:
             ".github/prompts/speckit.converge.prompt.md",
             ".github/prompts/speckit.implement.prompt.md",
             ".github/prompts/speckit.plan.prompt.md",
+            ".github/prompts/speckit.revise.prompt.md",
             ".github/prompts/speckit.specify.prompt.md",
             ".github/prompts/speckit.tasks.prompt.md",
             ".github/prompts/speckit.taskstoissues.prompt.md",
@@ -321,6 +323,7 @@ class TestCopilotCommandsMode:
             ".github/agents/speckit.converge.agent.md",
             ".github/agents/speckit.implement.agent.md",
             ".github/agents/speckit.plan.agent.md",
+            ".github/agents/speckit.revise.agent.md",
             ".github/agents/speckit.specify.agent.md",
             ".github/agents/speckit.tasks.agent.md",
             ".github/agents/speckit.taskstoissues.agent.md",
@@ -331,6 +334,7 @@ class TestCopilotCommandsMode:
             ".github/prompts/speckit.converge.prompt.md",
             ".github/prompts/speckit.implement.prompt.md",
             ".github/prompts/speckit.plan.prompt.md",
+            ".github/prompts/speckit.revise.prompt.md",
             ".github/prompts/speckit.specify.prompt.md",
             ".github/prompts/speckit.tasks.prompt.md",
             ".github/prompts/speckit.taskstoissues.prompt.md",
@@ -366,7 +370,7 @@ class TestCopilotSkillsMode:
 
     _SKILL_COMMANDS = [
         "analyze", "clarify", "constitution", "converge", "implement",
-        "plan", "checklist", "specify", "tasks", "taskstoissues",
+        "plan", "checklist", "revise", "specify", "tasks", "taskstoissues",
     ]
 
     def _make_copilot(self):
