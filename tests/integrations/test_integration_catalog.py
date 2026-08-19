@@ -722,11 +722,11 @@ class TestIntegrationDescriptor:
         ):
             IntegrationDescriptor(p)
 
-    def test_empty_document_still_reports_missing_fields(self, tmp_path):
-        """An empty document is not a wrong shape -- it is a mapping with no
-        keys, so the missing-field error must still be what is reported."""
+    @pytest.mark.parametrize("content", ["", "---"])
+    def test_empty_document_still_reports_missing_fields(self, tmp_path, content):
+        """Empty documents are normalized to an empty mapping, so missing fields are reported."""
         p = tmp_path / "integration.yml"
-        p.write_text("")
+        p.write_text(content)
         with pytest.raises(IntegrationDescriptorError, match="Missing required field: schema_version"):
             IntegrationDescriptor(p)
 
