@@ -107,7 +107,7 @@ def _constitution_provenance_matches_preset(
         return False
     try:
         metadata = json.loads(provenance.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return False
     return (
         isinstance(metadata, dict)
