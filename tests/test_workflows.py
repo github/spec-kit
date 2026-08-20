@@ -9041,6 +9041,18 @@ class TestStepCatalog:
         with pytest.raises(StepValidationError, match="out of range"):
             catalog.remove_catalog(5)
 
+    @pytest.mark.parametrize("bad", [[], False, 0, ""])
+    def test_remove_catalog_rejects_falsy_non_mapping_config(
+        self, project_dir, bad
+    ):
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        config_path.write_text(yaml.safe_dump(bad), encoding="utf-8")
+
+        with pytest.raises(StepValidationError, match="expected a mapping"):
+            StepCatalog(project_dir).remove_catalog(0)
+
     def test_remove_catalog_no_config(self, project_dir):
         from specify_cli.workflows.catalog import StepCatalog, StepValidationError
 
