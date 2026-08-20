@@ -12,7 +12,7 @@ from specify_cli.workflows.expressions import (
     _has_unbalanced_quote,
     _has_unbalanced_bracket,
     _has_incomplete_operand,
-    _is_not_a_bare_path,
+    _unresolvable_term,
     _evaluator_rejects,
     _strip_stray_delimiters,
     _COMPARISON_OPERATORS,
@@ -391,7 +391,6 @@ OFFERED_CORRECTION_INPUTS = [
     "inputs.a == 'x\ty'",
     "inputs.a == 'x\ry'",
     "inputs.ten == 'mười'",
-    "inputs.x == 1\nand inputs.name == 'abc'",
     '{{ inputs.name == "zzz"',
     "}} inputs.count > 100 {{",
 ]
@@ -480,8 +479,15 @@ MULTI_POSITION_UNFIXABLE = [
     ("inputs.f(]", "brackets do not balance"),
     ("inputs.items | length", "the evaluator rejects it"),
     ("inputs.tags | join", "used in an unsupported form"),
-    ('he said "hi" then left', "not a path or an expression"),
-    ("inputs.count+1", "not a path or an expression"),
+    ('he said "hi" then left', "is not a name the evaluator can resolve"),
+    ("inputs.count+1", "is not a valid path segment"),
+    ("inputs.a === inputs.b", "is not a name the evaluator can resolve"),
+    ("bogus == 'x'", "is not one of the namespace roots"),
+    ("inputs.payload | from_json()", "the evaluator rejects it"),
+    # `_find_top_level` matches " and " with literal spaces, so a newline before
+    # the keyword is not an operator: the wrapped form evaluates False where the
+    # same expression with a space evaluates True.
+    ("inputs.x == 1\nand inputs.name == 'abc'", "is not a name the evaluator can resolve"),
 ]
 
 
@@ -553,10 +559,22 @@ def test_the_probe_reports_what_the_evaluator_reports():
         ("inputs.2bad", False),
         ("inputs.tags[foo]", True),
         ("inputs.matrix[0][1]", True),
+        # Round 7: an operand one level down, which the single-term gate never saw.
+        ("inputs.a === inputs.b", True),
+        ("bogus", True),
+        ("bogus == 'x'", True),
+        ("item.name == 'x'", False),
+        ("fan_in.results | join(',')", False),
+        ("context.run_id != ''", False),
     ],
 )
-def test_bare_path_segments_must_be_identifiers(text, not_a_path):
-    assert _is_not_a_bare_path(text) is not_a_path
+def test_operands_must_be_literals_or_known_paths(text, not_a_path):
+    """Recursing to the leaves replaced the single-term check.
+
+    The old gate only looked at a core with no operator, so `inputs.a === inputs.b`
+    and `bogus == 'x'` walked past it. This asserts the reachable leaf instead.
+    """
+    assert (_unresolvable_term(text) is not None) is not_a_path
 
 
 @pytest.mark.parametrize(

@@ -974,6 +974,14 @@ def _has_incomplete_operand(text: str) -> bool:
     )
 
 
+# The roots _build_namespace supplies. A reference to anything else resolves to
+# None, so a correction built on one turns a truthy condition false.
+_NAMESPACE_ROOTS = ("inputs", "steps", "item", "fan_in", "context")
+
+# Exactly what _resolve_dot_path accepts: a name, optionally one numeric index.
+_PATH_SEGMENT = re.compile(r"^[\w-]+(\[\d+\])?$")
+
+
 class _ProbeNamespace(dict):
     """Namespace for the parse probe: every root exists, every leaf is absent.
 
@@ -1003,49 +1011,21 @@ def _evaluator_rejects(text: str) -> str | None:
     """
     try:
         _evaluate_simple_expression(
-            text, {"inputs": _ProbeNamespace(), "steps": _ProbeNamespace()}
+            text, {root: _ProbeNamespace() for root in _NAMESPACE_ROOTS}
         )
     except ValueError as exc:
         message = str(exc)
-        if message.startswith(("unknown filter ", "filter '")):
+        # Every error _apply_filter raises about the filter *expression* quotes the
+        # segment back as `got '| ...'`. Its value errors instead name the type they
+        # received, which under a probe is the placeholder, not anything the author
+        # wrote -- treating those as rejections withheld corrections from valid
+        # conditions such as `steps.emit.output.stdout | from_json`.
+        if "got '| " in message:
             return message.split(":", 1)[0]
     except Exception:  # noqa: BLE001 - probe values, not the author's text
         return None
     return None
 
-
-# Exactly what _resolve_dot_path accepts: a name, optionally one numeric index.
-# A looser pattern let inputs.tags[foo] and inputs.matrix[0][1] pass as paths, and
-# the resolver returns None for both, so the wrapped form turned a truthy condition
-# false -- the defect this gate exists to prevent.
-_PATH_SEGMENT = re.compile(r"^[\w-]+(\[\d+\])?$")
-
-
-def _is_not_a_bare_path(text: str) -> bool:
-    """True when a single-term core is not a dotted path of identifiers.
-
-    A core with no operator and no filter is resolved as a path lookup, so every
-    segment has to be an identifier. ``inputs.count+1`` is not -- the evaluator
-    reads it as a key named ``count+1``, finds nothing, and the wrapped form
-    resolves to ``None``, turning a truthy condition false. Prose fails the same
-    way: ``he said "hi" then left`` is not a path either.
-    """
-    stripped = text.strip()
-    if stripped.startswith("not "):
-        stripped = stripped[4:].strip()
-    for op in (" or ", " and ") + _COMPARISON_OPERATORS:
-        if _find_top_level(stripped, op) != -1:
-            return False
-    if _find_top_level(stripped, "|") != -1:
-        return False
-    if not stripped or stripped[0] in ("'", '"'):
-        return False
-    if stripped.lower() in ("true", "false") or _looks_numeric(stripped):
-        return False
-    for segment in _split_top_level(stripped, "."):
-        if not _PATH_SEGMENT.match(segment.strip()):
-            return True
-    return False
 
 
 def _looks_numeric(text: str) -> bool:
@@ -1054,6 +1034,67 @@ def _looks_numeric(text: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _is_literal(text: str) -> bool:
+    if len(text) >= 2 and text[0] in ("'", '"') and text[-1] == text[0]:
+        return True
+    return text.lower() in ("true", "false", "none", "null") or _looks_numeric(text)
+
+
+def _unresolvable_term(text: str) -> str | None:
+    """The first operand in *text* the evaluator cannot resolve, or ``None``.
+
+    Walks operands the way ``_evaluate_simple_expression`` does -- filters, then
+    ``or``/``and``/``not``, then comparisons -- and checks each leaf. A leaf must be
+    a literal or a dotted path rooted in ``_NAMESPACE_ROOTS``.
+
+    Enumerating broken shapes is what made this take several rounds: each new gate
+    only knew the shapes named so far. ``inputs.a === inputs.b`` split cleanly on
+    ``==`` and looked complete, while the evaluator read ``= inputs.b`` as a path
+    and resolved it to ``None``; ``bogus == 'x'`` passed for the same reason one
+    level up. Recursing to the leaves covers both without naming either.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return "an operand is empty"
+
+    if _find_top_level(stripped, "|") != -1:
+        segments = _split_top_level(stripped, "|")
+        return _unresolvable_term(segments[0])
+
+    for op in (" or ", " and "):
+        idx = _find_top_level(stripped, op)
+        if idx != -1:
+            return _unresolvable_term(stripped[:idx]) or _unresolvable_term(
+                stripped[idx + len(op):]
+            )
+
+    if stripped.startswith("not "):
+        return _unresolvable_term(stripped[4:])
+
+    for op in _COMPARISON_OPERATORS:
+        idx = _find_top_level(stripped, op)
+        if idx != -1:
+            return _unresolvable_term(stripped[:idx]) or _unresolvable_term(
+                stripped[idx + len(op):]
+            )
+
+    if _is_literal(stripped):
+        return None
+
+    segments = _split_top_level(stripped, ".")
+    if not _PATH_SEGMENT.match(segments[0].strip()):
+        return f"{stripped!r} is not a name the evaluator can resolve"
+    if re.sub(r"\[\d+\]$", "", segments[0].strip()) not in _NAMESPACE_ROOTS:
+        return (
+            f"{segments[0].strip()!r} is not one of the namespace roots "
+            f"({', '.join(_NAMESPACE_ROOTS)})"
+        )
+    for segment in segments[1:]:
+        if not _PATH_SEGMENT.match(segment.strip()):
+            return f"{segment.strip()!r} is not a valid path segment"
+    return None
 
 
 def _wrapping_would_not_repair(core: str) -> str | None:
@@ -1073,8 +1114,9 @@ def _wrapping_would_not_repair(core: str) -> str | None:
         return "its brackets do not balance"
     if _has_incomplete_operand(core):
         return "an operator in it is missing an operand"
-    if _is_not_a_bare_path(core):
-        return "it is not a path or an expression the evaluator can resolve"
+    unresolvable = _unresolvable_term(core)
+    if unresolvable is not None:
+        return unresolvable
     rejected = _evaluator_rejects(core)
     if rejected is not None:
         return f"the evaluator rejects it ({rejected})"
