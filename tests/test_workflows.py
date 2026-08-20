@@ -8328,6 +8328,18 @@ class TestWorkflowCatalog:
         with pytest.raises(WorkflowValidationError, match="out of range"):
             catalog.remove_catalog(5)
 
+    @pytest.mark.parametrize("bad", [[], False, 0, ""])
+    def test_remove_catalog_rejects_falsy_non_mapping_config(
+        self, project_dir, bad
+    ):
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.write_text(yaml.safe_dump(bad), encoding="utf-8")
+
+        with pytest.raises(WorkflowValidationError, match="expected a mapping"):
+            WorkflowCatalog(project_dir).remove_catalog(0)
+
     def test_get_catalog_configs(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog
 
