@@ -711,6 +711,71 @@ class TestExpressions:
                 StepContext(inputs={"tags": ["a", "b"]}),
             )
 
+    def test_multi_argument_filter_call_fails_loudly(self):
+        """A second argument must be reported, not silently mis-evaluated.
+
+        The whole captured argument text was handed to
+        `_evaluate_simple_expression` as ONE expression. `"1, 2"` is not a valid
+        expression, so it evaluated to None — making `default(1, 2)` return None
+        (silently wrong) and `join(",", "extra")` raise a message blaming the
+        separator rather than the extra argument.
+        """
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        with pytest.raises(ValueError, match="unsupported form"):
+            evaluate_expression(
+                "{{ inputs.missing | default(1, 2) }}", StepContext(inputs={})
+            )
+        with pytest.raises(ValueError, match="unsupported form"):
+            evaluate_expression(
+                '{{ inputs.tags | join(",", "extra") }}',
+                StepContext(inputs={"tags": ["a", "b"]}),
+            )
+
+    def test_single_argument_containing_a_comma_still_works(self):
+        """The multi-argument check must skip quotes AND nested brackets.
+
+        A single argument may legitimately contain a comma in two ways:
+
+        * inside quotes — `join(", ")`, `default("a, b")`
+        * inside a bracketed literal — `default([1, 2])`, which the expression
+          evaluator supports and which resolves to a real list
+
+        so the check uses `_find_top_level` (the same scanner the operator
+        splitting uses) rather than a quote-only scan.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"tags": ["a", "b"]})
+        assert evaluate_expression('{{ inputs.tags | join(", ") }}', ctx) == "a, b"
+        assert evaluate_expression('{{ inputs.tags | join(",") }}', ctx) == "a,b"
+        assert (
+            evaluate_expression('{{ inputs.missing | default("a, b") }}', ctx)
+            == "a, b"
+        )
+        # List literals: a comma inside brackets is not an argument separator.
+        assert evaluate_expression(
+            "{{ inputs.missing | default([1, 2]) }}", ctx
+        ) == [1, 2]
+        assert evaluate_expression(
+            "{{ inputs.missing | default([1,2]) }}", ctx
+        ) == [1, 2]
+        assert evaluate_expression("{{ inputs.missing | default([]) }}", ctx) == []
+
+    def test_multi_argument_after_a_literal_is_still_rejected(self):
+        """A real second argument is rejected even when the first is a literal."""
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        with pytest.raises(ValueError, match="unsupported form"):
+            evaluate_expression(
+                "{{ inputs.missing | default([1,2], 3) }}", StepContext(inputs={})
+            )
+
     def test_chained_filters_apply_left_to_right(self):
         # Filters chain: each filter's result feeds the next. `map` yields a
         # list and `join` is the only filter that renders a list to a string,
