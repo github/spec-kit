@@ -68,7 +68,7 @@ specify core info --json | jq '.commands[] | select(.name == "speckit.plan")'
 
 - Alphabetical ordering by `name` within each section.
 - Fixed top-level key order: `commands`, `templates`, `scripts`.
-- Fields inside each entry are emitted in a fixed order (see the schema at [`specs/001-core-info/contracts/core-info-schema.json`](https://github.com/github/spec-kit/blob/main/specs/001-core-info/contracts/core-info-schema.json)).
+- Fields inside each entry are emitted in a fixed order (see the entry construction in [`src/specify_cli/core/__init__.py`](https://github.com/github/spec-kit/blob/main/src/specify_cli/core/__init__.py)).
 - Path separators are always forward-slashes, even on Windows.
 
 ## Failure Modes
