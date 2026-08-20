@@ -549,8 +549,37 @@ def test_the_probe_reports_what_the_evaluator_reports():
         ("inputs.count > 100", False),      # has an operator, not a bare term
         ("inputs.count+1", True),           # the evaluator has no arithmetic
         ('he said "hi" then left', True),
-        ("inputs.2bad", True),
+        # _resolve_dot_path keys on [w-]+, so a key literally named "2bad" resolves.
+        ("inputs.2bad", False),
+        ("inputs.tags[foo]", True),
+        ("inputs.matrix[0][1]", True),
     ],
 )
 def test_bare_path_segments_must_be_identifiers(text, not_a_path):
     assert _is_not_a_bare_path(text) is not_a_path
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        # Valid against a string output and exercised in tests/test_workflows.py.
+        # The probe hands from_json a dict, so treating every probe error as a
+        # rejection withheld a correction from a good condition.
+        "steps.emit.output.stdout | from_json",
+        # The filter argument is resolved from the namespace too.
+        "inputs.tags | join(inputs.separator)",
+    ],
+)
+def test_probe_value_errors_are_not_treated_as_rejections(condition):
+    assert _evaluator_rejects(condition) is None
+    assert format_condition_remediation(condition).startswith("Wrap the expression: ")
+
+
+@pytest.mark.parametrize(
+    "condition",
+    ["inputs.items | length", "inputs.tags | join"],
+)
+def test_filter_wiring_errors_are_still_rejections(condition):
+    """The other half: a filter named wrong or used wrong is the author's text."""
+    assert _evaluator_rejects(condition) is not None
+    assert "Wrap the expression" not in format_condition_remediation(condition)

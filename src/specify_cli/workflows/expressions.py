@@ -931,9 +931,8 @@ def _has_unbalanced_bracket(text: str) -> bool:
             quote = ch
         elif ch in "([{":
             stack.append(ch)
-        elif ch in _BRACKET_PAIRS:
-            if not stack or stack.pop() != _BRACKET_PAIRS[ch]:
-                return True
+        elif ch in _BRACKET_PAIRS and (not stack or stack.pop() != _BRACKET_PAIRS[ch]):
+            return True
     return bool(stack)
 
 
@@ -970,10 +969,11 @@ def _has_incomplete_operand(text: str) -> bool:
         if any(not segment.strip() for segment in _split_top_level(stripped, op)):
             return True
 
-    if _find_top_level(stripped, "|") != -1:
-        if any(not segment.strip() for segment in _split_top_level(stripped, "|")):
-            return True
-    return False
+    return _find_top_level(stripped, "|") != -1 and any(
+        not segment.strip() for segment in _split_top_level(stripped, "|")
+    )
+
+
 class _ProbeNamespace(dict):
     """Namespace for the parse probe: every root exists, every leaf is absent.
 
@@ -983,29 +983,42 @@ class _ProbeNamespace(dict):
     malformed shape the probe is meant to expose.
     """
 
-    def __missing__(self, key: str) -> "_ProbeNamespace":  # pragma: no cover - trivial
+    def __missing__(self, key: str) -> "_ProbeNamespace":  # noqa: UP037  # pragma: no cover
         return _ProbeNamespace()
 
 
 def _evaluator_rejects(text: str) -> str | None:
-    """The evaluator's own error for *text*, or ``None`` when it parses.
+    """The evaluator's own complaint about how *text* is wired, or ``None``.
 
     Structural checks cannot establish that a core is parseable -- four rounds of
-    review found a new shape each time. This asks the evaluator instead, so any
-    filter used in an unsupported form (``| join`` with no argument) or under an
-    unknown name (``| length``) is reported by the code that will actually run,
-    not by a restatement of it.
+    review found a new shape each time -- so this asks the evaluator. It reports
+    only the two failures ``_apply_filter`` raises about the expression itself: an
+    unknown filter name, and a registered filter used in an unsupported form.
+
+    Anything else a probe run raises is about the probe's placeholder values, not
+    the author's text. ``steps.emit.output.stdout | from_json`` is valid against a
+    string output and is exercised in ``tests/test_workflows.py``; the probe hands
+    ``from_json`` a dict and it raises, so treating every error as a rejection
+    withheld a correction from a perfectly good condition.
     """
     try:
-        _evaluate_simple_expression(text, {"inputs": _ProbeNamespace(), "steps": _ProbeNamespace()})
+        _evaluate_simple_expression(
+            text, {"inputs": _ProbeNamespace(), "steps": _ProbeNamespace()}
+        )
     except ValueError as exc:
-        return str(exc).split(":", 1)[0]
-    except Exception:  # noqa: BLE001 - any other failure is still "not parseable"
-        return "it is not a parseable expression"
+        message = str(exc)
+        if message.startswith(("unknown filter ", "filter '")):
+            return message.split(":", 1)[0]
+    except Exception:  # noqa: BLE001 - probe values, not the author's text
+        return None
     return None
 
 
-_TERM_SUFFIX = re.compile(r"(\[[^\[\]]*\])+$")
+# Exactly what _resolve_dot_path accepts: a name, optionally one numeric index.
+# A looser pattern let inputs.tags[foo] and inputs.matrix[0][1] pass as paths, and
+# the resolver returns None for both, so the wrapped form turned a truthy condition
+# false -- the defect this gate exists to prevent.
+_PATH_SEGMENT = re.compile(r"^[\w-]+(\[\d+\])?$")
 
 
 def _is_not_a_bare_path(text: str) -> bool:
@@ -1030,8 +1043,7 @@ def _is_not_a_bare_path(text: str) -> bool:
     if stripped.lower() in ("true", "false") or _looks_numeric(stripped):
         return False
     for segment in _split_top_level(stripped, "."):
-        segment = _TERM_SUFFIX.sub("", segment.strip())
-        if not segment.isidentifier():
+        if not _PATH_SEGMENT.match(segment.strip()):
             return True
     return False
 
@@ -1042,6 +1054,7 @@ def _looks_numeric(text: str) -> bool:
     except ValueError:
         return False
     return True
+
 
 def _wrapping_would_not_repair(core: str) -> str | None:
     """Why wrapping *core* in ``{{ }}`` would not yield the expression intended.
