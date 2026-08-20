@@ -1082,7 +1082,7 @@ def collect_extension_events(project_root: Path) -> ResolvedEvents:
                 continue
             try:
                 data = yaml.safe_load(ext_yml.read_text(encoding="utf-8")) or {}
-            except (UnicodeDecodeError, yaml.YAMLError):
+            except (OSError, UnicodeDecodeError, yaml.YAMLError):
                 continue
             if not isinstance(data, dict):
                 continue
