@@ -13,6 +13,7 @@ command's output against ``specify artifact info --json``. See tasks.md T029.
 from __future__ import annotations
 
 import json
+import importlib
 import re
 from pathlib import Path
 
@@ -178,7 +179,7 @@ def test_core_info_ignores_presets_and_extensions_in_project(
 def test_core_info_missing_command_file_exits_nonzero(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from specify_cli import core as core_pkg
+    importlib.import_module("specify_cli.core")
 
     # Redirect the discovery helpers to a name that has no shipped file.
     monkeypatch.setattr(
