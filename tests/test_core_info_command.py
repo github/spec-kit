@@ -1,15 +1,4 @@
-"""CLI-level tests for ``specify core info --json`` via Typer's CliRunner.
-
-Contract references:
-- ``specs/001-core-info/contracts/core-info-cli.md``
-- ``specs/001-core-info/contracts/core-info-schema.json``
-
-Deferred (companion #4212): cross-reference integration tests that join this
-command's output against ``specify artifact info --json``. See tasks.md T029.
-"""
-# TODO(#4212): add a cross-reference integration test that joins
-# `specify core info --json` output against `specify artifact info --json`
-# once the companion command lands. See specs/001-core-info/tasks.md T029.
+"""CLI-level tests for ``specify core info --json`` via Typer's CliRunner."""
 from __future__ import annotations
 
 import importlib
@@ -29,7 +18,7 @@ def _invoke(args: list[str]):
 
 
 # ---------------------------------------------------------------------------
-# T019 — CLI surface
+# CLI surface
 # ---------------------------------------------------------------------------
 
 
@@ -60,7 +49,7 @@ def test_specify_root_help_shows_core_group() -> None:
 
 
 # ---------------------------------------------------------------------------
-# T020 — schema-conformance (hand-rolled shape check keyed off the schema)
+# Schema-conformance (hand-rolled shape check)
 # ---------------------------------------------------------------------------
 
 
@@ -116,7 +105,7 @@ def test_core_info_output_validates_against_contract_schema() -> None:
 
 
 # ---------------------------------------------------------------------------
-# T021 — determinism gate (SC-002)
+# Determinism gate
 # ---------------------------------------------------------------------------
 
 
@@ -128,7 +117,7 @@ def test_core_info_output_is_byte_identical_across_two_runs() -> None:
 
 
 # ---------------------------------------------------------------------------
-# T022 — path-shape invariant
+# Path-shape invariant
 # ---------------------------------------------------------------------------
 
 
@@ -140,7 +129,7 @@ def test_core_info_source_paths_are_package_relative() -> None:
 
 
 # ---------------------------------------------------------------------------
-# T023 — project-isolation guarantees (FR-013)
+# Project-isolation guarantees
 # ---------------------------------------------------------------------------
 
 
@@ -172,7 +161,7 @@ def test_core_info_ignores_presets_and_extensions_in_project(
 
 
 # ---------------------------------------------------------------------------
-# T024 — fail-fast on packaging errors → non-zero exit + JSON envelope on stderr
+# Fail-fast on packaging errors → non-zero exit + JSON envelope on stderr
 # ---------------------------------------------------------------------------
 
 

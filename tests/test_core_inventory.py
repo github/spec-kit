@@ -3,10 +3,10 @@
 Test targets:
 
 - Path resolution across wheel and source layouts
-- Frontmatter parsing with typed empty defaults (Clarifications Q2)
-- Alphabetical ordering & determinism (research §R6, SC-002)
-- Stable id grammar per companion #4210 (US2 T028)
-- Fail-fast failure modes (FR-012, SC-004)
+- Frontmatter parsing with typed empty defaults
+- Alphabetical ordering & determinism
+- Stable id grammar
+- Fail-fast failure modes
 """
 from __future__ import annotations
 
@@ -85,7 +85,7 @@ def override_layout(monkeypatch: pytest.MonkeyPatch):
 
 
 # ---------------------------------------------------------------------------
-# Path resolution (T015)
+# Path resolution
 # ---------------------------------------------------------------------------
 
 
@@ -129,7 +129,7 @@ def test_package_relative_rejects_absolute() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Frontmatter parsing (T015)
+# Frontmatter parsing
 # ---------------------------------------------------------------------------
 
 
@@ -174,7 +174,7 @@ def test_parse_command_frontmatter_rejects_non_mapping(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Typed empty defaults & handoffs normalization (T016)
+# Typed empty defaults & handoffs normalization
 # ---------------------------------------------------------------------------
 
 
@@ -211,7 +211,7 @@ def test_build_command_rejects_non_boolean_optional(tmp_path: Path, override_lay
 
 
 # ---------------------------------------------------------------------------
-# Scripts: partial runtimes, ordering (T016)
+# Scripts: partial runtimes, ordering
 # ---------------------------------------------------------------------------
 
 
@@ -266,7 +266,7 @@ def test_python_script_name_hyphenated(tmp_path: Path, override_layout) -> None:
 def test_build_core_inventory_deterministic_ordering() -> None:
     a = build_core_inventory()
     b = build_core_inventory()
-    # Byte-identical serialization is the SC-002 gate.
+    # Byte-identical serialization gate.
     assert json.dumps(a, sort_keys=False) == json.dumps(b, sort_keys=False)
 
 
@@ -283,14 +283,14 @@ def test_top_level_keys_have_fixed_order() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Stable-id grammar (US2 T028)
+# Stable-id grammar
 # ---------------------------------------------------------------------------
 
 
 _STABLE_ID = re.compile(r"^core:_:(command|template|script):[A-Za-z0-9._-]+$")
 
 
-def test_all_ids_match_4210_grammar() -> None:
+def test_all_ids_match_stable_grammar() -> None:
     inv = build_core_inventory()
     seen: list[str] = []
     for section, kind in [("commands", "command"), ("templates", "template"), ("scripts", "script")]:
@@ -304,7 +304,7 @@ def test_all_ids_match_4210_grammar() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Fail-fast behavior on packaging errors (SC-004, FR-012)
+# Fail-fast behavior on packaging errors
 # ---------------------------------------------------------------------------
 
 
@@ -383,7 +383,7 @@ def test_template_without_any_description_fails_fast(tmp_path: Path, override_la
 
 
 # ---------------------------------------------------------------------------
-# Path-shape invariant (T022)
+# Path-shape invariant
 # ---------------------------------------------------------------------------
 
 

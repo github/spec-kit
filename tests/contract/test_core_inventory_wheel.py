@@ -1,4 +1,4 @@
-"""Wheel/source count-parity contract test (T031).
+"""Wheel/source count-parity contract test.
 
 Guarantees the shipped baseline surfaces the same count of commands, templates
 and scripts regardless of whether ``build_core_inventory`` finds the wheel's

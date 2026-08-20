@@ -4,16 +4,11 @@ Public entry point: :func:`build_core_inventory` returns a fixed-shape dict
 enumerating the baseline commands, templates, and scripts that ship inside
 the wheel (`specify_cli/core_pack/`) or the source checkout (repo root).
 
-The output is the exact shape validated by
-``specs/001-core-info/contracts/core-info-schema.json``. See
-``specs/001-core-info/data-model.md`` for authoritative field types.
-
-Every asset carries a stable identifier per companion issue #4210:
-``core:_:{kind}:{name}``. Ordering: alphabetical by ``name`` within each
-list. Failure mode: any packaging inconsistency (missing shipped file,
-unparseable frontmatter, script with zero runtimes) raises
-:class:`CoreInventoryError` — the caller emits a JSON error envelope to
-stderr and exits non-zero (FR-012).
+Every asset carries a stable identifier: ``core:_:{kind}:{name}``. Ordering:
+alphabetical by ``name`` within each list. Failure mode: any packaging
+inconsistency (missing shipped file, unparseable frontmatter, script with
+zero runtimes) raises :class:`CoreInventoryError` — the caller emits a JSON
+error envelope to stderr and exits non-zero.
 """
 from __future__ import annotations
 
@@ -35,7 +30,7 @@ _RUNTIMES: tuple[tuple[str, str, str], ...] = (
 
 
 class CoreInventoryError(Exception):
-    """Raised when the shipped baseline is inconsistent (FR-012)."""
+    """Raised when the shipped baseline is inconsistent."""
 
     def __init__(
         self,
@@ -76,7 +71,7 @@ class _CoreLayout:
     ``core_pack/templates/``, ``core_pack/scripts/``. Source checkout:
     ``templates/commands/``, ``templates/``, ``scripts/``. The emitted
     ``sourcePath`` is always the source-layout form so wheel and source
-    outputs are byte-identical (FR-010, SC-002).
+    outputs are byte-identical.
     """
 
     commands_dir: Path
@@ -518,22 +513,20 @@ def _build_script_entries(layout: _CoreLayout) -> list[dict[str, Any]]:
 def build_core_inventory() -> dict[str, Any]:
     """Return the baseline inventory as a fixed-shape dict.
 
-    Shape (validated by ``contracts/core-info-schema.json``):
-    ``{"commands": [...], "templates": [...], "scripts": [...]}``.
+    Shape: ``{"commands": [...], "templates": [...], "scripts": [...]}``.
 
     All three top-level lists are sorted alphabetically by ``name``. Two
     consecutive calls MUST return byte-identical JSON when serialized
-    with ``json.dumps(..., sort_keys=False)`` (SC-002).
+    with ``json.dumps(..., sort_keys=False)``.
 
-    Raises :class:`CoreInventoryError` on any packaging inconsistency
-    (FR-012). No partial inventory is ever returned.
+    Raises :class:`CoreInventoryError` on any packaging inconsistency.
+    No partial inventory is ever returned.
     """
     layout = _resolve_core_root()
 
     from ..extensions import CORE_COMMAND_NAMES  # lazy: avoid import cycle
 
     # A deleted bundled command cannot be detected because this set is derived from those files.
-    # That would already corrupt the installation, so an independent manifest is not warranted.
     command_names = sorted(CORE_COMMAND_NAMES)
     commands = [_build_command_entry(name, layout) for name in command_names]
     templates = _build_template_entries(layout)

@@ -30,7 +30,7 @@ The response is a JSON object with three top-level arrays, always in this order 
 
 Every entry carries a stable identifier suitable for cross-referencing:
 
-- `id`: `core:_:<kind>:<name>` (grammar defined in [#4210](https://github.com/github/spec-kit/issues/4210); `<kind>` is `command`, `template`, or `script`)
+- `id`: `core:_:<kind>:<name>` (`<kind>` is `command`, `template`, or `script`)
 - `name`: the logical artifact name. Commands are namespaced as `speckit.<stem>`; templates use their filename stem; scripts use a hyphenated stem (for example, `setup-plan`, not `setup_plan`).
 - `description`: short human-readable summary
 - `sourcePath`: package-relative, forward-slash path (e.g. `templates/commands/plan.md`)
@@ -62,43 +62,37 @@ specify core info --json | jq '.commands[] | select(.name == "speckit.plan")'
 
 - Building tools that need to know what the shipped baseline contains without unpacking the wheel by hand.
 - Auditing which commands, templates, or scripts a given Spec Kit release ships.
-- Cross-referencing baseline artifacts against extension- or preset-provided ones. A companion command exposing the equivalent view for project-scoped artifacts is tracked in [#4212](https://github.com/github/spec-kit/issues/4212).
+- Cross-referencing baseline artifacts against extension- or preset-provided ones.
 
 ## Determinism Guarantees
 
 - Alphabetical ordering by `name` within each section.
 - Fixed top-level key order: `commands`, `templates`, `scripts`.
-- Fields inside each entry are emitted in a fixed order (see the entry construction in [`src/specify_cli/core/__init__.py`](https://github.com/github/spec-kit/blob/main/src/specify_cli/core/__init__.py)).
+- Fields inside each entry are emitted in a fixed order.
 - Path separators are always forward-slashes, even on Windows.
 
 ## Failure Modes
 
-The command is designed to fail fast rather than silently emit a partial or malformed inventory. On any packaging error — a missing shipped file, unparseable frontmatter, or a mistyped field — it exits with code `1` and prints a JSON error envelope on stderr:
+The command fails fast on packaging errors it can detect at read time — unparseable frontmatter, a mistyped field, or a script missing its canonical bash variant — rather than silently emitting a malformed inventory. On any such error it exits with code `1` and prints a JSON error envelope on stderr:
 
 ```json
 {
-  "error": "core_inventory.missing_file",
-  "message": "Baseline command 'plan' is registered but its source file is missing.",
-  "artifact": { "kind": "command", "name": "plan" }
+  "error": "core_inventory.frontmatter_parse",
+  "message": "Could not parse YAML frontmatter of command 'plan': ...",
+  "artifact": { "kind": "command", "name": "plan", "sourcePath": "templates/commands/plan.md" }
 }
 ```
 
 Common `error` codes:
 
-| Code                                 | Meaning                                                        |
-| ------------------------------------ | -------------------------------------------------------------- |
-| `core_inventory.assets_missing`      | Neither the wheel-shipped `core_pack/` nor the source checkout was found. |
-| `core_inventory.missing_file`        | A baseline command file expected to be shipped is absent.      |
-| `core_inventory.frontmatter_parse`   | YAML frontmatter on a baseline file could not be parsed.       |
-| `core_inventory.frontmatter_shape`   | Frontmatter parsed but a field has the wrong type.             |
-| `core_inventory.missing_canonical`   | A script ships a non-bash variant but no canonical bash one.   |
-| `core_inventory.invalid_source_path` | An emitted `sourcePath` failed the shape check (absolute or contained a backslash). |
+| Code                                | Meaning                                                        |
+| ----------------------------------- | -------------------------------------------------------------- |
+| `core_inventory.assets_missing`     | Neither the wheel-shipped `core_pack/` nor the source checkout was found. |
+| `core_inventory.frontmatter_parse`  | YAML frontmatter on a baseline file could not be parsed, or a field has the wrong type. |
+| `core_inventory.missing_description`| A baseline command, template, or script has no usable description. |
+| `core_inventory.missing_canonical`  | A script ships a non-bash variant but no canonical bash one.   |
+| `core_inventory.invalid_source_path`| An emitted `sourcePath` failed the shape check (absolute or contained a backslash). |
 
 These conditions represent packaging bugs and should be reported.
 
-## Known Deviations
-
-Two small deviations from the specification are noted here for transparency:
-
-- **Script descriptions**: Only 2 of the 6 shipped scripts (`check-prerequisites`, `common`) currently have header comments. For the other four (`create-new-feature`, `setup-plan`, `setup-tasks`, `resolve-template`), the command emits a filename-derived fallback (`"Baseline helper script: <name>."`). Adding real header comments to those scripts is tracked separately.
-- **Command `handoffs`**: The source frontmatter for `handoffs:` is a list of mappings with `agent`, `label`, and `prompt` keys. The core inventory surfaces only the `agent` values (a list of strings) — the same shape the schema exposes. Consumers that need the labels and prompts should read the frontmatter directly.
+Note: templates and scripts are enumerated from whatever files are present on disk, so an asset that is missing entirely from the installation is simply omitted from the output rather than raised as an error.
