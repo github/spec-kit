@@ -292,7 +292,7 @@ The currently declared multi-install safe integrations are:
 | `lingma` | `.lingma/skills` |
 | `omp` | `.omp/commands` |
 | `pi` | `.pi/prompts` |
-| `qodercli` | `.qoder/commands` |
+| `qodercli` | `.qoder/skills` |
 | `qwen` | `.qwen/commands` |
 | `shai` | `.shai/commands` |
 | `tabnine` | `.tabnine/agent/commands` |

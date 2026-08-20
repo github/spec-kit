@@ -23,4 +23,6 @@ class QodercliIntegration(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
+    legacy_flat_command_dir = ".qoder/commands"
+    legacy_flat_command_extension = ".md"
     multi_install_safe = True

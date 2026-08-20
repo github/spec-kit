@@ -3100,6 +3100,76 @@ class ExtensionManager:
             if updates:
                 self.registry.update(ext_id, updates)
 
+    def _retire_legacy_flat_extension_commands(
+        self,
+        agent_name: str,
+        command_names: List[str],
+    ) -> List[Path]:
+        """Remove old flat commands whose replacement skills were written."""
+        from ..agents import CommandRegistrar
+        from ..integrations import get_integration
+
+        integration = get_integration(agent_name)
+        legacy_dir = getattr(integration, "legacy_flat_command_dir", None)
+        legacy_extension = getattr(
+            integration, "legacy_flat_command_extension", None
+        )
+        if (
+            not isinstance(legacy_dir, str)
+            or not legacy_dir
+            or not isinstance(legacy_extension, str)
+            or not legacy_extension
+        ):
+            return []
+
+        registrar = CommandRegistrar()
+        agent_config = registrar.AGENT_CONFIGS.get(agent_name)
+        if not agent_config or agent_config.get("extension") != "/SKILL.md":
+            return []
+
+        def safe_project_dir(relative: str) -> Optional[Path]:
+            rel = Path(relative)
+            if rel.is_absolute() or ".." in rel.parts:
+                return None
+            current = self.project_root
+            for part in rel.parts:
+                current /= part
+                if current.is_symlink():
+                    return None
+            try:
+                current.resolve().relative_to(self.project_root.resolve())
+            except (OSError, ValueError):
+                return None
+            return current
+
+        legacy_root = safe_project_dir(legacy_dir)
+        skills_root = safe_project_dir(str(agent_config.get("dir", "")))
+        if legacy_root is None or skills_root is None or not legacy_root.is_dir():
+            return []
+
+        removed: List[Path] = []
+        for command_name in command_names:
+            if (
+                not isinstance(command_name, str)
+                or not command_name
+                or not registrar._is_safe_command_name(command_name)
+            ):
+                continue
+
+            skill_name = registrar._compute_output_name(
+                agent_name, command_name, agent_config
+            )
+            replacement = skills_root / skill_name / "SKILL.md"
+            if replacement.is_symlink() or not replacement.is_file():
+                continue
+
+            legacy_file = legacy_root / f"{command_name}{legacy_extension}"
+            if legacy_file.is_symlink() or legacy_file.is_file():
+                legacy_file.unlink()
+                removed.append(legacy_file)
+
+        return removed
+
     def register_enabled_extensions_for_agent(self, agent_name: str, *, force: bool = False) -> None:
         """Register installed, enabled extensions for ``agent_name``.
 
@@ -3160,6 +3230,7 @@ class ExtensionManager:
             # registration of the remaining enabled extensions for this agent.
             try:
                 updates: Dict[str, Any] = {}
+                registered: List[str] = []
                 # Set when a command -> skills toggle for this same agent
                 # defers stale command-mode cleanup until the skills
                 # replacement below confirms success (#2948).
@@ -3379,6 +3450,12 @@ class ExtensionManager:
                                         new_registered.pop(agent_name, None)
                                     if new_registered != registered_commands:
                                         updates["registered_commands"] = new_registered
+
+                if registered:
+                    self._retire_legacy_flat_extension_commands(
+                        agent_name,
+                        registered,
+                    )
 
                 if updates:
                     self.registry.update(ext_id, updates)
