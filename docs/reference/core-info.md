@@ -31,7 +31,7 @@ The response is a JSON object with three top-level arrays, always in this order 
 Every entry carries a stable identifier suitable for cross-referencing:
 
 - `id`: `core:_:<kind>:<name>` (grammar defined in [#4210](https://github.com/github/spec-kit/issues/4210); `<kind>` is `command`, `template`, or `script`)
-- `name`: the base name (no extension, hyphenated form for scripts — e.g. `setup-plan` not `setup_plan`)
+- `name`: the logical artifact name. Commands are namespaced as `speckit.<stem>`; templates use their filename stem; scripts use a hyphenated stem (for example, `setup-plan`, not `setup_plan`).
 - `description`: short human-readable summary
 - `sourcePath`: package-relative, forward-slash path (e.g. `templates/commands/plan.md`)
 
