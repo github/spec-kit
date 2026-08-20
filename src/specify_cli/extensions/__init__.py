@@ -377,6 +377,12 @@ class ExtensionManifest:
         commands = provides.get("commands", [])
         templates = provides.get("templates", [])
         scripts = provides.get("scripts", [])
+        # provides.instructions: always-on rule blocks an extension contributes to
+        # the agent's context file. Core only validates this metadata; the actual
+        # agent-file write is owned by the opt-in agent-context extension
+        # (github/spec-kit#4200). Installing an extension never mutates agent files
+        # when agent-context is absent.
+        instructions = provides.get("instructions", [])
         hooks = self.data.get("hooks")
         events = self.data.get("events")
 
@@ -386,6 +392,8 @@ class ExtensionManifest:
             raise ValidationError("Invalid provides.templates: expected a list")
         if "scripts" in provides and not isinstance(scripts, list):
             raise ValidationError("Invalid provides.scripts: expected a list")
+        if "instructions" in provides and not isinstance(instructions, list):
+            raise ValidationError("Invalid provides.instructions: expected a list")
         if "hooks" in self.data and not isinstance(hooks, dict):
             raise ValidationError("Invalid hooks: expected a mapping")
         if "events" in self.data:
@@ -397,15 +405,39 @@ class ExtensionManifest:
         has_events = bool(events)
         has_templates = bool(templates)
         has_scripts = bool(scripts)
+        has_instructions = bool(instructions)
 
-        if not has_commands and not has_hooks and not has_events and not has_templates and not has_scripts:
+        if (
+            not has_commands
+            and not has_hooks
+            and not has_events
+            and not has_templates
+            and not has_scripts
+            and not has_instructions
+        ):
             raise ValidationError(
                 "Extension must provide at least one command, hook, or event "
-                "(or a declared template/script)"
+                "(or a declared template/script/instructions block)"
             )
 
         self._validate_provided_artifacts(templates, section="templates", singular="template")
         self._validate_provided_artifacts(scripts, section="scripts", singular="script")
+
+        # provides.instructions entries carry only a 'file' (they are not invoked,
+        # so unlike commands/templates they need no 'name'). Validate the path with
+        # the same shared safety policy used for command files.
+        for entry in instructions:
+            if not isinstance(entry, dict):
+                raise ValidationError(
+                    "Each entry in 'provides.instructions' must be a mapping"
+                )
+            if "file" not in entry:
+                raise ValidationError("Instruction entry missing 'file'")
+            reason = relative_extension_path_violation(entry["file"])
+            if reason:
+                raise ValidationError(
+                    f"Invalid instruction file {entry['file']!r}: {reason}"
+                )
 
         # Validate hook values (if present).
         # Each event is a single mapping or a list of mappings.
@@ -719,6 +751,11 @@ class ExtensionManifest:
     def scripts(self) -> List[Dict[str, Any]]:
         """Get list of declared scripts (provides.scripts)."""
         return self.data.get("provides", {}).get("scripts", [])
+
+    @property
+    def instructions(self) -> List[Dict[str, Any]]:
+        """Get list of declared always-on instruction blocks (provides.instructions)."""
+        return self.data.get("provides", {}).get("instructions", [])
 
     @property
     def hooks(self) -> Dict[str, Any]:
