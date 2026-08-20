@@ -470,8 +470,7 @@
       "documentation": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/blob/main/inventory-alignment/README.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=0.9.0",
-        "extensions": ["speckit-inventory"]
+        "speckit_version": ">=0.9.0"
       },
       "provides": {
         "templates": 1,
