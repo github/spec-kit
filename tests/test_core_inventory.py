@@ -188,7 +188,7 @@ def test_build_command_handoffs_flatten_agent_field(well_formed_layout: Path, ov
 def test_build_command_rejects_non_boolean_optional(tmp_path: Path, override_layout) -> None:
     _write(
         tmp_path / "templates" / "commands" / "gamma.md",
-        "---\ndescription: hi\noptional: yes\n---\n",
+        "---\ndescription: hi\noptional: 123\n---\n",
     )
     (tmp_path / "templates" / "spec-template.md").parent.mkdir(exist_ok=True)
     _write(tmp_path / "templates" / "spec-template.md", "# Spec Template\n")
