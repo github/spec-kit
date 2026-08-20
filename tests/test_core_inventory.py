@@ -136,7 +136,9 @@ def test_package_relative_rejects_absolute() -> None:
 def test_parse_command_frontmatter_success(tmp_path: Path) -> None:
     md = tmp_path / "cmd.md"
     md.write_text("---\ndescription: hi\nartifact: foo\n---\nbody\n", encoding="utf-8")
-    parsed = core_pkg._read_leading_frontmatter(md, kind="command", name="cmd")
+    parsed = core_pkg._read_leading_frontmatter(
+        md, kind="command", name="cmd", source_path="commands/cmd.md"
+    )
     assert parsed == {"description": "hi", "artifact": "foo"}
 
 
@@ -144,7 +146,9 @@ def test_parse_command_frontmatter_raises_on_unclosed_fence(tmp_path: Path) -> N
     md = tmp_path / "cmd.md"
     md.write_text("---\ndescription: hi\n\nbody with no close\n", encoding="utf-8")
     with pytest.raises(CoreInventoryError) as excinfo:
-        core_pkg._read_leading_frontmatter(md, kind="command", name="cmd")
+        core_pkg._read_leading_frontmatter(
+            md, kind="command", name="cmd", source_path="commands/cmd.md"
+        )
     assert excinfo.value.error == "core_inventory.frontmatter_parse"
     assert excinfo.value.kind == "command"
 
@@ -152,14 +156,21 @@ def test_parse_command_frontmatter_raises_on_unclosed_fence(tmp_path: Path) -> N
 def test_parse_command_frontmatter_returns_empty_when_absent(tmp_path: Path) -> None:
     md = tmp_path / "cmd.md"
     md.write_text("# just markdown, no frontmatter\n", encoding="utf-8")
-    assert core_pkg._read_leading_frontmatter(md, kind="command", name="cmd") == {}
+    assert (
+        core_pkg._read_leading_frontmatter(
+            md, kind="command", name="cmd", source_path="commands/cmd.md"
+        )
+        == {}
+    )
 
 
 def test_parse_command_frontmatter_rejects_non_mapping(tmp_path: Path) -> None:
     md = tmp_path / "cmd.md"
     md.write_text("---\n- one\n- two\n---\nbody\n", encoding="utf-8")
     with pytest.raises(CoreInventoryError):
-        core_pkg._read_leading_frontmatter(md, kind="command", name="cmd")
+        core_pkg._read_leading_frontmatter(
+            md, kind="command", name="cmd", source_path="commands/cmd.md"
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -154,7 +154,9 @@ def _package_relative(path: str) -> str:
     return path
 
 
-def _read_leading_frontmatter(md_path: Path, *, kind: str, name: str) -> dict[str, Any]:
+def _read_leading_frontmatter(
+    md_path: Path, *, kind: str, name: str, source_path: str
+) -> dict[str, Any]:
     """Parse the ``---``-fenced YAML block at the head of ``md_path``.
 
     Returns ``{}`` if the file has no frontmatter block. Raises
@@ -166,10 +168,10 @@ def _read_leading_frontmatter(md_path: Path, *, kind: str, name: str) -> dict[st
     except OSError as exc:
         raise CoreInventoryError(
             error="core_inventory.read_failed",
-            message=f"Could not read {kind} file: {exc}",
+            message=f"Could not read {kind} file: {exc.strerror or exc}",
             kind=kind,
             name=name,
-            source_path=str(md_path),
+            source_path=source_path,
         ) from exc
 
     if not text.startswith("---"):
@@ -190,7 +192,7 @@ def _read_leading_frontmatter(md_path: Path, *, kind: str, name: str) -> dict[st
             ),
             kind=kind,
             name=name,
-            source_path=str(md_path),
+            source_path=source_path,
         )
 
     import yaml  # lazy import per constitution IV
@@ -206,7 +208,7 @@ def _read_leading_frontmatter(md_path: Path, *, kind: str, name: str) -> dict[st
             ),
             kind=kind,
             name=name,
-            source_path=str(md_path),
+            source_path=source_path,
         ) from exc
 
     if parsed is None:
@@ -220,7 +222,7 @@ def _read_leading_frontmatter(md_path: Path, *, kind: str, name: str) -> dict[st
             ),
             kind=kind,
             name=name,
-            source_path=str(md_path),
+            source_path=source_path,
         )
     return parsed
 
@@ -293,7 +295,9 @@ def _build_command_entry(name: str, layout: _CoreLayout) -> dict[str, Any]:
             name=name,
             source_path=source_path,
         )
-    frontmatter = _read_leading_frontmatter(file_path, kind="command", name=name)
+    frontmatter = _read_leading_frontmatter(
+        file_path, kind="command", name=name, source_path=source_path
+    )
     description = _normalize_description(
         frontmatter.get("description"),
         kind="command",
@@ -345,7 +349,9 @@ def _extract_template_description(md_path: Path, *, name: str, source_path: str)
     ``# `` H1 heading. Raises :class:`CoreInventoryError` if neither yields
     a non-empty string.
     """
-    frontmatter = _read_leading_frontmatter(md_path, kind="template", name=name)
+    frontmatter = _read_leading_frontmatter(
+        md_path, kind="template", name=name, source_path=source_path
+    )
     fm_desc = frontmatter.get("description")
     if isinstance(fm_desc, str):
         candidate = fm_desc.strip()
