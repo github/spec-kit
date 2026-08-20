@@ -12,6 +12,7 @@ command's output against ``specify artifact info --json``. See tasks.md T029.
 # once the companion command lands. See specs/001-core-info/tasks.md T029.
 from __future__ import annotations
 
+import importlib
 import json
 import importlib
 import re
