@@ -10,6 +10,7 @@ import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
+from tests.conftest import strip_ansi
 
 
 def _invoke(args: list[str]):
@@ -33,19 +34,19 @@ def test_core_info_without_json_exits_nonzero() -> None:
     result = _invoke(["core", "info"])
     assert result.exit_code != 0
     # Message points at the flag; user knows what to do.
-    assert "--json" in result.output
+    assert "--json" in strip_ansi(result.output)
 
 
 def test_core_info_help_lists_json_flag() -> None:
     result = _invoke(["core", "info", "--help"])
     assert result.exit_code == 0
-    assert "--json" in result.output
+    assert "--json" in strip_ansi(result.output)
 
 
 def test_specify_root_help_shows_core_group() -> None:
     result = _invoke(["--help"])
     assert result.exit_code == 0
-    assert "core" in result.output.lower()
+    assert "core" in strip_ansi(result.output).lower()
 
 
 # ---------------------------------------------------------------------------
@@ -179,4 +180,4 @@ def test_core_info_missing_command_file_exits_nonzero(
     assert result.exit_code == 1
     # CliRunner mixes streams by default; parse the envelope out of the output.
     # Look for the JSON envelope keys — that's enough to confirm the shape.
-    assert "core_inventory.missing_file" in result.output
+    assert "core_inventory.missing_file" in strip_ansi(result.output)
