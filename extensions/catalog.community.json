@@ -409,39 +409,47 @@
     "architecture-guard": {
       "name": "Architecture Guard",
       "id": "architecture-guard",
-      "description": "Framework-agnostic architecture review extension for validating implementation against governance and architecture constitutions, detecting architectural drift, and generating non-blocking refactor tasks.",
+      "description": "Framework-agnostic architecture governance for Spec Kit workflows, detecting drift, enforcing architectural rules, and generating actionable refactor tasks.",
       "author": "DyanGalih",
-      "version": "1.13.1",
-      "download_url": "https://github.com/DyanGalih/spec-kit-architecture-guard/archive/refs/tags/v1.13.1.zip",
-      "repository": "https://github.com/DyanGalih/spec-kit-architecture-guard",
-      "homepage": "https://github.com/DyanGalih/spec-kit-architecture-guard",
-      "documentation": "https://github.com/DyanGalih/spec-kit-architecture-guard/blob/main/docs/architecture-overview.md",
-      "changelog": "https://github.com/DyanGalih/spec-kit-architecture-guard/releases",
+      "version": "2.3.6",
+      "download_url": "https://github.com/DyanGalih/architecture-guard/archive/refs/tags/v2.3.6.zip",
+      "repository": "https://github.com/DyanGalih/architecture-guard",
+      "homepage": "https://github.com/DyanGalih/architecture-guard",
+      "documentation": "https://github.com/DyanGalih/architecture-guard/blob/main/SPECKIT-INTEGRATION.md",
+      "changelog": "https://github.com/DyanGalih/architecture-guard/blob/main/docs/release-notes.md",
       "license": "MIT",
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "node",
+            "version": ">=18",
+            "required": false
+          },
+          {
+            "name": "npm",
+            "required": false
+          }
+        ]
       },
       "provides": {
-        "commands": 14,
+        "commands": 18,
         "hooks": 3
       },
       "tags": [
         "architecture",
-        "spec-kit",
+        "governance",
         "review",
         "refactor",
-        "workflow",
-        "governance",
-        "guardrails",
-        "hygiene"
+        "workflow"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-05T07:26:00Z",
-      "updated_at": "2026-07-24T00:00:00Z"
+      "updated_at": "2026-08-20T00:00:00Z"
     },
     "archive": {
       "name": "Archive Extension",
