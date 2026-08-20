@@ -78,7 +78,7 @@ def override_layout(monkeypatch: pytest.MonkeyPatch):
             if p.is_file()
         )
         monkeypatch.setattr(
-            "specify_cli.extensions._load_core_command_names", lambda: names
+            "specify_cli.extensions.CORE_COMMAND_NAMES", names
         )
 
     return use
@@ -309,8 +309,8 @@ def test_missing_command_file_exits_with_envelope(tmp_path: Path, monkeypatch: p
     )
     monkeypatch.setattr(core_pkg, "_resolve_core_root", lambda: layout)
     monkeypatch.setattr(
-        "specify_cli.extensions._load_core_command_names",
-        lambda: frozenset({"ghost"}),
+        "specify_cli.extensions.CORE_COMMAND_NAMES",
+        frozenset({"ghost"}),
     )
     with pytest.raises(CoreInventoryError) as excinfo:
         build_core_inventory()

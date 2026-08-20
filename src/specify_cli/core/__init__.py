@@ -524,9 +524,9 @@ def build_core_inventory() -> dict[str, Any]:
     """
     layout = _resolve_core_root()
 
-    from ..extensions import _load_core_command_names  # lazy: avoid import cycle
+    from ..extensions import CORE_COMMAND_NAMES  # lazy: avoid import cycle
 
-    command_names = sorted(_load_core_command_names())
+    command_names = sorted(CORE_COMMAND_NAMES)
     commands = [_build_command_entry(name, layout) for name in command_names]
     templates = _build_template_entries(layout)
     scripts = _build_script_entries(layout)
