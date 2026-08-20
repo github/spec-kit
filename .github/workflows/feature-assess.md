@@ -9,6 +9,7 @@ on:
   skip-bots: [github-actions, copilot, dependabot]
 
 engine: copilot
+max-daily-ai-credits: 20K
 
 tools:
   bash: ["echo", "cat", "head", "tail", "grep", "wc", "sort", "uniq", "python3", "pip", "pip3", "jq", "date", "ls", "find", "mkdir", "sed", "env", "which", "curl", "sh", "bash", "uv", "uvx", "specify", "git"]
