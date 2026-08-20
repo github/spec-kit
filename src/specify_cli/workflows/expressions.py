@@ -974,31 +974,48 @@ def _has_incomplete_operand(text: str) -> bool:
         if any(not segment.strip() for segment in _split_top_level(stripped, "|")):
             return True
     return False
-def _unregistered_filter(text: str) -> str | None:
-    """The first filter name in *text* the evaluator does not implement, or ``None``.
+class _ProbeNamespace(dict):
+    """Namespace for the parse probe: every root exists, every leaf is absent.
 
-    Reads ``_REGISTERED_FILTERS`` so the check cannot claim a filter is fine that
-    ``_apply_filter`` will reject. ``inputs.items | length`` passed every structural
-    gate and was advertised as paste-ready, but the wrapped form raises
-    ``ValueError("unknown filter 'length'")`` -- a correction that replaces an
-    always-true condition with a crash.
+    Enough for ``_evaluate_simple_expression`` to walk the grammar without needing
+    real inputs. Deliberately *not* resolving leaves to a sentinel value: a probe
+    that answers every lookup also answers ``inputs.count+1``, which is the
+    malformed shape the probe is meant to expose.
     """
-    if _find_top_level(text, "|") == -1:
-        return None
-    for segment in _split_top_level(text, "|")[1:]:
-        name = segment.strip().split("(", 1)[0].strip()
-        if name and name not in _REGISTERED_FILTERS:
-            return name
+
+    def __missing__(self, key: str) -> "_ProbeNamespace":  # pragma: no cover - trivial
+        return _ProbeNamespace()
+
+
+def _evaluator_rejects(text: str) -> str | None:
+    """The evaluator's own error for *text*, or ``None`` when it parses.
+
+    Structural checks cannot establish that a core is parseable -- four rounds of
+    review found a new shape each time. This asks the evaluator instead, so any
+    filter used in an unsupported form (``| join`` with no argument) or under an
+    unknown name (``| length``) is reported by the code that will actually run,
+    not by a restatement of it.
+    """
+    try:
+        _evaluate_simple_expression(text, {"inputs": _ProbeNamespace(), "steps": _ProbeNamespace()})
+    except ValueError as exc:
+        return str(exc).split(":", 1)[0]
+    except Exception:  # noqa: BLE001 - any other failure is still "not parseable"
+        return "it is not a parseable expression"
     return None
 
 
-def _reads_as_prose(text: str) -> bool:
-    """True when *text* is several bare terms rather than one expression.
+_TERM_SUFFIX = re.compile(r"(\[[^\[\]]*\])+$")
 
-    An expression is a single term, or terms joined by an operator or a filter.
-    ``he said "hi" then left`` is neither: the evaluator resolves it to ``None``, so
-    wrapping turns a truthy string into a false condition. Quoted spans are skipped,
-    so ``inputs.f('a b')`` and ``inputs.name == 'two words'`` are unaffected.
+
+def _is_not_a_bare_path(text: str) -> bool:
+    """True when a single-term core is not a dotted path of identifiers.
+
+    A core with no operator and no filter is resolved as a path lookup, so every
+    segment has to be an identifier. ``inputs.count+1`` is not -- the evaluator
+    reads it as a key named ``count+1``, finds nothing, and the wrapped form
+    resolves to ``None``, turning a truthy condition false. Prose fails the same
+    way: ``he said "hi" then left`` is not a path either.
     """
     stripped = text.strip()
     if stripped.startswith("not "):
@@ -1008,22 +1025,23 @@ def _reads_as_prose(text: str) -> bool:
             return False
     if _find_top_level(stripped, "|") != -1:
         return False
-
-    quote: str | None = None
-    depth = 0
-    for ch in stripped:
-        if quote is not None:
-            if ch == quote:
-                quote = None
-        elif ch in ("'", '"'):
-            quote = ch
-        elif ch in "([{":
-            depth += 1
-        elif ch in ")]}":
-            depth -= 1
-        elif depth == 0 and ch.isspace():
+    if not stripped or stripped[0] in ("'", '"'):
+        return False
+    if stripped.lower() in ("true", "false") or _looks_numeric(stripped):
+        return False
+    for segment in _split_top_level(stripped, "."):
+        segment = _TERM_SUFFIX.sub("", segment.strip())
+        if not segment.isidentifier():
             return True
     return False
+
+
+def _looks_numeric(text: str) -> bool:
+    try:
+        float(text)
+    except ValueError:
+        return False
+    return True
 
 def _wrapping_would_not_repair(core: str) -> str | None:
     """Why wrapping *core* in ``{{ }}`` would not yield the expression intended.
@@ -1042,11 +1060,11 @@ def _wrapping_would_not_repair(core: str) -> str | None:
         return "its brackets do not balance"
     if _has_incomplete_operand(core):
         return "an operator in it is missing an operand"
-    unknown = _unregistered_filter(core)
-    if unknown is not None:
-        return f"it uses a filter the evaluator does not implement ({unknown!r})"
-    if _reads_as_prose(core):
-        return "it reads as several bare terms rather than one expression"
+    if _is_not_a_bare_path(core):
+        return "it is not a path or an expression the evaluator can resolve"
+    rejected = _evaluator_rejects(core)
+    if rejected is not None:
+        return f"the evaluator rejects it ({rejected})"
     return None
 
 

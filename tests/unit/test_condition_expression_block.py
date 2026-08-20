@@ -12,6 +12,8 @@ from specify_cli.workflows.expressions import (
     _has_unbalanced_quote,
     _has_unbalanced_bracket,
     _has_incomplete_operand,
+    _is_not_a_bare_path,
+    _evaluator_rejects,
     _strip_stray_delimiters,
     _COMPARISON_OPERATORS,
     _WORD_OPERATORS,
@@ -476,8 +478,10 @@ MULTI_POSITION_UNFIXABLE = [
     ("in inputs.tags", "missing an operand"),             # leading word operator
     ("inputs.f(]", "brackets do not balance"),            # matched count, wrong types
     ("inputs.f(]", "brackets do not balance"),
-    ("inputs.items | length", "filter the evaluator does not implement"),
-    ('he said "hi" then left', "several bare terms"),
+    ("inputs.items | length", "the evaluator rejects it"),
+    ("inputs.tags | join", "used in an unsupported form"),
+    ('he said "hi" then left', "not a path or an expression"),
+    ("inputs.count+1", "not a path or an expression"),
 ]
 
 
@@ -517,3 +521,36 @@ def test_word_operators_are_derived_from_the_evaluator_table():
     for op in _WORD_OPERATORS:
         assert _has_incomplete_operand("inputs.a" + op.rstrip()) is True, op
         assert _has_incomplete_operand(op.lstrip() + "inputs.a") is True, op
+
+
+def test_the_probe_reports_what_the_evaluator_reports():
+    """The parse probe must not restate the filter table.
+
+    Four review rounds each found a shape the structural gates did not know about.
+    Asking the evaluator removes that class: any filter used under an unknown name
+    or in an unsupported form is reported by the code that will run.
+    """
+    assert _evaluator_rejects("inputs.items | length") is not None
+    assert _evaluator_rejects("inputs.tags | join") is not None
+    assert _evaluator_rejects("inputs.tags | join(',')") is None
+    assert _evaluator_rejects("inputs.count > 100") is None
+
+
+@pytest.mark.parametrize(
+    "text,not_a_path",
+    [
+        ("inputs.name", False),
+        ("inputs.a.b.c", False),
+        ("inputs.tags[0]", False),
+        ("not inputs.ready", False),
+        ("true", False),
+        ("42", False),
+        ("'a literal'", False),
+        ("inputs.count > 100", False),      # has an operator, not a bare term
+        ("inputs.count+1", True),           # the evaluator has no arithmetic
+        ('he said "hi" then left', True),
+        ("inputs.2bad", True),
+    ],
+)
+def test_bare_path_segments_must_be_identifiers(text, not_a_path):
+    assert _is_not_a_bare_path(text) is not_a_path
