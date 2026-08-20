@@ -2633,8 +2633,8 @@
       "id": "maqa",
       "description": "Coordinator → feature → QA agent workflow with parallel worktree-based implementation. Language-agnostic. Auto-detects installed board plugins (Trello, Linear, GitHub Projects, Jira, Azure DevOps). Optional CI gate.",
       "author": "GenieRobot",
-      "version": "0.1.3",
-      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-ext/releases/download/maqa-v0.1.3/maqa.zip",
+      "version": "0.1.5",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-ext/releases/download/maqa-v0.1.5/maqa.zip",
       "repository": "https://github.com/GenieRobot/spec-kit-maqa-ext",
       "homepage": "https://github.com/GenieRobot/spec-kit-maqa-ext",
       "documentation": "https://github.com/GenieRobot/spec-kit-maqa-ext/blob/main/README.md",
@@ -2661,7 +2661,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-26T00:00:00Z",
-      "updated_at": "2026-03-27T00:00:00Z"
+      "updated_at": "2026-03-28T00:00:00Z"
     },
     "maqa-azure-devops": {
       "name": "MAQA Azure DevOps Integration",
