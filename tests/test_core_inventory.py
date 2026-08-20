@@ -170,7 +170,7 @@ def test_parse_command_frontmatter_rejects_non_mapping(tmp_path: Path) -> None:
 def test_build_command_entries_uses_typed_empty_defaults(well_formed_layout: Path, override_layout) -> None:
     override_layout(well_formed_layout)
     inv = build_core_inventory()
-    alpha = next(c for c in inv["commands"] if c["name"] == "alpha")
+    alpha = next(c for c in inv["commands"] if c["name"] == "speckit.alpha")
     # alpha.md declares only `description:` — everything else must default.
     assert alpha["artifact"] is None
     assert alpha["optional"] is False
@@ -180,7 +180,7 @@ def test_build_command_entries_uses_typed_empty_defaults(well_formed_layout: Pat
 def test_build_command_handoffs_flatten_agent_field(well_formed_layout: Path, override_layout) -> None:
     override_layout(well_formed_layout)
     inv = build_core_inventory()
-    beta = next(c for c in inv["commands"] if c["name"] == "beta")
+    beta = next(c for c in inv["commands"] if c["name"] == "speckit.beta")
     # beta.md's handoffs are mappings with `agent:` — we surface only agent ids.
     assert beta["handoffs"] == ["alpha", "alpha"]
 

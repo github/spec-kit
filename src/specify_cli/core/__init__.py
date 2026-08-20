@@ -281,6 +281,7 @@ def _normalize_description(raw: Any, *, kind: str, name: str, source_path: str) 
 def _build_command_entry(name: str, layout: _CoreLayout) -> dict[str, Any]:
     file_path = layout.commands_dir / f"{name}.md"
     source_path = _package_relative(layout.command_source_path(name))
+    logical_name = f"speckit.{name}"
     if not file_path.is_file():
         raise CoreInventoryError(
             error="core_inventory.missing_file",
@@ -327,8 +328,8 @@ def _build_command_entry(name: str, layout: _CoreLayout) -> dict[str, Any]:
         frontmatter.get("handoffs"), name=name, source_path=source_path
     )
     return {
-        "id": f"core:_:command:{name}",
-        "name": name,
+        "id": f"core:_:command:{logical_name}",
+        "name": logical_name,
         "description": description,
         "sourcePath": source_path,
         "artifact": artifact,
