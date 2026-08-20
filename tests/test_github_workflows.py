@@ -111,19 +111,59 @@ def test_community_submission_automation_is_wired_to_allowed_files():
         assert label in assignment_text
 
 
+# Full clauses from the catalog download-URL checks (issue #4185). Assert the
+# complete sentences so independent keywords cannot drift apart.
+_CATALOG_DOWNLOAD_URL_CLAUSES = (
+    (
+        "The download URL MUST belong to the submitted repository\n"
+        "  (`https://github.com/<owner>/<repo>/...` with the same `<owner>/<repo>` as\n"
+        "  the Repository URL). Reject URLs for any other GitHub repository."
+    ),
+    (
+        "If the download URL path contains `releases/latest/`, reject with an\n"
+        "  explanation — this URL is floating and not acceptable. Fail immediately,\n"
+        "  before any HTTP check."
+    ),
+    (
+        "The `<tag>` segment in the URL MUST correspond to the submitted version.\n"
+        "  Accept `vX.Y.Z`, `X.Y.Z`, and scoped tags whose version suffix matches\n"
+        "  (for example `aide-v1.0.0` for version `1.0.0`). Reject a tag whose\n"
+        "  embedded semver does not equal the submitted version."
+    ),
+    (
+        "`sha256` is optional. If the submission includes it, verify it matches the\n"
+        "  downloaded archive. Requiring `sha256` on every catalog entry is follow-up\n"
+        "  work and MUST NOT fail this check when the field is absent."
+    ),
+)
+
+
 def test_community_submission_workflows_require_tag_pinned_download_urls():
     """Catalog agents must reject floating releases/latest URLs (issue #4185)."""
     for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
         source_text = (WORKFLOWS_DIR / f"add-community-{workflow}.md").read_text(
             encoding="utf-8"
         )
-        lowered = source_text.lower()
 
-        assert "should follow the pattern" not in lowered
-        assert "releases/latest/" in source_text
-        assert "reject" in lowered
-        assert "`vX.Y.Z` or `X.Y.Z`" in source_text
-        assert "MUST" in source_text or "must" in lowered
+        assert "should follow the pattern" not in source_text.lower()
+        for clause in _CATALOG_DOWNLOAD_URL_CLAUSES:
+            assert clause in source_text, f"missing clause in {workflow}: {clause!r}"
+
+        if workflow == "bundle":
+            assert (
+                "`https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>.zip`."
+                in source_text
+            )
+            assert "archive/refs/tags/" not in source_text
+        else:
+            assert (
+                "`https://github.com/<owner>/<repo>/archive/refs/tags/<tag>.zip`"
+                in source_text
+            )
+            assert (
+                "`https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>.zip`"
+                in source_text
+            )
 
 
 def test_community_submission_allowed_files_do_not_include_other_catalogs_or_docs():
