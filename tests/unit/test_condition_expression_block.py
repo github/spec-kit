@@ -9,6 +9,7 @@ from specify_cli.workflows.expressions import (
     condition_is_never_evaluated,
     evaluate_condition,
     format_condition_correction,
+    _has_unbalanced_quote,
 )
 from specify_cli.workflows.steps.do_while import DoWhileStep
 from specify_cli.workflows.steps.if_then import IfThenStep
@@ -290,3 +291,65 @@ def test_malformed_message_offers_no_paste_ready_correction(step_cls, condition)
     errors = [e for e in step_cls().validate(config) if "'condition'" in e]
     assert "Wrap the expression" not in errors[0]
     assert errors[0].rstrip().endswith("Balance the delimiters and quotes.")
+
+
+# A correction is only offered when wrapping would actually repair the condition.
+# These two inputs reach the same "never evaluated" branch, but wrapping them
+# produces something the author must not paste, so the advice names the fault
+# instead. Both were previously advertised as paste-ready (Copilot review).
+UNFIXABLE_BY_WRAPPING = [
+    ("   ", "no expression here to wrap"),
+    ("{{ inputs.name == 'abc", "Close the unbalanced quote"),
+    ("'unterminated", "Close the unbalanced quote"),
+]
+
+
+@pytest.mark.parametrize("step_cls", STEP_CLASSES)
+@pytest.mark.parametrize("condition,expected", UNFIXABLE_BY_WRAPPING)
+def test_no_paste_ready_correction_when_wrapping_would_not_repair(
+    step_cls, condition, expected
+):
+    config = {"id": "s1", "condition": condition, "then": [], "steps": []}
+    errors = [e for e in step_cls().validate(config) if "'condition'" in e]
+
+    assert len(errors) == 1
+    assert "Wrap the expression" not in errors[0]
+    assert expected in errors[0]
+
+
+def test_wrapping_whitespace_would_invert_the_condition():
+    """Why the blank case gets advice instead of a suggestion.
+
+    `{{ }}` interpolates to the empty string, so pasting it turns an always-true
+    condition into an always-false one -- a different defect, not a repair.
+    """
+    ctx = StepContext(inputs={})
+    assert evaluate_condition("   ", ctx) is True
+    assert evaluate_condition("{{ }}", ctx) is False
+
+
+def test_wrapping_an_open_quote_inverts_the_condition():
+    """Why the unbalanced-quote case gets advice instead of a suggestion.
+
+    The raw-close fallback evaluates a truncated comparison and yields the string
+    "False", which evaluate_condition then reads as the `false` keyword. Pasting
+    the "correction" flips the condition rather than repairing it.
+    """
+    ctx = StepContext(inputs={"name": "Bob"})
+    assert evaluate_condition("{{ inputs.name == 'abc", ctx) is True
+    assert evaluate_condition("{{ inputs.name == 'abc }}", ctx) is False
+
+
+@pytest.mark.parametrize(
+    "text,unbalanced",
+    [
+        ("inputs.name == 'abc'", False),
+        ('inputs.name == "abc"', False),
+        ("inputs.name == 'abc", True),
+        ('inputs.name == "abc', True),
+        ("inputs.text == '\"'", False),
+        ("inputs.count > 100", False),
+    ],
+)
+def test_unbalanced_quote_scan(text, unbalanced):
+    assert _has_unbalanced_quote(text) is unbalanced

@@ -8,7 +8,7 @@ from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepSt
 from specify_cli.workflows.expressions import (
     condition_has_malformed_expression_block,
     condition_is_never_evaluated,
-    format_condition_correction,
+    format_condition_remediation,
 )
 
 
@@ -104,8 +104,8 @@ class DoWhileStep(StepBase):
             errors.append(
                 f"Do-while step {config.get('id', '?')!r}: 'condition' "
                 f"{config['condition']!r} is not a single complete '{{{{ }}}}' block, so "
-                "it is never evaluated as an expression and is always true. Wrap the expression: "
-                + format_condition_correction(config["condition"]) + "."
+                "it is never evaluated as an expression and is always true. "
+                + format_condition_remediation(config["condition"])
             )
         elif condition_has_malformed_expression_block(config["condition"]):
             # Different fault, different advice. Here the block is *not* skipped:

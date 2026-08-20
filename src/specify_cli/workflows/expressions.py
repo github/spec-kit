@@ -879,3 +879,59 @@ def format_condition_correction(condition: Any) -> str:
     # double-spaced "{{  }}" that string concatenation would otherwise produce.
     body = "{{ " + core + " }}" if core else "{{ }}"
     return json.dumps(body, ensure_ascii=False)
+
+
+def _has_unbalanced_quote(text: str) -> bool:
+    """True when a quote opened in *text* is never closed.
+
+    Same left-to-right, first-quote-wins scan the rest of this module uses, so the
+    answer agrees with what ``_find_block_close`` and ``_strip_stray_delimiters``
+    consider "inside a string".
+    """
+    quote: str | None = None
+    for ch in text:
+        if quote is not None:
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+    return quote is not None
+
+
+def format_condition_remediation(condition: Any) -> str:
+    """The advice sentence for a condition that is never evaluated.
+
+    ``format_condition_correction`` wraps whatever it is handed, which is the right
+    behaviour for a formatter but the wrong thing to *advertise* for two inputs it
+    cannot actually repair. Both were being offered as paste-ready corrections:
+
+    * a blank core -- ``condition: "   "`` corrected to ``"{{ }}"``, which evaluates
+      to the empty string. The author is told to paste something that flips an
+      always-true condition to always-false, which is a different bug rather than a
+      fix.
+    * an unbalanced quote -- ``{{ inputs.name == 'abc`` corrected to
+      ``"{{ inputs.name == 'abc }}"``. The quote is still open, so the raw-close
+      fallback evaluates a truncated comparison and yields the string ``"False"``,
+      which ``evaluate_condition`` then reads as the ``false`` keyword. The author
+      pastes the correction and the condition flips from always-true to
+      always-false -- inverted, not repaired.
+
+    Naming what is wrong beats handing back something that looks authoritative and
+    is not -- the same call already made for
+    ``condition_has_malformed_expression_block``, which offers no correction at all.
+    """
+    core = _strip_stray_delimiters(str(condition)).strip()
+    if not core:
+        return (
+            "There is no expression here to wrap: use the literal true or false, "
+            "since an empty '{{ }}' block evaluates to the empty string and would "
+            "silently invert the condition rather than repair it."
+        )
+    if _has_unbalanced_quote(core):
+        return (
+            "Close the unbalanced quote first: wrapping it as written leaves the "
+            "quote open, so the raw-close fallback evaluates a truncated comparison "
+            "rather than the one written, and its result can silently invert the "
+            "condition instead of repairing it."
+        )
+    return "Wrap the expression: " + format_condition_correction(condition) + "."
