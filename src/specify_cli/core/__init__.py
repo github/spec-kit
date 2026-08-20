@@ -532,6 +532,8 @@ def build_core_inventory() -> dict[str, Any]:
 
     from ..extensions import CORE_COMMAND_NAMES  # lazy: avoid import cycle
 
+    # A deleted bundled command cannot be detected because this set is derived from those files.
+    # That would already corrupt the installation, so an independent manifest is not warranted.
     command_names = sorted(CORE_COMMAND_NAMES)
     commands = [_build_command_entry(name, layout) for name in command_names]
     templates = _build_template_entries(layout)
