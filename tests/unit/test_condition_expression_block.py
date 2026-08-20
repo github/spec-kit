@@ -5,6 +5,7 @@ import yaml
 
 from specify_cli.workflows.base import StepContext
 from specify_cli.workflows.expressions import (
+    condition_has_malformed_expression_block,
     condition_is_never_evaluated,
     evaluate_condition,
     format_condition_correction,
@@ -86,10 +87,16 @@ NEVER_EVALUATED = [
     "inputs.count > 100",        # no delimiter at all
     "{{ inputs.count > 100",     # opened, never closed
     "}} inputs.count > 100 {{",  # reversed: the only '{{' is last
-    # The only '}}' sits inside a string operand, so the quote-aware scan finds
-    # no close. The raw-close fallback then evaluates a truncated body and
-    # leaves residual text ("False'"), which bool() makes true just the same.
+]
+
+# A different fault, and the interpolator treats it differently: the quote-aware
+# scan finds no close, but a raw '}}' exists further along, so
+# _interpolate_expressions falls back to it and *evaluates* the truncated body.
+# These are not "never evaluated" -- one leaves residual text that bool() makes
+# true, the other reaches the filter parser and raises.
+MALFORMED_BLOCKS = [
     "{{ inputs.x == '}}'",
+    "{{ inputs.missing | default('oops }}",
 ]
 
 
@@ -98,6 +105,30 @@ def test_incomplete_block_is_silently_true_and_is_flagged(condition):
     ctx = StepContext(inputs={"count": 5, "name": "abc"})
     assert evaluate_condition(condition, ctx) is True
     assert condition_is_never_evaluated(condition) is True
+    assert condition_has_malformed_expression_block(condition) is False
+
+
+@pytest.mark.parametrize("condition", MALFORMED_BLOCKS)
+def test_raw_close_fallback_is_malformed_not_never_evaluated(condition):
+    """The block *is* evaluated, so it must not be reported as always true."""
+    assert condition_has_malformed_expression_block(condition) is True
+    assert condition_is_never_evaluated(condition) is False
+
+
+def test_a_malformed_block_can_raise_rather_than_be_true():
+    """The concrete case the "always true" wording got wrong.
+
+    `default('oops` swallows the real close, the raw-close fallback hands the
+    filter parser a truncated argument, and the run dies instead of taking a branch.
+    """
+    ctx = StepContext(inputs={"count": 5})
+    with pytest.raises(ValueError):
+        evaluate_condition("{{ inputs.missing | default('oops }}", ctx)
+
+
+@pytest.mark.parametrize("condition", NEVER_EVALUATED + MALFORMED_BLOCKS)
+def test_the_two_faults_are_mutually_exclusive(condition):
+    assert condition_is_never_evaluated(condition) != condition_has_malformed_expression_block(condition)
 
 
 @pytest.mark.parametrize(
@@ -219,3 +250,38 @@ def test_correction_preserves_spacing_inside_a_quoted_operand():
     corrected = format_condition_correction('{{ inputs.name == "a  b"')
     inner = yaml.safe_load("condition: " + corrected)["condition"]
     assert inner == '{{ inputs.name == "a  b" }}'
+
+
+@pytest.mark.parametrize("step_cls", STEP_CLASSES)
+@pytest.mark.parametrize("condition", MALFORMED_BLOCKS)
+def test_validator_reports_malformed_rather_than_always_true(step_cls, condition):
+    """The two faults need opposite advice, so they must not share a message.
+
+    "never evaluated and is always true" is wrong here on both halves: the
+    interpolator does evaluate the truncated body, and the result is not
+    reliably true -- it can raise.
+    """
+    config = {"id": "s1", "condition": condition, "then": [], "steps": []}
+    errors = [e for e in step_cls().validate(config) if "'condition'" in e]
+
+    assert len(errors) == 1
+    assert "never evaluated" not in errors[0]
+    assert "cannot close" in errors[0]
+    assert "truncated expression" in errors[0]
+
+
+@pytest.mark.parametrize("step_cls", STEP_CLASSES)
+@pytest.mark.parametrize("condition", MALFORMED_BLOCKS)
+def test_malformed_message_offers_no_paste_ready_correction(step_cls, condition):
+    """Deliberately no suggestion for this class.
+
+    The fault is unbalanced delimiters or quotes, so the quote-aware stripper
+    cannot tell operand from delimiter -- for `{{ inputs.missing | default('oops }}`
+    it produces `"{{ inputs.missing | default('oops }} }}"`, which is not a fix.
+    Naming the fault beats handing back something that looks authoritative and
+    is not.
+    """
+    config = {"id": "s1", "condition": condition, "then": [], "steps": []}
+    errors = [e for e in step_cls().validate(config) if "'condition'" in e]
+    assert "Wrap the expression" not in errors[0]
+    assert errors[0].rstrip().endswith("Balance the delimiters and quotes.")

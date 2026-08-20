@@ -742,14 +742,49 @@ def condition_is_never_evaluated(condition: Any) -> bool:
     if open_at == -1:
         return True
     # An opening ``{{`` the substituter cannot close is no better than a missing
-    # one. ``_interpolate_expressions`` closes a block with the same quote-aware
-    # scan used here, so ``{{ inputs.count > 100`` -- and the reversed
-    # ``}} inputs.count > 100 {{``, whose only ``{{`` is last -- come back
-    # verbatim, while ``{{ inputs.x == '}}'`` falls to the raw-close branch and
-    # leaves residual text (``False'``). All three are non-empty strings that
-    # ``bool()`` then makes true. A plain ``find("}}")`` would miss the third,
-    # and would also have to re-derive quote handling this module already owns.
-    return _find_block_close(stripped, open_at) == -1
+    # one -- but only when the substituter really does leave it alone.
+    # ``_interpolate_expressions`` has two sub-cases when its quote-aware scan
+    # fails, and they do not behave alike: with no raw ``}}`` in the tail the
+    # block is emitted verbatim (never evaluated, so ``bool()`` makes it true),
+    # while a raw ``}}`` further along is used as the close and the truncated
+    # body *is* evaluated. Only the first is "never evaluated"; see
+    # ``condition_has_malformed_expression_block`` for the second.
+    if _find_block_close(stripped, open_at) != -1:
+        return False
+    return stripped.find("}}", open_at + 2) == -1
+
+
+def condition_has_malformed_expression_block(condition: Any) -> bool:
+    """True when *condition* holds a ``{{`` block the quote-aware scan cannot close,
+    but which ``_interpolate_expressions`` still evaluates through its raw-close
+    fallback.
+
+    This is a different fault from the one
+    ``condition_is_never_evaluated`` reports, and it deserves a different message.
+    The block is not skipped: the interpolator takes the first raw ``}}`` after the
+    opener and evaluates whatever it truncated, so
+
+        {{ inputs.missing | default('oops }}
+
+    reaches ``_apply_filter`` and raises ``ValueError`` at run time. Calling that
+    "never evaluated and always true" is wrong twice over -- it is evaluated, and it
+    does not end up true, it ends the run.
+
+    Kept separate from the never-evaluated check rather than folded in, because the
+    two need opposite advice: one says "you forgot the braces", this one says "your
+    delimiters or quotes do not balance".
+    """
+    if not isinstance(condition, str):
+        return False
+    stripped = condition.strip()
+    if not stripped or stripped.lower() in ("true", "false"):
+        return False
+    open_at = stripped.find("{{")
+    if open_at == -1:
+        return False
+    if _find_block_close(stripped, open_at) != -1:
+        return False
+    return stripped.find("}}", open_at + 2) != -1
 
 
 def _strip_stray_delimiters(text: str) -> str:
@@ -819,4 +854,7 @@ def format_condition_correction(condition: Any) -> str:
     ``condition_is_never_evaluated`` as if it were valid.
     """
     core = _strip_stray_delimiters(str(condition)).strip()
-    return json.dumps("{{ " + core + " }}", ensure_ascii=False)
+    # A blank core has nothing to wrap; render the empty block rather than the
+    # double-spaced "{{  }}" that string concatenation would otherwise produce.
+    body = "{{ " + core + " }}" if core else "{{ }}"
+    return json.dumps(body, ensure_ascii=False)

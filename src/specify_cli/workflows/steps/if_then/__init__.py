@@ -6,6 +6,7 @@ from typing import Any
 
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import (
+    condition_has_malformed_expression_block,
     condition_is_never_evaluated,
     format_condition_correction,
     evaluate_condition,
@@ -96,6 +97,20 @@ class IfThenStep(StepBase):
                 f"{config['condition']!r} has no complete '{{{{ }}}}' block, so it is "
                 "never evaluated and is always true. Wrap the expression: "
                 + format_condition_correction(config["condition"]) + "."
+            )
+        elif condition_has_malformed_expression_block(config["condition"]):
+            # Different fault, different advice. Here the block is *not* skipped:
+            # _interpolate_expressions cannot close it with its quote-aware scan, so it
+            # falls back to the first raw close and evaluates whatever that truncated.
+            # `{{ inputs.missing | default('oops }}` reaches the filter parser and raises
+            # ValueError at run time, so reporting it as "always true" would be wrong
+            # twice over: it is evaluated, and it does not end up true.
+            errors.append(
+                f"If step {config.get('id', '?')!r}: 'condition' "
+                f"{config['condition']!r} opens a '{{{{' the interpolator cannot "
+                "close, so it falls back to the first raw '}}' and evaluates a "
+                "truncated expression instead of the one written. Balance the "
+                "delimiters and quotes."
             )
         if "then" not in config:
             errors.append(
