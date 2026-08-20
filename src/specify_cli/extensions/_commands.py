@@ -25,6 +25,8 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .._console import console
+from .._installed_list_json import emit_json, emit_json_error, installed_list_item
+from .._project import resolve_specify_project_root
 from .._assets import get_speckit_version
 from .._download_security import (
     archive_format_from_name,
@@ -419,9 +421,20 @@ def _resolve_catalog_extension(
 def extension_list(
     available: bool = typer.Option(False, "--available", help="Show available extensions from catalog"),
     all_extensions: bool = typer.Option(False, "--all", help="Show both installed and available"),
+    json_output: bool = typer.Option(False, "--json", help="Output installed extensions as JSON"),
 ):
     """List installed extensions."""
     from . import ExtensionManager
+
+    if json_output:
+        try:
+            project_root = resolve_specify_project_root()
+            manager = ExtensionManager(project_root)
+            installed = manager.list_installed()
+            emit_json([installed_list_item(ext, include_hooks=True) for ext in installed])
+            return
+        except Exception as error:
+            emit_json_error(error)
 
     project_root = _require_specify_project()
     manager = ExtensionManager(project_root)

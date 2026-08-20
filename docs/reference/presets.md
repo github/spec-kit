@@ -43,9 +43,17 @@ Removes an installed preset and cleans up its registered commands.
 
 ```bash
 specify preset list
+specify preset list --json
 ```
 
 Lists installed presets with their versions, descriptions, template counts, and current status.
+
+`--json` writes a JSON array to stdout. Every item has the keys `id`, `name`,
+`description`, `version`, `author`, `priority`, `enabled`, `source`, and
+`provides`. `author` is `null` when absent; `source` is either
+`{"kind":"local"}` or `{"kind":"catalog"}`. Preset `provides` contains
+`commands`, `templates`, and `scripts` counts. For runtime failures after
+option parsing, `--json` writes `{"error":"..."}` to stderr and exits nonzero.
 
 Presets are printed in **resolution/precedence order**: the highest-precedence preset (lowest priority number) is listed first, and ties on priority are broken alphabetically by preset id. This matches the order used when composing commands and resolving templates, so the top entry is the one that wins for overlapping files.
 

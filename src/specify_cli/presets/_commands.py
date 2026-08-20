@@ -17,6 +17,8 @@ import yaml
 from rich.markup import escape as _escape_markup
 
 from .._console import console
+from .._installed_list_json import emit_json, emit_json_error, installed_list_item
+from .._project import resolve_specify_project_root
 from .._download_security import (
     archive_format_from_name,
     archive_suffix,
@@ -44,10 +46,26 @@ preset_app.add_typer(preset_catalog_app, name="catalog")
 
 
 @preset_app.command("list")
-def preset_list():
+def preset_list(
+    json_output: bool = typer.Option(False, "--json", help="Output installed presets as JSON"),
+):
     """List installed presets."""
     from .. import _require_specify_project
     from . import PresetManager
+
+    if json_output:
+        try:
+            project_root = resolve_specify_project_root()
+            manager = PresetManager(project_root)
+            installed = manager.list_installed()
+            installed = sorted(
+                installed,
+                key=lambda pack: (pack.get("priority", 10), str(pack.get("id", ""))),
+            )
+            emit_json([installed_list_item(pack, include_hooks=False) for pack in installed])
+            return
+        except Exception as error:
+            emit_json_error(error)
 
     project_root = _require_specify_project()
     manager = PresetManager(project_root)

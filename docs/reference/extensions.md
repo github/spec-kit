@@ -50,14 +50,25 @@ Removes an installed extension. Configuration files are backed up by default; us
 
 ```bash
 specify extension list
+specify extension list --json
 ```
 
 | Option        | Description                                        |
 | ------------- | -------------------------------------------------- |
 | `--available` | Show available (uninstalled) extensions            |
 | `--all`       | Show both installed and available extensions       |
+| `--json`      | Write installed extensions as JSON                 |
 
 Lists installed extensions with their status, version, and command counts.
+
+`--json` writes a JSON array to stdout. Every item has the keys `id`, `name`,
+`description`, `version`, `author`, `priority`, `enabled`, `source`, and
+`provides`. `author` is `null` when absent; `source` is either
+`{"kind":"local"}` or `{"kind":"catalog"}`. Extension `provides` contains
+`commands`, `templates`, `scripts`, and `hooks` counts. `--available` and
+`--all` do not broaden JSON output beyond installed extensions. For runtime
+failures after option parsing, `--json` writes `{"error":"..."}` to stderr and
+exits nonzero.
 
 ## Extension Info
 

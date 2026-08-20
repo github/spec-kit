@@ -10,6 +10,28 @@ import typer
 from ._console import err_console
 
 
+class ProjectResolutionError(RuntimeError):
+    """A project-root error that callers can render for their own surface."""
+
+
+def _resolve_init_dir_override_unrendered() -> Path | None:
+    """Resolve ``SPECIFY_INIT_DIR`` without emitting user-facing output."""
+    raw = os.environ.get("SPECIFY_INIT_DIR", "")
+    if not raw:
+        return None
+    init_root = (Path.cwd() / raw).resolve()
+    if not init_root.is_dir():
+        raise ProjectResolutionError(
+            f"SPECIFY_INIT_DIR does not point to an existing directory: {raw}"
+        )
+    if not (init_root / ".specify").is_dir():
+        raise ProjectResolutionError(
+            "SPECIFY_INIT_DIR is not a Spec Kit project "
+            f"(no .specify/ directory): {init_root}"
+        )
+    return init_root
+
+
 def _resolve_init_dir_override() -> Path | None:
     """Resolve the ``SPECIFY_INIT_DIR`` project override for the Python CLI.
 
@@ -33,21 +55,24 @@ def _resolve_init_dir_override() -> Path | None:
     here (a stable project identity), so this is a deliberate, documented variance,
     not a parity guarantee on the resolved string.
     """
-    raw = os.environ.get("SPECIFY_INIT_DIR", "")
-    if not raw:
-        return None
-    # Relative values resolve against cwd; an absolute value stands alone (Path's
-    # `/` drops the left operand when the right is absolute). resolve() also
-    # collapses a trailing slash and canonicalizes symlinks.
-    init_root = (Path.cwd() / raw).resolve()
-    if not init_root.is_dir():
-        err_console.print(
-            f"[red]Error:[/red] SPECIFY_INIT_DIR does not point to an existing directory: {raw}"
-        )
+    try:
+        return _resolve_init_dir_override_unrendered()
+    except ProjectResolutionError as error:
+        err_console.print(f"[red]Error:[/red] {error}")
         raise typer.Exit(1)
-    if not (init_root / ".specify").is_dir():
-        err_console.print(
-            f"[red]Error:[/red] SPECIFY_INIT_DIR is not a Spec Kit project (no .specify/ directory): {init_root}"
-        )
-        raise typer.Exit(1)
-    return init_root
+
+
+def resolve_specify_project_root() -> Path:
+    """Return the active project root without rendering errors.
+
+    This is deliberately separate from ``_require_specify_project`` so the
+    installed-list JSON contract can send structured failures to stderr without
+    changing the Rich diagnostics used by every other project-scoped command.
+    """
+    override = _resolve_init_dir_override_unrendered()
+    if override is not None:
+        return override
+    project_root = Path.cwd()
+    if not (project_root / ".specify").is_dir():
+        raise ProjectResolutionError("Not a Spec Kit project (no .specify/ directory)")
+    return project_root
