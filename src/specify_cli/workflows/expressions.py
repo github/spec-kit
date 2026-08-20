@@ -904,9 +904,24 @@ def _has_unbalanced_quote(text: str) -> bool:
     return quote is not None
 
 
+_BRACKET_PAIRS = {")": "(", "]": "[", "}": "{"}
+
+# The operators the evaluator delimits with spaces; derived so the check cannot
+# drift from _COMPARISON_OPERATORS.
+_WORD_OPERATORS = tuple(
+    op for op in (" or ", " and ") + _COMPARISON_OPERATORS if op.startswith(" ")
+)
+
+
 def _has_unbalanced_bracket(text: str) -> bool:
-    """True when a bracket opened outside a quoted operand is never closed."""
-    depth = 0
+    """True when brackets outside a quoted operand do not nest and match.
+
+    A depth counter is not enough: it calls ``inputs.f(]`` balanced, because the
+    ``]`` cancels the ``(``. The evaluator then resolves that body to ``None`` and
+    the comparison is false, which is the inversion this module is trying to keep
+    out of the suggested correction. Track the opener types instead.
+    """
+    stack: list[str] = []
     quote: str | None = None
     for ch in text:
         if quote is not None:
@@ -915,33 +930,50 @@ def _has_unbalanced_bracket(text: str) -> bool:
         elif ch in ("'", '"'):
             quote = ch
         elif ch in "([{":
-            depth += 1
-        elif ch in ")]}":
-            depth -= 1
-            if depth < 0:
+            stack.append(ch)
+        elif ch in _BRACKET_PAIRS:
+            if not stack or stack.pop() != _BRACKET_PAIRS[ch]:
                 return True
-    return depth != 0
+    return bool(stack)
 
 
 def _has_incomplete_operand(text: str) -> bool:
-    """True when a top-level operator in *text* is missing an operand.
+    """True when an operator in *text* is missing an operand on either side.
 
-    Reads ``_COMPARISON_OPERATORS`` and the boolean keywords from the evaluator
-    rather than restating them, so the check cannot drift from what
-    ``_evaluate_simple_expression`` will actually split on.
+    Splits on **every** top-level occurrence rather than the first. Checking only
+    the first is the same defect this module exists to reject one level up: it let
+    ``inputs.a == inputs.b ==`` through, because the leading ``==`` has operands on
+    both sides and the scan stopped there.
+
+    Reads ``_COMPARISON_OPERATORS`` from the evaluator rather than restating it, so
+    the check cannot drift from what ``_evaluate_simple_expression`` splits on.
     """
+    stripped = text.strip()
+    if not stripped:
+        return True
+
+    # `not x` is a valid prefix form; `and x` and `or x` are not, and none of the
+    # three is valid alone or trailing. The keyword scans below use bare words
+    # because a leading operator has no space in front of it to match on.
+    if stripped in ("and", "or", "not") or stripped.endswith(" not"):
+        return True
+    # Word operators lose their delimiting space at the ends of a stripped core, so
+    # a trailing "not in" or a leading "and" needs matching without it. Derived from
+    # the evaluator's own table rather than restated.
+    for op in _WORD_OPERATORS:
+        if stripped.endswith(op.rstrip()) or stripped.startswith(op.lstrip()):
+            return True
+
     for op in (" or ", " and ") + _COMPARISON_OPERATORS:
-        idx = _find_top_level(text, op)
-        if idx == -1:
+        if _find_top_level(stripped, op) == -1:
             continue
-        if not text[:idx].strip() or not text[idx + len(op):].strip():
+        if any(not segment.strip() for segment in _split_top_level(stripped, op)):
             return True
-    if _find_top_level(text, "|") != -1:
-        if any(not segment.strip() for segment in _split_top_level(text, "|")):
+
+    if _find_top_level(stripped, "|") != -1:
+        if any(not segment.strip() for segment in _split_top_level(stripped, "|")):
             return True
-    return text in ("not", "or", "and") or text.endswith((" not", " or", " and"))
-
-
+    return False
 def _wrapping_would_not_repair(core: str) -> str | None:
     """Why wrapping *core* in ``{{ }}`` would not yield the expression intended.
 

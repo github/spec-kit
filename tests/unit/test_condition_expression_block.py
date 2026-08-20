@@ -14,6 +14,7 @@ from specify_cli.workflows.expressions import (
     _has_incomplete_operand,
     _strip_stray_delimiters,
     _COMPARISON_OPERATORS,
+    _WORD_OPERATORS,
     format_condition_remediation,
 )
 from specify_cli.workflows.steps.do_while import DoWhileStep
@@ -447,3 +448,53 @@ def test_incomplete_operand_covers_every_operator_the_evaluator_splits_on():
     for op in ("!=", "==", ">=", "<=", ">", "<", " not in ", " in ", " and ", " or "):
         assert _has_incomplete_operand("inputs.a" + op) is True, op
         assert _has_incomplete_operand("inputs.a" + op + "inputs.b") is False, op
+
+
+# Copilot round 3: the first two gates each inspected only one position. These pin
+# every-position scanning, both ends, and bracket-type matching.
+MULTI_POSITION_UNFIXABLE = [
+    ("inputs.a == inputs.b ==", "missing an operand"),   # trailing, not the first op
+    ("and inputs.ready", "missing an operand"),           # leading boolean operator
+    ("inputs.a not in", "missing an operand"),            # trailing word operator
+    ("in inputs.tags", "missing an operand"),             # leading word operator
+    ("inputs.f(]", "brackets do not balance"),            # matched count, wrong types
+    ("inputs.f(]", "brackets do not balance"),
+]
+
+
+@pytest.mark.parametrize("step_cls", STEP_CLASSES)
+@pytest.mark.parametrize("condition,expected", MULTI_POSITION_UNFIXABLE)
+def test_gates_inspect_every_position_not_just_the_first(step_cls, condition, expected):
+    config = {"id": "s1", "condition": condition, "then": [], "steps": []}
+    errors = [e for e in step_cls().validate(config) if "'condition'" in e]
+
+    assert len(errors) == 1
+    assert "Wrap the expression" not in errors[0]
+    assert expected in errors[0]
+
+
+@pytest.mark.parametrize(
+    "text,unbalanced",
+    [
+        ("inputs.f(]", True),      # counts match, types do not
+        ("inputs.f[)", True),
+        ("inputs.f(}", True),
+        ("inputs.f([])", False),
+        ("inputs.f(])", True),
+        ("inputs.text == '(]'", False),   # mismatched pair inside a quoted operand
+    ],
+)
+def test_bracket_scan_matches_types_not_just_depth(text, unbalanced):
+    assert _has_unbalanced_bracket(text) is unbalanced
+
+
+def test_word_operators_are_derived_from_the_evaluator_table():
+    """Guards the derivation, not the literal tuple.
+
+    If a space-delimited operator is added to _COMPARISON_OPERATORS, the end-of-core
+    checks must pick it up without another edit here.
+    """
+    assert _WORD_OPERATORS == (" or ", " and ", " not in ", " in ")
+    for op in _WORD_OPERATORS:
+        assert _has_incomplete_operand("inputs.a" + op.rstrip()) is True, op
+        assert _has_incomplete_operand(op.lstrip() + "inputs.a") is True, op
