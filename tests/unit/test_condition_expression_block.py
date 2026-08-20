@@ -14,6 +14,7 @@ from specify_cli.workflows.expressions import (
     _has_incomplete_operand,
     _unresolvable_term,
     _evaluator_rejects,
+    _is_literal,
     _strip_stray_delimiters,
     _COMPARISON_OPERATORS,
     _WORD_OPERATORS,
@@ -601,3 +602,42 @@ def test_filter_wiring_errors_are_still_rejections(condition):
     """The other half: a filter named wrong or used wrong is the author's text."""
     assert _evaluator_rejects(condition) is not None
     assert "Wrap the expression" not in format_condition_remediation(condition)
+
+
+@pytest.mark.parametrize(
+    "condition,literal",
+    [
+        ("42", True),
+        ("3.14", True),
+        ("-7", True),
+        # `1e3` has no "." so the evaluator calls int() on it, which fails; it then
+        # falls through to a path lookup. float() alone accepted it here.
+        ("1e3", False),
+        ("'one'", True),
+        ('"one"', True),
+        # Two literals, not one: the evaluator requires the opening quote's match to
+        # be the final character, which first/last-character equality does not.
+        ("'a' 'b'", False),
+        ("'a' == 'b'", False),
+        ("true", True),
+        ("inputs.name", False),
+    ],
+)
+def test_literal_test_mirrors_the_evaluator(condition, literal):
+    assert _is_literal(condition) is literal
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        # `_build_namespace` hands back mappings, so an indexed root always resolves
+        # to None however the index is written.
+        "inputs[0]",
+        "steps[1]",
+        "1e3",
+        "'a' 'b'",
+    ],
+)
+def test_shapes_the_evaluator_resolves_to_none_get_no_correction(condition):
+    advice = format_condition_remediation(condition)
+    assert "Wrap the expression" not in advice

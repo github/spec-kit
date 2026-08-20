@@ -1029,15 +1029,31 @@ def _evaluator_rejects(text: str) -> str | None:
 
 
 def _looks_numeric(text: str) -> bool:
+    """Mirror the evaluator's numeric literal test exactly.
+
+    `_evaluate_simple_expression` only calls `float()` when a `.` is present and
+    `int()` otherwise, so `1e3` is not a number to it -- it falls through to a path
+    lookup and resolves to None. A bare `float()` here accepted `1e3` and the
+    correction turned a truthy condition false.
+    """
     try:
-        float(text)
-    except ValueError:
+        if "." in text:
+            float(text)
+        else:
+            int(text)
+    except (ValueError, TypeError):
         return False
     return True
 
 
 def _is_literal(text: str) -> bool:
-    if len(text) >= 2 and text[0] in ("'", '"') and text[-1] == text[0]:
+    """Mirror the evaluator's literal tests exactly.
+
+    The string case is the opening quote's *matching close being the final
+    character*, not first/last-character equality: `'a' 'b'` passes the latter but
+    is two literals to the evaluator, which falls through to a path lookup.
+    """
+    if text[:1] in ("'", '"') and text.find(text[0], 1) == len(text) - 1:
         return True
     return text.lower() in ("true", "false", "none", "null") or _looks_numeric(text)
 
@@ -1086,7 +1102,9 @@ def _unresolvable_term(text: str) -> str | None:
     segments = _split_top_level(stripped, ".")
     if not _PATH_SEGMENT.match(segments[0].strip()):
         return f"{stripped!r} is not a name the evaluator can resolve"
-    if re.sub(r"\[\d+\]$", "", segments[0].strip()) not in _NAMESPACE_ROOTS:
+    # The root itself is never indexed: `_build_namespace` hands back mappings, so
+    # `_resolve_dot_path` returns None for `inputs[0]` however the index is written.
+    if segments[0].strip() not in _NAMESPACE_ROOTS:
         return (
             f"{segments[0].strip()!r} is not one of the namespace roots "
             f"({', '.join(_NAMESPACE_ROOTS)})"
