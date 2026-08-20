@@ -249,6 +249,34 @@ def _find_block_close(text: str, start: int) -> int:
     return -1
 
 
+def _first_unclosable_block(text: str) -> str | None:
+    """How ``_interpolate_expressions`` will fail on the first block it cannot
+    close with the quote-aware scan, or ``None`` when every block closes.
+
+    Returns ``"evaluated"`` when a raw ``}}`` still follows the opener -- the
+    interpolator falls back to it and evaluates the truncated body, which reaches
+    the filter parser and raises ``ValueError``. Returns ``"verbatim"`` when no
+    ``}}`` follows at all -- the tail is emitted unchanged, so it survives into the
+    result as truthy text.
+
+    Walks blocks exactly the way ``_interpolate_expressions`` does, continuing past
+    each block that *does* close. Checking only the first opener let a later
+    unterminated block through both validators: ``{{ true }} and {{ inputs.ready``
+    closes its first block, so the scan stopped and reported no fault, while
+    interpolation leaves ``and {{ inputs.ready`` in the result and ``bool()`` makes
+    the condition always true.
+    """
+    i = 0
+    while True:
+        start = text.find("{{", i)
+        if start == -1:
+            return None
+        close = _find_block_close(text, start)
+        if close == -1:
+            return "evaluated" if text.find("}}", start + 2) != -1 else "verbatim"
+        i = close + 2
+
+
 def _interpolate_expressions(template: str, namespace: dict[str, Any]) -> str:
     """Substitute every top-level ``{{ ... }}`` block in *template*, quote-aware.
 
@@ -738,8 +766,7 @@ def condition_is_never_evaluated(condition: Any) -> bool:
         return True
     if stripped.lower() in ("true", "false"):
         return False
-    open_at = stripped.find("{{")
-    if open_at == -1:
+    if "{{" not in stripped:
         return True
     # An opening ``{{`` the substituter cannot close is no better than a missing
     # one -- but only when the substituter really does leave it alone.
@@ -749,9 +776,7 @@ def condition_is_never_evaluated(condition: Any) -> bool:
     # while a raw ``}}`` further along is used as the close and the truncated
     # body *is* evaluated. Only the first is "never evaluated"; see
     # ``condition_has_malformed_expression_block`` for the second.
-    if _find_block_close(stripped, open_at) != -1:
-        return False
-    return stripped.find("}}", open_at + 2) == -1
+    return _first_unclosable_block(stripped) == "verbatim"
 
 
 def condition_has_malformed_expression_block(condition: Any) -> bool:
@@ -766,9 +791,10 @@ def condition_has_malformed_expression_block(condition: Any) -> bool:
 
         {{ inputs.missing | default('oops }}
 
-    reaches ``_apply_filter`` and raises ``ValueError`` at run time. Calling that
-    "never evaluated and always true" is wrong twice over -- it is evaluated, and it
-    does not end up true, it ends the run.
+    reaches ``_apply_filter`` and raises ``ValueError`` at run time. The truncation does
+    not always raise -- ``{{ inputs.x == '}}'`` evaluates to the residual ``"False'"`` --
+    but either way what runs is not what was written, so "never evaluated and always
+    true" is the wrong report.
 
     Kept separate from the never-evaluated check rather than folded in, because the
     two need opposite advice: one says "you forgot the braces", this one says "your
@@ -779,12 +805,7 @@ def condition_has_malformed_expression_block(condition: Any) -> bool:
     stripped = condition.strip()
     if not stripped or stripped.lower() in ("true", "false"):
         return False
-    open_at = stripped.find("{{")
-    if open_at == -1:
-        return False
-    if _find_block_close(stripped, open_at) != -1:
-        return False
-    return stripped.find("}}", open_at + 2) != -1
+    return _first_unclosable_block(stripped) == "evaluated"
 
 
 def _strip_stray_delimiters(text: str) -> str:

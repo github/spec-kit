@@ -87,6 +87,9 @@ NEVER_EVALUATED = [
     "inputs.count > 100",        # no delimiter at all
     "{{ inputs.count > 100",     # opened, never closed
     "}} inputs.count > 100 {{",  # reversed: the only '{{' is last
+    # A complete block does not vouch for the rest: interpolation leaves the
+    # second fragment verbatim, and bool() makes the whole string true.
+    "{{ true }} and {{ inputs.ready",
 ]
 
 # A different fault, and the interpolator treats it differently: the quote-aware
@@ -97,6 +100,8 @@ NEVER_EVALUATED = [
 MALFORMED_BLOCKS = [
     "{{ inputs.x == '}}'",
     "{{ inputs.missing | default('oops }}",
+    # Same, but the faulty block is the second one.
+    "{{ inputs.name }} {{ inputs.missing | default('oops }}",
 ]
 
 

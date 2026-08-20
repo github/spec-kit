@@ -94,8 +94,8 @@ class IfThenStep(StepBase):
             # to write by habit.
             errors.append(
                 f"If step {config.get('id', '?')!r}: 'condition' "
-                f"{config['condition']!r} has no complete '{{{{ }}}}' block, so it is "
-                "never evaluated and is always true. Wrap the expression: "
+                f"{config['condition']!r} is not a single complete '{{{{ }}}}' block, so "
+                "it is never evaluated as an expression and is always true. Wrap the expression: "
                 + format_condition_correction(config["condition"]) + "."
             )
         elif condition_has_malformed_expression_block(config["condition"]):
