@@ -73,7 +73,7 @@ specify core info --json | jq '.commands[] | select(.name == "speckit.plan")'
 
 ## Failure Modes
 
-The command fails fast on packaging errors it can detect at read time — unparseable frontmatter, a mistyped field, or a script missing its canonical bash variant — rather than silently emitting a malformed inventory. On any such error it exits with code `1` and prints a JSON error envelope on stderr:
+The command fails fast on packaging errors it can detect at read time — unparseable frontmatter, a mistyped field, or a script missing its canonical bash variant — rather than silently emitting a malformed inventory. On any such error it exits with code `1` and prints a JSON error envelope on stderr. Note that templates and scripts are enumerated from whatever files are present on disk, so an asset that is missing entirely from the installation is simply omitted from the output rather than raised as an error.
 
 ```json
 {
@@ -94,5 +94,3 @@ Common `error` codes:
 | `core_inventory.invalid_source_path`| An emitted `sourcePath` failed the shape check (absolute or contained a backslash). |
 
 These conditions represent packaging bugs and should be reported.
-
-Note: templates and scripts are enumerated from whatever files are present on disk, so an asset that is missing entirely from the installation is simply omitted from the output rather than raised as an error.
