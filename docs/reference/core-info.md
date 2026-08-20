@@ -89,7 +89,7 @@ Common `error` codes:
 | ----------------------------------- | -------------------------------------------------------------- |
 | `core_inventory.assets_missing`     | Neither the wheel-shipped `core_pack/` nor the source checkout was found. |
 | `core_inventory.frontmatter_parse`  | YAML frontmatter on a baseline file could not be parsed, or a field has the wrong type. |
-| `core_inventory.missing_description`| A baseline command, template, or script has no usable description. |
+| `core_inventory.missing_description`| A baseline command or template has no usable description. |
 | `core_inventory.missing_canonical`  | A script ships a non-bash variant but no canonical bash one.   |
 | `core_inventory.invalid_source_path`| An emitted `sourcePath` failed the shape check (absolute or contained a backslash). |
 
