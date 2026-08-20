@@ -786,6 +786,38 @@ def test_bundle_info_resolves_github_browser_release_url(project: Path):
     assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
 
 
+def test_bundle_info_rejects_utf16_remote_manifest_like_local_sources(project: Path):
+    """A downloaded (non-zip) bundle.yml must be decoded strictly as UTF-8.
+
+    ``yamlio.load_yaml`` decodes local ``bundle.yml`` sources strictly as
+    UTF-8, so a well-formed UTF-16 manifest (a realistic PowerShell
+    ``Out-File`` output) is rejected. Feeding the downloaded bytes straight
+    to ``yaml.safe_load(io.BytesIO(raw))`` let PyYAML's Reader honour the
+    UTF-16 BOM and silently *accept* the same manifest instead, diverging
+    from local/zip sources (the zip branch of this same download path was
+    already fixed for the identical bug).
+    """
+    api_asset_url = "https://api.github.com/repos/org/repo/releases/assets/99"
+    manifest_yaml_utf16 = yaml.safe_dump(valid_manifest_dict()).encode("utf-16")
+
+    def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+        return FakeBundleResponse(manifest_yaml_utf16, url=api_asset_url)
+
+    catalog = project / "catalog.json"
+    write_catalog_file(
+        catalog,
+        {"demo-bundle": catalog_entry_dict("demo-bundle", download_url=api_asset_url)},
+    )
+    _make_catalog_config(catalog, project)
+
+    with patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+        result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json"])
+
+    assert result.exit_code == 1
+    output_flat = " ".join(result.output.split())
+    assert "could not be read" in output_flat.lower()
+
+
 def test_bundle_info_passes_through_api_asset_url(project: Path):
     """bundle info passes a direct GitHub API asset URL through with octet-stream."""
     api_asset_url = "https://api.github.com/repos/org/repo/releases/assets/77"
