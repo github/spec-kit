@@ -4406,6 +4406,41 @@
       "created_at": "2026-08-12T00:00:00Z",
       "updated_at": "2026-08-12T00:00:00Z"
     },
+    "speckit-inventory": {
+      "name": "Spec Inventory",
+      "id": "speckit-inventory",
+      "description": "Read-only inventory of live requirement and task IDs, with focused per-task context packs instead of whole-file dumps.",
+      "author": "Yash Chindam",
+      "version": "0.1.0",
+      "download_url": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/releases/download/v0.1.0/speckit-inventory.zip",
+      "sha256": "9ebf004ef6494323f6dccfab2554a04898c9e92bc7f25e0638b5aee916566e7f",
+      "repository": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment",
+      "homepage": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment",
+      "documentation": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/blob/v0.1.0/speckit-inventory/README.md",
+      "changelog": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/blob/v0.1.0/speckit-inventory/CHANGELOG.md",
+      "license": "MIT",
+      "category": "visibility",
+      "effect": "read-only",
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 2
+      },
+      "tags": [
+        "inventory",
+        "requirements",
+        "context",
+        "traceability",
+        "alignment"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-20T00:00:00Z",
+      "updated_at": "2026-08-20T00:00:00Z"
+    },
     "speckit-superpowers-bridge": {
       "name": "Superpowers Implementation Bridge",
       "id": "speckit-superpowers-bridge",

@@ -458,6 +458,35 @@
       "created_at": "2026-07-27T00:00:00Z",
       "updated_at": "2026-07-28T00:00:00Z"
     },
+    "inventory-alignment": {
+      "name": "Inventory Alignment",
+      "id": "inventory-alignment",
+      "version": "0.1.0",
+      "description": "Classifies each requirement against a read-only inventory of live IDs before writing, so reworded requirements are updated instead of duplicated.",
+      "author": "Yash Chindam",
+      "repository": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment",
+      "download_url": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/releases/download/v0.1.0/inventory-alignment.zip",
+      "sha256": "8ea62813aeb88d85001f54d91d8eceb011f5fb872bc764d5ea83e8e7ab92a2c1",
+      "homepage": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment",
+      "documentation": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/blob/v0.1.0/inventory-alignment/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "templates": 1,
+        "commands": 2
+      },
+      "tags": [
+        "inventory",
+        "alignment",
+        "requirements",
+        "traceability",
+        "workflow"
+      ],
+      "created_at": "2026-08-20T00:00:00Z",
+      "updated_at": "2026-08-20T00:00:00Z"
+    },
     "isaqb-architecture-governance": {
       "name": "iSAQB Architecture Governance",
       "id": "isaqb-architecture-governance",
