@@ -4173,8 +4173,8 @@
       "requires": {
         "speckit_version": ">=0.1.0",
         "tools": [
-          { "name": "git", "required": true },
-          { "name": "node", "required": false }
+          { "name": "git", "version": ">=2.0.0", "required": true },
+          { "name": "node", "version": ">=22.0.0", "required": false }
         ]
       },
       "provides": {
