@@ -121,8 +121,9 @@ _CATALOG_DOWNLOAD_URL_CLAUSES = (
     ),
     (
         "If the download URL path contains `releases/latest/`, reject with an\n"
-        "  explanation — this URL is floating and not acceptable. Fail immediately,\n"
-        "  before any HTTP check."
+        "  explanation — this URL is floating and not acceptable. Mark this pinning\n"
+        "  check failed and skip the HTTP request for this URL, then continue the\n"
+        "  remaining validations."
     ),
     (
         "The `<tag>` segment in the URL MUST correspond to the submitted version.\n"

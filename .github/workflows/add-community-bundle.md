@@ -124,8 +124,9 @@ Run every check and collect all failures before deciding the outcome.
 - The download URL MUST follow the accepted tag-pinned pattern:
   `https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>.zip`.
 - If the download URL path contains `releases/latest/`, reject with an
-  explanation — this URL is floating and not acceptable. Fail immediately,
-  before any HTTP check.
+  explanation — this URL is floating and not acceptable. Mark this pinning
+  check failed and skip the HTTP request for this URL, then continue the
+  remaining validations.
 - The `<tag>` segment in the URL MUST correspond to the submitted version.
   Accept `vX.Y.Z`, `X.Y.Z`, and scoped tags whose version suffix matches
   (for example `aide-v1.0.0` for version `1.0.0`). Reject a tag whose
