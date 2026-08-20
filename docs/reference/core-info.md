@@ -1,10 +1,10 @@
-# Core Inventory
+# Core Info
 
 The `specify core` command group exposes read-only information about Spec Kit's baked-in ("core") baseline — the commands, templates, and helper scripts that ship inside the CLI package itself. Presets, extensions, integrations, and project-scoped assets are intentionally **not** included; use their dedicated commands (`specify preset`, `specify extension`, `specify integration`) for those.
 
-Core-inventory output is deterministic and byte-identical across runs, so downstream tools can safely diff, hash, or cache it.
+Core info output is deterministic and byte-identical across runs, so downstream tools can safely diff, hash, or cache it.
 
-## List the Core Inventory
+## Inspect Core Info
 
 ```bash
 specify core info --json
@@ -12,7 +12,7 @@ specify core info --json
 
 | Option        | Description                                                          |
 | ------------- | -------------------------------------------------------------------- |
-| `--json`      | **Required.** Emit the inventory as JSON on stdout.                  |
+| `--json`      | **Required.** Emit core info as JSON on stdout.                      |
 
 The `--json` flag is mandatory. A human-readable table format is intentionally not offered — the command is designed for programmatic consumption by external tools and other Spec Kit surfaces. Invoking `specify core info` without `--json` exits non-zero with a hint pointing at the flag.
 
@@ -68,7 +68,7 @@ specify core info --json | jq '.commands[] | select(.name == "plan")'
 
 - Alphabetical ordering by `name` within each section.
 - Fixed top-level key order: `commands`, `templates`, `scripts`.
-- Fields inside each entry are emitted in a fixed order (see the schema at [`specs/001-core-inventory/contracts/core-info-schema.json`](https://github.com/github/spec-kit/blob/main/specs/001-core-inventory/contracts/core-info-schema.json)).
+- Fields inside each entry are emitted in a fixed order (see the schema at [`specs/001-core-info/contracts/core-info-schema.json`](https://github.com/github/spec-kit/blob/main/specs/001-core-info/contracts/core-info-schema.json)).
 - Path separators are always forward-slashes, even on Windows.
 
 ## Failure Modes

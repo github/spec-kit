@@ -1,8 +1,8 @@
 """specify core * command handlers — app object and register() entry point.
 
-See ``specs/001-core-inventory/contracts/core-info-cli.md`` for the CLI
+See ``specs/001-core-info/contracts/core-info-cli.md`` for the CLI
 contract (invocation syntax, streams, exit codes). See
-``specs/001-core-inventory/data-model.md`` for the emitted JSON shape.
+``specs/001-core-info/data-model.md`` for the emitted JSON shape.
 """
 from __future__ import annotations
 

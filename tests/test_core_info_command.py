@@ -1,15 +1,15 @@
 """CLI-level tests for ``specify core info --json`` via Typer's CliRunner.
 
 Contract references:
-- ``specs/001-core-inventory/contracts/core-info-cli.md``
-- ``specs/001-core-inventory/contracts/core-info-schema.json``
+- ``specs/001-core-info/contracts/core-info-cli.md``
+- ``specs/001-core-info/contracts/core-info-schema.json``
 
 Deferred (companion #4212): cross-reference integration tests that join this
 command's output against ``specify artifact info --json``. See tasks.md T029.
 """
 # TODO(#4212): add a cross-reference integration test that joins
 # `specify core info --json` output against `specify artifact info --json`
-# once the companion command lands. See specs/001-core-inventory/tasks.md T029.
+# once the companion command lands. See specs/001-core-info/tasks.md T029.
 from __future__ import annotations
 
 import json

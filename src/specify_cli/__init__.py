@@ -553,7 +553,7 @@ def _require_specify_project() -> Path:
     raise typer.Exit(1)
 
 
-# ===== Core Inventory Commands =====
+# ===== Core Info Commands =====
 
 # specify core * — see specify_cli/core/_commands.py
 from .core._commands import register as _register_core_cmds  # noqa: E402

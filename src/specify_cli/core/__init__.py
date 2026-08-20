@@ -5,8 +5,8 @@ enumerating the baseline commands, templates, and scripts that ship inside
 the wheel (`specify_cli/core_pack/`) or the source checkout (repo root).
 
 The output is the exact shape validated by
-``specs/001-core-inventory/contracts/core-info-schema.json``. See
-``specs/001-core-inventory/data-model.md`` for authoritative field types.
+``specs/001-core-info/contracts/core-info-schema.json``. See
+``specs/001-core-info/data-model.md`` for authoritative field types.
 
 Every asset carries a stable identifier per companion issue #4210:
 ``core:_:{kind}:{name}``. Ordering: alphabetical by ``name`` within each
