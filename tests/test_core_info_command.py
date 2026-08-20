@@ -182,8 +182,8 @@ def test_core_info_missing_command_file_exits_nonzero(
 
     # Redirect the discovery helpers to a name that has no shipped file.
     monkeypatch.setattr(
-        "specify_cli.extensions._load_core_command_names",
-        lambda: frozenset({"nonexistent-command"}),
+        "specify_cli.extensions.CORE_COMMAND_NAMES",
+        frozenset({"nonexistent-command"}),
     )
     result = _invoke(["core", "info", "--json"])
     assert result.exit_code == 1
