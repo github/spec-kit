@@ -974,6 +974,57 @@ def _has_incomplete_operand(text: str) -> bool:
         if any(not segment.strip() for segment in _split_top_level(stripped, "|")):
             return True
     return False
+def _unregistered_filter(text: str) -> str | None:
+    """The first filter name in *text* the evaluator does not implement, or ``None``.
+
+    Reads ``_REGISTERED_FILTERS`` so the check cannot claim a filter is fine that
+    ``_apply_filter`` will reject. ``inputs.items | length`` passed every structural
+    gate and was advertised as paste-ready, but the wrapped form raises
+    ``ValueError("unknown filter 'length'")`` -- a correction that replaces an
+    always-true condition with a crash.
+    """
+    if _find_top_level(text, "|") == -1:
+        return None
+    for segment in _split_top_level(text, "|")[1:]:
+        name = segment.strip().split("(", 1)[0].strip()
+        if name and name not in _REGISTERED_FILTERS:
+            return name
+    return None
+
+
+def _reads_as_prose(text: str) -> bool:
+    """True when *text* is several bare terms rather than one expression.
+
+    An expression is a single term, or terms joined by an operator or a filter.
+    ``he said "hi" then left`` is neither: the evaluator resolves it to ``None``, so
+    wrapping turns a truthy string into a false condition. Quoted spans are skipped,
+    so ``inputs.f('a b')`` and ``inputs.name == 'two words'`` are unaffected.
+    """
+    stripped = text.strip()
+    if stripped.startswith("not "):
+        stripped = stripped[4:].strip()
+    for op in (" or ", " and ") + _COMPARISON_OPERATORS:
+        if _find_top_level(stripped, op) != -1:
+            return False
+    if _find_top_level(stripped, "|") != -1:
+        return False
+
+    quote: str | None = None
+    depth = 0
+    for ch in stripped:
+        if quote is not None:
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif depth == 0 and ch.isspace():
+            return True
+    return False
+
 def _wrapping_would_not_repair(core: str) -> str | None:
     """Why wrapping *core* in ``{{ }}`` would not yield the expression intended.
 
@@ -991,6 +1042,11 @@ def _wrapping_would_not_repair(core: str) -> str | None:
         return "its brackets do not balance"
     if _has_incomplete_operand(core):
         return "an operator in it is missing an operand"
+    unknown = _unregistered_filter(core)
+    if unknown is not None:
+        return f"it uses a filter the evaluator does not implement ({unknown!r})"
+    if _reads_as_prose(core):
+        return "it reads as several bare terms rather than one expression"
     return None
 
 

@@ -368,13 +368,30 @@ def test_unbalanced_quote_scan(text, unbalanced):
 
 # The property behind the case list above, stated once so a new malformed shape
 # is caught by the invariant rather than by adding another fixture row.
-OFFERED_CORRECTION_INPUTS = TRICKY_CONDITIONS + [
+# Genuine expressions only. TRICKY_CONDITIONS is a quoting/escaping fixture for
+# the formatter and deliberately includes prose, so it must not be reused here.
+OFFERED_CORRECTION_INPUTS = [
     "inputs.count > 100",
     'inputs.name == "zzz"',
+    "inputs.name == 'zzz'",
     "{{ inputs.count > 100",
     "{{ true }} and {{ inputs.ready",
     "inputs.a and inputs.b",
-    "inputs.tags | length > 0",
+    "inputs.name",
+    "not inputs.ready",
+    "inputs.tags | join(',')",
+    # The tricky-quoting cases from TRICKY_CONDITIONS that really are expressions.
+    # Listed rather than filtered out of that fixture, so adding prose there cannot
+    # silently widen what this invariant claims.
+    'inputs.a == "x" and inputs.b == \'y\'',
+    "inputs.path == 'C:" + BACKSLASH + "tmp'",
+    'inputs.path == "C:' + BACKSLASH + 'tmp"',
+    "inputs.a == 'x\ty'",
+    "inputs.a == 'x\ry'",
+    "inputs.ten == 'mười'",
+    "inputs.x == 1\nand inputs.name == 'abc'",
+    '{{ inputs.name == "zzz"',
+    "}} inputs.count > 100 {{",
 ]
 
 
@@ -459,6 +476,8 @@ MULTI_POSITION_UNFIXABLE = [
     ("in inputs.tags", "missing an operand"),             # leading word operator
     ("inputs.f(]", "brackets do not balance"),            # matched count, wrong types
     ("inputs.f(]", "brackets do not balance"),
+    ("inputs.items | length", "filter the evaluator does not implement"),
+    ('he said "hi" then left', "several bare terms"),
 ]
 
 
