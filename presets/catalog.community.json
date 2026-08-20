@@ -466,11 +466,15 @@
       "author": "Yash Chindam",
       "repository": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment",
       "download_url": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/releases/download/v0.1.0/inventory-alignment.zip",
+      "sha256": "8ea62813aeb88d85001f54d91d8eceb011f5fb872bc764d5ea83e8e7ab92a2c1",
       "homepage": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment",
       "documentation": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/blob/main/inventory-alignment/README.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=0.9.0"
+        "speckit_version": ">=0.9.0",
+        "extensions": [
+          "speckit-inventory"
+        ]
       },
       "provides": {
         "templates": 1,
