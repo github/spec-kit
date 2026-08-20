@@ -10,6 +10,11 @@ from specify_cli.workflows.expressions import (
     evaluate_condition,
     format_condition_correction,
     _has_unbalanced_quote,
+    _has_unbalanced_bracket,
+    _has_incomplete_operand,
+    _strip_stray_delimiters,
+    _COMPARISON_OPERATORS,
+    format_condition_remediation,
 )
 from specify_cli.workflows.steps.do_while import DoWhileStep
 from specify_cli.workflows.steps.if_then import IfThenStep
@@ -299,8 +304,13 @@ def test_malformed_message_offers_no_paste_ready_correction(step_cls, condition)
 # instead. Both were previously advertised as paste-ready (Copilot review).
 UNFIXABLE_BY_WRAPPING = [
     ("   ", "no expression here to wrap"),
-    ("{{ inputs.name == 'abc", "Close the unbalanced quote"),
-    ("'unterminated", "Close the unbalanced quote"),
+    ("{{ inputs.name == 'abc", "quote opened in it is never closed"),
+    ("'unterminated", "quote opened in it is never closed"),
+    ("inputs.name ==", "missing an operand"),
+    ("inputs.count >", "missing an operand"),
+    ("inputs.ready and", "missing an operand"),
+    ("inputs.x | ", "missing an operand"),
+    ("inputs.f(", "brackets do not balance"),
 ]
 
 
@@ -353,3 +363,87 @@ def test_wrapping_an_open_quote_inverts_the_condition():
 )
 def test_unbalanced_quote_scan(text, unbalanced):
     assert _has_unbalanced_quote(text) is unbalanced
+
+
+# The property behind the case list above, stated once so a new malformed shape
+# is caught by the invariant rather than by adding another fixture row.
+OFFERED_CORRECTION_INPUTS = TRICKY_CONDITIONS + [
+    "inputs.count > 100",
+    'inputs.name == "zzz"',
+    "{{ inputs.count > 100",
+    "{{ true }} and {{ inputs.ready",
+    "inputs.a and inputs.b",
+    "inputs.tags | length > 0",
+]
+
+
+@pytest.mark.parametrize("condition", OFFERED_CORRECTION_INPUTS)
+def test_every_offered_correction_is_a_complete_expression(condition):
+    """Whatever is advertised as paste-ready must pass our own validators.
+
+    Both earlier rounds of this fix were partial because they enumerated broken
+    shapes -- blank, then unbalanced quote. This asserts the property instead: if
+    the remediation offers a correction at all, the wrapped form it hands back is
+    a single complete block that neither validator objects to.
+    """
+    advice = format_condition_remediation(condition)
+    assert advice.startswith("Wrap the expression: ")
+
+    suggested = yaml.safe_load(
+        "condition: " + advice.split("Wrap the expression: ", 1)[1].rstrip(".")
+    )["condition"]
+    assert condition_is_never_evaluated(suggested) is False
+    assert condition_has_malformed_expression_block(suggested) is False
+
+
+@pytest.mark.parametrize("condition,_reason", UNFIXABLE_BY_WRAPPING)
+def test_withheld_corrections_would_indeed_have_been_broken(condition, _reason):
+    """The other half: what is withheld really would not have survived wrapping.
+
+    Guards against the gate growing over-eager and refusing to help with input it
+    could have corrected.
+    """
+    core = _strip_stray_delimiters(condition).strip()
+    wrapped = "{{ " + core + " }}"
+    assert (
+        not core
+        or _has_unbalanced_quote(core)
+        or _has_unbalanced_bracket(core)
+        or _has_incomplete_operand(core)
+        or condition_is_never_evaluated(wrapped)
+        or condition_has_malformed_expression_block(wrapped)
+    )
+
+
+@pytest.mark.parametrize(
+    "text,unbalanced",
+    [
+        ("inputs.f(1)", False),
+        ("inputs.f(", True),
+        ("inputs.f)", True),
+        ("inputs.tags[0]", False),
+        ("inputs.text == '('", False),
+    ],
+)
+def test_unbalanced_bracket_scan(text, unbalanced):
+    assert _has_unbalanced_bracket(text) is unbalanced
+
+
+def test_incomplete_operand_reads_the_evaluator_operator_list():
+    """The check must not restate the operator table it is predicting."""
+    for op in _COMPARISON_OPERATORS:
+        assert _has_incomplete_operand("inputs.a" + op) is True
+        assert _has_incomplete_operand("inputs.a" + op + "inputs.b") is False
+
+
+def test_incomplete_operand_covers_every_operator_the_evaluator_splits_on():
+    """Hard-coded on purpose.
+
+    Parametrising over `_COMPARISON_OPERATORS` shrinks with the constant, so
+    dropping an operator from it would make that test pass vacuously -- the same
+    can't-fail-when-it-matters shape this module exists to reject. Listing the
+    operators here means removing one from the evaluator fails a test.
+    """
+    for op in ("!=", "==", ">=", "<=", ">", "<", " not in ", " in ", " and ", " or "):
+        assert _has_incomplete_operand("inputs.a" + op) is True, op
+        assert _has_incomplete_operand("inputs.a" + op + "inputs.b") is False, op

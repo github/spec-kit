@@ -474,6 +474,12 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
     )
 
 
+# Order matters -- multi-char operators first, so "!=" is not split as "!" + "=".
+# Shared with the remediation check so a validator cannot drift from what the
+# evaluator will actually split on.
+_COMPARISON_OPERATORS = ("!=", "==", ">=", "<=", ">", "<", " not in ", " in ")
+
+
 def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     """Evaluate a simple expression against the namespace.
 
@@ -533,7 +539,7 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     # Comparison operators (order matters — check multi-char ops first). Split at
     # the first top-level occurrence so an operator inside a quoted operand is
     # ignored.
-    for op in ("!=", "==", ">=", "<=", ">", "<", " not in ", " in "):
+    for op in _COMPARISON_OPERATORS:
         op_idx = _find_top_level(expr, op)
         if op_idx != -1:
             left = _evaluate_simple_expression(expr[:op_idx].strip(), namespace)
@@ -898,40 +904,88 @@ def _has_unbalanced_quote(text: str) -> bool:
     return quote is not None
 
 
+def _has_unbalanced_bracket(text: str) -> bool:
+    """True when a bracket opened outside a quoted operand is never closed."""
+    depth = 0
+    quote: str | None = None
+    for ch in text:
+        if quote is not None:
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+            if depth < 0:
+                return True
+    return depth != 0
+
+
+def _has_incomplete_operand(text: str) -> bool:
+    """True when a top-level operator in *text* is missing an operand.
+
+    Reads ``_COMPARISON_OPERATORS`` and the boolean keywords from the evaluator
+    rather than restating them, so the check cannot drift from what
+    ``_evaluate_simple_expression`` will actually split on.
+    """
+    for op in (" or ", " and ") + _COMPARISON_OPERATORS:
+        idx = _find_top_level(text, op)
+        if idx == -1:
+            continue
+        if not text[:idx].strip() or not text[idx + len(op):].strip():
+            return True
+    if _find_top_level(text, "|") != -1:
+        if any(not segment.strip() for segment in _split_top_level(text, "|")):
+            return True
+    return text in ("not", "or", "and") or text.endswith((" not", " or", " and"))
+
+
+def _wrapping_would_not_repair(core: str) -> str | None:
+    """Why wrapping *core* in ``{{ }}`` would not yield the expression intended.
+
+    ``None`` when it would. Each branch names something observable about the text
+    itself, deliberately not the interpolator path it will take: two earlier
+    versions of this message asserted an internal route -- the raw-close fallback --
+    and were wrong, because ``_is_single_expression`` accepts the wrapped form and
+    sends it down the typed fast path instead.
+    """
+    if not core:
+        return "there is no expression here to wrap"
+    if _has_unbalanced_quote(core):
+        return "the quote opened in it is never closed"
+    if _has_unbalanced_bracket(core):
+        return "its brackets do not balance"
+    if _has_incomplete_operand(core):
+        return "an operator in it is missing an operand"
+    return None
+
+
 def format_condition_remediation(condition: Any) -> str:
     """The advice sentence for a condition that is never evaluated.
 
-    ``format_condition_correction`` wraps whatever it is handed, which is the right
-    behaviour for a formatter but the wrong thing to *advertise* for two inputs it
-    cannot actually repair. Both were being offered as paste-ready corrections:
+    ``format_condition_correction`` wraps whatever it is handed, which is right for a
+    formatter but wrong to advertise as paste-ready when wrapping cannot repair the
+    input. Measured, each of these was being offered as the fix and each **inverts**
+    the condition instead:
 
-    * a blank core -- ``condition: "   "`` corrected to ``"{{ }}"``, which evaluates
-      to the empty string. The author is told to paste something that flips an
-      always-true condition to always-false, which is a different bug rather than a
-      fix.
-    * an unbalanced quote -- ``{{ inputs.name == 'abc`` corrected to
-      ``"{{ inputs.name == 'abc }}"``. The quote is still open, so the raw-close
-      fallback evaluates a truncated comparison and yields the string ``"False"``,
-      which ``evaluate_condition`` then reads as the ``false`` keyword. The author
-      pastes the correction and the condition flips from always-true to
-      always-false -- inverted, not repaired.
+        "   "                    -> "{{ }}"                      True  -> False
+        {{ inputs.name == 'abc   -> "{{ inputs.name == 'abc }}"  True  -> False
+        inputs.name ==           -> "{{ inputs.name == }}"       True  -> False
 
-    Naming what is wrong beats handing back something that looks authoritative and
-    is not -- the same call already made for
-    ``condition_has_malformed_expression_block``, which offers no correction at all.
+    The author is told the condition is always true, pastes the suggestion, and now
+    has an always-false one. Naming the fault beats handing back something that looks
+    authoritative and is not -- the same call already made for
+    ``condition_has_malformed_expression_block``, which offers no suggestion at all.
     """
     core = _strip_stray_delimiters(str(condition)).strip()
-    if not core:
-        return (
-            "There is no expression here to wrap: use the literal true or false, "
-            "since an empty '{{ }}' block evaluates to the empty string and would "
-            "silently invert the condition rather than repair it."
-        )
-    if _has_unbalanced_quote(core):
-        return (
-            "Close the unbalanced quote first: wrapping it as written leaves the "
-            "quote open, so the raw-close fallback evaluates a truncated comparison "
-            "rather than the one written, and its result can silently invert the "
-            "condition instead of repairing it."
-        )
-    return "Wrap the expression: " + format_condition_correction(condition) + "."
+    reason = _wrapping_would_not_repair(core)
+    if reason is None:
+        return "Wrap the expression: " + format_condition_correction(condition) + "."
+    return (
+        f"No correction is offered because {reason}: wrapping it as written would "
+        "produce a different expression from the one intended, and its result can "
+        "silently invert the condition rather than repair it. Complete the "
+        "expression, or use the literal true or false."
+    )
