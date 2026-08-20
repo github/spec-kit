@@ -175,6 +175,15 @@ def _create_extension_dir_with_aliases(
     return ext_dir
 
 
+def _create_cross_extension_with_suffix_alias(temp_dir: Path) -> Path:
+    """Create an installed extension with a file-like command alias."""
+    return _create_extension_dir_with_aliases(
+        temp_dir,
+        "other-ext",
+        [("run", ["speckit.other.export.json"])],
+    )
+
+
 def _create_unicode_extension_dir(temp_dir: Path, ext_id: str = "uni-ext") -> Path:
     """Create an extension whose command description contains non-ASCII characters."""
     ext_dir = temp_dir / ext_id
@@ -1220,6 +1229,9 @@ class TestExtensionSkillRegistration:
             "---\n\n"
             "Literal slash form: /speckit.foo.bar --flag value\n"
             "Valid suffix form: /speckit.export.json\n"
+            "Core command form: /speckit.tasks\n"
+            "Cross-extension command form: /speckit.other-ext.run\n"
+            "Cross-extension suffix form: /speckit.other.export.json\n"
             "Path continuation form: /speckit.foo.bar/scripts/run.sh\n"
             "Sentence punctuation form: Run /speckit.foo.bar.\n"
             "Native slash form: /speckit-foo-bar\n"
@@ -1227,10 +1239,21 @@ class TestExtensionSkillRegistration:
             "Native skill form: /skill:speckit-foo-bar\n"
             "Literal bare form: speckit.foo.bar\n"
             "Path-like form: https://example.com/speckit.foo.bar\n"
+            "Relative path form: ./speckit.foo.bar\n"
+            "Query URL form: https://example.test/redirect?next=/speckit.foo.bar\n"
+            "Fragment URL form: https://example.test/redirect#next=/speckit.foo.bar\n"
+            "Relative query URL form: /redirect?next=/speckit.foo.bar\n"
+            "Relative fragment URL form: /redirect#next=/speckit.foo.bar\n"
+            "Whitespace prose form: What? /speckit.foo.bar\n"
             "File-like form: /speckit.foo.bar.md\n"
         )
 
         manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_cross_extension_with_suffix_alias(temp_dir),
+            "0.1.0",
+            register_commands=False,
+        )
         # Exercise normal extension-add registration. Skills-native agents
         # write their SKILL.md through CommandRegistrar before the later
         # skill mirror reaches its existing-file guard.
@@ -1238,10 +1261,26 @@ class TestExtensionSkillRegistration:
 
         content = (skills_dir / "speckit-literal-ref-ext-run" / "SKILL.md").read_text()
         expected_json_invocation = expected_invocation.replace("foo-bar", "export-json")
+        expected_core_invocation = expected_invocation.replace("foo-bar", "tasks")
+        expected_cross_extension_invocation = expected_invocation.replace(
+            "foo-bar", "other-ext-run"
+        )
+        expected_cross_extension_suffix_invocation = expected_invocation.replace(
+            "foo-bar", "other-export-json"
+        )
         assert f"Literal slash form: {expected_invocation} --flag value" in content
         assert "Literal slash form: /speckit.foo.bar --flag value" not in content
         assert f"Valid suffix form: {expected_json_invocation}" in content
         assert "Valid suffix form: /speckit.export.json" not in content
+        assert f"Core command form: {expected_core_invocation}" in content
+        assert (
+            f"Cross-extension command form: {expected_cross_extension_invocation}"
+            in content
+        )
+        assert (
+            "Cross-extension suffix form: "
+            f"{expected_cross_extension_suffix_invocation}" in content
+        )
         assert "Path continuation form: /speckit.foo.bar/scripts/run.sh" in content
         assert f"Sentence punctuation form: Run {expected_invocation}." in content
         assert "Native slash form: /speckit-foo-bar" in content
@@ -1249,6 +1288,12 @@ class TestExtensionSkillRegistration:
         assert "Native skill form: /skill:speckit-foo-bar" in content
         assert "speckit.foo.bar" in content
         assert "https://example.com/speckit.foo.bar" in content
+        assert "./speckit.foo.bar" in content
+        assert "https://example.test/redirect?next=/speckit.foo.bar" in content
+        assert "https://example.test/redirect#next=/speckit.foo.bar" in content
+        assert "Relative query URL form: /redirect?next=/speckit.foo.bar" in content
+        assert "Relative fragment URL form: /redirect#next=/speckit.foo.bar" in content
+        assert f"Whitespace prose form: What? {expected_invocation}" in content
         assert "/speckit.foo.bar.md" in content
 
     def test_skill_registration_rewrites_multi_segment_alias_with_punctuation(
@@ -1289,9 +1334,22 @@ class TestExtensionSkillRegistration:
             "description: Run command\n"
             "---\n\n"
             "Sentence punctuation form: Run /speckit.foo.bar.baz.\n"
+            "Core command form: /speckit.tasks\n"
+            "Cross-extension command form: /speckit.other-ext.run\n"
+            "Cross-extension suffix form: /speckit.other.export.json\n"
+            "Query URL form: https://example.test/redirect?next=/speckit.foo.bar\n"
+            "Fragment URL form: https://example.test/redirect#next=/speckit.foo.bar\n"
+            "Relative query URL form: /redirect?next=/speckit.foo.bar\n"
+            "Relative fragment URL form: /redirect#next=/speckit.foo.bar\n"
+            "Whitespace prose form: What? /speckit.foo.bar\n"
         )
 
         manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_cross_extension_with_suffix_alias(temp_dir),
+            "0.1.0",
+            register_commands=False,
+        )
         manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
         content = (
@@ -1299,6 +1357,14 @@ class TestExtensionSkillRegistration:
         ).read_text()
         assert "Sentence punctuation form: Run /speckit-foo-bar-baz." in content
         assert "/speckit.foo.bar.baz." not in content
+        assert "Core command form: /speckit-tasks" in content
+        assert "Cross-extension command form: /speckit-other-ext-run" in content
+        assert "Cross-extension suffix form: /speckit-other-export-json" in content
+        assert "https://example.test/redirect?next=/speckit.foo.bar" in content
+        assert "https://example.test/redirect#next=/speckit.foo.bar" in content
+        assert "Relative query URL form: /redirect?next=/speckit.foo.bar" in content
+        assert "Relative fragment URL form: /redirect#next=/speckit.foo.bar" in content
+        assert "Whitespace prose form: What? /speckit-foo-bar" in content
 
     def test_missing_command_file_skipped(self, skills_project, temp_dir):
         """Commands with missing source files should be skipped gracefully."""
@@ -3109,6 +3175,12 @@ class TestRegisterExtensionSkillsForceFlag:
         _create_init_options(project_dir, ai="claude", ai_skills=True)
         skills_dir = _create_skills_dir(project_dir, ai="claude")
         ext_dir = _create_extension_dir(temp_dir)
+        (ext_dir / "commands" / "hello.md").write_text(
+            "---\n"
+            "description: Test hello command\n"
+            "---\n\n"
+            "Run this to say hello. Next: /speckit.tasks\n"
+        )
 
         manager = ExtensionManager(project_dir)
         # Install extension so it is in the registry
@@ -3126,6 +3198,7 @@ class TestRegisterExtensionSkillsForceFlag:
             "After register_enabled_extensions_for_agent(force=True), the SKILL.md "
             "must contain the extension body, not just the core-template stub."
         )
+        assert "Next: /speckit-tasks" in content
 
     def test_force_true_with_preexisting_dir_but_no_skill_file(
         self, project_dir, temp_dir

@@ -1010,6 +1010,53 @@ class ExtensionRegistry:
         )
 
 
+def _manifest_command_names(manifest: ExtensionManifest) -> set[str]:
+    """Return validated primary command names and aliases from one manifest."""
+    names: set[str] = set()
+    for command in manifest.commands:
+        if not isinstance(command, dict):
+            continue
+        name = command.get("name")
+        if isinstance(name, str):
+            names.add(name)
+        aliases = command.get("aliases", [])
+        if isinstance(aliases, list):
+            names.update(alias for alias in aliases if isinstance(alias, str))
+    return names
+
+
+def _available_extension_skill_command_names(
+    manifest: ExtensionManifest, extensions_dir: Path
+) -> set[str]:
+    """Return known callable names for extension skill compatibility rendering.
+
+    The current manifest is not in the registry during a normal add, so it is
+    included explicitly. Core names and validated manifests for all registered
+    extensions make suffix-shaped cross-extension commands distinguishable from
+    file references. A corrupt registry is not trusted for discovery.
+    """
+    names = {f"speckit.{name}" for name in CORE_COMMAND_NAMES}
+    names.update(_manifest_command_names(manifest))
+
+    registry = ExtensionRegistry(extensions_dir)
+    if registry.is_corrupt():
+        return names
+
+    for extension_id in registry.list():
+        if not isinstance(extension_id, str) or not VALID_EXTENSION_ARTIFACT_NAME_PATTERN.fullmatch(
+            extension_id
+        ):
+            continue
+        try:
+            installed_manifest = ExtensionManifest(
+                extensions_dir / extension_id / "extension.yml"
+            )
+        except ValidationError:
+            continue
+        names.update(_manifest_command_names(installed_manifest))
+    return names
+
+
 class ExtensionManager:
     """Manages extension lifecycle: installation, removal, updates."""
 
@@ -1605,37 +1652,9 @@ class ExtensionManager:
                 r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_]*)__", _replacement, body
             )
 
-        def _normalize_literal_slash_command_refs(body: str) -> str:
-            """Normalize literal /speckit.foo refs in generated skill bodies."""
-
-            known_command_names = {
-                cmd["name"]
-                for cmd in manifest.commands
-                if isinstance(cmd.get("name"), str)
-            }
-            for cmd in manifest.commands:
-                aliases = cmd.get("aliases", [])
-                if not isinstance(aliases, list):
-                    continue
-                known_command_names.update(
-                    alias for alias in aliases if isinstance(alias, str)
-                )
-
-            def _replacement(match: re.Match[str]) -> str:
-                command_name = match.group("command")
-                if command_name not in known_command_names:
-                    return match.group(0)
-                return _render_skill_command_invocation(command_name)
-
-            return re.sub(
-                (
-                    r"(?<![\w$:/-])"
-                    r"/(?P<command>speckit\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+)"
-                    r"(?!/)"
-                ),
-                _replacement,
-                body,
-            )
+        known_command_names = _available_extension_skill_command_names(
+            manifest, self.extensions_dir
+        )
 
         for cmd_info in manifest.commands:
             cmd_name = cmd_info["name"]
@@ -1716,7 +1735,9 @@ class ExtensionManager:
                 selected_ai, frontmatter, body, self.project_root, extension_id=manifest.id
             )
             body = _resolve_command_ref_tokens(body)
-            body = _normalize_literal_slash_command_refs(body)
+            body = registrar.normalize_literal_extension_skill_command_refs(
+                body, _render_skill_command_invocation, known_command_names
+            )
 
             original_desc = frontmatter.get("description", "")
             description = original_desc or f"Extension command: {cmd_name}"
@@ -3568,6 +3589,9 @@ class CommandRegistrar:
         if agent_name not in self.AGENT_CONFIGS:
             raise ExtensionError(f"Unsupported agent: {agent_name}")
         context_note = f"\n<!-- Extension: {manifest.id} -->\n<!-- Config: .specify/extensions/{manifest.id}/ -->\n"
+        known_command_names = _available_extension_skill_command_names(
+            manifest, project_root / ".specify" / "extensions"
+        )
         return self._registrar.register_commands(
             agent_name,
             manifest.commands,
@@ -3577,6 +3601,7 @@ class CommandRegistrar:
             context_note=context_note,
             link_outputs=link_outputs,
             extension_id=manifest.id,
+            known_extension_command_names=known_command_names,
         )
 
     def register_commands_for_all_agents(
@@ -3590,6 +3615,9 @@ class CommandRegistrar:
     ) -> Dict[str, List[str]]:
         """Register extension commands for all detected agents."""
         context_note = f"\n<!-- Extension: {manifest.id} -->\n<!-- Config: .specify/extensions/{manifest.id}/ -->\n"
+        known_command_names = _available_extension_skill_command_names(
+            manifest, project_root / ".specify" / "extensions"
+        )
         return self._registrar.register_commands_for_all_agents(
             manifest.commands,
             manifest.id,
@@ -3600,6 +3628,7 @@ class CommandRegistrar:
             create_missing_active_skills_dir=create_missing_active_skills_dir,
             only_agent=only_agent,
             extension_id=manifest.id,
+            known_extension_command_names=known_command_names,
         )
 
     def unregister_commands(

@@ -1746,11 +1746,15 @@ class TestExtensionManager:
             create_missing_active_skills_dir=False,
             extension_id=None,
             only_agent=None,
+            known_extension_command_names=None,
         ):
             captured["create_missing_active_skills_dir"] = (
                 create_missing_active_skills_dir
             )
             captured["extension_id"] = extension_id
+            captured["known_extension_command_names"] = (
+                known_extension_command_names
+            )
             return {}
 
         monkeypatch.setattr(
@@ -1765,6 +1769,10 @@ class TestExtensionManager:
 
         assert captured["create_missing_active_skills_dir"] is False
         assert captured["extension_id"] == manifest.id
+        assert (
+            manifest.commands[0]["name"]
+            in captured["known_extension_command_names"]
+        )
 
     def test_install_duplicate(self, extension_dir, project_dir):
         """Test installing already installed extension."""
