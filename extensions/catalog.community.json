@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-19T00:00:00Z",
+  "updated_at": "2026-08-20T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -19,7 +19,13 @@
       "effect": "read-write",
       "requires": {
         "speckit_version": ">=0.13.0,<0.16.0",
-        "tools": [{ "name": "adr", "version": ">=0.3.0", "required": true }]
+        "tools": [
+          {
+            "name": "adr",
+            "version": ">=0.3.0",
+            "required": true
+          }
+        ]
       },
       "provides": {
         "commands": 3,
@@ -338,8 +344,15 @@
       "requires": {
         "speckit_version": ">=0.1.0",
         "tools": [
-          { "name": "python", "version": ">=3.11", "required": true },
-          { "name": "uv", "required": true }
+          {
+            "name": "python",
+            "version": ">=3.11",
+            "required": true
+          },
+          {
+            "name": "uv",
+            "required": true
+          }
         ]
       },
       "provides": {
@@ -514,8 +527,15 @@
       "requires": {
         "speckit_version": ">=0.1.0",
         "tools": [
-          { "name": "python", "version": ">=3.11", "required": true },
-          { "name": "uv", "required": true }
+          {
+            "name": "python",
+            "version": ">=3.11",
+            "required": true
+          },
+          {
+            "name": "uv",
+            "required": true
+          }
         ]
       },
       "provides": {
@@ -687,8 +707,14 @@
       "requires": {
         "speckit_version": ">=0.10.0",
         "tools": [
-          { "name": "bash", "required": false },
-          { "name": "git", "required": false }
+          {
+            "name": "bash",
+            "required": false
+          },
+          {
+            "name": "git",
+            "required": false
+          }
         ]
       },
       "provides": {
@@ -967,7 +993,12 @@
       "effect": "read-write",
       "requires": {
         "speckit_version": ">=0.11.9",
-        "tools": [{ "name": "git", "required": false }]
+        "tools": [
+          {
+            "name": "git",
+            "required": false
+          }
+        ]
       },
       "provides": {
         "commands": 5,
@@ -1122,40 +1153,42 @@
     "companion": {
       "name": "SpecKit Companion",
       "id": "companion",
-      "description": "Live spec-driven progress for SpecKit Companion — lifecycle capture, status, resume, and composable commands you can customize with hooks and recipes.",
+      "description": "Live spec-driven progress for SpecKit Companion — lifecycle capture, status, resume, living specs, and composable commands you can customize with hooks and recipes.",
       "author": "alfredoperez",
-      "version": "0.11.0",
-      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.11.0/companion-0.11.0.zip",
+      "version": "0.20.2",
+      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.20.2/companion-0.20.2.zip",
       "repository": "https://github.com/alfredoperez/speckit-companion",
       "homepage": "https://github.com/alfredoperez/speckit-companion/tree/main/speckit-extension",
       "documentation": "https://github.com/alfredoperez/speckit-companion/blob/main/speckit-extension/README.md",
       "changelog": "https://github.com/alfredoperez/speckit-companion/blob/main/speckit-extension/CHANGELOG.md",
       "license": "MIT",
-      "category": "visibility",
+      "category": "process",
       "effect": "read-write",
       "requires": {
         "speckit_version": ">=0.9.5",
         "tools": [
-          { "name": "python3", "required": false }
+          {
+            "name": "python3",
+            "required": false
+          }
         ]
       },
       "provides": {
-        "commands": 13,
+        "commands": 18,
         "hooks": 4
       },
       "tags": [
         "vscode",
         "progress",
-        "status",
-        "resume",
-        "configurable",
-        "extensible"
+        "living-specs",
+        "drift",
+        "hooks"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-11T00:00:00Z",
-      "updated_at": "2026-06-24T00:00:00Z"
+      "updated_at": "2026-08-20T00:00:00Z"
     },
     "conduct": {
       "name": "Conduct Extension",
@@ -1671,11 +1704,26 @@
       "requires": {
         "speckit_version": ">=0.1.0",
         "tools": [
-          { "name": "git", "required": true },
-          { "name": "bash", "required": false },
-          { "name": "curl", "required": false },
-          { "name": "jq", "required": false },
-          { "name": "pwsh", "required": false }
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "bash",
+            "required": false
+          },
+          {
+            "name": "curl",
+            "required": false
+          },
+          {
+            "name": "jq",
+            "required": false
+          },
+          {
+            "name": "pwsh",
+            "required": false
+          }
         ]
       },
       "provides": {
@@ -1712,7 +1760,11 @@
       "requires": {
         "speckit_version": ">=0.1.0",
         "tools": [
-          { "name": "python3", "version": ">=3.8", "required": true }
+          {
+            "name": "python3",
+            "version": ">=3.8",
+            "required": true
+          }
         ]
       },
       "provides": {
@@ -2018,7 +2070,12 @@
       "effect": "read-write",
       "requires": {
         "speckit_version": ">=0.16.2",
-        "tools": [{ "name": "bash", "required": true }]
+        "tools": [
+          {
+            "name": "bash",
+            "required": true
+          }
+        ]
       },
       "provides": {
         "commands": 1,
@@ -2304,12 +2361,31 @@
       "requires": {
         "speckit_version": ">=0.1.0",
         "tools": [
-          { "name": "bash", "version": ">=4.4", "required": true },
-          { "name": "git", "required": true },
-          { "name": "curl", "required": true },
-          { "name": "jq", "required": true },
-          { "name": "gitleaks", "required": false },
-          { "name": "trufflehog", "required": false }
+          {
+            "name": "bash",
+            "version": ">=4.4",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "curl",
+            "required": true
+          },
+          {
+            "name": "jq",
+            "required": true
+          },
+          {
+            "name": "gitleaks",
+            "required": false
+          },
+          {
+            "name": "trufflehog",
+            "required": false
+          }
         ]
       },
       "provides": {
@@ -2447,7 +2523,12 @@
       "effect": "read-write",
       "requires": {
         "speckit_version": ">=0.13.0,<1.0.0",
-        "tools": [{ "name": "linear-mcp", "required": true }]
+        "tools": [
+          {
+            "name": "linear-mcp",
+            "required": true
+          }
+        ]
       },
       "provides": {
         "commands": 5,
@@ -2868,7 +2949,10 @@
       "requires": {
         "speckit_version": ">=0.2.0",
         "tools": [
-          { "name": "memsearch", "required": false }
+          {
+            "name": "memsearch",
+            "required": false
+          }
         ]
       },
       "provides": {
@@ -4386,8 +4470,15 @@
       "requires": {
         "speckit_version": ">=0.14.0",
         "tools": [
-          { "name": "bash", "required": true },
-          { "name": "python3", "version": ">=3.8", "required": true }
+          {
+            "name": "bash",
+            "required": true
+          },
+          {
+            "name": "python3",
+            "version": ">=3.8",
+            "required": true
+          }
         ]
       },
       "provides": {
@@ -4423,7 +4514,13 @@
       "effect": "read-only",
       "requires": {
         "speckit_version": ">=0.13.0",
-        "tools": [{ "name": "specjudge", "version": ">=0.5.0", "required": true }]
+        "tools": [
+          {
+            "name": "specjudge",
+            "version": ">=0.5.0",
+            "required": true
+          }
+        ]
       },
       "provides": {
         "commands": 1,
@@ -4830,8 +4927,14 @@
       "requires": {
         "speckit_version": ">=0.2.0",
         "tools": [
-          { "name": "gh", "required": true },
-          { "name": "python3", "required": true }
+          {
+            "name": "gh",
+            "required": true
+          },
+          {
+            "name": "python3",
+            "required": true
+          }
         ]
       },
       "provides": {
@@ -5200,11 +5303,27 @@
       "requires": {
         "speckit_version": ">=0.10.0",
         "tools": [
-          { "name": "rtk", "required": false },
-          { "name": "headroom", "required": false },
-          { "name": "token-router", "required": false },
-          { "name": "ollama", "required": false },
-          { "name": "python", "version": ">=3.10", "required": false }
+          {
+            "name": "rtk",
+            "required": false
+          },
+          {
+            "name": "headroom",
+            "required": false
+          },
+          {
+            "name": "token-router",
+            "required": false
+          },
+          {
+            "name": "ollama",
+            "required": false
+          },
+          {
+            "name": "python",
+            "version": ">=3.10",
+            "required": false
+          }
         ]
       },
       "provides": {
