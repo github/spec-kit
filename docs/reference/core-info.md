@@ -43,18 +43,18 @@ Kind-specific fields:
 ### Example
 
 ```bash
-specify core info --json | jq '.commands[] | select(.name == "plan")'
+specify core info --json | jq '.commands[] | select(.name == "speckit.plan")'
 ```
 
 ```json
 {
-  "id": "core:_:command:plan",
-  "name": "plan",
+  "id": "core:_:command:speckit.plan",
+  "name": "speckit.plan",
   "description": "Execute the implementation planning workflow using the plan template to generate design artifacts.",
   "sourcePath": "templates/commands/plan.md",
-  "artifact": "plan.md",
+  "artifact": null,
   "optional": false,
-  "handoffs": ["tasks"]
+  "handoffs": ["speckit.tasks", "speckit.checklist"]
 }
 ```
 
