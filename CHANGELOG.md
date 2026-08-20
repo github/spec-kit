@@ -2,6 +2,8 @@
 
 <!-- insert new changelog below this comment -->
 
+- feat(core): add `specify core info --json` command that emits the baked-in commands, templates, and scripts as a deterministic JSON inventory (#4215)
+
 ## [0.16.5] - 2026-08-19
 
 ### Changed

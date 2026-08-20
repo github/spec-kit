@@ -29,6 +29,8 @@
       href: reference/overview.md
     - name: Core Commands
       href: reference/core.md
+    - name: Core Inventory
+      href: reference/core-info.md
     - name: Integrations
       href: reference/integrations.md
     - name: Extensions
