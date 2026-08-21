@@ -381,6 +381,14 @@ class PresetManifest:
                 f"got {type(requires['speckit_version']).__name__}"
             )
 
+        # Validate the optional extension dependency list. A preset that
+        # overrides commands calling into an extension is inert without it, and
+        # until now the only place that could be said was the README -- see
+        # issue #4231. Absent means "no dependencies", so every existing preset
+        # stays valid.
+        if "extensions" in requires:
+            self._validate_requires_extensions(requires["extensions"])
+
         # Validate provides section
         provides = self.data["provides"]
         if "templates" not in provides:
@@ -524,10 +532,115 @@ class PresetManifest:
         """Get preset author."""
         return self.data["preset"].get("author", "")
 
+    @staticmethod
+    def _validate_requires_extensions(declared: Any) -> None:
+        """Validate the optional ``requires.extensions`` list.
+
+        Accepts either a bare extension id or a mapping carrying an optional
+        version specifier and an optional ``required`` flag:
+
+        .. code-block:: yaml
+
+            requires:
+              extensions:
+                - speckit-inventory
+                - id: other-ext
+                  version: ">=1.2.0"
+                  required: false
+
+        Raises:
+            PresetValidationError: If the list or any entry is malformed.
+        """
+        if not isinstance(declared, list):
+            raise PresetValidationError(
+                "Invalid requires.extensions: expected a list, "
+                f"got {type(declared).__name__}"
+            )
+
+        for index, entry in enumerate(declared):
+            label = f"requires.extensions[{index}]"
+
+            if isinstance(entry, str):
+                entry = {"id": entry}
+            elif not isinstance(entry, dict):
+                raise PresetValidationError(
+                    f"Invalid {label}: expected a string or a mapping, "
+                    f"got {type(entry).__name__}"
+                )
+
+            if "id" not in entry:
+                raise PresetValidationError(f"Missing {label}.id")
+            extension_id = entry["id"]
+            if not isinstance(extension_id, str):
+                raise PresetValidationError(
+                    f"Invalid {label}.id: expected a string, "
+                    f"got {type(extension_id).__name__}"
+                )
+            # Same id shape the extension loader enforces, so a dependency can
+            # never name something that could not be installed in the first place.
+            if not re.match(r'^[a-z0-9-]+$', extension_id):
+                raise PresetValidationError(
+                    f"Invalid {label}.id '{extension_id}': "
+                    "must be lowercase alphanumeric with hyphens only"
+                )
+
+            if "version" in entry:
+                constraint = entry["version"]
+                # Mirrors the requires.speckit_version reasoning: a non-string
+                # escapes InvalidSpecifier two ways -- scalars raise TypeError
+                # from the constructor, and a list/dict is iterable so it
+                # constructs and only fails later inside .contains().
+                if not isinstance(constraint, str) or not constraint.strip():
+                    raise PresetValidationError(
+                        f"Invalid {label}.version: expected a non-empty string, "
+                        f"got {type(constraint).__name__}"
+                    )
+                try:
+                    SpecifierSet(constraint)
+                except InvalidSpecifier:
+                    raise PresetValidationError(
+                        f"Invalid {label}.version '{constraint}': "
+                        "not a valid version specifier"
+                    )
+
+            if "required" in entry and not isinstance(entry["required"], bool):
+                raise PresetValidationError(
+                    f"Invalid {label}.required: expected a boolean, "
+                    f"got {type(entry['required']).__name__}"
+                )
+
     @property
     def requires_speckit_version(self) -> str:
         """Get required spec-kit version range."""
         return self.data["requires"]["speckit_version"]
+
+    @property
+    def requires_extensions(self) -> List[Dict[str, Any]]:
+        """Get declared extension dependencies, normalized to mappings.
+
+        Returns:
+            One entry per dependency with ``id``, ``version`` (``None`` when
+            unconstrained), and ``required`` (defaulting to ``True``). Empty
+            when the manifest declares no dependencies.
+        """
+        declared = self.data["requires"].get("extensions")
+        if not isinstance(declared, list):
+            return []
+
+        normalized: List[Dict[str, Any]] = []
+        for entry in declared:
+            if isinstance(entry, str):
+                entry = {"id": entry}
+            if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
+                continue
+            normalized.append(
+                {
+                    "id": entry["id"],
+                    "version": entry.get("version"),
+                    "required": entry.get("required", True),
+                }
+            )
+        return normalized
 
     @property
     def templates(self) -> List[Dict[str, Any]]:
@@ -840,6 +953,65 @@ class PresetManager:
             )
 
         return True
+
+    def find_unmet_extension_dependencies(
+        self,
+        manifest: PresetManifest
+    ) -> List[Dict[str, Any]]:
+        """Find declared extension dependencies that are not satisfied.
+
+        Reports rather than raises. A preset whose overrides call into an
+        extension is written to degrade safely -- without the extension the
+        core workflow still runs -- so a missing dependency is a warning, not
+        an install failure. See issue #4231.
+
+        Args:
+            manifest: Preset manifest to inspect
+
+        Returns:
+            One entry per unsatisfied dependency, each with ``id``, the
+            requested ``version`` specifier (``None`` when unconstrained), the
+            ``installed`` version (``None`` when absent), and a ``reason`` of
+            either ``"missing"`` or ``"version"``. Optional dependencies
+            (``required: false``) are never reported.
+        """
+        # Defense in depth, mirroring check_compatibility(): this method is
+        # public and also reachable with a hand-built manifest object that
+        # predates this field. A manifest without it declares nothing.
+        candidates = getattr(manifest, "requires_extensions", None)
+        if not isinstance(candidates, list):
+            return []
+
+        declared = [
+            dep for dep in candidates
+            if isinstance(dep, dict) and dep.get("required", True)
+        ]
+        if not declared:
+            return []
+
+        registry = ExtensionRegistry(self.project_root / ".specify" / "extensions")
+        unmet: List[Dict[str, Any]] = []
+
+        for dep in declared:
+            metadata = registry.get(dep["id"])
+            if metadata is None:
+                unmet.append({**dep, "installed": None, "reason": "missing"})
+                continue
+
+            constraint = dep["version"]
+            if not constraint:
+                continue
+
+            installed = metadata.get("version")
+            if not isinstance(installed, str):
+                # A registry entry without a usable version cannot be compared.
+                # Treat it as satisfied rather than inventing a failure, since
+                # the extension is demonstrably installed.
+                continue
+            if not version_satisfies(installed, constraint):
+                unmet.append({**dep, "installed": installed, "reason": "version"})
+
+        return unmet
 
     def _register_commands(
         self,
