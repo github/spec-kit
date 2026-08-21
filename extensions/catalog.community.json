@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-20T00:00:00Z",
+  "updated_at": "2026-08-21T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -1326,6 +1326,40 @@
       "stars": 0,
       "created_at": "2026-07-13T00:00:00Z",
       "updated_at": "2026-07-13T00:00:00Z"
+    },
+    "cosmosdb": {
+      "name": "Azure Cosmos DB",
+      "id": "cosmosdb",
+      "description": "Best-practice Azure Cosmos DB code generation and review for any AI coding agent",
+      "author": "Theo van Kraay (maintained on behalf of the Azure Cosmos DB team; hosted in the AzureCosmosDB org)",
+      "version": "0.1.0",
+      "download_url": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb",
+      "homepage": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb",
+      "documentation": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb/blob/main/README.md",
+      "changelog": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "code",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 53,
+        "hooks": 2
+      },
+      "tags": [
+        "azure",
+        "cosmosdb",
+        "database",
+        "nosql",
+        "recommend-coding"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-21T00:00:00Z",
+      "updated_at": "2026-08-21T00:00:00Z"
     },
     "cost": {
       "name": "Cost Tracker",
