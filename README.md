@@ -20,6 +20,15 @@
     <a href="./README.zh-CN.md">简体中文</a>
 </p>
 
+> [!NOTE]
+> **One year of Spec Kit — and 1.0.0**
+>
+> One year after the first commit, Spec Kit has reached [1.0.0](https://github.com/github/spec-kit/releases/tag/v1.0.0) — not because the work is finished or its shape is frozen, but because the project has grown into something coherent, useful, and shaped by far more people than those who started it.
+>
+> The lead maintainer's personal anniversary post, [*Spec Kit Turns One — and Ships 1.0.0*](https://www.manorrock.com/blog/2026/08/21/spec_kit_turns_one.html), defines what 1.0.0 actually means for the project: **it is now just a number**. As agents make adapting to change dramatically cheaper, the value moves from stability to adaptability.
+>
+> To everyone who has used Spec Kit, challenged its assumptions, reported a problem, contributed code or documentation, created an extension or preset, shared an idea, or helped someone else get started: **thank you**. This milestone belongs to the community that carried the project through its first year and continues to shape where it goes next.
+
 ---
 
 ## Table of Contents
