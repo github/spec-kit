@@ -59,8 +59,10 @@ def _warn_unmet_extension_dependencies(manager, manifest) -> None:
         extension_id = _escape_markup(dep["id"])
         reason = dep["reason"]
         # The remediation has to match the reason. `extension add` refuses an
-        # already-installed extension without --force, so suggesting it for a
-        # disabled or out-of-date one would hand the user a command that fails.
+        # already-installed extension without --force, and `extension update`
+        # only moves forward to the catalog release. A general PEP 440
+        # constraint may require an exact version, an upper bound, or a
+        # downgrade, so do not promise that update will satisfy it.
         if reason == "missing":
             console.print(f"    [yellow]{extension_id}[/yellow] is not installed")
             remedy = f"specify extension add {extension_id}"
@@ -73,7 +75,10 @@ def _warn_unmet_extension_dependencies(manager, manifest) -> None:
                 f"{_escape_markup(dep['installed'])} does not satisfy "
                 f"{_escape_markup(dep['version'])}"
             )
-            remedy = f"specify extension update {extension_id}"
+            remedy = (
+                "install a release of "
+                f"{extension_id} satisfying {_escape_markup(dep['version'])}"
+            )
         console.print(f"      Fix with: {remedy}")
     console.print()
     console.print(
