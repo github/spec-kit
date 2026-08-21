@@ -49,6 +49,8 @@ Spec-Driven Development **flips the script** on traditional software development
 
 ### SDD Quickstart
 
+Replace `vX.Y.Z` with the [latest release tag](https://github.com/github/spec-kit/releases), keeping the leading `v`.
+
 ```bash
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
 specify init my-project --integration copilot
@@ -73,6 +75,8 @@ Bug fixes are risky when an agent jumps straight from a report to a patch withou
 
 ### Bug Fix Quickstart
 
+Replace `vX.Y.Z` with the [latest release tag](https://github.com/github/spec-kit/releases), keeping the leading `v`.
+
 ```bash
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
 specify init my-project --integration copilot
@@ -91,6 +95,8 @@ Launch your coding agent in the project directory, then:
 Good ideas deserve evidence before commitment, whether or not they become software. The bundled, opt-in assess extension turns a raw idea into a documented **go / needs-clarification / kill** decision through an independent **intake → research → define → shape → decide** workflow.
 
 ### Idea Assessment Quickstart
+
+Replace `vX.Y.Z` with the [latest release tag](https://github.com/github/spec-kit/releases), keeping the leading `v`.
 
 ```bash
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
