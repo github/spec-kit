@@ -1158,7 +1158,7 @@ class TestPresetExtensionDependencies:
     """Test find_unmet_extension_dependencies (issue #4231)."""
 
     @staticmethod
-    def _install_extension(project_dir, extension_id, version):
+    def _install_extension(project_dir, extension_id, version, enabled=True):
         """Register an installed extension the way the extension installer does."""
         extensions_dir = project_dir / ".specify" / "extensions"
         extensions_dir.mkdir(parents=True, exist_ok=True)
@@ -1166,7 +1166,7 @@ class TestPresetExtensionDependencies:
         data = {"schema_version": "1.0", "extensions": {}}
         if registry_path.exists():
             data = json.loads(registry_path.read_text(encoding="utf-8"))
-        data["extensions"][extension_id] = {"version": version, "enabled": True}
+        data["extensions"][extension_id] = {"version": version, "enabled": enabled}
         registry_path.write_text(json.dumps(data), encoding="utf-8")
 
     @staticmethod
@@ -1278,19 +1278,60 @@ class TestPresetExtensionDependencies:
             manifest
         ) == []
 
+    def test_disabled_dependency_is_reported(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A disabled extension contributes nothing, so it counts as unmet.
+
+        Resolution skips disabled extensions, leaving the preset just as inert
+        as if the extension were absent -- but the registry entry exists, so a
+        presence-only check would call it satisfied and stay silent.
+        """
+        self._install_extension(project_dir, "speckit-inventory", "0.1.0", enabled=False)
+        manifest = self._manifest(temp_dir, valid_pack_data, ["speckit-inventory"])
+
+        unmet = PresetManager(project_dir).find_unmet_extension_dependencies(manifest)
+
+        assert len(unmet) == 1
+        assert unmet[0]["reason"] == "disabled"
+        assert unmet[0]["installed"] == "0.1.0"
+
+    def test_disabled_is_reported_ahead_of_version_mismatch(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """Enabling is the prerequisite, so it is reported before the version."""
+        self._install_extension(project_dir, "speckit-inventory", "0.1.0", enabled=False)
+        manifest = self._manifest(
+            temp_dir, valid_pack_data,
+            [{"id": "speckit-inventory", "version": ">=9.0.0"}],
+        )
+
+        unmet = PresetManager(project_dir).find_unmet_extension_dependencies(manifest)
+
+        assert [dep["reason"] for dep in unmet] == ["disabled"]
+
     def test_multiple_dependencies_report_independently(
         self, project_dir, temp_dir, valid_pack_data
     ):
         """Each declared dependency is evaluated on its own."""
         self._install_extension(project_dir, "present-ext", "1.0.0")
+        self._install_extension(project_dir, "off-ext", "1.0.0", enabled=False)
         manifest = self._manifest(
             temp_dir, valid_pack_data,
-            ["present-ext", "absent-ext", {"id": "opt-ext", "required": False}],
+            [
+                "present-ext",
+                "absent-ext",
+                "off-ext",
+                {"id": "opt-ext", "required": False},
+            ],
         )
 
         unmet = PresetManager(project_dir).find_unmet_extension_dependencies(manifest)
 
-        assert [dep["id"] for dep in unmet] == ["absent-ext"]
+        assert [(dep["id"], dep["reason"]) for dep in unmet] == [
+            ("absent-ext", "missing"),
+            ("off-ext", "disabled"),
+        ]
 
 
 class TestRegistryPriority:
