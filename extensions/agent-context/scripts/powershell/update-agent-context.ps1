@@ -457,6 +457,37 @@ $lines = @($MarkerStart,
 if ($PlanPath) {
     $lines += "at $PlanPath"
 }
+# Extension-contributed always-on instruction blocks (github/spec-kit#4200):
+# delegate to the python twin's --emit-extension-blocks so all three twins emit
+# byte-identical block text from a single implementation.
+$pyTwin = Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'python') 'update_agent_context.py'
+$pyForBlocks = $null
+foreach ($candidate in @($env:SPECKIT_PYTHON, 'python3', 'python')) {
+    if (-not $candidate) { continue }
+    if (-not (Get-Command $candidate -ErrorAction SilentlyContinue)) { continue }
+    # Verify the candidate is a real, runnable Python 3 (skips the Windows Store
+    # 'python3' alias stub, mirroring the config-parse detection above).
+    try {
+        & $candidate -c "import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)" 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) { $pyForBlocks = $candidate; break }
+    } catch { }
+}
+if ($pyForBlocks -and (Test-Path -LiteralPath $pyTwin)) {
+    # Windows PowerShell decodes native-command stdout using the console code
+    # page; force UTF-8 so non-ASCII rule text (e.g. em-dashes) survives capture.
+    $prevOutEnc = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        $emitted = (& $pyForBlocks $pyTwin --emit-extension-blocks 2>$null | Out-String)
+    } finally {
+        [Console]::OutputEncoding = $prevOutEnc
+    }
+    if ($emitted) {
+        $emitted = ($emitted -replace "`r`n", "`n") -replace "`r", "`n"
+        $emitted = $emitted.TrimEnd("`n")
+        foreach ($bl in ($emitted -split "`n")) { $lines += $bl }
+    }
+}
 $lines += $MarkerEnd
 $Section = ($lines -join "`n") + "`n"
 

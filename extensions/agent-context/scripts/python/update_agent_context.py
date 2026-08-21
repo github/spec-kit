@@ -201,7 +201,84 @@ def _resolve_plan_path(project_root: str) -> str:
     return plan_path
 
 
-def _build_section(marker_start: str, marker_end: str, plan_path: str) -> str:
+def _collect_extension_instruction_blocks(project_root: str) -> list[tuple[str, str]]:
+    """Collect always-on instruction blocks from installed + enabled extensions.
+
+    Implements the agent-context side of github/spec-kit#4200: an extension that
+    declares ``provides.instructions`` gets its rule block composed into the
+    managed section. Reads ``.specify/extensions/.registry`` and each extension's
+    manifest directly, with no dependency on the Specify CLI (mirrors this
+    extension's by-design independence). Returns ``(extension_id, content)`` in
+    deterministic id order. Each referenced file must resolve inside its own
+    extension directory; anything else is skipped. Fails closed on a
+    present-but-unreadable registry so unregistered directories are never
+    admitted as enabled extensions.
+    """
+    exts_dir = Path(project_root) / ".specify" / "extensions"
+    registry = exts_dir / ".registry"
+    if not registry.is_file():
+        return []
+    try:
+        import yaml
+    except ImportError:
+        return []
+    try:
+        with open(registry, "r", encoding="utf-8") as fh:
+            reg = json.load(fh)
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+        return []
+    if not isinstance(reg, dict) or not isinstance(reg.get("extensions"), dict):
+        return []
+
+    blocks: list[tuple[str, str]] = []
+    for ext_id in sorted(reg["extensions"]):
+        meta = reg["extensions"][ext_id]
+        if not isinstance(meta, dict) or not meta.get("enabled", True):
+            continue
+        manifest = exts_dir / ext_id / "extension.yml"
+        if not manifest.is_file():
+            continue
+        try:
+            with open(manifest, "r", encoding="utf-8") as fh:
+                data = yaml.safe_load(fh)
+        except Exception:
+            continue
+        provides = data.get("provides") if isinstance(data, dict) else None
+        instructions = provides.get("instructions") if isinstance(provides, dict) else None
+        if not isinstance(instructions, list):
+            continue
+        ext_root = (exts_dir / ext_id).resolve()
+        parts: list[str] = []
+        for entry in instructions:
+            if not isinstance(entry, dict):
+                continue
+            rel = entry.get("file")
+            if not isinstance(rel, str) or not rel.strip():
+                continue
+            if rel.startswith("/") or "\\" in rel or ".." in rel.split("/"):
+                continue
+            target = (ext_root / rel).resolve()
+            try:
+                target.relative_to(ext_root)
+            except ValueError:
+                continue
+            if not target.is_file():
+                continue
+            try:
+                parts.append(target.read_text(encoding="utf-8").strip())
+            except OSError:
+                continue
+        if parts:
+            blocks.append((ext_id, "\n\n".join(parts)))
+    return blocks
+
+
+def _build_section(
+    marker_start: str,
+    marker_end: str,
+    plan_path: str,
+    extension_blocks: list[tuple[str, str]] | None = None,
+) -> str:
     lines = [
         marker_start,
         "For additional context about technologies to be used, project structure,",
@@ -209,8 +286,26 @@ def _build_section(marker_start: str, marker_end: str, plan_path: str) -> str:
     ]
     if plan_path:
         lines.append(f"at {plan_path}")
+    # Extension-contributed always-on instruction blocks, each in its own
+    # namespaced sub-block so multiple extensions coexist and each can be
+    # regenerated or dropped independently on the next update.
+    lines.extend(extension_blocks or [])
     lines.append(marker_end)
     return "\n".join(lines) + "\n"
+
+
+def _render_extension_block_lines(project_root: str) -> list[str]:
+    """Render the namespaced sub-block lines for all enabled extensions'
+    instruction blocks. Shared by _build_section and the --emit-extension-blocks
+    mode so the bash/PowerShell twins produce byte-identical output.
+    """
+    lines: list[str] = []
+    for ext_id, content in _collect_extension_instruction_blocks(project_root):
+        lines.append("")
+        lines.append(f"<!-- SPECKIT EXT:{ext_id} START -->")
+        lines.append(content)
+        lines.append(f"<!-- SPECKIT EXT:{ext_id} END -->")
+    return lines
 
 
 def ensure_mdc_frontmatter(content: str) -> str:
@@ -298,6 +393,19 @@ def _upsert_section(
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     project_root = os.getcwd()
+
+    # --emit-extension-blocks: print only the composed extension instruction
+    # sub-block lines and exit. Used by the bash/PowerShell twins so all three
+    # produce identical output from this single implementation. Does not require
+    # the agent-context config (the twin already validated it before calling).
+    if "--emit-extension-blocks" in args:
+        block_lines = _render_extension_block_lines(project_root)
+        if block_lines:
+            # Write bytes with explicit \n so the bash/PowerShell twins receive
+            # identical separators regardless of OS text-mode newline translation.
+            sys.stdout.buffer.write("\n".join(block_lines).encode("utf-8"))
+        return 0
+
     ext_config = (
         f"{project_root}/.specify/extensions/agent-context/agent-context-config.yml"
     )
@@ -353,7 +461,8 @@ def main(argv: list[str] | None = None) -> int:
     if not plan_path:
         plan_path = _resolve_plan_path(project_root)
 
-    section = _build_section(marker_start, marker_end, plan_path)
+    extension_blocks = _render_extension_block_lines(project_root)
+    section = _build_section(marker_start, marker_end, plan_path, extension_blocks)
 
     for context_file in context_files:
         ctx_path = os.path.join(project_root, context_file)
