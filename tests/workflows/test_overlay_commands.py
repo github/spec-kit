@@ -893,3 +893,91 @@ class TestOverlayFilenameVsManifestId:
 
         with pytest.raises(typer.Exit):
             _find_overlay_file(project_dir, "wf", "lint")
+
+
+class TestOverlayAddDoesNotClobber:
+    """`overlay add` must not destroy a different overlay sitting at <id>.yml.
+
+    Overlay identity is the manifest `id`, not the filename (see
+    `_find_overlay_file`), so `lint.yml` can legitimately contain
+    `id: format`. When `_find_overlay_file` found no file carrying the new
+    overlay's id, the fallback target was derived purely from the filename and
+    committed onto unconditionally — permanently destroying the occupant, since
+    the commit renames it to a `.bak` and the success path then discards that
+    backup. Exit code 0, no warning.
+    """
+
+    def _setup(self, project_dir: Path, occupant_id: str | None) -> tuple[Path, Path]:
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "echo"}],
+            },
+        )
+        ov_dir = project_dir / ".specify" / "workflows" / "overlays" / "wf"
+        ov_dir.mkdir(parents=True, exist_ok=True)
+        if occupant_id is not None:
+            (ov_dir / "lint.yml").write_text(
+                yaml.safe_dump(
+                    {
+                        "id": occupant_id,
+                        "extends": "wf",
+                        "priority": 3,
+                        "edits": [{"remove": "a"}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+        incoming = project_dir / "incoming.yml"
+        incoming.write_text(
+            yaml.safe_dump(
+                {
+                    "id": "lint",
+                    "extends": "wf",
+                    "priority": 10,
+                    "edits": [{"remove": "a"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return ov_dir, incoming
+
+    def test_add_does_not_clobber_a_different_overlay(self, project_dir, monkeypatch):
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        ov_dir, incoming = self._setup(project_dir, occupant_id="format")
+
+        result = runner.invoke(app, ["workflow", "overlay", "add", str(incoming)])
+
+        assert result.exit_code == 1, result.output
+        # The victim must be untouched, and no backup left lying around.
+        survivor = yaml.safe_load((ov_dir / "lint.yml").read_text(encoding="utf-8"))
+        assert survivor["id"] == "format", survivor
+        assert survivor["priority"] == 3, survivor
+        assert [p.name for p in ov_dir.iterdir() if "bak" in p.name] == []
+
+    def test_add_still_updates_the_same_overlay_in_place(
+        self, project_dir, monkeypatch
+    ):
+        """The guard must only fire for a *different* overlay id."""
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        ov_dir, incoming = self._setup(project_dir, occupant_id="lint")
+
+        result = runner.invoke(app, ["workflow", "overlay", "add", str(incoming)])
+
+        assert result.exit_code == 0, result.output
+        updated = yaml.safe_load((ov_dir / "lint.yml").read_text(encoding="utf-8"))
+        assert updated["id"] == "lint"
+        assert updated["priority"] == 10
+
+    def test_add_creates_the_file_when_absent(self, project_dir, monkeypatch):
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        ov_dir, incoming = self._setup(project_dir, occupant_id=None)
+
+        result = runner.invoke(app, ["workflow", "overlay", "add", str(incoming)])
+
+        assert result.exit_code == 0, result.output
+        created = yaml.safe_load((ov_dir / "lint.yml").read_text(encoding="utf-8"))
+        assert created["id"] == "lint"

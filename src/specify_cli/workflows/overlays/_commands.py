@@ -207,6 +207,26 @@ def workflow_overlay_add(
         target_path = _ensure_contained_path(
             target_dir / f"{overlay.id}.yml", _overlay_root(project_root)
         )
+        # Overlay identity is the manifest ``id``, not the filename (see
+        # ``_find_overlay_file``), so ``<id>.yml`` can legitimately already hold
+        # a DIFFERENT overlay. Committing onto it would destroy that overlay
+        # permanently -- the commit renames the victim to a ``.bak`` and the
+        # success path then discards that backup -- while reporting success.
+        if target_path.is_file():
+            occupant, _ = _read_overlay(target_path)
+            occupant_id = occupant.get("id") if isinstance(occupant, dict) else None
+            if (
+                isinstance(occupant_id, str)
+                and occupant_id
+                and occupant_id != overlay.id
+            ):
+                err_console.print(
+                    f"[red]Error:[/red] {_escape_markup(str(target_path))} already "
+                    f"holds overlay {_escape_markup(repr(occupant_id))}. Rename or "
+                    f"remove it before adding overlay "
+                    f"{_escape_markup(repr(overlay.id))}."
+                )
+                return None
 
     backup: Path | None = None
     try:
