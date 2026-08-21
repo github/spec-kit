@@ -40,6 +40,8 @@ from specify_cli.presets import (
     VALID_PRESET_TEMPLATE_TYPES,
 )
 from specify_cli.extensions import ExtensionRegistry
+from specify_cli._console import console
+from specify_cli.presets._commands import _warn_unmet_extension_dependencies
 
 
 # ===== Fixtures =====
@@ -537,6 +539,61 @@ provides:
             yaml.dump(valid_pack_data, f)
         manifest = PresetManifest(manifest_path)
         assert len(manifest.templates) == 2
+
+    def test_requires_extensions_absent_is_valid(self, temp_dir, valid_pack_data):
+        """A preset with no declared dependencies stays valid and reports none."""
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        assert PresetManifest(manifest_path).requires_extensions == []
+
+    def test_requires_extensions_accepts_both_forms(self, temp_dir, valid_pack_data):
+        """Bare ids and mappings normalize to the same shape."""
+        valid_pack_data["requires"]["extensions"] = [
+            "speckit-inventory",
+            {"id": "other-ext", "version": ">=1.2.0", "required": False},
+        ]
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+
+        assert PresetManifest(manifest_path).requires_extensions == [
+            {"id": "speckit-inventory", "version": None, "required": True},
+            {"id": "other-ext", "version": ">=1.2.0", "required": False},
+        ]
+
+    @pytest.mark.parametrize(
+        "bad, expected",
+        [
+            ("speckit-inventory", "Invalid requires.extensions"),      # str, not list
+            ({"id": "x"}, "Invalid requires.extensions"),              # mapping, not list
+            ([123], r"Invalid requires\.extensions\[0\]"),             # member not str/mapping
+            ([None], r"Invalid requires\.extensions\[0\]"),
+            ([{"version": ">=1"}], r"Missing requires\.extensions\[0\]\.id"),
+            ([{"id": 5}], r"Invalid requires\.extensions\[0\]\.id"),
+            ([{"id": "Bad_ID"}], r"Invalid requires\.extensions\[0\]\.id"),
+            (["Bad_ID"], r"Invalid requires\.extensions\[0\]\.id"),
+            ([{"id": "x", "version": 1.0}], r"Invalid requires\.extensions\[0\]\.version"),
+            ([{"id": "x", "version": "  "}], r"Invalid requires\.extensions\[0\]\.version"),
+            ([{"id": "x", "version": "nonsense"}], r"Invalid requires\.extensions\[0\]\.version"),
+            ([{"id": "x", "required": "yes"}], r"Invalid requires\.extensions\[0\]\.required"),
+        ],
+    )
+    def test_requires_extensions_rejects_malformed(
+        self, temp_dir, valid_pack_data, bad, expected
+    ):
+        """Malformed dependency declarations fail as PresetValidationError.
+
+        Same reasoning as requires.speckit_version: an unvalidated value reaches
+        ``SpecifierSet`` or ``re.match`` later and surfaces as a bare TypeError
+        that no caller handles as a malformed manifest.
+        """
+        valid_pack_data["requires"]["extensions"] = bad
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        with pytest.raises(PresetValidationError, match=expected):
+            PresetManifest(manifest_path)
 
 
 # ===== PresetRegistry Tests =====
@@ -1100,6 +1157,205 @@ class TestPresetManager:
         installed = manager.list_installed()
         assert len(installed) == 1
         assert installed[0]["priority"] == 3
+
+
+class TestPresetExtensionDependencies:
+    """Test find_unmet_extension_dependencies (issue #4231)."""
+
+    @staticmethod
+    def _install_extension(project_dir, extension_id, version, enabled=True):
+        """Register an installed extension the way the extension installer does."""
+        extensions_dir = project_dir / ".specify" / "extensions"
+        extensions_dir.mkdir(parents=True, exist_ok=True)
+        registry_path = extensions_dir / ".registry"
+        data = {"schema_version": "1.0", "extensions": {}}
+        if registry_path.exists():
+            data = json.loads(registry_path.read_text(encoding="utf-8"))
+        data["extensions"][extension_id] = {"version": version, "enabled": enabled}
+        registry_path.write_text(json.dumps(data), encoding="utf-8")
+
+    @staticmethod
+    def _manifest(temp_dir, valid_pack_data, declared):
+        valid_pack_data["requires"]["extensions"] = declared
+        manifest_path = temp_dir / "dep-preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        return PresetManifest(manifest_path)
+
+    def test_no_declared_dependencies_is_satisfied(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A preset declaring nothing never reports an unmet dependency."""
+        manifest_path = temp_dir / "plain-preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+
+        manager = PresetManager(project_dir)
+        assert manager.find_unmet_extension_dependencies(
+            PresetManifest(manifest_path)
+        ) == []
+
+    def test_missing_dependency_is_reported(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """An uninstalled required extension is reported as missing."""
+        manifest = self._manifest(temp_dir, valid_pack_data, ["speckit-inventory"])
+
+        unmet = PresetManager(project_dir).find_unmet_extension_dependencies(manifest)
+
+        assert len(unmet) == 1
+        assert unmet[0]["id"] == "speckit-inventory"
+        assert unmet[0]["reason"] == "missing"
+        assert unmet[0]["installed"] is None
+
+    def test_installed_dependency_is_satisfied(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """An installed extension with no version constraint is satisfied."""
+        self._install_extension(project_dir, "speckit-inventory", "0.1.0")
+        manifest = self._manifest(temp_dir, valid_pack_data, ["speckit-inventory"])
+
+        assert PresetManager(project_dir).find_unmet_extension_dependencies(
+            manifest
+        ) == []
+
+    def test_satisfied_version_constraint(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A satisfied version constraint reports nothing."""
+        self._install_extension(project_dir, "speckit-inventory", "1.5.0")
+        manifest = self._manifest(
+            temp_dir, valid_pack_data,
+            [{"id": "speckit-inventory", "version": ">=1.2.0"}],
+        )
+
+        assert PresetManager(project_dir).find_unmet_extension_dependencies(
+            manifest
+        ) == []
+
+    def test_unsatisfied_version_constraint_reports_both_versions(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A version mismatch reports the installed version alongside the constraint."""
+        self._install_extension(project_dir, "speckit-inventory", "0.1.0")
+        manifest = self._manifest(
+            temp_dir, valid_pack_data,
+            [{"id": "speckit-inventory", "version": ">=9.0.0"}],
+        )
+
+        unmet = PresetManager(project_dir).find_unmet_extension_dependencies(manifest)
+
+        assert len(unmet) == 1
+        assert unmet[0]["reason"] == "version"
+        assert unmet[0]["installed"] == "0.1.0"
+        assert unmet[0]["version"] == ">=9.0.0"
+
+    def test_version_warning_does_not_promise_update_satisfies_constraint(self):
+        """Version remediation must handle constraints update cannot guarantee."""
+        manager = MagicMock()
+        manager.find_unmet_extension_dependencies.return_value = [
+            {
+                "id": "speckit-inventory",
+                "reason": "version",
+                "installed": "3.0.0",
+                "version": "<2",
+            }
+        ]
+
+        with console.capture() as capture:
+            _warn_unmet_extension_dependencies(manager, MagicMock())
+
+        output = strip_ansi(capture.get())
+        assert "install a release of speckit-inventory satisfying <2" in output
+        assert "specify extension update" not in output
+
+    def test_optional_dependency_is_never_reported(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """`required: false` opts out of the warning even when absent."""
+        manifest = self._manifest(
+            temp_dir, valid_pack_data,
+            [{"id": "speckit-inventory", "required": False}],
+        )
+
+        assert PresetManager(project_dir).find_unmet_extension_dependencies(
+            manifest
+        ) == []
+
+    def test_registry_entry_without_version_is_not_a_failure(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """An unusable registry version cannot be compared, so it is not invented
+        into a mismatch -- the extension is demonstrably installed."""
+        self._install_extension(project_dir, "speckit-inventory", "0.1.0")
+        registry_path = project_dir / ".specify" / "extensions" / ".registry"
+        data = json.loads(registry_path.read_text(encoding="utf-8"))
+        data["extensions"]["speckit-inventory"]["version"] = None
+        registry_path.write_text(json.dumps(data), encoding="utf-8")
+
+        manifest = self._manifest(
+            temp_dir, valid_pack_data,
+            [{"id": "speckit-inventory", "version": ">=9.0.0"}],
+        )
+
+        assert PresetManager(project_dir).find_unmet_extension_dependencies(
+            manifest
+        ) == []
+
+    def test_disabled_dependency_is_reported(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A disabled extension contributes nothing, so it counts as unmet.
+
+        Resolution skips disabled extensions, leaving the preset just as inert
+        as if the extension were absent -- but the registry entry exists, so a
+        presence-only check would call it satisfied and stay silent.
+        """
+        self._install_extension(project_dir, "speckit-inventory", "0.1.0", enabled=False)
+        manifest = self._manifest(temp_dir, valid_pack_data, ["speckit-inventory"])
+
+        unmet = PresetManager(project_dir).find_unmet_extension_dependencies(manifest)
+
+        assert len(unmet) == 1
+        assert unmet[0]["reason"] == "disabled"
+        assert unmet[0]["installed"] == "0.1.0"
+
+    def test_disabled_is_reported_ahead_of_version_mismatch(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """Enabling is the prerequisite, so it is reported before the version."""
+        self._install_extension(project_dir, "speckit-inventory", "0.1.0", enabled=False)
+        manifest = self._manifest(
+            temp_dir, valid_pack_data,
+            [{"id": "speckit-inventory", "version": ">=9.0.0"}],
+        )
+
+        unmet = PresetManager(project_dir).find_unmet_extension_dependencies(manifest)
+
+        assert [dep["reason"] for dep in unmet] == ["disabled"]
+
+    def test_multiple_dependencies_report_independently(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """Each declared dependency is evaluated on its own."""
+        self._install_extension(project_dir, "present-ext", "1.0.0")
+        self._install_extension(project_dir, "off-ext", "1.0.0", enabled=False)
+        manifest = self._manifest(
+            temp_dir, valid_pack_data,
+            [
+                "present-ext",
+                "absent-ext",
+                "off-ext",
+                {"id": "opt-ext", "required": False},
+            ],
+        )
+
+        unmet = PresetManager(project_dir).find_unmet_extension_dependencies(manifest)
+
+        assert [(dep["id"], dep["reason"]) for dep in unmet] == [
+            ("absent-ext", "missing"),
+            ("off-ext", "disabled"),
+        ]
 
 
 class TestRegistryPriority:

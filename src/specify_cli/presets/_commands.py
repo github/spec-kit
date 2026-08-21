@@ -40,6 +40,53 @@ preset_catalog_app = typer.Typer(
 preset_app.add_typer(preset_catalog_app, name="catalog")
 
 
+def _warn_unmet_extension_dependencies(manager, manifest) -> None:
+    """Warn when a preset's declared extension dependencies are unsatisfied.
+
+    A preset whose command overrides call into an extension is inert without
+    it, but the overrides still fall through to the core workflow, so nothing
+    breaks -- it just silently does less than the user expects. Naming the
+    missing extension and the command that installs it turns that silence into
+    something actionable. See issue #4231.
+    """
+    unmet = manager.find_unmet_extension_dependencies(manifest)
+    if not unmet:
+        return
+
+    console.print()
+    console.print("[yellow]![/yellow]  This preset depends on extensions that are not satisfied:")
+    for dep in unmet:
+        extension_id = _escape_markup(dep["id"])
+        reason = dep["reason"]
+        # The remediation has to match the reason. `extension add` refuses an
+        # already-installed extension without --force, and `extension update`
+        # only moves forward to the catalog release. A general PEP 440
+        # constraint may require an exact version, an upper bound, or a
+        # downgrade, so do not promise that update will satisfy it.
+        if reason == "missing":
+            console.print(f"    [yellow]{extension_id}[/yellow] is not installed")
+            remedy = f"specify extension add {extension_id}"
+        elif reason == "disabled":
+            console.print(f"    [yellow]{extension_id}[/yellow] is installed but disabled")
+            remedy = f"specify extension enable {extension_id}"
+        else:
+            console.print(
+                f"    [yellow]{extension_id}[/yellow] "
+                f"{_escape_markup(dep['installed'])} does not satisfy "
+                f"{_escape_markup(dep['version'])}"
+            )
+            remedy = (
+                "install a release of "
+                f"{extension_id} satisfying {_escape_markup(dep['version'])}"
+            )
+        console.print(f"      Fix with: {remedy}")
+    console.print()
+    console.print(
+        "[dim]The preset is installed and safe to use; the parts that rely on "
+        "these extensions will do nothing until this is resolved.[/dim]"
+    )
+
+
 # ===== Preset Commands =====
 
 
@@ -282,6 +329,12 @@ def preset_add(
         else:
             console.print("[red]Error:[/red] Specify a preset ID, --from URL, or --dev path")
             raise typer.Exit(1)
+
+        # Every install path above binds `manifest` and the no-source branch
+        # exits, so one call here covers --dev, --from, and catalog installs
+        # alike. Warns rather than fails: the preset is installed and its
+        # overrides fall through to the core workflow without the extension.
+        _warn_unmet_extension_dependencies(manager, manifest)
 
     except PresetCompatibilityError as e:
         console.print(f"[red]Compatibility Error:[/red] {_escape_markup(str(e))}")
