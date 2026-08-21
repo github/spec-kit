@@ -1388,8 +1388,10 @@ class TestCommandRunner:
             {"pre_tool_use": [{"command": "speckit.tdd.validate"}]},
         )
         content = (tmp_path / EVENTS_DISPATCHER_REL).read_text()
-        # Delegates to specify_cli when importable.
-        assert "from specify_cli.events import resolve_and_run_event_command" in content
+        # Delegates to specify_cli when importable and confinement is present.
+        assert "EVENT_SCRIPT_PATH_CONFINEMENT" in content
+        assert "from specify_cli.events import" in content
+        assert "resolve_and_run_event_command" in content
         assert "except (ImportError, TypeError):" in content
         # Inline stdlib fallback resolver for one-time/temporary installs.
         assert "_run_inline" in content
@@ -1453,6 +1455,53 @@ class TestCommandRunner:
         # The inline resolver ran the script with the payload.
         assert out_file.exists(), f"inline fallback did not run script; stderr={result.stderr!r} rc={result.returncode}"
         assert out_file.read_text() == '{"tool_name":"x"}'
+
+    def test_dispatcher_ignores_stale_specify_cli_without_confinement(self, tmp_path):
+        """A generated dispatcher must not delegate to an older specify_cli
+        that lacks EVENT_SCRIPT_PATH_CONFINEMENT (uvx-init plus stale
+        global install). Absolute script tokens stay rejected."""
+        import subprocess as _sp
+        import sys as _sys
+
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"session_start": [{"command": "speckit.boot"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        ran = tmp_path / "stale-ran"
+        (cmd_dir / "boot.md").write_text(
+            "---\ndescription: \"Boot\"\nscripts:\n  sh: /tmp/outside.sh\n---\nBody\n",
+            encoding="utf-8",
+        )
+
+        fake_dir = tmp_path / "_stale_pkg"
+        pkg = fake_dir / "specify_cli"
+        pkg.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+        (pkg / "events.py").write_text(
+            "def resolve_and_run_event_command(*_a, **_k):\n"
+            f"    open({str(ran)!r}, 'w').write('delegated')\n"
+            "    return 0\n",
+            encoding="utf-8",
+        )
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(fake_dir)
+        result = _sp.run(
+            [_sys.executable, str(dispatcher), "speckit.boot", "session_start", "60"],
+            input="{}",
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=str(tmp_path),
+        )
+        assert not ran.exists(), f"stale package ran; stderr={result.stderr!r}"
 
     def test_dispatcher_threads_per_handler_timeout(self, tmp_path):
         """S4: the generated dispatcher reads an optional 4th timeout arg and
@@ -1521,6 +1570,173 @@ class TestCommandRunner:
             assert PurePath(argv[1]).as_posix().endswith(".specify/scripts/bash/boot.sh")
         else:
             assert PurePath(argv[0]).as_posix().endswith(".specify/scripts/bash/boot.sh")
+
+    def test_absolute_script_token_returns_none(self, tmp_path):
+        """An absolute first ``scripts:`` token must not run a host binary."""
+        from specify_cli.events import _resolve_event_command_argv
+
+        outside = tmp_path.parent / "outside-event-script.sh"
+        outside.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "boot.md").write_text(
+            "---\n"
+            "description: \"Boot\"\n"
+            f"scripts:\n  sh: {outside.as_posix()}\n"
+            "---\nBody\n",
+            encoding="utf-8",
+        )
+
+        argv = _resolve_event_command_argv(cmd_dir / "boot.md", tmp_path, None)
+
+        assert argv is None
+
+    def test_dotdot_script_token_outside_project_returns_none(self, tmp_path):
+        """A ``..`` walk out of the project root must not resolve."""
+        from specify_cli.events import _resolve_event_command_argv
+
+        outside = tmp_path.parent / "outside-event-script.sh"
+        outside.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "boot.md").write_text(
+            "---\n"
+            "description: \"Boot\"\n"
+            "scripts:\n  sh: ../../outside-event-script.sh\n"
+            "---\nBody\n",
+            encoding="utf-8",
+        )
+
+        argv = _resolve_event_command_argv(cmd_dir / "boot.md", tmp_path, None)
+
+        assert argv is None
+
+    def test_extension_dotdot_to_core_scripts_resolves(self, tmp_path):
+        """Extension templates may reach core scripts via ``../../scripts/...``."""
+        from specify_cli.events import _resolve_event_command_argv
+
+        ext_id = "my-ext"
+        cmd_dir = tmp_path / ".specify" / "extensions" / ext_id / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "boot.md").write_text(
+            "---\n"
+            "description: \"Boot\"\n"
+            "scripts:\n  sh: ../../scripts/bash/helper.sh\n"
+            "---\nBody\n",
+            encoding="utf-8",
+        )
+        helper_dir = tmp_path / ".specify" / "scripts" / "bash"
+        helper_dir.mkdir(parents=True)
+        (helper_dir / "helper.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+
+        argv = _resolve_event_command_argv(cmd_dir / "boot.md", tmp_path, ext_id)
+
+        assert argv is not None
+        script_arg = argv[1] if platform.system().lower().startswith("win") else argv[0]
+        assert PurePath(script_arg).as_posix().endswith(".specify/scripts/bash/helper.sh")
+
+    def test_symlink_escape_returns_none(self, tmp_path):
+        """A relative token that resolves through a symlink out of the project
+        must not run the host target."""
+        from specify_cli.events import _resolve_event_command_argv
+
+        host = tmp_path.parent / "host-event-script.sh"
+        host.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        script_dir = tmp_path / ".specify" / "scripts"
+        script_dir.mkdir(parents=True)
+        sneak = script_dir / "sneak.sh"
+        try:
+            sneak.symlink_to(host)
+        except OSError:
+            pytest.skip("symlinks are not available")
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "boot.md").write_text(
+            "---\n"
+            "description: \"Boot\"\n"
+            "scripts:\n  sh: scripts/sneak.sh\n"
+            "---\nBody\n",
+            encoding="utf-8",
+        )
+
+        argv = _resolve_event_command_argv(cmd_dir / "boot.md", tmp_path, None)
+
+        assert argv is None
+
+    def test_windows_drive_script_token_returns_none(self, tmp_path):
+        """A Windows-anchored first token must not discard the project base."""
+        from specify_cli.events import _resolve_event_command_argv
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "boot.md").write_text(
+            "---\n"
+            "description: \"Boot\"\n"
+            "scripts:\n  sh: C:/Windows/System32/cmd.exe\n"
+            "---\nBody\n",
+            encoding="utf-8",
+        )
+
+        argv = _resolve_event_command_argv(cmd_dir / "boot.md", tmp_path, None)
+
+        assert argv is None
+
+    def test_dispatcher_template_confines_script_token(self):
+        """The stdlib fallback dispatcher must carry the same confinement."""
+        from specify_cli.events import _EVENTS_DISPATCHER_TEMPLATE
+
+        assert "_script_under_base" in _EVENTS_DISPATCHER_TEMPLATE
+        assert "PureWindowsPath" in _EVENTS_DISPATCHER_TEMPLATE
+
+    def test_dispatcher_inline_rejects_absolute_script(self, tmp_path):
+        """Inline fallback must not execute an absolute first ``scripts:`` token."""
+        import subprocess as _sp
+        import sys as _sys
+
+        if platform.system().lower().startswith("win"):
+            return
+
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"session_start": [{"command": "speckit.boot"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        marker = tmp_path / "should-not-run.out"
+        host = tmp_path.parent / "host-boot.sh"
+        host.write_text(
+            f"#!/bin/sh\necho ran > {shlex.quote(str(marker))}\nexit 0\n",
+            encoding="utf-8",
+        )
+        host.chmod(0o755)
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "boot.md").write_text(
+            "---\n"
+            "description: \"Boot\"\n"
+            f"scripts:\n  sh: {host.as_posix()}\n"
+            "---\nBody\n",
+            encoding="utf-8",
+        )
+        fake_dir = tmp_path / "_fake"
+        (fake_dir / "specify_cli").mkdir(parents=True)
+        (fake_dir / "specify_cli" / "__init__.py").write_text("", encoding="utf-8")
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(fake_dir)
+        result = _sp.run(
+            [_sys.executable, str(dispatcher), "speckit.boot", "session_start", "60"],
+            input="{}",
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 0, result.stderr
+        assert not marker.exists()
 
 
 # -- Merge/teardown idempotency & safety (Tier 3) ----------------------------

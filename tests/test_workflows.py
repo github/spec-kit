@@ -4520,6 +4520,94 @@ steps:
         errors = validate_workflow(definition)
         assert errors == []
 
+    @pytest.mark.parametrize(
+        "field, bad_value",
+        [
+            ("integration", ["claude"]),
+            ("integration", {"name": "claude"}),
+            ("integration", False),
+            ("model", ["gpt-5"]),
+            ("model", {"name": "gpt-5"}),
+            ("model", 0),
+            ("options", ["max_tokens"]),
+            ("options", "max_tokens"),
+            ("options", False),
+        ],
+    )
+    def test_rejects_invalid_workflow_dispatch_defaults(self, field, bad_value):
+        """Top-level dispatch defaults must retain their invalid shape for
+        validation instead of being passed to a step or normalized to ``{}``.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition(
+            {
+                "workflow": {
+                    "id": "test",
+                    "name": "Test",
+                    "version": "1.0.0",
+                    field: bad_value,
+                },
+                "steps": [{"id": "step-one", "command": "speckit.specify"}],
+            }
+        )
+
+        errors = validate_workflow(definition)
+
+        assert any(f"workflow.{field}" in error for error in errors), errors
+        assert any(type(bad_value).__name__ in error for error in errors), errors
+        if field == "options":
+            assert definition.default_options == bad_value
+
+    def test_preserves_valid_workflow_dispatch_defaults(self):
+        """String and mapping defaults stay available unchanged to steps."""
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        defaults = {
+            "integration": "claude",
+            "model": "gpt-5",
+            "options": {"max_tokens": 8000},
+        }
+        definition = WorkflowDefinition(
+            {
+                "workflow": {
+                    "id": "test",
+                    "name": "Test",
+                    "version": "1.0.0",
+                    **defaults,
+                },
+                "steps": [{"id": "step-one", "command": "speckit.specify"}],
+            }
+        )
+
+        assert definition.default_integration == defaults["integration"]
+        assert definition.default_model == defaults["model"]
+        assert definition.default_options == defaults["options"]
+        assert validate_workflow(definition) == []
+
+    def test_accepts_null_workflow_dispatch_defaults(self):
+        """Null integration/model inherit at runtime and null options stays {}."""
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition(
+            {
+                "workflow": {
+                    "id": "test",
+                    "name": "Test",
+                    "version": "1.0.0",
+                    "integration": None,
+                    "model": None,
+                    "options": None,
+                },
+                "steps": [{"id": "step-one", "command": "speckit.specify"}],
+            }
+        )
+
+        assert definition.default_integration is None
+        assert definition.default_model is None
+        assert definition.default_options == {}
+        assert validate_workflow(definition) == []
+
     def test_no_steps(self):
         from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
 
@@ -4564,6 +4652,29 @@ steps:
 """)
         errors = validate_workflow(definition)
         assert any("invalid type" in e.lower() for e in errors)
+
+    @pytest.mark.parametrize("step_type", [["shell"], {"name": "shell"}])
+    def test_non_string_step_type_reports_error(self, step_type):
+        """Unhashable YAML values must not crash registry membership checks."""
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition(
+            {
+                "workflow": {
+                    "id": "test",
+                    "name": "Test",
+                    "version": "1.0.0",
+                },
+                "steps": [{"id": "bad", "type": step_type}],
+            }
+        )
+
+        errors = validate_workflow(definition)
+
+        assert errors == [
+            f"Step 'bad': 'type' must be a string, got "
+            f"{type(step_type).__name__} ({step_type!r})."
+        ]
 
     def test_nested_step_validation(self):
         from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
@@ -5141,6 +5252,36 @@ steps:
 
 class TestWorkflowEngine:
     """Test WorkflowEngine execution."""
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("integration", ["claude"]),
+            ("model", {"name": "gpt-5"}),
+            ("options", ["max_tokens"]),
+        ],
+    )
+    def test_execute_rejects_invalid_workflow_dispatch_defaults(
+        self, project_dir, field, value
+    ):
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        definition = WorkflowDefinition(
+            {
+                "workflow": {
+                    "id": "invalid-dispatch-defaults",
+                    "name": "Invalid dispatch defaults",
+                    "version": "1.0.0",
+                    field: value,
+                },
+                "steps": [],
+            }
+        )
+
+        with pytest.raises(ValueError, match=f"workflow.{field}"):
+            WorkflowEngine(project_dir).execute(definition)
+
+        assert not (project_dir / ".specify" / "workflows" / "runs").exists()
 
     def test_load_from_file(self, sample_workflow_file, project_dir):
         from specify_cli.workflows.engine import WorkflowEngine
@@ -6659,6 +6800,45 @@ steps:
 # Unhandled exceptions raised out of `step_impl.execute()` are out of
 # scope for this flag — they propagate to `WorkflowEngine.execute()`
 # and abort the run.
+
+
+class TestWorkflowDispatchDefaultExecution:
+    """Execution safeguards for defaults inherited by dispatch steps."""
+
+    @pytest.mark.parametrize(
+        "defaults",
+        [
+            {
+                "integration": "claude",
+                "model": "gpt-5",
+                "options": {"max_tokens": 8000},
+            },
+            {"integration": None, "model": None, "options": None},
+        ],
+    )
+    def test_execute_accepts_valid_and_null_dispatch_defaults(
+        self, project_dir, defaults
+    ):
+        """Defaults with supported shapes remain executable without validation."""
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        definition = WorkflowDefinition(
+            {
+                "workflow": {
+                    "id": "valid-defaults",
+                    "name": "Valid Defaults",
+                    "version": "1.0.0",
+                    **defaults,
+                },
+                "steps": [],
+            }
+        )
+
+        state = WorkflowEngine(project_dir).execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results == {}
 
 
 class TestContinueOnError:
@@ -10939,6 +11119,45 @@ steps:
         with pytest.raises(ValueError):
             engine.resume(state.run_id, {"count": "not-a-number"})
 
+    def test_resume_rejects_legacy_invalid_options_before_state_mutation(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import RunState, WorkflowDefinition
+
+        definition = WorkflowDefinition.from_string(self._WF_NUM)
+        engine = self._engine(project_dir)
+        state = engine.execute(definition)
+        assert state.status == RunStatus.PAUSED
+
+        workflow_copy = (
+            project_dir
+            / ".specify"
+            / "workflows"
+            / "runs"
+            / state.run_id
+            / "workflow.yml"
+        )
+        workflow_copy.write_text(
+            self._WF_NUM.replace(
+                'version: "1.0.0"', 'version: "1.0.0"\n  options: [max_tokens]'
+            ),
+            encoding="utf-8",
+        )
+
+        def fail_step_context(*args, **kwargs):
+            raise AssertionError("StepContext must not be created")
+
+        monkeypatch.setattr("specify_cli.workflows.engine.StepContext", fail_step_context)
+
+        with pytest.raises(ValueError, match="'workflow.options' must be a mapping or null"):
+            engine.resume(state.run_id, {"count": "5"})
+
+        reloaded = RunState.load(state.run_id, project_dir)
+        assert reloaded.status == RunStatus.PAUSED
+        assert reloaded.error is None
+        assert reloaded.inputs["count"] == 1
+
     def test_retry_verdict_input_is_consumed_and_can_be_replaced(self, project_dir):
         import json as _json
         from specify_cli.workflows.engine import WorkflowDefinition
@@ -12317,6 +12536,46 @@ steps:
             )
         assert result.exit_code != 0
         assert "exceedsthe100-byteworkflowsizelimit" in "".join(result.output.split())
+        leaked = list(scratch_tmp.glob("*.yml"))
+        assert leaked == [], f"leaked temp files: {leaked}"
+
+    def test_add_from_url_interrupt_during_read_leaves_no_temp_file(
+        self, project_dir, monkeypatch, tmp_path
+    ):
+        """A KeyboardInterrupt while streaming the response body must still
+        unlink the already-created (delete=False) temp file. Unlike a
+        download ``ValueError``, ``KeyboardInterrupt`` is a ``BaseException``
+        and is not caught by ``except Exception`` -- only a ``BaseException``
+        handler around the temp-file lifetime can clean it up."""
+        import tempfile as tempfile_mod
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows import _commands as wf_commands
+
+        monkeypatch.chdir(project_dir)
+        scratch_tmp = tmp_path / "scratch-tmp"
+        scratch_tmp.mkdir()
+        monkeypatch.setattr(tempfile_mod, "tempdir", str(scratch_tmp))
+
+        def _boom(*args, **kwargs):
+            raise KeyboardInterrupt()
+
+        monkeypatch.setattr(wf_commands, "_read_response_within_limit", _boom)
+        body = b"id: align-wf\n"
+        runner = CliRunner()
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
+                body, url
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+                input="y\n",
+            )
+        assert result.exit_code != 0
         leaked = list(scratch_tmp.glob("*.yml"))
         assert leaked == [], f"leaked temp files: {leaked}"
 

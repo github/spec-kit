@@ -8,6 +8,10 @@ updates:
   - dependency-name: "github/gh-aw-actions/**"
   - dependency-name: "github/gh-aw-actions" # Managed by gh aw compile. Version-locked to the gh-aw compiler; do not bump.
   package-ecosystem: github-actions
+  groups:
+    codeql-action:
+      patterns:
+      - "github/codeql-action*"
   schedule:
     interval: weekly
 version: 2

@@ -3153,6 +3153,66 @@ class TestIntegrationUpgrade:
             f"after upgrade, found: {[f.name for f in core_remaining]}"
         )
 
+    def test_upgrade_migrates_qodercli_extension_commands_to_skills(self, tmp_path):
+        """Qoder upgrade retires old extension commands after skills exist."""
+        project = _init_project(tmp_path, "qodercli")
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        skills = project / ".qoder" / "skills"
+        commands = project / ".qoder" / "commands"
+        commands.mkdir(parents=True)
+
+        manifest_path = (
+            project / ".specify" / "integrations" / "qodercli.manifest.json"
+        )
+        manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        legacy_manifest_files = {}
+        for path, info in manifest_data["files"].items():
+            skill_path = project / path
+            command_name = skill_path.parent.name.replace("speckit-", "speckit.", 1)
+            legacy_path = commands / f"{command_name}.md"
+            legacy_path.write_bytes(skill_path.read_bytes())
+            legacy_manifest_files[
+                legacy_path.relative_to(project).as_posix()
+            ] = info
+        manifest_data["files"] = legacy_manifest_files
+        manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        git_metadata = registry["extensions"]["git"]
+        registered_commands = git_metadata["registered_commands"]["qodercli"]
+        for command_name in registered_commands:
+            skill_name = command_name.replace("speckit.", "speckit-", 1).replace(
+                ".", "-"
+            )
+            old_command = commands / f"{command_name}.md"
+            old_command.write_bytes(
+                (skills / skill_name / "SKILL.md").read_bytes()
+            )
+        missing_replacement = commands / "speckit.git.missing.md"
+        missing_replacement.write_text("# preserve until replaced\n", encoding="utf-8")
+        registered_commands.append("speckit.git.missing")
+        git_metadata["registered_skills"] = []
+        registry_path.write_text(json.dumps(registry), encoding="utf-8")
+
+        shutil.rmtree(skills)
+        result = _run_in_project(project, [
+            "integration", "upgrade", "qodercli", "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, f"upgrade failed: {result.output}"
+
+        for command_name in registered_commands[:-1]:
+            skill_name = command_name.replace("speckit.", "speckit-", 1).replace(
+                ".", "-"
+            )
+            assert (skills / skill_name / "SKILL.md").is_file()
+            assert not (commands / f"{command_name}.md").exists()
+        assert missing_replacement.is_file(), (
+            "a legacy command must remain when no replacement skill was written"
+        )
+
     def test_upgrade_kilocode_legacy_dir_rejects_installed_preset_overrides(
         self, tmp_path
     ):

@@ -934,7 +934,6 @@ def _download_remote_manifest(
     expected_sha256: str | None = None,
 ):
     """Fetch a remote bundle artifact over HTTPS and extract its manifest."""
-    import io
     import tempfile
     from pathlib import PurePosixPath
     from urllib.parse import urlparse as _urlparse
@@ -1038,7 +1037,20 @@ def _download_remote_manifest(
                     )
                 return manifest
 
-        data = _yaml.safe_load(io.BytesIO(raw))
+        # Decode as UTF-8 explicitly -- matching yamlio.load_yaml's contract --
+        # instead of feeding PyYAML the raw byte stream. PyYAML's Reader
+        # auto-detects a UTF-16 BOM and would silently *accept* a manifest
+        # that the local directory/bundle.yml sources reject, letting this
+        # remote-download path diverge from them (see the sibling .zip fix
+        # for _local_manifest_source, which had the identical bug).
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeError as exc:
+            raise BundlerError(
+                f"Downloaded content for bundle '{entry_id}' from "
+                f"{_source_desc} could not be read: {exc}"
+            ) from exc
+        data = _yaml.safe_load(text)
         return BundleManifest.from_dict(data)
     except BundlerError:
         raise

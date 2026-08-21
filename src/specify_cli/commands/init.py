@@ -33,6 +33,16 @@ def _stdin_is_interactive() -> bool:
     return sys.stdin.isatty()
 
 
+def _prompts_allowed(non_interactive: bool) -> bool:
+    """Return True when interactive pickers and confirmations may be shown.
+
+    ``--non-interactive`` suppresses prompts even when stdin is a TTY. Agent
+    harnesses often allocate a PTY (so ``isatty()`` is True) but cannot send
+    arrow-key input, which previously hung in ``select_with_arrows``.
+    """
+    return not non_interactive and _stdin_is_interactive()
+
+
 def _ext_spec_is_url(ext_spec: str) -> bool:
     """Return True when *ext_spec* is an http(s) URL rather than a name/path."""
     from urllib.parse import urlparse
@@ -44,7 +54,10 @@ def _ext_spec_is_url(ext_spec: str) -> bool:
 
 
 def _confirm_extension_url_trust(
-    url_specs: list[str], *, trust_override: bool
+    url_specs: list[str],
+    *,
+    trust_override: bool,
+    allow_prompt: bool | None = None,
 ) -> dict[str, bool]:
     """Resolve trust for each URL-based extension before the Live display.
 
@@ -58,7 +71,7 @@ def _confirm_extension_url_trust(
     from rich.panel import Panel
 
     approvals: dict[str, bool] = {}
-    interactive = _stdin_is_interactive()
+    interactive = _stdin_is_interactive() if allow_prompt is None else allow_prompt
     for spec in url_specs:
         if trust_override:
             approvals[spec] = True
@@ -264,6 +277,16 @@ def register(app: typer.Typer) -> None:
             "--force",
             help="Force merge/overwrite when using --here (skip confirmation)",
         ),
+        non_interactive: bool = typer.Option(
+            False,
+            "--non-interactive",
+            help=(
+                "Never prompt. Use documented defaults for unspecified "
+                "selections and fail instead of hanging when a choice has no "
+                "safe default. Required for agent harnesses that allocate a "
+                "PTY but cannot send arrow-key input."
+            ),
+        ),
         skip_tls: bool = typer.Option(
             False,
             "--skip-tls",
@@ -324,7 +347,7 @@ def register(app: typer.Typer) -> None:
         This command will:
         1. Check that required tools are installed
         2. Let you choose your coding agent integration, or default to Copilot
-           in non-interactive sessions
+           in non-interactive sessions (no TTY, or --non-interactive)
         3. Install bundled Spec Kit templates, scripts, workflow, and shared
            project infrastructure
         4. Set up coding agent integration commands and optional presets
@@ -341,6 +364,8 @@ def register(app: typer.Typer) -> None:
             specify init --here --integration vibe      # Initialize with Mistral Vibe support
             specify init --here
             specify init --here --force  # Skip confirmation when current directory not empty
+            specify init my-project --non-interactive  # CI/agent: defaults, no prompts
+            specify init --here --force --non-interactive --integration claude  # Scripted init, no hang
             specify init my-project --integration claude   # Claude installs skills by default
             specify init --here --integration gemini
             specify init my-project --integration generic --integration-options="--commands-dir .myagent/commands/"  # Bring your own agent; requires --commands-dir
@@ -416,6 +441,13 @@ def register(app: typer.Typer) -> None:
                     console.print(
                         "[cyan]--force supplied: skipping confirmation and proceeding with merge[/cyan]"
                     )
+                elif non_interactive:
+                    console.print(
+                        "[red]Error:[/red] Current directory is not empty and "
+                        "--non-interactive was set. Re-run with "
+                        "[bold]--force[/bold] to merge into it."
+                    )
+                    raise typer.Exit(1)
                 else:
                     # Fold the merge risk into the confirmation prompt rather than
                     # printing it unconditionally first: on the EOF/no-input path
@@ -491,7 +523,7 @@ def register(app: typer.Typer) -> None:
                 )
                 raise typer.Exit(1)
             selected_ai = integration
-        elif not _stdin_is_interactive():
+        elif not _prompts_allowed(non_interactive):
             default_integration = resolve_default_init_integration()
             console.print(
                 f"[dim]Non-interactive session detected: defaulting to '{default_integration}'. "
@@ -504,6 +536,7 @@ def register(app: typer.Typer) -> None:
                 ai_choices,
                 "Choose your coding agent integration:",
                 resolve_default_init_integration(),
+                flag_hint="--integration <agent>",
             )
 
         if not integration:
@@ -567,11 +600,12 @@ def register(app: typer.Typer) -> None:
         else:
             default_script = "ps" if os.name == "nt" else "sh"
 
-            if _stdin_is_interactive():
+            if _prompts_allowed(non_interactive):
                 selected_script = select_with_arrows(
                     SCRIPT_TYPE_CHOICES,
                     "Choose script type (or press Enter)",
                     default_script,
+                    flag_hint="--script sh|ps|py",
                 )
             else:
                 selected_script = default_script
@@ -615,7 +649,9 @@ def register(app: typer.Typer) -> None:
             url_specs = [e for e in extensions if _ext_spec_is_url(e)]
             if url_specs:
                 extension_url_approvals = _confirm_extension_url_trust(
-                    url_specs, trust_override=trust_extension_urls
+                    url_specs,
+                    trust_override=trust_extension_urls,
+                    allow_prompt=_prompts_allowed(non_interactive),
                 )
 
         # Disable transient mode on Windows: PowerShell 5.1's legacy console

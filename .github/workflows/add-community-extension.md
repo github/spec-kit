@@ -31,6 +31,9 @@ safe-outputs:
     labels: [extension-submission, automated]
     draft: true
     max: 1
+    allowed-files:
+      - extensions/catalog.community.json
+      - docs/community/extensions.md
     protected-files:
       policy: blocked
       exclude:

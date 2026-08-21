@@ -224,6 +224,59 @@ def _is_single_expression(stripped: str) -> bool:
     return True
 
 
+def _find_block_close(text: str, start: int) -> int:
+    """Index of the ``}}`` closing the block opened by the ``{{`` at *start*, or -1.
+
+    Quote-aware, so a literal ``}}`` inside a string argument
+    (``{{ inputs.text | default('}}') }}``) does not close the block early --
+    the same rule ``_is_single_expression`` applies. Shared with
+    ``condition_is_never_evaluated`` so the validator cannot disagree with the
+    substitution it is predicting.
+    """
+    quote: str | None = None
+    i = start + 2
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if quote is not None:
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch == "}" and i + 1 < n and text[i + 1] == "}":
+            return i
+        i += 1
+    return -1
+
+
+def _first_unclosable_block(text: str) -> str | None:
+    """How ``_interpolate_expressions`` will fail on the first block it cannot
+    close with the quote-aware scan, or ``None`` when every block closes.
+
+    Returns ``"evaluated"`` when a raw ``}}`` still follows the opener -- the
+    interpolator falls back to it and evaluates the truncated body, which reaches
+    the filter parser and raises ``ValueError``. Returns ``"verbatim"`` when no
+    ``}}`` follows at all -- the tail is emitted unchanged, so it survives into the
+    result as truthy text.
+
+    Walks blocks exactly the way ``_interpolate_expressions`` does, continuing past
+    each block that *does* close. Checking only the first opener let a later
+    unterminated block through both validators: ``{{ true }} and {{ inputs.ready``
+    closes its first block, so the scan stopped and reported no fault, while
+    interpolation leaves ``and {{ inputs.ready`` in the result and ``bool()`` makes
+    the condition always true.
+    """
+    i = 0
+    while True:
+        start = text.find("{{", i)
+        if start == -1:
+            return None
+        close = _find_block_close(text, start)
+        if close == -1:
+            return "evaluated" if text.find("}}", start + 2) != -1 else "verbatim"
+        i = close + 2
+
+
 def _interpolate_expressions(template: str, namespace: dict[str, Any]) -> str:
     """Substitute every top-level ``{{ ... }}`` block in *template*, quote-aware.
 
@@ -249,20 +302,7 @@ def _interpolate_expressions(template: str, namespace: dict[str, Any]) -> str:
             break
         out.append(template[i:start])
         # Scan for the block-closing ``}}`` that is outside any string literal.
-        j = start + 2
-        quote: str | None = None
-        close = -1
-        while j < n:
-            ch = template[j]
-            if quote is not None:
-                if ch == quote:
-                    quote = None
-            elif ch in ("'", '"'):
-                quote = ch
-            elif ch == "}" and j + 1 < n and template[j + 1] == "}":
-                close = j
-                break
-            j += 1
+        close = _find_block_close(template, start)
         if close == -1:
             # No quote-aware close. Two sub-cases, both kept identical to the old
             # regex so a malformed template is never silently hidden:
@@ -690,3 +730,152 @@ def evaluate_condition(condition: str, context: Any) -> bool:
         if lower == "true":
             return True
     return bool(result)
+
+
+def condition_is_never_evaluated(condition: Any) -> bool:
+    """True when a string *condition* is silently treated as always-true text.
+
+    ``evaluate_condition`` resolves its argument through
+    ``evaluate_expression``, which only substitutes ``{{ ... }}`` blocks. A
+    string with no such block comes back unchanged, and — unless it reads
+    ``true``/``false`` — is then coerced by ``bool()``. So an expression
+    authored without the braces, e.g. ``condition: inputs.count > 100``, is
+    never evaluated at all: it is a non-empty string, so the ``if`` step always
+    takes ``then`` and a ``while``/``do-while`` step always runs to
+    ``max_iterations``.
+
+    That is the same silent-truthiness authoring mistake the step validators
+    already reject for a list/dict/number condition, and it is easy to write:
+    GitHub Actions accepts a bare expression in ``if:``.
+
+    The empty string is excluded — it coerces to ``False``, which is a definite
+    answer rather than a silent always-true. Non-empty whitespace is *not*
+    excluded: ``bool("   ")`` is true, and ``evaluate_condition`` strips only
+    while testing the ``true``/``false`` keywords before falling through to
+    ``bool()`` on the raw string. That runtime behaviour is pinned deliberately
+    by ``test_condition_whitespace_only_string_stays_truthy``, so the authoring
+    mistake has to be caught here instead: ``condition: "   "`` always takes
+    ``then``.
+    """
+    if not isinstance(condition, str):
+        return False
+    if condition == "":
+        return False
+    stripped = condition.strip()
+    if not stripped:
+        return True
+    if stripped.lower() in ("true", "false"):
+        return False
+    if "{{" not in stripped:
+        return True
+    # An opening ``{{`` the substituter cannot close is no better than a missing
+    # one -- but only when the substituter really does leave it alone.
+    # ``_interpolate_expressions`` has two sub-cases when its quote-aware scan
+    # fails, and they do not behave alike: with no raw ``}}`` in the tail the
+    # block is emitted verbatim (never evaluated, so ``bool()`` makes it true),
+    # while a raw ``}}`` further along is used as the close and the truncated
+    # body *is* evaluated. Only the first is "never evaluated"; see
+    # ``condition_has_malformed_expression_block`` for the second.
+    return _first_unclosable_block(stripped) == "verbatim"
+
+
+def condition_has_malformed_expression_block(condition: Any) -> bool:
+    """True when *condition* holds a ``{{`` block the quote-aware scan cannot close,
+    but which ``_interpolate_expressions`` still evaluates through its raw-close
+    fallback.
+
+    This is a different fault from the one
+    ``condition_is_never_evaluated`` reports, and it deserves a different message.
+    The block is not skipped: the interpolator takes the first raw ``}}`` after the
+    opener and evaluates whatever it truncated, so
+
+        {{ inputs.missing | default('oops }}
+
+    reaches ``_apply_filter`` and raises ``ValueError`` at run time. The truncation does
+    not always raise -- ``{{ inputs.x == '}}'`` evaluates to the residual ``"False'"`` --
+    but either way what runs is not what was written, so "never evaluated and always
+    true" is the wrong report.
+
+    Kept separate from the never-evaluated check rather than folded in, because the
+    two need opposite advice: one says "you forgot the braces", this one says "your
+    delimiters or quotes do not balance".
+    """
+    if not isinstance(condition, str):
+        return False
+    stripped = condition.strip()
+    if not stripped or stripped.lower() in ("true", "false"):
+        return False
+    return _first_unclosable_block(stripped) == "evaluated"
+
+
+def _strip_stray_delimiters(text: str) -> str:
+    """Remove every ``{{``/``}}`` that lies outside a quoted operand.
+
+    Quote-aware for the same reason the rest of this module is: ``inputs.x == '}}'``
+    holds a delimiter as *data*, and a blanket ``re.sub`` would eat it and change
+    what the corrected condition compares against. Whitespace orphaned by a removed
+    delimiter collapses to one separator so the suggestion still reads as an
+    expression; whitespace inside a quoted operand is never touched.
+
+    ``_find_top_level`` cannot serve here: it counts ``{`` and ``}`` as bracket
+    depth, so it never reports a ``{{`` as a top-level token at all.
+    """
+    out: list[str] = []
+    quote: str | None = None
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if quote is not None:
+            out.append(ch)
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            out.append(ch)
+            i += 1
+            continue
+        if text.startswith("{{", i) or text.startswith("}}", i):
+            i += 2
+            while i < n and text[i].isspace():
+                i += 1
+            while out and out[-1].isspace():
+                out.pop()
+            out.append(" ")
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+def format_condition_correction(condition: Any) -> str:
+    """Render *condition* wrapped in ``{{ }}`` as a quoted, paste-ready YAML scalar.
+
+    The validators hand this back as the corrected form, so it has to survive a
+    round trip through a YAML parser. A plain ``"{{ ... }}"`` does not: a
+    condition holding a double quote (``inputs.name == "zzz"``) closes the
+    scalar early and the workflow file no longer loads. Quoting is therefore
+    chosen from the content. That enumeration was incomplete: a condition loaded
+    from a YAML literal block can carry a newline, which a double-quoted scalar
+    folds, so the correction did not round-trip.
+
+    ``json.dumps`` decides it instead. Every JSON string is a valid YAML
+    double-quoted scalar, and it escapes the quotes, backslashes, newlines and
+    other control characters that hand-rolled quoting has to enumerate.
+    ``ensure_ascii=False`` keeps non-ASCII operands readable rather than
+    expanding them into numeric escapes.
+
+    A stray delimiter is dropped rather than nested: ``{{ inputs.count > 100``
+    corrects to ``"{{ inputs.count > 100 }}"``, not to a doubled ``{{ {{ ... }} }}``.
+    Every stray delimiter goes, not only the ones sitting at the edges. Trimming
+    just the edges left ``prefix {{ inputs.ready`` reading
+    ``"{{ prefix {{ inputs.ready }}"`` -- an unclosed inner block, and one whose
+    complete *outer* block then carried the correction straight back through
+    ``condition_is_never_evaluated`` as if it were valid.
+    """
+    core = _strip_stray_delimiters(str(condition)).strip()
+    # A blank core has nothing to wrap; render the empty block rather than the
+    # double-spaced "{{  }}" that string concatenation would otherwise produce.
+    body = "{{ " + core + " }}" if core else "{{ }}"
+    return json.dumps(body, ensure_ascii=False)
