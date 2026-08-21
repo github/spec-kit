@@ -124,6 +124,10 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
     <strong>Getting Started</strong>
     <span>Install, configure, and run your first SDD workflow</span>
   </a>
+  <a href="guides/existing-projects.md" class="nav-card">
+    <strong>Existing Projects</strong>
+    <span>Adopt Spec Kit safely in an established codebase</span>
+  </a>
   <a href="reference/overview.md" class="nav-card">
     <strong>Reference</strong>
     <span>Core commands, integrations, extensions, presets, and workflows</span>
@@ -155,4 +159,4 @@ Ready to start? Follow the [Quick Start Guide](quickstart.md).
 
 </div>
 
-<p class="text-end small text-body-secondary">Last updated: July 16, 2026</p>
+<p class="text-end small text-body-secondary">Last updated: August 21, 2026</p>

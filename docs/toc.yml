@@ -9,6 +9,8 @@
       href: installation.md
     - name: Quick Start
       href: quickstart.md
+    - name: Existing Projects
+      href: guides/existing-projects.md
     - name: Upgrade
       href: upgrade.md
     - name: Install uv

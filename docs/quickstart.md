@@ -47,6 +47,9 @@ specify init taskify   # or: specify init .   to use the current directory
 
 > [!NOTE]
 > Prefer `pipx`, one-time `uvx` runs, a pinned release, or an offline/air-gapped setup? See the [Installation Guide](installation.md) for all supported methods.
+> Adding Spec Kit to a repository that already contains code? Follow
+> [Adopting Spec Kit in an Existing Project](guides/existing-projects.md) before
+> starting the workflow below.
 
 ### Step 1: `/speckit.constitution` — set the ground rules
 
