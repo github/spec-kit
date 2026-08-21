@@ -972,8 +972,8 @@ class PresetManager:
             One entry per unsatisfied dependency, each with ``id``, the
             requested ``version`` specifier (``None`` when unconstrained), the
             ``installed`` version (``None`` when absent), and a ``reason`` of
-            either ``"missing"`` or ``"version"``. Optional dependencies
-            (``required: false``) are never reported.
+            ``"missing"``, ``"disabled"``, or ``"version"``. Optional
+            dependencies (``required: false``) are never reported.
         """
         # Defense in depth, mirroring check_compatibility(): this method is
         # public and also reachable with a hand-built manifest object that
@@ -998,18 +998,35 @@ class PresetManager:
                 unmet.append({**dep, "installed": None, "reason": "missing"})
                 continue
 
+            installed_version = metadata.get("version")
+            installed_version = (
+                installed_version if isinstance(installed_version, str) else None
+            )
+
+            # A disabled extension is registered but contributes nothing:
+            # resolution skips it (see _collect_extension_layers), so the
+            # preset is just as inert as if it were absent. Report it before
+            # any version check -- enabling it is the prerequisite, and the
+            # version may well be fine once it is.
+            if not metadata.get("enabled", True):
+                unmet.append(
+                    {**dep, "installed": installed_version, "reason": "disabled"}
+                )
+                continue
+
             constraint = dep["version"]
             if not constraint:
                 continue
 
-            installed = metadata.get("version")
-            if not isinstance(installed, str):
+            if installed_version is None:
                 # A registry entry without a usable version cannot be compared.
                 # Treat it as satisfied rather than inventing a failure, since
-                # the extension is demonstrably installed.
+                # the extension is demonstrably installed and enabled.
                 continue
-            if not version_satisfies(installed, constraint):
-                unmet.append({**dep, "installed": installed, "reason": "version"})
+            if not version_satisfies(installed_version, constraint):
+                unmet.append(
+                    {**dep, "installed": installed_version, "reason": "version"}
+                )
 
         return unmet
 

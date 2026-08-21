@@ -57,19 +57,28 @@ def _warn_unmet_extension_dependencies(manager, manifest) -> None:
     console.print("[yellow]![/yellow]  This preset depends on extensions that are not satisfied:")
     for dep in unmet:
         extension_id = _escape_markup(dep["id"])
-        if dep["reason"] == "missing":
+        reason = dep["reason"]
+        # The remediation has to match the reason. `extension add` refuses an
+        # already-installed extension without --force, so suggesting it for a
+        # disabled or out-of-date one would hand the user a command that fails.
+        if reason == "missing":
             console.print(f"    [yellow]{extension_id}[/yellow] is not installed")
+            remedy = f"specify extension add {extension_id}"
+        elif reason == "disabled":
+            console.print(f"    [yellow]{extension_id}[/yellow] is installed but disabled")
+            remedy = f"specify extension enable {extension_id}"
         else:
             console.print(
                 f"    [yellow]{extension_id}[/yellow] "
                 f"{_escape_markup(dep['installed'])} does not satisfy "
                 f"{_escape_markup(dep['version'])}"
             )
-        console.print(f"      Install with: specify extension add {extension_id}")
+            remedy = f"specify extension update {extension_id}"
+        console.print(f"      Fix with: {remedy}")
     console.print()
     console.print(
         "[dim]The preset is installed and safe to use; the parts that rely on "
-        "these extensions will do nothing until they are present.[/dim]"
+        "these extensions will do nothing until this is resolved.[/dim]"
     )
 
 
