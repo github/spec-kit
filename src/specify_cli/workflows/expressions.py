@@ -474,6 +474,12 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
     )
 
 
+# Order matters -- multi-char operators first, so "!=" is not split as "!" + "=".
+# Shared with the remediation check so a validator cannot drift from what the
+# evaluator will actually split on.
+_COMPARISON_OPERATORS = ("!=", "==", ">=", "<=", ">", "<", " not in ", " in ")
+
+
 def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     """Evaluate a simple expression against the namespace.
 
@@ -533,7 +539,7 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     # Comparison operators (order matters — check multi-char ops first). Split at
     # the first top-level occurrence so an operator inside a quoted operand is
     # ignored.
-    for op in ("!=", "==", ">=", "<=", ">", "<", " not in ", " in "):
+    for op in _COMPARISON_OPERATORS:
         op_idx = _find_top_level(expr, op)
         if op_idx != -1:
             left = _evaluate_simple_expression(expr[:op_idx].strip(), namespace)
@@ -879,3 +885,329 @@ def format_condition_correction(condition: Any) -> str:
     # double-spaced "{{  }}" that string concatenation would otherwise produce.
     body = "{{ " + core + " }}" if core else "{{ }}"
     return json.dumps(body, ensure_ascii=False)
+
+
+def _has_unbalanced_quote(text: str) -> bool:
+    """True when a quote opened in *text* is never closed.
+
+    Same left-to-right, first-quote-wins scan the rest of this module uses, so the
+    answer agrees with what ``_find_block_close`` and ``_strip_stray_delimiters``
+    consider "inside a string".
+    """
+    quote: str | None = None
+    for ch in text:
+        if quote is not None:
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+    return quote is not None
+
+
+_BRACKET_PAIRS = {")": "(", "]": "[", "}": "{"}
+
+# The operators the evaluator delimits with spaces; derived so the check cannot
+# drift from _COMPARISON_OPERATORS.
+_WORD_OPERATORS = tuple(
+    op for op in (" or ", " and ") + _COMPARISON_OPERATORS if op.startswith(" ")
+)
+
+
+def _has_unbalanced_bracket(text: str) -> bool:
+    """True when brackets outside a quoted operand do not nest and match.
+
+    A depth counter is not enough: it calls ``inputs.f(]`` balanced, because the
+    ``]`` cancels the ``(``. The evaluator then resolves that body to ``None`` and
+    the comparison is false, which is the inversion this module is trying to keep
+    out of the suggested correction. Track the opener types instead.
+    """
+    stack: list[str] = []
+    quote: str | None = None
+    for ch in text:
+        if quote is not None:
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch in "([{":
+            stack.append(ch)
+        elif ch in _BRACKET_PAIRS and (not stack or stack.pop() != _BRACKET_PAIRS[ch]):
+            return True
+    return bool(stack)
+
+
+def _has_incomplete_operand(text: str) -> bool:
+    """True when an operator in *text* is missing an operand on either side.
+
+    Splits on **every** top-level occurrence rather than the first. Checking only
+    the first is the same defect this module exists to reject one level up: it let
+    ``inputs.a == inputs.b ==`` through, because the leading ``==`` has operands on
+    both sides and the scan stopped there.
+
+    Reads ``_COMPARISON_OPERATORS`` from the evaluator rather than restating it, so
+    the check cannot drift from what ``_evaluate_simple_expression`` splits on.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return True
+
+    # `not x` is a valid prefix form; `and x` and `or x` are not, and none of the
+    # three is valid alone or trailing. The keyword scans below use bare words
+    # because a leading operator has no space in front of it to match on.
+    if stripped in ("and", "or", "not") or stripped.endswith(" not"):
+        return True
+    # Word operators lose their delimiting space at the ends of a stripped core, so
+    # a trailing "not in" or a leading "and" needs matching without it. Derived from
+    # the evaluator's own table rather than restated.
+    for op in _WORD_OPERATORS:
+        if stripped.endswith(op.rstrip()) or stripped.startswith(op.lstrip()):
+            return True
+
+    for op in (" or ", " and ") + _COMPARISON_OPERATORS:
+        if _find_top_level(stripped, op) == -1:
+            continue
+        if any(not segment.strip() for segment in _split_top_level(stripped, op)):
+            return True
+
+    return _find_top_level(stripped, "|") != -1 and any(
+        not segment.strip() for segment in _split_top_level(stripped, "|")
+    )
+
+
+# The roots _build_namespace supplies. A reference to anything else resolves to
+# None, so a correction built on one turns a truthy condition false.
+_NAMESPACE_ROOTS = ("inputs", "steps", "item", "fan_in", "context")
+
+# Exactly what _resolve_dot_path accepts: a name, optionally one numeric index.
+_PATH_SEGMENT = re.compile(r"^[\w-]+(\[\d+\])?$")
+
+
+class _ProbeNamespace(dict):
+    """Namespace for the parse probe: every root exists, every leaf is absent.
+
+    Enough for ``_evaluate_simple_expression`` to walk the grammar without needing
+    real inputs. Deliberately *not* resolving leaves to a sentinel value: a probe
+    that answers every lookup also answers ``inputs.count+1``, which is the
+    malformed shape the probe is meant to expose.
+    """
+
+    def __missing__(self, key: str) -> "_ProbeNamespace":  # noqa: UP037  # pragma: no cover
+        return _ProbeNamespace()
+
+
+def _evaluator_rejects(text: str) -> str | None:
+    """The evaluator's own complaint about how *text* is wired, or ``None``.
+
+    Structural checks cannot establish that a core is parseable -- four rounds of
+    review found a new shape each time -- so this asks the evaluator. It reports
+    only the two failures ``_apply_filter`` raises about the expression itself: an
+    unknown filter name, and a registered filter used in an unsupported form.
+
+    Anything else a probe run raises is about the probe's placeholder values, not
+    the author's text. ``steps.emit.output.stdout | from_json`` is valid against a
+    string output and is exercised in ``tests/test_workflows.py``; the probe hands
+    ``from_json`` a dict and it raises, so treating every error as a rejection
+    withheld a correction from a perfectly good condition.
+    """
+    try:
+        _evaluate_simple_expression(
+            text, {root: _ProbeNamespace() for root in _NAMESPACE_ROOTS}
+        )
+    except ValueError as exc:
+        message = str(exc)
+        # Every error _apply_filter raises about the filter *expression* quotes the
+        # segment back as `got '| ...'`. Its value errors instead name the type they
+        # received, which under a probe is the placeholder, not anything the author
+        # wrote -- treating those as rejections withheld corrections from valid
+        # conditions such as `steps.emit.output.stdout | from_json`.
+        if "got '| " in message:
+            return message.split(":", 1)[0]
+    except Exception:  # noqa: BLE001 - probe values, not the author's text
+        return None
+    return None
+
+
+
+def _looks_numeric(text: str) -> bool:
+    """Mirror the evaluator's numeric literal test exactly.
+
+    `_evaluate_simple_expression` only calls `float()` when a `.` is present and
+    `int()` otherwise, so `1e3` is not a number to it -- it falls through to a path
+    lookup and resolves to None. A bare `float()` here accepted `1e3` and the
+    correction turned a truthy condition false.
+    """
+    try:
+        if "." in text:
+            float(text)
+        else:
+            int(text)
+    except (ValueError, TypeError):
+        return False
+    return True
+
+
+def _is_literal(text: str) -> bool:
+    """Mirror the evaluator's literal tests exactly.
+
+    The string case is the opening quote's *matching close being the final
+    character*, not first/last-character equality: `'a' 'b'` passes the latter but
+    is two literals to the evaluator, which falls through to a path lookup.
+    """
+    if text[:1] in ("'", '"') and text.find(text[0], 1) == len(text) - 1:
+        return True
+    return text.lower() in ("true", "false", "none", "null") or _looks_numeric(text)
+
+
+def _unresolvable_term(text: str) -> str | None:
+    """The first operand in *text* the evaluator cannot resolve, or ``None``.
+
+    Walks operands the way ``_evaluate_simple_expression`` does -- filters, then
+    ``or``/``and``/``not``, then comparisons -- and checks each leaf. A leaf must be
+    a literal or a dotted path rooted in ``_NAMESPACE_ROOTS``.
+
+    Enumerating broken shapes is what made this take several rounds: each new gate
+    only knew the shapes named so far. ``inputs.a === inputs.b`` split cleanly on
+    ``==`` and looked complete, while the evaluator read ``= inputs.b`` as a path
+    and resolved it to ``None``; ``bogus == 'x'`` passed for the same reason one
+    level up. Recursing to the leaves covers both without naming either.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return "an operand is empty"
+
+    if _find_top_level(stripped, "|") != -1:
+        segments = _split_top_level(stripped, "|")
+        reason = _unresolvable_term(segments[0])
+        if reason is not None:
+            return reason
+        # A filter argument is an ordinary operand to `_apply_filter`, which
+        # evaluates it with `_evaluate_simple_expression` like any other. Skipping
+        # it let `inputs.tags | join(bogus)` be offered as paste-ready: `bogus` is
+        # no namespace root, resolves to None, and the wrapped form then raises
+        # `join: expected a string separator, got NoneType`. Parse with the same
+        # pattern `_apply_filter` uses, so a form this does not recognize is left
+        # to the evaluator probe rather than guessed at here.
+        for segment in segments[1:]:
+            match = re.fullmatch(r"(\w+)\((.+)\)", segment.strip())
+            if match is None:
+                continue
+            reason = _unresolvable_term(match.group(2))
+            if reason is not None:
+                return reason
+        return None
+
+    for op in (" or ", " and "):
+        idx = _find_top_level(stripped, op)
+        if idx != -1:
+            return _unresolvable_term(stripped[:idx]) or _unresolvable_term(
+                stripped[idx + len(op):]
+            )
+
+    if stripped.startswith("not "):
+        return _unresolvable_term(stripped[4:])
+
+    for op in _COMPARISON_OPERATORS:
+        idx = _find_top_level(stripped, op)
+        if idx != -1:
+            return _unresolvable_term(stripped[:idx]) or _unresolvable_term(
+                stripped[idx + len(op):]
+            )
+
+    if _is_literal(stripped):
+        return None
+
+    # A list literal is a term the evaluator understands, and it recurses into the
+    # elements rather than resolving the brackets as a name. Not mirroring that
+    # denied the correction to `inputs.tag in ['x', 'y']` -- a condition wrapping
+    # repairs completely -- while reporting the list as an unresolvable name. The
+    # empty-segment skip matches `_evaluate_simple_expression`, which drops them so
+    # `[1, 2,]` is `[1, 2]` rather than `[1, 2, None]`.
+    if stripped.startswith("[") and stripped.endswith("]"):
+        inner = stripped[1:-1].strip()
+        if not inner:
+            return None
+        for element in _split_top_level_commas(inner):
+            if not element.strip():
+                continue
+            reason = _unresolvable_term(element)
+            if reason is not None:
+                return reason
+        return None
+
+    segments = _split_top_level(stripped, ".")
+    if not _PATH_SEGMENT.match(segments[0].strip()):
+        return f"{stripped!r} is not a name the evaluator can resolve"
+    # `item` is the only root that is not always a mapping: `StepContext.item` is
+    # `Any` and a fan-out assigns the item value itself, so when that value is a
+    # list `_resolve_dot_path` indexes it and `item[0] == 'x'` resolves. Every
+    # other root comes back from `_build_namespace` as a mapping, and the index
+    # branch returns None for those however it is written -- so the index is
+    # stripped for `item` alone rather than for roots in general.
+    root = segments[0].strip()
+    indexed_root = re.fullmatch(r"([\w-]+)\[\d+\]", root)
+    if indexed_root is not None and indexed_root.group(1) == "item":
+        root = indexed_root.group(1)
+    if root not in _NAMESPACE_ROOTS:
+        return (
+            f"{segments[0].strip()!r} is not one of the namespace roots "
+            f"({', '.join(_NAMESPACE_ROOTS)})"
+        )
+    for segment in segments[1:]:
+        if not _PATH_SEGMENT.match(segment.strip()):
+            return f"{segment.strip()!r} is not a valid path segment"
+    return None
+
+
+def _wrapping_would_not_repair(core: str) -> str | None:
+    """Why wrapping *core* in ``{{ }}`` would not yield the expression intended.
+
+    ``None`` when it would. Each branch names something observable about the text
+    itself, deliberately not the interpolator path it will take: two earlier
+    versions of this message asserted an internal route -- the raw-close fallback --
+    and were wrong, because ``_is_single_expression`` accepts the wrapped form and
+    sends it down the typed fast path instead.
+    """
+    if not core:
+        return "there is no expression here to wrap"
+    if _has_unbalanced_quote(core):
+        return "the quote opened in it is never closed"
+    if _has_unbalanced_bracket(core):
+        return "its brackets do not balance"
+    if _has_incomplete_operand(core):
+        return "an operator in it is missing an operand"
+    unresolvable = _unresolvable_term(core)
+    if unresolvable is not None:
+        return unresolvable
+    rejected = _evaluator_rejects(core)
+    if rejected is not None:
+        return f"the evaluator rejects it ({rejected})"
+    return None
+
+
+def format_condition_remediation(condition: Any) -> str:
+    """The advice sentence for a condition that is never evaluated.
+
+    ``format_condition_correction`` wraps whatever it is handed, which is right for a
+    formatter but wrong to advertise as paste-ready when wrapping cannot repair the
+    input. Measured, each of these was being offered as the fix and each **inverts**
+    the condition instead:
+
+        "   "                    -> "{{ }}"                      True  -> False
+        {{ inputs.name == 'abc   -> "{{ inputs.name == 'abc }}"  True  -> False
+        inputs.name ==           -> "{{ inputs.name == }}"       True  -> False
+
+    The author is told the condition is always true, pastes the suggestion, and now
+    has an always-false one. Naming the fault beats handing back something that looks
+    authoritative and is not -- the same call already made for
+    ``condition_has_malformed_expression_block``, which offers no suggestion at all.
+    """
+    core = _strip_stray_delimiters(str(condition)).strip()
+    reason = _wrapping_would_not_repair(core)
+    if reason is None:
+        return "Wrap the expression: " + format_condition_correction(condition) + "."
+    return (
+        f"No correction is offered because {reason}: wrapping it as written would "
+        "produce a different expression from the one intended, and its result can "
+        "silently invert the condition rather than repair it. Complete the "
+        "expression, or use the literal true or false."
+    )
