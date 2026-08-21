@@ -205,6 +205,25 @@ specify preset add team-workflow --priority 10
 
 For any file that both provide, `compliance` wins (priority 5 < 10). For files only one provides, that one is used. For files neither provides, the core default is used.
 
+## Contribution Identifiers
+
+Every command, template, and script contributed by a preset (or an extension, or the core layer) is addressable at read time by a deterministic opaque identifier of the form:
+
+```text
+{layer}:{sourceId}:{kind}:{name}
+```
+
+- `layer` is one of `core`, `preset`, or `extension`.
+- `sourceId` is `_` for `core`, the preset pack id for `preset`, or the extension id for `extension`.
+- `kind` is one of `command`, `template`, or `script`.
+- `name` is the entry's declared `name` field.
+
+Identifiers are computed on demand from author-declared manifest content and are never persisted to `.specify/` or any cache. Copying a preset to another machine (or touching its files) does not change the identifiers it produces.
+
+`PresetResolver.collect_all_layers()` returns layer dicts that each include a `lookupId` field pointing back to the originating contribution's `id`. Project-local overrides in `.specify/templates/overrides/` are a resolver-only concept — they carry a synthetic `project:_:{kind}:{name}` `lookupId` that intentionally does not match any manifest contribution.
+
+For the full grammar, including the hook name-component convention and the discriminator recipe used by extensions, see the [Extension API Reference — Contribution Identifiers](../../extensions/EXTENSION-API-REFERENCE.md#contribution-identifiers) section.
+
 ## FAQ
 
 ### Can I use multiple presets at the same time?
