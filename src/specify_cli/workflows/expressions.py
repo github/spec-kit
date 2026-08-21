@@ -1137,9 +1137,17 @@ def _unresolvable_term(text: str) -> str | None:
     segments = _split_top_level(stripped, ".")
     if not _PATH_SEGMENT.match(segments[0].strip()):
         return f"{stripped!r} is not a name the evaluator can resolve"
-    # The root itself is never indexed: `_build_namespace` hands back mappings, so
-    # `_resolve_dot_path` returns None for `inputs[0]` however the index is written.
-    if segments[0].strip() not in _NAMESPACE_ROOTS:
+    # `item` is the only root that is not always a mapping: `StepContext.item` is
+    # `Any` and a fan-out assigns the item value itself, so when that value is a
+    # list `_resolve_dot_path` indexes it and `item[0] == 'x'` resolves. Every
+    # other root comes back from `_build_namespace` as a mapping, and the index
+    # branch returns None for those however it is written -- so the index is
+    # stripped for `item` alone rather than for roots in general.
+    root = segments[0].strip()
+    indexed_root = re.fullmatch(r"([\w-]+)\[\d+\]", root)
+    if indexed_root is not None and indexed_root.group(1) == "item":
+        root = indexed_root.group(1)
+    if root not in _NAMESPACE_ROOTS:
         return (
             f"{segments[0].strip()!r} is not one of the namespace roots "
             f"({', '.join(_NAMESPACE_ROOTS)})"

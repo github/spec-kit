@@ -731,3 +731,28 @@ def test_resolvable_filter_arguments_keep_the_correction(condition):
     """The other direction: the argument check must not become a blanket refusal."""
     assert CORRECTION_OFFERED in format_condition_remediation(condition)
     assert _wrapped_evaluates(condition)
+
+
+@pytest.mark.parametrize("condition", ["item[0] == 'x'", "item[1] == 'y'"])
+def test_an_indexed_item_root_keeps_the_correction(condition):
+    """`item` is the only root that is not always a mapping.
+
+    `StepContext.item` is `Any` and a fan-out assigns the item value itself, so an
+    item that is a list makes `item[0]` resolve. Rejecting every indexed root
+    withheld the correction from a condition that evaluates.
+    """
+    ctx = StepContext(inputs={"a": 1}, item=["x", "y"])
+    assert CORRECTION_OFFERED in format_condition_remediation(condition)
+    assert evaluate_condition("{{ " + condition + " }}", ctx) is True
+
+
+@pytest.mark.parametrize("condition", ["inputs[0]", "steps[1]", "fan_in[0]", "context[0]"])
+def test_indexing_an_always_mapping_root_still_loses_the_correction(condition):
+    """The other side of that split, so it does not widen into "any indexed root".
+
+    `_build_namespace` hands these back as mappings, so `_resolve_dot_path` takes
+    the index branch, finds no list, and returns None however the index is written.
+    """
+    ctx = StepContext(inputs={"a": 1}, item=["x", "y"])
+    assert CORRECTION_OFFERED not in format_condition_remediation(condition)
+    assert evaluate_condition("{{ " + condition + " }}", ctx) is False
