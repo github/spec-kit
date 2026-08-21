@@ -607,7 +607,7 @@
     "bdd": {
       "name": "BDD",
       "id": "bdd",
-      "description": "ATDD/BDD extension: convert specs to Gherkin scenarios, scaffold step definitions, and verify acceptance test coverage.",
+      "description": "Convert specs to Gherkin scenarios, scaffold step definitions, and verify acceptance test coverage.",
       "author": "RSginer",
       "version": "1.0.3",
       "download_url": "https://github.com/RSginer/spec-kit-bdd/archive/refs/tags/v1.0.3.zip",
