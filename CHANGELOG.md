@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.0.0] - 2026-08-21
+
+### Changed
+
+- [extension] Update Security Review extension to v2.0.0 (#4223)
+- fix(presets): reject duplicate provides.templates name+type entries (#4191)
+- fix(bundler): decode a downloaded (non-zip) bundle manifest as UTF-8 (#4190)
+- Update Intake Sequencing Governance preset to v0.2.3 (#4235)
+- Update MAQA — Multi-Agent & Quality Assurance extension to v0.1.6 (#4234)
+- [bug-fix] Fix qodercli-skills-migration: migrate QodercliIntegration to SkillsIntegration (#4205)
+- [preset] Add Inventory Alignment preset to community catalog (#4229)
+- [extension] Add Spec Inventory extension to community catalog (#4228)
+- [extension] Update Architecture Guard extension to v2.3.6 (#4224)
+- Update SpecKit Companion extension to v0.20.2 (#4225)
+- fix(workflows): reject a condition that has no {{ }} block (#4182)
+- fix: raise feature assessment credit budget (#4222)
+- [extension] Add AgentDocx extension to community catalog (#4184)
+- fix(integrations): report a falsy non-mapping integration descriptor as a shape error (#4187)
+- Update Autonomous Run Governance preset to v0.4.1 (#4203)
+- fix(workflows): validate dispatch defaults (#4181)
+- Update Atlas extension display name in community catalog (#4202)
+- Add Closed Vocabulary Check preset to community catalog (#4201)
+- fix(utils): narrow bare except Exception in merge_json_files (#4189)
+- chore: release 0.16.5, begin 0.16.6.dev0 development (#4206)
+
 ## [0.16.5] - 2026-08-19
 
 ### Changed
