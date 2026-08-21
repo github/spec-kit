@@ -2,11 +2,9 @@
 - name: Home
   href: index.md
 
-# About
-- name: About
-  items:
-    - name: History
-      href: history.md
+# Project history
+- name: Project History
+  href: history.md
 
 # Getting started section
 - name: Getting Started
