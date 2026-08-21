@@ -140,6 +140,10 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
     <strong>What is SDD?</strong>
     <span>The philosophy behind Spec-Driven Development</span>
   </a>
+  <a href="history.md" class="nav-card">
+    <strong>History</strong>
+    <span>How Spec Kit grew from its SDD foundation into an extensible process harness</span>
+  </a>
 </div>
 
 ---
