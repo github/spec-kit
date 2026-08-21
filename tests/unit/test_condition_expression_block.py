@@ -641,3 +641,93 @@ def test_literal_test_mirrors_the_evaluator(condition, literal):
 def test_shapes_the_evaluator_resolves_to_none_get_no_correction(condition):
     advice = format_condition_remediation(condition)
     assert "Wrap the expression" not in advice
+
+
+# The two shapes below were each offered or withheld for the wrong reason. Both are
+# checked against what the evaluator actually does with the wrapped form, not against
+# a restatement of the check, so a check that drifts from the evaluator fails here.
+CORRECTION_OFFERED = "Wrap the expression"
+
+
+def _wrapped_evaluates(condition: str) -> bool:
+    ctx = StepContext(
+        inputs={
+            "tag": "x",
+            "tags": ["a", "b"],
+            "count": 3,
+            "fallback": ", ",
+            "blob": '{"k": 1}',
+        }
+    )
+    try:
+        evaluate_condition("{{ " + condition + " }}", ctx)
+    except Exception:
+        return False
+    return True
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "inputs.tag in ['x', 'y']",
+        "inputs.tag not in ['x']",
+        "inputs.tag in [inputs.other, 'z']",
+        # `_evaluate_simple_expression` drops empty segments, so a trailing comma is
+        # `[1, 2]` rather than `[1, 2, None]`, and an empty list is a list.
+        "inputs.count in [1, 2,]",
+        "inputs.count in []",
+    ],
+)
+def test_list_literal_operands_keep_the_correction(condition):
+    """A list literal is a term, not a name.
+
+    Resolving the brackets as a path reported `"['x', 'y']" is not a name the
+    evaluator can resolve` and withheld the correction from a condition that
+    wrapping repairs completely.
+    """
+    assert CORRECTION_OFFERED in format_condition_remediation(condition)
+    assert _wrapped_evaluates(condition)
+
+
+@pytest.mark.parametrize(
+    "condition",
+    ["inputs.tags | join(bogus)", "inputs.tags | map(bogus)"],
+)
+def test_filter_arguments_that_make_the_wrapped_form_raise_lose_the_correction(condition):
+    """A filter argument is an operand like any other.
+
+    `_apply_filter` evaluates it with `_evaluate_simple_expression`, so a name that
+    is no namespace root arrives as None and the filter raises on it. Skipping the
+    argument offered these as paste-ready.
+    """
+    assert CORRECTION_OFFERED not in format_condition_remediation(condition)
+    assert not _wrapped_evaluates(condition)
+
+
+def test_a_filter_argument_that_cannot_resolve_loses_it_even_without_raising():
+    """`default` tolerates the None, so this one is policy rather than a crash.
+
+    Withholding it is the same call already made for an unresolvable name anywhere
+    else -- `bogus == 'x'` evaluates fine and is withheld too -- so the argument
+    check does not need the wrapped form to raise before it declines.
+    """
+    condition = "inputs.count | default(bogus)"
+    assert CORRECTION_OFFERED not in format_condition_remediation(condition)
+    assert _wrapped_evaluates(condition)
+    assert CORRECTION_OFFERED not in format_condition_remediation("bogus == 'x'")
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "inputs.tags | join(', ')",
+        "inputs.tags | join(inputs.fallback)",
+        "inputs.tags | map('name')",
+        "inputs.count | default(0)",
+        "inputs.blob | from_json",
+    ],
+)
+def test_resolvable_filter_arguments_keep_the_correction(condition):
+    """The other direction: the argument check must not become a blanket refusal."""
+    assert CORRECTION_OFFERED in format_condition_remediation(condition)
+    assert _wrapped_evaluates(condition)

@@ -1077,7 +1077,24 @@ def _unresolvable_term(text: str) -> str | None:
 
     if _find_top_level(stripped, "|") != -1:
         segments = _split_top_level(stripped, "|")
-        return _unresolvable_term(segments[0])
+        reason = _unresolvable_term(segments[0])
+        if reason is not None:
+            return reason
+        # A filter argument is an ordinary operand to `_apply_filter`, which
+        # evaluates it with `_evaluate_simple_expression` like any other. Skipping
+        # it let `inputs.tags | join(bogus)` be offered as paste-ready: `bogus` is
+        # no namespace root, resolves to None, and the wrapped form then raises
+        # `join: expected a string separator, got NoneType`. Parse with the same
+        # pattern `_apply_filter` uses, so a form this does not recognize is left
+        # to the evaluator probe rather than guessed at here.
+        for segment in segments[1:]:
+            match = re.fullmatch(r"(\w+)\((.+)\)", segment.strip())
+            if match is None:
+                continue
+            reason = _unresolvable_term(match.group(2))
+            if reason is not None:
+                return reason
+        return None
 
     for op in (" or ", " and "):
         idx = _find_top_level(stripped, op)
@@ -1097,6 +1114,24 @@ def _unresolvable_term(text: str) -> str | None:
             )
 
     if _is_literal(stripped):
+        return None
+
+    # A list literal is a term the evaluator understands, and it recurses into the
+    # elements rather than resolving the brackets as a name. Not mirroring that
+    # denied the correction to `inputs.tag in ['x', 'y']` -- a condition wrapping
+    # repairs completely -- while reporting the list as an unresolvable name. The
+    # empty-segment skip matches `_evaluate_simple_expression`, which drops them so
+    # `[1, 2,]` is `[1, 2]` rather than `[1, 2, None]`.
+    if stripped.startswith("[") and stripped.endswith("]"):
+        inner = stripped[1:-1].strip()
+        if not inner:
+            return None
+        for element in _split_top_level_commas(inner):
+            if not element.strip():
+                continue
+            reason = _unresolvable_term(element)
+            if reason is not None:
+                return reason
         return None
 
     segments = _split_top_level(stripped, ".")
