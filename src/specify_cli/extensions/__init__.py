@@ -28,6 +28,13 @@ from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from .._assets import _locate_core_pack, _repo_root
+from .._identifier import (
+    IdentifierComponentError,
+    canonical_json,
+    derive_hook_id,
+    derive_named_id,
+    validate_component,
+)
 from .._download_security import (
     archive_format_from_name,
     archive_suffix,
@@ -415,6 +422,11 @@ class ExtensionManifest:
                     raise ValidationError(
                         f"Invalid hook '{hook_name}': list must contain at least one entry"
                     )
+                try:
+                    validate_component(hook_name, f"hook event name '{hook_name}'")
+                except IdentifierComponentError as exc:
+                    raise ValidationError(str(exc)) from exc
+                event_entries: List[dict] = []
                 for entry in coerce_hook_entries(hook_config):
                     if not isinstance(entry, dict):
                         raise ValidationError(
@@ -425,6 +437,13 @@ class ExtensionManifest:
                         raise ValidationError(
                             f"Hook '{hook_name}' missing required 'command' field"
                         )
+                    try:
+                        validate_component(
+                            entry["command"],
+                            f"hook '{hook_name}' command",
+                        )
+                    except IdentifierComponentError as exc:
+                        raise ValidationError(str(exc)) from exc
                     if "priority" in entry:
                         priority = entry["priority"]
                         if not isinstance(priority, int) or isinstance(priority, bool):
@@ -437,6 +456,35 @@ class ExtensionManifest:
                                 f"Hook '{hook_name}' has invalid 'priority': "
                                 "must be >= 1"
                             )
+                    event_entries.append(entry)
+
+                # Reject two hook entries under the same (event, command) whose
+                # declared fields (with eventName/command stripped) canonicalize
+                # to the same byte string — those are semantically identical
+                # listeners with no way to address them separately.
+                by_command: Dict[str, List[tuple[int, dict]]] = {}
+                for idx, entry in enumerate(event_entries):
+                    by_command.setdefault(entry["command"], []).append((idx, entry))
+                for command_value, group in by_command.items():
+                    if len(group) < 2:
+                        continue
+                    seen_canonical: Dict[bytes, int] = {}
+                    for idx, entry in group:
+                        stripped = {
+                            k: v
+                            for k, v in entry.items()
+                            if k not in ("eventName", "command")
+                        }
+                        key = canonical_json(stripped)
+                        if key in seen_canonical:
+                            first_idx = seen_canonical[key]
+                            raise ValidationError(
+                                f"Duplicate hook entries for event '{hook_name}' "
+                                f"command '{command_value}': entries at positions "
+                                f"{first_idx} and {idx} have byte-identical declared "
+                                "fields and cannot be uniquely identified"
+                            )
+                        seen_canonical[key] = idx
 
         # Validate commands; track renames so hook references can be rewritten.
         rename_map: Dict[str, str] = {}
@@ -724,6 +772,112 @@ class ExtensionManifest:
     def hooks(self) -> Dict[str, Any]:
         """Get hook definitions."""
         return self.data.get("hooks", {})
+
+    def iter_contributions(self) -> List[Dict[str, Any]]:
+        """Return an enriched, ordered list of every contribution this manifest declares.
+
+        Each dict is a shallow copy of the underlying manifest entry with four
+        derived keys added: ``layer`` (always ``"extension"``), ``sourceId``
+        (this manifest's ``id``), ``kind`` (``"command"`` / ``"template"`` /
+        ``"script"`` / ``"hook"``), and ``id`` (the deterministic identifier).
+        Hook entries also carry a synthesized ``name`` field of the form
+        ``"{eventName}:{command}"`` alongside the original ``eventName`` /
+        ``command`` values, so consumers can locate a hook by its identifier's
+        name component without re-splitting the string.
+
+        The underlying ``self.data`` mapping is never mutated — the enriched
+        dicts are constructed fresh on every call so callers can safely rely on
+        the identifiers reflecting the current in-memory manifest state.
+        """
+        source_id = self.id
+        contributions: List[Dict[str, Any]] = []
+
+        for cmd in self.commands:
+            enriched = dict(cmd)
+            name = cmd.get("name", "")
+            enriched.update(
+                layer="extension",
+                sourceId=source_id,
+                kind="command",
+                id=derive_named_id("extension", source_id, "command", name),
+            )
+            contributions.append(enriched)
+
+        for tmpl in self.templates:
+            enriched = dict(tmpl)
+            name = tmpl.get("name", "")
+            enriched.update(
+                layer="extension",
+                sourceId=source_id,
+                kind="template",
+                id=derive_named_id("extension", source_id, "template", name),
+            )
+            contributions.append(enriched)
+
+        for scr in self.scripts:
+            enriched = dict(scr)
+            name = scr.get("name", "")
+            enriched.update(
+                layer="extension",
+                sourceId=source_id,
+                kind="script",
+                id=derive_named_id("extension", source_id, "script", name),
+            )
+            contributions.append(enriched)
+
+        hooks = self.hooks or {}
+        # Flatten every hook entry across every event so the discriminator
+        # decision has visibility into the full same-source sibling set.
+        flattened: List[tuple[str, dict]] = []
+        for event_name, hook_config in hooks.items():
+            for entry in coerce_hook_entries(hook_config):
+                if isinstance(entry, dict):
+                    normalized = dict(entry)
+                    normalized.setdefault("eventName", event_name)
+                    flattened.append((event_name, normalized))
+
+        siblings_for_id = [
+            {"eventName": event, "command": entry.get("command", "")}
+            for event, entry in flattened
+        ]
+
+        for event_name, entry in flattened:
+            command_value = entry.get("command", "")
+            declared_fields = {
+                k: v
+                for k, v in entry.items()
+                if k not in ("eventName", "command")
+            }
+            hook_id = derive_hook_id(
+                "extension",
+                source_id,
+                event_name,
+                command_value,
+                siblings_for_id,
+                declared_fields,
+            )
+            enriched = dict(entry)
+            enriched.update(
+                layer="extension",
+                sourceId=source_id,
+                kind="hook",
+                name=f"{event_name}:{command_value}",
+                id=hook_id,
+            )
+            contributions.append(enriched)
+
+        return contributions
+
+    def contribution_id(self, kind: str, name: str) -> Optional[str]:
+        """Return the computed identifier for a single contribution, if declared.
+
+        ``name`` is the declared name for command/template/script kinds, or the
+        ``"{eventName}:{command}"`` compound for hook kinds.
+        """
+        for entry in self.iter_contributions():
+            if entry["kind"] == kind and entry.get("name") == name:
+                return entry["id"]
+        return None
 
     def get_hash(self) -> str:
         """Calculate SHA256 hash of manifest file."""
