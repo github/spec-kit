@@ -1,5 +1,7 @@
 <div class="landing-hero">
 
+<img class="landing-hero-logo" src="images/spec-kit-logo.webp" alt="" width="120" height="120">
+
 # GitHub Spec Kit
 
 **Spec-Driven Development or your own process — step by step or as an automated workflow.**
@@ -127,6 +129,10 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
   <a href="guides/existing-projects.md" class="nav-card">
     <strong>Existing Projects</strong>
     <span>Adopt Spec Kit safely in an established codebase</span>
+  </a>
+  <a href="upgrade.md" class="nav-card">
+    <strong>Upgrade</strong>
+    <span>Keep an existing Spec Kit project current across releases</span>
   </a>
   <a href="reference/overview.md" class="nav-card">
     <strong>Reference</strong>
