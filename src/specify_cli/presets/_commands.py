@@ -767,10 +767,15 @@ def preset_catalog_add(
     # Load existing config
     if config_path.exists():
         try:
-            config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         except Exception as e:
             config_label = _display_project_path(project_root, config_path)
             console.print(f"[red]Error:[/red] Failed to read {_escape_markup(str(config_label))}: {_escape_markup(str(e))}")
+            raise typer.Exit(1)
+        if config is None:
+            config = {}
+        elif not isinstance(config, dict):
+            console.print("[red]Error:[/red] Invalid catalog config: expected a mapping.")
             raise typer.Exit(1)
     else:
         config = {}
@@ -827,9 +832,14 @@ def preset_catalog_remove(
         raise typer.Exit(1)
 
     try:
-        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     except Exception as e:
         console.print(f"[red]Error:[/red] Failed to read preset catalog config: {e}")
+        raise typer.Exit(1)
+    if config is None:
+        config = {}
+    elif not isinstance(config, dict):
+        console.print("[red]Error:[/red] Invalid catalog config: expected a mapping.")
         raise typer.Exit(1)
 
     catalogs = config.get("catalogs", [])
