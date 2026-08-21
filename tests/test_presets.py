@@ -40,6 +40,8 @@ from specify_cli.presets import (
     VALID_PRESET_TEMPLATE_TYPES,
 )
 from specify_cli.extensions import ExtensionRegistry
+from specify_cli._console import console
+from specify_cli.presets._commands import _warn_unmet_extension_dependencies
 
 
 # ===== Fixtures =====
@@ -1244,6 +1246,25 @@ class TestPresetExtensionDependencies:
         assert unmet[0]["reason"] == "version"
         assert unmet[0]["installed"] == "0.1.0"
         assert unmet[0]["version"] == ">=9.0.0"
+
+    def test_version_warning_does_not_promise_update_satisfies_constraint(self):
+        """Version remediation must handle constraints update cannot guarantee."""
+        manager = MagicMock()
+        manager.find_unmet_extension_dependencies.return_value = [
+            {
+                "id": "speckit-inventory",
+                "reason": "version",
+                "installed": "3.0.0",
+                "version": "<2",
+            }
+        ]
+
+        with console.capture() as capture:
+            _warn_unmet_extension_dependencies(manager, MagicMock())
+
+        output = strip_ansi(capture.get())
+        assert "install a release of speckit-inventory satisfying <2" in output
+        assert "specify extension update" not in output
 
     def test_optional_dependency_is_never_reported(
         self, project_dir, temp_dir, valid_pack_data
