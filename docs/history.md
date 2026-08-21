@@ -48,7 +48,7 @@ January 22, 2026. The transition became publicly visible when the repository's
 global [`CODEOWNERS` entry](https://github.com/github/spec-kit/commit/3040d33c31d8a26d50f91aec5d62d1cecac3298c)
 changed to `@mnriem` on February 23.
 
-During this stewardship, the maintainer-team focus moved from building a
+During this stewardship, the maintainer team's focus moved from building a
 composable model to using it to ship complete first-party processes. That shift
 was not sequential for the community: the modular extension system began as a
 community contribution, and contributors adopted and extended each primitive
