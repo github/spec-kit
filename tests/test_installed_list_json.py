@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
+from specify_cli._installed_list_json import _normalized_source
 from specify_cli.extensions import ExtensionManager
 from specify_cli.presets import PresetManager
 
@@ -81,10 +83,12 @@ def test_preset_list_json_uses_canonical_wire_object_and_keeps_flat_manager_keys
     project = _project(tmp_path)
     _preset(project, "test-preset")
     manager = PresetManager(project)
-    manager.registry.add("test-preset", {"version": "1.0.0", "source": "catalog", "priority": 3})
+    source = {"kind": "catalog", "catalog": "speckit-official"}
+    manager.registry.add("test-preset", {"version": "1.0.0", "source": source, "priority": 3})
 
     record = manager.list_installed()[0]
     assert record["template_count"] == 3
+    assert record["_json_source"] == source
     assert record["_json_provides"] == {"commands": 1, "templates": 1, "scripts": 1, "hooks": 0}
 
     monkeypatch.chdir(project)
@@ -96,7 +100,7 @@ def test_preset_list_json_uses_canonical_wire_object_and_keeps_flat_manager_keys
         "id", "name", "description", "version", "author", "priority", "enabled", "source", "provides"
     }
     assert item["author"] == "Preset Author"
-    assert item["source"] == {"kind": "catalog"}
+    assert item["source"] == source
     assert item["provides"] == {"commands": 1, "templates": 1, "scripts": 1}
     assert "hooks" not in item["provides"]
 
@@ -116,7 +120,8 @@ def test_preset_list_json_defaults_legacy_source_and_author(tmp_path, monkeypatc
 def test_extension_list_json_is_installed_only_for_available_and_all(tmp_path, monkeypatch):
     project = _project(tmp_path)
     _extension(project, "example-ext")
-    ExtensionManager(project).registry.add("example-ext", {"version": "1.0.0", "source": "unknown"})
+    source = {"kind": "catalog", "catalog": "speckit-official"}
+    ExtensionManager(project).registry.add("example-ext", {"version": "1.0.0", "source": source})
 
     monkeypatch.chdir(project)
     expected = _json_result(runner.invoke(app, ["extension", "list", "--json"]))
@@ -129,7 +134,7 @@ def test_extension_list_json_is_installed_only_for_available_and_all(tmp_path, m
         "id", "name", "description", "version", "author", "priority", "enabled", "source", "provides"
     }
     assert item["author"] is None
-    assert item["source"] == {"kind": "local"}
+    assert item["source"] == source
     assert item["provides"] == {"commands": 1, "templates": 0, "scripts": 0, "hooks": 0}
 
 
@@ -141,16 +146,71 @@ def test_empty_json_lists_are_successful_arrays(tmp_path, monkeypatch):
     assert _json_result(runner.invoke(app, ["extension", "list", "--json"])) == []
 
 
-def test_preset_list_json_degrades_corrupt_records_and_malformed_sources(tmp_path, monkeypatch):
+def test_preset_list_json_preserves_catalog_source_for_corrupt_records(tmp_path, monkeypatch):
     project = _project(tmp_path)
-    PresetManager(project).registry.add("broken-preset", {"version": "1.0.0", "source": []})
+    source = {"kind": "catalog", "catalog": "speckit-official"}
+    PresetManager(project).registry.add("broken-preset", {"version": "1.0.0", "source": source})
 
     monkeypatch.chdir(project)
     item = _json_result(runner.invoke(app, ["preset", "list", "--json"]))[0]
 
     assert item["author"] is None
-    assert item["source"] == {"kind": "local"}
+    assert item["source"] == source
     assert item["provides"] == {"commands": 0, "templates": 0, "scripts": 0}
+
+
+def test_extension_list_json_preserves_catalog_source_for_corrupt_records(tmp_path, monkeypatch):
+    project = _project(tmp_path)
+    source = {"kind": "catalog", "catalog": "speckit-official"}
+    ExtensionManager(project).registry.add("broken-extension", {"version": "1.0.0", "source": source})
+
+    monkeypatch.chdir(project)
+    item = _json_result(runner.invoke(app, ["extension", "list", "--json"]))[0]
+
+    assert item["source"] == source
+    assert item["provides"] == {"commands": 0, "templates": 0, "scripts": 0, "hooks": 0}
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ({"kind": "local", "catalog": "ignored", "extra": "ignored"}, {"kind": "local"}),
+        (
+            {"kind": "catalog", "catalog": "speckit-official", "extra": "ignored"},
+            {"kind": "catalog", "catalog": "speckit-official"},
+        ),
+        ([], {"kind": "local"}),
+        ({"kind": "catalog"}, {"kind": "local"}),
+        ({"kind": "catalog", "catalog": "   "}, {"kind": "local"}),
+        ({"kind": "catalog", "catalog": 1}, {"kind": "local"}),
+    ],
+)
+def test_normalized_source_whitelists_valid_shapes_and_falls_back(source, expected):
+    assert _normalized_source(source) == expected
+
+
+def test_installed_list_json_falls_back_for_legacy_unknown_and_malformed_sources(tmp_path, monkeypatch):
+    project = _project(tmp_path)
+    _preset(project, "legacy-preset")
+    _preset(project, "malformed-preset")
+    _extension(project, "unknown-ext")
+    PresetManager(project).registry.add("legacy-preset", {"version": "1.0.0", "source": "catalog"})
+    PresetManager(project).registry.add(
+        "malformed-preset", {"version": "1.0.0", "source": {"kind": "catalog", "catalog": []}}
+    )
+    ExtensionManager(project).registry.add(
+        "unknown-ext", {"version": "1.0.0", "source": {"kind": "remote", "catalog": "other"}}
+    )
+
+    monkeypatch.chdir(project)
+    presets = _json_result(runner.invoke(app, ["preset", "list", "--json"]))
+    extension = _json_result(runner.invoke(app, ["extension", "list", "--json"]))[0]
+
+    assert {item["id"]: item["source"] for item in presets} == {
+        "legacy-preset": {"kind": "local"},
+        "malformed-preset": {"kind": "local"},
+    }
+    assert extension["source"] == {"kind": "local"}
 
 
 def test_extension_json_counts_multiple_hooks_for_one_event(tmp_path, monkeypatch):

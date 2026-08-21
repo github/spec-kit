@@ -12,6 +12,22 @@ from typing import Any, NoReturn
 import typer
 
 
+def _normalized_source(source: Any) -> dict[str, str]:
+    """Return the stable public source shape for an installed record."""
+    if not isinstance(source, dict):
+        return {"kind": "local"}
+
+    kind = source.get("kind")
+    if kind == "local":
+        return {"kind": "local"}
+    if kind == "catalog":
+        catalog = source.get("catalog")
+        if isinstance(catalog, str) and catalog.strip():
+            return {"kind": "catalog", "catalog": catalog}
+
+    return {"kind": "local"}
+
+
 def installed_list_item(record: dict[str, Any], *, include_hooks: bool) -> dict[str, Any]:
     """Return the canonical public JSON object for one installed record."""
     provides = record["_json_provides"]
@@ -30,7 +46,7 @@ def installed_list_item(record: dict[str, Any], *, include_hooks: bool) -> dict[
         "author": record["_json_author"],
         "priority": record["priority"],
         "enabled": record["enabled"],
-        "source": {"kind": record["_json_source_kind"]},
+        "source": _normalized_source(record["_json_source"]),
         "provides": provides,
     }
 

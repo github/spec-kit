@@ -50,10 +50,12 @@ Lists installed presets with their versions, descriptions, template counts, and 
 
 `--json` writes a JSON array to stdout. Every item has the keys `id`, `name`,
 `description`, `version`, `author`, `priority`, `enabled`, `source`, and
-`provides`. `author` is `null` when absent; `source` is either
-`{"kind":"local"}` or `{"kind":"catalog"}`. Preset `provides` contains
-`commands`, `templates`, and `scripts` counts. For runtime failures after
-option parsing, `--json` writes `{"error":"..."}` to stderr and exits nonzero.
+`provides`. `author` is `null` when absent; `source` is `{"kind":"local"}`
+for local, legacy, or malformed provenance, or
+`{"kind":"catalog","catalog":"<catalog-name>"}` for a valid catalog source.
+Preset `provides` contains `commands`, `templates`, and `scripts` counts. For
+runtime failures after option parsing, `--json` writes `{"error":"..."}` to
+stderr and exits nonzero.
 
 Presets are printed in **resolution/precedence order**: the highest-precedence preset (lowest priority number) is listed first, and ties on priority are broken alphabetically by preset id. This matches the order used when composing commands and resolving templates, so the top entry is the one that wins for overlapping files.
 

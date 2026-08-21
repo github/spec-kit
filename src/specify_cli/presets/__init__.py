@@ -4066,15 +4066,6 @@ class PresetManager:
                 provided_counts = {"commands": 0, "templates": 0, "scripts": 0, "hooks": 0}
                 for template in manifest.templates:
                     provided_counts[f"{template['type']}s"] += 1
-                source = metadata.get("source")
-                source_kind = (
-                    source.get("kind") if isinstance(source, dict) else source
-                )
-                source_kind = (
-                    source_kind
-                    if isinstance(source_kind, str) and source_kind in {"local", "catalog"}
-                    else "local"
-                )
                 author = manifest.author
                 result.append({
                     "id": pack_id,
@@ -4087,17 +4078,10 @@ class PresetManager:
                     "tags": manifest.tags,
                     "priority": normalize_priority(metadata.get("priority")),
                     "_json_author": author if isinstance(author, str) and author else None,
-                    "_json_source_kind": source_kind,
+                    "_json_source": metadata.get("source"),
                     "_json_provides": provided_counts,
                 })
             except PresetValidationError:
-                source = metadata.get("source")
-                source_kind = source.get("kind") if isinstance(source, dict) else source
-                source_kind = (
-                    source_kind
-                    if isinstance(source_kind, str) and source_kind in {"local", "catalog"}
-                    else "local"
-                )
                 result.append({
                     "id": pack_id,
                     "name": pack_id,
@@ -4109,7 +4093,7 @@ class PresetManager:
                     "tags": [],
                     "priority": normalize_priority(metadata.get("priority")),
                     "_json_author": None,
-                    "_json_source_kind": source_kind,
+                    "_json_source": metadata.get("source"),
                     "_json_provides": {"commands": 0, "templates": 0, "scripts": 0, "hooks": 0},
                 })
 
