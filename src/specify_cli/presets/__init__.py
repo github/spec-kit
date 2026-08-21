@@ -4081,6 +4081,10 @@ class PresetManager:
 
             try:
                 manifest = PresetManifest(manifest_path)
+                provided_counts = {"commands": 0, "templates": 0, "scripts": 0, "hooks": 0}
+                for template in manifest.templates:
+                    provided_counts[f"{template['type']}s"] += 1
+                author = manifest.author
                 result.append({
                     "id": pack_id,
                     "name": manifest.name,
@@ -4091,6 +4095,9 @@ class PresetManager:
                     "template_count": len(manifest.templates),
                     "tags": manifest.tags,
                     "priority": normalize_priority(metadata.get("priority")),
+                    "_json_author": author if isinstance(author, str) and author else None,
+                    "_json_source": metadata.get("source"),
+                    "_json_provides": provided_counts,
                 })
             except PresetValidationError:
                 result.append({
@@ -4103,6 +4110,9 @@ class PresetManager:
                     "template_count": 0,
                     "tags": [],
                     "priority": normalize_priority(metadata.get("priority")),
+                    "_json_author": None,
+                    "_json_source": metadata.get("source"),
+                    "_json_provides": {"commands": 0, "templates": 0, "scripts": 0, "hooks": 0},
                 })
 
         return result

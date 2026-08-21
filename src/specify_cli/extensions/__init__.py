@@ -3490,6 +3490,11 @@ class ExtensionManager:
 
             try:
                 manifest = ExtensionManifest(manifest_path)
+                author = manifest.data["extension"].get("author")
+                json_hook_count = sum(
+                    len(coerce_hook_entries(hook_config))
+                    for hook_config in manifest.hooks.values()
+                )
                 result.append(
                     {
                         "id": ext_id,
@@ -3501,6 +3506,14 @@ class ExtensionManager:
                         "installed_at": metadata.get("installed_at"),
                         "command_count": len(manifest.commands),
                         "hook_count": len(manifest.hooks),
+                        "_json_author": author if isinstance(author, str) and author else None,
+                        "_json_source": metadata.get("source"),
+                        "_json_provides": {
+                            "commands": len(manifest.commands),
+                            "templates": len(manifest.templates),
+                            "scripts": len(manifest.scripts),
+                            "hooks": json_hook_count,
+                        },
                     }
                 )
             except ValidationError:
@@ -3516,6 +3529,9 @@ class ExtensionManager:
                         "installed_at": metadata.get("installed_at"),
                         "command_count": 0,
                         "hook_count": 0,
+                        "_json_author": None,
+                        "_json_source": metadata.get("source"),
+                        "_json_provides": {"commands": 0, "templates": 0, "scripts": 0, "hooks": 0},
                     }
                 )
 
