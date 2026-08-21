@@ -10,6 +10,7 @@ Technical reference for Spec Kit extension system APIs and manifest schema.
 4. [Configuration Schema](#configuration-schema)
 5. [Hook System](#hook-system)
 6. [CLI Commands](#cli-commands)
+7. [Contribution Identifiers](#contribution-identifiers)
 
 ---
 
@@ -859,7 +860,60 @@ satisfied = version_satisfies("1.2.3", ">=1.0.0,<2.0.0")  # bool
 
 ---
 
-## File System Layout
+## Contribution Identifiers
+
+Every command, template, script, and hook contributed by an extension (or a preset, or the core layer) is addressable at read time by a deterministic opaque identifier. Resolved artifact-stack layers carry a matching `lookupId` field that points back to the contribution the layer came from. Identifiers are **computed on demand from author-declared manifest content** and are **never persisted** to `.specify/` or to any cache file.
+
+### Grammar
+
+Named contributions (commands, templates, scripts) follow:
+
+```text
+{layer}:{sourceId}:{kind}:{name}
+```
+
+- `layer` is one of `core`, `preset`, or `extension`.
+- `sourceId` is `_` for `core`, the preset pack id for `preset`, or the extension id for `extension`.
+- `kind` is one of `command`, `template`, `script`, or `hook`.
+- `name` is the contribution's declared `name` field.
+
+Hook contributions use a compound name-component built from the event and command:
+
+```text
+{layer}:{sourceId}:hook:{eventName}:{command}
+```
+
+When two or more hook entries within the same source share the same `(eventName, command)` pair, a 12-hex-character discriminator is appended:
+
+```text
+{layer}:{sourceId}:hook:{eventName}:{command}:{discriminator}
+```
+
+The discriminator is the first 12 lowercase hex characters of `sha256(canonical_json(entry - {eventName, command}))`. Two hook entries with byte-identical declared fields (after removing `eventName` and `command`) are rejected at manifest load with a `ValidationError` naming both positions — there is no meaningful way to distinguish them at read time.
+
+### Reserved character
+
+`:` is reserved as the identifier component separator. It cannot appear inside any of `layer`, `sourceId`, `kind`, `name`, `eventName`, or `command`. Extension ids, command names, template names, and script names are already constrained by their existing regex patterns (`^[a-z0-9-]+$` and friends), which forbid `:`. Hook event names (mapping keys) and hook `command` values are additionally validated to reject `:` at manifest load.
+
+### The `project:` sentinel
+
+Project-local overrides in `.specify/templates/overrides/` are a resolver-only concept — they have no backing manifest and cannot appear in `iter_contributions()`. Layers of that kind carry a synthetic `lookupId` of the form `project:_:{kind}:{name}` so consumers that reverse-lookup the id always see "not found", which is the intended behaviour: overrides are addressable at the stack level, not as first-class contributions.
+
+### Python API
+
+`ExtensionManifest.iter_contributions()` yields dicts of the form `{layer, sourceId, kind, name, id, ...author-declared fields}`; each entry's `id` is the computed identifier. `ExtensionManifest.contribution_id(kind, name)` returns the id for a single lookup, or `None` if no contribution matches. `PresetManifest` exposes the same two methods.
+
+`PresetResolver.collect_all_layers()` returns layer dicts that include a `lookupId` field for every layer type (`project override`, preset, extension, core, and bundled core).
+
+### Determinism guarantees
+
+Identifier derivation reads only the in-memory declared manifest content. No filesystem paths, no `os.environ`, no timestamps, and no file-content hashes contribute to any id. Copying an extension or preset to a different machine (or renaming its directory, or touching its files) does not change the identifiers it produces.
+
+### Opacity guidance
+
+Identifiers are stable, but treat them as **opaque strings** in stored data (registries, cache files, external tooling). Parse them with the helpers in `specify_cli._identifier` (`derive_named_id`, `derive_hook_id`) rather than by string-splitting on `:` — the discriminator suffix and future grammar extensions may otherwise catch you out.
+
+
 
 ```text
 .specify/

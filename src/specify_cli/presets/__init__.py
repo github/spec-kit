@@ -37,6 +37,10 @@ from .._download_security import (
     safe_extract_archive,
 )
 from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
+from .._identifier import (
+    PROJECT_OVERRIDE_LAYER,
+    derive_named_id,
+)
 from .._init_options import (
     MISSING_INIT_OPTIONS_FILE,
     is_ai_skills_enabled,
@@ -538,6 +542,38 @@ class PresetManifest:
     def tags(self) -> List[str]:
         """Get preset tags."""
         return self.data.get("tags", [])
+
+    def iter_contributions(self) -> List[Dict[str, Any]]:
+        """Return an enriched, ordered list of every contribution this preset declares.
+
+        Each dict is a shallow copy of the underlying ``provides.templates[]``
+        entry with four derived keys added: ``layer`` (always ``"preset"``),
+        ``sourceId`` (this preset's ``id``), ``kind`` (mirrors the entry's
+        ``type`` — one of ``"command"`` / ``"template"`` / ``"script"``), and
+        ``id`` (the deterministic identifier). The underlying manifest data is
+        not mutated.
+        """
+        source_id = self.id
+        contributions: List[Dict[str, Any]] = []
+        for entry in self.templates:
+            kind = entry.get("type", "")
+            name = entry.get("name", "")
+            enriched = dict(entry)
+            enriched.update(
+                layer="preset",
+                sourceId=source_id,
+                kind=kind,
+                id=derive_named_id("preset", source_id, kind, name),
+            )
+            contributions.append(enriched)
+        return contributions
+
+    def contribution_id(self, kind: str, name: str) -> Optional[str]:
+        """Return the computed identifier for a single contribution, if declared."""
+        for entry in self.iter_contributions():
+            if entry["kind"] == kind and entry.get("name") == name:
+                return entry["id"]
+        return None
 
     def get_hash(self) -> str:
         """Calculate SHA256 hash of manifest file."""
@@ -5527,6 +5563,9 @@ class PresetResolver:
                 "path": override,
                 "source": "project override",
                 "strategy": "replace",
+                "lookupId": derive_named_id(
+                    PROJECT_OVERRIDE_LAYER, "_", template_type, template_name
+                ),
             })
 
         # Priority 2: Installed presets (sorted by priority — lower number = higher precedence)
@@ -5583,6 +5622,9 @@ class PresetResolver:
                         "path": candidate,
                         "source": f"{pack_id} v{version}",
                         "strategy": strategy,
+                        "lookupId": derive_named_id(
+                            "preset", pack_id, template_type, template_name
+                        ),
                     })
 
         # Priority 3: Extension-provided templates (always "replace")
@@ -5611,6 +5653,9 @@ class PresetResolver:
                     "strategy": "replace",
                     "extension_id": ext_id,
                     "extension_dir": ext_dir,
+                    "lookupId": derive_named_id(
+                        "extension", ext_id, template_type, template_name
+                    ),
                 })
 
         # Priority 4: Core templates (always "replace")
@@ -5639,6 +5684,9 @@ class PresetResolver:
                 "path": core,
                 "source": "core",
                 "strategy": "replace",
+                "lookupId": derive_named_id(
+                    "core", "_", template_type, template_name
+                ),
             })
         else:
             # Priority 5: Bundled core_pack (wheel install) or repo-root
@@ -5649,6 +5697,9 @@ class PresetResolver:
                     "path": bundled,
                     "source": "core (bundled)",
                     "strategy": "replace",
+                    "lookupId": derive_named_id(
+                        "core", "_", template_type, template_name
+                    ),
                 })
 
         return layers
