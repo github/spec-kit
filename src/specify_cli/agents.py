@@ -61,6 +61,10 @@ class CommandRegistrar:
         r"(?<![\w$:/\-\\])"
         r"/(?P<command>speckit\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)"
     )
+    _MARKDOWN_INLINE_LINK_DESTINATION_PREFIX = re.compile(r"\]\(\s*<?$")
+    _HTML_HREF_VALUE_PREFIX = re.compile(
+        r"\bhref\s*=\s*['\"]?$", re.IGNORECASE
+    )
     _FILE_LIKE_COMMAND_SUFFIXES = frozenset(
         {
             "csv",
@@ -618,12 +622,16 @@ class CommandRegistrar:
         body: str,
         render_invocation: Callable[[str], str],
         known_command_names: Iterable[str],
+        *,
+        restrict_to_known_commands: bool = False,
     ) -> str:
         """Render isolated literal slash-dot refs in extension skill bodies.
 
         Tokens remain the portable authoring form. This compatibility fallback
         covers existing literal references, including core and cross-extension
-        commands that are not part of the current extension manifest.
+        commands that are not part of the current extension manifest. Callers
+        whose output path does not emit aliases can restrict rewriting to the
+        supplied names so references never target absent skill artifacts.
         """
         known_names = frozenset(
             name for name in known_command_names if isinstance(name, str)
@@ -638,13 +646,32 @@ class CommandRegistrar:
             prefix = body[token_start:match_start]
             return "?" in prefix or "#" in prefix
 
+        def _is_relative_link_destination(match_start: int) -> bool:
+            line_start = body.rfind("\n", 0, match_start) + 1
+            if cls._MARKDOWN_INLINE_LINK_DESTINATION_PREFIX.search(
+                body[line_start:match_start]
+            ):
+                return True
+
+            tag_start = body.rfind("<", 0, match_start)
+            if tag_start < 0 or body.rfind(">", 0, match_start) > tag_start:
+                return False
+            return (
+                cls._HTML_HREF_VALUE_PREFIX.search(body[tag_start:match_start])
+                is not None
+            )
+
         def _replacement(match: re.Match[str]) -> str:
             command_name = match.group("command")
-            if _is_url_value(match.start()):
+            if _is_url_value(match.start()) or _is_relative_link_destination(
+                match.start()
+            ):
                 return match.group(0)
             if match.start() > 0 and body[match.start() - 1] == ".":
                 return match.group(0)
             if body[match.end() : match.end() + 1] in {"/", "\\"}:
+                return match.group(0)
+            if restrict_to_known_commands and command_name not in known_names:
                 return match.group(0)
             if (
                 command_name not in known_names
