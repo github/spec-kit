@@ -175,6 +175,15 @@ def _create_extension_dir_with_aliases(
     return ext_dir
 
 
+def _create_cross_extension_with_suffix_alias(temp_dir: Path) -> Path:
+    """Create an installed extension with a file-like command alias."""
+    return _create_extension_dir_with_aliases(
+        temp_dir,
+        "other-ext",
+        [("run", ["speckit.other.export.json"])],
+    )
+
+
 def _create_unicode_extension_dir(temp_dir: Path, ext_id: str = "uni-ext") -> Path:
     """Create an extension whose command description contains non-ASCII characters."""
     ext_dir = temp_dir / ext_id
@@ -1166,12 +1175,28 @@ class TestExtensionSkillRegistration:
         assert "__SPECKIT_COMMAND_PLAN__" not in content
         assert expected_invocation in content
 
-    def test_skill_registration_does_not_rewrite_literal_speckit_text(
-        self, project_dir, temp_dir
+    @pytest.mark.parametrize(
+        ("ai", "expected_invocation", "aliases_emitted"),
+        [
+            ("claude", "/speckit-foo-bar", True),
+            ("copilot", "/speckit-foo-bar", False),
+            ("codex", "$speckit-foo-bar", True),
+            ("command-code", "$speckit-foo-bar", True),
+            ("kimi", "/skill:speckit-foo-bar", True),
+            ("zcode", "$speckit-foo-bar", True),
+            ("bob", "/speckit-foo-bar", False),
+            ("qodercli", "/speckit-foo-bar", True),
+        ],
+    )
+    def test_skill_registration_normalizes_only_emitted_skill_command_refs(
+        self, project_dir, temp_dir, ai, expected_invocation, aliases_emitted
     ):
-        """Auto-registered skills should leave literal speckit text untouched."""
-        _create_init_options(project_dir, ai="codex", ai_skills=True)
-        skills_dir = _create_skills_dir(project_dir, ai="codex")
+        """Literal refs normalize only when the active path emits their skill."""
+        _create_init_options(project_dir, ai=ai, ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai=ai)
+        core_skill = skills_dir / "speckit-tasks" / "SKILL.md"
+        core_skill.parent.mkdir(parents=True, exist_ok=True)
+        core_skill.write_text("core tasks skill", encoding="utf-8")
 
         ext_dir = temp_dir / "literal-ref-ext"
         ext_dir.mkdir()
@@ -1190,6 +1215,10 @@ class TestExtensionSkillRegistration:
                         "name": "speckit.literal-ref-ext.run",
                         "file": "commands/run.md",
                         "description": "Run command",
+                        "aliases": [
+                            "speckit.foo.bar",
+                            "speckit.export.json",
+                        ],
                     }
                 ]
             },
@@ -1202,20 +1231,239 @@ class TestExtensionSkillRegistration:
             "---\n"
             "description: Run command\n"
             "---\n\n"
-            "Literal slash form: /speckit.foo.bar\n"
-            "Literal skill form: /speckit-plan\n"
+            "Literal slash form: /speckit.foo.bar --flag value\n"
+            "Valid suffix form: /speckit.export.json\n"
+            "Primary command form: /speckit.literal-ref-ext.run\n"
+            "Primary prose form: Run /speckit.literal-ref-ext.run.\n"
+            "Core command form: /speckit.tasks\n"
+            "Cross-extension command form: /speckit.other-ext.run\n"
+            "Cross-extension suffix form: /speckit.other.export.json\n"
+            "Path continuation form: /speckit.foo.bar/scripts/run.sh\n"
+            "Sentence punctuation form: Run /speckit.foo.bar.\n"
+            "Native slash form: /speckit-foo-bar\n"
+            "Native dollar form: $speckit-foo-bar\n"
+            "Native skill form: /skill:speckit-foo-bar\n"
             "Literal bare form: speckit.foo.bar\n"
+            "Path-like form: https://example.com/speckit.foo.bar\n"
+            "Relative path form: ./speckit.foo.bar\n"
+            "Query URL form: https://example.test/redirect?next=/speckit.foo.bar\n"
+            "Fragment URL form: https://example.test/redirect#next=/speckit.foo.bar\n"
+            "Relative query URL form: /redirect?next=/speckit.foo.bar\n"
+            "Relative fragment URL form: /redirect#next=/speckit.foo.bar\n"
+            "Whitespace prose form: What? /speckit.foo.bar\n"
+            "Markdown link form: [docs](/speckit.literal-ref-ext.run)\n"
+            "Quoted HTML href form: <a href=\"/speckit.literal-ref-ext.run\">docs</a>\n"
+            "Single-quoted HTML href form: <a href='/speckit.literal-ref-ext.run'>docs</a>\n"
+            "Unquoted HTML href form: <a href=/speckit.literal-ref-ext.run>docs</a>\n"
+            "File-like form: /speckit.foo.bar.md\n"
         )
 
         manager = ExtensionManager(project_dir)
-        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+        manager.install_from_directory(
+            _create_cross_extension_with_suffix_alias(temp_dir),
+            "0.1.0",
+            register_commands=True,
+        )
+        # Exercise normal extension-add registration. Skills-native agents
+        # write their SKILL.md through CommandRegistrar before the later
+        # skill mirror reaches its existing-file guard.
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=True)
 
         content = (skills_dir / "speckit-literal-ref-ext-run" / "SKILL.md").read_text()
-        assert "/speckit.foo.bar" in content
-        assert "/speckit-plan" in content
-        assert "speckit.foo.bar" in content
-        assert "/speckit-foo-bar" not in content
-        assert "$speckit-plan" not in content
+        expected_json_invocation = expected_invocation.replace("foo-bar", "export-json")
+        expected_primary_invocation = expected_invocation.replace(
+            "foo-bar", "literal-ref-ext-run"
+        )
+        expected_core_invocation = expected_invocation.replace("foo-bar", "tasks")
+        expected_cross_extension_invocation = expected_invocation.replace(
+            "foo-bar", "other-ext-run"
+        )
+        expected_cross_extension_suffix_invocation = expected_invocation.replace(
+            "foo-bar", "other-export-json"
+        )
+        assert f"Primary command form: {expected_primary_invocation}" in content
+        assert f"Primary prose form: Run {expected_primary_invocation}." in content
+        assert f"Core command form: {expected_core_invocation}" in content
+        assert (
+            f"Cross-extension command form: {expected_cross_extension_invocation}"
+            in content
+        )
+        assert "Path continuation form: /speckit.foo.bar/scripts/run.sh" in content
+        assert "Native slash form: /speckit-foo-bar" in content
+        assert "Native dollar form: $speckit-foo-bar" in content
+        assert "Native skill form: /skill:speckit-foo-bar" in content
+        assert "Literal bare form: speckit.foo.bar" in content
+        assert "https://example.com/speckit.foo.bar" in content
+        assert "./speckit.foo.bar" in content
+        assert "https://example.test/redirect?next=/speckit.foo.bar" in content
+        assert "https://example.test/redirect#next=/speckit.foo.bar" in content
+        assert "Relative query URL form: /redirect?next=/speckit.foo.bar" in content
+        assert "Relative fragment URL form: /redirect#next=/speckit.foo.bar" in content
+        assert "Markdown link form: [docs](/speckit.literal-ref-ext.run)" in content
+        assert (
+            'Quoted HTML href form: <a href="/speckit.literal-ref-ext.run">docs</a>'
+            in content
+        )
+        assert (
+            "Single-quoted HTML href form: "
+            "<a href='/speckit.literal-ref-ext.run'>docs</a>" in content
+        )
+        assert (
+            "Unquoted HTML href form: "
+            "<a href=/speckit.literal-ref-ext.run>docs</a>" in content
+        )
+        assert "/speckit.foo.bar.md" in content
+
+        alias_skill = skills_dir / "speckit-foo-bar" / "SKILL.md"
+        if aliases_emitted:
+            assert f"Literal slash form: {expected_invocation} --flag value" in content
+            assert f"Valid suffix form: {expected_json_invocation}" in content
+            assert (
+                "Cross-extension suffix form: "
+                f"{expected_cross_extension_suffix_invocation}" in content
+            )
+            assert f"Sentence punctuation form: Run {expected_invocation}." in content
+            assert f"Whitespace prose form: What? {expected_invocation}" in content
+            assert alias_skill.is_file()
+        else:
+            assert "Literal slash form: /speckit.foo.bar --flag value" in content
+            assert "Valid suffix form: /speckit.export.json" in content
+            assert (
+                "Cross-extension suffix form: /speckit.other.export.json" in content
+            )
+            assert "Sentence punctuation form: Run /speckit.foo.bar." in content
+            assert "Whitespace prose form: What? /speckit.foo.bar" in content
+            assert not alias_skill.exists()
+
+    @pytest.mark.parametrize("ai", ["copilot", "bob"])
+    def test_fallback_keeps_missing_source_primary_ref_literal(
+        self, project_dir, temp_dir, ai
+    ):
+        """Fallback rewrites only primaries whose skill can be emitted."""
+        _create_init_options(project_dir, ai=ai, ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai=ai)
+
+        ext_dir = temp_dir / f"missing-primary-{ai}"
+        ext_dir.mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "missing-primary-ext",
+                "name": "Missing Primary Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.missing-primary-ext.run",
+                        "file": "commands/run.md",
+                        "description": "Run command",
+                    },
+                    {
+                        "name": "speckit.missing-primary-ext.ghost",
+                        "file": "commands/ghost.md",
+                        "description": "Missing command",
+                    },
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.safe_dump(manifest_data, f)
+
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Run command\n"
+            "---\n\n"
+            "Generated primary: /speckit.missing-primary-ext.run\n"
+            "Missing primary: /speckit.missing-primary-ext.ghost\n",
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=True)
+
+        content = (
+            skills_dir / "speckit-missing-primary-ext-run" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        assert "Generated primary: /speckit-missing-primary-ext-run" in content
+        assert "Missing primary: /speckit.missing-primary-ext.ghost" in content
+        assert not (
+            skills_dir / "speckit-missing-primary-ext-ghost" / "SKILL.md"
+        ).exists()
+
+    def test_skill_registration_rewrites_multi_segment_alias_with_punctuation(
+        self, project_dir, temp_dir
+    ):
+        """Aliases can be free-form safe names with multiple dotted segments."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+
+        ext_dir = temp_dir / "multi-segment-alias-ext"
+        ext_dir.mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "multi-segment-alias-ext",
+                "name": "Multi Segment Alias Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.multi-segment-alias-ext.run",
+                        "file": "commands/run.md",
+                        "description": "Run command",
+                        "aliases": ["speckit.foo.bar.baz"],
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.safe_dump(manifest_data, f)
+
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Run command\n"
+            "---\n\n"
+            "Sentence punctuation form: Run /speckit.foo.bar.baz.\n"
+            "Core command form: /speckit.tasks\n"
+            "Cross-extension command form: /speckit.other-ext.run\n"
+            "Cross-extension suffix form: /speckit.other.export.json\n"
+            "Query URL form: https://example.test/redirect?next=/speckit.foo.bar\n"
+            "Fragment URL form: https://example.test/redirect#next=/speckit.foo.bar\n"
+            "Relative query URL form: /redirect?next=/speckit.foo.bar\n"
+            "Relative fragment URL form: /redirect#next=/speckit.foo.bar\n"
+            "Whitespace prose form: What? /speckit.foo.bar\n"
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_cross_extension_with_suffix_alias(temp_dir),
+            "0.1.0",
+            register_commands=True,
+        )
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=True)
+
+        content = (
+            skills_dir / "speckit-multi-segment-alias-ext-run" / "SKILL.md"
+        ).read_text()
+        assert "Sentence punctuation form: Run /speckit-foo-bar-baz." in content
+        assert "/speckit.foo.bar.baz." not in content
+        assert "Core command form: /speckit-tasks" in content
+        assert "Cross-extension command form: /speckit-other-ext-run" in content
+        assert "Cross-extension suffix form: /speckit-other-export-json" in content
+        assert "https://example.test/redirect?next=/speckit.foo.bar" in content
+        assert "https://example.test/redirect#next=/speckit.foo.bar" in content
+        assert "Relative query URL form: /redirect?next=/speckit.foo.bar" in content
+        assert "Relative fragment URL form: /redirect#next=/speckit.foo.bar" in content
+        assert "Whitespace prose form: What? /speckit-foo-bar" in content
+        assert (skills_dir / "speckit-foo-bar-baz" / "SKILL.md").is_file()
 
     def test_missing_command_file_skipped(self, skills_project, temp_dir):
         """Commands with missing source files should be skipped gracefully."""
@@ -3025,7 +3273,16 @@ class TestRegisterExtensionSkillsForceFlag:
         """
         _create_init_options(project_dir, ai="claude", ai_skills=True)
         skills_dir = _create_skills_dir(project_dir, ai="claude")
+        core_skill = skills_dir / "speckit-tasks" / "SKILL.md"
+        core_skill.parent.mkdir(parents=True, exist_ok=True)
+        core_skill.write_text("core tasks skill", encoding="utf-8")
         ext_dir = _create_extension_dir(temp_dir)
+        (ext_dir / "commands" / "hello.md").write_text(
+            "---\n"
+            "description: Test hello command\n"
+            "---\n\n"
+            "Run this to say hello. Next: /speckit.tasks\n"
+        )
 
         manager = ExtensionManager(project_dir)
         # Install extension so it is in the registry
@@ -3043,6 +3300,7 @@ class TestRegisterExtensionSkillsForceFlag:
             "After register_enabled_extensions_for_agent(force=True), the SKILL.md "
             "must contain the extension body, not just the core-template stub."
         )
+        assert "Next: /speckit-tasks" in content
 
     def test_force_true_with_preexisting_dir_but_no_skill_file(
         self, project_dir, temp_dir

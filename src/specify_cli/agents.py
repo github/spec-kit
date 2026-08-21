@@ -10,7 +10,7 @@ import os
 import re
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import yaml
 
@@ -57,6 +57,38 @@ class CommandRegistrar:
     # Populated lazily via _ensure_configs() on first use.
     AGENT_CONFIGS: dict[str, dict[str, Any]] = {}
     _configs_loaded: bool = False
+    _LITERAL_EXTENSION_SKILL_COMMAND_REF = re.compile(
+        r"(?<![\w$:/\-\\])"
+        r"/(?P<command>speckit\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)"
+    )
+    _MARKDOWN_INLINE_LINK_DESTINATION_PREFIX = re.compile(r"\]\(\s*<?$")
+    _HTML_HREF_VALUE_PREFIX = re.compile(
+        r"\bhref\s*=\s*['\"]?$", re.IGNORECASE
+    )
+    _FILE_LIKE_COMMAND_SUFFIXES = frozenset(
+        {
+            "csv",
+            "css",
+            "html",
+            "js",
+            "json",
+            "jsx",
+            "md",
+            "mdx",
+            "ps1",
+            "psm1",
+            "py",
+            "scss",
+            "sh",
+            "toml",
+            "ts",
+            "tsx",
+            "txt",
+            "xml",
+            "yaml",
+            "yml",
+        }
+    )
 
     def __init__(self) -> None:
         self._ensure_configs()
@@ -584,6 +616,73 @@ class CommandRegistrar:
             return False
         return os.path.normpath(name) == name
 
+    @classmethod
+    def normalize_literal_extension_skill_command_refs(
+        cls,
+        body: str,
+        render_invocation: Callable[[str], str],
+        known_command_names: Iterable[str],
+        *,
+        restrict_to_known_commands: bool = False,
+    ) -> str:
+        """Render isolated literal slash-dot refs in extension skill bodies.
+
+        Tokens remain the portable authoring form. This compatibility fallback
+        covers existing literal references, including core and cross-extension
+        commands that are not part of the current extension manifest. Callers
+        whose output path does not emit aliases can restrict rewriting to the
+        supplied names so references never target absent skill artifacts.
+        """
+        known_names = frozenset(
+            name for name in known_command_names if isinstance(name, str)
+        )
+
+        def _is_url_value(match_start: int) -> bool:
+            token_start = max(
+                body.rfind(" ", 0, match_start),
+                body.rfind("\n", 0, match_start),
+                body.rfind("\t", 0, match_start),
+            ) + 1
+            prefix = body[token_start:match_start]
+            return "?" in prefix or "#" in prefix
+
+        def _is_relative_link_destination(match_start: int) -> bool:
+            line_start = body.rfind("\n", 0, match_start) + 1
+            if cls._MARKDOWN_INLINE_LINK_DESTINATION_PREFIX.search(
+                body[line_start:match_start]
+            ):
+                return True
+
+            tag_start = body.rfind("<", 0, match_start)
+            if tag_start < 0 or body.rfind(">", 0, match_start) > tag_start:
+                return False
+            return (
+                cls._HTML_HREF_VALUE_PREFIX.search(body[tag_start:match_start])
+                is not None
+            )
+
+        def _replacement(match: re.Match[str]) -> str:
+            command_name = match.group("command")
+            if _is_url_value(match.start()) or _is_relative_link_destination(
+                match.start()
+            ):
+                return match.group(0)
+            if match.start() > 0 and body[match.start() - 1] == ".":
+                return match.group(0)
+            if body[match.end() : match.end() + 1] in {"/", "\\"}:
+                return match.group(0)
+            if restrict_to_known_commands and command_name not in known_names:
+                return match.group(0)
+            if (
+                command_name not in known_names
+                and command_name.rsplit(".", 1)[-1].lower()
+                in cls._FILE_LIKE_COMMAND_SUFFIXES
+            ):
+                return match.group(0)
+            return render_invocation(command_name)
+
+        return cls._LITERAL_EXTENSION_SKILL_COMMAND_REF.sub(_replacement, body)
+
     @staticmethod
     def _same_lexical_path(left: Path, right: Path) -> bool:
         """Compare paths after lexical normalization without resolving symlinks."""
@@ -618,6 +717,7 @@ class CommandRegistrar:
         _resolved_dir: Optional[Path] = None,
         link_outputs: bool = False,
         extension_id: Optional[str] = None,
+        known_extension_command_names: Optional[Iterable[str]] = None,
     ) -> List[str]:
         """Register commands for a specific agent.
 
@@ -686,6 +786,29 @@ class CommandRegistrar:
         except (ImportError, ValueError, KeyError):
             pass
         _prefix = get_invocation_prefix(agent_name, registrar_writes_skills)
+
+        # Skills-native agents write SKILL.md through this registrar before
+        # the extension skill mirror reaches its existing-file guard. Apply
+        # the same extension-only compatibility fallback here.
+        known_command_names: set[str] = set()
+        if registrar_writes_skills and extension_id is not None:
+            known_command_names = {
+                command["name"]
+                for command in commands
+                if isinstance(command.get("name"), str)
+            }
+            for command in commands:
+                aliases = command.get("aliases", [])
+                if isinstance(aliases, list):
+                    known_command_names.update(
+                        alias for alias in aliases if isinstance(alias, str)
+                    )
+            if known_extension_command_names is not None:
+                known_command_names.update(
+                    name
+                    for name in known_extension_command_names
+                    if isinstance(name, str)
+                )
 
         for cmd_info in commands:
             cmd_name = cmd_info["name"]
@@ -789,6 +912,12 @@ class CommandRegistrar:
             from specify_cli.integrations.base import IntegrationBase  # noqa: PLC0415
 
             body = IntegrationBase.resolve_command_refs(body, _sep, _prefix)
+            if registrar_writes_skills and extension_id is not None:
+                body = self.normalize_literal_extension_skill_command_refs(
+                    body,
+                    lambda command_name: _prefix + command_name.replace(".", _sep),
+                    known_command_names,
+                )
 
             output_name = self._compute_output_name(agent_name, cmd_name, agent_config)
 
@@ -1060,6 +1189,7 @@ class CommandRegistrar:
         create_missing_active_skills_dir: bool = False,
         extension_id: Optional[str] = None,
         only_agent: Optional[str] = None,
+        known_extension_command_names: Optional[Iterable[str]] = None,
     ) -> Dict[str, List[str]]:
         """Register commands for all detected agents in the project.
 
@@ -1184,6 +1314,7 @@ class CommandRegistrar:
                         _resolved_dir=agent_dir,
                         link_outputs=link_outputs,
                         extension_id=extension_id,
+                        known_extension_command_names=known_extension_command_names,
                     )
                     if registered:
                         results[agent_name] = registered
