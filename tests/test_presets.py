@@ -1778,6 +1778,25 @@ class TestResolveCore:
 
         assert result is None, "OSError during manifest load must be silently skipped"
 
+    def test_resolve_extension_command_via_manifest_skips_validation_error(self, project_dir):
+        """resolve_extension_command_via_manifest skips extensions whose manifest raises ValidationError."""
+        import unittest.mock as mock
+
+        ext_dir = project_dir / ".specify" / "extensions" / "bad-ext"
+        cmd_dir = ext_dir / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "mycmd.md").write_text("---\ndescription: d\n---\n\nbody\n")
+        # Write a manifest with missing required fields to trigger ValidationError
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: bad-ext\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve_extension_command_via_manifest("speckit.bad-ext.mycmd")
+
+        assert result is None, "ValidationError during manifest load must be silently skipped"
+
 
 class TestExtensionPriorityResolution:
     """Test extension priority resolution with registered and unregistered extensions."""
