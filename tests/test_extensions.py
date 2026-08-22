@@ -3714,6 +3714,65 @@ Real body starts here.
         assert "$speckit-plan" in content
         assert "/speckit-plan" not in content
 
+    def test_codex_skill_registration_resolves_verbatim_command_ref(
+        self, extension_dir, project_dir
+    ):
+        """Verbatim __SPECKIT_COMMAND(...)__ tokens resolve in skills mode too.
+
+        Regression for the resolver in ``_register_extension_skills`` (the sole
+        writer of extension SKILL.md content when the active integration is in
+        skills mode). It previously matched only the uppercase token form,
+        leaving the verbatim form (used for hyphenated command names) as a raw
+        literal in SKILL.md.
+        """
+        (project_dir / ".specify" / "init-options.json").write_text(
+            '{"ai":"codex","ai_skills":true,"script":"sh"}', encoding="utf-8"
+        )
+        (project_dir / ".agents" / "skills").mkdir(parents=True)
+        command = extension_dir / "commands" / "hello.md"
+        command.write_text(
+            "---\ndescription: Test hello command\n---\n\n"
+            "Run __SPECKIT_COMMAND(speckit.agent-context.update)__.",
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        manager._register_extension_skills(manifest, extension_dir)
+
+        skill_file = (
+            project_dir / ".agents" / "skills" / "speckit-test-ext-hello" / "SKILL.md"
+        )
+        content = skill_file.read_text(encoding="utf-8")
+        assert "$speckit-agent-context-update" in content
+        assert "__SPECKIT_COMMAND(" not in content
+
+    def test_claude_skill_registration_resolves_verbatim_command_ref(
+        self, extension_dir, project_dir
+    ):
+        """Verbatim tokens with hyphens resolve for slash-skills agents."""
+        (project_dir / ".specify" / "init-options.json").write_text(
+            '{"ai":"claude","ai_skills":true,"script":"sh"}', encoding="utf-8"
+        )
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+        command = extension_dir / "commands" / "hello.md"
+        command.write_text(
+            "---\ndescription: Test hello command\n---\n\n"
+            "Run __SPECKIT_COMMAND(speckit.agent-context.update)__.",
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        manager._register_extension_skills(manifest, extension_dir)
+
+        skill_file = (
+            project_dir / ".claude" / "skills" / "speckit-test-ext-hello" / "SKILL.md"
+        )
+        content = skill_file.read_text(encoding="utf-8")
+        assert "/speckit-agent-context-update" in content
+        assert "__SPECKIT_COMMAND(" not in content
+
     def test_codex_skill_registration_resolves_script_placeholders(self, project_dir, temp_dir):
         """Codex SKILL.md overrides should resolve script placeholders."""
         import yaml

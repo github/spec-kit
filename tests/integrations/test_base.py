@@ -410,6 +410,45 @@ class TestResolveCommandRefs:
         result = IntegrationBase.resolve_command_refs(text, ".")
         assert result == "/speckit.v2.plan"
 
+    # -- Verbatim form tests --------------------------------------------------
+
+    def test_verbatim_dot_separator_with_hyphen(self):
+        """Verbatim form correctly handles a hyphen in command name with dot separator."""
+        text = "__SPECKIT_COMMAND(speckit.agent-context.update)__"
+        result = IntegrationBase.resolve_command_refs(text, ".")
+        assert result == "/speckit.agent-context.update"
+
+    def test_verbatim_hyphen_separator_with_hyphen(self):
+        """Verbatim form correctly handles a hyphen in command name with hyphen separator."""
+        text = "__SPECKIT_COMMAND(speckit.agent-context.update)__"
+        result = IntegrationBase.resolve_command_refs(text, "-")
+        assert result == "/speckit-agent-context-update"
+
+    def test_verbatim_dollar_prefix(self):
+        text = "__SPECKIT_COMMAND(speckit.agent-context.update)__"
+        result = IntegrationBase.resolve_command_refs(text, "-", "$")
+        assert result == "$speckit-agent-context-update"
+
+    def test_verbatim_simple_command_no_hyphens(self):
+        """Verbatim form works for commands without hyphens too."""
+        text = "__SPECKIT_COMMAND(speckit.git.commit)__"
+        result = IntegrationBase.resolve_command_refs(text, ".")
+        assert result == "/speckit.git.commit"
+
+    def test_verbatim_and_uppercase_mixed(self):
+        """Both forms can coexist in the same string."""
+        text = "__SPECKIT_COMMAND_PLAN__ and __SPECKIT_COMMAND(speckit.agent-context.update)__"
+        result = IntegrationBase.resolve_command_refs(text, ".")
+        assert result == "/speckit.plan and /speckit.agent-context.update"
+
+    def test_uppercase_form_unaffected_by_verbatim_support(self):
+        """Regression: existing uppercase form still works correctly."""
+        text = "__SPECKIT_COMMAND_AGENT_CONTEXT_UPDATE__"
+        result_dot = IntegrationBase.resolve_command_refs(text, ".")
+        result_hyphen = IntegrationBase.resolve_command_refs(text, "-")
+        assert result_dot == "/speckit.agent.context.update"
+        assert result_hyphen == "/speckit-agent-context-update"
+
 
 class TestResolvePythonInterpreter:
     def test_returns_python_on_path(self, monkeypatch):
