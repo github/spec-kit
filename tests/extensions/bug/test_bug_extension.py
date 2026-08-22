@@ -1,10 +1,10 @@
 """Tests for the bundled ``bug`` extension.
 
 Validates:
-- Bundled layout (manifest, README, three command files)
+- Bundled layout (manifest, README, config template, command files)
 - Catalog registration
 - Wheel/source-checkout resolution via ``_locate_bundled_extension``
-- Install via ``ExtensionManager.install_from_directory`` copies the three
+- Install via ``ExtensionManager.install_from_directory`` copies the
   command files and records them in the installed manifest (command
   registration with AI agents is exercised separately and not asserted here)
 """
@@ -24,7 +24,10 @@ EXT_DIR = PROJECT_ROOT / "extensions" / "bug"
 
 EXPECTED_COMMANDS = {
     "speckit.bug.assess",
+    "speckit.bug.issue",
+    "speckit.bug.fetch",
     "speckit.bug.fix",
+    "speckit.bug.pr",
     "speckit.bug.test",
 }
 
@@ -56,6 +59,9 @@ class TestExtensionLayout:
         for name in EXPECTED_COMMANDS:
             cmd = EXT_DIR / "commands" / f"{name}.md"
             assert cmd.is_file(), f"Missing command file: {cmd}"
+
+    def test_config_template_exists(self):
+        assert (EXT_DIR / "config-template.yml").is_file()
 
 
 # ── Catalog registration ─────────────────────────────────────────────────────
