@@ -407,6 +407,12 @@ class IntegrationBase(ABC):
                     "stdout": "",
                     "stderr": "Interrupted by user",
                 }
+            except OSError as exc:
+                return {
+                    "exit_code": 1,
+                    "stdout": "",
+                    "stderr": f"Failed to execute command: {exc}",
+                }
             return {
                 "exit_code": result.returncode,
                 "stdout": "",
