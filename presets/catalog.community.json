@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-20T00:00:00Z",
+  "updated_at": "2026-08-22T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -832,6 +832,34 @@
       ],
       "created_at": "2026-08-14T00:00:00Z",
       "updated_at": "2026-08-14T00:00:00Z"
+    },
+    "stable-identifiers": {
+      "name": "Stable Identifiers",
+      "id": "stable-identifiers",
+      "version": "0.1.0",
+      "description": "Makes Spec Kit identifiers sparse and permanent so they are never renumbered or re-issued: FR/SC/CHK and task T-numbers start at a multiple of 1000, step by 10, insert into the gap, and leave permanent holes on removal.",
+      "author": "Ira Abramov",
+      "repository": "https://github.com/ira-at-work/spec-kit-preset-stable-identifiers",
+      "download_url": "https://github.com/ira-at-work/spec-kit-preset-stable-identifiers/archive/refs/tags/v0.1.0.zip",
+      "homepage": "https://github.com/ira-at-work/spec-kit-preset-stable-identifiers",
+      "documentation": "https://github.com/ira-at-work/spec-kit-preset-stable-identifiers/blob/v0.1.0/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.10.0"
+      },
+      "provides": {
+        "templates": 3,
+        "commands": 6
+      },
+      "tags": [
+        "identifiers",
+        "stability",
+        "no-renumber",
+        "traceability",
+        "governance"
+      ],
+      "created_at": "2026-08-22T00:00:00Z",
+      "updated_at": "2026-08-22T00:00:00Z"
     },
     "test-first-governance": {
       "name": "Test-First Governance",
