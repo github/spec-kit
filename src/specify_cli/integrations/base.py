@@ -630,17 +630,25 @@ class IntegrationBase(ABC):
 
         Each placeholder encodes a command name in upper-case with
         underscores (e.g. ``__SPECKIT_COMMAND_PLAN__``,
-        ``__SPECKIT_COMMAND_GIT_COMMIT__``).  The replacement uses
+        ``__SPECKIT_COMMAND_GIT_COMMIT__``).  Each underscore is replaced by
         *separator* to join the segments:
 
         * ``separator="."`` → ``/speckit.plan``, ``/speckit.git.commit``
         * ``separator="-"`` → ``/speckit-plan``, ``/speckit-git-commit``
 
+        A segment may itself contain a literal hyphen (command names are
+        constrained to ``[a-z0-9-]+`` per segment and never contain an
+        underscore, see ``EXTENSION_COMMAND_NAME_PATTERN``), so hyphens are
+        written verbatim in the placeholder and pass through unchanged:
+
+        * ``__SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__`` with
+          ``separator="."`` → ``/speckit.agent-context.update``
+
         *prefix* defaults to ``"/"`` but may be ``"$"`` for agents whose
         native skills invocation uses dollar-prefixed chat commands.
         """
         return re.sub(
-            r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_]*)__",
+            r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_-]*)__",
             lambda m: prefix
             + "speckit"
             + separator

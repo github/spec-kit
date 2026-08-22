@@ -410,6 +410,31 @@ class TestResolveCommandRefs:
         result = IntegrationBase.resolve_command_refs(text, ".")
         assert result == "/speckit.v2.plan"
 
+    # -- Hyphenated segment tests ---------------------------------------------
+
+    def test_hyphen_in_segment_dot_separator(self):
+        """A literal hyphen in a segment survives with the dot separator."""
+        text = "__SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__"
+        result = IntegrationBase.resolve_command_refs(text, ".")
+        assert result == "/speckit.agent-context.update"
+
+    def test_hyphen_in_segment_hyphen_separator(self):
+        """A literal hyphen in a segment survives with the hyphen separator."""
+        text = "__SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__"
+        result = IntegrationBase.resolve_command_refs(text, "-")
+        assert result == "/speckit-agent-context-update"
+
+    def test_hyphen_in_segment_dollar_prefix(self):
+        text = "__SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__"
+        result = IntegrationBase.resolve_command_refs(text, "-", "$")
+        assert result == "$speckit-agent-context-update"
+
+    def test_hyphen_in_multiple_segments(self):
+        """Every segment may independently contain a hyphen."""
+        text = "__SPECKIT_COMMAND_CODE-REVIEW_REQUEST-CHANGES__"
+        result = IntegrationBase.resolve_command_refs(text, ".")
+        assert result == "/speckit.code-review.request-changes"
+
 
 class TestResolvePythonInterpreter:
     def test_returns_python_on_path(self, monkeypatch):

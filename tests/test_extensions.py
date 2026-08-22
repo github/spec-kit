@@ -3714,6 +3714,54 @@ Real body starts here.
         assert "$speckit-plan" in content
         assert "/speckit-plan" not in content
 
+    def test_codex_skill_registration_resolves_hyphenated_command_ref(
+        self, extension_dir, project_dir
+    ):
+        """A hyphenated segment in a command-ref token resolves for dollar-skills agents."""
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+        command = extension_dir / "commands" / "hello.md"
+        command.write_text(
+            "---\ndescription: Test hello command\n---\n\n"
+            "Run __SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__.",
+            encoding="utf-8",
+        )
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent(
+            "codex", manifest, extension_dir, project_dir
+        )
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        content = skill_file.read_text(encoding="utf-8")
+        assert "$speckit-agent-context-update" in content
+        assert "__SPECKIT_COMMAND_" not in content
+
+    def test_claude_skill_registration_resolves_hyphenated_command_ref(
+        self, extension_dir, project_dir
+    ):
+        """A hyphenated segment in a command-ref token resolves for slash-skills agents."""
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+        command = extension_dir / "commands" / "hello.md"
+        command.write_text(
+            "---\ndescription: Test hello command\n---\n\n"
+            "Run __SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__.",
+            encoding="utf-8",
+        )
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent(
+            "claude", manifest, extension_dir, project_dir
+        )
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        content = skill_file.read_text(encoding="utf-8")
+        assert "/speckit-agent-context-update" in content
+        assert "__SPECKIT_COMMAND_" not in content
+
     def test_codex_skill_registration_resolves_script_placeholders(self, project_dir, temp_dir):
         """Codex SKILL.md overrides should resolve script placeholders."""
         import yaml
