@@ -885,28 +885,43 @@ class StepRegistry:
         # Defense-in-depth: refuse to read the registry if any parent directory
         # under .specify/workflows/steps is a symlink, which could redirect the
         # read outside the project root.
-        if self._has_symlinked_parent():
-            return default_registry
-        # Defense-in-depth: also refuse to read a symlinked registry file,
-        # which could redirect the read outside the project root.
-        if self.registry_path.is_symlink():
-            return default_registry
+        if self._has_symlinked_parent() or self.registry_path.is_symlink():
+            raise OSError(
+                f"Refusing to read step registry at {self.registry_path}: "
+                "a parent directory or the registry file itself is a symlink"
+            )
         if self.registry_path.exists():
             try:
                 with open(self.registry_path, encoding="utf-8") as f:
                     data = json.load(f)
-                # Validate shape: must be a dict with a dict "steps" field
-                if not isinstance(data, dict):
-                    return default_registry
-                if not isinstance(data.get("steps"), dict):
-                    data["steps"] = {}
-                return data
-            except (json.JSONDecodeError, ValueError, OSError, UnicodeError):
-                return default_registry
+            except OSError as exc:
+                raise OSError(
+                    f"Failed to read step registry at {self.registry_path}: {exc}"
+                ) from exc
+            except (
+                json.JSONDecodeError,
+                ValueError,
+                UnicodeError,
+            ) as exc:
+                raise OSError(
+                    f"Step registry at {self.registry_path} is corrupted: {exc}"
+                ) from exc
+            # Validate shape: must be a dict with a dict "steps" field
+            if not isinstance(data, dict):
+                raise OSError(
+                    f"Step registry at {self.registry_path} is corrupted: "
+                    "top-level value must be an object"
+                )
+            if not isinstance(data.get("steps"), dict):
+                raise OSError(
+                    f"Step registry at {self.registry_path} is corrupted: "
+                    "'steps' must be an object"
+                )
+            return data
         return default_registry
 
     def save(self) -> None:
-        """Persist registry to disk.
+        """Persist registry to disk atomically.
 
         Raises ``StepValidationError`` with a clear message on filesystem
         errors (read-only fs, permission denied, ...) so callers can surface
@@ -918,8 +933,21 @@ class StepRegistry:
             )
         try:
             self.steps_dir.mkdir(parents=True, exist_ok=True)
-            with open(self.registry_path, "w", encoding="utf-8") as f:
-                json.dump(self.data, f, indent=2)
+            fd, tmp = tempfile.mkstemp(
+                dir=str(self.registry_path.parent),
+                prefix=f".{self.registry_path.name}.",
+                suffix=".tmp",
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(self.data, f, indent=2)
+                os.replace(tmp, self.registry_path)
+            except BaseException:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                raise
         except OSError as exc:
             raise StepValidationError(
                 f"Failed to write step registry at {self.registry_path}: {exc}"
