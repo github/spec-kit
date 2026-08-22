@@ -58,12 +58,14 @@ Once resolved, set `BUG_SLUG` and `BUG_DIR = .specify/bugs/<BUG_SLUG>`.
    - Write the body to `BUG_DIR/issue-body.md` (keeps shell quoting safe for `--body-file`).
 
 3. **Create the issue (live path)**
-   - Map severity to labels: always include `bug`; also include `severity:<level>` (e.g. `severity:high`).
-   - Run:
+   - Map severity to labels: always include `bug`; also include `severity:<level>` (e.g. `severity:high`) when the repo supports it.
+   - Run (do **not** use `--json`: older `gh` versions reject it — capture the URL from stdout instead):
      ```bash
-     gh issue create --title "<title>" --body-file BUG_DIR/issue-body.md --label "bug" --label "severity:<level>" --json number,url,title
+     gh issue create --title "<title>" --body-file BUG_DIR/issue-body.md --label "bug" --label "severity:<level>"
      ```
-   - Capture the JSON. **If a label is rejected** (the repo does not have it), retry without the `severity:<level>` label, then without any labels — a tracked issue is better than none. Record the final outcome either way.
+   - On success `gh` prints the new issue URL (e.g. `https://github.com/<owner>/<repo>/issues/36`) to stdout. Capture that line and extract the **URL** and the **issue number** (the trailing digits after `/issues/`).
+   - **If a label is rejected** (e.g. `severity:high` does not exist in the repo), retry without the `severity:<level>` label, then without any labels — a tracked issue is better than none. Record the final outcome either way.
+   - **If creation fails for any other reason** (no `gh`, not authenticated, no GitHub remote, network error), skip to Graceful Degradation below.
 
 4. **Record the issue**
    - Write `BUG_DIR/issue.md`:

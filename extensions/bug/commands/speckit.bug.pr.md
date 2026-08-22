@@ -56,11 +56,13 @@ Once resolved, set `BUG_SLUG` and `BUG_DIR = .specify/bugs/<BUG_SLUG>`.
 
 3. **Open the PR (live path)**
    - Determine the base branch: prefer the repository default (usually `main`/`master`); allow the user to override with `base=<branch>` in `$ARGUMENTS`.
-   - Run:
+   - Run (do **not** use `--json`: older `gh` versions reject it — capture the URL from stdout instead):
      ```bash
-     gh pr create --base <base> --title "<title>" --body-file BUG_DIR/pr-body.md --json number,url,title
+     gh pr create --base <base> --title "<title>" --body-file BUG_DIR/pr-body.md
      ```
-   - Capture the JSON. If the push of the current branch fails, run `git push -u origin <current-branch>` and retry.
+   - On success `gh` prints the new PR URL (e.g. `https://github.com/<owner>/<repo>/pull/42`) to stdout. Capture that line and extract the **URL** and the **PR number** (the trailing digits after `/pull/`).
+   - If the push of the current branch fails, run `git push -u origin <current-branch>` and retry the `gh pr create`.
+   - If `gh`/GitHub remote/auth/network is unavailable, skip to Graceful Degradation below.
 
 4. **Record the PR**
    - Write `BUG_DIR/pr.md`:

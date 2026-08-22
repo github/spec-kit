@@ -44,14 +44,16 @@ After resolution, set `BUG_SLUG` and `BUG_DIR = .specify/bugs/<BUG_SLUG>`.
    - If no valid reference can be parsed, stop and tell the user what form to pass.
 
 2. **Fetch the issue (live path)**
-   - Run:
+   - Run (no `--json` — it is unsupported on older `gh`; read the rendered output instead):
      ```bash
-     gh issue view <number> --repo <owner>/<repo> --json number,url,title,body,state,author,labels,comments,createdAt,updatedAt,assignees,closedAt
+     gh issue view <number> --repo <owner>/<repo>
      ```
-   - Capture the JSON. Handle the common error cases:
+   - This prints the issue (title, state, author, labels, body, and any comments) to stdout. Read it directly.
+   - Handle the common error cases:
      - **Issue not found / 404** → tell the user and stop; do not write a record.
-     - **Not authorized** → fall through to Graceful Degradation.
-   - Extract: `title`, `body`, `state` (`OPEN`/`CLOSED`), `url`, `labels` (list of `{name}`), the `comments` array (each with `author`/`body`), and timestamps.
+     - **Not authorized / other failure** → fall through to Graceful Degradation.
+   - From the output, extract: the **title**, **state** (`OPEN`/`CLOSED`), **author**, **labels** (note any `severity:<level>` label as the severity), the **body**, and any **comments** (author + body).
+   - The issue **URL** is `https://github.com/<owner>/<repo>/issues/<number>` (you already have `owner`, `repo`, and `number`).
 
 3. **Record the issue**
    - Write `BUG_DIR/issue.md`:
@@ -125,7 +127,7 @@ After resolution, set `BUG_SLUG` and `BUG_DIR = .specify/bugs/<BUG_SLUG>`.
 5. **Graceful Degradation (no live fetch)**
    - When `gh`/GitHub remote/auth is unavailable, instead write `BUG_DIR/issue-draft.md` containing:
      - The issue reference the user supplied.
-     - Instructions to fetch manually: `gh issue view <number> --repo <owner>/<repo> --json number,url,title,body,state,author,labels,comments` — or paste the issue content here.
+     - Instructions to fetch manually: `gh issue view <number> --repo <owner>/<repo>` — or paste the issue content here.
    - Do not error. Tell the user the issue was not fetched live and what to do next.
 
 6. **Report back** with:

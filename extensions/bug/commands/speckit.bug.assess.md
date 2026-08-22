@@ -162,11 +162,11 @@ Do not attempt to validate the URL by issuing a preflight `HEAD` (or any other) 
 
 ### Optional — file the GitHub issue (report phase)
 
-By default, `assess` only writes a **local** assessment; it does **not** file a GitHub issue. "Assess" means *triage*, not *report*. To also report the bug:
+By default, `assess` only writes a **local** assessment; it does **not** file a GitHub issue. "Assess" means *triage*, not *report*. Before reporting back, decide whether to also report the bug by evaluating these in order:
 
-- **Explicit opt-in**: if the user passed a truthy `issue` / `--issue` flag, file the issue now.
-- **Config opt-in**: if `.specify/extensions/bug/bug-config.yml` exists and sets `auto_create_issue: true`, file the issue now.
-- Otherwise, only **suggest** the issue step in the report-back below.
+1. **Explicit opt-in**: if the user passed a truthy `issue` / `--issue` flag (or `issue=true`), file the issue now.
+2. **Config opt-in**: read `.specify/extensions/bug/bug-config.yml` (scaffolded at install). If it exists and `auto_create_issue` is `true` (or `1` / `yes` / `on`), file the issue now — the user enabled this explicitly, so no further confirmation is required.
+3. **Otherwise**: do not file it; only **suggest** the issue step in the report-back below.
 
 When filing, perform the same procedure as `__SPECKIT_COMMAND_BUG_ISSUE__` for this slug: read the assessment you just wrote, create the GitHub issue via `gh`, and record `BUG_DIR/issue.md`. If `gh` / GitHub remote / auth is unavailable, write `BUG_DIR/issue-draft.md` and note it — do not error.
 
