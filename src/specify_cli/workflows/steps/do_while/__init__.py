@@ -131,6 +131,14 @@ class DoWhileStep(StepBase):
                     f"Do-while step {config.get('id', '?')!r}: "
                     f"'max_iterations' must be an integer >= 1."
                 )
+        if "steps" not in config:
+            # This step's own docstring promises "The first invocation always
+            # returns the nested steps for execution" -- with no body it
+            # validated clean and then returned none, so the loop never ran even
+            # once. See the matching guard in the ``while`` step.
+            errors.append(
+                f"Do-while step {config.get('id', '?')!r} is missing 'steps' field."
+            )
         nested = config.get("steps", [])
         if not isinstance(nested, list):
             errors.append(
