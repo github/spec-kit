@@ -428,8 +428,21 @@ class _StepKindManager:
             except BundlerError:
                 if backup_dir.exists():
                     shutil.copytree(backup_dir, step_dir, dirs_exist_ok=True)
-                if metadata is not None and not self._registry.is_installed(component.id):
-                    self._registry.add(component.id, metadata)
+                # Re-read the registry: ``StepRegistry`` snapshots the file once
+                # in ``__init__`` (``self.data = self._load()``) and
+                # ``is_installed`` only consults that snapshot. ``self.remove()``
+                # above has already deleted the entry from disk, but
+                # ``self._registry``'s snapshot still contains it -- so the
+                # guard was always False here and the restore never ran, in
+                # exactly the failure case it was written for. The step package
+                # came back but stayed unregistered: ``workflow step list``
+                # stopped showing it and ``workflow step add`` then refused with
+                # "Step directory already exists".
+                from ...workflows.catalog import StepRegistry
+
+                current = StepRegistry(self._root)
+                if metadata is not None and not current.is_installed(component.id):
+                    current.add(component.id, metadata)
                 raise
         finally:
             shutil.rmtree(backup_dir.parent, ignore_errors=True)
