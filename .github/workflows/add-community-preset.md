@@ -161,11 +161,26 @@ preset** — not just any file named `README.md`, and not a product/framework pi
   `specify preset add ...` command for this preset; otherwise it fails check 2d above.
 
 ### 2e. Release and download URL validation
-- The download URL should follow the pattern
-  `https://github.com/<owner>/<repo>/archive/refs/tags/v<version>.zip`
+- The download URL MUST belong to the submitted repository
+  (`https://github.com/<owner>/<repo>/...` with the same `<owner>/<repo>` as
+  the Repository URL). Reject URLs for any other GitHub repository.
+- The download URL MUST follow one of the accepted tag-pinned patterns:
+  `https://github.com/<owner>/<repo>/archive/refs/tags/<tag>.zip`
   or
   `https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>.zip`
-- Verify a GitHub release exists matching the submitted version
+- If the download URL path contains `releases/latest/`, reject with an
+  explanation — this URL is floating and not acceptable. Mark this pinning
+  check failed and skip the HTTP request for this URL, then continue the
+  remaining validations.
+- The `<tag>` segment in the URL MUST correspond to the submitted version.
+  Accept `vX.Y.Z`, `X.Y.Z`, and scoped tags whose version suffix matches
+  (for example `aide-v1.0.0` for version `1.0.0`). Reject a tag whose
+  embedded semver does not equal the submitted version.
+- `sha256` is optional. If the submission includes it, verify it matches the
+  downloaded archive. Requiring `sha256` on every catalog entry is follow-up
+  work and MUST NOT fail this check when the field is absent.
+- Only after the pinning checks pass: verify a GitHub release exists for that
+  tag, and that the download URL returns HTTP 200.
 
 ### 2f. Submission checklists
 - Confirm that all required checkboxes in the Testing Checklist and Submission
