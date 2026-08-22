@@ -4,25 +4,43 @@ extension:
   id: bug
   name: "Bug Triage Workflow"
   version: "1.0.0"
-  description: "Assess, fix, and validate bug reports against the codebase with per-bug reports stored under .specify/bugs/<slug>/"
+  description: "Assess, load or report (GitHub issue), fix, and validate bug reports against the codebase, with optional branch isolation and PR creation; per-bug reports stored under .specify/bugs/<slug>/"
   author: spec-kit-core
   repository: https://github.com/github/spec-kit
   license: MIT
 
 requires:
   speckit_version: ">=0.9.0"
+  tools:
+    - name: gh
+      required: false
 
 provides:
   commands:
     - name: speckit.bug.assess
       file: commands/speckit.bug.assess.md
       description: "Assess a bug report (pasted text or URL) against the codebase and produce an assessment with possible remediation"
+    - name: speckit.bug.issue
+      file: commands/speckit.bug.issue.md
+      description: "File a GitHub issue from a bug assessment (the 'report' phase) and record the issue link"
+    - name: speckit.bug.fetch
+      file: commands/speckit.bug.fetch.md
+      description: "Load an existing GitHub issue into the workflow (the complement of bug.issue) and seed a triage draft"
     - name: speckit.bug.fix
       file: commands/speckit.bug.fix.md
       description: "Apply the remediation from a bug assessment and record what was changed"
+    - name: speckit.bug.pr
+      file: commands/speckit.bug.pr.md
+      description: "Open a pull request for the applied bug fix, linking the tracked issue"
     - name: speckit.bug.test
       file: commands/speckit.bug.test.md
       description: "Validate that a previously fixed bug is resolved and record the verification report"
+
+  config:
+    - name: "bug-config.yml"
+      template: "config-template.yml"
+      description: "Bug workflow configuration (issue auto-creation, branch prefix)"
+      required: false
 
 tags:
   - "bug"

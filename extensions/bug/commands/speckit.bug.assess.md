@@ -17,6 +17,7 @@ The user input contains the bug description and (optionally) a slug. Treat it as
 1. **Pasted text** — a copy of an issue, a stack trace, an error message, or a freeform description.
 2. **A URL** — a link to a GitHub/GitLab issue, a discussion, a Sentry/log link, a forum thread, or any web page describing the bug. Fetch and read the page content before proceeding.
 3. **A mix** — text plus a URL for additional context.
+4. **An `issue` flag** — `issue` / `--issue` (or `issue=true` / `issue=false`). When present and truthy, this command also files a GitHub issue for the bug after writing the assessment (the "report" phase). See **Optional — file the GitHub issue** below.
 
 If both a URL and text are present, fetch the URL and merge its content with the pasted text when forming the bug summary.
 
@@ -159,11 +160,25 @@ Do not attempt to validate the URL by issuing a preflight `HEAD` (or any other) 
    - [NEEDS CLARIFICATION: …]
    ```
 
+### Optional — file the GitHub issue (report phase)
+
+By default, `assess` only writes a **local** assessment; it does **not** file a GitHub issue. "Assess" means *triage*, not *report*. To also report the bug:
+
+- **Explicit opt-in**: if the user passed a truthy `issue` / `--issue` flag, file the issue now.
+- **Config opt-in**: if `.specify/extensions/bug/bug-config.yml` exists and sets `auto_create_issue: true`, file the issue now.
+- Otherwise, only **suggest** the issue step in the report-back below.
+
+When filing, perform the same procedure as `__SPECKIT_COMMAND_BUG_ISSUE__` for this slug: read the assessment you just wrote, create the GitHub issue via `gh`, and record `BUG_DIR/issue.md`. If `gh` / GitHub remote / auth is unavailable, write `BUG_DIR/issue-draft.md` and note it — do not error.
+
 7. **Report back** with:
    - The slug used and whether it was user-provided, asked-for, or auto-generated. State it on its own line (e.g. `Slug: <BUG_SLUG>`) so it is easy to spot — downstream commands in the same session may reuse it from context without re-prompting.
    - The path `.specify/bugs/<BUG_SLUG>/assessment.md`.
    - The verdict and severity.
-   - The next suggested step: `__SPECKIT_COMMAND_BUG_FIX__ slug=<BUG_SLUG>`.
+   - A one-line clarification: `assess` = local triage (this file); "report" = the GitHub issue created by `__SPECKIT_COMMAND_BUG_ISSUE__`.
+   - A note that if the bug is **already** tracked as a GitHub issue you want to work on, you can skip pasting it here and instead load it with `__SPECKIT_COMMAND_BUG_FETCH__` (by issue number / URL / `owner/repo#n`), which records `issue.md` and seeds this assessment for you.
+   - The next suggested steps, in order:
+     - If the issue was NOT yet filed: `__SPECKIT_COMMAND_BUG_ISSUE__ slug=<BUG_SLUG>` (file the GitHub issue).
+     - Then: `__SPECKIT_COMMAND_BUG_FIX__ slug=<BUG_SLUG>` (apply the remediation; add `--branch` or `--worktree` to isolate the fix on its own branch).
 
 ## Guardrails
 
@@ -171,3 +186,4 @@ Do not attempt to validate the URL by issuing a preflight `HEAD` (or any other) 
 - Never invent reproduction steps or file paths that are not supported by either the report or the codebase.
 - Never overwrite an existing `assessment.md` without confirmation.
 - If the bug report cannot be understood at all (empty, unrelated, spam), set verdict to `invalid` with a clear reason and stop.
+- Filing a GitHub issue (only when the `issue` flag or `auto_create_issue` config is set) is an opt-in external action. It never modifies repository source and degrades to a local `issue-draft.md` when `gh` / GitHub is unavailable.
