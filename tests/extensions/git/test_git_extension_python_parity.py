@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from tests.conftest import requires_bash
+from tests.parity_helpers import collation_range_locale
 from tests.extensions.git.test_git_extension import (
     _GIT_ENV,
     _init_git,
@@ -139,20 +140,68 @@ class TestCreateFeatureBranchParity:
         p = _run_py("create-new-feature-branch", py_proj, "--json", "--dry-run", description)
         _assert_parity(b, p)
 
-    def test_short_name_cleaning(self, tmp_path: Path):
+    @pytest.mark.parametrize(
+        ("short_name", "expected"),
+        [
+            ("User_Auth!", "001-user-auth"),
+            ("User__Auth!!", "001-user-auth"),
+            ("auth -- v2", "001-auth-v2"),
+        ],
+        ids=["single_separators", "repeated_separators", "separator_run"],
+    )
+    def test_short_name_cleaning(
+        self, tmp_path: Path, short_name: str, expected: str
+    ):
+        # Repeated separators included: the bash twin used to collapse them with
+        # sed 's/-\+/-/g', a GNU-ism that POSIX/BSD sed reads as a literal '+',
+        # so the runs survived on macOS.
         bash_proj, py_proj = _twin_projects(tmp_path)
-        # Single separator runs only: the bash twin's collapse step
-        # (sed 's/-\+/-/g') is a GNU-ism that BSD sed treats literally.
         b = _run_bash(
             "create-new-feature-branch.sh", bash_proj,
-            "--json", "--dry-run", "--short-name", "User_Auth!", "desc",
+            "--json", "--dry-run", "--short-name", short_name, "desc",
         )
         p = _run_py(
             "create-new-feature-branch", py_proj,
-            "--json", "--dry-run", "--short-name", "User_Auth!", "desc",
+            "--json", "--dry-run", "--short-name", short_name, "desc",
         )
         _assert_parity(b, p)
-        assert json.loads(p.stdout)["BRANCH_NAME"] == "001-user-auth"
+        assert json.loads(p.stdout)["BRANCH_NAME"] == expected
+
+    @pytest.mark.parametrize(
+        "description",
+        [
+            "Añadir autenticación de usuario",
+            "Ajouter la réservation hôtelière",
+        ],
+        ids=["spanish", "french"],
+    )
+    def test_branch_name_ignores_locale_collation(
+        self, tmp_path: Path, description: str
+    ):
+        """The created git branch must not depend on the caller's locale.
+
+        The bash twin sanitizes with sed 's/[^a-z0-9]/-/g'. Under a locale whose
+        a-z range is collation-ordered that class keeps accented lowercase
+        letters, so bash checked out 001-ajouter-réservation-hôtelière where
+        the Python twin checks out 001-ajouter-servation-teli.
+        """
+        locale_name = collation_range_locale()
+        if locale_name is None:
+            pytest.skip("no locale with collation-ordered [a-z] ranges available")
+        env_extra = {"LC_ALL": locale_name, "LANG": locale_name}
+
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        b = _run_bash(
+            "create-new-feature-branch.sh", bash_proj,
+            "--json", "--dry-run", description, env_extra=env_extra,
+        )
+        p = _run_py(
+            "create-new-feature-branch", py_proj,
+            "--json", "--dry-run", description, env_extra=env_extra,
+        )
+        _assert_parity(b, p)
+        branch = json.loads(b.stdout)["BRANCH_NAME"]
+        assert branch.isascii(), branch
 
     def test_numbering_from_specs_and_branches(self, tmp_path: Path):
         bash_proj, py_proj = _twin_projects(tmp_path)
