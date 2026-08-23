@@ -7,6 +7,7 @@ offline-first).
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -169,16 +170,66 @@ def test_bundled_extension_pin_match_installs(tmp_path: Path, monkeypatch):
     bundled = _write_manifest(tmp_path / "ext", "extension", "1.0.0")
     monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: bundled)
     called: list = []
-    monkeypatch.setattr(
-        ExtensionManager, "install_from_directory",
-        lambda self, *a, **k: called.append(a),
-    )
+
+    def _fake_install(self, *a, **k):
+        called.append(a)
+        return SimpleNamespace(id="my-ext")
+
+    monkeypatch.setattr(ExtensionManager, "install_from_directory", _fake_install)
 
     manager = primitive_manager("extensions", tmp_path, allow_network=False)
     # matching pin, and unpinned, both install cleanly
     manager.install(ComponentRef(kind="extensions", id="my-ext", version="1.0.0"))
     manager.install(ComponentRef(kind="extensions", id="my-ext", version=None))
     assert len(called) == 2
+
+
+def _write_extension_with_config(ext_dir: Path) -> None:
+    """A minimal, real (unmocked) extension source with a provides.config entry."""
+    import yaml
+
+    ext_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "schema_version": "1.0",
+        "extension": {
+            "id": "my-ext",
+            "name": "My Extension",
+            "version": "1.0.0",
+            "description": "Test extension",
+        },
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {
+            "commands": [
+                {"name": "speckit.my-ext.hello", "file": "commands/hello.md"},
+            ],
+            "config": [
+                {"name": "my-ext-config.yml", "template": "config-template.yml"},
+            ],
+        },
+    }
+    (ext_dir / "extension.yml").write_text(yaml.dump(manifest), encoding="utf-8")
+    (ext_dir / "config-template.yml").write_text("setting: default\n", encoding="utf-8")
+    (ext_dir / "commands").mkdir(exist_ok=True)
+    (ext_dir / "commands" / "hello.md").write_text("---\ndescription: Test\n---\n\nhi\n", encoding="utf-8")
+
+
+def test_bundled_extension_install_scaffolds_config(tmp_path: Path, monkeypatch):
+    """A bundle-installed extension must have its provides.config templates
+    scaffolded, exactly like `specify extension add` does (issue: bundle
+    install skipped ExtensionManager.scaffold_config)."""
+    import specify_cli._assets as assets
+
+    project = tmp_path / "project"
+    ext_source = tmp_path / "ext-source"
+    _write_extension_with_config(ext_source)
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: ext_source)
+
+    manager = primitive_manager("extensions", project, allow_network=False)
+    manager.install(ComponentRef(kind="extensions", id="my-ext"))
+
+    scaffolded = project / ".specify" / "extensions" / "my-ext" / "my-ext-config.yml"
+    assert scaffolded.exists()
+    assert scaffolded.read_text(encoding="utf-8") == "setting: default\n"
 
 
 def test_bundled_preset_pin_mismatch_refuses(tmp_path: Path, monkeypatch):
@@ -227,10 +278,12 @@ def test_extension_refresh_calls_install_with_force(tmp_path: Path, monkeypatch)
     bundled = _write_manifest(tmp_path / "ext", "extension", "1.0.0")
     monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: bundled)
     force_values: list = []
-    monkeypatch.setattr(
-        ExtensionManager, "install_from_directory",
-        lambda self, *a, **k: force_values.append(k.get("force", False)),
-    )
+
+    def _fake_install(self, *a, **k):
+        force_values.append(k.get("force", False))
+        return SimpleNamespace(id="my-ext")
+
+    monkeypatch.setattr(ExtensionManager, "install_from_directory", _fake_install)
 
     manager = primitive_manager("extensions", tmp_path, allow_network=False)
     manager.refresh(ComponentRef(kind="extensions", id="my-ext"))
@@ -265,10 +318,12 @@ def test_default_installer_refresh_dispatches_to_kind_manager(tmp_path: Path, mo
     bundled = _write_manifest(tmp_path / "ext", "extension", "1.0.0")
     monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: bundled)
     force_values: list = []
-    monkeypatch.setattr(
-        ExtensionManager, "install_from_directory",
-        lambda self, *a, **k: force_values.append(k.get("force", False)),
-    )
+
+    def _fake_install(self, *a, **k):
+        force_values.append(k.get("force", False))
+        return SimpleNamespace(id="my-ext")
+
+    monkeypatch.setattr(ExtensionManager, "install_from_directory", _fake_install)
 
     installer = DefaultPrimitiveInstaller(allow_network=False)
     installer.refresh(tmp_path, _component("extensions", "my-ext"))
@@ -290,6 +345,7 @@ def test_refresh_succeeds_and_passes_force_true(tmp_path: Path, monkeypatch):
     def _fake_install_from_directory(self, *a, **k):
         force_seen.append(k.get("force", False))
         self.registry.add("my-ext", {"version": "1.0.0"})
+        return SimpleNamespace(id="my-ext")
 
     monkeypatch.setattr(
         ExtensionManager, "install_from_directory", _fake_install_from_directory
