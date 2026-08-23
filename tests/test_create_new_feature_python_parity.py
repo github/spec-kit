@@ -119,8 +119,18 @@ def test_python_prefix_scan_tolerates_permission_error(
         "I want to add the new API rate limiting feature for users",
         "Fix UI for DB sync",
         "a to the of",
+        # An acronym touching an accented letter: bash probes with `grep -qw`
+        # under LC_ALL=C, where the accent is a word boundary, so the Python
+        # twin must use explicit ASCII lookarounds rather than a Unicode \b.
+        "Fix \u00e9DB\u00e9 sync",
     ],
-    ids=["plain", "stop_words", "acronyms", "all_stop_words_fallback"],
+    ids=[
+        "plain",
+        "stop_words",
+        "acronyms",
+        "all_stop_words_fallback",
+        "acronym_next_to_non_ascii",
+    ],
 )
 def test_python_branch_name_generation_matches_bash(
     repo: Path, description: str

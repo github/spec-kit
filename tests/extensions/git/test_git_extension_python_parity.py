@@ -141,6 +141,35 @@ class TestCreateFeatureBranchParity:
         _assert_parity(b, p)
 
     @pytest.mark.parametrize(
+        "description",
+        [
+            "Fix \u00e9DB\u00e9 sync",
+            "Tune the \u00fcUI\u00fc layer",
+        ],
+        ids=["db_between_accents", "ui_between_accents"],
+    )
+    def test_acronym_adjacent_to_non_ascii_matches_python(
+        self, tmp_path: Path, description: str
+    ):
+        """A short acronym touching an accented letter is kept by both twins.
+
+        The bash twin probes for acronyms with `grep -qw` under LC_ALL=C, where
+        an accented letter is a non-word byte and therefore a word boundary.
+        Python's \\b and .NET's \\b are Unicode-aware and saw no boundary there,
+        so the twins disagreed on whether the acronym survived.
+        """
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        b = _run_bash(
+            "create-new-feature-branch.sh", bash_proj,
+            "--json", "--dry-run", description,
+        )
+        p = _run_py(
+            "create-new-feature-branch", py_proj,
+            "--json", "--dry-run", description,
+        )
+        _assert_parity(b, p)
+
+    @pytest.mark.parametrize(
         ("short_name", "expected"),
         [
             ("User_Auth!", "001-user-auth"),
