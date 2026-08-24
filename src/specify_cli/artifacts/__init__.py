@@ -934,7 +934,7 @@ class ArtifactCatalog:
             if not entry.is_file() or entry.suffix != _TEMPLATE_SUFFIX:
                 continue
             name = entry.stem
-            if not _is_valid_artifact_name_component(name, "template"):
+            if not _is_valid_artifact_name_component(name, "command"):
                 continue
             command_layers = resolver.collect_all_layers(name, "command")
             backed_by_command = any(
