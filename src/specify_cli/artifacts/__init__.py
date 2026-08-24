@@ -26,7 +26,7 @@ from .._identifier import derive_named_id
 # ---------------------------------------------------------------------------
 
 ArtifactKind = Literal["command", "template", "script"]
-LayerName = Literal["preset", "extension", "core"]
+LayerName = Literal["project", "preset", "extension", "core"]
 Strategy = Literal["replace", "wrap", "prepend", "append"]
 
 
@@ -450,6 +450,21 @@ def _build_stack(
             rows.append(
                 StackLayer(
                     layer="core",
+                    presetId=None,
+                    presetName=None,
+                    strategy=strategy,
+                    active=active,
+                    hidden=hidden,
+                    manifestPath=None,
+                    lookupId=lookup_id,
+                )
+            )
+            continue
+
+        if lookup_id.startswith("project:") or source == "project override":
+            rows.append(
+                StackLayer(
+                    layer="project",
                     presetId=None,
                     presetName=None,
                     strategy=strategy,
