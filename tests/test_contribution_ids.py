@@ -423,7 +423,9 @@ class TestLookupIdRoundTrip:
         (overrides_dir / "spec-template.md").write_text("override", encoding="utf-8")
         resolver = PresetResolver(project)
         layers = resolver.collect_all_layers("spec-template", "template")
-        override_layer = next(l for l in layers if l["source"] == "project override")
+        override_layer = next(
+            layer for layer in layers if layer["source"] == "project override"
+        )
         assert override_layer["lookupId"] == derive_named_id(
             PROJECT_OVERRIDE_LAYER, "_", "template", "spec-template"
         )
@@ -436,7 +438,7 @@ class TestLookupIdRoundTrip:
         resolver = PresetResolver(project)
         resolver.templates_dir = project / "templates"
         layers = resolver.collect_all_layers("spec-template", "template")
-        core_layer = next(l for l in layers if l["source"] == "core")
+        core_layer = next(layer for layer in layers if layer["source"] == "core")
         assert core_layer["lookupId"] == "core:_:template:spec-template"
 
     def test_preset_layer_lookup_id_matches_manifest_contribution_id(self, tmp_path):
@@ -479,7 +481,9 @@ class TestLookupIdRoundTrip:
         )
         resolver = PresetResolver(project)
         layers = resolver.collect_all_layers("spec-template", "template")
-        preset_layer = next(l for l in layers if l["source"].startswith(pack_id))
+        preset_layer = next(
+            layer for layer in layers if layer["source"].startswith(pack_id)
+        )
         manifest = PresetManifest(pack_dir / "preset.yml")
         assert preset_layer["lookupId"] == manifest.contribution_id("template", "spec-template")
         assert preset_layer["lookupId"] == f"preset:{pack_id}:template:spec-template"
