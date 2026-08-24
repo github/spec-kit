@@ -26,9 +26,7 @@ The 12-lowercase-hex discriminator is appended only when at least one sibling
 hook in the same source shares the same ``(eventName, command)`` pair, and it is
 computed by SHA-256 of a canonical JSON serialization of the hook entry's
 declared fields (with ``eventName`` and ``command`` removed, since they already
-appear in the identifier prefix). Two hook entries in the same source whose
-declared fields produce byte-identical canonical JSON are rejected at manifest
-load time — they are semantically identical listeners.
+appear in the identifier prefix).
 
 The functions in this module are pure — inputs are strings or in-memory
 mappings parsed from a manifest, outputs are strings. None of them read from
@@ -139,9 +137,7 @@ def canonical_json(value: Any) -> bytes:
 
     Mapping keys are sorted lexicographically at every depth, list order is
     preserved (author intent), whitespace is stripped, and non-ASCII characters
-    are emitted verbatim. This is the byte string that the hook discriminator
-    hashes and that the manifest loader uses to detect byte-identical duplicate
-    hook entries.
+    are emitted verbatim. This is the byte string the hook discriminator hashes.
     """
     normalized = _normalize_for_canonical_json(value)
     return json.dumps(
