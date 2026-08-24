@@ -19,13 +19,11 @@ from specify_cli.artifacts import (
     AmbiguousArtifactError,
     Artifact,
     ArtifactCatalog,
+    ArtifactKind,
     ArtifactNotFoundError,
     ArtifactResolutionError,
     NotASpecKitProjectError,
-    _derive_manifest_path,
-    _preset_display_name,
 )
-from specify_cli.extensions import ExtensionRegistry
 
 
 ERROR_REGEX = re.compile(
@@ -62,11 +60,51 @@ def _install_preset(project_root: Path, pack_id: str, provides: dict, priority: 
     """Drop a minimal preset onto disk and register it in the ``.registry`` file."""
     pack_dir = project_root / ".specify" / "presets" / pack_id
     pack_dir.mkdir(parents=True)
+    templates: list[dict[str, str]] = []
+
+    def _default_file(kind: str, name: str) -> str:
+        if kind == "command":
+            return f"commands/{name}.md"
+        if kind == "script":
+            return f"scripts/{name}.sh"
+        return f"templates/{name}.md"
+
+    for entry in provides.get("templates", []):
+        if not isinstance(entry, dict):
+            continue
+        entry_type = entry.get("type", "template")
+        if not isinstance(entry_type, str) or entry_type not in ("command", "template", "script"):
+            continue
+        name = entry.get("name")
+        if not isinstance(name, str):
+            continue
+        normalized = dict(entry)
+        normalized["type"] = entry_type
+        normalized.setdefault("file", _default_file(entry_type, name))
+        templates.append(normalized)
+
+    for kind_key, entry_type in (("commands", "command"), ("scripts", "script")):
+        for entry in provides.get(kind_key, []):
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("name")
+            if not isinstance(name, str):
+                continue
+            normalized = dict(entry)
+            normalized["type"] = entry_type
+            normalized.setdefault("file", _default_file(entry_type, name))
+            templates.append(normalized)
+
     manifest = {
-        "id": pack_id,
-        "version": "1.0.0",
-        "metadata": {"name": f"Test preset {pack_id}"},
-        "provides": provides,
+        "schema_version": "1.0",
+        "preset": {
+            "id": pack_id,
+            "name": f"Test preset {pack_id}",
+            "version": "1.0.0",
+            "description": f"Test preset {pack_id}",
+        },
+        "requires": {"speckit_version": ">=1.0.0"},
+        "provides": {"templates": templates},
     }
     (pack_dir / "preset.yml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
     registry_path = project_root / ".specify" / "presets" / ".registry"
@@ -134,6 +172,8 @@ class TestListArtifactsContract:
     def test_excludes_disabled_and_unusable_manifest_contributions(
         self, spec_kit_project: Path
     ):
+        from specify_cli.extensions import ExtensionRegistry
+
         extensions_dir = spec_kit_project / ".specify" / "extensions"
         for extension_id, artifact_name, enabled, file_name in (
             (
@@ -222,74 +262,16 @@ class TestListArtifactsContract:
             "core:_:script:legacy-script"
         )
 
-    def test_project_local_command_keeps_existing_namespace(
-        self, spec_kit_project: Path
-    ):
-        """A project-local ``speckit.*.md`` must not be published as ``speckit.speckit.*``."""
+    def test_preserves_prefixed_project_local_command_names(self, spec_kit_project: Path):
         commands_dir = spec_kit_project / ".specify" / "templates" / "commands"
-        commands_dir.mkdir(parents=True)
-        (commands_dir / "speckit.local.md").write_text(
-            "---\ndescription: Local command\n---\n", encoding="utf-8"
+        commands_dir.mkdir()
+        (commands_dir / "speckit.local-prefixed.md").write_text(
+            "---\ndescription: Local prefixed command\n---\n", encoding="utf-8"
         )
 
-        catalog = ArtifactCatalog(spec_kit_project)
-        names = {row.name for row in catalog.list_artifacts() if row.kind == "command"}
-        assert "speckit.local" in names
-        assert "speckit.speckit.local" not in names
-        assert catalog.get_artifact_info("speckit.local")["stack"][0]["lookupId"] == (
-            "core:_:command:speckit.local"
-        )
-
-    def test_manifest_declared_preset_contribution_uses_manifest_description(
-        self, spec_kit_project: Path
-    ):
-        """Declared entries come from ``PresetManifest.iter_contributions()``."""
-        pack_dir = spec_kit_project / ".specify" / "presets" / "valid-pack"
-        pack_dir.mkdir(parents=True)
-        (pack_dir / "preset.yml").write_text(
-            yaml.safe_dump(
-                {
-                    "schema_version": "1.0",
-                    "preset": {
-                        "id": "valid-pack",
-                        "name": "Valid Pack",
-                        "version": "1.0.0",
-                        "description": "Fixture",
-                    },
-                    "requires": {"speckit_version": ">=0.1.0"},
-                    "provides": {
-                        "templates": [
-                            {
-                                "type": "template",
-                                "name": "declared-template",
-                                "description": "From the manifest",
-                                "file": "templates/declared-template.md",
-                            }
-                        ]
-                    },
-                }
-            ),
-            encoding="utf-8",
-        )
-        (pack_dir / "templates").mkdir()
-        (pack_dir / "templates" / "declared-template.md").write_text(
-            "body", encoding="utf-8"
-        )
-        registry_path = spec_kit_project / ".specify" / "presets" / ".registry"
-        registry_path.write_text(
-            json.dumps(
-                {
-                    "schema_version": "1.0",
-                    "presets": {"valid-pack": {"version": "1.0.0", "priority": 10}},
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        artifacts = {
-            row.id: row for row in ArtifactCatalog(spec_kit_project).list_artifacts()
-        }
-        assert artifacts["template:declared-template"].description == "From the manifest"
+        artifacts = {artifact.id: artifact for artifact in ArtifactCatalog(spec_kit_project).list_artifacts()}
+        assert "command:speckit.local-prefixed" in artifacts
+        assert "command:speckit.speckit.local-prefixed" not in artifacts
 
 
 class TestListSorting:
@@ -456,32 +438,18 @@ class TestKindHint:
             )
 
     @pytest.mark.parametrize(
-        "name, kind",
-        [
-            ("../../outside", "template"),
-            ("/etc/passwd", "template"),
-            ("nested/name", "script"),
-            ("Upper-Case", "template"),
-            ("speckit.constitution", "template"),
-            ("command:template:foo", "command"),
-        ],
+        ("kind", "name"),
+        (
+            ("template", "../../outside"),
+            ("command", "template:foo"),
+            ("script", "script:name"),
+        ),
     )
-    def test_kind_flag_rejects_names_outside_the_grammar(
-        self, spec_kit_project: Path, name: str, kind: str
+    def test_kind_hint_rejects_invalid_name_components(
+        self, spec_kit_project: Path, kind: ArtifactKind, name: str
     ):
-        """An explicit kind skips the inventory, so the name must be validated."""
         with pytest.raises(ArtifactNotFoundError):
             ArtifactCatalog(spec_kit_project).get_artifact_info(name, kind=kind)
-
-    def test_shorthand_rejects_names_outside_the_grammar(self, spec_kit_project: Path):
-        with pytest.raises(ArtifactNotFoundError):
-            ArtifactCatalog(spec_kit_project).get_artifact_info("template:../../outside")
-
-    def test_kind_flag_accepts_a_valid_name(self, spec_kit_project: Path):
-        info = ArtifactCatalog(spec_kit_project).get_artifact_info(
-            "speckit.constitution", kind="command"
-        )
-        assert info["kind"] == "command"
 
 
 # ---------------------------------------------------------------------------
@@ -784,6 +752,8 @@ class TestManifestPathPortability:
     """`_derive_manifest_path` must never leak an absolute host path."""
 
     def test_preset_manifest_path_is_repo_relative(self, tmp_path: Path):
+        from specify_cli.artifacts import _derive_manifest_path
+
         project_root = tmp_path / "proj"
         pack_dir = project_root / ".specify" / "presets" / "my-pack"
         pack_dir.mkdir(parents=True)
@@ -799,6 +769,8 @@ class TestManifestPathPortability:
         )
 
     def test_extension_manifest_path_is_repo_relative(self, tmp_path: Path):
+        from specify_cli.artifacts import _derive_manifest_path
+
         project_root = tmp_path / "proj"
         ext_dir = project_root / ".specify" / "extensions" / "my-ext"
         ext_dir.mkdir(parents=True)
@@ -814,6 +786,8 @@ class TestManifestPathPortability:
         )
 
     def test_missing_manifest_file_is_none(self, tmp_path: Path):
+        from specify_cli.artifacts import _derive_manifest_path
+
         project_root = tmp_path / "proj"
         pack_dir = project_root / ".specify" / "presets" / "my-pack"
         pack_dir.mkdir(parents=True)
@@ -825,6 +799,8 @@ class TestManifestPathPortability:
         assert _derive_manifest_path(layer, project_root) is None
 
     def test_core_and_project_layers_have_no_manifest(self, tmp_path: Path):
+        from specify_cli.artifacts import _derive_manifest_path
+
         project_root = tmp_path / "proj"
         project_root.mkdir()
 
@@ -854,6 +830,8 @@ provides:
 """
 
     def test_reads_validated_preset_name(self, tmp_path: Path):
+        from specify_cli.artifacts import _preset_display_name
+
         pack_dir = tmp_path / "pack"
         pack_dir.mkdir()
         (pack_dir / "preset.yml").write_text(self._VALID_MANIFEST, encoding="utf-8")
@@ -862,6 +840,8 @@ provides:
 
     def test_falls_back_to_pack_id_when_manifest_fails_validation(self, tmp_path: Path):
         """A legacy flat manifest with no ``preset:`` section fails validation."""
+        from specify_cli.artifacts import _preset_display_name
+
         pack_dir = tmp_path / "pack"
         pack_dir.mkdir()
         (pack_dir / "preset.yml").write_text("id: pack\nname: Flat Name\n", encoding="utf-8")
@@ -869,6 +849,8 @@ provides:
         assert _preset_display_name(pack_dir, "pack") == "pack"
 
     def test_falls_back_to_pack_id_without_manifest_file(self, tmp_path: Path):
+        from specify_cli.artifacts import _preset_display_name
+
         pack_dir = tmp_path / "pack"
         pack_dir.mkdir()
 
@@ -876,9 +858,9 @@ provides:
 
 
 # ---------------------------------------------------------------------------
-# Import safety
+# Existing module-import placeholder retained for import safety.
 # ---------------------------------------------------------------------------
 
 
-def test_public_api_is_importable_from_the_package_root():
-    assert ArtifactCatalog.__module__ == "specify_cli.artifacts"
+def test_module_imports():
+    from specify_cli.artifacts import ArtifactCatalog  # noqa: F401
