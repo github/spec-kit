@@ -667,14 +667,17 @@ class ArtifactCatalog:
     def _iter_contribution_artifacts(
         self,
     ) -> Iterable[tuple[ArtifactKind, str, str]]:
-        """Yield ``(kind, name, description)`` for every preset/extension contribution.
+        """Yield ``(kind, name, description)`` for resolver-visible contributions.
 
         Silent on any manifest that fails to parse — that would already be
         surfaced by ``specify preset list`` or ``specify extension list``, and
         this command's job is to describe the composed inventory, not to be
         the second validation surface.
         """
+        from ..presets import PresetResolver  # lazy: avoids circular import
+
         specify_dir = self.project_root / ".specify"
+        resolver = PresetResolver(self.project_root)
         for tier in ("presets", "extensions"):
             tier_dir = specify_dir / tier
             if not tier_dir.is_dir():
@@ -692,7 +695,16 @@ class ArtifactCatalog:
                     continue
                 if not isinstance(data, dict):
                     continue
-                yield from _iter_manifest_contributions(data, is_preset=tier == "presets")
+                layer = "preset" if tier == "presets" else "extension"
+                for kind, name, description in _iter_manifest_contributions(
+                    data, is_preset=tier == "presets"
+                ):
+                    lookup_id = derive_named_id(layer, pack_dir.name, kind, name)
+                    if any(
+                        candidate["lookupId"] == lookup_id
+                        for candidate in resolver.collect_all_layers(name, kind)
+                    ):
+                        yield kind, name, description
 
 
 def _iter_manifest_contributions(

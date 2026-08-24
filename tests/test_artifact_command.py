@@ -125,6 +125,67 @@ class TestListArtifactsContract:
             info = catalog.get_artifact_info(script.id)
             assert info["stack"][-1]["lookupId"] == f"core:_:script:{script.name}"
 
+    def test_excludes_disabled_and_unusable_manifest_contributions(
+        self, spec_kit_project: Path
+    ):
+        from specify_cli.extensions import ExtensionRegistry
+
+        extensions_dir = spec_kit_project / ".specify" / "extensions"
+        for extension_id, artifact_name, enabled, file_name in (
+            (
+                "disabled-ext",
+                "disabled-template",
+                False,
+                "templates/disabled-template.md",
+            ),
+            (
+                "missing-file-ext",
+                "missing-template",
+                True,
+                "templates/missing-template.md",
+            ),
+        ):
+            extension_dir = extensions_dir / extension_id
+            extension_dir.mkdir()
+            (extension_dir / "extension.yml").write_text(
+                yaml.safe_dump(
+                    {
+                        "schema_version": "1.0",
+                        "extension": {
+                            "id": extension_id,
+                            "name": extension_id,
+                            "version": "1.0.0",
+                            "description": "test",
+                            "author": "test",
+                            "repository": "https://example.com",
+                            "license": "MIT",
+                        },
+                        "requires": {"speckit_version": ">=0.2.0"},
+                        "provides": {
+                            "templates": [
+                                {
+                                    "name": artifact_name,
+                                    "file": file_name,
+                                    "description": "Should not be listed",
+                                }
+                            ]
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            if not enabled:
+                template = extension_dir / file_name
+                template.parent.mkdir()
+                template.write_text("# Disabled\n", encoding="utf-8")
+            ExtensionRegistry(extensions_dir).add(
+                extension_id, {"version": "1.0.0", "enabled": enabled}
+            )
+
+        names = {row.name for row in ArtifactCatalog(spec_kit_project).list_artifacts()}
+        assert "disabled-template" not in names
+        assert "missing-template" not in names
+
 
 class TestListSorting:
     """Deterministic ordering: kind first (command/template/script), then name."""
@@ -239,7 +300,7 @@ class TestErrors:
         # Register a preset that contributes 'shared-name' as both a
         # template and a script — the info lookup with no kind hint should
         # then be ambiguous.
-        _install_preset(
+        pack = _install_preset(
             spec_kit_project,
             "test-ambig",
             {
@@ -249,6 +310,10 @@ class TestErrors:
                 ],
             },
         )
+        (pack / "templates").mkdir()
+        (pack / "templates" / "shared-name.md").write_text("# Template\n")
+        (pack / "scripts").mkdir()
+        (pack / "scripts" / "shared-name.sh").write_text("#!/usr/bin/env bash\n")
         with pytest.raises(AmbiguousArtifactError) as excinfo:
             ArtifactCatalog(spec_kit_project).get_artifact_info("shared-name")
         assert excinfo.value.message.startswith("ambiguous artifact shared-name: matches kinds")
