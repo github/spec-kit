@@ -170,11 +170,25 @@ class TestInfoContract:
         assert core["strategy"] == "replace"
         assert re.match(r"^core:_:(command|template|script):[^:]+$", core["lookupId"])
 
+    def test_project_override_row_shape(self, spec_kit_project: Path):
+        overrides = spec_kit_project / ".specify" / "templates" / "overrides"
+        overrides.mkdir()
+        (overrides / "speckit.constitution.md").write_text("override", encoding="utf-8")
+
+        info = ArtifactCatalog(spec_kit_project).get_artifact_info("speckit.constitution")
+
+        project = next(layer for layer in info["stack"] if layer["layer"] == "project")
+        assert project["presetId"] is None
+        assert project["presetName"] is None
+        assert project["manifestPath"] is None
+        assert project["strategy"] == "replace"
+        assert re.match(r"^project:_:(command|template|script):[^:]+$", project["lookupId"])
+
     def test_lookup_id_grammar(self, spec_kit_project: Path):
         info = ArtifactCatalog(spec_kit_project).get_artifact_info("speckit.constitution")
         for layer in info["stack"]:
             assert re.match(
-                r"^(preset|extension|core):[^:]+:(command|template|script):[^:]+(:[0-9a-f]{12})?$",
+                r"^(project|preset|extension|core):[^:]+:(command|template|script):[^:]+(:[0-9a-f]{12})?$",
                 layer["lookupId"],
             )
 
@@ -415,4 +429,3 @@ class TestStackComposition:
 
 def test_module_imports():
     from specify_cli.artifacts import ArtifactCatalog  # noqa: F401
-
