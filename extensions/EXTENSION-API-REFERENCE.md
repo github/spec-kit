@@ -883,13 +883,7 @@ Hook contributions use a compound name-component built from the event and comman
 {layer}:{sourceId}:hook:{eventName}:{command}
 ```
 
-When two or more hook entries within the same source share the same `(eventName, command)` pair, a 12-hex-character discriminator is appended:
-
-```text
-{layer}:{sourceId}:hook:{eventName}:{command}:{discriminator}
-```
-
-The discriminator is the first 12 lowercase hex characters of `sha256(canonical_json(entry - {eventName, command}))`. Two hook entries with byte-identical declared fields (after removing `eventName` and `command`) are rejected at manifest load with a `ValidationError` naming both positions — there is no meaningful way to distinguish them at read time.
+If an extension declares multiple hooks with the same `(eventName, command)` pair, the final declaration wins, matching hook installation. `iter_contributions()` emits only that final hook, so every emitted hook identifier corresponds to an installed hook.
 
 ### Reserved character
 
@@ -911,7 +905,7 @@ Identifier derivation reads only the in-memory declared manifest content. No fil
 
 ### Opacity guidance
 
-Identifiers are stable, but treat them as **opaque strings** in stored data (registries, cache files, external tooling). Parse them with the helpers in `specify_cli._identifier` (`derive_named_id`, `derive_hook_id`) rather than by string-splitting on `:` — the discriminator suffix and future grammar extensions may otherwise catch you out.
+Identifiers are stable, but treat them as **opaque strings** in stored data (registries, cache files, external tooling). Parse them with the helpers in `specify_cli._identifier` (`derive_named_id`, `derive_hook_id`) rather than by string-splitting on `:` so future grammar extensions do not break consumers.
 
 ```text
 .specify/

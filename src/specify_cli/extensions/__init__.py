@@ -30,7 +30,6 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from .._assets import _locate_core_pack, _repo_root
 from .._identifier import (
     IdentifierComponentError,
-    canonical_json,
     derive_hook_id,
     derive_named_id,
     validate_component,
@@ -458,34 +457,6 @@ class ExtensionManifest:
                             )
                     event_entries.append(entry)
 
-                # Reject two hook entries under the same (event, command) whose
-                # declared fields (with eventName/command stripped) canonicalize
-                # to the same byte string — those are semantically identical
-                # listeners with no way to address them separately.
-                by_command: Dict[str, List[tuple[int, dict]]] = {}
-                for idx, entry in enumerate(event_entries):
-                    by_command.setdefault(entry["command"], []).append((idx, entry))
-                for command_value, group in by_command.items():
-                    if len(group) < 2:
-                        continue
-                    seen_canonical: Dict[bytes, int] = {}
-                    for idx, entry in group:
-                        stripped = {
-                            k: v
-                            for k, v in entry.items()
-                            if k not in ("eventName", "command")
-                        }
-                        key = canonical_json(stripped)
-                        if key in seen_canonical:
-                            first_idx = seen_canonical[key]
-                            raise ValidationError(
-                                f"Duplicate hook entries for event '{hook_name}' "
-                                f"command '{command_value}': entries at positions "
-                                f"{first_idx} and {idx} have byte-identical declared "
-                                "fields and cannot be uniquely identified"
-                            )
-                        seen_canonical[key] = idx
-
         # Validate commands; track renames so hook references can be rewritten.
         rename_map: Dict[str, str] = {}
         for cmd in commands:
@@ -826,35 +797,33 @@ class ExtensionManifest:
             contributions.append(enriched)
 
         hooks = self.hooks or {}
-        # Flatten every hook entry across every event so the discriminator
-        # decision has visibility into the full same-source sibling set.
-        flattened: List[tuple[str, dict]] = []
+        # Mirror registration's last-write-wins behavior for duplicate commands
+        # in the same event, so IDs exist only for hooks installed on disk.
+        collapsed: List[tuple[str, dict]] = []
+        seen: Dict[tuple[str, str], int] = {}
         for event_name, hook_config in hooks.items():
             for entry in coerce_hook_entries(hook_config):
-                if isinstance(entry, dict):
-                    normalized = dict(entry)
-                    normalized.setdefault("eventName", event_name)
-                    flattened.append((event_name, normalized))
+                if not isinstance(entry, dict):
+                    continue
+                command_value = entry.get("command")
+                if not command_value:
+                    continue
+                normalized = dict(entry)
+                normalized.setdefault("eventName", event_name)
+                key = (event_name, command_value)
+                if key in seen:
+                    collapsed[seen[key]] = (event_name, normalized)
+                else:
+                    seen[key] = len(collapsed)
+                    collapsed.append((event_name, normalized))
 
-        siblings_for_id = [
-            {"eventName": event, "command": entry.get("command", "")}
-            for event, entry in flattened
-        ]
-
-        for event_name, entry in flattened:
+        for event_name, entry in collapsed:
             command_value = entry.get("command", "")
-            declared_fields = {
-                k: v
-                for k, v in entry.items()
-                if k not in ("eventName", "command")
-            }
             hook_id = derive_hook_id(
                 "extension",
                 source_id,
                 event_name,
                 command_value,
-                siblings_for_id,
-                declared_fields,
             )
             enriched = dict(entry)
             enriched.update(
