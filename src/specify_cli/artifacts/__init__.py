@@ -235,41 +235,39 @@ def _enumerate_core_commands(project_root: Path | None = None) -> list[_CoreBase
     grammar ``command:speckit.constitution`` requires.
     """
     from ..extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
+    from ..presets import PresetResolver
 
     commands_dir = _core_asset_root("commands")
     project_commands_dir = _project_core_asset_root(project_root, "commands")
     rows: list[_CoreBaselineRow] = []
     if commands_dir is None and project_commands_dir is None:
         return rows
-    candidate_stems = set(CORE_COMMAND_NAMES)
+    logical_names = {
+        name if name.startswith("speckit.") else f"speckit.{name}"
+        for name in CORE_COMMAND_NAMES
+    }
     if commands_dir is not None:
-        candidate_stems.update(
-            entry.stem
+        logical_names.update(
+            entry.stem if entry.stem.startswith("speckit.") else f"speckit.{entry.stem}"
             for entry in commands_dir.iterdir()
             if entry.is_file() and entry.suffix == _TEMPLATE_SUFFIX
         )
     if project_commands_dir is not None:
-        candidate_stems.update(
-            entry.stem
+        logical_names.update(
+            entry.stem if entry.stem.startswith("speckit.") else f"speckit.{entry.stem}"
             for entry in project_commands_dir.iterdir()
             if entry.is_file() and entry.suffix == _TEMPLATE_SUFFIX
         )
     rows_by_name: dict[str, _CoreBaselineRow] = {}
-    for stem in sorted(candidate_stems):
-        logical_name = stem if stem.startswith("speckit.") else f"speckit.{stem}"
+    for logical_name in sorted(logical_names):
+        name_candidates = PresetResolver.core_name_candidates(logical_name)
         project_candidates = (
-            (
-                project_commands_dir / f"{stem}.md",
-                project_commands_dir / f"{logical_name}.md",
-            )
+            tuple(project_commands_dir / f"{name}.md" for name in name_candidates)
             if project_commands_dir is not None
             else ()
         )
         bundled_candidates = (
-            (
-                commands_dir / f"{stem}.md",
-                commands_dir / f"{logical_name}.md",
-            )
+            tuple(commands_dir / f"{name}.md" for name in name_candidates)
             if commands_dir is not None
             else ()
         )
