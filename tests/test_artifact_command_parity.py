@@ -136,5 +136,5 @@ class TestJSONShape:
 
 
 def test_module_imports():
-    import specify_cli.artifacts  # noqa: F401
+    _ = ArtifactCatalog
 
