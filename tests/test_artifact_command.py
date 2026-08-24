@@ -21,7 +21,6 @@ from specify_cli.artifacts import (
     ArtifactCatalog,
     ArtifactNotFoundError,
     NotASpecKitProjectError,
-    StackLayer,
 )
 
 
