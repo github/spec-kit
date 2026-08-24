@@ -37,12 +37,17 @@ from .._download_security import (
     safe_extract_archive,
 )
 from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
+from .._identifier import (
+    PROJECT_OVERRIDE_LAYER,
+    derive_named_id,
+)
 from .._init_options import (
     MISSING_INIT_OPTIONS_FILE,
     is_ai_skills_enabled,
     load_init_options,
     resolve_active_agent_for_registration,
 )
+from .._script_variants import script_variant_paths
 from .._invocation_style import get_invocation_prefix
 from ..integrations.base import IntegrationBase
 from .._utils import dump_frontmatter, version_satisfies
@@ -538,6 +543,30 @@ class PresetManifest:
     def tags(self) -> List[str]:
         """Get preset tags."""
         return self.data.get("tags", [])
+
+    def iter_contributions(self) -> List[Dict[str, Any]]:
+        """Return an enriched, ordered list of every contribution this preset declares."""
+        source_id = self.id
+        contributions: List[Dict[str, Any]] = []
+        for entry in self.templates:
+            kind = entry.get("type", "")
+            name = entry.get("name", "")
+            enriched = dict(entry)
+            enriched.update(
+                layer="preset",
+                sourceId=source_id,
+                kind=kind,
+                id=derive_named_id("preset", source_id, kind, name),
+            )
+            contributions.append(enriched)
+        return contributions
+
+    def contribution_id(self, kind: str, name: str) -> Optional[str]:
+        """Return the computed identifier for a single contribution, if declared."""
+        for entry in self.iter_contributions():
+            if entry["kind"] == kind and entry.get("name") == name:
+                return entry["id"]
+        return None
 
     def get_hash(self) -> str:
         """Calculate SHA256 hash of manifest file."""
@@ -5308,8 +5337,11 @@ class PresetResolver:
                 if core.exists():
                     return core
         elif template_type == "script":
-            core = self.templates_dir / "scripts" / f"{template_name}{ext}"
-            if core.exists():
+            core = next(
+                (path for path in script_variant_paths(self.templates_dir / "scripts", template_name) if path.exists()),
+                None,
+            )
+            if core is not None:
                 return core
 
         # Priority 5: Bundled core_pack (wheel install) or repo-root templates
@@ -5329,10 +5361,13 @@ class PresetResolver:
                     if stem:
                         candidate = _core_pack / "commands" / f"{stem}.md"
             elif template_type == "script":
-                candidate = _core_pack / "scripts" / f"{template_name}{ext}"
+                candidate = next(
+                    (path for path in script_variant_paths(_core_pack / "scripts", template_name) if path.exists()),
+                    None,
+                )
             else:
                 candidate = _core_pack / f"{template_name}.md"
-            if candidate.exists():
+            if candidate is not None and candidate.exists():
                 return candidate
         else:
             # Source-checkout / editable install: templates live at repo root
@@ -5346,10 +5381,13 @@ class PresetResolver:
                     if stem:
                         candidate = repo_root / "templates" / "commands" / f"{stem}.md"
             elif template_type == "script":
-                candidate = repo_root / "scripts" / f"{template_name}{ext}"
+                candidate = next(
+                    (path for path in script_variant_paths(repo_root / "scripts", template_name) if path.exists()),
+                    None,
+                )
             else:
                 candidate = repo_root / f"{template_name}.md"
-            if candidate.exists():
+            if candidate is not None and candidate.exists():
                 return candidate
 
         return None
@@ -5527,6 +5565,9 @@ class PresetResolver:
                 "path": override,
                 "source": "project override",
                 "strategy": "replace",
+                "lookupId": derive_named_id(
+                    PROJECT_OVERRIDE_LAYER, "_", template_type, template_name
+                ),
             })
 
         # Priority 2: Installed presets (sorted by priority — lower number = higher precedence)
@@ -5583,6 +5624,9 @@ class PresetResolver:
                         "path": candidate,
                         "source": f"{pack_id} v{version}",
                         "strategy": strategy,
+                        "lookupId": derive_named_id(
+                            "preset", pack_id, template_type, template_name
+                        ),
                     })
 
         # Priority 3: Extension-provided templates (always "replace")
@@ -5611,6 +5655,9 @@ class PresetResolver:
                     "strategy": "replace",
                     "extension_id": ext_id,
                     "extension_dir": ext_dir,
+                    "lookupId": derive_named_id(
+                        "extension", ext_id, template_type, template_name
+                    ),
                 })
 
         # Priority 4: Core templates (always "replace")
@@ -5631,14 +5678,20 @@ class PresetResolver:
                     if c.exists():
                         core = c
         elif template_type == "script":
-            c = self.templates_dir / "scripts" / f"{template_name}{ext}"
-            if c.exists():
+            c = next(
+                (path for path in script_variant_paths(self.templates_dir / "scripts", template_name) if path.exists()),
+                None,
+            )
+            if c is not None:
                 core = c
         if core:
             layers.append({
                 "path": core,
                 "source": "core",
                 "strategy": "replace",
+                "lookupId": derive_named_id(
+                    "core", "_", template_type, template_name
+                ),
             })
         else:
             # Priority 5: Bundled core_pack (wheel install) or repo-root
@@ -5649,6 +5702,9 @@ class PresetResolver:
                     "path": bundled,
                     "source": "core (bundled)",
                     "strategy": "replace",
+                    "lookupId": derive_named_id(
+                        "core", "_", template_type, template_name
+                    ),
                 })
 
         return layers
@@ -5683,10 +5739,13 @@ class PresetResolver:
                 elif template_type == "command":
                     c = core_pack / "commands" / f"{name}.md"
                 elif template_type == "script":
-                    c = core_pack / "scripts" / f"{name}{ext}"
+                    c = next(
+                        (path for path in script_variant_paths(core_pack / "scripts", name) if path.exists()),
+                        None,
+                    )
                 else:
                     c = core_pack / f"{name}.md"
-                if c.exists():
+                if c is not None and c.exists():
                     return c
         else:
             repo_root = _repo_root()
@@ -5696,10 +5755,13 @@ class PresetResolver:
                 elif template_type == "command":
                     c = repo_root / "templates" / "commands" / f"{name}.md"
                 elif template_type == "script":
-                    c = repo_root / "scripts" / f"{name}{ext}"
+                    c = next(
+                        (path for path in script_variant_paths(repo_root / "scripts", name) if path.exists()),
+                        None,
+                    )
                 else:
                     c = repo_root / f"{name}.md"
-                if c.exists():
+                if c is not None and c.exists():
                     return c
         return None
 
