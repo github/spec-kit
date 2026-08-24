@@ -21,7 +21,12 @@ def canonical_script_name(path: Path) -> str | None:
 
 
 def script_variant_paths(scripts_dir: Path, name: str) -> Iterator[Path]:
-    """Yield runtime-specific paths for the logical script *name*."""
+    """Yield candidate paths for the logical script *name*.
+
+    The legacy flat Bash path (``<scripts_dir>/<name>.sh``) is yielded first so
+    existing projects keep working, followed by the runtime-specific paths.
+    """
+    yield scripts_dir / f"{name}.sh"
     for runtime, suffix, uses_underscores in _SCRIPT_VARIANTS:
         stem = name.replace("-", "_") if uses_underscores else name
         yield scripts_dir / runtime / f"{stem}{suffix}"
