@@ -12,30 +12,10 @@ import json
 from pathlib import Path
 
 import pytest
-import yaml
 
 from specify_cli.artifacts import ArtifactCatalog
 from specify_cli.presets import PresetResolver
-
-
-def _install_preset(project_root: Path, pack_id: str, provides: dict, priority: int = 10) -> Path:
-    pack_dir = project_root / ".specify" / "presets" / pack_id
-    pack_dir.mkdir(parents=True)
-    manifest = {
-        "id": pack_id,
-        "version": "1.0.0",
-        "metadata": {"name": f"Test preset {pack_id}"},
-        "provides": provides,
-    }
-    (pack_dir / "preset.yml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
-    registry_path = project_root / ".specify" / "presets" / ".registry"
-    if registry_path.is_file():
-        registry = json.loads(registry_path.read_text(encoding="utf-8"))
-    else:
-        registry = {"schema_version": "1.0.0", "presets": {}}
-    registry["presets"][pack_id] = {"priority": priority, "version": "1.0.0"}
-    registry_path.write_text(json.dumps(registry), encoding="utf-8")
-    return pack_dir
+from tests.conftest import install_preset
 
 
 @pytest.fixture
@@ -53,7 +33,7 @@ class TestManifestPathIsPosix:
     """The ``manifestPath`` field MUST use forward slashes on every OS."""
 
     def test_no_backslashes(self, spec_kit_project: Path):
-        pack = _install_preset(
+        pack = install_preset(
             spec_kit_project,
             "test-posix",
             {"commands": [{"name": "speckit.constitution", "description": "d"}]},
@@ -70,7 +50,7 @@ class TestManifestPathIsPosix:
             assert "\\" not in path, f"backslash leak: {path!r}"
 
     def test_never_absolute(self, spec_kit_project: Path):
-        pack = _install_preset(
+        pack = install_preset(
             spec_kit_project,
             "test-rel",
             {"commands": [{"name": "speckit.constitution", "description": "d"}]},
@@ -93,7 +73,7 @@ class TestResolverParity:
     """The ``active: true`` row must be what :meth:`resolve_content` would pick."""
 
     def test_active_layer_matches_resolver(self, spec_kit_project: Path):
-        pack = _install_preset(
+        pack = install_preset(
             spec_kit_project,
             "test-parity",
             {"commands": [{"name": "speckit.constitution", "description": "override"}]},
@@ -114,6 +94,36 @@ class TestResolverParity:
         # by the resolver, active.layer must not be "core".
         assert "body-from-preset" in winner
         assert active["layer"] == "preset"
+
+    def test_manifest_declared_artifact_matches_resolver(self, spec_kit_project: Path):
+        pack = install_preset(
+            spec_kit_project,
+            "test-manifest-parity",
+            {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.manifest-declared",
+                        "file": "commands/differently-named.md",
+                        "description": "manifest contribution",
+                    }
+                ]
+            },
+        )
+        (pack / "commands").mkdir()
+        (pack / "commands" / "differently-named.md").write_text(
+            "body-from-manifest", encoding="utf-8"
+        )
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        info = catalog.get_artifact_info("speckit.manifest-declared")
+        active = next(layer for layer in info["stack"] if layer["active"])
+        winner = PresetResolver(spec_kit_project).resolve_content(
+            "speckit.manifest-declared", template_type="command"
+        )
+
+        assert winner == "body-from-manifest"
+        assert active["lookupId"] == "preset:test-manifest-parity:command:speckit.manifest-declared"
 
 
 class TestJSONShape:
@@ -136,4 +146,3 @@ class TestJSONShape:
 
 def test_module_imports():
     _ = ArtifactCatalog
-
