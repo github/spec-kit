@@ -693,6 +693,16 @@ class TestManifestPathPortability:
 
         assert _find_enclosing_manifest(source, project_root) == manifest
 
+    def test_enclosing_manifest_search_accepts_project_root_path(self, tmp_path: Path):
+        from specify_cli.artifacts import _find_enclosing_manifest
+
+        project_root = tmp_path / "proj"
+        project_root.mkdir()
+        manifest = project_root / "preset.yml"
+        manifest.write_text("id: root-pack\n", encoding="utf-8")
+
+        assert _find_enclosing_manifest(project_root, project_root) == manifest
+
 
 # ---------------------------------------------------------------------------
 # Existing module-import placeholder retained for import safety.

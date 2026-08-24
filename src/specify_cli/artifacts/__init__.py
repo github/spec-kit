@@ -374,7 +374,8 @@ def _derive_manifest_path(layer: dict[str, Any], project_root: Path) -> str | No
 def _find_enclosing_manifest(path: Path, project_root: Path) -> Path | None:
     """Walk parents of ``path`` up to ``project_root`` looking for a manifest."""
     root = project_root.resolve()
-    for parent in path.parents:
+    start = path if path.is_dir() else path.parent
+    for parent in (start, *start.parents):
         try:
             parent.resolve().relative_to(root)
         except ValueError:
