@@ -390,8 +390,9 @@ def _find_enclosing_manifest(path: Path, project_root: Path) -> Path | None:
 def _preset_display_name(pack_dir: Path, pack_id: str) -> str:
     """Return the preset's human-friendly name from ``preset.yml``.
 
-    Falls back to the pack id when the manifest is missing or lacks a
-    ``metadata.name`` value.
+    Reads ``preset.name`` first and falls back to a top-level ``name`` key for
+    manifests written in the older flat layout. Falls back to the pack id when
+    the manifest is missing or declares no usable name.
     """
     manifest_path = pack_dir / "preset.yml"
     if not manifest_path.is_file():
@@ -407,6 +408,9 @@ def _preset_display_name(pack_dir: Path, pack_id: str) -> str:
         display = preset.get("name")
         if isinstance(display, str) and display:
             return display
+    display = data.get("name")
+    if isinstance(display, str) and display:
+        return display
     return pack_id
 
 

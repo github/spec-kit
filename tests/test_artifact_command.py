@@ -704,6 +704,40 @@ class TestManifestPathPortability:
         assert _find_enclosing_manifest(project_root, project_root) == manifest
 
 
+class TestPresetDisplayName:
+    """`_preset_display_name` reads nested and flat manifest layouts."""
+
+    def test_reads_nested_preset_name(self, tmp_path: Path):
+        from specify_cli.artifacts import _preset_display_name
+
+        pack_dir = tmp_path / "pack"
+        pack_dir.mkdir()
+        (pack_dir / "preset.yml").write_text(
+            "preset:\n  id: pack\n  name: Nested Name\nname: Flat Name\n",
+            encoding="utf-8",
+        )
+
+        assert _preset_display_name(pack_dir, "pack") == "Nested Name"
+
+    def test_falls_back_to_top_level_name(self, tmp_path: Path):
+        from specify_cli.artifacts import _preset_display_name
+
+        pack_dir = tmp_path / "pack"
+        pack_dir.mkdir()
+        (pack_dir / "preset.yml").write_text("id: pack\nname: Flat Name\n", encoding="utf-8")
+
+        assert _preset_display_name(pack_dir, "pack") == "Flat Name"
+
+    def test_falls_back_to_pack_id_without_name(self, tmp_path: Path):
+        from specify_cli.artifacts import _preset_display_name
+
+        pack_dir = tmp_path / "pack"
+        pack_dir.mkdir()
+        (pack_dir / "preset.yml").write_text("id: pack\n", encoding="utf-8")
+
+        assert _preset_display_name(pack_dir, "pack") == "pack"
+
+
 # ---------------------------------------------------------------------------
 # Existing module-import placeholder retained for import safety.
 # ---------------------------------------------------------------------------
