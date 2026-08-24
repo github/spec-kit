@@ -19,7 +19,7 @@ from typing import Any, Iterable, Literal
 import yaml
 
 from .._assets import _locate_core_pack, _repo_root
-from .._identifier import derive_named_id
+from .._identifier import PROJECT_OVERRIDE_LAYER, derive_named_id
 from .._script_variants import canonical_script_name
 
 # ---------------------------------------------------------------------------
@@ -121,6 +121,7 @@ class ArtifactResolutionError(ArtifactError):
 # ---------------------------------------------------------------------------
 
 _TEMPLATE_SUFFIX = ".md"
+_SCRIPT_SUFFIX = ".sh"
 
 
 @dataclass(frozen=True)
@@ -675,6 +676,16 @@ class ArtifactCatalog:
     ) -> Iterable[tuple[ArtifactKind, str, str]]:
         """Yield ``(kind, name, description)`` for resolver-visible contributions.
 
+        Covers the two ways a pack can contribute an artifact:
+
+        * manifest-declared entries (``preset.yml`` / ``extension.yml``), and
+        * convention-placed extension files (``commands/``, ``templates/``,
+          ``scripts/``) that the resolver picks up even without a manifest.
+
+        Project-local overrides under ``.specify/templates/overrides`` are
+        included too, so an artifact that exists only as an override is still
+        listed.
+
         Silent on any manifest that fails to parse — that would already be
         surfaced by ``specify preset list`` or ``specify extension list``, and
         this command's job is to describe the composed inventory, not to be
@@ -685,6 +696,16 @@ class ArtifactCatalog:
         specify_dir = self.project_root / ".specify"
         resolver = PresetResolver(self.project_root)
         layers_by_artifact: dict[tuple[ArtifactKind, str], set[str]] = {}
+
+        def _lookup_ids(kind: ArtifactKind, name: str) -> set[str]:
+            key = (kind, name)
+            if key not in layers_by_artifact:
+                layers_by_artifact[key] = {
+                    candidate["lookupId"]
+                    for candidate in resolver.collect_all_layers(name, kind)
+                }
+            return layers_by_artifact[key]
+
         for tier in ("presets", "extensions"):
             tier_dir = specify_dir / tier
             if not tier_dir.is_dir():
@@ -694,27 +715,88 @@ class ArtifactCatalog:
                     continue
                 manifest_name = "preset.yml" if tier == "presets" else "extension.yml"
                 manifest = pack_dir / manifest_name
-                if not manifest.is_file():
-                    continue
-                try:
-                    data = yaml.safe_load(manifest.read_text(encoding="utf-8"))
-                except (OSError, UnicodeDecodeError, yaml.YAMLError):
-                    continue
-                if not isinstance(data, dict):
-                    continue
                 layer = "preset" if tier == "presets" else "extension"
-                for kind, name, description in _iter_manifest_contributions(
-                    data, is_preset=tier == "presets"
-                ):
-                    lookup_id = derive_named_id(layer, pack_dir.name, kind, name)
-                    key = (kind, name)
-                    if key not in layers_by_artifact:
-                        layers_by_artifact[key] = {
-                            candidate["lookupId"]
-                            for candidate in resolver.collect_all_layers(name, kind)
-                        }
-                    if lookup_id in layers_by_artifact[key]:
-                        yield kind, name, description
+                data: Any = None
+                if manifest.is_file():
+                    try:
+                        data = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+                    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+                        data = None
+                if isinstance(data, dict):
+                    for kind, name, description in _iter_manifest_contributions(
+                        data, is_preset=tier == "presets"
+                    ):
+                        lookup_id = derive_named_id(layer, pack_dir.name, kind, name)
+                        if lookup_id in _lookup_ids(kind, name):
+                            yield kind, name, description
+                if tier != "extensions":
+                    continue
+                # Convention fallback: an extension file placed at the
+                # conventional path resolves whether or not the manifest
+                # declares it, so it belongs in the inventory as well.
+                for kind, name in _iter_convention_contributions(pack_dir):
+                    lookup_id = derive_named_id("extension", pack_dir.name, kind, name)
+                    if lookup_id in _lookup_ids(kind, name):
+                        yield kind, name, ""
+
+        yield from self._iter_project_override_artifacts(resolver)
+
+    def _iter_project_override_artifacts(
+        self,
+        resolver: Any,
+    ) -> Iterable[tuple[ArtifactKind, str, str]]:
+        """Yield ``(kind, name, "")`` for project-local override files.
+
+        A root ``overrides/<name>.md`` file is the override for both the
+        ``template`` and the ``command`` lookup of ``<name>``, so it is
+        reported as a command when some other layer already provides that
+        command and as a template otherwise. That keeps a command override
+        from also appearing as a second, spurious ``template:`` row.
+        """
+        overrides_dir = resolver.overrides_dir
+        if not overrides_dir.is_dir():
+            return
+        for entry in sorted(overrides_dir.iterdir(), key=lambda p: p.name):
+            if not entry.is_file() or entry.suffix != _TEMPLATE_SUFFIX:
+                continue
+            name = entry.stem
+            command_layers = resolver.collect_all_layers(name, "command")
+            backed_by_command = any(
+                not str(layer.get("lookupId", "")).startswith(
+                    f"{PROJECT_OVERRIDE_LAYER}:"
+                )
+                for layer in command_layers
+            )
+            yield ("command" if backed_by_command else "template"), name, ""
+        scripts_dir = overrides_dir / "scripts"
+        if not scripts_dir.is_dir():
+            return
+        for entry in sorted(scripts_dir.iterdir(), key=lambda p: p.name):
+            if entry.is_file() and entry.suffix == _SCRIPT_SUFFIX:
+                yield "script", entry.stem, ""
+
+
+_CONVENTION_SUBDIRS: tuple[tuple[str, ArtifactKind, str], ...] = (
+    ("commands", "command", _TEMPLATE_SUFFIX),
+    ("templates", "template", _TEMPLATE_SUFFIX),
+    ("scripts", "script", _SCRIPT_SUFFIX),
+)
+
+
+def _iter_convention_contributions(pack_dir: Path) -> Iterable[tuple[ArtifactKind, str]]:
+    """Yield ``(kind, name)`` for files an extension exposes by convention.
+
+    Only the conventional subdirectories are scanned; loose ``.md`` files at
+    the extension root (``README.md`` and friends) are deliberately skipped so
+    packaging files don't show up as templates.
+    """
+    for subdir, kind, suffix in _CONVENTION_SUBDIRS:
+        candidate_dir = pack_dir / subdir
+        if not candidate_dir.is_dir():
+            continue
+        for entry in sorted(candidate_dir.iterdir(), key=lambda p: p.name):
+            if entry.is_file() and entry.suffix == suffix and ":" not in entry.stem:
+                yield kind, entry.stem
 
 
 def _iter_manifest_contributions(
