@@ -858,7 +858,10 @@ class ArtifactCatalog:
                 description = contribution.get("description", "")
                 if not isinstance(description, str):
                     description = ""
-                if contribution["id"] in lookup_ids(kind, name):
+                lookup_id = contribution.get("id")
+                if not isinstance(lookup_id, str) or not lookup_id:
+                    continue
+                if lookup_id in lookup_ids(kind, name):
                     yield kind, name, description
 
         # Convention fallback: a preset/extension file placed at the
