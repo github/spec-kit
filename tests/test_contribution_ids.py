@@ -549,4 +549,3 @@ class TestNoPersistence:
         assert ":command:" not in on_disk
         assert ":template:" not in on_disk
         assert ":script:" not in on_disk
-
