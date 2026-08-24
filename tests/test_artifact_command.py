@@ -211,8 +211,10 @@ class TestErrors:
             spec_kit_project,
             "test-ambig",
             {
-                "templates": [{"name": "shared-name", "description": "t"}],
-                "scripts": [{"name": "shared-name", "description": "s"}],
+                "templates": [
+                    {"type": "template", "name": "shared-name", "description": "t"},
+                    {"type": "script", "name": "shared-name", "description": "s"},
+                ],
             },
         )
         with pytest.raises(AmbiguousArtifactError) as excinfo:
@@ -361,6 +363,29 @@ class TestUTF8NoBOM:
 
 
 class TestStackComposition:
+    def test_preset_command_uses_entry_type(self, spec_kit_project: Path):
+        pack = _install_preset(
+            spec_kit_project,
+            "test-command",
+            {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.constitution",
+                        "description": "override",
+                    }
+                ]
+            },
+        )
+        (pack / "commands").mkdir()
+        (pack / "commands" / "speckit.constitution.md").write_text(
+            "---\ndescription: override\n---\nbody", encoding="utf-8"
+        )
+
+        rows = ArtifactCatalog(spec_kit_project).list_artifacts()
+        assert any(row.id == "command:speckit.constitution" for row in rows)
+        assert ArtifactCatalog(spec_kit_project).get_artifact_info("speckit.constitution")["kind"] == "command"
+
     def test_preset_replace_hides_core(self, spec_kit_project: Path):
         # Install a preset that replaces the constitution command.
         pack = _install_preset(
@@ -390,5 +415,4 @@ class TestStackComposition:
 
 def test_module_imports():
     from specify_cli.artifacts import ArtifactCatalog  # noqa: F401
-
 

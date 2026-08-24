@@ -678,15 +678,17 @@ class ArtifactCatalog:
                     continue
                 if not isinstance(data, dict):
                     continue
-                yield from _iter_manifest_contributions(data)
+                yield from _iter_manifest_contributions(data, is_preset=tier == "presets")
 
 
 def _iter_manifest_contributions(
     data: dict[str, Any],
+    *,
+    is_preset: bool = False,
 ) -> Iterable[tuple[ArtifactKind, str, str]]:
     """Yield ``(kind, name, description)`` entries declared by a manifest.
 
-    Both preset and extension manifests use the same ``provides`` shape:
+    Extension manifests group entries by artifact kind:
 
     .. code-block:: yaml
 
@@ -695,11 +697,32 @@ def _iter_manifest_contributions(
           templates: [ ... ]
           scripts: [ ... ]
 
+    Preset manifests instead place every contribution under ``templates`` and
+    identify its artifact kind with each entry's ``type`` field.
+
     Anything malformed at the entry level is skipped rather than raised —
     the artifact command is a projection, not a validator.
     """
     provides = data.get("provides")
     if not isinstance(provides, dict):
+        return
+    if is_preset:
+        entries = provides.get("templates")
+        if not isinstance(entries, list):
+            return
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            kind_value = entry.get("type")
+            name = entry.get("name")
+            if kind_value not in ("command", "template", "script"):
+                continue
+            if not isinstance(name, str) or not name or ":" in name:
+                continue
+            description = entry.get("description", "")
+            if not isinstance(description, str):
+                description = ""
+            yield kind_value, name, description
         return
     for kind_key, kind_value in (
         ("commands", "command"),
