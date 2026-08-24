@@ -12911,6 +12911,64 @@ class TestCollectAllLayers:
         assert layers[1]["strategy"] == "replace"
 
 
+class TestCoreScriptRuntimeVariants:
+    """Core scripts resolve through whichever runtime variant is installed."""
+
+    @staticmethod
+    def _write_core_script(project_dir, runtime, filename, body):
+        script_dir = project_dir / ".specify" / "templates" / "scripts" / runtime
+        script_dir.mkdir(parents=True, exist_ok=True)
+        path = script_dir / filename
+        path.write_text(body)
+        return path
+
+    def test_resolve_finds_powershell_only_core_script(self, project_dir):
+        """Only the .ps1 variant exists — resolve() must still find it."""
+        path = self._write_core_script(
+            project_dir, "powershell", "ps-only-helper.ps1", "Write-Output 'ps'\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+        assert resolver.resolve("ps-only-helper", "script") == path
+
+    def test_collect_all_layers_finds_powershell_only_core_script(self, project_dir):
+        """Only the .ps1 variant exists — collect_all_layers() must find it."""
+        path = self._write_core_script(
+            project_dir, "powershell", "ps-only-helper.ps1", "Write-Output 'ps'\n"
+        )
+
+        layers = PresetResolver(project_dir).collect_all_layers(
+            "ps-only-helper", "script"
+        )
+        assert len(layers) == 1
+        assert layers[0]["path"] == path
+        assert layers[0]["source"] == "core"
+
+    def test_resolve_finds_python_only_core_script(self, project_dir):
+        """Only the underscored .py variant exists — the hyphenated logical
+        name must still resolve."""
+        path = self._write_core_script(
+            project_dir, "python", "py_only_helper.py", "print('py')\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+        assert resolver.resolve("py-only-helper", "script") == path
+
+    def test_collect_all_layers_finds_python_only_core_script(self, project_dir):
+        """Only the underscored .py variant exists — collect_all_layers() must
+        map the hyphenated logical name onto it."""
+        path = self._write_core_script(
+            project_dir, "python", "py_only_helper.py", "print('py')\n"
+        )
+
+        layers = PresetResolver(project_dir).collect_all_layers(
+            "py-only-helper", "script"
+        )
+        assert len(layers) == 1
+        assert layers[0]["path"] == path
+        assert layers[0]["source"] == "core"
+
+
 class TestRemoveReconciliation:
     """Test that removing a preset re-registers the next layer's command."""
 
