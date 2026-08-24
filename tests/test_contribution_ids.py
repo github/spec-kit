@@ -267,22 +267,6 @@ class TestHookDiscriminator:
         }
         assert ids_a == ids_b
 
-    def test_byte_identical_declared_fields_rejected_at_load(self, tmp_path):
-        data = _extension_data(
-            hooks={
-                "after_tasks": [
-                    {"command": "speckit.speckitgit.branch", "priority": 10},
-                    {"command": "speckit.speckitgit.branch", "priority": 10},
-                ]
-            }
-        )
-        with pytest.raises(ValidationError) as exc_info:
-            ExtensionManifest(_write_manifest(tmp_path, data, "extension.yml"))
-        message = str(exc_info.value)
-        assert "Duplicate hook entries" in message
-        assert "after_tasks" in message
-        assert "positions 0 and 1" in message
-
     def test_hook_discriminator_helper_is_deterministic(self):
         payload = {"priority": 10, "optional": True, "prompt": "Run?"}
         a = hook_discriminator(payload)
@@ -584,4 +568,3 @@ class TestNoPersistence:
         assert ":command:" not in on_disk
         assert ":template:" not in on_disk
         assert ":script:" not in on_disk
-

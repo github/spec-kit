@@ -889,7 +889,7 @@ When two or more hook entries within the same source share the same `(eventName,
 {layer}:{sourceId}:hook:{eventName}:{command}:{discriminator}
 ```
 
-The discriminator is the first 12 lowercase hex characters of `sha256(canonical_json(entry - {eventName, command}))`. Two hook entries with byte-identical declared fields (after removing `eventName` and `command`) are rejected at manifest load with a `ValidationError` naming both positions — there is no meaningful way to distinguish them at read time.
+The discriminator is the first 12 lowercase hex characters of `sha256(canonical_json(entry - {eventName, command}))`. If two entries are byte-identical after removing `eventName` and `command`, they collapse under the existing per-event, per-command last-write-wins hook merge semantics.
 
 ### Reserved character
 
