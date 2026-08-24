@@ -650,6 +650,25 @@ class TestConventionDiscovery:
         assert catalog.get_artifact_info("speckit.legacy")["kind"] == "command"
 
 
+class TestManifestPathPortability:
+    """`_derive_manifest_path` must never leak an absolute host path."""
+
+    def test_enclosing_manifest_outside_project_root_is_none(self, tmp_path: Path):
+        from specify_cli.artifacts import _derive_manifest_path
+
+        project_root = tmp_path / "proj"
+        project_root.mkdir()
+
+        outside = tmp_path / "outside-pack"
+        (outside / "templates").mkdir(parents=True)
+        (outside / "preset.yml").write_text("id: outside-pack\n", encoding="utf-8")
+        source = outside / "templates" / "legacy-template.md"
+        source.write_text("body", encoding="utf-8")
+
+        layer = {"lookupId": "preset:outside-pack:template:legacy-template", "path": source}
+        assert _derive_manifest_path(layer, project_root) is None
+
+
 # ---------------------------------------------------------------------------
 # Existing module-import placeholder retained for import safety.
 # ---------------------------------------------------------------------------
