@@ -182,11 +182,27 @@ What the extension provides.
 - `commands`: Array of command objects
 - `templates`: Array of template objects
 - `scripts`: Array of script objects
+- `instructions`: Array of always-on instruction blocks (see below)
 
 `hooks` and `events` are separate top-level manifest fields (siblings of
 `provides`, not nested under it — see [`hooks`](#hooks) below). At least one
-of `provides.commands`, `provides.templates`, `provides.scripts`, `hooks`, or
-`events` is required.
+of `provides.commands`, `provides.templates`, `provides.scripts`,
+`provides.instructions`, `hooks`, or `events` is required.
+
+**Instruction object** (`provides.instructions`, [#4200](https://github.com/github/spec-kit/issues/4200)):
+
+- `file`: Path to a markdown rule block, relative to the extension root
+  (path-safe: no absolute paths, no `..`). The payload must not contain the
+  managed-section markers (`<!-- SPECKIT ... -->`).
+- `description`: Optional description.
+
+Always-on instructions are an **opt-in delivery** mechanism: core only validates
+the metadata. The agent-file writes are performed by the `agent-context`
+extension, which composes each enabled extension's block into the routed context
+file (e.g. `.github/copilot-instructions.md`) inside a namespaced
+`<!-- SPECKIT EXT:<id> START/END -->` block, and drops it again on disable/remove
+at the next refresh. With `agent-context` not installed, declaring
+`provides.instructions` writes nothing.
 
 **Command object**:
 

@@ -7,6 +7,15 @@ without any command/hook invocation. Ownership follows the maintainer's decision
 owns the agent-file writes.** With `agent-context` not installed, installing an
 extension does not touch agent files.
 
+**Triggers / lifecycle.** The agent needs no command invocation to *receive* the rules —
+they live in the always-on context file. Composition and refresh are performed by
+`agent-context` itself: its `speckit.agent-context.update` command and its `after_specify`
+/ `after_plan` hooks, so the block is written during normal setup, before the agent runs,
+and a disabled or removed extension's block is dropped on the next refresh. A fully
+automatic trigger on `extension add`/`remove` would need an extension-lifecycle hook point
+in core (none exists today — the event system covers agent-runtime events only), so that is
+deliberately left as a follow-up owned by `agent-context`.
+
 ## What changed
 
 - **Core (`src/specify_cli/extensions/__init__.py`)** — accepts and validates a new
@@ -31,13 +40,18 @@ extension does not touch agent files.
 
 ## Efficacy
 
-The delivered payload is the **same rule block** measured in the delivery A/B. Installed
-via this path, the block written to `.github/copilot-instructions.md` is **byte-identical**
-to the always-on rule block that scored **+0.142 mean** best-practice conformance over bare
-(vs +0.10 for the same content as on-demand commands), across 2 models × 4 languages ×
-3 complexity levels. Because the payload is identical, the measured lift carries over by
-construction — this change is about **delivery/reachability**, not content or instruction
-weighting.
+The lift is about **delivery/reachability**, not content or instruction weighting: the
+delivered payload is the same rule block whether it arrives always-on or via a command, so
+when it is present the measured conformance gain carries over by construction. Two
+measurements, same conformance metric, 2 models × 4 languages × 3 complexity (n=24):
+
+- **This mechanism's exact output.** Bare vs the block this install path actually writes to
+  `.github/copilot-instructions.md`, captured byte-for-byte: **+0.123 mean best-practice
+  conformance, 22 wins / 0 ties / 2 losses** (both losses tiny, on a near-ceiling model).
+  This is the verified, install-path-accurate figure.
+- **Earlier distilled-block pilot** (a shorter, hand-distilled rule block — a *distinct*
+  experiment with a *distinct* payload): **+0.142 mean** over bare, vs +0.10 for the same
+  content delivered as on-demand commands. Kept for context, not the headline number.
 
 ## Verification (automated)
 
@@ -53,7 +67,7 @@ weighting.
   file is written when `agent-context` is not configured**; `--emit-extension-blocks`
   emits the shared block text.
 
-Full suite: `pytest tests/extensions tests/test_extensions.py` → **673 passed, 146 skipped**
+Full suite (rebased on current `main`): `pytest` → **6916 passed, 415 skipped**
 (the skips are the bash/pwsh cross-execution parity tests, which run on POSIX CI).
 
 Manual end-to-end (copilot integration) also confirmed: `specify extension add` a

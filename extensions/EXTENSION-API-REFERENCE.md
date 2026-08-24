@@ -40,7 +40,7 @@ requires:
       required: boolean    # Optional, default: false
 
 provides:
-  commands:              # At least one of commands/templates/scripts/hooks/events required
+  commands:              # At least one of commands/templates/scripts/instructions/hooks/events required
     - name: string       # Required, pattern: ^speckit\.[a-z0-9-]+\.[a-z0-9-]+$
       file: string       # Required, relative path to command file
       description: string # Required
@@ -58,6 +58,14 @@ provides:
       file: string       # Required, relative path to script file
       description: string # Optional
       runtimes: [string] # Optional, subset of: bash, powershell, python
+
+  instructions:          # Optional, array of always-on instruction blocks (#4200).
+                          # Core validates only; the agent-file writes are performed by
+                          # the opt-in agent-context extension (nothing is written without it).
+    - file: string       # Required, relative path (inside the extension) to a markdown
+                          #   rule block; path-safe (no absolute path, no '..'). The
+                          #   payload must not contain SPECKIT section markers.
+      description: string # Optional
 
   config:                # Optional, array of config files
     - name: string       # Config file name

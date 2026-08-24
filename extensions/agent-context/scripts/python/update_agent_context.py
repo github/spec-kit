@@ -27,6 +27,12 @@ from pathlib import Path
 DEFAULT_START = "<!-- SPECKIT START -->"
 DEFAULT_END = "<!-- SPECKIT END -->"
 
+# Any SPECKIT marker comment (the outer managed-section markers or the
+# per-extension ``EXT:<id> START/END`` sub-markers). Instruction payloads that
+# embed one would collide with the find/replace in _upsert_section and strand
+# old content on disable/remove, so such payloads are rejected.
+_SPECKIT_MARKER_RE = re.compile(r"<!--\s*SPECKIT\b")
+
 
 def _err(message: str) -> None:
     print(message, file=sys.stderr)
@@ -201,7 +207,11 @@ def _resolve_plan_path(project_root: str) -> str:
     return plan_path
 
 
-def _collect_extension_instruction_blocks(project_root: str) -> list[tuple[str, str]]:
+def _collect_extension_instruction_blocks(
+    project_root: str,
+    marker_start: str = DEFAULT_START,
+    marker_end: str = DEFAULT_END,
+) -> list[tuple[str, str]]:
     """Collect always-on instruction blocks from installed + enabled extensions.
 
     Implements the agent-context side of github/spec-kit#4200: an extension that
@@ -265,9 +275,21 @@ def _collect_extension_instruction_blocks(project_root: str) -> list[tuple[str, 
             if not target.is_file():
                 continue
             try:
-                parts.append(target.read_text(encoding="utf-8").strip())
-            except OSError:
+                text = target.read_text(encoding="utf-8").strip()
+            except (OSError, UnicodeDecodeError):
+                # Unreadable or non-UTF-8 file: skip this entry (fail closed)
+                # rather than crash the whole context refresh (#4200 review).
                 continue
+            if marker_start in text or marker_end in text or _SPECKIT_MARKER_RE.search(text):
+                # Payload embeds a managed-section marker; including it would
+                # corrupt _upsert_section's find/replace and strand old content
+                # on disable/remove. Skip it (fail closed) with a warning.
+                _err(
+                    f"agent-context: skipping instructions from '{ext_id}': "
+                    "content contains a managed section marker."
+                )
+                continue
+            parts.append(text)
         if parts:
             blocks.append((ext_id, "\n\n".join(parts)))
     return blocks
@@ -294,13 +316,19 @@ def _build_section(
     return "\n".join(lines) + "\n"
 
 
-def _render_extension_block_lines(project_root: str) -> list[str]:
+def _render_extension_block_lines(
+    project_root: str,
+    marker_start: str = DEFAULT_START,
+    marker_end: str = DEFAULT_END,
+) -> list[str]:
     """Render the namespaced sub-block lines for all enabled extensions'
     instruction blocks. Shared by _build_section and the --emit-extension-blocks
     mode so the bash/PowerShell twins produce byte-identical output.
     """
     lines: list[str] = []
-    for ext_id, content in _collect_extension_instruction_blocks(project_root):
+    for ext_id, content in _collect_extension_instruction_blocks(
+        project_root, marker_start, marker_end
+    ):
         lines.append("")
         lines.append(f"<!-- SPECKIT EXT:{ext_id} START -->")
         lines.append(content)
@@ -461,7 +489,7 @@ def main(argv: list[str] | None = None) -> int:
     if not plan_path:
         plan_path = _resolve_plan_path(project_root)
 
-    extension_blocks = _render_extension_block_lines(project_root)
+    extension_blocks = _render_extension_block_lines(project_root, marker_start, marker_end)
     section = _build_section(marker_start, marker_end, plan_path, extension_blocks)
 
     for context_file in context_files:

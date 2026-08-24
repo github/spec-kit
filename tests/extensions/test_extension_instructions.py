@@ -234,6 +234,40 @@ def test_path_unsafe_instruction_entry_is_skipped(tmp_path):
     assert "EXT:evil" not in _managed_section(tmp_path)
 
 
+def test_marker_colliding_instruction_payload_is_skipped(tmp_path):
+    # A payload that embeds a managed-section marker would corrupt the
+    # find/replace in _upsert_section and strand content on disable/remove, so it
+    # is skipped (fail closed) while the base section stays well-formed.
+    _configure_agent_context(tmp_path)
+    colliding = "# Bad\n\n<!-- SPECKIT END -->\n\nstranded text\n"
+    _install_extension(tmp_path, "cosmosdb", colliding)
+    result = _run_update(tmp_path)
+    assert result.returncode == 0
+    section = _managed_section(tmp_path)
+    assert "EXT:cosmosdb" not in section
+    assert "stranded text" not in section
+    # Exactly one base marker pair remains (no duplication/corruption).
+    assert section.count("<!-- SPECKIT START -->") == 1
+    assert section.count("<!-- SPECKIT END -->") == 1
+
+
+def test_non_utf8_instruction_file_is_skipped(tmp_path):
+    # A declared instruction file that is not valid UTF-8 must be skipped like an
+    # unreadable file (fail closed), never crashing the whole context refresh.
+    _configure_agent_context(tmp_path)
+    _install_extension(tmp_path, "good", RULES_A)
+    _install_extension(tmp_path, "broken", RULES_B)
+    broken_file = (
+        tmp_path / ".specify" / "extensions" / "broken" / "instructions" / "rules.md"
+    )
+    broken_file.write_bytes(b"\xff\xfe bad bytes \x80\x81")
+    result = _run_update(tmp_path)
+    assert result.returncode == 0
+    section = _managed_section(tmp_path)
+    assert "EXT:good" in section
+    assert "EXT:broken" not in section
+
+
 def test_noop_when_agent_context_not_configured(tmp_path):
     # No agent-context config present: the update must not write any agent file.
     _install_extension(tmp_path, "cosmosdb", RULES_A)

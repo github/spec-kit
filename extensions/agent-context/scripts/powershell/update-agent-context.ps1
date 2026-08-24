@@ -465,10 +465,11 @@ $pyForBlocks = $null
 foreach ($candidate in @($env:SPECKIT_PYTHON, 'python3', 'python')) {
     if (-not $candidate) { continue }
     if (-not (Get-Command $candidate -ErrorAction SilentlyContinue)) { continue }
-    # Verify the candidate is a real, runnable Python 3 (skips the Windows Store
-    # 'python3' alias stub, mirroring the config-parse detection above).
+    # Verify the candidate is a real, runnable Python 3 that can import PyYAML
+    # (the emitter imports yaml). Skips the Windows Store 'python3' alias stub
+    # and any interpreter without PyYAML, mirroring the config-parse probe above.
     try {
-        & $candidate -c "import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)" 2>$null | Out-Null
+        & $candidate -c "import sys, yaml; sys.exit(0 if sys.version_info[0] == 3 else 1)" 2>$null | Out-Null
         if ($LASTEXITCODE -eq 0) { $pyForBlocks = $candidate; break }
     } catch { }
 }
