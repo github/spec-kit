@@ -763,7 +763,7 @@ class ArtifactCatalog:
             pack_dir = preset_manager.presets_dir / pack_id
             manifest = preset_manager.get_pack(pack_id)
             yield from self._iter_pack_contributions(
-                manifest, pack_dir, _lookup_ids
+                manifest, pack_dir, "preset", _lookup_ids
             )
 
         # -- Extensions: registered ids plus on-disk unregistered directories,
@@ -787,7 +787,7 @@ class ArtifactCatalog:
                         manifest = ExtensionManifest(manifest_path)
                     except ValidationError:
                         manifest = None
-            yield from self._iter_pack_contributions(manifest, ext_dir, _lookup_ids)
+            yield from self._iter_pack_contributions(manifest, ext_dir, "extension", _lookup_ids)
 
         yield from self._iter_project_override_artifacts(resolver)
 
@@ -795,6 +795,7 @@ class ArtifactCatalog:
     def _iter_pack_contributions(
         manifest: Any,
         pack_dir: Path,
+        layer: str,
         lookup_ids: Callable[[ArtifactKind, str], set[str]],
     ) -> Iterable[tuple[ArtifactKind, str, str]]:
         """Yield ``(kind, name, description)`` for one preset or extension pack.
@@ -822,7 +823,6 @@ class ArtifactCatalog:
         # Convention fallback: a preset/extension file placed at the
         # conventional path resolves whether or not the manifest declares it,
         # so it belongs in the inventory as well.
-        layer = "preset" if pack_dir.parent.name == "presets" else "extension"
         for kind, name in _iter_convention_contributions(pack_dir):
             lookup_id = derive_named_id(layer, pack_dir.name, kind, name)
             if lookup_id in lookup_ids(kind, name):
