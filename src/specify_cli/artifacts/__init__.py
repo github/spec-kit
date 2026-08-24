@@ -600,6 +600,17 @@ def _validate_project(project_root: Path) -> None:
         raise NotASpecKitProjectError()
 
 
+def _validate_extension_registry(project_root: Path) -> None:
+    extensions_dir = project_root / ".specify" / "extensions"
+    if not extensions_dir.exists():
+        return
+
+    from ..extensions import ExtensionRegistry
+
+    if ExtensionRegistry(extensions_dir).is_corrupt():
+        raise ArtifactResolutionError()
+
+
 def _resolve_kind_hint(name: str, kind: ArtifactKind | None) -> tuple[str, ArtifactKind | None]:
     """Parse ``kind:name`` shorthand and reconcile it with an explicit ``--kind`` flag.
 
@@ -651,6 +662,7 @@ class ArtifactCatalog:
         they are integration-specific output, not a shipped asset family.
         """
         _validate_project(self.project_root)
+        _validate_extension_registry(self.project_root)
         baseline = self._get_baseline()
 
         seen: dict[tuple[ArtifactKind, str], Artifact] = {}

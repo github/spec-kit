@@ -20,11 +20,9 @@ from typing import Optional
 import typer
 
 from . import (
-    AmbiguousArtifactError,
     ArtifactCatalog,
     ArtifactError,
     ArtifactKind,
-    ArtifactNotFoundError,
     ArtifactResolutionError,
     NotASpecKitProjectError,
 )
@@ -140,7 +138,7 @@ def info_command(
         root = _resolve_project_root()
         catalog = ArtifactCatalog(root)
         payload = catalog.get_artifact_info(name, kind=resolved_kind)
-    except (ArtifactNotFoundError, AmbiguousArtifactError, NotASpecKitProjectError) as exc:
+    except ArtifactError as exc:
         _emit_error_and_exit(exc)
         return  # pragma: no cover
     except PresetError:
