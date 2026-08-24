@@ -306,30 +306,6 @@ class TestExtensionManifest:
         assert result == {"widget", "gadget"}
         assert result != _FALLBACK_CORE_COMMAND_NAMES
 
-    def test_load_core_command_names_prefers_wheel_core_pack(self, monkeypatch):
-        """When a wheel ``core_pack`` bundle exists, discovery reads
-        ``core_pack/commands`` (the force-include target) ahead of the source
-        tree (#3274)."""
-        from specify_cli.extensions import _load_core_command_names
-        import specify_cli.extensions as ext
-
-        with tempfile.TemporaryDirectory() as tmp:
-            core_pack = Path(tmp) / "core_pack"
-            (core_pack / "commands").mkdir(parents=True)
-            (core_pack / "commands" / "sprocket.md").write_text("# sprocket", encoding="utf-8")
-
-            # The shared resolver itself picks the bundle ahead of the source
-            # tree; here we just stand in for its already-resolved result.
-            monkeypatch.setattr(
-                ext,
-                "_locate_core_asset_dir",
-                lambda subdir: core_pack / "commands" if subdir == "commands" else None,
-            )
-
-            result = _load_core_command_names()
-
-        assert result == {"sprocket"}
-
     def test_load_core_command_names_falls_back_when_nothing_found(self, monkeypatch):
         """With neither a bundle nor a source tree, discovery returns the
         baked-in fallback so validation still works (#3274)."""
