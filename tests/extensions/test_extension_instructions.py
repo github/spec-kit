@@ -300,3 +300,35 @@ def test_emit_extension_blocks_mode(tmp_path):
     assert result.returncode == 0
     assert "<!-- SPECKIT EXT:cosmosdb START -->" in result.stdout
     assert RULES_A.strip() in result.stdout
+
+
+def test_custom_markers_forwarded_to_emit(tmp_path):
+    # The twins forward their configured markers via --marker-start/--marker-end;
+    # a non-colliding payload still composes normally under custom markers.
+    _install_extension(tmp_path, "cosmosdb", RULES_A)
+    result = subprocess.run(
+        [
+            sys.executable, str(PY_TWIN), "--emit-extension-blocks",
+            "--marker-start", "<!-- CTX-START -->", "--marker-end", "<!-- CTX-END -->",
+        ],
+        cwd=str(tmp_path), capture_output=True, text=True, encoding="utf-8",
+    )
+    assert result.returncode == 0
+    assert "<!-- SPECKIT EXT:cosmosdb START -->" in result.stdout
+    assert RULES_A.strip() in result.stdout
+
+
+def test_custom_marker_colliding_payload_rejected_in_emit(tmp_path):
+    # A payload containing the *configured* end marker must be rejected too, not
+    # only payloads containing the default SPECKIT markers.
+    _install_extension(tmp_path, "cosmosdb", "# Rules\n\n<!-- CTX-END -->\n\nstranded\n")
+    result = subprocess.run(
+        [
+            sys.executable, str(PY_TWIN), "--emit-extension-blocks",
+            "--marker-start", "<!-- CTX-START -->", "--marker-end", "<!-- CTX-END -->",
+        ],
+        cwd=str(tmp_path), capture_output=True, text=True, encoding="utf-8",
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+    assert "EXT:cosmosdb" not in result.stdout

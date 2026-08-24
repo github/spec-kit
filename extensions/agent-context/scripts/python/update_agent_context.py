@@ -427,7 +427,18 @@ def main(argv: list[str] | None = None) -> int:
     # produce identical output from this single implementation. Does not require
     # the agent-context config (the twin already validated it before calling).
     if "--emit-extension-blocks" in args:
-        block_lines = _render_extension_block_lines(project_root)
+        # Twins forward their configured markers so collision-rejection uses the
+        # SAME markers the upsert will use (custom markers included), not just the
+        # defaults. Fall back to the defaults when a twin passes nothing.
+        def _opt(name: str, default: str) -> str:
+            if name in args:
+                i = args.index(name)
+                if i + 1 < len(args):
+                    return args[i + 1]
+            return default
+        marker_start = _opt("--marker-start", DEFAULT_START)
+        marker_end = _opt("--marker-end", DEFAULT_END)
+        block_lines = _render_extension_block_lines(project_root, marker_start, marker_end)
         if block_lines:
             # Write bytes with explicit \n so the bash/PowerShell twins receive
             # identical separators regardless of OS text-mode newline translation.

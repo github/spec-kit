@@ -358,7 +358,7 @@ trap 'rm -f "$TMP_SECTION"' EXIT
   # Extension-contributed always-on instruction blocks (github/spec-kit#4200).
   # Delegated to the python twin's --emit-extension-blocks so all three twins
   # emit byte-identical block text from a single implementation.
-  _EXT_BLOCKS="$("$_python" "$_SCRIPT_DIR/../python/update_agent_context.py" --emit-extension-blocks 2>/dev/null || true)"
+  _EXT_BLOCKS="$("$_python" "$_SCRIPT_DIR/../python/update_agent_context.py" --emit-extension-blocks --marker-start "$MARKER_START" --marker-end "$MARKER_END" 2>/dev/null || true)"
   if [[ -n "$_EXT_BLOCKS" ]]; then
     printf '%s\n' "$_EXT_BLOCKS"
   fi

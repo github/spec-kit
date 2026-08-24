@@ -647,3 +647,52 @@ def test_python_composes_extension_instructions_matching_powershell(
     content_b = (repo_b / "AGENTS.md").read_bytes()
     assert b"<!-- SPECKIT EXT:cosmosdb START -->" in content_b
     assert "Use point reads \u2014 keep RU low".encode("utf-8") in content_b
+
+
+CUSTOM_MARKERS = {"start": "<!-- CTX-START -->", "end": "<!-- CTX-END -->"}
+
+
+@requires_posix_bash
+def test_python_composes_instructions_custom_markers_matching_bash(
+    tmp_path: Path,
+) -> None:
+    repo_a, repo_b = twin_projects(
+        tmp_path, context_file="AGENTS.md", context_markers=CUSTOM_MARKERS
+    )
+    for repo in (repo_a, repo_b):
+        add_plan(repo)
+        install_instructions_extension(repo, "cosmosdb", INSTRUCTIONS_RULES)
+
+    bash = run_bash(repo_a)
+    py = run_python(repo_b)
+
+    assert_parity(bash, py, repo_a, repo_b)
+    content_b = (repo_b / "AGENTS.md").read_bytes()
+    assert (repo_a / "AGENTS.md").read_bytes() == content_b
+    # Composed under the configured custom markers, forwarded to the emitter.
+    assert b"<!-- CTX-START -->" in content_b and b"<!-- CTX-END -->" in content_b
+    assert b"<!-- SPECKIT EXT:cosmosdb START -->" in content_b
+
+
+@pytest.mark.skipif(not POWERSHELL, reason="no PowerShell available")
+def test_python_composes_instructions_custom_markers_matching_powershell(
+    tmp_path: Path,
+) -> None:
+    repo_a = make_project(
+        tmp_path / "proj-ps", context_file="AGENTS.md", context_markers=CUSTOM_MARKERS
+    )
+    repo_b = make_project(
+        tmp_path / "proj-py", context_file="AGENTS.md", context_markers=CUSTOM_MARKERS
+    )
+    for repo in (repo_a, repo_b):
+        add_plan(repo)
+        install_instructions_extension(repo, "cosmosdb", INSTRUCTIONS_RULES)
+
+    ps = run_powershell(repo_a)
+    py = run_python(repo_b)
+
+    assert ps.returncode == py.returncode == 0, ps.stderr + py.stderr
+    content_b = (repo_b / "AGENTS.md").read_bytes()
+    assert (repo_a / "AGENTS.md").read_bytes() == content_b
+    assert b"<!-- CTX-START -->" in content_b and b"<!-- CTX-END -->" in content_b
+    assert b"<!-- SPECKIT EXT:cosmosdb START -->" in content_b

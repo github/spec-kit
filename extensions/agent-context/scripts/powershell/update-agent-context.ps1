@@ -473,13 +473,31 @@ foreach ($candidate in @($env:SPECKIT_PYTHON, 'python3', 'python')) {
         if ($LASTEXITCODE -eq 0) { $pyForBlocks = $candidate; break }
     } catch { }
 }
+if (-not $pyForBlocks) {
+    # The base section is written natively below, but extension-contributed
+    # always-on instruction blocks are composed by the Python emitter only. If no
+    # Python 3 + PyYAML is on PATH and other extensions are installed (any of which
+    # may declare provides.instructions), warn instead of silently dropping them.
+    $registryPath = Join-Path $ProjectRoot '.specify/extensions/.registry'
+    if (Test-Path -LiteralPath $registryPath) {
+        try {
+            $reg = Get-Content -LiteralPath $registryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $others = @($reg.extensions.PSObject.Properties | Where-Object {
+                $_.Name -ne 'agent-context' -and $_.Value.enabled -ne $false
+            })
+            if ($others.Count -gt 0) {
+                [Console]::Error.WriteLine("agent-context: Python 3 with PyYAML not found; extension always-on instruction blocks (provides.instructions) were NOT composed. Base context section written. Install PyYAML (pip install pyyaml) or expose a Python 3 on PATH to include them.")
+            }
+        } catch { }
+    }
+}
 if ($pyForBlocks -and (Test-Path -LiteralPath $pyTwin)) {
     # Windows PowerShell decodes native-command stdout using the console code
     # page; force UTF-8 so non-ASCII rule text (e.g. em-dashes) survives capture.
     $prevOutEnc = [Console]::OutputEncoding
     try {
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        $emitted = (& $pyForBlocks $pyTwin --emit-extension-blocks 2>$null | Out-String)
+        $emitted = (& $pyForBlocks $pyTwin --emit-extension-blocks --marker-start $MarkerStart --marker-end $MarkerEnd 2>$null | Out-String)
     } finally {
         [Console]::OutputEncoding = $prevOutEnc
     }
