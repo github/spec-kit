@@ -156,6 +156,20 @@ def _core_asset_root(subdir: str) -> Path | None:
     return candidate if candidate.is_dir() else None
 
 
+def _project_core_asset_root(project_root: Path | None, subdir: str) -> Path | None:
+    """Return the project-local core directory for an asset family, if present."""
+    if project_root is None:
+        return None
+    candidate = project_root / ".specify" / "templates"
+    if subdir == "commands":
+        candidate /= "commands"
+    elif subdir == "scripts":
+        candidate /= "scripts"
+    elif subdir != "templates":  # pragma: no cover — internal misuse
+        return None
+    return candidate if candidate.is_dir() else None
+
+
 def _extract_frontmatter_description(text: str) -> str:
     """Return the ``description`` value from YAML frontmatter, else ``""``.
 
@@ -219,7 +233,7 @@ def _extract_script_description(text: str) -> str:
     return ""
 
 
-def _enumerate_core_commands() -> list[_CoreBaselineRow]:
+def _enumerate_core_commands(project_root: Path | None = None) -> list[_CoreBaselineRow]:
     """Enumerate every command shipped in the core baseline.
 
     Names are surfaced with the ``speckit.`` prefix so they collide with
@@ -229,11 +243,30 @@ def _enumerate_core_commands() -> list[_CoreBaselineRow]:
     from ..extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
 
     commands_dir = _core_asset_root("commands")
+    project_commands_dir = _project_core_asset_root(project_root, "commands")
     rows: list[_CoreBaselineRow] = []
-    if commands_dir is None:
+    if commands_dir is None and project_commands_dir is None:
         return rows
-    for stem in sorted(CORE_COMMAND_NAMES):
-        path = commands_dir / f"{stem}.md"
+    project_stems = (
+        {
+            entry.stem
+            for entry in project_commands_dir.iterdir()
+            if entry.is_file() and entry.suffix == _TEMPLATE_SUFFIX
+        }
+        if project_commands_dir is not None
+        else set()
+    )
+    for stem in sorted(set(CORE_COMMAND_NAMES) | project_stems):
+        path = (
+            project_commands_dir / f"{stem}.md"
+            if project_commands_dir is not None
+            and (project_commands_dir / f"{stem}.md").is_file()
+            else commands_dir / f"{stem}.md"
+            if commands_dir is not None
+            else None
+        )
+        if path is None:
+            continue
         if not path.is_file():
             continue
         try:
@@ -251,58 +284,72 @@ def _enumerate_core_commands() -> list[_CoreBaselineRow]:
     return rows
 
 
-def _enumerate_core_templates() -> list[_CoreBaselineRow]:
+def _enumerate_core_templates(project_root: Path | None = None) -> list[_CoreBaselineRow]:
     templates_dir = _core_asset_root("templates")
+    project_templates_dir = _project_core_asset_root(project_root, "templates")
     rows: list[_CoreBaselineRow] = []
-    if templates_dir is None:
-        return rows
-    for entry in sorted(templates_dir.iterdir(), key=lambda p: p.name):
-        if not entry.is_file() or entry.suffix != _TEMPLATE_SUFFIX:
+    seen: set[str] = set()
+    for directory in (project_templates_dir, templates_dir):
+        if directory is None:
             continue
-        try:
-            text = entry.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            text = ""
-        rows.append(
-            _CoreBaselineRow(
-                name=entry.stem,
-                kind="template",
-                path=entry,
-                description=_extract_frontmatter_description(text),
-            )
-        )
-    return rows
-
-
-def _enumerate_core_scripts() -> list[_CoreBaselineRow]:
-    scripts_dir = _core_asset_root("scripts")
-    rows: list[_CoreBaselineRow] = []
-    if scripts_dir is None:
-        return rows
-    seen: dict[str, _CoreBaselineRow] = {}
-    for runtime_dir in sorted(scripts_dir.iterdir(), key=lambda p: p.name):
-        if not runtime_dir.is_dir():
-            continue
-        for entry in sorted(runtime_dir.iterdir(), key=lambda p: p.name):
-            if not entry.is_file():
+        for entry in sorted(directory.iterdir(), key=lambda p: p.name):
+            if (
+                not entry.is_file()
+                or entry.suffix != _TEMPLATE_SUFFIX
+                or entry.stem in seen
+            ):
                 continue
-            name = canonical_script_name(entry)
-            if name is None:
-                continue
-            if name in seen:
-                continue
+            seen.add(entry.stem)
             try:
                 text = entry.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
                 text = ""
-            seen[name] = _CoreBaselineRow(
-                name=name,
-                kind="script",
-                path=entry,
-                description=_extract_script_description(text),
+            rows.append(
+                _CoreBaselineRow(
+                    name=entry.stem,
+                    kind="template",
+                    path=entry,
+                    description=_extract_frontmatter_description(text),
+                )
             )
+    return rows
+
+
+def _enumerate_core_scripts(project_root: Path | None = None) -> list[_CoreBaselineRow]:
+    scripts_dir = _core_asset_root("scripts")
+    project_scripts_dir = _project_core_asset_root(project_root, "scripts")
+    rows: list[_CoreBaselineRow] = []
+    seen: dict[str, _CoreBaselineRow] = {}
+    for directory in (project_scripts_dir, scripts_dir):
+        if directory is None:
+            continue
+        for entry in sorted(directory.glob(f"*{_SCRIPT_SUFFIX}"), key=lambda p: p.name):
+            if entry.stem not in seen:
+                seen[entry.stem] = _core_script_row(entry, entry.stem)
+        for runtime_dir in sorted(directory.iterdir(), key=lambda p: p.name):
+            if not runtime_dir.is_dir():
+                continue
+            for entry in sorted(runtime_dir.iterdir(), key=lambda p: p.name):
+                if not entry.is_file():
+                    continue
+                name = canonical_script_name(entry)
+                if name is not None and name not in seen:
+                    seen[name] = _core_script_row(entry, name)
     rows.extend(sorted(seen.values(), key=lambda r: r.name))
     return rows
+
+
+def _core_script_row(path: Path, name: str) -> _CoreBaselineRow:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        text = ""
+    return _CoreBaselineRow(
+        name=name,
+        kind="script",
+        path=path,
+        description=_extract_script_description(text),
+    )
 
 
 @dataclass(frozen=True)
@@ -314,11 +361,11 @@ class CoreBaseline:
     scripts: tuple[_CoreBaselineRow, ...]
 
     @classmethod
-    def load(cls) -> "CoreBaseline":
+    def load(cls, project_root: Path | None = None) -> "CoreBaseline":
         return cls(
-            commands=tuple(_enumerate_core_commands()),
-            templates=tuple(_enumerate_core_templates()),
-            scripts=tuple(_enumerate_core_scripts()),
+            commands=tuple(_enumerate_core_commands(project_root)),
+            templates=tuple(_enumerate_core_templates(project_root)),
+            scripts=tuple(_enumerate_core_scripts(project_root)),
         )
 
     def by_kind(self, kind: ArtifactKind) -> tuple[_CoreBaselineRow, ...]:
@@ -663,7 +710,7 @@ class ArtifactCatalog:
     # -------------------------------------------------------------- internals
     def _get_baseline(self) -> CoreBaseline:
         if self._baseline is None:
-            self._baseline = CoreBaseline.load()
+            self._baseline = CoreBaseline.load(self.project_root)
         return self._baseline
 
     def _find_matches(self, name: str) -> list[tuple[ArtifactKind, str]]:

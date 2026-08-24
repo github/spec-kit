@@ -189,6 +189,38 @@ class TestListArtifactsContract:
         assert "disabled-template" not in names
         assert "missing-template" not in names
 
+    def test_includes_project_local_core_assets(self, spec_kit_project: Path):
+        templates_dir = spec_kit_project / ".specify" / "templates"
+        (templates_dir / "legacy-template.md").write_text(
+            "---\ndescription: Local template\n---\n", encoding="utf-8"
+        )
+        commands_dir = templates_dir / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "local-command.md").write_text(
+            "---\ndescription: Local command\n---\n", encoding="utf-8"
+        )
+        scripts_dir = templates_dir / "scripts"
+        scripts_dir.mkdir()
+        (scripts_dir / "legacy-script.sh").write_text(
+            "# Local script\n", encoding="utf-8"
+        )
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        artifacts = {artifact.id: artifact for artifact in catalog.list_artifacts()}
+
+        assert artifacts["template:legacy-template"].description == "Local template"
+        assert artifacts["command:speckit.local-command"].description == "Local command"
+        assert artifacts["script:legacy-script"].description == "Local script"
+        assert catalog.get_artifact_info("speckit.local-command")["stack"][0]["lookupId"] == (
+            "core:_:command:speckit.local-command"
+        )
+        assert catalog.get_artifact_info("legacy-template")["stack"][0]["lookupId"] == (
+            "core:_:template:legacy-template"
+        )
+        assert catalog.get_artifact_info("legacy-script")["stack"][0]["lookupId"] == (
+            "core:_:script:legacy-script"
+        )
+
 
 class TestListSorting:
     """Deterministic ordering: kind first (command/template/script), then name."""
