@@ -53,6 +53,10 @@ def escape_toml_basic(value: str) -> str:
             out.append("\\r")
         elif ch == "\t":
             out.append("\\t")
+        elif ch == "\b":
+            out.append("\\b")
+        elif ch == "\f":
+            out.append("\\f")
         elif code < 0x20 or code == 0x7F:
             out.append(f"\\u{code:04x}")
         else:
