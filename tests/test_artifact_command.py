@@ -28,6 +28,7 @@ from specify_cli.artifacts import (
     _preset_display_name,
 )
 from specify_cli.extensions import ExtensionRegistry
+from specify_cli.presets import PresetResolver
 
 
 ERROR_REGEX = re.compile(
@@ -274,6 +275,21 @@ class TestListArtifactsContract:
         artifacts = {artifact.id: artifact for artifact in ArtifactCatalog(spec_kit_project).list_artifacts()}
         assert "command:speckit.local-prefixed" in artifacts
         assert "command:speckit.speckit.local-prefixed" not in artifacts
+
+    def test_prefers_exact_core_command_name(self, spec_kit_project: Path):
+        commands_dir = spec_kit_project / ".specify" / "templates" / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "foo.md").write_text(
+            "---\ndescription: Stripped fallback\n---\n", encoding="utf-8"
+        )
+        exact_path = commands_dir / "speckit.foo.md"
+        exact_path.write_text(
+            "---\ndescription: Exact logical name\n---\n", encoding="utf-8"
+        )
+
+        assert PresetResolver(spec_kit_project).resolve("speckit.foo", "command") == exact_path
+        info = ArtifactCatalog(spec_kit_project).get_artifact_info("speckit.foo")
+        assert info["description"] == "Exact logical name"
 
     def test_active_preset_description_overrides_hidden_core_description(
         self, spec_kit_project: Path

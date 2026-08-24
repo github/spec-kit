@@ -5231,6 +5231,15 @@ class PresetResolver:
             return template_name[len("speckit."):]
         return None
 
+    @classmethod
+    def core_name_candidates(cls, logical_name: str) -> list[str]:
+        """Return exact-first filename candidates for a core logical name."""
+        names = [logical_name]
+        stem = cls._core_stem(logical_name)
+        if stem and stem != logical_name:
+            names.append(stem)
+        return names
+
     def resolve(
         self,
         template_name: str,
@@ -5740,11 +5749,6 @@ class PresetResolver:
         except ImportError:
             return None
 
-        stem = self._core_stem(template_name)
-        names = [template_name]
-        if stem and stem != template_name:
-            names.append(stem)
-
         if template_type == "template":
             base = _locate_core_asset_dir("templates")
         elif template_type == "command":
@@ -5757,7 +5761,7 @@ class PresetResolver:
         if base is None:
             return None
 
-        for name in names:
+        for name in self.core_name_candidates(template_name):
             if template_type == "script":
                 c = next(
                     (path for path in script_variant_paths(base, name) if path.exists()),
