@@ -85,7 +85,7 @@ class ArtifactError(Exception):
 
     Each subclass carries a ``.message`` attribute whose value is the exact
     string emitted to stderr under the ``error`` key of the JSON envelope.
-    The contract regex is ``^(unknown artifact |ambiguous artifact |not a Spec Kit project)``.
+    The contract regex is ``^(unknown artifact |ambiguous artifact |artifact resolution failed|not a Spec Kit project)``.
     """
 
     message: str
