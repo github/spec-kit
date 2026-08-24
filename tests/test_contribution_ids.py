@@ -439,7 +439,9 @@ class TestLookupIdRoundTrip:
         resolver.templates_dir = project / "templates"
         layers = resolver.collect_all_layers("spec-template", "template")
         core_layer = next(layer for layer in layers if layer["source"] == "core")
-        assert core_layer["lookupId"] == "core:_:template:spec-template"
+        assert core_layer["lookupId"] == derive_named_id(
+            "core", "_", "template", "spec-template"
+        )
 
     def test_preset_layer_lookup_id_matches_manifest_contribution_id(self, tmp_path):
         project = _make_project(tmp_path)
