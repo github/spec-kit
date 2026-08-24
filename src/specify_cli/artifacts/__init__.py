@@ -678,6 +678,7 @@ class ArtifactCatalog:
 
         specify_dir = self.project_root / ".specify"
         resolver = PresetResolver(self.project_root)
+        layers_by_artifact: dict[tuple[ArtifactKind, str], set[str]] = {}
         for tier in ("presets", "extensions"):
             tier_dir = specify_dir / tier
             if not tier_dir.is_dir():
@@ -700,10 +701,13 @@ class ArtifactCatalog:
                     data, is_preset=tier == "presets"
                 ):
                     lookup_id = derive_named_id(layer, pack_dir.name, kind, name)
-                    if any(
-                        candidate["lookupId"] == lookup_id
-                        for candidate in resolver.collect_all_layers(name, kind)
-                    ):
+                    key = (kind, name)
+                    if key not in layers_by_artifact:
+                        layers_by_artifact[key] = {
+                            candidate["lookupId"]
+                            for candidate in resolver.collect_all_layers(name, kind)
+                        }
+                    if lookup_id in layers_by_artifact[key]:
                         yield kind, name, description
 
 
