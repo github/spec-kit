@@ -397,6 +397,11 @@ def _preset_display_name(pack_dir: Path, pack_id: str) -> str:
         return pack_id
     if not isinstance(data, dict):
         return pack_id
+    metadata = data.get("metadata")
+    if isinstance(metadata, dict):
+        display = metadata.get("name")
+        if isinstance(display, str) and display:
+            return display
     preset = data.get("preset")
     if isinstance(preset, dict):
         display = preset.get("name")
@@ -773,8 +778,16 @@ class ArtifactCatalog:
         if not scripts_dir.is_dir():
             return
         for entry in sorted(scripts_dir.iterdir(), key=lambda p: p.name):
-            if entry.is_file() and entry.suffix == _SCRIPT_SUFFIX:
-                yield "script", entry.stem, ""
+            if entry.is_file() and entry.suffix in (".sh", ".ps1", ".py"):
+                name = canonical_script_name(entry)
+                if name is None:
+                    name = (
+                        entry.stem.replace("_", "-")
+                        if entry.suffix == ".py"
+                        else entry.stem
+                    )
+                if ":" not in name:
+                    yield "script", name, ""
 
 
 _CONVENTION_SUBDIRS: tuple[tuple[str, ArtifactKind, str], ...] = (
@@ -796,8 +809,19 @@ def _iter_convention_contributions(pack_dir: Path) -> Iterable[tuple[ArtifactKin
         if not candidate_dir.is_dir():
             continue
         for entry in sorted(candidate_dir.iterdir(), key=lambda p: p.name):
-            if entry.is_file() and entry.suffix == suffix and ":" not in entry.stem:
-                yield kind, entry.stem
+            if not entry.is_file():
+                continue
+            if kind != "script":
+                if entry.suffix == suffix and ":" not in entry.stem:
+                    yield kind, entry.stem
+                continue
+            if entry.suffix not in (".sh", ".ps1", ".py"):
+                continue
+            name = canonical_script_name(entry)
+            if name is None:
+                name = entry.stem.replace("_", "-") if entry.suffix == ".py" else entry.stem
+            if ":" not in name:
+                yield kind, name
 
 
 def _iter_manifest_contributions(
@@ -826,22 +850,47 @@ def _iter_manifest_contributions(
     if not isinstance(provides, dict):
         return
     if is_preset:
+        def _iter_kind_entries(
+            entries: Any,
+            kind: ArtifactKind,
+        ) -> Iterable[tuple[ArtifactKind, str, str]]:
+            if not isinstance(entries, list):
+                return
+            for entry in entries:
+                if isinstance(entry, str):
+                    if entry and ":" not in entry:
+                        yield kind, entry, ""
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                name = entry.get("name")
+                if not isinstance(name, str) or not name or ":" in name:
+                    continue
+                description = entry.get("description", "")
+                if not isinstance(description, str):
+                    description = ""
+                yield kind, name, description
+
         entries = provides.get("templates")
-        if not isinstance(entries, list):
-            return
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            kind_value = entry.get("type")
-            name = entry.get("name")
-            if kind_value not in ("command", "template", "script"):
-                continue
-            if not isinstance(name, str) or not name or ":" in name:
-                continue
-            description = entry.get("description", "")
-            if not isinstance(description, str):
-                description = ""
-            yield kind_value, name, description
+        if isinstance(entries, list):
+            for entry in entries:
+                if isinstance(entry, dict):
+                    kind_value = entry.get("type")
+                    if kind_value in ("command", "template", "script"):
+                        name = entry.get("name")
+                        if not isinstance(name, str) or not name or ":" in name:
+                            continue
+                        description = entry.get("description", "")
+                        if not isinstance(description, str):
+                            description = ""
+                        yield kind_value, name, description
+                        continue
+                for row in _iter_kind_entries([entry], "template"):
+                    yield row
+        for row in _iter_kind_entries(provides.get("commands"), "command"):
+            yield row
+        for row in _iter_kind_entries(provides.get("scripts"), "script"):
+            yield row
         return
     for kind_key, kind_value in (
         ("commands", "command"),
@@ -880,5 +929,3 @@ __all__ = [
     "StackLayer",
     "Strategy",
 ]
-
-_ = derive_named_id  # keep the import edge visible for tooling
