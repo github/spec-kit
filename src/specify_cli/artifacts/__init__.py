@@ -709,6 +709,7 @@ class ArtifactCatalog:
         * When no artifact matches, raises :class:`ArtifactNotFoundError`.
         """
         _validate_project(self.project_root)
+        _validate_extension_registry(self.project_root)
         bare, resolved_kind = _resolve_kind_hint(name, kind)
 
         if resolved_kind is None:
