@@ -416,7 +416,6 @@ class ExtensionManifest:
                     validate_component(hook_name, f"hook event name '{hook_name}'")
                 except IdentifierComponentError as exc:
                     raise ValidationError(str(exc)) from exc
-                event_entries: List[dict] = []
                 for entry in coerce_hook_entries(hook_config):
                     if not isinstance(entry, dict):
                         raise ValidationError(
@@ -446,35 +445,6 @@ class ExtensionManifest:
                                 f"Hook '{hook_name}' has invalid 'priority': "
                                 "must be >= 1"
                             )
-                    event_entries.append(entry)
-
-                # Reject two hook entries under the same (event, command) whose
-                # declared fields (with eventName/command stripped) canonicalize
-                # to the same byte string — those are semantically identical
-                # listeners with no way to address them separately.
-                by_command: Dict[str, List[tuple[int, dict]]] = {}
-                for idx, entry in enumerate(event_entries):
-                    by_command.setdefault(entry["command"], []).append((idx, entry))
-                for command_value, group in by_command.items():
-                    if len(group) < 2:
-                        continue
-                    seen_canonical: Dict[bytes, int] = {}
-                    for idx, entry in group:
-                        stripped = {
-                            k: v
-                            for k, v in entry.items()
-                            if k not in ("eventName", "command")
-                        }
-                        key = canonical_json(stripped)
-                        if key in seen_canonical:
-                            first_idx = seen_canonical[key]
-                            raise ValidationError(
-                                f"Duplicate hook entries for event '{hook_name}' "
-                                f"command '{command_value}': entries at positions "
-                                f"{first_idx} and {idx} have byte-identical declared "
-                                "fields and cannot be uniquely identified"
-                            )
-                        seen_canonical[key] = idx
 
         # Validate commands; track renames so hook references can be rewritten.
         rename_map: Dict[str, str] = {}
@@ -561,14 +531,11 @@ class ExtensionManifest:
                 command_ref = entry.get("command")
                 if not isinstance(command_ref, str):
                     continue
-                # Step 1: apply any rename from the auto-correction pass.
-                after_rename = rename_map.get(command_ref, command_ref)
-                # Step 2: lift alias-form '{ext_id}.cmd' to canonical 'speckit.{ext_id}.cmd'.
-                parts = after_rename.split(".")
-                if len(parts) == 2 and parts[0] == ext["id"]:
-                    final_ref = f"speckit.{ext['id']}.{parts[1]}"
-                else:
-                    final_ref = after_rename
+                final_ref = self._canonicalize_command_ref(
+                    command_ref,
+                    ext["id"],
+                    rename_map,
+                )
                 if final_ref != command_ref:
                     entry["command"] = final_ref
                     self.warnings.append(
@@ -590,12 +557,11 @@ class ExtensionManifest:
                 command_ref = event_config.get("command")
                 if not isinstance(command_ref, str):
                     continue
-                after_rename = rename_map.get(command_ref, command_ref)
-                parts = after_rename.split(".")
-                if len(parts) == 2 and parts[0] == ext["id"]:
-                    final_ref = f"speckit.{ext['id']}.{parts[1]}"
-                else:
-                    final_ref = after_rename
+                final_ref = self._canonicalize_command_ref(
+                    command_ref,
+                    ext["id"],
+                    rename_map,
+                )
                 if final_ref != command_ref:
                     event_config["command"] = final_ref
                     self.warnings.append(
@@ -603,6 +569,56 @@ class ExtensionManifest:
                         f"updated to canonical form '{final_ref}'. "
                         f"The extension author should update the manifest."
                     )
+
+        # Reject two hook entries under the same (event, command) whose
+        # declared fields (with eventName/command stripped) canonicalize
+        # to the same byte string — those are semantically identical
+        # listeners with no way to address them separately.
+        if hooks:
+            for hook_name, hook_config in hooks.items():
+                by_command: Dict[str, List[tuple[int, dict]]] = {}
+                for idx, entry in enumerate(coerce_hook_entries(hook_config)):
+                    command_ref = entry.get("command")
+                    if not isinstance(command_ref, str):
+                        continue
+                    command_value = self._canonicalize_command_ref(
+                        command_ref,
+                        ext["id"],
+                        rename_map,
+                    )
+                    by_command.setdefault(command_value, []).append((idx, entry))
+                for command_value, group in by_command.items():
+                    if len(group) < 2:
+                        continue
+                    seen_canonical: Dict[bytes, int] = {}
+                    for idx, entry in group:
+                        stripped = {
+                            k: v
+                            for k, v in entry.items()
+                            if k not in ("eventName", "command")
+                        }
+                        key = canonical_json(stripped)
+                        if key in seen_canonical:
+                            first_idx = seen_canonical[key]
+                            raise ValidationError(
+                                f"Duplicate hook entries for event '{hook_name}' "
+                                f"command '{command_value}': entries at positions "
+                                f"{first_idx} and {idx} have byte-identical declared "
+                                "fields and cannot be uniquely identified"
+                            )
+                        seen_canonical[key] = idx
+
+    @staticmethod
+    def _canonicalize_command_ref(
+        command_ref: str,
+        ext_id: str,
+        rename_map: Dict[str, str],
+    ) -> str:
+        after_rename = rename_map.get(command_ref, command_ref)
+        parts = after_rename.split(".")
+        if len(parts) == 2 and parts[0] == ext_id:
+            return f"speckit.{ext_id}.{parts[1]}"
+        return after_rename
 
     @staticmethod
     def _validate_provided_artifacts(entries: List[Any], section: str, singular: str) -> None:
