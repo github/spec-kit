@@ -128,7 +128,8 @@ class ArtifactResolutionError(ArtifactError):
 
 _TEMPLATE_SUFFIX = ".md"
 _SCRIPT_SUFFIX = ".sh"
-_COMMAND_NAMESPACE = "speckit."
+_COMMAND_NAME_RE = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+")
+_TEMPLATE_OR_SCRIPT_NAME_RE = re.compile(r"[a-z0-9-]+")
 
 
 @dataclass(frozen=True)
@@ -227,60 +228,75 @@ def _extract_script_description(text: str) -> str:
     return ""
 
 
-def _core_command_logical_name(stem: str) -> str:
-    """Return the namespaced logical name for a core command file stem.
-
-    Bundled core commands are stored unprefixed (``analyze.md``) and are
-    published as ``speckit.analyze``. A project-local file may already carry
-    the namespace (``.specify/templates/commands/speckit.analyze.md``), in
-    which case the prefix is preserved rather than doubled — the resolver
-    accepts the file under the logical name ``speckit.analyze``, so the
-    inventory has to publish that same name.
-    """
-    return stem if stem.startswith(_COMMAND_NAMESPACE) else f"{_COMMAND_NAMESPACE}{stem}"
-
-
 def _enumerate_core_commands(project_root: Path | None = None) -> list[_CoreBaselineRow]:
     """Enumerate every command shipped in the core baseline.
 
     Names are surfaced with the ``speckit.`` prefix so they collide with
     preset/extension contributions in a stable way — this is what the id
     grammar ``command:speckit.constitution`` requires.
-
-    The bundled baseline and the project-local core tree
-    (``.specify/templates/commands/``, resolver tier 4) are unioned; on a
-    logical-name collision the project-local file wins, matching the
-    resolver's own precedence.
     """
     from ..extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
 
     commands_dir = _core_asset_root("commands")
     project_commands_dir = _project_core_asset_root(project_root, "commands")
-    candidates: dict[str, Path] = {}
-    if commands_dir is not None:
-        for stem in sorted(CORE_COMMAND_NAMES):
-            path = commands_dir / f"{stem}{_TEMPLATE_SUFFIX}"
-            if path.is_file():
-                candidates[_core_command_logical_name(stem)] = path
-    if project_commands_dir is not None:
-        for entry in sorted(project_commands_dir.iterdir(), key=lambda p: p.name):
-            if entry.is_file() and entry.suffix == _TEMPLATE_SUFFIX:
-                candidates[_core_command_logical_name(entry.stem)] = entry
     rows: list[_CoreBaselineRow] = []
-    for name in sorted(candidates):
-        path = candidates[name]
+    if commands_dir is None and project_commands_dir is None:
+        return rows
+    candidate_stems = set(CORE_COMMAND_NAMES)
+    if commands_dir is not None:
+        candidate_stems.update(
+            entry.stem
+            for entry in commands_dir.iterdir()
+            if entry.is_file() and entry.suffix == _TEMPLATE_SUFFIX
+        )
+    if project_commands_dir is not None:
+        candidate_stems.update(
+            entry.stem
+            for entry in project_commands_dir.iterdir()
+            if entry.is_file() and entry.suffix == _TEMPLATE_SUFFIX
+        )
+    rows_by_name: dict[str, _CoreBaselineRow] = {}
+    for stem in sorted(candidate_stems):
+        logical_name = stem if stem.startswith("speckit.") else f"speckit.{stem}"
+        project_candidates = (
+            (
+                project_commands_dir / f"{stem}.md",
+                project_commands_dir / f"{logical_name}.md",
+            )
+            if project_commands_dir is not None
+            else ()
+        )
+        bundled_candidates = (
+            (
+                commands_dir / f"{stem}.md",
+                commands_dir / f"{logical_name}.md",
+            )
+            if commands_dir is not None
+            else ()
+        )
+        path = next(
+            (
+                candidate
+                for candidate in (*project_candidates, *bundled_candidates)
+                if candidate.is_file()
+            ),
+            None,
+        )
+        if path is None:
+            continue
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             text = ""
-        rows.append(
-            _CoreBaselineRow(
-                name=name,
-                kind="command",
-                path=path,
-                description=_extract_frontmatter_description(text),
-            )
+        if logical_name in rows_by_name:
+            continue
+        rows_by_name[logical_name] = _CoreBaselineRow(
+            name=logical_name,
+            kind="command",
+            path=path,
+            description=_extract_frontmatter_description(text),
         )
+    rows.extend(rows_by_name[name] for name in sorted(rows_by_name))
     return rows
 
 
@@ -601,28 +617,17 @@ def _resolve_kind_hint(name: str, kind: ArtifactKind | None) -> tuple[str, Artif
     return name, kind
 
 
-_COMMAND_NAME_RE = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+")
-_SIMPLE_NAME_RE = re.compile(r"[a-z0-9-]+")
-
-
-def _is_valid_artifact_name(name: str, kind: ArtifactKind) -> bool:
-    """Return True when ``name`` is a legal artifact name for ``kind``.
-
-    Applies the same grammars ``specify preset resolve`` enforces — dotted
-    lowercase segments for commands, a single lowercase segment for templates
-    and scripts — plus the identifier-component rule that forbids ``:``. This
-    is the guard for the lookup path that skips the inventory (an explicit
-    ``--kind`` or a ``kind:name`` shorthand), where the name would otherwise
-    flow straight into the resolver's path joins and could both escape the
-    project tree (``../../outside``) and yield identifiers that violate the
-    colon-free grammar.
-    """
+def _validate_artifact_name(name: str, kind: ArtifactKind) -> str:
+    """Validate a candidate artifact name using resolver-compatible grammars."""
     try:
-        validate_component(name, "artifact name")
-    except IdentifierComponentError:
-        return False
-    pattern = _COMMAND_NAME_RE if kind == "command" else _SIMPLE_NAME_RE
-    return pattern.fullmatch(name) is not None
+        validated = validate_component(name, f"{kind} name")
+    except IdentifierComponentError as exc:
+        raise ArtifactNotFoundError(name) from exc
+
+    pattern = _COMMAND_NAME_RE if kind == "command" else _TEMPLATE_OR_SCRIPT_NAME_RE
+    if pattern.fullmatch(validated):
+        return validated
+    raise ArtifactNotFoundError(name)
 
 
 class ArtifactCatalog:
@@ -707,19 +712,16 @@ class ArtifactCatalog:
             if len(matches) > 1:
                 raise AmbiguousArtifactError(bare, [k for k, _ in matches])
             resolved_kind = matches[0][0]
-        elif not _is_valid_artifact_name(bare, resolved_kind):
-            # A caller-supplied kind skips the inventory lookup, so the name
-            # has to be validated before it reaches the resolver.
-            raise ArtifactNotFoundError(name)
 
-        stack = _build_stack(self.project_root, resolved_kind, bare)
+        validated_name = _validate_artifact_name(bare, resolved_kind)
+        stack = _build_stack(self.project_root, resolved_kind, validated_name)
         if not stack:
             raise ArtifactNotFoundError(name)
 
-        description = self._describe(resolved_kind, bare)
+        description = self._describe(resolved_kind, validated_name)
         return {
-            "id": f"{resolved_kind}:{bare}",
-            "name": bare,
+            "id": f"{resolved_kind}:{validated_name}",
+            "name": validated_name,
             "kind": resolved_kind,
             "description": description,
             "stack": [layer.to_json_dict() for layer in stack],
@@ -858,10 +860,7 @@ class ArtifactCatalog:
                 description = contribution.get("description", "")
                 if not isinstance(description, str):
                     description = ""
-                lookup_id = contribution.get("id")
-                if not isinstance(lookup_id, str) or not lookup_id:
-                    continue
-                if lookup_id in lookup_ids(kind, name):
+                if contribution["id"] in lookup_ids(kind, name):
                     yield kind, name, description
 
         # Convention fallback: a preset/extension file placed at the
