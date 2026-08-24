@@ -46,3 +46,11 @@ class TestLocateCoreAssetDir:
         monkeypatch.setattr(assets, "_repo_root", lambda: tmp_path)
 
         assert _locate_core_asset_dir("bogus") is None
+
+    def test_returns_none_for_unknown_subdir_with_wheel_bundle(self, tmp_path, monkeypatch):
+        core_pack = tmp_path / "core_pack"
+        (core_pack / "extensions").mkdir(parents=True)
+
+        monkeypatch.setattr(assets, "_locate_core_pack", lambda: core_pack)
+
+        assert _locate_core_asset_dir("extensions") is None

@@ -45,16 +45,16 @@ def _locate_core_asset_dir(subdir: str) -> Path | None:
     enumeration) cannot silently diverge on what "core" means on a given
     machine.
     """
+    if subdir not in ("commands", "templates", "scripts"):
+        return None
     core = _locate_core_pack()
     if core is not None:
         candidate = core / subdir
         return candidate if candidate.is_dir() else None
     if subdir == "commands":
         candidate = _repo_root() / "templates" / "commands"
-    elif subdir in ("templates", "scripts"):
+    else:
         candidate = _repo_root() / subdir
-    else:  # pragma: no cover — internal misuse
-        return None
     return candidate if candidate.is_dir() else None
 
 
