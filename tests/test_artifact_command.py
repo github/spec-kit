@@ -668,6 +668,18 @@ class TestManifestPathPortability:
         layer = {"lookupId": "preset:outside-pack:template:legacy-template", "path": source}
         assert _derive_manifest_path(layer, project_root) is None
 
+    def test_enclosing_manifest_search_stops_at_project_root(self, tmp_path: Path):
+        from specify_cli.artifacts import _find_enclosing_manifest
+
+        project_root = tmp_path / "proj"
+        source_dir = project_root / ".specify" / "templates"
+        source_dir.mkdir(parents=True)
+        source = source_dir / "legacy-template.md"
+        source.write_text("body", encoding="utf-8")
+        (tmp_path / "preset.yml").write_text("id: outside-pack\n", encoding="utf-8")
+
+        assert _find_enclosing_manifest(source, project_root) is None
+
 
 # ---------------------------------------------------------------------------
 # Existing module-import placeholder retained for import safety.
