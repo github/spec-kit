@@ -716,6 +716,21 @@ class TestConventionDiscovery:
         info = catalog.get_artifact_info("local-template")
         assert info["stack"][0]["layer"] == "project"
 
+    def test_dotted_override_only_artifact_is_a_command(self, spec_kit_project: Path):
+        overrides = spec_kit_project / ".specify" / "templates" / "overrides"
+        overrides.mkdir(parents=True)
+        (overrides / "speckit.local.md").write_text("body", encoding="utf-8")
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        ids = {row.id for row in catalog.list_artifacts()}
+        assert "command:speckit.local" in ids
+        assert "template:speckit.local" not in ids
+        with pytest.raises(ArtifactNotFoundError):
+            catalog.get_artifact_info("template:speckit.local")
+        info = catalog.get_artifact_info("command:speckit.local")
+        assert info["kind"] == "command"
+        assert info["stack"][0]["layer"] == "project"
+
     def test_unregistered_preset_template_without_manifest(self, spec_kit_project: Path):
         pack_dir = _install_preset(spec_kit_project, "legacy-preset", provides={"templates": []})
         preset_templates_dir = pack_dir / "templates"
