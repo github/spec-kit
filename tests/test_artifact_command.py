@@ -28,7 +28,8 @@ from specify_cli.artifacts import (
     _preset_display_name,
 )
 from specify_cli.extensions import ExtensionRegistry
-from specify_cli.presets import PresetResolver
+from specify_cli.presets import PresetRegistry, PresetResolver
+from tests.conftest import install_preset
 
 
 ERROR_REGEX = re.compile(
@@ -59,67 +60,6 @@ def non_project(tmp_path: Path) -> Path:
     root = tmp_path / "not-proj"
     root.mkdir()
     return root
-
-
-def _install_preset(project_root: Path, pack_id: str, provides: dict, priority: int = 10) -> Path:
-    """Drop a minimal preset onto disk and register it in the ``.registry`` file."""
-    pack_dir = project_root / ".specify" / "presets" / pack_id
-    pack_dir.mkdir(parents=True)
-    templates: list[dict[str, str]] = []
-
-    def _default_file(kind: str, name: str) -> str:
-        if kind == "command":
-            return f"commands/{name}.md"
-        if kind == "script":
-            return f"scripts/{name}.sh"
-        return f"templates/{name}.md"
-
-    for entry in provides.get("templates", []):
-        if not isinstance(entry, dict):
-            continue
-        entry_type = entry.get("type", "template")
-        if not isinstance(entry_type, str) or entry_type not in ("command", "template", "script"):
-            continue
-        name = entry.get("name")
-        if not isinstance(name, str):
-            continue
-        normalized = dict(entry)
-        normalized["type"] = entry_type
-        normalized.setdefault("file", _default_file(entry_type, name))
-        templates.append(normalized)
-
-    for kind_key, entry_type in (("commands", "command"), ("scripts", "script")):
-        for entry in provides.get(kind_key, []):
-            if not isinstance(entry, dict):
-                continue
-            name = entry.get("name")
-            if not isinstance(name, str):
-                continue
-            normalized = dict(entry)
-            normalized["type"] = entry_type
-            normalized.setdefault("file", _default_file(entry_type, name))
-            templates.append(normalized)
-
-    manifest = {
-        "schema_version": "1.0",
-        "preset": {
-            "id": pack_id,
-            "name": f"Test preset {pack_id}",
-            "version": "1.0.0",
-            "description": f"Test preset {pack_id}",
-        },
-        "requires": {"speckit_version": ">=1.0.0"},
-        "provides": {"templates": templates},
-    }
-    (pack_dir / "preset.yml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
-    registry_path = project_root / ".specify" / "presets" / ".registry"
-    if registry_path.is_file():
-        registry = json.loads(registry_path.read_text(encoding="utf-8"))
-    else:
-        registry = {"schema_version": "1.0.0", "presets": {}}
-    registry["presets"][pack_id] = {"priority": priority, "version": "1.0.0"}
-    registry_path.write_text(json.dumps(registry), encoding="utf-8")
-    return pack_dir
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +247,7 @@ class TestListArtifactsContract:
             "---\ndescription: Core description\n---\n", encoding="utf-8"
         )
 
-        pack = _install_preset(
+        pack = install_preset(
             spec_kit_project,
             "override-preset",
             {
@@ -335,7 +275,7 @@ class TestListArtifactsContract:
         not leak through just because it happens to be enumerated first
         alphabetically.
         """
-        pack_low = _install_preset(
+        pack_low = install_preset(
             spec_kit_project,
             "aaa-low-priority-preset",
             {"templates": [{"name": "shared-artifact", "description": "Loser description"}]},
@@ -346,7 +286,7 @@ class TestListArtifactsContract:
             "# Loser\n", encoding="utf-8"
         )
 
-        pack_high = _install_preset(
+        pack_high = install_preset(
             spec_kit_project,
             "zzz-high-priority-preset",
             {"templates": [{"name": "shared-artifact", "description": "Winner description"}]},
@@ -477,7 +417,7 @@ class TestErrors:
         # Register a preset that contributes 'shared-name' as both a
         # template and a script — the info lookup with no kind hint should
         # then be ambiguous.
-        pack = _install_preset(
+        pack = install_preset(
             spec_kit_project,
             "test-ambig",
             {
@@ -509,7 +449,7 @@ class TestErrors:
 
 class TestKindHint:
     def test_kind_flag_disambiguates(self, spec_kit_project: Path):
-        _install_preset(
+        install_preset(
             spec_kit_project,
             "test-kind",
             {"templates": [{"name": "dup", "description": "t"}],
@@ -694,7 +634,7 @@ class TestUTF8NoBOM:
 
 class TestStackComposition:
     def test_preset_command_uses_entry_type(self, spec_kit_project: Path):
-        pack = _install_preset(
+        pack = install_preset(
             spec_kit_project,
             "test-command",
             {
@@ -719,7 +659,7 @@ class TestStackComposition:
     def test_preset_single_segment_command_id_from_list_is_resolvable(
         self, spec_kit_project: Path
     ):
-        pack = _install_preset(
+        pack = install_preset(
             spec_kit_project,
             "test-single-command",
             {"commands": [{"name": "specify", "description": "single segment"}]},
@@ -739,7 +679,7 @@ class TestStackComposition:
 
     def test_preset_replace_hides_core(self, spec_kit_project: Path):
         # Install a preset that replaces the constitution command.
-        pack = _install_preset(
+        pack = install_preset(
             spec_kit_project,
             "test-replace",
             {"commands": [{"name": "speckit.constitution", "description": "override"}]},
@@ -853,7 +793,11 @@ class TestConventionDiscovery:
         assert "command:speckit..local" not in ids
 
     def test_unregistered_preset_template_without_manifest(self, spec_kit_project: Path):
-        pack_dir = _install_preset(spec_kit_project, "legacy-preset", provides={"templates": []})
+        pack_dir = spec_kit_project / ".specify" / "presets" / "legacy-preset"
+        pack_dir.mkdir()
+        PresetRegistry(pack_dir.parent).add(
+            "legacy-preset", {"priority": 10, "version": "1.0.0"}
+        )
         preset_templates_dir = pack_dir / "templates"
         preset_templates_dir.mkdir()
         (preset_templates_dir / "legacy-preset-template.md").write_text(
