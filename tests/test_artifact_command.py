@@ -390,6 +390,6 @@ class TestStackComposition:
 
 
 def test_module_imports():
-    import specify_cli.artifacts  # noqa: F401
+    from specify_cli.artifacts import ArtifactCatalog  # noqa: F401
 
 
