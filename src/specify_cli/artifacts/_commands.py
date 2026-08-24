@@ -25,8 +25,10 @@ from . import (
     ArtifactError,
     ArtifactKind,
     ArtifactNotFoundError,
+    ArtifactResolutionError,
     NotASpecKitProjectError,
 )
+from ..presets import PresetError
 
 artifact_app = typer.Typer(
     name="artifact",
@@ -99,6 +101,9 @@ def list_command(
     except ArtifactError as exc:
         _emit_error_and_exit(exc)
         return  # pragma: no cover — _emit_error_and_exit raises
+    except PresetError:
+        _emit_error_and_exit(ArtifactResolutionError())
+        return  # pragma: no cover — _emit_error_and_exit raises
 
     sys.stdout.write(json.dumps(rows, indent=2, sort_keys=True, ensure_ascii=False))
     sys.stdout.write("\n")
@@ -137,6 +142,9 @@ def info_command(
         payload = catalog.get_artifact_info(name, kind=resolved_kind)
     except (ArtifactNotFoundError, AmbiguousArtifactError, NotASpecKitProjectError) as exc:
         _emit_error_and_exit(exc)
+        return  # pragma: no cover
+    except PresetError:
+        _emit_error_and_exit(ArtifactResolutionError())
         return  # pragma: no cover
 
     sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))

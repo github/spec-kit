@@ -110,6 +110,12 @@ class NotASpecKitProjectError(ArtifactError):
         super().__init__(self.message)
 
 
+class ArtifactResolutionError(ArtifactError):
+    def __init__(self) -> None:
+        self.message = "artifact resolution failed"
+        super().__init__(self.message)
+
+
 # ---------------------------------------------------------------------------
 # Core-baseline enumeration
 # ---------------------------------------------------------------------------
