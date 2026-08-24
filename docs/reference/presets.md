@@ -218,6 +218,16 @@ Every command, template, and script contributed by a preset (or an extension, or
 - `kind` is one of `command`, `template`, or `script`.
 - `name` is the entry's declared `name` field.
 
+`sourceId` is the source's own stable system identifier:
+
+| Layer | `sourceId` value | Where it comes from |
+| --- | --- | --- |
+| `core` | `_` (literal underscore) | Placeholder because core has no manifest id |
+| `preset` | The preset pack's `id` | The manifest's `preset.id` field — the same value used by `PresetManifest.id`, the install directory, registries, and resolver layer metadata |
+| `extension` | The extension's `id` | The manifest's `extension.id` field — the same value used by `ExtensionManifest.id`, the install directory, registries, and hook metadata |
+
+Preset contribution identifiers cover named artifacts (`command`, `template`, and `script`). Extension hooks are treated separately because their lookup name is derived from the hook event and command instead of a single `name` field.
+
 Identifiers are computed on demand from author-declared manifest content and are never persisted to `.specify/` or any cache. Copying a preset to another machine (or touching its files) does not change the identifiers it produces.
 
 `PresetResolver.collect_all_layers()` returns layer dicts that each include a `lookupId` field pointing back to the originating contribution's `id`. Project-local overrides in `.specify/templates/overrides/` are a resolver-only concept — they carry a synthetic `project:_:{kind}:{name}` `lookupId` that intentionally does not match any manifest contribution.

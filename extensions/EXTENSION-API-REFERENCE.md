@@ -877,6 +877,8 @@ Named contributions (commands, templates, scripts) follow:
 - `kind` is one of `command`, `template`, `script`, or `hook`.
 - `name` is the contribution's declared `name` field.
 
+`sourceId` is the source's own stable system identifier: `_` for the manifest-less core layer, `preset.id` from `preset.yml` for presets, and `extension.id` from `extension.yml` for extensions. It is the same string used elsewhere to refer to that preset or extension (install directories, registries, resolver metadata, and hook metadata), which makes identifiers stable join keys back to their originating source.
+
 Hook contributions use a compound name-component built from the event and command:
 
 ```text
@@ -895,7 +897,18 @@ Project-local overrides in `.specify/templates/overrides/` are a resolver-only c
 
 ### Python API
 
-`ExtensionManifest.iter_contributions()` yields dicts of the form `{layer, sourceId, kind, name, id, ...author-declared fields}`; each entry's `id` is the computed identifier. `ExtensionManifest.contribution_id(kind, name)` returns the id for a single lookup, or `None` if no contribution matches. `PresetManifest` exposes the same two methods.
+```python
+class ExtensionManifest:
+    def iter_contributions(self) -> list[dict]: ...
+    def contribution_id(self, kind: str, name: str) -> str | None: ...
+
+
+class PresetManifest:
+    def iter_contributions(self) -> list[dict]: ...
+    def contribution_id(self, kind: str, name: str) -> str | None: ...
+```
+
+Each contribution dict carries `{layer, sourceId, kind, name, id, ...author-declared fields}`; `id` is the computed identifier. `contribution_id(kind, name)` returns the id for a single lookup, or `None` if no contribution matches.
 
 `PresetResolver.collect_all_layers()` returns layer dicts that include a `lookupId` field for every layer type (`project override`, preset, extension, core, and bundled core).
 

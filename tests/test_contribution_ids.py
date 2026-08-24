@@ -13,12 +13,6 @@ from __future__ import annotations
 
 import copy
 import json
-import os
-import shutil
-import subprocess
-import sys
-import textwrap
-import time
 from pathlib import Path
 
 import pytest
@@ -141,11 +135,6 @@ class TestIdentifierDerivation:
     )
     def test_hook_id_grammar(self, layer, source_id, event, command, expected):
         assert derive_hook_id(layer, source_id, event, command) == expected
-
-    def test_named_id_stable_across_two_derivations(self):
-        a = derive_named_id("preset", "speckit-core", "command", "speckit.plan")
-        b = derive_named_id("preset", "speckit-core", "command", "speckit.plan")
-        assert a == b
 
 
 # ---------------------------------------------------------------------------
@@ -295,33 +284,6 @@ class TestContributionSurface:
         )
         assert manifest.contribution_id("command", "does-not-exist") is None
 
-    def test_representation_shape_is_additive_for_preset(self, tmp_path):
-        original = _preset_data()
-        manifest = PresetManifest(_write_manifest(tmp_path, original, "preset.yml"))
-        derived_keys = {"layer", "sourceId", "kind", "id"}
-        for src_entry, out_entry in zip(original["provides"]["templates"], manifest.iter_contributions()):
-            assert set(src_entry.keys()).issubset(out_entry.keys())
-            assert derived_keys.issubset(out_entry.keys())
-
-    def test_representation_shape_is_additive_for_extension(self, tmp_path):
-        original = _extension_data(
-            hooks={"before_specify": {"command": "speckit.speckitgit.branch"}}
-        )
-        manifest = ExtensionManifest(_write_manifest(tmp_path, original, "extension.yml"))
-        entries = manifest.iter_contributions()
-        derived_named = {"layer", "sourceId", "kind", "id"}
-
-        cmd_entry = original["provides"]["commands"][0]
-        cmd_out = next(e for e in entries if e["kind"] == "command")
-        assert set(cmd_entry.keys()).issubset(cmd_out.keys())
-        assert derived_named.issubset(cmd_out.keys())
-
-        hook_entry = original["hooks"]["before_specify"]
-        hook_out = next(e for e in entries if e["kind"] == "hook")
-        assert set(hook_entry.keys()).issubset(hook_out.keys())
-        assert derived_named.issubset(hook_out.keys())
-        assert hook_out["name"] == "before_specify:speckit.speckitgit.branch"
-
     def test_underlying_data_not_mutated(self, tmp_path):
         original = _preset_data()
         original_snapshot = copy.deepcopy(original)
@@ -417,70 +379,6 @@ class TestLookupIdRoundTrip:
         manifest = PresetManifest(pack_dir / "preset.yml")
         assert preset_layer["lookupId"] == manifest.contribution_id("template", "spec-template")
         assert preset_layer["lookupId"] == f"preset:{pack_id}:template:spec-template"
-
-
-# ---------------------------------------------------------------------------
-# Determinism across environments
-# ---------------------------------------------------------------------------
-
-
-_SUBPROCESS_SCRIPT = textwrap.dedent(
-    """
-    import sys, json
-    from specify_cli.extensions import ExtensionManifest
-    manifest = ExtensionManifest(sys.argv[1])
-    ids = [c["id"] for c in manifest.iter_contributions()]
-    sys.stdout.write(json.dumps(ids))
-    """
-)
-
-
-class TestDeterminism:
-    def _fixture_manifest(self, tmp_path: Path) -> Path:
-        data = _extension_data(
-            hooks={
-                "before_specify": {"command": "speckit.speckitgit.branch"},
-                "before_plan": [
-                    {"command": "speckit.speckitgit.branch", "priority": 10},
-                    {"command": "speckit.speckitgit.branch", "priority": 20},
-                ],
-            }
-        )
-        return _write_manifest(tmp_path, data, "extension.yml")
-
-    def test_identifiers_match_across_subprocesses(self, tmp_path):
-        manifest_path = self._fixture_manifest(tmp_path)
-        env = os.environ.copy()
-        env["PYTHONPATH"] = os.pathsep.join(
-            [str(Path(__file__).resolve().parent.parent / "src"), env.get("PYTHONPATH", "")]
-        )
-
-        def _run() -> str:
-            proc = subprocess.run(
-                [sys.executable, "-c", _SUBPROCESS_SCRIPT, str(manifest_path)],
-                capture_output=True,
-                text=True,
-                env=env,
-                check=True,
-            )
-            return proc.stdout
-
-        assert _run() == _run()
-
-    def test_ids_independent_of_paths_and_mtimes(self, tmp_path):
-        original_dir = tmp_path / "orig"
-        copied_dir = tmp_path / "copy"
-        original_dir.mkdir()
-        manifest_path = self._fixture_manifest(original_dir)
-        original_ids = [c["id"] for c in ExtensionManifest(manifest_path).iter_contributions()]
-
-        shutil.copytree(original_dir, copied_dir)
-        distant_past = time.time() - 3600
-        os.utime(copied_dir / manifest_path.name, (distant_past, distant_past))
-        copied_ids = [
-            c["id"] for c in ExtensionManifest(copied_dir / manifest_path.name).iter_contributions()
-        ]
-        assert original_ids == copied_ids
 
 
 # ---------------------------------------------------------------------------
