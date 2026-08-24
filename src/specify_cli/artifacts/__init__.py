@@ -20,6 +20,7 @@ import yaml
 
 from .._assets import _locate_core_pack, _repo_root
 from .._identifier import derive_named_id
+from .._script_variants import canonical_script_name
 
 # ---------------------------------------------------------------------------
 # Public data classes
@@ -113,7 +114,6 @@ class NotASpecKitProjectError(ArtifactError):
 # Core-baseline enumeration
 # ---------------------------------------------------------------------------
 
-_SCRIPT_SUFFIXES = frozenset({".py", ".sh", ".ps1"})
 _TEMPLATE_SUFFIX = ".md"
 
 
@@ -277,9 +277,11 @@ def _enumerate_core_scripts() -> list[_CoreBaselineRow]:
         if not runtime_dir.is_dir():
             continue
         for entry in sorted(runtime_dir.iterdir(), key=lambda p: p.name):
-            if not entry.is_file() or entry.suffix not in _SCRIPT_SUFFIXES:
+            if not entry.is_file():
                 continue
-            name = entry.name
+            name = canonical_script_name(entry)
+            if name is None:
+                continue
             if name in seen:
                 continue
             try:

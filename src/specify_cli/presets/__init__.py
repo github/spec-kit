@@ -41,6 +41,7 @@ from .._identifier import (
     PROJECT_OVERRIDE_LAYER,
     derive_named_id,
 )
+from .._script_variants import script_variant_paths
 from .._init_options import (
     MISSING_INIT_OPTIONS_FILE,
     is_ai_skills_enabled,
@@ -5344,8 +5345,11 @@ class PresetResolver:
                 if core.exists():
                     return core
         elif template_type == "script":
-            core = self.templates_dir / "scripts" / f"{template_name}{ext}"
-            if core.exists():
+            core = next(
+                (path for path in script_variant_paths(self.templates_dir / "scripts", template_name) if path.exists()),
+                None,
+            )
+            if core is not None:
                 return core
 
         # Priority 5: Bundled core_pack (wheel install) or repo-root templates
@@ -5365,10 +5369,13 @@ class PresetResolver:
                     if stem:
                         candidate = _core_pack / "commands" / f"{stem}.md"
             elif template_type == "script":
-                candidate = _core_pack / "scripts" / f"{template_name}{ext}"
+                candidate = next(
+                    (path for path in script_variant_paths(_core_pack / "scripts", template_name) if path.exists()),
+                    None,
+                )
             else:
                 candidate = _core_pack / f"{template_name}.md"
-            if candidate.exists():
+            if candidate is not None and candidate.exists():
                 return candidate
         else:
             # Source-checkout / editable install: templates live at repo root
@@ -5382,10 +5389,13 @@ class PresetResolver:
                     if stem:
                         candidate = repo_root / "templates" / "commands" / f"{stem}.md"
             elif template_type == "script":
-                candidate = repo_root / "scripts" / f"{template_name}{ext}"
+                candidate = next(
+                    (path for path in script_variant_paths(repo_root / "scripts", template_name) if path.exists()),
+                    None,
+                )
             else:
                 candidate = repo_root / f"{template_name}.md"
-            if candidate.exists():
+            if candidate is not None and candidate.exists():
                 return candidate
 
         return None
@@ -5676,8 +5686,11 @@ class PresetResolver:
                     if c.exists():
                         core = c
         elif template_type == "script":
-            c = self.templates_dir / "scripts" / f"{template_name}{ext}"
-            if c.exists():
+            c = next(
+                (path for path in script_variant_paths(self.templates_dir / "scripts", template_name) if path.exists()),
+                None,
+            )
+            if c is not None:
                 core = c
         if core:
             layers.append({
@@ -5734,10 +5747,13 @@ class PresetResolver:
                 elif template_type == "command":
                     c = core_pack / "commands" / f"{name}.md"
                 elif template_type == "script":
-                    c = core_pack / "scripts" / f"{name}{ext}"
+                    c = next(
+                        (path for path in script_variant_paths(core_pack / "scripts", name) if path.exists()),
+                        None,
+                    )
                 else:
                     c = core_pack / f"{name}.md"
-                if c.exists():
+                if c is not None and c.exists():
                     return c
         else:
             repo_root = _repo_root()
@@ -5747,10 +5763,13 @@ class PresetResolver:
                 elif template_type == "command":
                     c = repo_root / "templates" / "commands" / f"{name}.md"
                 elif template_type == "script":
-                    c = repo_root / "scripts" / f"{name}{ext}"
+                    c = next(
+                        (path for path in script_variant_paths(repo_root / "scripts", name) if path.exists()),
+                        None,
+                    )
                 else:
                     c = repo_root / f"{name}.md"
-                if c.exists():
+                if c is not None and c.exists():
                     return c
         return None
 
