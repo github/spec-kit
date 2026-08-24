@@ -685,87 +685,108 @@ class TestConventionDiscovery:
 class TestManifestPathPortability:
     """`_derive_manifest_path` must never leak an absolute host path."""
 
-    def test_enclosing_manifest_outside_project_root_is_none(self, tmp_path: Path):
+    def test_preset_manifest_path_is_repo_relative(self, tmp_path: Path):
+        from specify_cli.artifacts import _derive_manifest_path
+
+        project_root = tmp_path / "proj"
+        pack_dir = project_root / ".specify" / "presets" / "my-pack"
+        pack_dir.mkdir(parents=True)
+        (pack_dir / "preset.yml").write_text("id: my-pack\n", encoding="utf-8")
+
+        layer = {
+            "lookupId": "preset:my-pack:template:spec-template",
+            "path": pack_dir / "spec-template.md",
+        }
+        assert (
+            _derive_manifest_path(layer, project_root)
+            == ".specify/presets/my-pack/preset.yml"
+        )
+
+    def test_extension_manifest_path_is_repo_relative(self, tmp_path: Path):
+        from specify_cli.artifacts import _derive_manifest_path
+
+        project_root = tmp_path / "proj"
+        ext_dir = project_root / ".specify" / "extensions" / "my-ext"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "extension.yml").write_text("id: my-ext\n", encoding="utf-8")
+
+        layer = {
+            "lookupId": "extension:my-ext:command:speckit.my-ext.go",
+            "path": ext_dir / "commands" / "speckit.my-ext.go.md",
+        }
+        assert (
+            _derive_manifest_path(layer, project_root)
+            == ".specify/extensions/my-ext/extension.yml"
+        )
+
+    def test_missing_manifest_file_is_none(self, tmp_path: Path):
+        from specify_cli.artifacts import _derive_manifest_path
+
+        project_root = tmp_path / "proj"
+        pack_dir = project_root / ".specify" / "presets" / "my-pack"
+        pack_dir.mkdir(parents=True)
+
+        layer = {
+            "lookupId": "preset:my-pack:template:spec-template",
+            "path": pack_dir / "spec-template.md",
+        }
+        assert _derive_manifest_path(layer, project_root) is None
+
+    def test_core_and_project_layers_have_no_manifest(self, tmp_path: Path):
         from specify_cli.artifacts import _derive_manifest_path
 
         project_root = tmp_path / "proj"
         project_root.mkdir()
 
-        outside = tmp_path / "outside-pack"
-        (outside / "templates").mkdir(parents=True)
-        (outside / "preset.yml").write_text("id: outside-pack\n", encoding="utf-8")
-        source = outside / "templates" / "legacy-template.md"
-        source.write_text("body", encoding="utf-8")
-
-        layer = {"lookupId": "preset:outside-pack:template:legacy-template", "path": source}
-        assert _derive_manifest_path(layer, project_root) is None
-
-    def test_enclosing_manifest_search_stops_at_project_root(self, tmp_path: Path):
-        from specify_cli.artifacts import _find_enclosing_manifest
-
-        project_root = tmp_path / "proj"
-        source_dir = project_root / ".specify" / "templates"
-        source_dir.mkdir(parents=True)
-        source = source_dir / "legacy-template.md"
-        source.write_text("body", encoding="utf-8")
-        (tmp_path / "preset.yml").write_text("id: outside-pack\n", encoding="utf-8")
-
-        assert _find_enclosing_manifest(source, project_root) is None
-
-    def test_enclosing_manifest_search_includes_project_root(self, tmp_path: Path):
-        from specify_cli.artifacts import _find_enclosing_manifest
-
-        project_root = tmp_path / "proj"
-        source_dir = project_root / ".specify" / "templates"
-        source_dir.mkdir(parents=True)
-        source = source_dir / "legacy-template.md"
-        source.write_text("body", encoding="utf-8")
-        manifest = project_root / "preset.yml"
-        manifest.write_text("id: root-pack\n", encoding="utf-8")
-
-        assert _find_enclosing_manifest(source, project_root) == manifest
-
-    def test_enclosing_manifest_search_accepts_project_root_path(self, tmp_path: Path):
-        from specify_cli.artifacts import _find_enclosing_manifest
-
-        project_root = tmp_path / "proj"
-        project_root.mkdir()
-        manifest = project_root / "preset.yml"
-        manifest.write_text("id: root-pack\n", encoding="utf-8")
-
-        assert _find_enclosing_manifest(project_root, project_root) == manifest
+        core_layer = {"lookupId": "core:_:template:spec-template"}
+        project_layer = {"lookupId": "project:_:template:spec-template"}
+        assert _derive_manifest_path(core_layer, project_root) is None
+        assert _derive_manifest_path(project_layer, project_root) is None
 
 
 class TestPresetDisplayName:
-    """`_preset_display_name` reads nested and flat manifest layouts."""
+    """`_preset_display_name` delegates to the validated `PresetManifest.name`."""
 
-    def test_reads_nested_preset_name(self, tmp_path: Path):
+    _VALID_MANIFEST = """\
+schema_version: "1.0"
+preset:
+  id: pack
+  name: Nested Name
+  version: "1.0.0"
+  description: A test preset
+requires:
+  speckit_version: ">=1.0.0"
+provides:
+  templates:
+    - type: template
+      name: spec-template
+      file: spec-template.md
+"""
+
+    def test_reads_validated_preset_name(self, tmp_path: Path):
         from specify_cli.artifacts import _preset_display_name
 
         pack_dir = tmp_path / "pack"
         pack_dir.mkdir()
-        (pack_dir / "preset.yml").write_text(
-            "preset:\n  id: pack\n  name: Nested Name\nname: Flat Name\n",
-            encoding="utf-8",
-        )
+        (pack_dir / "preset.yml").write_text(self._VALID_MANIFEST, encoding="utf-8")
 
         assert _preset_display_name(pack_dir, "pack") == "Nested Name"
 
-    def test_falls_back_to_top_level_name(self, tmp_path: Path):
+    def test_falls_back_to_pack_id_when_manifest_fails_validation(self, tmp_path: Path):
+        """A legacy flat manifest with no ``preset:`` section fails validation."""
         from specify_cli.artifacts import _preset_display_name
 
         pack_dir = tmp_path / "pack"
         pack_dir.mkdir()
         (pack_dir / "preset.yml").write_text("id: pack\nname: Flat Name\n", encoding="utf-8")
 
-        assert _preset_display_name(pack_dir, "pack") == "Flat Name"
+        assert _preset_display_name(pack_dir, "pack") == "pack"
 
-    def test_falls_back_to_pack_id_without_name(self, tmp_path: Path):
+    def test_falls_back_to_pack_id_without_manifest_file(self, tmp_path: Path):
         from specify_cli.artifacts import _preset_display_name
 
         pack_dir = tmp_path / "pack"
         pack_dir.mkdir()
-        (pack_dir / "preset.yml").write_text("id: pack\n", encoding="utf-8")
 
         assert _preset_display_name(pack_dir, "pack") == "pack"
 

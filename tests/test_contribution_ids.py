@@ -31,6 +31,7 @@ from specify_cli._identifier import (
     derive_hook_id,
     derive_named_id,
     hook_discriminator,
+    layer_kind_from_lookup_id,
     validate_component,
 )
 from specify_cli.extensions import ExtensionManifest, ValidationError
@@ -152,6 +153,34 @@ class TestIdentifierDerivation:
         a = derive_named_id("preset", "speckit-core", "command", "speckit.plan")
         b = derive_named_id("preset", "speckit-core", "command", "speckit.plan")
         assert a == b
+
+
+class TestLayerKindFromLookupId:
+    """``layer_kind_from_lookup_id`` extracts the layer segment of a lookupId."""
+
+    @pytest.mark.parametrize(
+        "lookup_id, expected",
+        [
+            ("core:_:command:speckit.constitution", "core"),
+            ("preset:speckit-core:template:spec-template", "preset"),
+            ("extension:speckit-git:script:post-commit", "extension"),
+            (f"{PROJECT_OVERRIDE_LAYER}:_:template:spec-template", PROJECT_OVERRIDE_LAYER),
+        ],
+    )
+    def test_recognized_layer_prefixes(self, lookup_id, expected):
+        assert layer_kind_from_lookup_id(lookup_id) == expected
+
+    @pytest.mark.parametrize(
+        "lookup_id",
+        [
+            "",
+            "bogus:_:command:speckit.plan",
+            "core",
+            ":_:command:speckit.plan",
+        ],
+    )
+    def test_unrecognized_or_malformed_returns_none(self, lookup_id):
+        assert layer_kind_from_lookup_id(lookup_id) is None
 
 
 # ---------------------------------------------------------------------------

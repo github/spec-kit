@@ -27,7 +27,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
-from .._assets import _locate_core_pack, _repo_root
+from .._assets import _locate_core_asset_dir
 from .._identifier import (
     IdentifierComponentError,
     canonical_json,
@@ -89,29 +89,19 @@ def _load_core_command_names() -> frozenset[str]:
     the source checkout when running from the repository. If neither is
     available, use the baked-in fallback set so validation still works.
 
-    Path resolution is delegated to the canonical ``_assets`` resolvers
-    (``_locate_core_pack`` / ``_repo_root``) — the same ones the presets and
-    bundle loaders use — rather than bespoke ``Path(__file__)`` arithmetic.
-    Hand-counted ``.parent`` chains silently broke discovery once already: the
-    #3014 move of this module from ``specify_cli/extensions.py`` to
-    ``specify_cli/extensions/__init__.py`` pushed the file one directory deeper
-    without updating the counts, so both candidates resolved to non-existent
-    paths and every call fell through to the fallback (#3274). The shared
-    resolvers are anchored to the package root, so discovery survives future
-    module moves.
+    Path resolution is delegated to :func:`_locate_core_asset_dir` — the same
+    resolver ``PresetResolver._find_bundled_core`` and the artifact command's
+    core-baseline enumeration use — rather than bespoke ``Path(__file__)``
+    arithmetic. Hand-counted ``.parent`` chains silently broke discovery once
+    already: the #3014 move of this module from ``specify_cli/extensions.py``
+    to ``specify_cli/extensions/__init__.py`` pushed the file one directory
+    deeper without updating the counts, so both candidates resolved to
+    non-existent paths and every call fell through to the fallback (#3274).
+    The shared resolver is anchored to the package root, so discovery
+    survives future module moves.
     """
-    core_pack = _locate_core_pack()
-    candidate_dirs = [
-        # Wheel install: force-include maps templates/commands → core_pack/commands.
-        core_pack / "commands" if core_pack is not None else None,
-        # Source checkout / editable install: repo-root templates/commands.
-        _repo_root() / "templates" / "commands",
-    ]
-
-    for commands_dir in candidate_dirs:
-        if commands_dir is None or not commands_dir.is_dir():
-            continue
-
+    commands_dir = _locate_core_asset_dir("commands")
+    if commands_dir is not None:
         command_names = {
             command_file.stem
             for command_file in commands_dir.iterdir()

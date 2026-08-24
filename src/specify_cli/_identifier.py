@@ -98,6 +98,26 @@ def derive_named_id(layer: str, source_id: str, kind: str, name: str) -> str:
     return f"{layer}:{source_id}:{kind}:{name}"
 
 
+_LAYER_KINDS = frozenset({"core", PROJECT_OVERRIDE_LAYER, "preset", "extension"})
+
+
+def layer_kind_from_lookup_id(lookup_id: str) -> str | None:
+    """Return the layer segment of a resolved-stack ``lookupId``, or ``None``.
+
+    ``lookupId`` values on resolved stack layers follow the same
+    ``"{layer}:..."`` grammar as manifest-contribution ``id`` values (see
+    module docstring), with ``layer`` additionally taking on
+    :data:`PROJECT_OVERRIDE_LAYER` for resolver-only project-override layers.
+    This is the single place that knows the set of valid layer prefixes, so
+    consumers can classify a lookupId without re-deriving the grammar via
+    string-prefix checks of their own.
+    """
+    layer, _, rest = lookup_id.partition(":")
+    if not rest or layer not in _LAYER_KINDS:
+        return None
+    return layer
+
+
 def canonical_json(value: Any) -> bytes:
     """Serialize ``value`` to a canonical UTF-8 JSON byte string.
 
