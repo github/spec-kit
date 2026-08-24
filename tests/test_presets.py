@@ -12968,6 +12968,31 @@ class TestCoreScriptRuntimeVariants:
         assert layers[0]["path"] == path
         assert layers[0]["source"] == "core"
 
+    def test_resolve_finds_legacy_flat_core_script(self, project_dir):
+        """The legacy flat .specify/templates/scripts/<name>.sh layout still
+        resolves."""
+        scripts_dir = project_dir / ".specify" / "templates" / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        path = scripts_dir / "flat-helper.sh"
+        path.write_text("echo 'flat'\n")
+
+        resolver = PresetResolver(project_dir)
+        assert resolver.resolve("flat-helper", "script") == path
+
+    def test_collect_all_layers_finds_legacy_flat_core_script(self, project_dir):
+        """collect_all_layers() also honours the legacy flat layout."""
+        scripts_dir = project_dir / ".specify" / "templates" / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        path = scripts_dir / "flat-helper.sh"
+        path.write_text("echo 'flat'\n")
+
+        layers = PresetResolver(project_dir).collect_all_layers(
+            "flat-helper", "script"
+        )
+        assert len(layers) == 1
+        assert layers[0]["path"] == path
+        assert layers[0]["source"] == "core"
+
 
 class TestRemoveReconciliation:
     """Test that removing a preset re-registers the next layer's command."""
