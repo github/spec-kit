@@ -438,6 +438,10 @@ class ExtensionManifest:
                 raise ValidationError(
                     f"Invalid instruction file {entry['file']!r}: {reason}"
                 )
+            if "description" in entry and not isinstance(entry["description"], str):
+                raise ValidationError(
+                    "Instruction entry 'description' must be a string"
+                )
 
         # Validate hook values (if present).
         # Each event is a single mapping or a list of mappings.

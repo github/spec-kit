@@ -116,6 +116,49 @@ def add_plan(project_root: Path, feature_dir: str = "specs/001-demo") -> None:
     )
 
 
+INSTRUCTIONS_RULES = (
+    "# Cosmos rules\n\n- Use point reads \u2014 keep RU low\n- Prefer id as partition key\n"
+)
+
+
+def install_instructions_extension(
+    project_root: Path,
+    ext_id: str,
+    rules: str,
+    file_rel: str = "instructions/rules.md",
+) -> None:
+    """Materialize an installed + enabled provides.instructions extension on disk."""
+    exts = project_root / ".specify" / "extensions"
+    ext_dir = exts / ext_id
+    target = ext_dir / file_rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(rules, encoding="utf-8")
+    (ext_dir / "extension.yml").write_text(
+        'schema_version: "1.0"\n'
+        "extension:\n"
+        f"  id: {ext_id}\n"
+        f"  name: {ext_id}\n"
+        '  version: "0.1.0"\n'
+        "  description: d\n"
+        "  author: a\n"
+        "requires:\n"
+        '  speckit_version: ">=0.2.0"\n'
+        "provides:\n"
+        "  instructions:\n"
+        f"    - file: {file_rel}\n",
+        encoding="utf-8",
+    )
+    registry = exts / ".registry"
+    data = (
+        json.loads(registry.read_text(encoding="utf-8"))
+        if registry.is_file()
+        else {"schema_version": "1.0", "extensions": {}}
+    )
+    data["extensions"][ext_id] = {"version": "0.1.0", "enabled": True}
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    registry.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
 def twin_projects(tmp_path: Path, **config: object) -> tuple[Path, Path]:
     return (
         make_project(tmp_path / "proj-a", **config),
@@ -562,3 +605,45 @@ def test_python_upsert_matches_powershell(tmp_path: Path) -> None:
 
     assert ps.returncode == py.returncode == 0, ps.stderr + py.stderr
     assert (repo_a / "AGENTS.md").read_bytes() == (repo_b / "AGENTS.md").read_bytes()
+
+
+# ── Composed extension instructions (#4200) parity ────────────────────────
+
+
+@requires_posix_bash
+def test_python_composes_extension_instructions_matching_bash(tmp_path: Path) -> None:
+    repo_a, repo_b = twin_projects(tmp_path, context_file="AGENTS.md")
+    for repo in (repo_a, repo_b):
+        add_plan(repo)
+        install_instructions_extension(repo, "cosmosdb", INSTRUCTIONS_RULES)
+
+    bash = run_bash(repo_a)
+    py = run_python(repo_b)
+
+    assert_parity(bash, py, repo_a, repo_b)
+    content_a = (repo_a / "AGENTS.md").read_bytes()
+    content_b = (repo_b / "AGENTS.md").read_bytes()
+    assert content_a == content_b
+    assert b"<!-- SPECKIT EXT:cosmosdb START -->" in content_b
+    # Non-ASCII payload survives byte-for-byte through both twins.
+    assert "Use point reads \u2014 keep RU low".encode("utf-8") in content_b
+
+
+@pytest.mark.skipif(not POWERSHELL, reason="no PowerShell available")
+def test_python_composes_extension_instructions_matching_powershell(
+    tmp_path: Path,
+) -> None:
+    repo_a = make_project(tmp_path / "proj-ps", context_file="AGENTS.md")
+    repo_b = make_project(tmp_path / "proj-py", context_file="AGENTS.md")
+    for repo in (repo_a, repo_b):
+        add_plan(repo)
+        install_instructions_extension(repo, "cosmosdb", INSTRUCTIONS_RULES)
+
+    ps = run_powershell(repo_a)
+    py = run_python(repo_b)
+
+    assert ps.returncode == py.returncode == 0, ps.stderr + py.stderr
+    assert (repo_a / "AGENTS.md").read_bytes() == (repo_b / "AGENTS.md").read_bytes()
+    content_b = (repo_b / "AGENTS.md").read_bytes()
+    assert b"<!-- SPECKIT EXT:cosmosdb START -->" in content_b
+    assert "Use point reads \u2014 keep RU low".encode("utf-8") in content_b

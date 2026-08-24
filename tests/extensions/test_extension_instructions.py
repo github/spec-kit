@@ -91,6 +91,16 @@ def test_instruction_entry_requires_file(tmp_path):
         )
 
 
+def test_instruction_description_must_be_a_string(tmp_path):
+    with pytest.raises(ValidationError, match="'description' must be a string"):
+        ExtensionManifest(
+            _manifest(
+                tmp_path,
+                "instructions:\n  - file: rules.md\n    description: [not, a, string]\n",
+            )
+        )
+
+
 @pytest.mark.parametrize(
     "bad_path",
     ["/abs/rules.md", "../escape.md", "sub/../../escape.md"],
