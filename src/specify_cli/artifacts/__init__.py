@@ -18,8 +18,8 @@ from typing import Any, Iterable, Literal
 
 import yaml
 
-from .._assets import _locate_core_pack, _repo_root
-from .._identifier import PROJECT_OVERRIDE_LAYER, derive_named_id
+from .._assets import _locate_core_asset_dir
+from .._identifier import PROJECT_OVERRIDE_LAYER, derive_named_id, layer_kind_from_lookup_id
 from .._script_variants import canonical_script_name
 
 # ---------------------------------------------------------------------------
@@ -135,25 +135,12 @@ class _CoreBaselineRow:
 def _core_asset_root(subdir: str) -> Path | None:
     """Return the on-disk directory holding a family of core assets, or None.
 
-    Prefers the wheel-installed ``core_pack`` bundle, then falls back to the
-    source-checkout layout. Mirrors the two-tier resolution used by
-    :func:`_load_core_command_names` and :meth:`PresetResolver._find_bundled_core`
-    so all three code paths agree on what "core" means on this machine.
+    Delegates to :func:`_locate_core_asset_dir`, the single shared resolver
+    also used by :func:`_load_core_command_names` and
+    :meth:`PresetResolver._find_bundled_core`, so all three code paths agree
+    on what "core" means on this machine instead of each re-deriving it.
     """
-    core = _locate_core_pack()
-    if core is not None:
-        candidate = core / subdir
-        if candidate.is_dir():
-            return candidate
-    if subdir == "commands":
-        candidate = _repo_root() / "templates" / "commands"
-    elif subdir == "templates":
-        candidate = _repo_root() / "templates"
-    elif subdir == "scripts":
-        candidate = _repo_root() / "scripts"
-    else:  # pragma: no cover — internal misuse
-        return None
-    return candidate if candidate.is_dir() else None
+    return _locate_core_asset_dir(subdir)
 
 
 def _project_core_asset_root(project_root: Path | None, subdir: str) -> Path | None:
@@ -391,74 +378,57 @@ def _derive_manifest_path(layer: dict[str, Any], project_root: Path) -> str | No
     """Return a repo-relative POSIX path to the manifest declaring this layer.
 
     ``layer`` is one dict entry from ``PresetResolver.collect_all_layers()``.
-    Core layers return ``None`` — they have no on-disk manifest that ships
-    with the project. Non-core layers walk upward from the contribution file
-    until they find the preset's ``preset.yml`` or the extension's
-    ``extension.yml``, then relativize against ``project_root``.
+    Only ``preset`` and ``extension`` layers have an on-disk manifest — core
+    and project-override layers return ``None``.
 
-    Uses ``as_posix()`` so the string is stable across Windows and POSIX —
-    a caller comparing snapshots between operating systems gets the same
-    value on both. The enclosing-manifest search is bounded at
-    ``project_root`` so convention-only layers cannot walk out of the
-    project and serialize absolute host paths.
+    ``PresetResolver.collect_all_layers`` always reads a pack's files from
+    ``project_root / ".specify" / "<presets|extensions>" / "<sourceId>"``,
+    whether or not that pack is registered — registration only changes which
+    priority/version metadata is attached, never where the pack lives on
+    disk. That means the manifest's location is fully determined by the
+    layer's own ``lookupId`` (``"{layer}:{sourceId}:..."``), so it is derived
+    directly rather than walking upward from the contribution file.
+
+    Uses ``as_posix()`` so the string is stable across Windows and POSIX — a
+    caller comparing snapshots between operating systems gets the same value
+    on both.
     """
     lookup_id = layer.get("lookupId", "")
-    if lookup_id.startswith("core:"):
+    layer_kind = layer_kind_from_lookup_id(lookup_id)
+    if layer_kind not in ("preset", "extension"):
         return None
-    source = layer.get("path")
-    if not isinstance(source, Path):
+    pack_id = _extract_lookup_pack_id(lookup_id)
+    if not pack_id:
         return None
-    manifest = _find_enclosing_manifest(source, project_root)
-    if manifest is None:
+    tier_dir, manifest_name = (
+        ("presets", "preset.yml")
+        if layer_kind == "preset"
+        else ("extensions", "extension.yml")
+    )
+    manifest_path = project_root / ".specify" / tier_dir / pack_id / manifest_name
+    if not manifest_path.is_file():
         return None
-    try:
-        rel = manifest.relative_to(project_root)
-    except ValueError:
-        return None
-    return rel.as_posix()
-
-
-def _find_enclosing_manifest(path: Path, project_root: Path) -> Path | None:
-    """Walk parents of ``path`` up to ``project_root`` looking for a manifest."""
-    root = project_root.resolve()
-    start = path if path.is_dir() else path.parent
-    for parent in (start, *start.parents):
-        try:
-            parent.resolve().relative_to(root)
-        except ValueError:
-            break
-        for name in ("preset.yml", "extension.yml"):
-            candidate = parent / name
-            if candidate.is_file():
-                return candidate
-    return None
+    return manifest_path.relative_to(project_root).as_posix()
 
 
 def _preset_display_name(pack_dir: Path, pack_id: str) -> str:
-    """Return the preset's human-friendly name from ``preset.yml``.
+    """Return the preset's human-friendly name from ``preset.yml``, or ``pack_id``.
 
-    Reads ``preset.name`` first and falls back to a top-level ``name`` key for
-    manifests written in the older flat layout. Falls back to the pack id when
-    the manifest is missing or declares no usable name.
+    Delegates parsing and validation to :class:`PresetManifest` — the same
+    class ``PresetManager.list_installed()`` and ``specify preset list`` use —
+    instead of re-parsing the YAML by hand. Falls back to ``pack_id`` when the
+    manifest file is missing or fails manifest validation (for example, an
+    older flat-layout manifest with no ``preset:`` section at all).
     """
+    from ..presets import PresetManifest, PresetValidationError  # lazy: avoids circular import
+
     manifest_path = pack_dir / "preset.yml"
     if not manifest_path.is_file():
         return pack_id
     try:
-        data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return PresetManifest(manifest_path).name
+    except PresetValidationError:
         return pack_id
-    if not isinstance(data, dict):
-        return pack_id
-    preset = data.get("preset")
-    if isinstance(preset, dict):
-        display = preset.get("name")
-        if isinstance(display, str) and display:
-            return display
-    display = data.get("name")
-    if isinstance(display, str) and display:
-        return display
-    return pack_id
 
 
 def _extract_lookup_pack_id(lookup_id: str) -> str | None:
@@ -509,9 +479,12 @@ def _build_stack(
         else:
             hidden = idx > first_replace_idx
 
-        # Layer classification: prefer lookupId prefix (authoritative) with a
-        # source-string fallback for defensive parsing.
-        if lookup_id.startswith("core:") or source.startswith("core"):
+        # Layer classification: the lookupId prefix is the resolver's own
+        # grammar (see layer_kind_from_lookup_id) and is authoritative; the
+        # source-string check only guards against a malformed lookupId.
+        layer_kind = layer_kind_from_lookup_id(lookup_id)
+
+        if layer_kind == "core" or (layer_kind is None and source.startswith("core")):
             rows.append(
                 StackLayer(
                     layer="core",
@@ -526,7 +499,9 @@ def _build_stack(
             )
             continue
 
-        if lookup_id.startswith("project:") or source == "project override":
+        if layer_kind == PROJECT_OVERRIDE_LAYER or (
+            layer_kind is None and source == "project override"
+        ):
             rows.append(
                 StackLayer(
                     layer="project",
@@ -541,7 +516,9 @@ def _build_stack(
             )
             continue
 
-        if lookup_id.startswith("extension:") or source.startswith("extension:"):
+        if layer_kind == "extension" or (
+            layer_kind is None and source.startswith("extension:")
+        ):
             manifest_path = _derive_manifest_path(layer, project_root)
             rows.append(
                 StackLayer(

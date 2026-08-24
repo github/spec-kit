@@ -5728,9 +5728,15 @@ class PresetResolver:
         Mirrors the tier-5 fallback logic in ``resolve()`` so that
         ``collect_all_layers()`` can locate base layers even when
         ``.specify/templates/`` doesn't contain the core file.
+
+        Directory resolution is delegated to the shared
+        ``_locate_core_asset_dir`` resolver — the same one the artifact
+        command's core-baseline enumeration and the extensions module's
+        core-command-name discovery use — so all three code paths agree on
+        what "core" means on this machine.
         """
         try:
-            from specify_cli import _locate_core_pack, _repo_root
+            from specify_cli._assets import _locate_core_asset_dir
         except ImportError:
             return None
 
@@ -5739,38 +5745,28 @@ class PresetResolver:
         if stem and stem != template_name:
             names.append(stem)
 
-        core_pack = _locate_core_pack()
-        if core_pack is not None:
-            for name in names:
-                if template_type == "template":
-                    c = core_pack / "templates" / f"{name}.md"
-                elif template_type == "command":
-                    c = core_pack / "commands" / f"{name}.md"
-                elif template_type == "script":
-                    c = next(
-                        (path for path in script_variant_paths(core_pack / "scripts", name) if path.exists()),
-                        None,
-                    )
-                else:
-                    c = core_pack / f"{name}.md"
-                if c is not None and c.exists():
-                    return c
+        if template_type == "template":
+            base = _locate_core_asset_dir("templates")
+        elif template_type == "command":
+            base = _locate_core_asset_dir("commands")
+        elif template_type == "script":
+            base = _locate_core_asset_dir("scripts")
         else:
-            repo_root = _repo_root()
-            for name in names:
-                if template_type == "template":
-                    c = repo_root / "templates" / f"{name}.md"
-                elif template_type == "command":
-                    c = repo_root / "templates" / "commands" / f"{name}.md"
-                elif template_type == "script":
-                    c = next(
-                        (path for path in script_variant_paths(repo_root / "scripts", name) if path.exists()),
-                        None,
-                    )
-                else:
-                    c = repo_root / f"{name}.md"
-                if c is not None and c.exists():
-                    return c
+            base = None
+
+        if base is None:
+            return None
+
+        for name in names:
+            if template_type == "script":
+                c = next(
+                    (path for path in script_variant_paths(base, name) if path.exists()),
+                    None,
+                )
+            else:
+                c = base / f"{name}.md"
+            if c is not None and c.exists():
+                return c
         return None
 
     def resolve_content(

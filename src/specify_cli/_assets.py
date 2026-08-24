@@ -32,6 +32,32 @@ def _repo_root() -> Path:
     return Path(__file__).parent.parent.parent
 
 
+def _locate_core_asset_dir(subdir: str) -> Path | None:
+    """Return the on-disk directory holding a family of core assets, or None.
+
+    ``subdir`` is one of ``"commands"``, ``"templates"``, or ``"scripts"`` —
+    the three asset families every core baseline consumer needs to agree on.
+    Prefers the wheel-installed ``core_pack`` bundle, then falls back to the
+    source-checkout layout. This is the single place that knows the two-tier
+    resolution ("wheel bundle, else repo-root checkout") for locating core
+    assets, so callers (extension command-name discovery, the preset
+    resolver's core fallback, and the artifact command's core-baseline
+    enumeration) cannot silently diverge on what "core" means on a given
+    machine.
+    """
+    core = _locate_core_pack()
+    if core is not None:
+        candidate = core / subdir
+        return candidate if candidate.is_dir() else None
+    if subdir == "commands":
+        candidate = _repo_root() / "templates" / "commands"
+    elif subdir in ("templates", "scripts"):
+        candidate = _repo_root() / subdir
+    else:  # pragma: no cover — internal misuse
+        return None
+    return candidate if candidate.is_dir() else None
+
+
 def _locate_bundled_extension(extension_id: str) -> Path | None:
     """Return the path to a bundled extension, or None.
 
