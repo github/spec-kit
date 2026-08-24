@@ -836,21 +836,16 @@ class ArtifactCatalog:
             pack_dir = preset_manager.presets_dir / pack_id
             manifest = preset_manager.get_pack(pack_id)
             yield from self._iter_pack_contributions(
-                manifest, pack_dir, "preset", _lookup_ids
+                manifest, pack_dir, "preset", pack_id, _lookup_ids
             )
 
-        # -- Extensions: registered ids plus on-disk unregistered directories,
-        # mirroring PresetResolver._get_all_extensions_by_priority.
+        # -- Extensions: use the resolver's own extension enumeration order and
+        # identity (directory name), including safe-id and corrupt-registry
+        # handling from PresetResolver.iter_extensions_by_priority().
         ext_manager = ExtensionManager(self.project_root)
-        registered_ext_ids = {e["id"] for e in ext_manager.list_installed()}
-        ext_ids = set(registered_ext_ids)
-        if ext_manager.extensions_dir.is_dir():
-            ext_ids.update(
-                p.name for p in ext_manager.extensions_dir.iterdir() if p.is_dir()
-            )
-        for ext_id in sorted(ext_ids):
+        for _priority, ext_id, metadata in resolver.iter_extensions_by_priority():
             ext_dir = ext_manager.extensions_dir / ext_id
-            if ext_id in registered_ext_ids:
+            if metadata is not None:
                 manifest = ext_manager.get_extension(ext_id)
             else:
                 manifest_path = ext_dir / "extension.yml"
@@ -860,7 +855,9 @@ class ArtifactCatalog:
                         manifest = ExtensionManifest(manifest_path)
                     except ValidationError:
                         manifest = None
-            yield from self._iter_pack_contributions(manifest, ext_dir, "extension", _lookup_ids)
+            yield from self._iter_pack_contributions(
+                manifest, ext_dir, "extension", ext_id, _lookup_ids
+            )
 
         yield from self._iter_project_override_artifacts(resolver)
 
@@ -869,6 +866,7 @@ class ArtifactCatalog:
         manifest: Any,
         pack_dir: Path,
         layer: str,
+        source_id: str,
         lookup_ids: Callable[[ArtifactKind, str], set[str]],
     ) -> Iterable[tuple[ArtifactKind, str, str, str]]:
         """Yield ``(kind, name, description, lookup_id)`` for one pack.
@@ -890,7 +888,7 @@ class ArtifactCatalog:
                 description = contribution.get("description", "")
                 if not isinstance(description, str):
                     description = ""
-                lookup_id = contribution["id"]
+                lookup_id = derive_named_id(layer, source_id, kind, name)
                 if lookup_id in lookup_ids(kind, name):
                     yield kind, name, description, lookup_id
 
@@ -898,7 +896,7 @@ class ArtifactCatalog:
         # conventional path resolves whether or not the manifest declares it,
         # so it belongs in the inventory as well.
         for kind, name in _iter_convention_contributions(pack_dir):
-            lookup_id = derive_named_id(layer, pack_dir.name, kind, name)
+            lookup_id = derive_named_id(layer, source_id, kind, name)
             if lookup_id in lookup_ids(kind, name):
                 yield kind, name, "", lookup_id
 

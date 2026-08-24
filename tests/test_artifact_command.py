@@ -173,6 +173,50 @@ class TestListArtifactsContract:
         assert "disabled-template" not in names
         assert "missing-template" not in names
 
+    def test_unregistered_extension_uses_directory_id_for_lookup(self, spec_kit_project: Path):
+        ext_dir = spec_kit_project / ".specify" / "extensions" / "renamed"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "commands" / "actual.md").write_text(
+            "---\ndescription: Dir identity wins\n---\nbody\n",
+            encoding="utf-8",
+        )
+        (ext_dir / "extension.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "extension": {
+                        "id": "original",
+                        "name": "Original Id",
+                        "version": "1.0.0",
+                        "description": "test",
+                        "author": "test",
+                        "repository": "https://example.com",
+                        "license": "MIT",
+                    },
+                    "requires": {"speckit_version": ">=0.2.0"},
+                    "provides": {
+                        "commands": [
+                            {
+                                "name": "speckit.original.hello",
+                                "file": "commands/actual.md",
+                                "description": "manifest declared command",
+                            }
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        info = ArtifactCatalog(spec_kit_project).get_artifact_info("speckit.original.hello")
+        assert info["stack"][0]["lookupId"] == "extension:renamed:command:speckit.original.hello"
+        assert (
+            PresetResolver(spec_kit_project)
+            .collect_all_layers("speckit.original.hello", "command")[0]["lookupId"]
+            == "extension:renamed:command:speckit.original.hello"
+        )
+
     def test_includes_project_local_core_assets(self, spec_kit_project: Path):
         templates_dir = spec_kit_project / ".specify" / "templates"
         (templates_dir / "legacy-template.md").write_text(

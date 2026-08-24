@@ -5218,6 +5218,14 @@ class PresetResolver:
         all_extensions.sort(key=lambda x: (x[0], x[1]))
         return all_extensions
 
+    def iter_extensions_by_priority(self) -> list[tuple[int, str, dict | None]]:
+        """Return extension directories in resolver lookup order.
+
+        Each entry is ``(priority, ext_id, metadata_or_none)`` where ``ext_id``
+        is always the on-disk directory name used in lookup identifiers.
+        """
+        return self._get_all_extensions_by_priority()
+
     @staticmethod
     def _core_stem(template_name: str) -> Optional[str]:
         """Extract the stem for core command lookup.
