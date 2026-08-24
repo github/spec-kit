@@ -527,6 +527,17 @@ class TestCLI:
         assert result.stdout == ""
         assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
 
+    def test_list_corrupt_extension_registry_uses_json_error_envelope(
+        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        extensions_dir = spec_kit_project / ".specify" / "extensions"
+        (extensions_dir / ".registry").write_text("{invalid", encoding="utf-8")
+        monkeypatch.chdir(spec_kit_project)
+        result = CliRunner().invoke(app, ["artifact", "list", "--json"])
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
+
     def test_not_a_project_error_envelope(self, non_project: Path, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.chdir(non_project)
         runner = CliRunner()
