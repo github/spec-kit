@@ -6,8 +6,10 @@ import yaml
 from specify_cli.workflows.base import StepContext
 from specify_cli.workflows.expressions import (
     condition_has_malformed_expression_block,
+    condition_is_interpolated_to_text,
     condition_is_never_evaluated,
     evaluate_condition,
+    evaluate_expression,
     format_condition_correction,
     _has_unbalanced_quote,
     _has_unbalanced_bracket,
@@ -139,6 +141,75 @@ def test_a_malformed_block_can_raise_rather_than_be_true():
     ctx = StepContext(inputs={"count": 5})
     with pytest.raises(ValueError):
         evaluate_condition("{{ inputs.missing | default('oops }}", ctx)
+
+
+# A third fault. The braces are present and they close, but they do not cover the
+# whole condition, so `evaluate_expression` leaves its typed fast path: each block is
+# substituted into the surrounding text and the result is a *string*, which
+# `evaluate_condition` then coerces. Every one of these reads as a real expression and
+# is always true. The validators already told authors the condition must be "a single
+# complete '{{ }}' block" -- nothing checked it.
+INTERPOLATED_TO_TEXT = [
+    "{{ inputs.ready }} and {{ inputs.count > 100 }}",   # two blocks joined by an operator
+    "{{ inputs.ready }} or {{ inputs.ready }}",
+    "not {{ inputs.ready }}",                            # operator outside the block
+    "{{ inputs.count }} > 100",                          # comparison outside the block
+    "ready: {{ inputs.ready }}",                         # prose around one block
+    "{{ inputs.ready }}x",                               # a single trailing character
+]
+
+
+@pytest.mark.parametrize("condition", INTERPOLATED_TO_TEXT)
+def test_a_condition_spliced_into_text_is_silently_true_and_is_flagged(condition):
+    # Ground truth first: the interpolated form really is a string, and really is true
+    # for a set of inputs where the expression the author wrote would be false.
+    ctx = StepContext(inputs={"ready": False, "count": 0})
+    rendered = evaluate_expression(condition, ctx)
+    assert isinstance(rendered, str)
+    assert evaluate_condition(condition, ctx) is True
+
+    assert condition_is_interpolated_to_text(condition) is True
+
+
+@pytest.mark.parametrize("condition", INTERPOLATED_TO_TEXT)
+@pytest.mark.parametrize("step_cls", STEP_CLASSES)
+def test_every_condition_step_rejects_a_spliced_condition(step_cls, condition):
+    config = {"id": "s1", "condition": condition, "then": [], "steps": []}
+    errors = [e for e in step_cls().validate(config) if "'condition'" in e]
+
+    assert len(errors) == 1
+    assert "single '{{ }}' block" in errors[0]
+    # No paste-ready correction: there is no single right rewrite of `{{ a }} and {{ b }}`.
+    assert "Wrap the expression" not in errors[0]
+
+
+VALID_SINGLE_BLOCKS = [
+    "{{ inputs.ready }}",
+    "{{ inputs.ready and inputs.count > 100 }}",
+    "{{ not inputs.ready }}",
+    "{{ inputs.tags | join(', ') == 'a, b' }}",
+    # A '}}' inside a quoted argument does not end the block, so this is still one
+    # expression and must stay on the fast path.
+    "{{ inputs.text | contains('}}') }}",
+    # `evaluate_expression` strips before testing the fast path, so surrounding
+    # whitespace is not "text around the block" and must stay accepted.
+    "  {{ inputs.ready }}  ",
+]
+
+
+@pytest.mark.parametrize("condition", VALID_SINGLE_BLOCKS)
+@pytest.mark.parametrize("step_cls", STEP_CLASSES)
+def test_a_single_complete_block_is_still_accepted(step_cls, condition):
+    """The narrowing must not widen: one block, however complex, is the supported form."""
+    assert condition_is_interpolated_to_text(condition) is False
+    config = {"id": "s1", "condition": condition, "then": [], "steps": []}
+    assert [e for e in step_cls().validate(config) if "'condition'" in e] == []
+
+
+@pytest.mark.parametrize("condition", NEVER_EVALUATED + MALFORMED_BLOCKS)
+def test_the_older_two_faults_keep_their_own_message(condition):
+    """The new check yields to both, so each fault keeps the advice written for it."""
+    assert condition_is_interpolated_to_text(condition) is False
 
 
 @pytest.mark.parametrize("condition", NEVER_EVALUATED + MALFORMED_BLOCKS)

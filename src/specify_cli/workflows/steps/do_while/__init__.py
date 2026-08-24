@@ -7,6 +7,7 @@ from typing import Any
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import (
     condition_has_malformed_expression_block,
+    condition_is_interpolated_to_text,
     condition_is_never_evaluated,
     format_condition_remediation,
 )
@@ -120,6 +121,21 @@ class DoWhileStep(StepBase):
                 "close, so it falls back to the first raw '}}' and evaluates a "
                 "truncated expression instead of the one written. Balance the "
                 "delimiters and quotes."
+            )
+        elif condition_is_interpolated_to_text(config["condition"]):
+            # Third fault, third message. The braces are here and they close, but they
+            # do not cover the whole condition, so evaluate_expression takes its text
+            # path rather than the typed one: each block is substituted into the
+            # surrounding string and the result is coerced by bool(). Two blocks joined
+            # by `and` render "False and False", which is true. No paste-ready
+            # correction is offered: there is no single right rewrite, because only the
+            # author knows which grouping the operators were meant to have.
+            errors.append(
+                f"Do-while step {config.get('id', '?')!r}: 'condition' "
+                f"{config['condition']!r} holds more than one '{{{{ }}}}' block, or "
+                "text around one, so it is substituted into a string and coerced by "
+                "bool() instead of being evaluated. Put the whole expression inside a "
+                "single '{{ }}' block."
             )
         max_iter = config.get("max_iterations")
         if max_iter is not None:
