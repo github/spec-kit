@@ -745,6 +745,18 @@ class TestConventionDiscovery:
         assert info["kind"] == "command"
         assert info["stack"][0]["layer"] == "project"
 
+    def test_malformed_dotted_override_is_not_forced_to_command(
+        self, spec_kit_project: Path
+    ):
+        overrides = spec_kit_project / ".specify" / "templates" / "overrides"
+        overrides.mkdir(parents=True)
+        (overrides / "speckit..local.md").write_text("body", encoding="utf-8")
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        ids = {row.id for row in catalog.list_artifacts()}
+        assert "template:speckit..local" in ids
+        assert "command:speckit..local" not in ids
+
     def test_unregistered_preset_template_without_manifest(self, spec_kit_project: Path):
         pack_dir = _install_preset(spec_kit_project, "legacy-preset", provides={"templates": []})
         preset_templates_dir = pack_dir / "templates"
