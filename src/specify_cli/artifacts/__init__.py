@@ -351,7 +351,10 @@ def _derive_manifest_path(layer: dict[str, Any], project_root: Path) -> str | No
 
     Uses ``as_posix()`` so the string is stable across Windows and POSIX —
     a caller comparing snapshots between operating systems gets the same
-    value on both.
+    value on both. If the enclosing manifest is found outside
+    ``project_root`` (e.g. an unbounded parent walk from a convention-only
+    layer escapes the project), ``None`` is returned rather than an
+    absolute host path, preserving the repo-relative contract.
     """
     lookup_id = layer.get("lookupId", "")
     if lookup_id.startswith("core:"):
@@ -365,7 +368,7 @@ def _derive_manifest_path(layer: dict[str, Any], project_root: Path) -> str | No
     try:
         rel = manifest.relative_to(project_root)
     except ValueError:
-        return manifest.as_posix()
+        return None
     return rel.as_posix()
 
 
@@ -870,6 +873,7 @@ __all__ = [
     "ArtifactError",
     "ArtifactKind",
     "ArtifactNotFoundError",
+    "ArtifactResolutionError",
     "CoreBaseline",
     "LayerName",
     "NotASpecKitProjectError",
