@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from typer.testing import CliRunner
 
 from specify_cli import app
 from specify_cli.artifacts import (
@@ -23,7 +24,10 @@ from specify_cli.artifacts import (
     ArtifactNotFoundError,
     ArtifactResolutionError,
     NotASpecKitProjectError,
+    _derive_manifest_path,
+    _preset_display_name,
 )
+from specify_cli.extensions import ExtensionRegistry
 
 
 ERROR_REGEX = re.compile(
@@ -172,8 +176,6 @@ class TestListArtifactsContract:
     def test_excludes_disabled_and_unusable_manifest_contributions(
         self, spec_kit_project: Path
     ):
-        from specify_cli.extensions import ExtensionRegistry
-
         extensions_dir = spec_kit_project / ".specify" / "extensions"
         for extension_id, artifact_name, enabled, file_name in (
             (
@@ -473,8 +475,6 @@ class TestSkillsExcluded:
 
 class TestCLI:
     def test_list_requires_json_flag(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
-        from typer.testing import CliRunner
-
         monkeypatch.chdir(spec_kit_project)
         runner = CliRunner()
         result = runner.invoke(app, ["artifact", "list"])
@@ -482,8 +482,6 @@ class TestCLI:
         assert result.stdout == ""
 
     def test_list_json_emits_array(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
-        from typer.testing import CliRunner
-
         monkeypatch.chdir(spec_kit_project)
         runner = CliRunner()
         result = runner.invoke(app, ["artifact", "list", "--json"])
@@ -493,16 +491,12 @@ class TestCLI:
         assert result.stdout.endswith("\n")
 
     def test_list_json_is_pretty_printed(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
-        from typer.testing import CliRunner
-
         monkeypatch.chdir(spec_kit_project)
         runner = CliRunner()
         result = runner.invoke(app, ["artifact", "list", "--json"])
         assert '  "id"' in result.stdout  # 2-space indent visible
 
     def test_info_json_shape(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
-        from typer.testing import CliRunner
-
         monkeypatch.chdir(spec_kit_project)
         runner = CliRunner()
         result = runner.invoke(app, ["artifact", "info", "speckit.constitution", "--json"])
@@ -511,8 +505,6 @@ class TestCLI:
         assert set(payload.keys()) == {"id", "name", "kind", "description", "stack"}
 
     def test_info_unknown_error_envelope(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
-        from typer.testing import CliRunner
-
         monkeypatch.chdir(spec_kit_project)
         runner = CliRunner()
         result = runner.invoke(app, ["artifact", "info", "no.such.thing", "--json"])
@@ -525,8 +517,6 @@ class TestCLI:
     def test_info_corrupt_extension_registry_uses_json_error_envelope(
         self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        from typer.testing import CliRunner
-
         extensions_dir = spec_kit_project / ".specify" / "extensions"
         (extensions_dir / ".registry").write_text("{invalid", encoding="utf-8")
         monkeypatch.chdir(spec_kit_project)
@@ -538,8 +528,6 @@ class TestCLI:
         assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
 
     def test_not_a_project_error_envelope(self, non_project: Path, monkeypatch: pytest.MonkeyPatch):
-        from typer.testing import CliRunner
-
         monkeypatch.chdir(non_project)
         runner = CliRunner()
         result = runner.invoke(app, ["artifact", "list", "--json"])
@@ -549,8 +537,6 @@ class TestCLI:
         assert err["error"] == "not a Spec Kit project: no .specify/ directory found"
 
     def test_stdout_empty_on_error(self, non_project: Path, monkeypatch: pytest.MonkeyPatch):
-        from typer.testing import CliRunner
-
         monkeypatch.chdir(non_project)
         runner = CliRunner()
         for argv in (
@@ -570,8 +556,6 @@ class TestCLI:
         monkeypatch: pytest.MonkeyPatch,
         override: str,
     ):
-        from typer.testing import CliRunner
-
         monkeypatch.chdir(non_project)
         monkeypatch.setenv("SPECIFY_INIT_DIR", override)
         runner = CliRunner()
@@ -589,8 +573,6 @@ class TestCLI:
 
 class TestUTF8NoBOM:
     def test_output_is_utf8_without_bom(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
-        from typer.testing import CliRunner
-
         monkeypatch.chdir(spec_kit_project)
         runner = CliRunner()
         result = runner.invoke(app, ["artifact", "list", "--json"])
@@ -627,6 +609,27 @@ class TestStackComposition:
         rows = ArtifactCatalog(spec_kit_project).list_artifacts()
         assert any(row.id == "command:speckit.constitution" for row in rows)
         assert ArtifactCatalog(spec_kit_project).get_artifact_info("speckit.constitution")["kind"] == "command"
+
+    def test_preset_single_segment_command_id_from_list_is_resolvable(
+        self, spec_kit_project: Path
+    ):
+        pack = _install_preset(
+            spec_kit_project,
+            "test-single-command",
+            {"commands": [{"name": "specify", "description": "single segment"}]},
+        )
+        (pack / "commands").mkdir()
+        (pack / "commands" / "specify.md").write_text(
+            "---\ndescription: single segment\n---\nbody", encoding="utf-8"
+        )
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        ids = {row.id for row in catalog.list_artifacts()}
+
+        assert "command:specify" in ids
+        info = catalog.get_artifact_info("command:specify")
+        assert info["id"] == "command:specify"
+        assert catalog.get_artifact_info("specify", kind="command")["id"] == "command:specify"
 
     def test_preset_replace_hides_core(self, spec_kit_project: Path):
         # Install a preset that replaces the constitution command.
@@ -767,8 +770,6 @@ class TestManifestPathPortability:
     """`_derive_manifest_path` must never leak an absolute host path."""
 
     def test_preset_manifest_path_is_repo_relative(self, tmp_path: Path):
-        from specify_cli.artifacts import _derive_manifest_path
-
         project_root = tmp_path / "proj"
         pack_dir = project_root / ".specify" / "presets" / "my-pack"
         pack_dir.mkdir(parents=True)
@@ -784,8 +785,6 @@ class TestManifestPathPortability:
         )
 
     def test_extension_manifest_path_is_repo_relative(self, tmp_path: Path):
-        from specify_cli.artifacts import _derive_manifest_path
-
         project_root = tmp_path / "proj"
         ext_dir = project_root / ".specify" / "extensions" / "my-ext"
         ext_dir.mkdir(parents=True)
@@ -801,8 +800,6 @@ class TestManifestPathPortability:
         )
 
     def test_missing_manifest_file_is_none(self, tmp_path: Path):
-        from specify_cli.artifacts import _derive_manifest_path
-
         project_root = tmp_path / "proj"
         pack_dir = project_root / ".specify" / "presets" / "my-pack"
         pack_dir.mkdir(parents=True)
@@ -814,8 +811,6 @@ class TestManifestPathPortability:
         assert _derive_manifest_path(layer, project_root) is None
 
     def test_core_and_project_layers_have_no_manifest(self, tmp_path: Path):
-        from specify_cli.artifacts import _derive_manifest_path
-
         project_root = tmp_path / "proj"
         project_root.mkdir()
 
@@ -845,8 +840,6 @@ provides:
 """
 
     def test_reads_validated_preset_name(self, tmp_path: Path):
-        from specify_cli.artifacts import _preset_display_name
-
         pack_dir = tmp_path / "pack"
         pack_dir.mkdir()
         (pack_dir / "preset.yml").write_text(self._VALID_MANIFEST, encoding="utf-8")
@@ -855,8 +848,6 @@ provides:
 
     def test_falls_back_to_pack_id_when_manifest_fails_validation(self, tmp_path: Path):
         """A legacy flat manifest with no ``preset:`` section fails validation."""
-        from specify_cli.artifacts import _preset_display_name
-
         pack_dir = tmp_path / "pack"
         pack_dir.mkdir()
         (pack_dir / "preset.yml").write_text("id: pack\nname: Flat Name\n", encoding="utf-8")
@@ -864,8 +855,6 @@ provides:
         assert _preset_display_name(pack_dir, "pack") == "pack"
 
     def test_falls_back_to_pack_id_without_manifest_file(self, tmp_path: Path):
-        from specify_cli.artifacts import _preset_display_name
-
         pack_dir = tmp_path / "pack"
         pack_dir.mkdir()
 
@@ -878,4 +867,4 @@ provides:
 
 
 def test_module_imports():
-    from specify_cli.artifacts import ArtifactCatalog  # noqa: F401
+    assert ArtifactCatalog is not None

@@ -128,7 +128,7 @@ class ArtifactResolutionError(ArtifactError):
 
 _TEMPLATE_SUFFIX = ".md"
 _SCRIPT_SUFFIX = ".sh"
-_COMMAND_NAME_RE = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+")
+_COMMAND_NAME_RE = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)*")
 _TEMPLATE_OR_SCRIPT_NAME_RE = re.compile(r"[a-z0-9-]+")
 
 
@@ -903,7 +903,9 @@ class ArtifactCatalog:
                 )
                 for layer in command_layers
             )
-            is_command = backed_by_command or bool(_COMMAND_NAME_RE.fullmatch(name))
+            is_command = backed_by_command or (
+                "." in name and bool(_COMMAND_NAME_RE.fullmatch(name))
+            )
             yield ("command" if is_command else "template"), name, ""
         scripts_dir = overrides_dir / "scripts"
         if not scripts_dir.is_dir():
