@@ -5173,7 +5173,7 @@ class PresetResolver:
             except (OSError, ValueError):
                 return entry, None, ext_manifest.id
             return entry, (candidate if candidate.is_file() else None), ext_manifest.id
-        return None, None, ext_manifest.id
+        return None, None, None
 
     def _get_all_extensions_by_priority(self) -> list[tuple[int, str, dict | None]]:
         """Build unified list of registered and unregistered extensions sorted by priority.
