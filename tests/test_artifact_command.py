@@ -20,11 +20,14 @@ from specify_cli.artifacts import (
     Artifact,
     ArtifactCatalog,
     ArtifactNotFoundError,
+    ArtifactResolutionError,
     NotASpecKitProjectError,
 )
 
 
-ERROR_REGEX = re.compile(r"^(unknown artifact |ambiguous artifact |not a Spec Kit project)")
+ERROR_REGEX = re.compile(
+    r"^(unknown artifact |ambiguous artifact |artifact resolution failed|not a Spec Kit project)"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -319,6 +322,9 @@ class TestErrors:
         assert excinfo.value.message.startswith("ambiguous artifact shared-name: matches kinds")
         assert ERROR_REGEX.match(excinfo.value.message)
 
+    def test_resolution_error_message(self):
+        assert ArtifactResolutionError().message == "artifact resolution failed"
+
 
 class TestKindHint:
     def test_kind_flag_disambiguates(self, spec_kit_project: Path):
@@ -417,6 +423,21 @@ class TestCLI:
         err = json.loads(result.stderr)
         assert set(err.keys()) == {"error"}
         assert ERROR_REGEX.match(err["error"])
+
+    def test_info_corrupt_extension_registry_uses_json_error_envelope(
+        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        from typer.testing import CliRunner
+
+        extensions_dir = spec_kit_project / ".specify" / "extensions"
+        (extensions_dir / ".registry").write_text("{invalid", encoding="utf-8")
+        monkeypatch.chdir(spec_kit_project)
+        result = CliRunner().invoke(
+            app, ["artifact", "info", "speckit.constitution", "--json"]
+        )
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
 
     def test_not_a_project_error_envelope(self, non_project: Path, monkeypatch: pytest.MonkeyPatch):
         from typer.testing import CliRunner
