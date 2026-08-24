@@ -2817,11 +2817,15 @@ class TestExtensionManager:
 
             # Force-reinstall from ZIP
             manifest = manager.install_from_zip(
-                zip_path, "0.1.0", force=True
+                zip_path, "0.1.0", force=True, catalog_name="extension-catalog"
             )
 
         assert manifest.id == "test-ext"
         assert manager.registry.is_installed("test-ext")
+        assert manager.registry.get("test-ext")["source"] == {
+            "kind": "catalog",
+            "catalog": "extension-catalog",
+        }
         ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
         assert ext_dir.exists()
 
@@ -2892,10 +2896,16 @@ class TestExtensionManager:
                     archive.add(file_path, arcname=arcname)
 
         manager = ExtensionManager(project_dir)
-        manifest = manager.install_from_archive(archive_path, "0.1.0")
+        manifest = manager.install_from_archive(
+            archive_path, "0.1.0", catalog_name="extension-catalog"
+        )
 
         assert manifest.id == "test-ext"
         assert manager.registry.is_installed("test-ext")
+        assert manager.registry.get("test-ext")["source"] == {
+            "kind": "catalog",
+            "catalog": "extension-catalog",
+        }
 
     def test_install_from_tar_rejects_symlink_entry(
         self, extension_dir, project_dir, temp_dir
@@ -7909,6 +7919,46 @@ class TestExtensionAddCLI:
             f"but was called with '{download_called_with[0]}'"
         )
 
+    def test_catalog_add_forwards_catalog_name(self, tmp_path):
+        """The extension catalog branch passes resolved provenance to the manager."""
+        from types import SimpleNamespace
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "project"
+        (project_dir / ".specify").mkdir(parents=True)
+        archive = tmp_path / "extension.zip"
+        archive.write_bytes(b"archive")
+        captured = {}
+
+        def fake_install_from_zip(self, _archive, _version, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                id="catalog-extension",
+                name="Catalog Extension",
+                version="1.0.0",
+                description="catalog extension",
+                warnings=[],
+                commands=[],
+            )
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(ExtensionCatalog, "get_extension_info", return_value={
+                 "id": "catalog-extension",
+                 "name": "Catalog Extension",
+                 "version": "1.0.0",
+                 "_install_allowed": True,
+                 "_catalog_name": "extension-catalog",
+             }), \
+             patch.object(ExtensionCatalog, "download_extension", return_value=archive), \
+             patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip), \
+             patch("specify_cli.extensions._commands._refresh_events_and_warn"):
+            result = CliRunner().invoke(app, ["extension", "add", "catalog-extension"])
+
+        assert result.exit_code == 0, result.output
+        assert captured["catalog_name"] == "extension-catalog"
+
     def test_add_discovery_only_error_suggests_resolved_id(self, tmp_path):
         """The not-installable error must suggest a copy-pasteable command using
         the resolved catalog ID, not a display name that may contain spaces."""
@@ -8930,7 +8980,9 @@ class TestExtensionUpdateCLI:
 
         manager = ExtensionManager(project_dir)
         v1_dir = self._create_extension_source(tmp_path, "1.0.0")
-        manager.install_from_directory(v1_dir, "0.1.0")
+        manager.install_from_directory(
+            v1_dir, "0.1.0", catalog_name="previous-catalog"
+        )
         installed_extension_dir = manager.extensions_dir / "test-ext"
         removed_paths = []
         real_rmtree = shutil.rmtree
@@ -9166,15 +9218,20 @@ class TestExtensionUpdateCLI:
         )
         v2_dir = self._create_extension_source(tmp_path, "2.0.0")
 
-        def fake_install_from_zip(self_obj, _zip_path, speckit_version):
-            return self_obj.install_from_directory(v2_dir, speckit_version)
+        def fake_install_from_zip(
+            self_obj, _zip_path, speckit_version, *, catalog_name=None
+        ):
+            return self_obj.install_from_directory(
+                v2_dir, speckit_version, catalog_name=catalog_name
+            )
 
         with patch.object(Path, "cwd", return_value=project_dir), \
              patch.object(ExtensionCatalog, "get_extension_info", return_value={
                  "id": "test-ext",
-                 "name": "Test Extension",
-                 "version": "2.0.0",
-                 "_install_allowed": True,
+                "name": "Test Extension",
+                "version": "2.0.0",
+                "_install_allowed": True,
+                "_catalog_name": "updated-catalog",
              }), \
              patch.object(ExtensionCatalog, "download_extension", return_value=zip_path), \
              patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip):
@@ -9185,6 +9242,10 @@ class TestExtensionUpdateCLI:
         updated = ExtensionManager(project_dir).registry.get("test-ext")
         assert updated["version"] == "2.0.0"
         assert updated["installed_at"] == original_installed_at
+        assert updated["source"] == {
+            "kind": "catalog",
+            "catalog": "updated-catalog",
+        }
         restored_config_content = (
             project_dir / ".specify" / "extensions" / "test-ext" / "linear-config.yml"
         ).read_text()
@@ -9212,7 +9273,9 @@ class TestExtensionUpdateCLI:
 
         manager = ExtensionManager(project_dir)
         v1_dir = self._create_extension_source(tmp_path, "1.0.0")
-        manager.install_from_directory(v1_dir, "0.1.0")
+        manager.install_from_directory(
+            v1_dir, "0.1.0", catalog_name="original-catalog"
+        )
 
         backup_registry_entry = manager.registry.get("test-ext")
         hooks_before = yaml.safe_load((project_dir / ".specify" / "extensions.yml").read_text())

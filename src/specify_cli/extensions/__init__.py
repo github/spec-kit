@@ -2052,6 +2052,8 @@ class ExtensionManager:
         priority: int = 10,
         link_commands: bool = False,
         force: bool = False,
+        *,
+        catalog_name: str | None = None,
     ) -> ExtensionManifest:
         """Install extension from a local directory.
 
@@ -2612,11 +2614,19 @@ class ExtensionManager:
                 backup_config_dir.unlink()
 
         # Update registry
+        normalized_catalog_name = (
+            catalog_name.strip() if isinstance(catalog_name, str) else ""
+        )
+        source = (
+            {"kind": "catalog", "catalog": normalized_catalog_name}
+            if normalized_catalog_name
+            else "local"
+        )
         self.registry.add(
             manifest.id,
             {
                 "version": manifest.version,
-                "source": "local",
+                "source": source,
                 "manifest_hash": manifest.get_hash(),
                 "enabled": True,
                 "priority": priority,
@@ -2673,6 +2683,7 @@ class ExtensionManager:
         archive_file: BinaryIO | None = None,
         source_name: str | None = None,
         content_type: str | None = None,
+        catalog_name: str | None = None,
     ) -> ExtensionManifest:
         """Install an extension from a supported archive.
 
@@ -2724,7 +2735,11 @@ class ExtensionManager:
 
             # Install from extracted directory
             return self.install_from_directory(
-                extension_dir, speckit_version, priority=priority, force=force
+                extension_dir,
+                speckit_version,
+                priority=priority,
+                force=force,
+                catalog_name=catalog_name,
             )
 
     def _config_root_is_contained(self, specify_dir: Path) -> bool:
@@ -2880,6 +2895,7 @@ class ExtensionManager:
         archive_file: BinaryIO | None = None,
         source_name: str | None = None,
         content_type: str | None = None,
+        catalog_name: str | None = None,
     ) -> ExtensionManifest:
         """Backward-compatible wrapper for archive installation."""
         return self.install_from_archive(
@@ -2890,6 +2906,7 @@ class ExtensionManager:
             archive_file=archive_file,
             source_name=source_name,
             content_type=content_type,
+            catalog_name=catalog_name,
         )
 
     def remove(self, extension_id: str, keep_config: bool = False) -> bool:

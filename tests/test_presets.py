@@ -834,9 +834,15 @@ class TestPresetManager:
                     zf.write(file_path, arcname)
 
         manager = PresetManager(project_dir)
-        manifest = manager.install_from_zip(zip_path, "0.1.5")
+        manifest = manager.install_from_zip(
+            zip_path, "0.1.5", catalog_name="preset-catalog"
+        )
         assert manifest.id == "test-pack"
         assert manager.registry.is_installed("test-pack")
+        assert manager.registry.get("test-pack")["source"] == {
+            "kind": "catalog",
+            "catalog": "preset-catalog",
+        }
 
     def test_install_from_zip_forwards_force(
         self, project_dir, pack_dir, temp_dir
@@ -919,10 +925,16 @@ class TestPresetManager:
                     archive.add(file_path, arcname=arcname)
 
         manager = PresetManager(project_dir)
-        manifest = manager.install_from_archive(archive_path, "0.1.5")
+        manifest = manager.install_from_archive(
+            archive_path, "0.1.5", catalog_name="preset-catalog"
+        )
 
         assert manifest.id == "test-pack"
         assert manager.registry.is_installed("test-pack")
+        assert manager.registry.get("test-pack")["source"] == {
+            "kind": "catalog",
+            "catalog": "preset-catalog",
+        }
 
     def test_install_from_tar_rejects_symlink_entry(
         self, project_dir, pack_dir, temp_dir
@@ -3323,6 +3335,40 @@ class TestPresetCatalogMultiCatalog:
         catalog = PresetCatalog(project_dir)
         result = catalog._load_catalog_config(config_path)
         assert result is None
+
+    def test_load_catalog_config_defaults_blank_names(self, project_dir):
+        """Blank and null names normalize by valid catalog order."""
+        config_path = project_dir / ".specify" / "preset-catalogs.yml"
+        config_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {"name": "skipped", "url": "   "},
+                        {
+                            "name": None,
+                            "url": "https://one.example.com/catalog.json",
+                        },
+                        {
+                            "name": "   ",
+                            "url": "https://two.example.com/catalog.json",
+                        },
+                        {
+                            "name": "  padded-name  ",
+                            "url": "https://three.example.com/catalog.json",
+                        },
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        entries = PresetCatalog(project_dir)._load_catalog_config(config_path)
+
+        assert [entry.name for entry in entries] == [
+            "catalog-1",
+            "catalog-2",
+            "padded-name",
+        ]
 
     def test_load_catalog_config_invalid_yaml(self, project_dir):
         """Test loading invalid YAML raises error."""
@@ -10751,6 +10797,36 @@ class TestBundledPresetLocator:
         assert result.exit_code == 0, result.output
         assert "Lean Workflow" in result.output
         assert "installed" in result.output.lower()
+
+    def test_preset_add_catalog_forwards_catalog_name(self, project_dir, monkeypatch):
+        """Catalog installs pass resolved provenance into the manager boundary."""
+        from specify_cli.presets._commands import preset_add
+
+        captured = {}
+
+        def fake_install_from_zip(self, _archive, _version, priority=10, *, catalog_name=None):
+            captured.update(priority=priority, catalog_name=catalog_name)
+            return SimpleNamespace(name="Catalog Preset", version="1.0.0")
+
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "1.0.0")
+        monkeypatch.setattr(
+            PresetCatalog,
+            "get_pack_info",
+            lambda _self, _id: {
+                "name": "Catalog Preset",
+                "_install_allowed": True,
+                "_catalog_name": "preset-catalog",
+            },
+        )
+        archive = project_dir / "preset.zip"
+        archive.write_bytes(b"archive")
+        monkeypatch.setattr(PresetCatalog, "download_pack", lambda _self, _id: archive)
+        monkeypatch.setattr(PresetManager, "install_from_zip", fake_install_from_zip)
+
+        preset_add(preset_id="catalog-preset", from_url=None, dev=None, priority=7)
+
+        assert captured == {"priority": 7, "catalog_name": "preset-catalog"}
 
     def test_preset_add_from_url_rejects_insecure_redirect(self, project_dir, monkeypatch):
         """URL installs reject redirects from HTTPS to non-loopback HTTP."""

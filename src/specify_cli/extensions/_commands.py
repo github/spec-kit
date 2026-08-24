@@ -424,13 +424,20 @@ def extension_list(
     json_output: bool = typer.Option(False, "--json", help="Output installed extensions as JSON"),
 ):
     """List installed extensions."""
-    from . import ExtensionManager
+    from . import ExtensionManager, normalize_priority
 
     if json_output:
         try:
             project_root = resolve_specify_project_root()
             manager = ExtensionManager(project_root)
             installed = manager.list_installed()
+            installed = sorted(
+                installed,
+                key=lambda extension: (
+                    normalize_priority(extension.get("priority")),
+                    str(extension.get("id", "")),
+                ),
+            )
             emit_json([installed_list_item(ext, include_hooks=True) for ext in installed])
             return
         except Exception as error:
@@ -1100,6 +1107,7 @@ def extension_add(
                                 speckit_version,
                                 priority=priority,
                                 force=force,
+                                catalog_name=ext_info.get("_catalog_name"),
                             )
                         finally:
                             if archive_path.exists():
@@ -1678,6 +1686,7 @@ def extension_update(
                         "installed": str(installed_version),
                         "available": str(catalog_version),
                         "download_url": ext_info.get("download_url"),
+                        "catalog_name": ext_info.get("_catalog_name"),
                     }
                 )
             else:
@@ -2276,7 +2285,11 @@ def extension_update(
                     manager.remove(extension_id, keep_config=True)
 
                     # 8. Install new version
-                    _ = manager.install_from_zip(archive_path, speckit_version)
+                    _ = manager.install_from_zip(
+                        archive_path,
+                        speckit_version,
+                        catalog_name=update["catalog_name"],
+                    )
 
                     # Restore user config files from backup after successful install.
                     new_extension_dir = manager.extensions_dir / extension_id

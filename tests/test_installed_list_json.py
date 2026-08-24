@@ -117,6 +117,135 @@ def test_preset_list_json_defaults_legacy_source_and_author(tmp_path, monkeypatc
     assert item["source"] == {"kind": "local"}
 
 
+def test_catalog_install_producers_persist_structured_source_and_keep_local_default(
+    tmp_path, monkeypatch
+):
+    project = _project(tmp_path)
+    source_project = tmp_path / "sources"
+    (source_project / ".specify").mkdir(parents=True)
+    _preset(source_project, "catalog-preset")
+    _preset(source_project, "local-preset")
+    _extension(source_project, "catalog-extension")
+    _extension(source_project, "local-extension")
+    for extension_id in ("catalog-extension", "local-extension"):
+        manifest_path = (
+            source_project / ".specify" / "extensions" / extension_id / "extension.yml"
+        )
+        manifest_path.write_text(
+            manifest_path.read_text(encoding="utf-8").replace(
+                "speckit.example-ext.example", f"speckit.{extension_id}.example"
+            ),
+            encoding="utf-8",
+        )
+
+    preset_manager = PresetManager(project)
+    preset_manager.install_from_directory(
+        source_project / ".specify" / "presets" / "catalog-preset",
+        "1.0.0",
+        catalog_name="  preset-catalog  ",
+    )
+    preset_manager.install_from_directory(
+        source_project / ".specify" / "presets" / "local-preset",
+        "1.0.0",
+        catalog_name="  ",
+    )
+
+    extension_manager = ExtensionManager(project)
+    extension_manager.install_from_directory(
+        source_project / ".specify" / "extensions" / "catalog-extension",
+        "1.0.0",
+        register_commands=False,
+        catalog_name="  extension-catalog  ",
+    )
+    extension_manager.install_from_directory(
+        source_project / ".specify" / "extensions" / "local-extension",
+        "1.0.0",
+        register_commands=False,
+        catalog_name="  ",
+    )
+
+    assert preset_manager.registry.get("catalog-preset")["source"] == {
+        "kind": "catalog",
+        "catalog": "preset-catalog",
+    }
+    assert preset_manager.registry.get("local-preset")["source"] == "local"
+    assert extension_manager.registry.get("catalog-extension")["source"] == {
+        "kind": "catalog",
+        "catalog": "extension-catalog",
+    }
+    assert extension_manager.registry.get("local-extension")["source"] == "local"
+
+    monkeypatch.chdir(project)
+    presets = _json_result(runner.invoke(app, ["preset", "list", "--json"]))
+    extensions = _json_result(runner.invoke(app, ["extension", "list", "--json"]))
+    assert {item["id"]: item["source"] for item in presets} == {
+        "catalog-preset": {"kind": "catalog", "catalog": "preset-catalog"},
+        "local-preset": {"kind": "local"},
+    }
+    assert {item["id"]: item["source"] for item in extensions} == {
+        "catalog-extension": {"kind": "catalog", "catalog": "extension-catalog"},
+        "local-extension": {"kind": "local"},
+    }
+
+
+def test_preset_json_order_uses_priority_then_id_despite_install_order(tmp_path, monkeypatch):
+    project = _project(tmp_path)
+    source_project = tmp_path / "sources"
+    (source_project / ".specify").mkdir(parents=True)
+    for preset_id in ("zebra", "later", "alpha"):
+        _preset(source_project, preset_id)
+
+    manager = PresetManager(project)
+    manager.install_from_directory(
+        source_project / ".specify" / "presets" / "zebra", "1.0.0", priority=5
+    )
+    manager.install_from_directory(
+        source_project / ".specify" / "presets" / "later", "1.0.0", priority=9
+    )
+    manager.install_from_directory(
+        source_project / ".specify" / "presets" / "alpha", "1.0.0", priority=5
+    )
+
+    monkeypatch.chdir(project)
+    payload = _json_result(runner.invoke(app, ["preset", "list", "--json"]))
+    assert [item["id"] for item in payload] == ["alpha", "zebra", "later"]
+
+
+def test_extension_json_order_uses_priority_then_id_despite_install_order(
+    tmp_path, monkeypatch
+):
+    project = _project(tmp_path)
+    source_project = tmp_path / "sources"
+    (source_project / ".specify").mkdir(parents=True)
+    for extension_id in ("zebra", "later", "alpha"):
+        _extension(source_project, extension_id)
+        manifest_path = (
+            source_project / ".specify" / "extensions" / extension_id / "extension.yml"
+        )
+        manifest_path.write_text(
+            manifest_path.read_text(encoding="utf-8").replace(
+                "speckit.example-ext.example", f"speckit.{extension_id}.example"
+            ),
+            encoding="utf-8",
+        )
+
+    manager = ExtensionManager(project)
+    for extension_id, priority in (("zebra", 5), ("later", 9), ("alpha", 5)):
+        manager.install_from_directory(
+            source_project / ".specify" / "extensions" / extension_id,
+            "1.0.0",
+            register_commands=False,
+            priority=priority,
+        )
+    manager.registry.update("zebra", {"enabled": False})
+
+    monkeypatch.chdir(project)
+    payload = _json_result(runner.invoke(app, ["extension", "list", "--json"]))
+
+    assert [item["id"] for item in payload] == ["alpha", "zebra", "later"]
+    assert payload[1]["enabled"] is False
+
+
 def test_extension_list_json_is_installed_only_for_available_and_all(tmp_path, monkeypatch):
     project = _project(tmp_path)
     _extension(project, "example-ext")

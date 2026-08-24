@@ -292,6 +292,7 @@ def preset_add(
                         archive_path,
                         speckit_version,
                         priority,
+                        catalog_name=pack_info.get("_catalog_name"),
                     )
                     console.print(f"[green]✓[/green] Preset '{manifest.name}' v{manifest.version} installed (priority {priority})")
                 finally:
