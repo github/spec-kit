@@ -75,7 +75,7 @@ def _extension_data(
     if with_commands:
         data["provides"]["commands"] = [
             {
-                "name": f"speckit.{ext_id.replace('-', '')}.branch",
+                "name": f"speckit.{ext_id}.branch",
                 "file": "commands/branch.md",
                 "description": "Fixture command",
             }
@@ -147,8 +147,8 @@ class TestDuplicateHooks:
         data = _extension_data(
             hooks={
                 "before_plan": [
-                    {"command": "speckit.speckitgit.branch", "priority": 10},
-                    {"command": "speckit.speckitgit.branch", "priority": 20},
+                    {"command": "speckit.speckit-git.branch", "priority": 10},
+                    {"command": "speckit.speckit-git.branch", "priority": 20},
                 ]
             }
         )
@@ -156,10 +156,10 @@ class TestDuplicateHooks:
         hooks = [c for c in manifest.iter_contributions() if c["kind"] == "hook"]
         assert len(hooks) == 1
         assert hooks[0]["priority"] == 20
-        assert hooks[0]["id"] == "extension:speckit-git:hook:before_plan:speckit.speckitgit.branch"
+        assert hooks[0]["id"] == "extension:speckit-git:hook:before_plan:speckit.speckit-git.branch"
         assert (
             manifest.contribution_id(
-                "hook", "before_plan:speckit.speckitgit.branch"
+                "hook", "before_plan:speckit.speckit-git.branch"
             )
             == hooks[0]["id"]
         )
@@ -207,7 +207,7 @@ class TestComponentGuard:
 
     def test_extension_hook_event_name_with_colon_rejected(self, tmp_path):
         data = _extension_data(
-            hooks={"before:plan": {"command": "speckit.speckitgit.branch"}}
+            hooks={"before:plan": {"command": "speckit.speckit-git.branch"}}
         )
         with pytest.raises(ValidationError) as exc_info:
             ExtensionManifest(_write_manifest(tmp_path, data, "extension.yml"))
@@ -265,16 +265,16 @@ class TestContributionSurface:
 
     def test_extension_iter_contributions_matrix(self, tmp_path):
         data = _extension_data(
-            hooks={"before_specify": {"command": "speckit.speckitgit.branch"}}
+            hooks={"before_specify": {"command": "speckit.speckit-git.branch"}}
         )
         manifest = ExtensionManifest(_write_manifest(tmp_path, data, "extension.yml"))
         entries = manifest.iter_contributions()
         kinds = {e["kind"]: e for e in entries}
-        assert kinds["command"]["id"] == "extension:speckit-git:command:speckit.speckitgit.branch"
+        assert kinds["command"]["id"] == "extension:speckit-git:command:speckit.speckit-git.branch"
         assert kinds["template"]["id"] == "extension:speckit-git:template:pr-body"
         assert kinds["script"]["id"] == "extension:speckit-git:script:post-commit"
-        assert kinds["hook"]["id"] == "extension:speckit-git:hook:before_specify:speckit.speckitgit.branch"
-        assert kinds["hook"]["name"] == "before_specify:speckit.speckitgit.branch"
+        assert kinds["hook"]["id"] == "extension:speckit-git:hook:before_specify:speckit.speckit-git.branch"
+        assert kinds["hook"]["name"] == "before_specify:speckit.speckit-git.branch"
 
     def test_contribution_id_lookup(self, tmp_path):
         manifest = PresetManifest(_write_manifest(tmp_path, _preset_data(), "preset.yml"))
@@ -414,7 +414,7 @@ class TestLookupIdRoundTrip:
 class TestNoPersistence:
     def test_no_id_written_to_manifest_files(self, tmp_path):
         data = _extension_data(
-            hooks={"before_specify": {"command": "speckit.speckitgit.branch"}}
+            hooks={"before_specify": {"command": "speckit.speckit-git.branch"}}
         )
         manifest_path = _write_manifest(tmp_path, data, "extension.yml")
         # Read identifiers to force the derivation code path.

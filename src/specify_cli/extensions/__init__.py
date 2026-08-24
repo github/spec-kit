@@ -240,6 +240,71 @@ def collapse_hook_event_entries(event_name: str, hook_config: Any) -> List[Dict[
     return list(collapsed.values())
 
 
+def _collect_extension_command_names(
+    extension_id: str, commands: List[Dict[str, Any]]
+) -> Dict[str, str]:
+    """Collect and validate command and alias names declared by a manifest."""
+    if extension_id in CORE_COMMAND_NAMES:
+        raise ValidationError(
+            f"Extension ID '{extension_id}' conflicts with core command namespace '{extension_id}'"
+        )
+
+    declared_names: Dict[str, str] = {}
+
+    for cmd in commands:
+        primary_name = cmd["name"]
+        aliases = cmd.get("aliases", [])
+
+        if aliases is None:
+            aliases = []
+        if not isinstance(aliases, list):
+            raise ValidationError(
+                f"Aliases for command '{primary_name}' must be a list"
+            )
+
+        for kind, name in [("command", primary_name)] + [
+            ("alias", alias) for alias in aliases
+        ]:
+            if not isinstance(name, str):
+                raise ValidationError(
+                    f"{kind.capitalize()} for command '{primary_name}' must be a string"
+                )
+
+            path_reason = relative_extension_path_violation(name)
+            if path_reason:
+                raise ValidationError(f"Invalid {kind} {name!r}: {path_reason}")
+
+            # Enforce canonical pattern only for primary command names;
+            # aliases are free-form to preserve community extension compat.
+            if kind == "command":
+                match = EXTENSION_COMMAND_NAME_PATTERN.match(name)
+                if match is None:
+                    raise ValidationError(
+                        f"Invalid {kind} '{name}': "
+                        "must follow pattern 'speckit.{extension}.{command}'"
+                    )
+
+                namespace = match.group(1)
+                if namespace != extension_id:
+                    raise ValidationError(
+                        f"{kind.capitalize()} '{name}' must use extension namespace '{extension_id}'"
+                    )
+
+                if namespace in CORE_COMMAND_NAMES:
+                    raise ValidationError(
+                        f"{kind.capitalize()} '{name}' conflicts with core command namespace '{namespace}'"
+                    )
+
+            if name in declared_names:
+                raise ValidationError(
+                    f"Duplicate command or alias '{name}' in extension manifest"
+                )
+
+            declared_names[name] = kind
+
+    return declared_names
+
+
 @dataclass
 class CatalogEntry(BaseCatalogEntry):
     """Represents a single catalog entry in the catalog stack."""
@@ -558,6 +623,8 @@ class ExtensionManifest:
                         f"Invalid alias {alias!r} for command "
                         f"'{cmd['name']}': {alias_reason}"
                     )
+
+        _collect_extension_command_names(ext["id"], commands)
 
         # Rewrite any hook command references that pointed at a renamed command or
         # an alias-form ref (ext.cmd → speckit.ext.cmd).  Always emit a warning when
@@ -1235,67 +1302,7 @@ class ExtensionManager:
         Raises:
             ValidationError: If any declared name is invalid
         """
-        if manifest.id in CORE_COMMAND_NAMES:
-            raise ValidationError(
-                f"Extension ID '{manifest.id}' conflicts with core command namespace '{manifest.id}'"
-            )
-
-        declared_names: Dict[str, str] = {}
-
-        for cmd in manifest.commands:
-            primary_name = cmd["name"]
-            aliases = cmd.get("aliases", [])
-
-            if aliases is None:
-                aliases = []
-            if not isinstance(aliases, list):
-                raise ValidationError(
-                    f"Aliases for command '{primary_name}' must be a list"
-                )
-
-            for kind, name in [("command", primary_name)] + [
-                ("alias", alias) for alias in aliases
-            ]:
-                if not isinstance(name, str):
-                    raise ValidationError(
-                        f"{kind.capitalize()} for command '{primary_name}' must be a string"
-                    )
-
-                path_reason = relative_extension_path_violation(name)
-                if path_reason:
-                    raise ValidationError(
-                        f"Invalid {kind} {name!r}: {path_reason}"
-                    )
-
-                # Enforce canonical pattern only for primary command names;
-                # aliases are free-form to preserve community extension compat.
-                if kind == "command":
-                    match = EXTENSION_COMMAND_NAME_PATTERN.match(name)
-                    if match is None:
-                        raise ValidationError(
-                            f"Invalid {kind} '{name}': "
-                            "must follow pattern 'speckit.{extension}.{command}'"
-                        )
-
-                    namespace = match.group(1)
-                    if namespace != manifest.id:
-                        raise ValidationError(
-                            f"{kind.capitalize()} '{name}' must use extension namespace '{manifest.id}'"
-                        )
-
-                    if namespace in CORE_COMMAND_NAMES:
-                        raise ValidationError(
-                            f"{kind.capitalize()} '{name}' conflicts with core command namespace '{namespace}'"
-                        )
-
-                if name in declared_names:
-                    raise ValidationError(
-                        f"Duplicate command or alias '{name}' in extension manifest"
-                    )
-
-                declared_names[name] = kind
-
-        return declared_names
+        return _collect_extension_command_names(manifest.id, manifest.commands)
 
     def _get_installed_command_name_map(
         self,

@@ -635,6 +635,51 @@ class TestExtensionManifest:
         assert manifest.commands[0]["aliases"] == ["speckit.hello"]
         assert manifest.warnings == []
 
+    def test_duplicate_primary_command_rejected_at_manifest_load(
+        self, temp_dir, valid_manifest_data
+    ):
+        """Duplicate primary command names are rejected before install validation."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"].append(
+            {
+                "name": "speckit.test-ext.hello",
+                "file": "commands/hello-again.md",
+            }
+        )
+        manifest_path = temp_dir / "extension.yml"
+        manifest_path.write_text(yaml.safe_dump(valid_manifest_data))
+
+        with pytest.raises(
+            ValidationError,
+            match="Duplicate command or alias 'speckit.test-ext.hello'",
+        ):
+            ExtensionManifest(manifest_path)
+
+    def test_primary_command_alias_collision_rejected_at_manifest_load(
+        self, temp_dir, valid_manifest_data
+    ):
+        """A primary name cannot duplicate an alias from another command."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = [
+            "speckit.test-ext.goodbye"
+        ]
+        valid_manifest_data["provides"]["commands"].append(
+            {
+                "name": "speckit.test-ext.goodbye",
+                "file": "commands/goodbye.md",
+            }
+        )
+        manifest_path = temp_dir / "extension.yml"
+        manifest_path.write_text(yaml.safe_dump(valid_manifest_data))
+
+        with pytest.raises(
+            ValidationError,
+            match="Duplicate command or alias 'speckit.test-ext.goodbye'",
+        ):
+            ExtensionManifest(manifest_path)
+
     def test_valid_command_name_has_no_warnings(self, temp_dir, valid_manifest_data):
         """Test that a correctly-named command produces no warnings."""
         import yaml
