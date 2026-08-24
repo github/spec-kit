@@ -5073,6 +5073,14 @@ class PresetResolver:
             if self._is_safe_registry_id(pack_id)
         ]
 
+    def iter_presets_by_priority(self) -> List[tuple[str, dict]]:
+        """Return preset directories in resolver lookup order.
+
+        Each entry is ``(pack_id, metadata)`` where ``pack_id`` is the registry
+        key/directory name used in lookup identifiers.
+        """
+        return self._get_all_presets_by_priority()
+
     def _manifest_declared_template(
         self, pack_dir: Path, template_name: str, template_type: str
     ) -> tuple[dict | None, Path | None]:

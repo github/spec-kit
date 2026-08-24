@@ -842,8 +842,7 @@ class ArtifactCatalog:
 
         # -- Presets: the registry is authoritative, no unregistered fallback.
         preset_manager = PresetManager(self.project_root)
-        for entry in sorted(preset_manager.list_installed(), key=lambda e: e["id"]):
-            pack_id = entry["id"]
+        for pack_id, _metadata in resolver.iter_presets_by_priority():
             pack_dir = preset_manager.presets_dir / pack_id
             manifest = preset_manager.get_pack(pack_id)
             yield from self._iter_pack_contributions(

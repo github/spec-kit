@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from specify_cli.artifacts import ArtifactCatalog
 from specify_cli.presets import PresetResolver
@@ -124,6 +125,49 @@ class TestResolverParity:
 
         assert winner == "body-from-manifest"
         assert active["lookupId"] == "preset:test-manifest-parity:command:speckit.manifest-declared"
+
+    def test_preset_manifest_id_mismatch_uses_registry_key(self, spec_kit_project: Path):
+        pack = install_preset(
+            spec_kit_project,
+            "renamed-preset",
+            {
+                "commands": [
+                    {
+                        "name": "speckit.preset-renamed.hello",
+                        "file": "commands/actual.md",
+                        "description": "manifest contribution",
+                    }
+                ]
+            },
+        )
+        manifest_path = pack / "preset.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["preset"]["id"] = "original-preset"
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        (pack / "commands").mkdir()
+        (pack / "commands" / "actual.md").write_text(
+            "body-from-renamed-preset", encoding="utf-8"
+        )
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        assert "command:speckit.preset-renamed.hello" in {
+            row.id for row in catalog.list_artifacts()
+        }
+        info = catalog.get_artifact_info("speckit.preset-renamed.hello")
+        active = next(layer for layer in info["stack"] if layer["active"])
+        winner = PresetResolver(spec_kit_project).resolve_content(
+            "speckit.preset-renamed.hello", template_type="command"
+        )
+
+        assert winner == "body-from-renamed-preset"
+        assert active["lookupId"] == (
+            "preset:renamed-preset:command:speckit.preset-renamed.hello"
+        )
+        assert (
+            PresetResolver(spec_kit_project)
+            .collect_all_layers("speckit.preset-renamed.hello", "command")[0]["lookupId"]
+            == "preset:renamed-preset:command:speckit.preset-renamed.hello"
+        )
 
 
 class TestJSONShape:
