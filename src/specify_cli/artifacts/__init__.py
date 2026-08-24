@@ -387,14 +387,11 @@ def _preset_display_name(pack_dir: Path, pack_id: str) -> str:
         return pack_id
     if not isinstance(data, dict):
         return pack_id
-    metadata = data.get("metadata")
-    if isinstance(metadata, dict):
-        display = metadata.get("name")
+    preset = data.get("preset")
+    if isinstance(preset, dict):
+        display = preset.get("name")
         if isinstance(display, str) and display:
             return display
-    display = data.get("name")
-    if isinstance(display, str) and display:
-        return display
     return pack_id
 
 
