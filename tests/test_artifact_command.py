@@ -8,6 +8,7 @@ Typer's ``CliRunner``.
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -248,6 +249,27 @@ class TestListArtifactsContract:
         assert catalog.get_artifact_info("legacy-script")["stack"][0]["lookupId"] == (
             "core:_:script:legacy-script"
         )
+
+    @pytest.mark.skipif(os.name == "nt", reason="':' filenames are unsupported on Windows")
+    def test_skips_invalid_colon_names_in_project_local_inventory(self, spec_kit_project: Path):
+        templates_dir = spec_kit_project / ".specify" / "templates"
+        commands_dir = templates_dir / "commands"
+        scripts_dir = templates_dir / "scripts"
+        overrides_dir = templates_dir / "overrides"
+        override_scripts_dir = overrides_dir / "scripts"
+        commands_dir.mkdir(parents=True)
+        scripts_dir.mkdir(parents=True)
+        overrides_dir.mkdir(parents=True)
+        override_scripts_dir.mkdir(parents=True)
+
+        (templates_dir / "bad:template.md").write_text("---\ndescription: bad\n---\n", encoding="utf-8")
+        (commands_dir / "bad:command.md").write_text("---\ndescription: bad\n---\n", encoding="utf-8")
+        (scripts_dir / "bad:script.sh").write_text("# bad\n", encoding="utf-8")
+        (overrides_dir / "bad:override.md").write_text("override", encoding="utf-8")
+        (override_scripts_dir / "bad:override-script.sh").write_text("# bad\n", encoding="utf-8")
+
+        artifacts = ArtifactCatalog(spec_kit_project).list_artifacts()
+        assert all(":" not in artifact.name for artifact in artifacts)
 
     def test_preserves_prefixed_project_local_command_names(self, spec_kit_project: Path):
         commands_dir = spec_kit_project / ".specify" / "templates" / "commands"
