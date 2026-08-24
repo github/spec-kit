@@ -903,15 +903,15 @@ Project-local overrides in `.specify/templates/overrides/` are a resolver-only c
 
 `ExtensionManifest.iter_contributions()` yields dicts of the form `{layer, sourceId, kind, name, id, ...author-declared fields}`; each entry's `id` is the computed identifier. `ExtensionManifest.contribution_id(kind, name)` returns the id for a single lookup, or `None` if no contribution matches. `PresetManifest` exposes the same two methods.
 
-`PresetResolver.collect_all_layers()` returns layer dicts that include a `lookupId` field for every layer type (`project override`, preset, extension, core, and bundled core).
+`PresetResolver.collect_all_layers()` returns layer dicts that include a `lookupId` field for every layer type (`project override`, preset, extension, core, and bundled core). Resolver `lookupId` values identify the layer by the resolver's registry key or directory name, which can differ from the manifest-declared source id used by `iter_contributions()`.
 
 ### Determinism guarantees
 
-Identifier derivation reads only the in-memory declared manifest content. No filesystem paths, no `os.environ`, no timestamps, and no file-content hashes contribute to any id. Copying an extension or preset to a different machine (or renaming its directory, or touching its files) does not change the identifiers it produces.
+Manifest contribution identifier derivation reads only the in-memory declared manifest content. No filesystem paths, no `os.environ`, no timestamps, and no file-content hashes contribute to those manifest ids. Copying an extension or preset to a different machine (or touching its files) does not change the identifiers it produces. Resolver `lookupId` values are stack identifiers, not manifest contribution ids: for example, an unregistered extension's directory name is the resolver source id, so renaming that directory changes its `lookupId`.
 
 ### Opacity guidance
 
-Identifiers are stable, but treat them as **opaque strings** in stored data (registries, cache files, external tooling). Parse them with the helpers in `specify_cli._identifier` (`derive_named_id`, `derive_hook_id`) rather than by string-splitting on `:` — the discriminator suffix and future grammar extensions may otherwise catch you out.
+Identifiers are stable, but treat them as **opaque strings** in stored data (registries, cache files, external tooling). Do not parse them by string-splitting on `:` — the discriminator suffix and future grammar extensions may otherwise catch you out. If you only need to classify a stack entry's layer, use `layer_kind_from_lookup_id`; `derive_named_id` and `derive_hook_id` construct new identifiers rather than parsing existing ones.
 
 
 

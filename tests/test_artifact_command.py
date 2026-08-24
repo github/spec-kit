@@ -210,7 +210,11 @@ class TestListArtifactsContract:
             encoding="utf-8",
         )
 
-        info = ArtifactCatalog(spec_kit_project).get_artifact_info("speckit.original.hello")
+        catalog = ArtifactCatalog(spec_kit_project)
+        assert "command:speckit.original.hello" in {
+            row.id for row in catalog.list_artifacts()
+        }
+        info = catalog.get_artifact_info("speckit.original.hello")
         assert info["stack"][0]["lookupId"] == "extension:renamed:command:speckit.original.hello"
         assert (
             PresetResolver(spec_kit_project)
