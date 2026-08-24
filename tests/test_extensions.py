@@ -968,6 +968,30 @@ provides:
         lifted = [w for w in manifest.warnings if "updated to canonical form" in w]
         assert len(lifted) == 2
 
+    def test_duplicate_hook_entries_detected_after_command_normalization(
+        self,
+        temp_dir,
+        valid_manifest_data,
+    ):
+        """Equivalent hook entries are rejected after command refs canonicalize."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"][0]["name"] = "speckit.hello"
+        valid_manifest_data["hooks"]["after_tasks"] = [
+            {"command": "speckit.hello", "optional": True},
+            {"command": "speckit.test-ext.hello", "optional": True},
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(
+            ValidationError,
+            match="Duplicate hook entries for event 'after_tasks' command 'speckit.test-ext.hello'",
+        ):
+            ExtensionManifest(manifest_path)
+
     def test_hook_empty_list_rejected(self, temp_dir, valid_manifest_data):
         """An empty list for a hook event is rejected rather than silently
         registering nothing."""
