@@ -41,6 +41,8 @@ src/specify_cli/integrations/
 │   └── __init__.py
 ├── copilot/               # Example: IntegrationBase subclass (custom setup)
 │   └── __init__.py
+├── docker_agent/          # Example: Docker Agent SkillsIntegration subclass
+│   └── __init__.py
 └── ...                    # One subpackage per supported agent
 ```
 

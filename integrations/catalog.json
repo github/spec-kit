@@ -102,6 +102,15 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli", "skills"]
     },
+    "docker-agent": {
+      "id": "docker-agent",
+      "name": "Docker Agent",
+      "version": "1.0.0",
+      "description": "Docker Agent skills-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "skills", "docker"]
+    },
     "qwen": {
       "id": "qwen",
       "name": "Qwen Code",
