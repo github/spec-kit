@@ -4,9 +4,9 @@ Every command / template / script / hook contribution surfaced by a preset or
 extension manifest exposes a computed ``id`` derived from author-declared data
 only, and every layer of a resolved artifact stack exposes a matching
 ``lookupId``. The scenarios below cover: the identifier grammar across every
-``layer x kind`` combination, duplicate hook collapse behavior, cross-process
-byte-stability, path/mtime independence, and the additive-only shape guarantee
-for the enriched contribution dicts.
+``layer x kind`` combination, duplicate hook collapse behavior, component
+validation, contribution lookup, resolver ``lookupId`` round-trips, and
+non-persistence of computed identifiers.
 """
 
 from __future__ import annotations
