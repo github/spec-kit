@@ -380,6 +380,31 @@ class TestLookupIdRoundTrip:
         assert preset_layer["lookupId"] == manifest.contribution_id("template", "spec-template")
         assert preset_layer["lookupId"] == f"preset:{pack_id}:template:spec-template"
 
+    def test_extension_layer_uses_manifest_id_when_directory_name_differs(self, tmp_path):
+        project = _make_project(tmp_path)
+        ext_dir = project / ".specify" / "extensions" / "local-copy"
+        (ext_dir / "templates").mkdir(parents=True)
+        (ext_dir / "templates" / "pr-body.md").write_text("extension", encoding="utf-8")
+        manifest_path = _write_manifest(
+            ext_dir,
+            _extension_data(
+                ext_id="real-id",
+                with_commands=False,
+                with_scripts=False,
+            ),
+            "extension.yml",
+        )
+
+        resolver = PresetResolver(project)
+        layers = resolver.collect_all_layers("pr-body", "template")
+        extension_layer = next(
+            layer for layer in layers if layer["source"] == "extension:local-copy (unregistered)"
+        )
+        manifest = ExtensionManifest(manifest_path)
+
+        assert extension_layer["lookupId"] == manifest.contribution_id("template", "pr-body")
+        assert extension_layer["lookupId"] == "extension:real-id:template:pr-body"
+
 
 # ---------------------------------------------------------------------------
 # Identifiers never persisted
