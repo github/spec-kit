@@ -680,6 +680,19 @@ class TestManifestPathPortability:
 
         assert _find_enclosing_manifest(source, project_root) is None
 
+    def test_enclosing_manifest_search_includes_project_root(self, tmp_path: Path):
+        from specify_cli.artifacts import _find_enclosing_manifest
+
+        project_root = tmp_path / "proj"
+        source_dir = project_root / ".specify" / "templates"
+        source_dir.mkdir(parents=True)
+        source = source_dir / "legacy-template.md"
+        source.write_text("body", encoding="utf-8")
+        manifest = project_root / "preset.yml"
+        manifest.write_text("id: root-pack\n", encoding="utf-8")
+
+        assert _find_enclosing_manifest(source, project_root) == manifest
+
 
 # ---------------------------------------------------------------------------
 # Existing module-import placeholder retained for import safety.
