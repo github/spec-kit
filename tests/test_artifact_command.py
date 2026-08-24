@@ -618,6 +618,23 @@ class TestConventionDiscovery:
         info = catalog.get_artifact_info("local-template")
         assert info["stack"][0]["layer"] == "project"
 
+    def test_unregistered_preset_template_without_manifest(self, spec_kit_project: Path):
+        pack_dir = _install_preset(spec_kit_project, "legacy-preset", provides={"templates": []})
+        preset_templates_dir = pack_dir / "templates"
+        preset_templates_dir.mkdir()
+        (preset_templates_dir / "legacy-preset-template.md").write_text(
+            "body", encoding="utf-8"
+        )
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        assert any(
+            row.id == "template:legacy-preset-template" for row in catalog.list_artifacts()
+        )
+        info = catalog.get_artifact_info("legacy-preset-template")
+        assert info["stack"][0]["lookupId"] == (
+            "preset:legacy-preset:template:legacy-preset-template"
+        )
+
     def test_command_override_is_not_duplicated_as_template(self, spec_kit_project: Path):
         ext_dir = spec_kit_project / ".specify" / "extensions" / "legacy" / "commands"
         ext_dir.mkdir(parents=True)

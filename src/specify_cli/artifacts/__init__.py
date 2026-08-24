@@ -729,13 +729,11 @@ class ArtifactCatalog:
                         lookup_id = derive_named_id(layer, pack_dir.name, kind, name)
                         if lookup_id in _lookup_ids(kind, name):
                             yield kind, name, description
-                if tier != "extensions":
-                    continue
-                # Convention fallback: an extension file placed at the
+                # Convention fallback: a preset/extension file placed at the
                 # conventional path resolves whether or not the manifest
                 # declares it, so it belongs in the inventory as well.
                 for kind, name in _iter_convention_contributions(pack_dir):
-                    lookup_id = derive_named_id("extension", pack_dir.name, kind, name)
+                    lookup_id = derive_named_id(layer, pack_dir.name, kind, name)
                     if lookup_id in _lookup_ids(kind, name):
                         yield kind, name, ""
 
