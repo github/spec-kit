@@ -224,7 +224,7 @@ Every command, template, and script contributed by a preset (or an extension, or
 | --- | --- | --- |
 | `core` | `_` (literal underscore) | Placeholder because core has no manifest id |
 | `preset` | The preset pack's `id` | The manifest's `preset.id` field — the same value used by `PresetManifest.id`, the install directory, registries, and resolver layer metadata |
-| `extension` | The extension's `id` | The manifest's `extension.id` field — the same value used by `ExtensionManifest.id`, the install directory, registries, and hook metadata |
+| `extension` | The extension's `id` | The manifest's `extension.id` field — the value used by `ExtensionManifest.id` and manifest-backed `lookupId` values; the extension directory or registry key may differ for unregistered local copies |
 
 Preset contribution identifiers cover named artifacts (`command`, `template`, and `script`). Extension hooks are treated separately because their lookup name is derived from the hook event and command instead of a single `name` field.
 

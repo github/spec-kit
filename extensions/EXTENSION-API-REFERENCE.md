@@ -877,7 +877,7 @@ Named contributions (commands, templates, scripts) follow:
 - `kind` is one of `command`, `template`, `script`, or `hook`.
 - `name` is the contribution's declared `name` field.
 
-`sourceId` is the source's own stable system identifier: `_` for the manifest-less core layer, `preset.id` from `preset.yml` for presets, and `extension.id` from `extension.yml` for extensions. It is the same string used elsewhere to refer to that preset or extension (install directories, registries, resolver metadata, and hook metadata), which makes identifiers stable join keys back to their originating source.
+`sourceId` is the source's own stable manifest identifier: `_` for the manifest-less core layer, `preset.id` from `preset.yml` for presets, and `extension.id` from `extension.yml` for extensions. Manifest-backed extension contributions and resolver `lookupId` values use `extension.id` even when an unregistered local copy has a different directory or registry key, which makes identifiers stable join keys back to their originating manifest.
 
 Hook contributions use a compound name-component built from the event and command:
 
