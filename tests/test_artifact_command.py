@@ -411,6 +411,13 @@ class TestErrors:
     def test_resolution_error_message(self):
         assert ArtifactResolutionError().message == "artifact resolution failed"
 
+    def test_info_rejects_corrupt_extension_registry(self, spec_kit_project: Path):
+        registry = spec_kit_project / ".specify" / "extensions" / ".registry"
+        registry.write_text("{invalid", encoding="utf-8")
+
+        with pytest.raises(ArtifactResolutionError):
+            ArtifactCatalog(spec_kit_project).get_artifact_info("command:speckit.constitution")
+
 
 class TestKindHint:
     def test_kind_flag_disambiguates(self, spec_kit_project: Path):
