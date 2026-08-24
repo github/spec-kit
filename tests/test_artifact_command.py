@@ -22,7 +22,10 @@ from specify_cli.artifacts import (
     ArtifactNotFoundError,
     ArtifactResolutionError,
     NotASpecKitProjectError,
+    _derive_manifest_path,
+    _preset_display_name,
 )
+from specify_cli.extensions import ExtensionRegistry
 
 
 ERROR_REGEX = re.compile(
@@ -131,8 +134,6 @@ class TestListArtifactsContract:
     def test_excludes_disabled_and_unusable_manifest_contributions(
         self, spec_kit_project: Path
     ):
-        from specify_cli.extensions import ExtensionRegistry
-
         extensions_dir = spec_kit_project / ".specify" / "extensions"
         for extension_id, artifact_name, enabled, file_name in (
             (
@@ -783,8 +784,6 @@ class TestManifestPathPortability:
     """`_derive_manifest_path` must never leak an absolute host path."""
 
     def test_preset_manifest_path_is_repo_relative(self, tmp_path: Path):
-        from specify_cli.artifacts import _derive_manifest_path
-
         project_root = tmp_path / "proj"
         pack_dir = project_root / ".specify" / "presets" / "my-pack"
         pack_dir.mkdir(parents=True)
@@ -800,8 +799,6 @@ class TestManifestPathPortability:
         )
 
     def test_extension_manifest_path_is_repo_relative(self, tmp_path: Path):
-        from specify_cli.artifacts import _derive_manifest_path
-
         project_root = tmp_path / "proj"
         ext_dir = project_root / ".specify" / "extensions" / "my-ext"
         ext_dir.mkdir(parents=True)
@@ -817,8 +814,6 @@ class TestManifestPathPortability:
         )
 
     def test_missing_manifest_file_is_none(self, tmp_path: Path):
-        from specify_cli.artifacts import _derive_manifest_path
-
         project_root = tmp_path / "proj"
         pack_dir = project_root / ".specify" / "presets" / "my-pack"
         pack_dir.mkdir(parents=True)
@@ -830,8 +825,6 @@ class TestManifestPathPortability:
         assert _derive_manifest_path(layer, project_root) is None
 
     def test_core_and_project_layers_have_no_manifest(self, tmp_path: Path):
-        from specify_cli.artifacts import _derive_manifest_path
-
         project_root = tmp_path / "proj"
         project_root.mkdir()
 
@@ -861,8 +854,6 @@ provides:
 """
 
     def test_reads_validated_preset_name(self, tmp_path: Path):
-        from specify_cli.artifacts import _preset_display_name
-
         pack_dir = tmp_path / "pack"
         pack_dir.mkdir()
         (pack_dir / "preset.yml").write_text(self._VALID_MANIFEST, encoding="utf-8")
@@ -871,8 +862,6 @@ provides:
 
     def test_falls_back_to_pack_id_when_manifest_fails_validation(self, tmp_path: Path):
         """A legacy flat manifest with no ``preset:`` section fails validation."""
-        from specify_cli.artifacts import _preset_display_name
-
         pack_dir = tmp_path / "pack"
         pack_dir.mkdir()
         (pack_dir / "preset.yml").write_text("id: pack\nname: Flat Name\n", encoding="utf-8")
@@ -880,8 +869,6 @@ provides:
         assert _preset_display_name(pack_dir, "pack") == "pack"
 
     def test_falls_back_to_pack_id_without_manifest_file(self, tmp_path: Path):
-        from specify_cli.artifacts import _preset_display_name
-
         pack_dir = tmp_path / "pack"
         pack_dir.mkdir()
 
@@ -889,9 +876,9 @@ provides:
 
 
 # ---------------------------------------------------------------------------
-# Existing module-import placeholder retained for import safety.
+# Import safety
 # ---------------------------------------------------------------------------
 
 
-def test_module_imports():
-    from specify_cli.artifacts import ArtifactCatalog  # noqa: F401
+def test_public_api_is_importable_from_the_package_root():
+    assert ArtifactCatalog.__module__ == "specify_cli.artifacts"

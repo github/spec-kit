@@ -15,6 +15,7 @@ import pytest
 import yaml
 
 from specify_cli.artifacts import ArtifactCatalog
+from specify_cli.presets import PresetResolver
 
 
 def _install_preset(project_root: Path, pack_id: str, provides: dict, priority: int = 10) -> Path:
@@ -92,8 +93,6 @@ class TestResolverParity:
     """The ``active: true`` row must be what :meth:`resolve_content` would pick."""
 
     def test_active_layer_matches_resolver(self, spec_kit_project: Path):
-        from specify_cli.presets import PresetResolver
-
         pack = _install_preset(
             spec_kit_project,
             "test-parity",
