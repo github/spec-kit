@@ -221,6 +221,75 @@ class TestListArtifactsContract:
             "core:_:script:legacy-script"
         )
 
+    def test_project_local_command_keeps_existing_namespace(
+        self, spec_kit_project: Path
+    ):
+        """A project-local ``speckit.*.md`` must not be published as ``speckit.speckit.*``."""
+        commands_dir = spec_kit_project / ".specify" / "templates" / "commands"
+        commands_dir.mkdir(parents=True)
+        (commands_dir / "speckit.local.md").write_text(
+            "---\ndescription: Local command\n---\n", encoding="utf-8"
+        )
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        names = {row.name for row in catalog.list_artifacts() if row.kind == "command"}
+        assert "speckit.local" in names
+        assert "speckit.speckit.local" not in names
+        assert catalog.get_artifact_info("speckit.local")["stack"][0]["lookupId"] == (
+            "core:_:command:speckit.local"
+        )
+
+    def test_manifest_declared_preset_contribution_uses_manifest_description(
+        self, spec_kit_project: Path
+    ):
+        """Declared entries come from ``PresetManifest.iter_contributions()``."""
+        pack_dir = spec_kit_project / ".specify" / "presets" / "valid-pack"
+        pack_dir.mkdir(parents=True)
+        (pack_dir / "preset.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "valid-pack",
+                        "name": "Valid Pack",
+                        "version": "1.0.0",
+                        "description": "Fixture",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "declared-template",
+                                "description": "From the manifest",
+                                "file": "templates/declared-template.md",
+                            }
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (pack_dir / "templates").mkdir()
+        (pack_dir / "templates" / "declared-template.md").write_text(
+            "body", encoding="utf-8"
+        )
+        registry_path = spec_kit_project / ".specify" / "presets" / ".registry"
+        registry_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "1.0",
+                    "presets": {"valid-pack": {"version": "1.0.0", "priority": 10}},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        artifacts = {
+            row.id: row for row in ArtifactCatalog(spec_kit_project).list_artifacts()
+        }
+        assert artifacts["template:declared-template"].description == "From the manifest"
+
 
 class TestListSorting:
     """Deterministic ordering: kind first (command/template/script), then name."""
@@ -384,6 +453,34 @@ class TestKindHint:
             ArtifactCatalog(spec_kit_project).get_artifact_info(
                 "template:speckit.constitution", kind="command"
             )
+
+    @pytest.mark.parametrize(
+        "name, kind",
+        [
+            ("../../outside", "template"),
+            ("/etc/passwd", "template"),
+            ("nested/name", "script"),
+            ("Upper-Case", "template"),
+            ("speckit.constitution", "template"),
+            ("command:template:foo", "command"),
+        ],
+    )
+    def test_kind_flag_rejects_names_outside_the_grammar(
+        self, spec_kit_project: Path, name: str, kind: str
+    ):
+        """An explicit kind skips the inventory, so the name must be validated."""
+        with pytest.raises(ArtifactNotFoundError):
+            ArtifactCatalog(spec_kit_project).get_artifact_info(name, kind=kind)
+
+    def test_shorthand_rejects_names_outside_the_grammar(self, spec_kit_project: Path):
+        with pytest.raises(ArtifactNotFoundError):
+            ArtifactCatalog(spec_kit_project).get_artifact_info("template:../../outside")
+
+    def test_kind_flag_accepts_a_valid_name(self, spec_kit_project: Path):
+        info = ArtifactCatalog(spec_kit_project).get_artifact_info(
+            "speckit.constitution", kind="command"
+        )
+        assert info["kind"] == "command"
 
 
 # ---------------------------------------------------------------------------
