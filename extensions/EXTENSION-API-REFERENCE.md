@@ -913,8 +913,6 @@ Identifier derivation reads only the in-memory declared manifest content. No fil
 
 Identifiers are stable, but treat them as **opaque strings** in stored data (registries, cache files, external tooling). Parse them with the helpers in `specify_cli._identifier` (`derive_named_id`, `derive_hook_id`) rather than by string-splitting on `:` — the discriminator suffix and future grammar extensions may otherwise catch you out.
 
-
-
 ```text
 .specify/
 ├── extensions/
