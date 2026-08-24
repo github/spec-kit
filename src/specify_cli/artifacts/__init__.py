@@ -351,10 +351,9 @@ def _derive_manifest_path(layer: dict[str, Any], project_root: Path) -> str | No
 
     Uses ``as_posix()`` so the string is stable across Windows and POSIX —
     a caller comparing snapshots between operating systems gets the same
-    value on both. If the enclosing manifest is found outside
-    ``project_root`` (e.g. an unbounded parent walk from a convention-only
-    layer escapes the project), ``None`` is returned rather than an
-    absolute host path, preserving the repo-relative contract.
+    value on both. The enclosing-manifest search is bounded at
+    ``project_root`` so convention-only layers cannot walk out of the
+    project and serialize absolute host paths.
     """
     lookup_id = layer.get("lookupId", "")
     if lookup_id.startswith("core:"):
@@ -362,7 +361,7 @@ def _derive_manifest_path(layer: dict[str, Any], project_root: Path) -> str | No
     source = layer.get("path")
     if not isinstance(source, Path):
         return None
-    manifest = _find_enclosing_manifest(source)
+    manifest = _find_enclosing_manifest(source, project_root)
     if manifest is None:
         return None
     try:
@@ -372,9 +371,14 @@ def _derive_manifest_path(layer: dict[str, Any], project_root: Path) -> str | No
     return rel.as_posix()
 
 
-def _find_enclosing_manifest(path: Path) -> Path | None:
-    """Walk parents of ``path`` looking for preset.yml or extension.yml."""
+def _find_enclosing_manifest(path: Path, project_root: Path) -> Path | None:
+    """Walk parents of ``path`` up to ``project_root`` looking for a manifest."""
+    root = project_root.resolve()
     for parent in path.parents:
+        try:
+            parent.resolve().relative_to(root)
+        except ValueError:
+            break
         for name in ("preset.yml", "extension.yml"):
             candidate = parent / name
             if candidate.is_file():
