@@ -219,6 +219,27 @@ def coerce_hook_entries(hook_config: Any) -> List[Any]:
     return hook_config if isinstance(hook_config, list) else [hook_config]
 
 
+def collapse_hook_event_entries(event_name: str, hook_config: Any) -> List[Dict[str, Any]]:
+    """Collapse a hook event to final entries using installer last-write-wins.
+
+    Duplicate commands are removed and re-inserted so the final declaration is
+    retained at the end of the event list, matching register-time ordering.
+    """
+    collapsed: Dict[str, Dict[str, Any]] = {}
+    for entry in coerce_hook_entries(hook_config):
+        if not isinstance(entry, dict):
+            continue
+        command = entry.get("command")
+        if not command:
+            continue
+        normalized = dict(entry)
+        normalized.setdefault("eventName", event_name)
+        if command in collapsed:
+            del collapsed[command]
+        collapsed[command] = normalized
+    return list(collapsed.values())
+
+
 @dataclass
 class CatalogEntry(BaseCatalogEntry):
     """Represents a single catalog entry in the catalog stack."""
@@ -797,43 +818,24 @@ class ExtensionManifest:
             contributions.append(enriched)
 
         hooks = self.hooks or {}
-        # Mirror registration's last-write-wins behavior for duplicate commands
-        # in the same event, so IDs exist only for hooks installed on disk.
-        collapsed: List[tuple[str, dict]] = []
-        seen: Dict[tuple[str, str], int] = {}
         for event_name, hook_config in hooks.items():
-            for entry in coerce_hook_entries(hook_config):
-                if not isinstance(entry, dict):
-                    continue
-                command_value = entry.get("command")
-                if not command_value:
-                    continue
-                normalized = dict(entry)
-                normalized.setdefault("eventName", event_name)
-                key = (event_name, command_value)
-                if key in seen:
-                    collapsed[seen[key]] = (event_name, normalized)
-                else:
-                    seen[key] = len(collapsed)
-                    collapsed.append((event_name, normalized))
-
-        for event_name, entry in collapsed:
-            command_value = entry.get("command", "")
-            hook_id = derive_hook_id(
-                "extension",
-                source_id,
-                event_name,
-                command_value,
-            )
-            enriched = dict(entry)
-            enriched.update(
-                layer="extension",
-                sourceId=source_id,
-                kind="hook",
-                name=f"{event_name}:{command_value}",
-                id=hook_id,
-            )
-            contributions.append(enriched)
+            for entry in collapse_hook_event_entries(event_name, hook_config):
+                command_value = entry.get("command", "")
+                hook_id = derive_hook_id(
+                    "extension",
+                    source_id,
+                    event_name,
+                    command_value,
+                )
+                enriched = dict(entry)
+                enriched.update(
+                    layer="extension",
+                    sourceId=source_id,
+                    kind="hook",
+                    name=f"{event_name}:{command_value}",
+                    id=hook_id,
+                )
+                contributions.append(enriched)
 
         return contributions
 
@@ -5152,17 +5154,11 @@ class HookExecutor:
                 config["hooks"][hook_name] = []
                 changed = True
 
-            # Key by command to dedup within the manifest. Deleting before
-            # re-insert moves a duplicate to the end so "last wins" also breaks ties.
+            # Key by command after canonical last-write-wins collapse so order
+            # exactly matches iter_contributions() for duplicate declarations.
             new_entries: Dict[str, Dict[str, Any]] = {}
-            for entry in coerce_hook_entries(hook_config):
-                if not isinstance(entry, dict):
-                    continue
-                command = entry.get("command")
-                if not command:
-                    continue
-                if command in new_entries:
-                    del new_entries[command]
+            for entry in collapse_hook_event_entries(hook_name, hook_config):
+                command = entry["command"]
                 new_entries[command] = {
                     "extension": manifest.id,
                     "command": command,

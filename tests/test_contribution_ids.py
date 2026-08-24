@@ -175,6 +175,27 @@ class TestDuplicateHooks:
             == hooks[0]["id"]
         )
 
+    def test_duplicate_hook_moves_to_end_like_installer(self, tmp_path):
+        data = _extension_data(
+            hooks={
+                "before_plan": [
+                    {"command": "speckit.dup", "priority": 1},
+                    {"command": "speckit.other", "priority": 2},
+                    {"command": "speckit.dup", "priority": 3},
+                ]
+            },
+            with_commands=False,
+            with_templates=False,
+            with_scripts=False,
+        )
+        manifest = ExtensionManifest(_write_manifest(tmp_path, data, "extension.yml"))
+        hooks = [c for c in manifest.iter_contributions() if c["kind"] == "hook"]
+        assert [h["name"] for h in hooks] == [
+            "before_plan:speckit.other",
+            "before_plan:speckit.dup",
+        ]
+        assert [h["priority"] for h in hooks] == [2, 3]
+
 
 # ---------------------------------------------------------------------------
 # Manifest component `:` guard
