@@ -107,6 +107,24 @@ class TestListArtifactsContract:
         ids = [r.id for r in rows]
         assert len(ids) == len(set(ids))
 
+    def test_core_script_variants_have_one_resolvable_logical_name(
+        self, spec_kit_project: Path
+    ):
+        catalog = ArtifactCatalog(spec_kit_project)
+        scripts = [row for row in catalog.list_artifacts() if row.kind == "script"]
+
+        assert {row.name for row in scripts} == {
+            "check-prerequisites",
+            "common",
+            "create-new-feature",
+            "resolve-template",
+            "setup-plan",
+            "setup-tasks",
+        }
+        for script in scripts:
+            info = catalog.get_artifact_info(script.id)
+            assert info["stack"][-1]["lookupId"] == f"core:_:script:{script.name}"
+
 
 class TestListSorting:
     """Deterministic ordering: kind first (command/template/script), then name."""
