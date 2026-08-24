@@ -284,12 +284,12 @@ def _enumerate_core_commands(project_root: Path | None = None) -> list[_CoreBase
         )
         if path is None:
             continue
+        if logical_name in rows_by_name:
+            continue
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             text = ""
-        if logical_name in rows_by_name:
-            continue
         rows_by_name[logical_name] = _CoreBaselineRow(
             name=logical_name,
             kind="command",
