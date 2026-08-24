@@ -23,6 +23,7 @@ from .._identifier import (
     PROJECT_OVERRIDE_LAYER,
     IdentifierComponentError,
     derive_named_id,
+    is_dotted_command_name,
     layer_kind_from_lookup_id,
     validate_component,
 )
@@ -128,8 +129,6 @@ class ArtifactResolutionError(ArtifactError):
 
 _TEMPLATE_SUFFIX = ".md"
 _SCRIPT_SUFFIX = ".sh"
-_COMMAND_NAME_RE = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)*")
-_TEMPLATE_OR_SCRIPT_NAME_RE = re.compile(r"[a-z0-9-]+")
 
 
 @dataclass(frozen=True)
@@ -629,16 +628,11 @@ def _resolve_kind_hint(name: str, kind: ArtifactKind | None) -> tuple[str, Artif
 
 
 def _validate_artifact_name(name: str, kind: ArtifactKind) -> str:
-    """Validate a candidate artifact name using resolver-compatible grammars."""
+    """Validate the structural identifier component constraints for ``name``."""
     try:
-        validated = validate_component(name, f"{kind} name")
+        return validate_component(name, f"{kind} name")
     except IdentifierComponentError as exc:
         raise ArtifactNotFoundError(name) from exc
-
-    pattern = _COMMAND_NAME_RE if kind == "command" else _TEMPLATE_OR_SCRIPT_NAME_RE
-    if pattern.fullmatch(validated):
-        return validated
-    raise ArtifactNotFoundError(name)
 
 
 class ArtifactCatalog:
@@ -726,6 +720,8 @@ class ArtifactCatalog:
             resolved_kind = matches[0][0]
 
         validated_name = _validate_artifact_name(bare, resolved_kind)
+        if not any(kind_name == resolved_kind for kind_name, _ in self._find_matches(validated_name)):
+            raise ArtifactNotFoundError(name)
         stack = _build_stack(self.project_root, resolved_kind, validated_name)
         if not stack:
             raise ArtifactNotFoundError(name)
@@ -895,11 +891,9 @@ class ArtifactCatalog:
         command and as a template otherwise. That keeps a command override
         from also appearing as a second, spurious ``template:`` row.
 
-        A dotted name (``speckit.local``) is a command name under the
-        resolver's own grammar (see ``_COMMAND_NAME_RE``) regardless of
-        whether any lower, non-project layer backs it, so it is classified
-        as a command even when the override is the only layer — matching
-        the exact ID ``preset resolve``/``artifact info`` accepts for it.
+        A dotted name (``speckit.local``) is treated as a command even when
+        the override is the only layer — matching the exact ID
+        ``preset resolve``/``artifact info`` accepts for it.
         """
         overrides_dir = resolver.overrides_dir
         if not overrides_dir.is_dir():
@@ -915,9 +909,7 @@ class ArtifactCatalog:
                 )
                 for layer in command_layers
             )
-            is_command = backed_by_command or (
-                "." in name and bool(_COMMAND_NAME_RE.fullmatch(name))
-            )
+            is_command = backed_by_command or is_dotted_command_name(name)
             yield ("command" if is_command else "template"), name, ""
         scripts_dir = overrides_dir / "scripts"
         if not scripts_dir.is_dir():

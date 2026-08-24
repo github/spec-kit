@@ -118,6 +118,22 @@ def layer_kind_from_lookup_id(lookup_id: str) -> str | None:
     return layer
 
 
+def is_dotted_command_name(value: str) -> bool:
+    """Return ``True`` when ``value`` is a dotted command-style name.
+
+    Command-style names allow lowercase alphanumerics and ``-`` in each segment
+    and require at least one ``.`` separator.
+    """
+    if "." not in value:
+        return False
+    segments = value.split(".")
+    return all(
+        segment
+        and all((("0" <= char <= "9") or ("a" <= char <= "z") or char == "-") for char in segment)
+        for segment in segments
+    )
+
+
 def canonical_json(value: Any) -> bytes:
     """Serialize ``value`` to a canonical UTF-8 JSON byte string.
 
