@@ -553,6 +553,87 @@ class TestStackComposition:
 
 
 # ---------------------------------------------------------------------------
+# Convention-based discovery — extensions without a manifest, project overrides
+# ---------------------------------------------------------------------------
+
+
+class TestConventionDiscovery:
+    def test_unregistered_extension_template_without_manifest(self, spec_kit_project: Path):
+        ext_dir = spec_kit_project / ".specify" / "extensions" / "legacy" / "templates"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "legacy-template.md").write_text("body", encoding="utf-8")
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        assert any(row.id == "template:legacy-template" for row in catalog.list_artifacts())
+        info = catalog.get_artifact_info("legacy-template")
+        assert info["stack"][0]["lookupId"] == "extension:legacy:template:legacy-template"
+
+    def test_convention_command_and_script_are_listed(self, spec_kit_project: Path):
+        ext_dir = spec_kit_project / ".specify" / "extensions" / "legacy"
+        (ext_dir / "commands").mkdir(parents=True)
+        (ext_dir / "commands" / "speckit.legacy.md").write_text("body", encoding="utf-8")
+        (ext_dir / "scripts").mkdir()
+        (ext_dir / "scripts" / "legacy-script.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+
+        ids = {row.id for row in ArtifactCatalog(spec_kit_project).list_artifacts()}
+        assert "command:speckit.legacy" in ids
+        assert "script:legacy-script" in ids
+
+    def test_extension_readme_is_not_listed_as_template(self, spec_kit_project: Path):
+        ext_dir = spec_kit_project / ".specify" / "extensions" / "legacy"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "README.md").write_text("docs", encoding="utf-8")
+
+        ids = {row.id for row in ArtifactCatalog(spec_kit_project).list_artifacts()}
+        assert "template:README" not in ids
+
+    def test_disabled_extension_convention_file_is_excluded(self, spec_kit_project: Path):
+        extensions_dir = spec_kit_project / ".specify" / "extensions"
+        ext_dir = extensions_dir / "legacy" / "templates"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "legacy-template.md").write_text("body", encoding="utf-8")
+        (extensions_dir / ".registry").write_text(
+            json.dumps(
+                {
+                    "schema_version": "1.0.0",
+                    "extensions": {"legacy": {"priority": 10, "enabled": False}},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        ids = {row.id for row in ArtifactCatalog(spec_kit_project).list_artifacts()}
+        assert "template:legacy-template" not in ids
+
+    def test_project_override_only_artifact_is_listed(self, spec_kit_project: Path):
+        overrides = spec_kit_project / ".specify" / "templates" / "overrides"
+        (overrides / "scripts").mkdir(parents=True)
+        (overrides / "local-template.md").write_text("body", encoding="utf-8")
+        (overrides / "scripts" / "local-script.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        ids = {row.id for row in catalog.list_artifacts()}
+        assert "template:local-template" in ids
+        assert "script:local-script" in ids
+        info = catalog.get_artifact_info("local-template")
+        assert info["stack"][0]["layer"] == "project"
+
+    def test_command_override_is_not_duplicated_as_template(self, spec_kit_project: Path):
+        ext_dir = spec_kit_project / ".specify" / "extensions" / "legacy" / "commands"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "speckit.legacy.md").write_text("body", encoding="utf-8")
+        overrides = spec_kit_project / ".specify" / "templates" / "overrides"
+        overrides.mkdir(parents=True)
+        (overrides / "speckit.legacy.md").write_text("override", encoding="utf-8")
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        ids = {row.id for row in catalog.list_artifacts()}
+        assert "command:speckit.legacy" in ids
+        assert "template:speckit.legacy" not in ids
+        assert catalog.get_artifact_info("speckit.legacy")["kind"] == "command"
+
+
+# ---------------------------------------------------------------------------
 # Existing module-import placeholder retained for import safety.
 # ---------------------------------------------------------------------------
 
