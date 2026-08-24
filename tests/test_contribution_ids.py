@@ -32,7 +32,7 @@ from specify_cli._identifier import (
     validate_component,
 )
 from specify_cli.extensions import ExtensionManifest, ValidationError
-from specify_cli.presets import PresetManifest, PresetResolver
+from specify_cli.presets import PresetManifest, PresetResolver, PresetValidationError
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +231,30 @@ class TestComponentGuard:
         with pytest.raises(ValidationError) as exc_info:
             ExtensionManifest(_write_manifest(tmp_path, data, "extension.yml"))
         assert "':' is reserved" in str(exc_info.value)
+
+    @pytest.mark.parametrize("template_type", ["command", "template", "script"])
+    def test_preset_template_name_with_colon_rejected(self, tmp_path, template_type):
+        data = _preset_data()
+        data["provides"]["templates"] = [
+            {"type": template_type, "name": "bad:name", "file": "commands/x.md"}
+        ]
+        with pytest.raises(PresetValidationError):
+            PresetManifest(_write_manifest(tmp_path, data, "preset.yml"))
+
+    @pytest.mark.parametrize("section", ["templates", "scripts"])
+    def test_extension_artifact_name_with_colon_rejected(self, tmp_path, section):
+        data = _extension_data()
+        data["provides"][section] = [{"name": "bad:name", "file": "x/y.md"}]
+        with pytest.raises(ValidationError):
+            ExtensionManifest(_write_manifest(tmp_path, data, "extension.yml"))
+
+    def test_extension_command_name_with_colon_rejected(self, tmp_path):
+        data = _extension_data()
+        data["provides"]["commands"] = [
+            {"name": "speckit.git:branch", "file": "commands/branch.md"}
+        ]
+        with pytest.raises(ValidationError):
+            ExtensionManifest(_write_manifest(tmp_path, data, "extension.yml"))
 
 
 # ---------------------------------------------------------------------------

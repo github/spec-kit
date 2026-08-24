@@ -527,6 +527,15 @@ class ExtensionManifest:
                         "must follow pattern 'speckit.{extension}.{command}'"
                     )
 
+            # The (possibly corrected) name is an identifier component, so it
+            # may not contain the ':' delimiter. EXTENSION_COMMAND_NAME_PATTERN
+            # already excludes it; the explicit guard keeps the guarantee
+            # uniform with the hook fields.
+            try:
+                validate_component(cmd["name"], f"command name '{cmd['name']}'")
+            except IdentifierComponentError as exc:
+                raise ValidationError(str(exc)) from exc
+
             # Validate alias types; no pattern enforcement on aliases — they are
             # intentionally free-form to preserve community extension compatibility
             # (e.g. 'speckit.verify' short aliases used by existing extensions).
@@ -647,6 +656,15 @@ class ExtensionManifest:
                     f"Duplicate {singular} name '{name}' in 'provides.{section}'"
                 )
             seen_names.add(name)
+
+            # The name is an identifier component, so it may not contain the
+            # ':' delimiter. VALID_EXTENSION_ARTIFACT_NAME_PATTERN already
+            # excludes it; the explicit guard keeps the guarantee uniform with
+            # the hook fields.
+            try:
+                validate_component(name, f"{singular} name '{name}'")
+            except IdentifierComponentError as exc:
+                raise ValidationError(str(exc)) from exc
 
             file_value = entry["file"]
             reason = relative_extension_path_violation(file_value)

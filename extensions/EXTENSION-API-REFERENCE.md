@@ -887,7 +887,7 @@ If an extension declares multiple hooks with the same `(eventName, command)` pai
 
 ### Reserved character
 
-`:` is reserved as the identifier component separator. It cannot appear inside any of `layer`, `sourceId`, `kind`, `name`, `eventName`, or `command`. Extension ids, command names, template names, and script names are already constrained by their existing regex patterns (`^[a-z0-9-]+$` and friends), which forbid `:`. Hook event names (mapping keys) and hook `command` values are additionally validated to reject `:` at manifest load.
+`:` is reserved as the identifier component separator. It cannot appear inside any of `layer`, `sourceId`, `kind`, `name`, `eventName`, or `command`. Extension ids, command names, template names, and script names are already constrained by their existing regex patterns (`^[a-z0-9-]+$` and friends), which forbid `:`. In addition, every value that appears in an identifier — contribution names (commands, templates, scripts) as well as hook event names (mapping keys) and hook `command` values — is explicitly validated to reject `:` at manifest load, so the guarantee holds uniformly.
 
 ### The `project:` sentinel
 

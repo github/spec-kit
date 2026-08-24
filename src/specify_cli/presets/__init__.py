@@ -39,7 +39,9 @@ from .._download_security import (
 from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
 from .._identifier import (
     PROJECT_OVERRIDE_LAYER,
+    IdentifierComponentError,
     derive_named_id,
+    validate_component,
 )
 from .._init_options import (
     MISSING_INIT_OPTIONS_FILE,
@@ -502,6 +504,15 @@ class PresetManifest:
                         f"Invalid template name '{tmpl['name']}': "
                         "must be lowercase alphanumeric with hyphens only"
                     )
+
+            # The name is an identifier component, so it may not contain the
+            # ':' delimiter. The patterns above already exclude it; the explicit
+            # guard keeps the guarantee uniform with the hook fields and holds
+            # if those patterns are ever relaxed.
+            try:
+                validate_component(tmpl["name"], f"template name '{tmpl['name']}'")
+            except IdentifierComponentError as exc:
+                raise PresetValidationError(str(exc)) from exc
 
     @property
     def id(self) -> str:
