@@ -882,6 +882,12 @@ class ArtifactCatalog:
         reported as a command when some other layer already provides that
         command and as a template otherwise. That keeps a command override
         from also appearing as a second, spurious ``template:`` row.
+
+        A dotted name (``speckit.local``) is a command name under the
+        resolver's own grammar (see ``_COMMAND_NAME_RE``) regardless of
+        whether any lower, non-project layer backs it, so it is classified
+        as a command even when the override is the only layer — matching
+        the exact ID ``preset resolve``/``artifact info`` accepts for it.
         """
         overrides_dir = resolver.overrides_dir
         if not overrides_dir.is_dir():
@@ -897,7 +903,8 @@ class ArtifactCatalog:
                 )
                 for layer in command_layers
             )
-            yield ("command" if backed_by_command else "template"), name, ""
+            is_command = backed_by_command or bool(_COMMAND_NAME_RE.fullmatch(name))
+            yield ("command" if is_command else "template"), name, ""
         scripts_dir = overrides_dir / "scripts"
         if not scripts_dir.is_dir():
             return
