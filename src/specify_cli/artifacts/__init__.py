@@ -633,6 +633,15 @@ def _validate_artifact_name(name: str, kind: ArtifactKind) -> str:
         raise ArtifactNotFoundError(name) from exc
 
 
+def _is_valid_artifact_name_component(name: Any, kind: ArtifactKind) -> bool:
+    """Return ``True`` when ``name`` can appear in an artifact identifier."""
+    try:
+        validate_component(name, f"{kind} name")
+    except IdentifierComponentError:
+        return False
+    return True
+
+
 class ArtifactCatalog:
     """Read-only view over one Spec Kit project's artifact inventory."""
 
@@ -679,6 +688,8 @@ class ArtifactCatalog:
         descriptions_by_layer: dict[tuple[ArtifactKind, str], dict[str, str]] = {}
 
         for row in (*baseline.commands, *baseline.templates, *baseline.scripts):
+            if not _is_valid_artifact_name_component(row.name, row.kind):
+                continue
             key = (row.kind, row.name)
             names.add(key)
             core_lookup_id = derive_named_id("core", "_", row.kind, row.name)
@@ -923,6 +934,8 @@ class ArtifactCatalog:
             if not entry.is_file() or entry.suffix != _TEMPLATE_SUFFIX:
                 continue
             name = entry.stem
+            if not _is_valid_artifact_name_component(name, "template"):
+                continue
             command_layers = resolver.collect_all_layers(name, "command")
             backed_by_command = any(
                 not str(layer.get("lookupId", "")).startswith(
@@ -939,6 +952,8 @@ class ArtifactCatalog:
             return
         for entry in sorted(scripts_dir.iterdir(), key=lambda p: p.name):
             if entry.is_file() and entry.suffix == _SCRIPT_SUFFIX:
+                if not _is_valid_artifact_name_component(entry.stem, "script"):
+                    continue
                 lookup_id = derive_named_id(PROJECT_OVERRIDE_LAYER, "_", "script", entry.stem)
                 yield "script", entry.stem, "", lookup_id
 
