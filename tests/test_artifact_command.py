@@ -358,6 +358,32 @@ class TestCLI:
             result = runner.invoke(app, argv)
             assert result.stdout == "", f"stdout leak for {argv}: {result.stdout!r}"
 
+    @pytest.mark.parametrize(
+        "override",
+        ("missing-project", "."),
+    )
+    def test_invalid_init_dir_override_uses_json_error_envelope(
+        self,
+        non_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        override: str,
+    ):
+        from typer.testing import CliRunner
+
+        monkeypatch.chdir(non_project)
+        monkeypatch.setenv("SPECIFY_INIT_DIR", override)
+        runner = CliRunner()
+        for argv in (
+            ["artifact", "list", "--json"],
+            ["artifact", "info", "x", "--json"],
+        ):
+            result = runner.invoke(app, argv)
+            assert result.exit_code == 1
+            assert result.stdout == ""
+            assert json.loads(result.stderr) == {
+                "error": "not a Spec Kit project: no .specify/ directory found"
+            }
+
 
 class TestUTF8NoBOM:
     def test_output_is_utf8_without_bom(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):

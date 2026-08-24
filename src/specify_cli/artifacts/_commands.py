@@ -12,6 +12,7 @@ Mirrors the shape used by ``src/specify_cli/presets/_commands.py`` and
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -39,16 +40,13 @@ def _resolve_project_root() -> Path:
 
     The stdout of ``specify artifact list --json`` and ``specify artifact
     info <name> --json`` is a strict JSON envelope; any incidental Rich
-    output would corrupt it. So instead of calling ``_require_specify_project``
-    (which prints to stderr via ``err_console``), we replicate its logic
-    through the same helper ``_resolve_init_dir_override`` and raise the
-    module-local :class:`NotASpecKitProjectError` for the shared error
-    handler to serialize.
+    output would corrupt it. The shared ``_resolve_init_dir_override`` emits
+    Rich errors for invalid overrides, so validate the override quietly here
+    and raise the module-local :class:`NotASpecKitProjectError` for the shared
+    error handler to serialize.
     """
-    from .._project import _resolve_init_dir_override
-
-    override = _resolve_init_dir_override()
-    cwd = override if override is not None else Path.cwd()
+    raw_override = os.environ.get("SPECIFY_INIT_DIR", "")
+    cwd = (Path.cwd() / raw_override).resolve() if raw_override else Path.cwd()
     if not (cwd / ".specify").is_dir():
         raise NotASpecKitProjectError()
     return cwd
