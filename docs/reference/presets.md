@@ -215,7 +215,7 @@ Every command, template, and script contributed by a preset (or an extension, or
 
 - `layer` is one of `core`, `preset`, or `extension`.
 - `sourceId` is `_` for `core`, the preset pack id for `preset`, or the extension id for `extension`.
-- `kind` is one of `command`, `template`, or `script`.
+- `kind` is one of `command`, `template`, or `script` (see below for hooks).
 - `name` is the entry's declared `name` field.
 
 `sourceId` is the source's own stable system identifier:
