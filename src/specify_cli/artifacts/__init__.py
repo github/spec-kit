@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Literal
+from typing import Any, Callable, Iterable, Literal
 
 import yaml
 
@@ -714,9 +714,23 @@ class ArtifactCatalog:
 
         Covers the two ways a pack can contribute an artifact:
 
-        * manifest-declared entries (``preset.yml`` / ``extension.yml``), and
+        * manifest-declared entries (``preset.yml`` / ``extension.yml``), read
+          via each manifest class's own ``iter_contributions()`` rather than
+          re-parsing ``provides`` by hand, and
         * convention-placed extension files (``commands/``, ``templates/``,
           ``scripts/``) that the resolver picks up even without a manifest.
+
+        Presets are enumerated through ``PresetManager.list_installed()`` —
+        presets have no unregistered-directory fallback in the resolver (see
+        ``PresetResolver._get_all_presets_by_priority``), so the registry is
+        the complete set. Extensions additionally admit unregistered
+        directories at implicit priority 10 (see
+        ``PresetResolver._get_all_extensions_by_priority``), so those are
+        folded in alongside the registered set. Either way, every yielded
+        contribution is still checked against the resolver's own
+        ``collect_all_layers()`` output before being surfaced, so a disabled
+        pack, an orphaned directory the resolver would not admit, or a
+        declared-but-unusable entry cannot appear in the inventory.
 
         Project-local overrides under ``.specify/templates/overrides`` are
         included too, so an artifact that exists only as an override is still
@@ -727,9 +741,9 @@ class ArtifactCatalog:
         this command's job is to describe the composed inventory, not to be
         the second validation surface.
         """
-        from ..presets import PresetResolver  # lazy: avoids circular import
+        from ..extensions import ExtensionManager, ExtensionManifest, ValidationError
+        from ..presets import PresetManager, PresetResolver  # lazy: avoids circular import
 
-        specify_dir = self.project_root / ".specify"
         resolver = PresetResolver(self.project_root)
         layers_by_artifact: dict[tuple[ArtifactKind, str], set[str]] = {}
 
@@ -742,38 +756,77 @@ class ArtifactCatalog:
                 }
             return layers_by_artifact[key]
 
-        for tier in ("presets", "extensions"):
-            tier_dir = specify_dir / tier
-            if not tier_dir.is_dir():
-                continue
-            for pack_dir in sorted(tier_dir.iterdir(), key=lambda p: p.name):
-                if not pack_dir.is_dir():
-                    continue
-                manifest_name = "preset.yml" if tier == "presets" else "extension.yml"
-                manifest = pack_dir / manifest_name
-                layer = "preset" if tier == "presets" else "extension"
-                data: Any = None
-                if manifest.is_file():
+        # -- Presets: the registry is authoritative, no unregistered fallback.
+        preset_manager = PresetManager(self.project_root)
+        for entry in sorted(preset_manager.list_installed(), key=lambda e: e["id"]):
+            pack_id = entry["id"]
+            pack_dir = preset_manager.presets_dir / pack_id
+            manifest = preset_manager.get_pack(pack_id)
+            yield from self._iter_pack_contributions(
+                manifest, pack_dir, _lookup_ids
+            )
+
+        # -- Extensions: registered ids plus on-disk unregistered directories,
+        # mirroring PresetResolver._get_all_extensions_by_priority.
+        ext_manager = ExtensionManager(self.project_root)
+        registered_ext_ids = {e["id"] for e in ext_manager.list_installed()}
+        ext_ids = set(registered_ext_ids)
+        if ext_manager.extensions_dir.is_dir():
+            ext_ids.update(
+                p.name for p in ext_manager.extensions_dir.iterdir() if p.is_dir()
+            )
+        for ext_id in sorted(ext_ids):
+            ext_dir = ext_manager.extensions_dir / ext_id
+            if ext_id in registered_ext_ids:
+                manifest = ext_manager.get_extension(ext_id)
+            else:
+                manifest_path = ext_dir / "extension.yml"
+                manifest = None
+                if manifest_path.is_file():
                     try:
-                        data = yaml.safe_load(manifest.read_text(encoding="utf-8"))
-                    except (OSError, UnicodeDecodeError, yaml.YAMLError):
-                        data = None
-                if isinstance(data, dict):
-                    for kind, name, description in _iter_manifest_contributions(
-                        data, is_preset=tier == "presets"
-                    ):
-                        lookup_id = derive_named_id(layer, pack_dir.name, kind, name)
-                        if lookup_id in _lookup_ids(kind, name):
-                            yield kind, name, description
-                # Convention fallback: a preset/extension file placed at the
-                # conventional path resolves whether or not the manifest
-                # declares it, so it belongs in the inventory as well.
-                for kind, name in _iter_convention_contributions(pack_dir):
-                    lookup_id = derive_named_id(layer, pack_dir.name, kind, name)
-                    if lookup_id in _lookup_ids(kind, name):
-                        yield kind, name, ""
+                        manifest = ExtensionManifest(manifest_path)
+                    except ValidationError:
+                        manifest = None
+            yield from self._iter_pack_contributions(manifest, ext_dir, _lookup_ids)
 
         yield from self._iter_project_override_artifacts(resolver)
+
+    @staticmethod
+    def _iter_pack_contributions(
+        manifest: Any,
+        pack_dir: Path,
+        lookup_ids: Callable[[ArtifactKind, str], set[str]],
+    ) -> Iterable[tuple[ArtifactKind, str, str]]:
+        """Yield ``(kind, name, description)`` for one preset or extension pack.
+
+        ``manifest`` is a validated ``PresetManifest``/``ExtensionManifest``
+        (or ``None`` if the pack has no usable manifest). Declared
+        contributions come from the manifest's own ``iter_contributions()``;
+        convention-placed files are scanned separately since they exist
+        whether or not any manifest declares them.
+        """
+        if manifest is not None:
+            for contribution in manifest.iter_contributions():
+                kind = contribution.get("kind")
+                name = contribution.get("name")
+                if kind not in ("command", "template", "script"):
+                    continue
+                if not isinstance(name, str) or not name or ":" in name:
+                    continue
+                description = contribution.get("description", "")
+                if not isinstance(description, str):
+                    description = ""
+                if contribution["id"] in lookup_ids(kind, name):
+                    yield kind, name, description
+
+        # Convention fallback: a preset/extension file placed at the
+        # conventional path resolves whether or not the manifest declares it,
+        # so it belongs in the inventory as well.
+        layer = "preset" if pack_dir.parent.name == "presets" else "extension"
+        for kind, name in _iter_convention_contributions(pack_dir):
+            lookup_id = derive_named_id(layer, pack_dir.name, kind, name)
+            if lookup_id in lookup_ids(kind, name):
+                yield kind, name, ""
 
     def _iter_project_override_artifacts(
         self,
@@ -831,72 +884,6 @@ def _iter_convention_contributions(pack_dir: Path) -> Iterable[tuple[ArtifactKin
         for entry in sorted(candidate_dir.iterdir(), key=lambda p: p.name):
             if entry.is_file() and entry.suffix == suffix and ":" not in entry.stem:
                 yield kind, entry.stem
-
-
-def _iter_manifest_contributions(
-    data: dict[str, Any],
-    *,
-    is_preset: bool = False,
-) -> Iterable[tuple[ArtifactKind, str, str]]:
-    """Yield ``(kind, name, description)`` entries declared by a manifest.
-
-    Extension manifests group entries by artifact kind:
-
-    .. code-block:: yaml
-
-        provides:
-          commands: [ {name: "...", description: "..."} , ... ]
-          templates: [ ... ]
-          scripts: [ ... ]
-
-    Preset manifests instead place every contribution under ``templates`` and
-    identify its artifact kind with each entry's ``type`` field.
-
-    Anything malformed at the entry level is skipped rather than raised —
-    the artifact command is a projection, not a validator.
-    """
-    provides = data.get("provides")
-    if not isinstance(provides, dict):
-        return
-    if is_preset:
-        entries = provides.get("templates")
-        if not isinstance(entries, list):
-            return
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            kind_value = entry.get("type")
-            name = entry.get("name")
-            if kind_value not in ("command", "template", "script"):
-                continue
-            if not isinstance(name, str) or not name or ":" in name:
-                continue
-            description = entry.get("description", "")
-            if not isinstance(description, str):
-                description = ""
-            yield kind_value, name, description
-        return
-    for kind_key, kind_value in (
-        ("commands", "command"),
-        ("templates", "template"),
-        ("scripts", "script"),
-    ):
-        entries = provides.get(kind_key)
-        if not isinstance(entries, list):
-            continue
-        for entry in entries:
-            if isinstance(entry, str):
-                yield kind_value, entry, ""  # type: ignore[misc]
-                continue
-            if not isinstance(entry, dict):
-                continue
-            name = entry.get("name")
-            if not isinstance(name, str) or not name or ":" in name:
-                continue
-            description = entry.get("description", "")
-            if not isinstance(description, str):
-                description = ""
-            yield kind_value, name, description  # type: ignore[misc]
 
 
 __all__ = [

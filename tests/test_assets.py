@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from specify_cli._assets import _locate_core_asset_dir
 
 
