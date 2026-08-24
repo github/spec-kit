@@ -406,6 +406,7 @@ class ExtensionManifest:
 
         # Validate hook values (if present).
         # Each event is a single mapping or a list of mappings.
+        hook_entries_by_event: Dict[str, List[dict]] = {}
         if hooks:
             for hook_name, hook_config in hooks.items():
                 if isinstance(hook_config, list) and not hook_config:
@@ -416,6 +417,7 @@ class ExtensionManifest:
                     validate_component(hook_name, f"hook event name '{hook_name}'")
                 except IdentifierComponentError as exc:
                     raise ValidationError(str(exc)) from exc
+                event_entries: List[dict] = []
                 for entry in coerce_hook_entries(hook_config):
                     if not isinstance(entry, dict):
                         raise ValidationError(
@@ -445,6 +447,8 @@ class ExtensionManifest:
                                 f"Hook '{hook_name}' has invalid 'priority': "
                                 "must be >= 1"
                             )
+                    event_entries.append(entry)
+                hook_entries_by_event[hook_name] = event_entries
 
         # Validate commands; track renames so hook references can be rewritten.
         rename_map: Dict[str, str] = {}
@@ -574,39 +578,38 @@ class ExtensionManifest:
         # declared fields (with eventName/command stripped) canonicalize
         # to the same byte string — those are semantically identical
         # listeners with no way to address them separately.
-        if hooks:
-            for hook_name, hook_config in hooks.items():
-                by_command: Dict[str, List[tuple[int, dict]]] = {}
-                for idx, entry in enumerate(coerce_hook_entries(hook_config)):
-                    command_ref = entry.get("command")
-                    if not isinstance(command_ref, str):
-                        continue
-                    command_value = self._canonicalize_command_ref(
-                        command_ref,
-                        ext["id"],
-                        rename_map,
-                    )
-                    by_command.setdefault(command_value, []).append((idx, entry))
-                for command_value, group in by_command.items():
-                    if len(group) < 2:
-                        continue
-                    seen_canonical: Dict[bytes, int] = {}
-                    for idx, entry in group:
-                        stripped = {
-                            k: v
-                            for k, v in entry.items()
-                            if k not in ("eventName", "command")
-                        }
-                        key = canonical_json(stripped)
-                        if key in seen_canonical:
-                            first_idx = seen_canonical[key]
-                            raise ValidationError(
-                                f"Duplicate hook entries for event '{hook_name}' "
-                                f"command '{command_value}': entries at positions "
-                                f"{first_idx} and {idx} have byte-identical declared "
-                                "fields and cannot be uniquely identified"
-                            )
-                        seen_canonical[key] = idx
+        for hook_name, event_entries in hook_entries_by_event.items():
+            by_command: Dict[str, List[tuple[int, dict]]] = {}
+            for idx, entry in enumerate(event_entries):
+                command_ref = entry.get("command")
+                if not isinstance(command_ref, str):
+                    continue
+                command_value = self._canonicalize_command_ref(
+                    command_ref,
+                    ext["id"],
+                    rename_map,
+                )
+                by_command.setdefault(command_value, []).append((idx, entry))
+            for command_value, group in by_command.items():
+                if len(group) < 2:
+                    continue
+                seen_canonical: Dict[bytes, int] = {}
+                for idx, entry in group:
+                    stripped = {
+                        k: v
+                        for k, v in entry.items()
+                        if k not in ("eventName", "command")
+                    }
+                    key = canonical_json(stripped)
+                    if key in seen_canonical:
+                        first_idx = seen_canonical[key]
+                        raise ValidationError(
+                            f"Duplicate hook entries for event '{hook_name}' "
+                            f"command '{command_value}': entries at positions "
+                            f"{first_idx} and {idx} have byte-identical declared "
+                            "fields and cannot be uniquely identified"
+                        )
+                    seen_canonical[key] = idx
 
     @staticmethod
     def _canonicalize_command_ref(
