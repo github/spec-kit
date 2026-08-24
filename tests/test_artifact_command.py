@@ -275,6 +275,78 @@ class TestListArtifactsContract:
         assert "command:speckit.local-prefixed" in artifacts
         assert "command:speckit.speckit.local-prefixed" not in artifacts
 
+    def test_active_preset_description_overrides_hidden_core_description(
+        self, spec_kit_project: Path
+    ):
+        """A preset that overrides a core command must win the description too.
+
+        Regression test: descriptions used to be merged "first non-empty
+        wins", and core rows were inserted before contributions — so an
+        active preset's replacement of a core command still reported the
+        (now-inactive) core description.
+        """
+        commands_dir = spec_kit_project / ".specify" / "templates" / "commands"
+        commands_dir.mkdir(parents=True)
+        (commands_dir / "speckit.constitution.md").write_text(
+            "---\ndescription: Core description\n---\n", encoding="utf-8"
+        )
+
+        pack = _install_preset(
+            spec_kit_project,
+            "override-preset",
+            {
+                "commands": [
+                    {"name": "speckit.constitution", "description": "Preset description"}
+                ]
+            },
+        )
+        (pack / "commands").mkdir()
+        (pack / "commands" / "speckit.constitution.md").write_text(
+            "# Preset\n", encoding="utf-8"
+        )
+
+        artifacts = {
+            artifact.id: artifact
+            for artifact in ArtifactCatalog(spec_kit_project).list_artifacts()
+        }
+        assert artifacts["command:speckit.constitution"].description == "Preset description"
+
+    def test_higher_precedence_preset_description_wins(self, spec_kit_project: Path):
+        """When two presets both provide an artifact, the winner's description wins.
+
+        Lower ``priority`` number means higher precedence (see
+        ``PresetResolver.collect_all_layers``); the loser's description must
+        not leak through just because it happens to be enumerated first
+        alphabetically.
+        """
+        pack_low = _install_preset(
+            spec_kit_project,
+            "aaa-low-priority-preset",
+            {"templates": [{"name": "shared-artifact", "description": "Loser description"}]},
+            priority=20,
+        )
+        (pack_low / "templates").mkdir()
+        (pack_low / "templates" / "shared-artifact.md").write_text(
+            "# Loser\n", encoding="utf-8"
+        )
+
+        pack_high = _install_preset(
+            spec_kit_project,
+            "zzz-high-priority-preset",
+            {"templates": [{"name": "shared-artifact", "description": "Winner description"}]},
+            priority=5,
+        )
+        (pack_high / "templates").mkdir()
+        (pack_high / "templates" / "shared-artifact.md").write_text(
+            "# Winner\n", encoding="utf-8"
+        )
+
+        artifacts = {
+            artifact.id: artifact
+            for artifact in ArtifactCatalog(spec_kit_project).list_artifacts()
+        }
+        assert artifacts["template:shared-artifact"].description == "Winner description"
+
 
 class TestListSorting:
     """Deterministic ordering: kind first (command/template/script), then name."""

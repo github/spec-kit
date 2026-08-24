@@ -654,42 +654,66 @@ class ArtifactCatalog:
 
         Skills (``.github/skills/**/SKILL.md``) are intentionally excluded —
         they are integration-specific output, not a shipped asset family.
+
+        Descriptions are picked from the highest-priority layer that has one,
+        not the first layer discovered — a core command that an active
+        preset overrides must report the preset's description, and two
+        competing packs must report the higher-precedence one's. Precedence
+        is decided by :meth:`PresetResolver.collect_all_layers`'s own
+        ordering (index 0 = winner), not by enumeration order here.
         """
         _validate_project(self.project_root)
         _validate_extension_registry(self.project_root)
         baseline = self._get_baseline()
 
-        seen: dict[tuple[ArtifactKind, str], Artifact] = {}
+        from ..presets import PresetResolver  # lazy: avoids circular import
+
+        resolver = PresetResolver(self.project_root)
+        layers_cache: dict[tuple[ArtifactKind, str], list[dict[str, Any]]] = {}
+
+        def _layers_for(kind: ArtifactKind, name: str) -> list[dict[str, Any]]:
+            key = (kind, name)
+            if key not in layers_cache:
+                layers_cache[key] = resolver.collect_all_layers(name, kind)
+            return layers_cache[key]
+
+        names: set[tuple[ArtifactKind, str]] = set()
+        descriptions_by_layer: dict[tuple[ArtifactKind, str], dict[str, str]] = {}
 
         for row in (*baseline.commands, *baseline.templates, *baseline.scripts):
             key = (row.kind, row.name)
-            if key not in seen:
-                seen[key] = Artifact(
-                    id=f"{row.kind}:{row.name}",
-                    name=row.name,
-                    kind=row.kind,
-                    description=row.description,
-                )
+            names.add(key)
+            core_lookup_id = derive_named_id("core", "_", row.kind, row.name)
+            descriptions_by_layer.setdefault(key, {}).setdefault(
+                core_lookup_id, row.description
+            )
 
-        for kind, name, description in self._iter_contribution_artifacts():
+        for kind, name, description, lookup_id in self._iter_contribution_artifacts(
+            resolver, _layers_for
+        ):
             key = (kind, name)
-            if key not in seen:
-                seen[key] = Artifact(
-                    id=f"{kind}:{name}",
-                    name=name,
-                    kind=kind,
-                    description=description,
-                )
-            elif description and not seen[key].description:
-                seen[key] = Artifact(
-                    id=seen[key].id,
-                    name=seen[key].name,
-                    kind=seen[key].kind,
-                    description=description,
-                )
+            names.add(key)
+            layer_descriptions = descriptions_by_layer.setdefault(key, {})
+            if lookup_id not in layer_descriptions or (
+                description and not layer_descriptions[lookup_id]
+            ):
+                layer_descriptions[lookup_id] = description
+
+        artifacts: list[Artifact] = []
+        for kind, name in names:
+            layer_descriptions = descriptions_by_layer.get((kind, name), {})
+            description = ""
+            for layer in _layers_for(kind, name):
+                candidate = layer_descriptions.get(layer["lookupId"], "")
+                if candidate:
+                    description = candidate
+                    break
+            artifacts.append(
+                Artifact(id=f"{kind}:{name}", name=name, kind=kind, description=description)
+            )
 
         kind_order = {"command": 0, "template": 1, "script": 2}
-        return sorted(seen.values(), key=lambda a: (kind_order[a.kind], a.name))
+        return sorted(artifacts, key=lambda a: (kind_order[a.kind], a.name))
 
     # ------------------------------------------------------------------ info
     def get_artifact_info(
@@ -761,8 +785,10 @@ class ArtifactCatalog:
 
     def _iter_contribution_artifacts(
         self,
-    ) -> Iterable[tuple[ArtifactKind, str, str]]:
-        """Yield ``(kind, name, description)`` for resolver-visible contributions.
+        resolver: Any,
+        layers_for: Callable[[ArtifactKind, str], list[dict[str, Any]]],
+    ) -> Iterable[tuple[ArtifactKind, str, str, str]]:
+        """Yield ``(kind, name, description, lookup_id)`` for visible contributions.
 
         Covers the two ways a pack can contribute an artifact:
 
@@ -780,9 +806,15 @@ class ArtifactCatalog:
         ``PresetResolver._get_all_extensions_by_priority``), so those are
         folded in alongside the registered set. Either way, every yielded
         contribution is still checked against the resolver's own
-        ``collect_all_layers()`` output before being surfaced, so a disabled
+        ``collect_all_layers()`` output (via ``layers_for``, the cache shared
+        with :meth:`list_artifacts`) before being surfaced, so a disabled
         pack, an orphaned directory the resolver would not admit, or a
         declared-but-unusable entry cannot appear in the inventory.
+
+        The ``lookup_id`` is the same ``lookupId`` string
+        ``collect_all_layers()`` uses for this layer, so the caller can
+        resolve each artifact's description by precedence instead of
+        enumeration order.
 
         Project-local overrides under ``.specify/templates/overrides`` are
         included too, so an artifact that exists only as an override is still
@@ -794,19 +826,10 @@ class ArtifactCatalog:
         the second validation surface.
         """
         from ..extensions import ExtensionManager, ExtensionManifest, ValidationError
-        from ..presets import PresetManager, PresetResolver  # lazy: avoids circular import
-
-        resolver = PresetResolver(self.project_root)
-        layers_by_artifact: dict[tuple[ArtifactKind, str], set[str]] = {}
+        from ..presets import PresetManager  # lazy: avoids circular import
 
         def _lookup_ids(kind: ArtifactKind, name: str) -> set[str]:
-            key = (kind, name)
-            if key not in layers_by_artifact:
-                layers_by_artifact[key] = {
-                    candidate["lookupId"]
-                    for candidate in resolver.collect_all_layers(name, kind)
-                }
-            return layers_by_artifact[key]
+            return {layer["lookupId"] for layer in layers_for(kind, name)}
 
         # -- Presets: the registry is authoritative, no unregistered fallback.
         preset_manager = PresetManager(self.project_root)
@@ -849,8 +872,8 @@ class ArtifactCatalog:
         pack_dir: Path,
         layer: str,
         lookup_ids: Callable[[ArtifactKind, str], set[str]],
-    ) -> Iterable[tuple[ArtifactKind, str, str]]:
-        """Yield ``(kind, name, description)`` for one preset or extension pack.
+    ) -> Iterable[tuple[ArtifactKind, str, str, str]]:
+        """Yield ``(kind, name, description, lookup_id)`` for one pack.
 
         ``manifest`` is a validated ``PresetManifest``/``ExtensionManifest``
         (or ``None`` if the pack has no usable manifest). Declared
@@ -869,8 +892,9 @@ class ArtifactCatalog:
                 description = contribution.get("description", "")
                 if not isinstance(description, str):
                     description = ""
-                if contribution["id"] in lookup_ids(kind, name):
-                    yield kind, name, description
+                lookup_id = contribution["id"]
+                if lookup_id in lookup_ids(kind, name):
+                    yield kind, name, description, lookup_id
 
         # Convention fallback: a preset/extension file placed at the
         # conventional path resolves whether or not the manifest declares it,
@@ -878,13 +902,13 @@ class ArtifactCatalog:
         for kind, name in _iter_convention_contributions(pack_dir):
             lookup_id = derive_named_id(layer, pack_dir.name, kind, name)
             if lookup_id in lookup_ids(kind, name):
-                yield kind, name, ""
+                yield kind, name, "", lookup_id
 
     def _iter_project_override_artifacts(
         self,
         resolver: Any,
-    ) -> Iterable[tuple[ArtifactKind, str, str]]:
-        """Yield ``(kind, name, "")`` for project-local override files.
+    ) -> Iterable[tuple[ArtifactKind, str, str, str]]:
+        """Yield ``(kind, name, "", lookup_id)`` for project-local overrides.
 
         A root ``overrides/<name>.md`` file is the override for both the
         ``template`` and the ``command`` lookup of ``<name>``, so it is
@@ -911,13 +935,16 @@ class ArtifactCatalog:
                 for layer in command_layers
             )
             is_command = backed_by_command or is_dotted_command_name(name)
-            yield ("command" if is_command else "template"), name, ""
+            kind: ArtifactKind = "command" if is_command else "template"
+            lookup_id = derive_named_id(PROJECT_OVERRIDE_LAYER, "_", kind, name)
+            yield kind, name, "", lookup_id
         scripts_dir = overrides_dir / "scripts"
         if not scripts_dir.is_dir():
             return
         for entry in sorted(scripts_dir.iterdir(), key=lambda p: p.name):
             if entry.is_file() and entry.suffix == _SCRIPT_SUFFIX:
-                yield "script", entry.stem, ""
+                lookup_id = derive_named_id(PROJECT_OVERRIDE_LAYER, "_", "script", entry.stem)
+                yield "script", entry.stem, "", lookup_id
 
 
 _CONVENTION_SUBDIRS: tuple[tuple[str, ArtifactKind, str], ...] = (
