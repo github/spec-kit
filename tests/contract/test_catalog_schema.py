@@ -308,6 +308,15 @@ def test_load_payload_rejects_unsupported_schema_version():
         load_catalog_payload(payload)
 
 
+def test_load_payload_accepts_matching_or_absent_schema_version():
+    payload = catalog_payload({"demo": catalog_entry_dict("demo")})
+    payload["schema_version"] = "1.5"
+    assert "demo" in load_catalog_payload(payload)
+
+    payload.pop("schema_version")
+    assert "demo" in load_catalog_payload(payload)
+
+
 @pytest.mark.parametrize("field", ["requires", "provides"])
 @pytest.mark.parametrize("bad", [[], "", 0, False])
 def test_catalog_entry_rejects_falsy_non_mapping(field, bad):
