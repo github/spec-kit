@@ -484,7 +484,10 @@ provides:
         manifest = PresetManifest(pack_dir / "preset.yml")
         hash_val = manifest.get_hash()
         assert hash_val.startswith("sha256:")
-        assert len(hash_val) > 10
+        import hashlib
+        content = (pack_dir / "preset.yml").read_bytes()
+        expected = f"sha256:{hashlib.sha256(content).hexdigest()}"
+        assert hash_val == expected
 
     def test_multiple_templates(self, temp_dir, valid_pack_data):
         """Test pack with multiple templates of different types."""
@@ -499,6 +502,41 @@ provides:
             yaml.dump(valid_pack_data, f)
         manifest = PresetManifest(manifest_path)
         assert len(manifest.templates) == 4
+
+    def test_duplicate_template_name_and_type_raises_validation_error(
+        self, temp_dir, valid_pack_data
+    ):
+        """A later entry with the same (name, type) pair must be rejected.
+
+        ``PresetResolver._manifest_declared_template`` returns the FIRST
+        'provides.templates' entry matching a given (name, type) pair, so a
+        later duplicate would be silently unreachable while still being
+        counted by ``PresetManifest.templates`` -- mirroring the sibling bug
+        fixed for ``ExtensionManifest``'s provides.templates/scripts (#4016).
+        """
+        valid_pack_data["provides"]["templates"] = [
+            {"type": "command", "name": "specify", "file": "commands/specify-v1.md"},
+            {"type": "command", "name": "specify", "file": "commands/specify-v2.md"},
+        ]
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        with pytest.raises(PresetValidationError, match="Duplicate template name"):
+            PresetManifest(manifest_path)
+
+    def test_same_name_different_type_templates_allowed(
+        self, temp_dir, valid_pack_data
+    ):
+        """The same name may recur across different template types."""
+        valid_pack_data["provides"]["templates"] = [
+            {"type": "template", "name": "specify", "file": "templates/specify.md"},
+            {"type": "command", "name": "specify", "file": "commands/specify.md"},
+        ]
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        manifest = PresetManifest(manifest_path)
+        assert len(manifest.templates) == 2
 
 
 # ===== PresetRegistry Tests =====
@@ -3274,6 +3312,38 @@ class TestPresetCatalogMultiCatalog:
         assert result.exit_code == 1
         assert "[/red]absent" in result.output
 
+    @pytest.mark.parametrize(
+        "args",
+        [
+            [
+                "preset",
+                "catalog",
+                "add",
+                "https://example.com/catalog.json",
+                "--name",
+                "example",
+            ],
+            ["preset", "catalog", "remove", "example"],
+        ],
+    )
+    def test_catalog_mutation_rejects_non_mapping_config_root(
+        self, project_dir, args
+    ):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        config_path = project_dir / ".specify" / "preset-catalogs.yml"
+        original = "[]\n"
+        config_path.write_text(original, encoding="utf-8")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(app, args)
+
+        assert result.exit_code == 1
+        assert "expected a mapping" in result.output
+        assert config_path.read_text(encoding="utf-8") == original
+
     def test_env_var_overrides_catalogs(self, project_dir, monkeypatch):
         """Test that SPECKIT_PRESET_CATALOG_URL env var overrides defaults."""
         monkeypatch.setenv(
@@ -4260,8 +4330,14 @@ class TestSelfTestPreset:
         assert manifest.id == "invalid-wrap"
         assert manager.registry.is_installed("invalid-wrap")
 
-    def test_extension_command_skipped_when_extension_missing(self, project_dir, temp_dir):
-        """Test that extension command overrides are skipped if the extension isn't installed."""
+    def test_selfcontained_namespaced_command_scaffolds_without_extension(self, project_dir, temp_dir):
+        """A preset shipping a self-contained ``speckit.<ns>.<cmd>`` command
+        scaffolds even when no matching extension is installed.
+
+        The command template ships its own body, so it is self-contained and
+        must render just like a short ``speckit.<cmd>`` command. It is not
+        dropped merely because ``.specify/extensions/fakeext/`` is absent.
+        """
         claude_dir = project_dir / ".claude" / "skills"
         claude_dir.mkdir(parents=True)
 
@@ -4297,11 +4373,13 @@ class TestSelfTestPreset:
         manager = PresetManager(project_dir)
         manager.install_from_directory(preset_dir, "0.1.5")
 
-        # Extension not installed — command should NOT be registered
-        cmd_file = claude_dir / "speckit.fakeext.cmd.md"
-        assert not cmd_file.exists(), "Command registered for missing extension"
+        # Extension not installed, but the preset ships its own command body —
+        # it must scaffold (as a native-skill SKILL.md for claude) and be
+        # tracked in the preset's registered_commands.
+        skill_file = claude_dir / "speckit-fakeext-cmd" / "SKILL.md"
+        assert skill_file.exists(), "Self-contained namespaced command was dropped"
         metadata = manager.registry.get("ext-override")
-        assert metadata["registered_commands"] == {}
+        assert metadata["registered_commands"] != {}
 
     def test_extension_command_registered_when_extension_present(self, project_dir, temp_dir):
         """Test that extension command overrides ARE registered when the extension is installed."""
@@ -6528,17 +6606,16 @@ class TestPresetSkills:
             "sanity: the new skills-mode artifact should still be written"
         )
 
-    def test_rescaffold_skips_extension_commands_when_extension_not_installed(
+    def test_rescaffold_scaffolds_selfcontained_namespaced_commands(
         self, project_dir, temp_dir
     ):
-        """Rescaffold must not materialize extension-scoped commands
-        (``speckit.<ext>.<cmd>``) when the extension isn't installed.
+        """A self-contained ``speckit.<ns>.<cmd>`` preset command scaffolds and
+        survives rescaffold, even when no matching extension is installed.
 
-        ``_register_commands`` refuses them, but the rescaffold seeded its
-        final reconciliation pass with every command template name
-        unfiltered, so ``_reconcile_composed_commands`` wrote the command
-        file anyway — an artifact no registry entry tracks (review
-        3623357358).
+        The preset ships the command body itself, so it is materialized just
+        like a short ``speckit.<cmd>`` command — both at install and through a
+        later reconciliation/rescaffold pass. It is not dropped by the
+        ``speckit.<ns>.<cmd>`` name shape (#4076).
         """
         self._write_init_options(project_dir, ai="copilot", ai_skills=False)
         commands_dir = project_dir / ".github" / "agents"
@@ -6552,24 +6629,24 @@ class TestPresetSkills:
         manager.install_from_directory(preset_dir, "0.1.5")
 
         ext_cmd = commands_dir / "speckit.git.feature.agent.md"
-        assert not ext_cmd.exists(), (
-            "sanity: install must not write an extension command when the "
-            "extension isn't installed"
+        assert ext_cmd.exists(), (
+            "sanity: install must scaffold a self-contained namespaced command "
+            "even when its like-named extension isn't installed"
         )
 
         manager.register_enabled_presets_for_agent("copilot")
 
-        assert not ext_cmd.exists(), (
-            "rescaffold must not materialize an extension-scoped command "
-            "whose extension isn't installed"
+        assert ext_cmd.exists(), (
+            "rescaffold must keep the self-contained namespaced command"
         )
         metadata = manager.registry.get("ext-scoped-preset")
-        assert not (metadata.get("registered_commands") or {}).get("copilot")
+        assert (metadata.get("registered_commands") or {}).get("copilot")
 
-    def test_rescaffold_skips_extension_skills_when_extension_not_installed(
+    def test_rescaffold_scaffolds_selfcontained_namespaced_skills(
         self, project_dir, temp_dir
     ):
-        """Historical tracking must not recreate a missing extension's skill."""
+        """A self-contained ``speckit.<ns>.<cmd>`` preset command renders its
+        skill even when no matching extension is installed."""
         self._write_init_options(project_dir, ai="copilot", ai_skills=True)
         skills_dir = project_dir / ".github" / "skills"
         skills_dir.mkdir(parents=True)
@@ -6586,27 +6663,79 @@ class TestPresetSkills:
 
         skill_name = "speckit-git-feature"
         skill_file = skills_dir / skill_name / "SKILL.md"
-        assert not skill_file.exists()
-
-        manager.registry.update(
-            "ext-scoped-skill-preset",
-            {"registered_skills": {"copilot": [skill_name]}},
-        )
-        overrides_dir = (
-            project_dir / ".specify" / "templates" / "overrides"
-        )
-        overrides_dir.mkdir(parents=True)
-        (overrides_dir / "speckit.git.feature.md").write_text(
-            "---\ndescription: Project override\n---\n\nOverride body\n",
-            encoding="utf-8",
+        assert skill_file.exists(), (
+            "install must render a self-contained namespaced command's skill "
+            "even when its like-named extension isn't installed"
         )
 
         manager.register_enabled_presets_for_agent("copilot")
 
-        assert not skill_file.exists(), (
-            "rescaffold must not materialize an extension-scoped skill "
-            "whose extension isn't installed"
+        assert skill_file.exists(), (
+            "rescaffold must keep the self-contained namespaced command's skill"
         )
+
+    def test_uncomposable_wrap_command_skips_skill_in_skills_mode(
+        self, project_dir, temp_dir
+    ):
+        """A wrap command with no base layer must not materialize a broken
+        skill in skills mode.
+
+        When ``_register_commands`` skips an uncomposable wrap command (no
+        base to compose onto — e.g. the command it wraps comes from an
+        uninstalled extension), ``_register_skills`` must skip it too. Before
+        this fix, skills mode fell back to the raw preset body and wrote a
+        SKILL.md containing a literal ``{CORE_TEMPLATE}`` placeholder.
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        skills_dir = project_dir / ".github" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        preset_dir = temp_dir / "uncomposable-wrap"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        # speckit.git.feature has no core command template and no installed
+        # extension, so there is no base layer to wrap.
+        (preset_dir / "commands" / "speckit.git.feature.md").write_text(
+            "---\ndescription: Wrap\nstrategy: wrap\n---\n\n"
+            "wrap start\n{CORE_TEMPLATE}\nwrap end\n"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "uncomposable-wrap",
+                "name": "uncomposable-wrap",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.git.feature",
+                        "file": "commands/speckit.git.feature.md",
+                        "strategy": "wrap",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        with pytest.warns(UserWarning, match="no base command layer"):
+            manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-git-feature" / "SKILL.md"
+        assert not skill_file.exists(), (
+            "an uncomposable wrap command must not be rendered as a skill"
+        )
+        # Belt-and-suspenders: no artifact anywhere may leak the raw placeholder.
+        leaked = [
+            p for p in skills_dir.rglob("*")
+            if p.is_file() and "{CORE_TEMPLATE}" in p.read_text(encoding="utf-8")
+        ]
+        assert not leaked, f"literal {{CORE_TEMPLATE}} leaked into {leaked}"
 
     def test_same_mode_partial_command_rescaffold_keeps_skipped_tracking(
         self, project_dir, temp_dir
@@ -10016,6 +10145,43 @@ class TestPresetSkills:
         assert "claude" in registered_skills and "speckit-specify" in registered_skills["claude"], (
             "claude's real ownership must be preserved in the migrated tracking"
         )
+
+    def test_short_and_namespaced_commands_scaffold_consistently(
+        self, project_dir, temp_dir
+    ):
+        """A preset's ``speckit.<cmd>`` and ``speckit.<ns>.<cmd>`` commands must
+        scaffold identically in command mode, with no installed extension.
+
+        Regression: the 3-part (``speckit.<ns>.<cmd>``) form was silently
+        dropped by a name-shape guard whenever ``.specify/extensions/<ns>/``
+        was absent, even though the preset ships the command body itself. The
+        2-part form always scaffolded. Both are self-contained and must behave
+        the same (#4076).
+        """
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        gemini_commands_dir = project_dir / ".gemini" / "commands"
+        gemini_commands_dir.mkdir(parents=True)
+
+        short_preset = self._create_command_preset(
+            temp_dir, "short-cmd", "speckit.newcmd", "Short", "short body",
+        )
+        ns_preset = self._create_command_preset(
+            temp_dir, "ns-cmd", "speckit.fakeext.newcmd", "Namespaced", "ns body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(short_preset, "0.1.5")
+        manager.install_from_directory(ns_preset, "0.1.5")
+
+        short_file = gemini_commands_dir / "speckit.newcmd.toml"
+        ns_file = gemini_commands_dir / "speckit.fakeext.newcmd.toml"
+        assert short_file.exists(), "2-part command should scaffold"
+        assert ns_file.exists(), (
+            "3-part namespaced command must scaffold too, even without the "
+            "matching extension installed"
+        )
+        assert manager.registry.get("short-cmd")["registered_commands"] != {}
+        assert manager.registry.get("ns-cmd")["registered_commands"] != {}
 
 
 class TestPresetSetPriority:
@@ -13576,7 +13742,7 @@ class TestInstalledPresetRichMarkup:
         )
 
         assert result.exit_code == 0, (result.output, result.exception)
-        assert "constitution.md" in strip_ansi(result.output)
+        assert "constitution.md" in "".join(strip_ansi(result.output).split())
 
     def test_resolve_rejects_empty_command_segments(self, project_dir):
         """Dotted command identifiers cannot contain empty path-like segments."""
@@ -13679,6 +13845,73 @@ class TestInstalledPresetRichMarkup:
         assert "Composition chain" in output, output
         assert "[base]" in output, output
         assert "[append]" in output, output
+
+
+class TestPresetListOrdering:
+    """``preset list`` must print presets in actual resolution/precedence order.
+
+    Regression coverage for #4086: the printed order was registry/insertion
+    order, so a preset with a *higher* priority number (lower precedence) could
+    appear before one with a lower number, misleading users about which preset
+    wins. Output must be sorted by (priority, id) to match
+    ``PresetRegistry.list_by_priority()``.
+    """
+
+    def _install(self, temp_dir, project_dir, pack_id, priority):
+        from specify_cli.presets import PresetManager
+
+        src = temp_dir / f"src-{pack_id}"
+        (src / "templates").mkdir(parents=True)
+        (src / "templates" / "spec-template.md").write_text("# tmpl\n")
+        (src / "preset.yml").write_text(yaml.dump({
+            "schema_version": "1.0",
+            "preset": {
+                "id": pack_id,
+                "name": pack_id,
+                "version": "1.0.0",
+                "description": "plain description",
+            },
+            "requires": {"speckit_version": ">=0.0.1"},
+            "provides": {"templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+            }]},
+        }))
+        PresetManager(project_dir).install_from_directory(src, "9.9.9", priority)
+
+    def _invoke(self, project_dir, args):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            return CliRunner().invoke(app, args)
+
+    def test_list_sorted_by_priority(self, temp_dir, project_dir):
+        """Lower priority number is listed first regardless of install order."""
+        # Install in an order that does NOT match precedence.
+        self._install(temp_dir, project_dir, "copilot-sub-agents", priority=100)
+        self._install(temp_dir, project_dir, "lean", priority=10)
+
+        result = self._invoke(project_dir, ["preset", "list"])
+        assert result.exit_code == 0, result.output
+        output = strip_ansi(result.output)
+        # `lean` (priority 10) must appear before `copilot-sub-agents` (100).
+        assert output.index("(lean)") < output.index("(copilot-sub-agents)"), output
+        assert "resolution order" in output, output
+        assert "Ties are broken by preset id" in output, output
+
+    def test_list_ties_broken_by_id(self, temp_dir, project_dir):
+        """Equal priority ties are broken alphabetically by preset id."""
+        self._install(temp_dir, project_dir, "zebra", priority=10)
+        self._install(temp_dir, project_dir, "alpha", priority=10)
+
+        result = self._invoke(project_dir, ["preset", "list"])
+        assert result.exit_code == 0, result.output
+        output = strip_ansi(result.output)
+        assert output.index("(alpha)") < output.index("(zebra)"), output
+
 
 class TestConstitutionSyncPreset:
     """The bundled opt-in ``constitution-sync`` preset re-adds materialization.

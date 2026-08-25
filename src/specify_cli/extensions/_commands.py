@@ -43,7 +43,15 @@ extension_app = typer.Typer(
 
 catalog_app = typer.Typer(
     name="catalog",
-    help="Manage extension catalogs",
+    help=(
+        "Manage extension catalogs.\n\n"
+        "Catalogs are either install sources (install_allowed) or discovery-only "
+        "search surfaces. The built-in 'community' catalog is discovery-only by "
+        "design: it is unvetted, so it is searchable but not installable. To install "
+        "something you found there, either use 'specify extension add <name> --from "
+        "<url>' after vetting it, or curate your own catalog you control. Never flip a "
+        "discovery-only catalog to install_allowed — that is the vetting boundary."
+    ),
     add_completion=False,
 )
 extension_app.add_typer(catalog_app, name="catalog")
@@ -69,6 +77,33 @@ def load_init_options(*args, **kwargs):
 def _display_project_path(*args, **kwargs):
     from .. import _display_project_path as _f
     return _f(*args, **kwargs)
+
+
+def _command_safe_id(raw_id: object, placeholder: str = "<extension-id>") -> str:
+    """Return an extension ID that is safe to embed in a suggested shell command.
+
+    Catalog entries (especially from discovery-only catalogs) are untrusted:
+    their keys are not validated during catalog merge, so an ``id`` like
+    ``foo; rm -rf ~`` could otherwise be interpolated into a command we
+    explicitly encourage the user to copy and run. ``rich.markup.escape`` only
+    neutralizes Rich markup, not shell metacharacters, so it is not sufficient
+    here. Only emit the real ID when it matches the same
+    lowercase-alphanumeric-and-hyphen rule ``ExtensionManifest`` enforces
+    (``^[a-z0-9-]+$``); otherwise fall back to a literal placeholder so the
+    printed command never carries catalog-controlled shell text.
+
+    A leading hyphen is additionally rejected: an ID like ``--force`` satisfies
+    the pattern but Typer would parse it as an option rather than the positional
+    extension argument, yielding a non-copyable or option-altering command.
+    """
+    from . import VALID_EXTENSION_ARTIFACT_NAME_PATTERN
+
+    text = str(raw_id)
+    if text.startswith("-"):
+        return placeholder
+    if VALID_EXTENSION_ARTIFACT_NAME_PATTERN.match(text):
+        return text
+    return placeholder
 
 
 def _refresh_events_and_warn(project_root: Path) -> None:
@@ -444,6 +479,14 @@ def catalog_list():
         console.print(f"     Install: {install_str}")
         console.print()
 
+    if any(not entry.install_allowed for entry in active_catalogs):
+        console.print(
+            "[dim]Discovery-only catalogs are searchable but not installable by design "
+            "(unvetted sources). To install something you found in one, vet it and run "
+            "'specify extension add <name> --from <url>', or add it to a catalog you "
+            "control. Don't flip a discovery-only catalog to install_allowed.[/dim]\n"
+        )
+
     config_path = project_root / ".specify" / "extension-catalogs.yml"
     user_config_path = Path.home() / ".specify" / "extension-catalogs.yml"
     if os.environ.get("SPECKIT_CATALOG_URL"):
@@ -477,7 +520,11 @@ def catalog_add(
     priority: int = typer.Option(10, "--priority", help="Priority (lower = higher priority)"),
     install_allowed: bool = typer.Option(
         False, "--install-allowed/--no-install-allowed",
-        help="Allow extensions from this catalog to be installed",
+        help=(
+            "Mark this catalog as a trusted install source. Only enable this for a "
+            "catalog you own and vet; leave it off (the default) for discovery-only "
+            "search surfaces. Never enable it for an unvetted public catalog."
+        ),
     ),
     description: str = typer.Option("", "--description", help="Description of the catalog"),
 ):
@@ -903,8 +950,8 @@ def extension_add(
         # Warn about untrusted sources — default-deny confirmation
         console.print()
         console.print(Panel(
-            f"[bold]You are installing an extension from an external URL that is not\n"
-            f"listed in any of your configured extension catalogs.[/bold]\n\n"
+            f"[bold]You are installing an extension directly from an external URL,\n"
+            f"bypassing your trusted (install-allowed) extension catalogs.[/bold]\n\n"
             f"URL: {safe_url}\n\n"
             f"Only install extensions from sources you trust.",
             title="[bold yellow]⚠ Untrusted Source[/bold yellow]",
@@ -1007,13 +1054,25 @@ def extension_add(
                         # Enforce install_allowed policy
                         if not ext_info.get("_install_allowed", True):
                             catalog_name = _escape_markup(str(ext_info.get("_catalog_name", "community")))
+                            resolved_id = _command_safe_id(ext_info["id"])
                             console.print(
-                                f"[red]Error:[/red] '{safe_extension}' is available in the "
-                                f"'{catalog_name}' catalog but installation is not allowed from that catalog."
+                                f"[red]Error:[/red] '{safe_extension}' was found in the "
+                                f"'{catalog_name}' catalog, which is discovery-only — a search "
+                                f"surface, not an install source."
                             )
                             console.print(
-                                f"\nTo enable installation, add '{safe_extension}' to an approved catalog "
-                                f"(install_allowed: true) in .specify/extension-catalogs.yml."
+                                "\nDiscovery-only catalogs are intentionally not installable so "
+                                "unvetted extensions can't be pulled in without review. Don't flip "
+                                "such a catalog to install_allowed. Instead, once you've vetted this "
+                                "extension:"
+                            )
+                            console.print(
+                                f"  • install it directly from its archive URL:\n"
+                                f"      specify extension add {resolved_id} --from <archive-url>"
+                            )
+                            console.print(
+                                "  • or add it to a catalog you curate and control "
+                                "(install_allowed: true)."
                             )
                             raise typer.Exit(1)
 
@@ -1256,14 +1315,16 @@ def extension_search(
                 console.print(f"  [dim]Repository:[/dim] {_escape_markup(str(ext['repository']))}")
 
             # Install command (show warning if not installable)
-            safe_id = _escape_markup(str(ext['id']))
+            cmd_id = _command_safe_id(ext['id'])
             if install_allowed:
-                console.print(f"\n  [cyan]Install:[/cyan] specify extension add {safe_id}")
+                console.print(f"\n  [cyan]Install:[/cyan] specify extension add {cmd_id}")
             else:
-                console.print(f"\n  [yellow]⚠[/yellow]  Not directly installable from '{catalog_name}'.")
+                console.print(f"\n  [yellow]⚠[/yellow]  Not directly installable from '{catalog_name}' (discovery-only).")
                 console.print(
-                    f"  Add to an approved catalog with install_allowed: true, "
-                    f"or install from an archive URL: specify extension add {safe_id} --from <archive-url>"
+                    f"  Once vetted, install it directly: specify extension add {cmd_id} --from <archive-url>"
+                )
+                console.print(
+                    "  Don't flip a discovery-only catalog to install_allowed — that's the vetting boundary."
                 )
             console.print()
 
@@ -1485,22 +1546,39 @@ def _print_extension_info(ext_info: dict, manager):
     is_installed = manager.registry.is_installed(ext_info['id'])
     install_allowed = ext_info.get("_install_allowed", True)
     safe_id = _escape_markup(str(ext_info['id']))
+    cmd_id = _command_safe_id(ext_info['id'])
     if is_installed:
         console.print("[green]✓ Installed[/green]")
         metadata = manager.registry.get(ext_info['id'])
         priority = normalize_priority(metadata.get("priority") if isinstance(metadata, dict) else None)
         console.print(f"[dim]Priority:[/dim] {priority}")
-        console.print(f"\nTo remove: specify extension remove {safe_id}")
+        console.print(f"\nTo remove: specify extension remove {cmd_id}")
     elif install_allowed:
         console.print("[yellow]Not installed[/yellow]")
-        console.print(f"\n[cyan]Install:[/cyan] specify extension add {safe_id}")
+        console.print(f"\n[cyan]Install:[/cyan] specify extension add {cmd_id}")
     else:
         catalog_name = _escape_markup(str(ext_info.get("_catalog_name", "community")))
         console.print("[yellow]Not installed[/yellow]")
         console.print(
-            f"\n[yellow]⚠[/yellow]  '{safe_id}' is available in the '{catalog_name}' catalog "
-            f"but not in your approved catalog. Add it to .specify/extension-catalogs.yml "
-            f"with install_allowed: true to enable installation."
+            f"\n[yellow]⚠[/yellow]  '{safe_id}' is in the '{catalog_name}' catalog, which is "
+            f"discovery-only (a search surface, not an install source)."
+        )
+        download_url = ext_info.get("download_url")
+        if download_url:
+            console.print(
+                f"Candidate archive (vet before installing): {_escape_markup(str(download_url))}"
+            )
+            console.print(
+                f"Once vetted, install directly: specify extension add {cmd_id} --from <archive-url>"
+            )
+        else:
+            console.print(
+                f"Once you've vetted its release archive, install directly: "
+                f"specify extension add {cmd_id} --from <archive-url>"
+            )
+        console.print(
+            "Discovery-only catalogs are intentionally not install sources — don't set "
+            "install_allowed on them."
         )
 
 

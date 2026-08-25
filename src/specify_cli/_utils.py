@@ -213,7 +213,7 @@ def handle_vscode_settings(sub_item, dest_file, rel_path, verbose=False, tracker
             shutil.copy2(sub_item, dest_file)
             log("Copied (no existing settings.json):", "blue")
 
-    except Exception as e:
+    except (OSError, ValueError, KeyError) as e:
         log(f"Warning: Could not merge settings: {e}", "yellow")
         if not dest_file.exists():
             shutil.copy2(sub_item, dest_file)
@@ -249,7 +249,7 @@ def merge_json_files(existing_path: Path, new_content: Any, verbose: bool = Fals
         except FileNotFoundError:
             # Handle race condition where file is deleted after exists() check
             exists = False
-        except Exception as e:
+        except (OSError, ValueError) as e:
             if verbose:
                 console.print(f"[yellow]Warning: Could not read or parse existing JSON in {existing_path.name} ({e}).[/yellow]")
             # Skip merge to preserve existing file if unparseable or inaccessible (e.g. PermissionError)

@@ -409,6 +409,7 @@ class PresetManifest:
             raise PresetValidationError(
                 "Preset must provide at least one template"
             )
+        seen_name_types: set[tuple[str, str]] = set()
         for tmpl in templates:
             if not isinstance(tmpl, dict):
                 raise PresetValidationError(
@@ -437,6 +438,20 @@ class PresetManifest:
                     f"Invalid template type '{tmpl['type']}': "
                     f"must be one of {sorted(VALID_PRESET_TEMPLATE_TYPES)}"
                 )
+
+            # PresetResolver._manifest_declared_template returns the first
+            # 'provides.templates' entry matching a given (name, type) pair, so
+            # a later duplicate would be silently unreachable while still being
+            # counted by PresetManifest.templates. Reject at validation time
+            # instead, mirroring the sibling fix for ExtensionManifest's
+            # provides.templates/scripts (#4016).
+            name_type = (tmpl["name"], tmpl["type"])
+            if name_type in seen_name_types:
+                raise PresetValidationError(
+                    f"Duplicate template name '{tmpl['name']}' of type "
+                    f"'{tmpl['type']}' in 'provides.templates'"
+                )
+            seen_name_types.add(name_type)
 
             # Validate file path safety: must be relative, no parent traversal
             file_path = tmpl["file"]
@@ -526,8 +541,11 @@ class PresetManifest:
 
     def get_hash(self) -> str:
         """Calculate SHA256 hash of manifest file."""
+        h = hashlib.sha256()
         with open(self.path, 'rb') as f:
-            return f"sha256:{hashlib.sha256(f.read()).hexdigest()}"
+            for chunk in iter(lambda: f.read(8192), b""):
+                h.update(chunk)
+        return f"sha256:{h.hexdigest()}"
 
 
 class PresetRegistry:
@@ -823,25 +841,6 @@ class PresetManager:
 
         return True
 
-    def _extension_installed_for_command(self, command_name: str) -> bool:
-        """Whether *command_name* may be materialized in this project.
-
-        Extension command overrides follow ``speckit.<ext-id>.<cmd-name>``;
-        they must be skipped everywhere preset artifacts are written —
-        registration *and* reconciliation — when the extension isn't
-        installed, or reconciliation would materialize files that
-        registration refused to track. Core commands (single-dot names,
-        e.g. ``speckit.specify``) always pass.
-        """
-        parts = command_name.split(".")
-        if len(parts) >= 3 and parts[0] == "speckit":
-            ext_id = parts[1]
-            if not (
-                self.project_root / ".specify" / "extensions" / ext_id
-            ).is_dir():
-                return False
-        return True
-
     def _register_commands(
         self,
         manifest: PresetManifest,
@@ -870,21 +869,20 @@ class PresetManager:
         if not command_templates:
             return {}
 
-        # Filter out extension command overrides if the extension isn't installed.
-        filtered = [
-            cmd
-            for cmd in command_templates
-            if self._extension_installed_for_command(cmd["name"])
-        ]
-
-        if not filtered:
-            return {}
-
+        # A preset command template always ships its own body, so it is
+        # self-contained and scaffolds regardless of whether any similarly
+        # named extension is installed. Namespaced names (speckit.<ns>.<cmd>)
+        # are treated exactly like short names (speckit.<cmd>) — they are NOT
+        # filtered out just because ``.specify/extensions/<ns>/`` is absent.
+        # The only command that cannot be materialized is a composition
+        # (prepend/append/wrap) with no base layer to compose onto; that case
+        # is handled per-command below (warn + skip), not by dropping names up
+        # front.
         # Handle composition strategies: resolve composed content for non-replace commands
         resolver = PresetResolver(self.project_root)
         composed_dir = None
         commands_to_register = []
-        for cmd in filtered:
+        for cmd in command_templates:
             strategy = cmd.get("strategy", "replace")
             if strategy != "replace":
                 # Only pre-compose if this preset is the top composing layer.
@@ -907,13 +905,23 @@ class PresetManager:
                             "file": f".composed/{cmd['name']}.md",
                         })
                     else:
-                        raise PresetValidationError(
-                            f"Command '{cmd['name']}' uses '{strategy}' strategy "
-                            f"but no base command layer exists to compose onto. "
-                            f"Ensure a lower-priority preset, extension, or core "
-                            f"command provides this command before using "
-                            f"composition strategies."
+                        # No base layer to compose onto (e.g. the command it
+                        # would wrap comes from an extension that isn't
+                        # installed). Warn and skip this single command rather
+                        # than aborting the whole install — mirrors the
+                        # "composed is None" branch in
+                        # _reconcile_composed_commands so command-mode and
+                        # reconciliation behave identically.
+                        import warnings
+                        warnings.warn(
+                            f"Command '{cmd['name']}' uses '{strategy}' "
+                            f"strategy but no base command layer exists to "
+                            f"compose onto; skipping. Provide a lower-priority "
+                            f"preset, extension, or core command for it before "
+                            f"using composition strategies.",
+                            stacklevel=2,
                         )
+                        continue
                 else:
                     # Not the top layer — register raw file; reconciliation
                     # will overwrite with the correct composed/winning content.
@@ -1681,21 +1689,13 @@ class PresetManager:
         if not command_names:
             return set()
 
-        # Never materialize extension-scoped commands whose extension isn't
-        # installed. Registration (_register_commands / _register_skills)
-        # already refuses them, so a reconciliation pass writing them would
-        # create files no registry entry tracks. Filtering here — the single
-        # chokepoint every install/remove/rescaffold reconciliation funnels
-        # through — keeps all callers consistent without each one re-applying
-        # the filter when seeding names from manifest templates.
-        command_names = [
-            name
-            for name in command_names
-            if self._extension_installed_for_command(name)
-        ]
-        if not command_names:
-            return set()
-
+        # Every preset-owned command name flows through unchanged. Names are
+        # NOT filtered by the ``speckit.<ns>.<cmd>`` shape: a self-contained
+        # preset command scaffolds whether or not a like-named extension is
+        # installed (parity with _register_commands), and a name whose base
+        # layer has disappeared must still reach the loop below so its now
+        # uncomposable stale file gets unregistered. The loop already skips
+        # names that resolve to no layers at all (``if not layers: continue``).
         try:
             from ..agents import CommandRegistrar
         except ImportError:
@@ -2136,14 +2136,11 @@ class PresetManager:
         if not command_names:
             return set()
 
-        command_names = [
-            name
-            for name in command_names
-            if self._extension_installed_for_command(name)
-        ]
-        if not command_names:
-            return set()
-
+        # Preset-owned command names are not filtered by the
+        # ``speckit.<ns>.<cmd>`` shape here either: a self-contained preset
+        # command renders its skill whether or not a like-named extension is
+        # installed. The per-name loop below skips anything that doesn't
+        # resolve to a managed skill directory.
         resolver = PresetResolver(self.project_root)
         active_skills_dir = self._get_skills_dir()
 
@@ -2673,20 +2670,16 @@ class PresetManager:
         if not command_templates:
             return {}
 
-        # Filter out extension command overrides if the extension isn't installed,
-        # matching the same logic used by _register_commands().
-        filtered = [
-            cmd
-            for cmd in command_templates
-            if self._extension_installed_for_command(cmd["name"])
-        ]
-
-        if not filtered:
-            return {}
-
+        # Preset command templates are self-contained and render as skills
+        # regardless of whether a like-named extension is installed — the same
+        # rule _register_commands() uses. No ``speckit.<ns>.<cmd>`` name-shape
+        # filtering; the per-command loop below skips anything without a target
+        # skill directory.
         skills_dir = target_dir if target_dir is not None else self._get_skills_dir()
         if not skills_dir:
             return {}
+
+        resolver = PresetResolver(self.project_root)
 
         from .. import SKILL_DESCRIPTIONS, load_init_options
         from ..agents import CommandRegistrar
@@ -2717,7 +2710,7 @@ class PresetManager:
 
         written: List[str] = []
 
-        for cmd_tmpl in filtered:
+        for cmd_tmpl in command_templates:
             cmd_name = cmd_tmpl["name"]
             cmd_file_rel = cmd_tmpl["file"]
             source_file = preset_dir / cmd_file_rel
@@ -2756,6 +2749,29 @@ class PresetManager:
             # Parse the command file
             content = source_file.read_text(encoding="utf-8")
             frontmatter, body = registrar.parse_frontmatter(content)
+
+            # A composition-strategy command (wrap/prepend/append) needs a
+            # base layer to compose onto. When _register_commands produced no
+            # composed file for it and the stack still has no base
+            # (resolve_content is None) — e.g. the command it wraps comes from
+            # an extension that isn't installed — rendering the raw preset
+            # fragment as a skill would emit broken output: a literal
+            # {CORE_TEMPLATE} for wrap, or only the preset's own fragment for
+            # prepend/append. Skip it here too so command mode and skills mode
+            # agree (mirrors _register_commands, which skips the same command).
+            # _register_commands already warned for this command in the same
+            # pass, so the skip is silent here to avoid a duplicate warning.
+            effective_strategy = (
+                cmd_tmpl.get("strategy")
+                or frontmatter.get("strategy")
+                or "replace"
+            )
+            if (
+                effective_strategy != "replace"
+                and not composed_file.exists()
+                and resolver.resolve_content(cmd_name, "command") is None
+            ):
+                continue
 
             if frontmatter.get("strategy") == "wrap":
                 body, core_frontmatter = _substitute_core_template(body, cmd_name, self.project_root, registrar)

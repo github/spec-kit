@@ -96,6 +96,25 @@ Changes the resolution priority of an extension. When multiple extensions provid
 
 Extension catalogs control where `search` and `add` look for extensions. Catalogs are checked in priority order (lower number = higher precedence).
 
+### Trust model: discovery-only vs. install sources
+
+Catalogs come in two kinds, and the distinction is a **security boundary**, not a limitation:
+
+- **Install sources** (`install_allowed: true`) — catalogs you trust as a place to install from. The built-in `default` (official) catalog is one, as is any catalog you author and vet yourself.
+- **Discovery-only** catalogs (`install_allowed: false`) — searchable surfaces for *finding* extensions, but not installable. The built-in `community` catalog is discovery-only and is already active for `search` out of the box; you do not need to add it.
+
+`community` is intentionally discovery-only because it is an open, unvetted list. Making everything in it one-command-installable would mean pulling arbitrary third-party code with no review.
+
+> **Do not flip a discovery-only catalog to `install_allowed`.** That defeats the entire point of separating discovery from installation. There are two correct ways to install something you found via `community`:
+>
+> 1. **Install a single vetted extension directly** with `--from` (no catalog authoring needed). Get the candidate archive URL from `specify extension info <name>` — for a discovery-only entry it prints a "Candidate archive" URL. Review that release archive, then install it:
+>    ```bash
+>    specify extension info <name>          # shows the candidate archive URL
+>    specify extension add <name> --from <archive-url>
+>    ```
+>    Treat the URL as untrusted until you have vetted it — it comes from an unvetted catalog.
+> 2. **Curate your own catalog** you control and vet, and mark *that* catalog `install_allowed: true` — for when you want a governed, reusable install source (e.g. for an org).
+
 ### List Catalogs
 
 ```bash
@@ -114,7 +133,7 @@ specify extension catalog add <url>
 | ------------------------------------ | -------------------------------------------------- |
 | `--name <name>`                      | Required. Unique name for the catalog              |
 | `--priority <N>`                     | Priority (default: 10; lower = higher precedence)  |
-| `--install-allowed / --no-install-allowed` | Whether extensions can be installed from this catalog |
+| `--install-allowed / --no-install-allowed` | Mark the catalog as a trusted install source. Only enable for a catalog you own and vet; leave off (the default) for discovery-only sources. Never enable it for an unvetted public catalog. |
 | `--description <text>`               | Optional description                               |
 
 Adds a catalog to the project's `.specify/extension-catalogs.yml`.
@@ -134,9 +153,9 @@ Catalogs are resolved in this order (first match wins):
 1. **Environment variable** — `SPECKIT_CATALOG_URL` overrides all catalogs
 2. **Project config** — `.specify/extension-catalogs.yml`
 3. **User config** — `~/.specify/extension-catalogs.yml`
-4. **Built-in defaults** — official catalog + community catalog
+4. **Built-in defaults** — official `default` catalog (install-allowed) + `community` catalog (discovery-only)
 
-Example `.specify/extension-catalogs.yml`:
+Example `.specify/extension-catalogs.yml` for a catalog you own and vet:
 
 ```yaml
 catalogs:

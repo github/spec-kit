@@ -772,8 +772,6 @@ def _local_manifest_source(arg: str):
         return BundleManifest.from_file(manifest_path)
 
     if candidate.suffix == ".zip":
-        import io
-
         import yaml as _yaml
 
         from ..._download_security import open_zip_bounded, read_zip_member_limited
@@ -791,8 +789,20 @@ def _local_manifest_source(arg: str):
                 error_type=BundlerError,
                 label="bundle manifest",
             )
+        # The bounded-zip helpers above keep archive failures inside the
+        # BundlerError contract, but the manifest bytes need the same
+        # treatment as yamlio.load_yaml: decode as UTF-8 explicitly —
+        # feeding PyYAML the byte stream would let its Reader auto-detect
+        # a UTF-16 BOM and accept a manifest the directory and bundle.yml
+        # sources reject.
         try:
-            data = _yaml.safe_load(io.BytesIO(raw))
+            text = raw.decode("utf-8")
+        except UnicodeError as exc:
+            raise BundlerError(
+                f"Could not read bundle.yml inside '{candidate}': {exc}"
+            ) from exc
+        try:
+            data = _yaml.safe_load(text)
         except _yaml.YAMLError as exc:
             # The sibling directory/bundle.yml branches reach YAML through
             # load_yaml(), which turns a parse failure into a BundlerError. This
@@ -924,7 +934,6 @@ def _download_remote_manifest(
     expected_sha256: str | None = None,
 ):
     """Fetch a remote bundle artifact over HTTPS and extract its manifest."""
-    import io
     import tempfile
     from pathlib import PurePosixPath
     from urllib.parse import urlparse as _urlparse
@@ -1028,7 +1037,20 @@ def _download_remote_manifest(
                     )
                 return manifest
 
-        data = _yaml.safe_load(io.BytesIO(raw))
+        # Decode as UTF-8 explicitly -- matching yamlio.load_yaml's contract --
+        # instead of feeding PyYAML the raw byte stream. PyYAML's Reader
+        # auto-detects a UTF-16 BOM and would silently *accept* a manifest
+        # that the local directory/bundle.yml sources reject, letting this
+        # remote-download path diverge from them (see the sibling .zip fix
+        # for _local_manifest_source, which had the identical bug).
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeError as exc:
+            raise BundlerError(
+                f"Downloaded content for bundle '{entry_id}' from "
+                f"{_source_desc} could not be read: {exc}"
+            ) from exc
+        data = _yaml.safe_load(text)
         return BundleManifest.from_dict(data)
     except BundlerError:
         raise

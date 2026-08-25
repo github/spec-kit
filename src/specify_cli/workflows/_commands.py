@@ -1708,6 +1708,24 @@ def workflow_list():
         console.print()
 
 
+def _cleanup_download_tmp_path(tmp_path: Path | None) -> None:
+    """Best-effort unlink of a partially-downloaded workflow temp file.
+
+    A cleanup ``OSError`` here must never replace/mask whatever error or
+    interrupt is already propagating -- warn about it and keep going.
+    """
+    if tmp_path is None:
+        return
+    try:
+        tmp_path.unlink(missing_ok=True)
+    except OSError as cleanup_exc:
+        console.print(
+            "[yellow]Warning:[/yellow] Could not remove temporary "
+            f"workflow download file: {_escape_markup(str(cleanup_exc))} "
+            f"(path: {_escape_markup(str(tmp_path))})"
+        )
+
+
 @workflow_app.command("add")
 def workflow_add(
     source: str = typer.Argument(..., help="Workflow ID, URL, or local path"),
@@ -2037,23 +2055,23 @@ def workflow_add(
                             _enforce_workflow_yaml_size(downloaded_content)
                     tmp.write(downloaded_content)
         except typer.Exit:
+            _cleanup_download_tmp_path(tmp_path)
             raise
         except Exception as exc:
-            if tmp_path is not None:
-                # A cleanup failure here must never replace/mask the
-                # original download error below with a raw, unhandled
-                # OSError -- warn about it and keep going, exactly like the
-                # later post-install finally cleanup does.
-                try:
-                    tmp_path.unlink(missing_ok=True)
-                except OSError as cleanup_exc:
-                    console.print(
-                        "[yellow]Warning:[/yellow] Could not remove temporary "
-                        f"workflow download file: {_escape_markup(str(cleanup_exc))} "
-                        f"(path: {_escape_markup(str(tmp_path))})"
-                    )
+            # A cleanup failure here must never replace/mask the
+            # original download error below with a raw, unhandled
+            # OSError -- warn about it and keep going, exactly like the
+            # later post-install finally cleanup does.
+            _cleanup_download_tmp_path(tmp_path)
             console.print(f"[red]Error:[/red] Failed to download workflow: {_escape_markup(str(exc))}")
             raise typer.Exit(1)
+        except BaseException:
+            # Covers KeyboardInterrupt and other non-Exception exits: the
+            # temp file is already created on disk (delete=False) by this
+            # point, so an interrupt during the size-limited read must still
+            # unlink it rather than leaking it to the system temp directory.
+            _cleanup_download_tmp_path(tmp_path)
+            raise
         try:
             if downloaded_archive_format is None:
                 _validate_and_install_local(

@@ -20,11 +20,22 @@
     <a href="./README.zh-CN.md">简体中文</a>
 </p>
 
+> [!NOTE]
+> **One year of Spec Kit — and 1.0.0**
+>
+> One year after the first commit, Spec Kit has reached [1.0.0](https://github.com/github/spec-kit/releases/tag/v1.0.0) — not because the work is finished or its shape is frozen, but because the project has grown into something coherent, useful, and shaped by far more people than those who started it.
+>
+> The lead maintainer's personal anniversary post, [*Spec Kit Turns One — and Ships 1.0.0*](https://www.manorrock.com/blog/2026/08/21/spec_kit_turns_one.html), defines what 1.0.0 actually means for the project: **it is now just a number**. As agents make adapting to change dramatically cheaper, the value moves from stability to adaptability.
+>
+> To everyone who has used Spec Kit, challenged its assumptions, reported a problem, contributed code or documentation, created an extension or preset, shared an idea, or helped someone else get started: **thank you**. This milestone belongs to the community that carried the project through its first year and continues to shape where it goes next.
+
 ---
 
 ## Table of Contents
 
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
+- [🐞 Bug Fixing with Spec Kit](#-bug-fixing-with-spec-kit)
+- [💡 Assessing Ideas with Spec Kit](#-assessing-ideas-with-spec-kit)
 - [⚡ Get Started](#-get-started)
 - [📽️ Video Overview](#️-video-overview)
 - [🌍 Community](#-community)
@@ -44,6 +55,75 @@
 ## 🤔 What is Spec-Driven Development?
 
 Spec-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" of coding began. Spec-Driven Development changes this: **specifications become executable**, directly generating working implementations rather than just guiding them.
+
+### SDD Quickstart
+
+Replace `vX.Y.Z` with the [latest release tag](https://github.com/github/spec-kit/releases), keeping the leading `v`.
+
+```bash
+uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
+specify init my-project --integration copilot
+cd my-project
+```
+
+Launch your coding agent in the project directory, then:
+
+0. **Establish** your project principles once (`/speckit-constitution`). This is a one-time step per project.
+1. **Specify** what you want to build (`/speckit-specify`).
+2. **Plan** how you will build it (`/speckit-plan`).
+3. **Break down** the plan into actionable tasks (`/speckit-tasks`).
+4. **Implement** the tasks (`/speckit-implement`).
+5. **Converge** the implementation against the spec, plan, and tasks (`/speckit-converge`).
+
+> [!NOTE]
+> Repeat steps 4 and 5 until `/speckit-converge` reports **Converged**.
+
+## 🐞 Bug Fixing with Spec Kit
+
+Bug fixes are risky when an agent jumps straight from a report to a patch without validating the diagnosis or confirming that the fix resolves the original symptom. The bundled, opt-in bug extension provides a repeatable **assess → fix → test** workflow that keeps each fix scoped, evidence-based, and documented from root cause through verification.
+
+### Bug Fix Quickstart
+
+Replace `vX.Y.Z` with the [latest release tag](https://github.com/github/spec-kit/releases), keeping the leading `v`.
+
+```bash
+uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
+specify init my-project --integration copilot
+cd my-project
+specify extension add bug
+```
+
+Launch your coding agent in the project directory, then:
+
+1. **Assess** the bug (`/speckit-bug-assess "<bug report>" slug=login-crash`).
+2. **Fix** the assessed cause (`/speckit-bug-fix slug=login-crash`).
+3. **Test** the fix (`/speckit-bug-test slug=login-crash`).
+
+## 💡 Assessing Ideas with Spec Kit
+
+Good ideas deserve evidence before commitment, whether or not they become software. The bundled, opt-in assess extension turns a raw idea into a documented **go / needs-clarification / kill** decision through an independent **intake → research → define → shape → decide** workflow.
+
+### Idea Assessment Quickstart
+
+Replace `vX.Y.Z` with the [latest release tag](https://github.com/github/spec-kit/releases), keeping the leading `v`.
+
+```bash
+uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
+specify init my-project --integration copilot
+cd my-project
+specify extension add assess
+```
+
+Launch your coding agent in the project directory, then:
+
+1. **Intake** the idea (`/speckit-assess-intake "<idea>" slug=offline-mode`).
+2. **Research** supporting and opposing evidence (`/speckit-assess-research slug=offline-mode`).
+3. **Define** the problem, goals, and success metrics (`/speckit-assess-define slug=offline-mode`).
+4. **Shape** possible solutions and their trade-offs (`/speckit-assess-shape slug=offline-mode`).
+5. **Decide** whether to proceed, clarify, or stop (`/speckit-assess-decide slug=offline-mode`).
+
+> [!NOTE]
+> Idea assessment is standalone. If you choose to build an idea with a **go** decision, you can hand it off to `/speckit-specify`.
 
 ## ⚡ Get Started
 
@@ -68,6 +148,13 @@ See the [Installation Guide](./docs/installation.md) for alternative methods, ve
 ```bash
 specify init my-project --integration copilot
 cd my-project
+```
+
+For CI or AI agent harnesses (no keyboard, or a PTY that cannot send arrow keys), pass `--non-interactive` so init never hangs on a picker. Combine with `--force` when initializing into a non-empty directory:
+
+```bash
+specify init my-project --non-interactive --ignore-agent-tools
+specify init --here --force --non-interactive --integration claude
 ```
 
 To check for updates or upgrade the installed CLI, use the self-management commands. See the [Upgrade Guide](./docs/upgrade.md) for detailed scenarios and customization options.

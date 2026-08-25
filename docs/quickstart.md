@@ -3,7 +3,7 @@
 This guide will help you get started with Spec-Driven Development using Spec Kit. Throughout, we illustrate each step with a running example: **Taskify**, a small team productivity platform.
 
 > [!NOTE]
-> Automation scripts are provided as Bash (`.sh`), PowerShell (`.ps1`), and Python (`.py`) variants. Interactive `specify init` prompts you to choose one; non-interactive runs default to a shell variant for your OS. Pass `--script sh|ps|py` to select explicitly.
+> Automation scripts are provided as Bash (`.sh`), PowerShell (`.ps1`), and Python (`.py`) variants. Interactive `specify init` prompts you to choose one; non-interactive runs (no TTY, or `--non-interactive`) default to a shell variant for your OS. Pass `--script sh|ps|py` to select explicitly.
 
 Commands are shown here in `/speckit.*` form, but the exact invocation depends on your agent. Some skills-based agents use `$speckit-*` (e.g. Codex, ZCode) or `/skill:speckit-*` (e.g. Kimi). Use whichever form your agent exposes — the steps are otherwise identical.
 
@@ -43,10 +43,13 @@ uv tool install specify-cli
 specify init taskify   # or: specify init .   to use the current directory
 ```
 
-`init` lets you pick your coding agent interactively, or pass it explicitly with `--integration` (e.g. `--integration copilot`).
+`init` lets you pick your coding agent interactively, or pass it explicitly with `--integration` (e.g. `--integration copilot`). For CI and AI agent harnesses, add `--non-interactive` so unspecified choices use documented defaults instead of hanging on an arrow-key picker.
 
 > [!NOTE]
 > Prefer `pipx`, one-time `uvx` runs, a pinned release, or an offline/air-gapped setup? See the [Installation Guide](installation.md) for all supported methods.
+> Adding Spec Kit to a repository that already contains code? Follow
+> [Adopting Spec Kit in an Existing Project](guides/existing-projects.md) before
+> starting the workflow below.
 
 ### Step 1: `/speckit.constitution` — set the ground rules
 
