@@ -16,7 +16,7 @@ specify artifact list --json
 | -------- | -------------------------------------------------------- |
 | `--json` | Required. Emit the inventory as a JSON array on stdout.  |
 
-Prints a flat inventory of every visible artifact — one row per `(kind, name)` pair — sorted by kind (`command`, then `template`, then `script`) and then by name.
+Prints the full inventory of every visible artifact — one row per `(kind, name)` pair, including its composition `stack` — sorted by kind (`command`, then `template`, then `script`) and then by name.
 
 ```json
 [
@@ -24,23 +24,52 @@ Prints a flat inventory of every visible artifact — one row per `(kind, name)`
     "id": "command:speckit.specify",
     "name": "speckit.specify",
     "kind": "command",
-    "description": "Create or update the feature specification."
+    "description": "Create or update the feature specification.",
+    "stack": [
+      {
+        "id": "command:speckit.specify",
+        "layer": null,
+        "sourceId": null,
+        "presetId": null,
+        "presetName": null,
+        "strategy": "replace",
+        "active": true,
+        "hidden": false,
+        "manifestPath": null,
+        "lookupId": null
+      }
+    ]
   },
   {
     "id": "script:create-new-feature",
     "name": "create-new-feature",
     "kind": "script",
-    "description": "Create a new feature branch and spec directory."
+    "description": "Create a new feature branch and spec directory.",
+    "stack": [
+      {
+        "id": "script:create-new-feature",
+        "layer": null,
+        "sourceId": null,
+        "presetId": null,
+        "presetName": null,
+        "strategy": "replace",
+        "active": true,
+        "hidden": false,
+        "manifestPath": null,
+        "lookupId": null
+      }
+    ]
   }
 ]
 ```
 
-| Field         | Description                                                            |
-| ------------- | ---------------------------------------------------------------------- |
-| `id`          | `{kind}:{name}` — the shorthand `artifact info` accepts as its argument |
-| `name`        | Logical artifact name (commands use the `speckit.<stem>` namespace)     |
-| `kind`        | One of `command`, `template`, `script`                                  |
+| Field         | Description                                                               |
+| ------------- | ------------------------------------------------------------------------- |
+| `id`          | `{kind}:{name}` — the shorthand `artifact info` accepts as its argument    |
+| `name`        | Logical artifact name (commands use the `speckit.<stem>` namespace)        |
+| `kind`        | One of `command`, `template`, `script`                                     |
 | `description` | Description from the highest-precedence layer that declares one, else `""` |
+| `stack`       | Composition stack for this artifact, using the same row shape as `artifact info` |
 
 Built-in artifacts always appear, even when nothing overrides them. Descriptions come from the highest-priority layer that has one — a preset or project override that hides a built-in command reports its own description, not the hidden built-in text. Skills (`.github/skills/**/SKILL.md`) are excluded: they are integration-specific output, not a shipped asset family.
 
@@ -92,7 +121,7 @@ specify artifact info <name> --json
 }
 ```
 
-The top-level `id`, `name`, `kind`, and `description` fields match the corresponding row on `artifact list --json`.
+The top-level `id`, `name`, `kind`, `description`, and `stack` fields match the corresponding row on `artifact list --json`.
 
 ### Stack semantics
 
