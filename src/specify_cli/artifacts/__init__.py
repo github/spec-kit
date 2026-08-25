@@ -974,10 +974,9 @@ class ArtifactCatalog:
         """Yield ``(kind, name, description, lookup_id)`` for project overrides.
 
         A root ``overrides/<name>.md`` file is the override for both the
-        ``template`` and the ``command`` lookup of ``<name>``, so it is
-        reported as a command when some other layer already provides that
-        command and as a template otherwise. That keeps a command override
-        from also appearing as a second, spurious ``template:`` row.
+        ``template`` and the ``command`` lookup of ``<name>``. It is reported
+        for every kind backed by another layer; the fallback heuristic is used
+        only when the override is the sole layer.
 
         A dotted name (``speckit.local``) is treated as a command even when
         the override is the only layer — matching the exact ID
@@ -992,16 +991,20 @@ class ArtifactCatalog:
             name = entry.stem
             if not _is_valid_artifact_name_component(name, "command"):
                 continue
-            command_layers = resolver.collect_all_layers(name, "command")
-            backed_by_command = any(
-                layer_kind_from_lookup_id(str(layer.get("lookupId", "")))
-                != PROJECT_OVERRIDE_LAYER
-                for layer in command_layers
-            )
-            is_command = backed_by_command or is_dotted_command_name(name)
-            kind: ArtifactKind = "command" if is_command else "template"
-            lookup_id = derive_named_id(PROJECT_OVERRIDE_LAYER, "_", kind, name)
-            yield kind, name, _describe_artifact_file(entry, kind), lookup_id
+            backed_kinds: list[ArtifactKind] = []
+            for kind in ("command", "template"):
+                layers = resolver.collect_all_layers(name, kind)
+                if any(
+                    layer_kind_from_lookup_id(str(layer.get("lookupId", "")))
+                    != PROJECT_OVERRIDE_LAYER
+                    for layer in layers
+                ):
+                    backed_kinds.append(kind)
+            if not backed_kinds:
+                backed_kinds.append("command" if is_dotted_command_name(name) else "template")
+            for kind in backed_kinds:
+                lookup_id = derive_named_id(PROJECT_OVERRIDE_LAYER, "_", kind, name)
+                yield kind, name, _describe_artifact_file(entry, kind), lookup_id
         scripts_dir = overrides_dir / "scripts"
         if not scripts_dir.is_dir():
             return

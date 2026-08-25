@@ -5373,6 +5373,8 @@ class PresetResolver:
                     if subdir:
                         candidate = pack_dir / subdir / f"{template_name}{ext}"
                     else:
+                        if template_name.lower() == "readme":
+                            continue
                         candidate = pack_dir / f"{template_name}{ext}"
                     if candidate.exists():
                         return candidate
@@ -5396,6 +5398,8 @@ class PresetResolver:
                 if subdir:
                     candidate = ext_dir / subdir / f"{template_name}{ext}"
                 else:
+                    if template_name.lower() == "readme":
+                        continue
                     candidate = ext_dir / f"{template_name}{ext}"
                 if candidate.exists():
                     return candidate

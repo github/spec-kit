@@ -928,6 +928,23 @@ class TestConventionDiscovery:
         rows = {row.id: row.description for row in catalog.list_artifacts()}
         assert rows["command:speckit.constitution"] == "Core description"
 
+    def test_project_override_describes_both_backed_kinds(self, spec_kit_project: Path):
+        commands_dir = spec_kit_project / ".specify" / "templates" / "commands"
+        commands_dir.mkdir(parents=True)
+        (commands_dir / "shared.md").write_text("command\n", encoding="utf-8")
+        templates_dir = spec_kit_project / ".specify" / "templates"
+        (templates_dir / "shared.md").write_text("template\n", encoding="utf-8")
+        overrides = templates_dir / "overrides"
+        overrides.mkdir(parents=True)
+        (overrides / "shared.md").write_text(
+            "---\ndescription: Shared override\n---\n", encoding="utf-8"
+        )
+
+        rows = {row.id: row.description for row in ArtifactCatalog(spec_kit_project).list_artifacts()}
+
+        assert rows["command:shared"] == "Shared override"
+        assert rows["template:shared"] == "Shared override"
+
     def test_dotted_override_only_artifact_is_a_command(self, spec_kit_project: Path):
         overrides = spec_kit_project / ".specify" / "templates" / "overrides"
         overrides.mkdir(parents=True)

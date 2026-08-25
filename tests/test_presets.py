@@ -11970,6 +11970,17 @@ class TestWrapStrategy:
         assert layers, "expected convention-based lookup to still find the template"
         assert layers[0]["path"] == tmpl_dir / "legacy-template.md"
 
+    @pytest.mark.parametrize("pack_kind", ["preset", "extension"])
+    def test_root_readme_is_not_resolved_as_template(self, project_dir, pack_kind):
+        pack_dir = project_dir / ".specify" / f"{pack_kind}s" / "legacy"
+        pack_dir.mkdir(parents=True)
+        (pack_dir / "README.md").write_text("packaging notes\n")
+
+        resolver = PresetResolver(project_dir)
+
+        assert resolver.resolve("README", "template") is None
+        assert resolver.collect_all_layers("README", "template") == []
+
     def test_extension_manifest_wins_over_stale_conventional_file(self, project_dir):
         """A declared entry is authoritative even when a stale file also sits at
         the conventional path (templates/<name>.md) — the manifest must win,
