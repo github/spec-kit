@@ -276,7 +276,7 @@ class TestExtensionManifest:
 
         The fallback set happens to equal the real command stems today, so an
         equality check against the live tree cannot tell a working loader apart
-        from a dead one. Point the shared ``_locate_core_asset_dir`` resolver
+        from a dead one. Point the shared ``_locate_shared_asset_dir`` resolver
         at a temp tree with *different* command names: the old off-by-one path
         math read nothing and returned the baked-in fallback; the fixed loader
         returns the temp stems.
@@ -297,7 +297,7 @@ class TestExtensionManifest:
             # No wheel bundle in this scenario; force the source-checkout path.
             monkeypatch.setattr(
                 ext,
-                "_locate_core_asset_dir",
+                "_locate_shared_asset_dir",
                 lambda subdir: commands if subdir == "commands" else None,
             )
 
@@ -315,7 +315,7 @@ class TestExtensionManifest:
         )
         import specify_cli.extensions as ext
 
-        monkeypatch.setattr(ext, "_locate_core_asset_dir", lambda subdir: None)
+        monkeypatch.setattr(ext, "_locate_shared_asset_dir", lambda subdir: None)
 
         assert _load_core_command_names() == _FALLBACK_CORE_COMMAND_NAMES
 

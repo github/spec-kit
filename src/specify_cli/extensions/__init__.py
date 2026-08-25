@@ -27,7 +27,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
-from .._assets import _locate_core_asset_dir
+from .._assets import _locate_shared_asset_dir
 from .._identifier import (
     IdentifierComponentError,
     derive_hook_id,
@@ -88,7 +88,7 @@ def _load_core_command_names() -> frozenset[str]:
     the source checkout when running from the repository. If neither is
     available, use the baked-in fallback set so validation still works.
 
-    Path resolution is delegated to :func:`_locate_core_asset_dir` — the same
+    Path resolution is delegated to :func:`_locate_shared_asset_dir` — the same
     resolver ``PresetResolver._find_bundled_core`` and the artifact command's
     core-baseline enumeration use — rather than bespoke ``Path(__file__)``
     arithmetic. Hand-counted ``.parent`` chains silently broke discovery once
@@ -99,7 +99,7 @@ def _load_core_command_names() -> frozenset[str]:
     The shared resolver is anchored to the package root, so discovery
     survives future module moves.
     """
-    commands_dir = _locate_core_asset_dir("commands")
+    commands_dir = _locate_shared_asset_dir("commands")
     if commands_dir is not None:
         command_names = {
             command_file.stem

@@ -18,7 +18,7 @@ from typing import Any, Iterable, Literal
 
 import yaml
 
-from .._assets import _locate_core_asset_dir
+from .._assets import _locate_shared_asset_dir
 from .._identifier import (
     PROJECT_OVERRIDE_LAYER,
     IdentifierComponentError,
@@ -127,17 +127,6 @@ class ArtifactResolutionError(ArtifactError):
 
 _TEMPLATE_SUFFIX = ".md"
 _SCRIPT_SUFFIX = ".sh"
-
-
-def _core_asset_root(subdir: str) -> Path | None:
-    """Return the on-disk directory holding a family of core assets, or None.
-
-    Delegates to :func:`_locate_core_asset_dir`, the single shared resolver
-    also used by :func:`_load_core_command_names` and
-    :meth:`PresetResolver._find_bundled_core`, so all three code paths agree
-    on what "core" means on this machine instead of each re-deriving it.
-    """
-    return _locate_core_asset_dir(subdir)
 
 
 def _project_core_asset_root(project_root: Path | None, subdir: str) -> Path | None:
@@ -793,7 +782,7 @@ class ArtifactCatalog:
         from ..presets import PresetResolver
 
         project_commands_dir = _project_core_asset_root(self.project_root, "commands")
-        bundled_commands_dir = _core_asset_root("commands")
+        bundled_commands_dir = _locate_shared_asset_dir("commands")
         command_dirs = tuple(
             directory
             for directory in (project_commands_dir, bundled_commands_dir)
@@ -815,7 +804,7 @@ class ArtifactCatalog:
         seen_templates: set[str] = set()
         for directory in (
             _project_core_asset_root(self.project_root, "templates"),
-            _core_asset_root("templates"),
+            _locate_shared_asset_dir("templates"),
         ):
             if directory is None:
                 continue
@@ -831,7 +820,7 @@ class ArtifactCatalog:
         seen_scripts: set[str] = set()
         for directory in (
             _project_core_asset_root(self.project_root, "scripts"),
-            _core_asset_root("scripts"),
+            _locate_shared_asset_dir("scripts"),
         ):
             if directory is None:
                 continue

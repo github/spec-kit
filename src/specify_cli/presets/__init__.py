@@ -3496,13 +3496,11 @@ class PresetManager:
                 and restore_from_bundled_core
                 and extension_restore is None
             ):
-                from .. import _locate_core_pack, _repo_root
+                from .._assets import _locate_shared_asset_dir
 
-                _core_pack = _locate_core_pack()
-                if _core_pack is not None:
-                    core_file = _core_pack / "commands" / f"{short_name}.md"
-                else:
-                    core_file = _repo_root() / "templates" / "commands" / f"{short_name}.md"
+                commands_dir = _locate_shared_asset_dir("commands")
+                if commands_dir is not None:
+                    core_file = commands_dir / f"{short_name}.md"
             if not core_file.exists():
                 core_file = None
 
@@ -5813,22 +5811,22 @@ class PresetResolver:
         ``.specify/templates/`` doesn't contain the core file.
 
         Directory resolution is delegated to the shared
-        ``_locate_core_asset_dir`` resolver — the same one the artifact
+        ``_locate_shared_asset_dir`` resolver — the same one the artifact
         command's core-baseline enumeration and the extensions module's
         core-command-name discovery use — so all three code paths agree on
         what "core" means on this machine.
         """
         try:
-            from specify_cli._assets import _locate_core_asset_dir
+            from specify_cli._assets import _locate_shared_asset_dir
         except ImportError:
             return None
 
         if template_type == "template":
-            base = _locate_core_asset_dir("templates")
+            base = _locate_shared_asset_dir("templates")
         elif template_type == "command":
-            base = _locate_core_asset_dir("commands")
+            base = _locate_shared_asset_dir("commands")
         elif template_type == "script":
-            base = _locate_core_asset_dir("scripts")
+            base = _locate_shared_asset_dir("scripts")
         else:
             base = None
 

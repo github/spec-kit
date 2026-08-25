@@ -1179,7 +1179,7 @@ class TestPresetResolver:
         Regression test: the tier-5 branch used to read ``core_pack/<family>/``
         directly, so a wheel bundle missing ``scripts/`` made ``resolve()``
         return nothing while ``collect_all_layers()`` fell back to the source
-        checkout via ``_locate_core_asset_dir``.
+        checkout via ``_locate_shared_asset_dir``.
         """
         import specify_cli._assets as assets
 
@@ -1190,7 +1190,9 @@ class TestPresetResolver:
         script = repo_root / "scripts" / "bash" / "core-only.sh"
         script.write_text("#!/bin/sh\n", encoding="utf-8")
 
-        monkeypatch.setattr(assets, "_locate_core_pack", lambda: core_pack)
+        monkeypatch.setattr(
+            assets, "__file__", str(project_dir.parent / "_assets.py")
+        )
         monkeypatch.setattr(assets, "_repo_root", lambda: repo_root)
 
         resolver = PresetResolver(project_dir)
