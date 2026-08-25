@@ -281,6 +281,19 @@ class TestListArtifactsContract:
         assert "legacy-root" in names
         assert "README" not in names
 
+    @pytest.mark.parametrize("registry_dir, registry_name", [
+        ("extensions", "extensions"),
+        ("presets", "presets"),
+    ])
+    def test_registry_missing_collection_key_is_corrupt(
+        self, spec_kit_project: Path, registry_dir: str, registry_name: str
+    ):
+        registry_path = spec_kit_project / ".specify" / registry_dir / ".registry"
+        registry_path.write_text('{"schema_version": "1.0"}', encoding="utf-8")
+
+        with pytest.raises(ArtifactResolutionError):
+            ArtifactCatalog(spec_kit_project).list_artifacts()
+
     @pytest.mark.skipif(os.name == "nt", reason="':' filenames are unsupported on Windows")
     def test_skips_invalid_colon_names_in_project_local_inventory(self, spec_kit_project: Path):
         templates_dir = spec_kit_project / ".specify" / "templates"

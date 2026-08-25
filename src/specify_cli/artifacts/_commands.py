@@ -99,7 +99,7 @@ def list_command(
     except ArtifactError as exc:
         _emit_error_and_exit(exc)
         return  # pragma: no cover — _emit_error_and_exit raises
-    except PresetError:
+    except (OSError, PresetError):
         _emit_error_and_exit(ArtifactResolutionError())
         return  # pragma: no cover — _emit_error_and_exit raises
 
@@ -141,7 +141,7 @@ def info_command(
     except ArtifactError as exc:
         _emit_error_and_exit(exc)
         return  # pragma: no cover
-    except PresetError:
+    except (OSError, PresetError):
         _emit_error_and_exit(ArtifactResolutionError())
         return  # pragma: no cover
 

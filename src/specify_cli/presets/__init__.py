@@ -671,7 +671,7 @@ class PresetRegistry:
             return True
         if not isinstance(data, dict):
             return True
-        if "presets" in data and not isinstance(data["presets"], dict):
+        if "presets" not in data or not isinstance(data["presets"], dict):
             return True
         return False
 

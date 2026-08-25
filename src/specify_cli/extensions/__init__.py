@@ -920,7 +920,7 @@ class ExtensionRegistry:
             return True
         if not isinstance(data, dict):
             return True
-        if "extensions" in data and not isinstance(data["extensions"], dict):
+        if "extensions" not in data or not isinstance(data["extensions"], dict):
             return True
         return False
 
