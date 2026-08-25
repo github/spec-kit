@@ -851,7 +851,32 @@ class RunState:
             installed_origin_tracked=has_installed_workflow_id,
         )
         state.status = RunStatus(state_data["status"])
-        state.current_step_index = state_data.get("current_step_index", 0)
+
+        # ``resume()`` slices ``definition.steps[state.current_step_index :]``
+        # with no guard of its own -- unlike ``workflow_id`` /
+        # ``installed_workflow_id`` / ``installed_registry_root`` / ``inputs``
+        # above, this field was never shape-checked here. A non-int value (a
+        # hand-edited or externally-written state.json, e.g. a string or
+        # float) reaches that slice and raises a raw, unhelpful
+        # ``TypeError: slice indices must be integers or None or have an
+        # __index__ method`` from deep inside ``resume()`` instead of the
+        # clean "Invalid run state: ..." this loader already gives every
+        # other malformed field. A negative value slices from the end instead
+        # of failing, silently resuming from the wrong step. Reject both here,
+        # consistent with the sibling checks. ``bool`` is an ``int`` subclass,
+        # so it is excluded explicitly (mirrors the ``max_iterations`` /
+        # ``continue_on_error`` bool guards elsewhere in this module).
+        current_step_index = state_data.get("current_step_index", 0)
+        if (
+            isinstance(current_step_index, bool)
+            or not isinstance(current_step_index, int)
+            or current_step_index < 0
+        ):
+            raise ValueError(
+                "Invalid run state: 'current_step_index' must be a "
+                f"non-negative integer, got {current_step_index!r}"
+            )
+        state.current_step_index = current_step_index
         state.current_step_id = state_data.get("current_step_id")
         state.step_results = state_data.get("step_results", {})
         state.workflow_dir = state_data.get("workflow_dir")

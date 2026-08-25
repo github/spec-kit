@@ -7377,6 +7377,49 @@ class TestRunState:
             RunState.load("requested-run", project_dir)
 
     @pytest.mark.parametrize(
+        "bad_current_step_index",
+        ["not-a-number", 1.5, -1, [0], {"index": 0}, True],
+    )
+    def test_load_rejects_invalid_current_step_index(
+        self, project_dir, bad_current_step_index
+    ):
+        """A malformed ``current_step_index`` must fail at load(), not resume().
+
+        ``resume()`` slices ``definition.steps[state.current_step_index :]``
+        with no guard of its own. Every other field this loader restores
+        (``workflow_id``, ``installed_workflow_id``, ``installed_registry_root``,
+        ``inputs``) is shape-checked here and raises the same clean "Invalid
+        run state: ..." ``ValueError`` on a malformed value; ``current_step_index``
+        was the one field silently passed through. A non-int value reaches the
+        slice and raises a raw, unhelpful ``TypeError`` from deep inside
+        ``resume()`` instead. ``True`` is included because ``bool`` is an
+        ``int`` subclass and would otherwise slip past a bare ``isinstance(...,
+        int)`` check.
+        """
+        from specify_cli.workflows.engine import RunState
+
+        run_dir = (
+            project_dir / ".specify" / "workflows" / "runs" / "bad-index-run"
+        )
+        run_dir.mkdir(parents=True)
+        (run_dir / "state.json").write_text(
+            json.dumps(
+                {
+                    "run_id": "bad-index-run",
+                    "workflow_id": "test-workflow",
+                    "status": "paused",
+                    "current_step_index": bad_current_step_index,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(
+            ValueError, match="'current_step_index' must be a non-negative integer"
+        ):
+            RunState.load("bad-index-run", project_dir)
+
+    @pytest.mark.parametrize(
         ("installed_workflow_id", "installed_registry_root"),
         [
             ("", None),
