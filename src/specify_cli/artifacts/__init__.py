@@ -562,10 +562,11 @@ class ArtifactCatalog:
                 names.add(key)
 
         artifacts: list[Artifact] = []
+        manifest_cache: dict[Path, Any | None] = {}
         for kind, name in names:
             description = ""
             for layer in _layers_for(kind, name):
-                candidate = self._describe_layer(layer, kind, name)
+                candidate = self._describe_layer(layer, kind, name, manifest_cache)
                 if candidate:
                     description = candidate
                     break
@@ -712,7 +713,12 @@ class ArtifactCatalog:
             for contribution in manifest.iter_contributions():
                 kind = contribution.get("kind")
                 name = contribution.get("name")
-                if kind in ("command", "template", "script") and isinstance(name, str):
+                if (
+                    kind in ("command", "template", "script")
+                    and isinstance(name, str)
+                    and name
+                    and ":" not in name
+                ):
                     yield kind, name
 
         yield from ((kind, name) for kind, name, _path in _iter_convention_contributions(pack_dir))
@@ -826,9 +832,12 @@ class ArtifactCatalog:
         layer: dict[str, Any],
         kind: ArtifactKind,
         name: str,
+        manifest_cache: dict[Path, Any | None],
     ) -> str:
         """Return manifest metadata or on-disk metadata for one resolver layer."""
-        manifest_description = self._manifest_description_for_layer(layer, kind, name)
+        manifest_description = self._manifest_description_for_layer(
+            layer, kind, name, manifest_cache
+        )
         if manifest_description:
             return manifest_description
         path = layer.get("path")
@@ -841,6 +850,7 @@ class ArtifactCatalog:
         layer: dict[str, Any],
         kind: ArtifactKind,
         name: str,
+        manifest_cache: dict[Path, Any | None],
     ) -> str:
         lookup_id = layer.get("lookupId", "")
         layer_kind = layer_kind_from_lookup_id(lookup_id)
@@ -854,12 +864,20 @@ class ArtifactCatalog:
                 pack_dir = self.project_root / ".specify" / "presets" / preset_id
             manifest_path = pack_dir / "preset.yml"
             if manifest_path.is_file():
-                try:
-                    from ..presets import PresetManifest, PresetValidationError
+                if manifest_path not in manifest_cache:
+                    try:
+                        from ..presets import PresetManifest, PresetValidationError
 
-                    manifest = PresetManifest(manifest_path)
-                except (PresetValidationError, OSError, TypeError, AttributeError):
-                    manifest = None
+                        manifest_cache[manifest_path] = PresetManifest(manifest_path)
+                    except (
+                        PresetValidationError,
+                        yaml.YAMLError,
+                        OSError,
+                        TypeError,
+                        AttributeError,
+                    ):
+                        manifest_cache[manifest_path] = None
+                manifest = manifest_cache[manifest_path]
         elif layer_kind == "extension":
             ext_dir = layer.get("extension_dir")
             if not isinstance(ext_dir, Path):
@@ -869,12 +887,20 @@ class ArtifactCatalog:
                 ext_dir = self.project_root / ".specify" / "extensions" / extension_id
             manifest_path = ext_dir / "extension.yml"
             if manifest_path.is_file():
-                try:
-                    from ..extensions import ExtensionManifest, ValidationError
+                if manifest_path not in manifest_cache:
+                    try:
+                        from ..extensions import ExtensionManifest, ValidationError
 
-                    manifest = ExtensionManifest(manifest_path)
-                except (ValidationError, OSError, TypeError, AttributeError):
-                    manifest = None
+                        manifest_cache[manifest_path] = ExtensionManifest(manifest_path)
+                    except (
+                        ValidationError,
+                        yaml.YAMLError,
+                        OSError,
+                        TypeError,
+                        AttributeError,
+                    ):
+                        manifest_cache[manifest_path] = None
+                manifest = manifest_cache[manifest_path]
         if manifest is None:
             return ""
         for contribution in manifest.iter_contributions():
