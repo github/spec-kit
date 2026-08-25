@@ -117,7 +117,11 @@ def _parse_tags(value: Any, entry_id: str) -> tuple[str, ...]:
         raise BundlerError(
             f"Catalog entry '{entry_id}': 'tags' must be a list of strings."
         )
-    return tuple(str(t) for t in value)
+    if any(not isinstance(tag, str) for tag in value):
+        raise BundlerError(
+            f"Catalog entry '{entry_id}': 'tags' must be a list of strings."
+        )
+    return tuple(value)
 
 
 def _parse_verified(value: Any, entry_id: str) -> bool:
