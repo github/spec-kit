@@ -8453,6 +8453,20 @@ class TestWorkflowCatalog:
         with pytest.raises(WorkflowValidationError, match="unreadable or malformed"):
             catalog.remove_catalog(0)
 
+    @pytest.mark.parametrize("body", ["[]\n", "false\n", "0\n", "''\n"])
+    def test_remove_catalog_rejects_falsy_non_mapping_config(self, project_dir, body):
+        """A FALSY non-mapping top-level config ([], false, 0, '') must raise
+        'corrupted (expected a mapping)', not be silently coerced to {} by
+        ``or {}`` and then fail as a misleading 'out of range' error."""
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.write_text(body, encoding="utf-8")
+
+        catalog = WorkflowCatalog(project_dir)
+        with pytest.raises(WorkflowValidationError, match="expected a mapping"):
+            catalog.remove_catalog(0)
+
     def test_add_catalog_wraps_write_oserror(self, project_dir, monkeypatch):
         """An OSError on write must be wrapped as WorkflowValidationError."""
         from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
@@ -9099,6 +9113,21 @@ class TestStepCatalog:
         with pytest.raises(StepValidationError, match="already configured"):
             catalog.add_catalog("https://example.com/steps.json")
 
+    @pytest.mark.parametrize("body", ["[]\n", "false\n", "0\n", "''\n"])
+    def test_add_catalog_rejects_falsy_non_mapping_config(self, project_dir, body):
+        """A FALSY non-mapping top-level config ([], false, 0, '') must raise
+        'corrupted (expected a mapping)', not be silently coerced to {} by
+        ``or {}`` — matching the empty-document case above, which correctly
+        treats only a real absence of a document (None) as empty."""
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        config_path.write_text(body, encoding="utf-8")
+
+        catalog = StepCatalog(project_dir)
+        with pytest.raises(StepValidationError, match="expected a mapping"):
+            catalog.add_catalog("https://example.com/steps.json")
+
     def test_remove_catalog(self, project_dir):
         from specify_cli.workflows.catalog import StepCatalog
 
@@ -9121,6 +9150,20 @@ class TestStepCatalog:
 
         with pytest.raises(StepValidationError, match="out of range"):
             catalog.remove_catalog(5)
+
+    @pytest.mark.parametrize("body", ["[]\n", "false\n", "0\n", "''\n"])
+    def test_remove_catalog_rejects_falsy_non_mapping_config(self, project_dir, body):
+        """A FALSY non-mapping top-level config ([], false, 0, '') must raise
+        'corrupted (expected a mapping)', not be silently coerced to {} by
+        ``or {}`` and then fail as a misleading 'out of range' error."""
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        config_path.write_text(body, encoding="utf-8")
+
+        catalog = StepCatalog(project_dir)
+        with pytest.raises(StepValidationError, match="expected a mapping"):
+            catalog.remove_catalog(0)
 
     def test_remove_catalog_no_config(self, project_dir):
         from specify_cli.workflows.catalog import StepCatalog, StepValidationError

@@ -784,12 +784,17 @@ class WorkflowCatalog:
             raise WorkflowValidationError("No catalog config file found.")
 
         try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         except (yaml.YAMLError, OSError, UnicodeDecodeError) as exc:
             raise WorkflowValidationError(
                 f"Catalog config file is unreadable or malformed: {exc}"
             ) from exc
-        if not isinstance(data, dict):
+        # Do NOT coerce with ``or {}`` here: that also turns a FALSY non-mapping
+        # (top-level ``[]``, ``false``, ``0``, ``''``) into ``{}`` and silently
+        # swallows it, matching _load_catalog_config's guard above.
+        if data is None:
+            data = {}
+        elif not isinstance(data, dict):
             raise WorkflowValidationError(
                 "Catalog config file is corrupted (expected a mapping)."
             )
@@ -1394,11 +1399,16 @@ class StepCatalog:
         data: dict[str, Any] = {"catalogs": []}
         if config_path.exists():
             try:
-                raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+                raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
             except (yaml.YAMLError, OSError, UnicodeDecodeError) as exc:
                 raise StepValidationError(
                     f"Catalog config file is unreadable or malformed: {exc}"
                 ) from exc
+            # Do NOT coerce with ``or {}`` here: that also turns a FALSY
+            # non-mapping (top-level ``[]``, ``false``, ``0``, ``''``) into
+            # ``{}`` and silently swallows it.
+            if raw is None:
+                raw = {"catalogs": []}
             if not isinstance(raw, dict):
                 raise StepValidationError(
                     "Catalog config file is corrupted (expected a mapping)."
@@ -1463,12 +1473,17 @@ class StepCatalog:
             raise StepValidationError("No step catalog config file found.")
 
         try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         except (yaml.YAMLError, OSError, UnicodeDecodeError) as exc:
             raise StepValidationError(
                 f"Catalog config file is unreadable or malformed: {exc}"
             ) from exc
-        if not isinstance(data, dict):
+        # Do NOT coerce with ``or {}`` here: that also turns a FALSY non-mapping
+        # (top-level ``[]``, ``false``, ``0``, ``''``) into ``{}`` and silently
+        # swallows it.
+        if data is None:
+            data = {}
+        elif not isinstance(data, dict):
             raise StepValidationError(
                 "Catalog config file is corrupted (expected a mapping)."
             )
