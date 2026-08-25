@@ -5784,9 +5784,6 @@ class PresetResolver:
                 "path": core,
                 "source": "core",
                 "strategy": "replace",
-                "lookupId": derive_named_id(
-                    "core", "_", template_type, template_name
-                ),
             })
         else:
             # Priority 5: Bundled core_pack (wheel install) or repo-root
@@ -5797,9 +5794,6 @@ class PresetResolver:
                     "path": bundled,
                     "source": "core",
                     "strategy": "replace",
-                    "lookupId": derive_named_id(
-                        "core", "_", template_type, template_name
-                    ),
                 })
 
         return layers

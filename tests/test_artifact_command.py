@@ -474,7 +474,7 @@ class TestInfoContract:
             "speckit.constitution", "command"
         )[-1]
         assert resolver_layer["source"] == "core"
-        assert resolver_layer["lookupId"] == "core:_:command:speckit.constitution"
+        assert "lookupId" not in resolver_layer
 
         info = ArtifactCatalog(spec_kit_project).get_artifact_info("speckit.constitution")
         assert info["id"] == "command:speckit.constitution"

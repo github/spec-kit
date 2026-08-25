@@ -1707,7 +1707,7 @@ class TestPresetResolver:
         layers = resolver.collect_all_layers("speckit.implement", "command")
         assert layers, "expected a bundled core base layer to be found"
         assert layers[-1]["source"] == "core"
-        assert layers[-1]["lookupId"] == "core:_:command:speckit.implement"
+        assert "lookupId" not in layers[-1]
         assert layers[-1]["path"].parts[-2:] == ("commands", "implement.md")
 
     def test_resolve_command_falls_back_to_bundled_core(self, project_dir):
@@ -12883,7 +12883,7 @@ class TestCollectAllLayers:
         layers = resolver.collect_all_layers("spec-template")
         assert len(layers) == 1
         assert layers[0]["source"] == "core"
-        assert layers[0]["lookupId"] == "core:_:template:spec-template"
+        assert "lookupId" not in layers[0]
         assert layers[0]["strategy"] == "replace"
 
     def test_layers_include_presets(self, project_dir, temp_dir, valid_pack_data):

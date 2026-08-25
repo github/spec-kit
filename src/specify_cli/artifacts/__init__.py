@@ -236,18 +236,10 @@ def _public_layer_shape(
 ) -> tuple[LayerName | None, str | None, str | None]:
     """Translate resolver provenance into the public layer identity triple.
 
-    The resolver preserves its pre-existing built-in identity with
-    ``source == "core"`` and a ``core:_:`` lookup ID. Public artifact output
-    omits that tier's identity while retaining preset, extension, and project
-    override identities unchanged.
+    Layers without a lookup identifier have no public provenance. Preset,
+    extension, and project override identities are retained unchanged.
     """
     lookup_id = resolver_layer.get("lookupId")
-    if (
-        resolver_layer.get("source") == "core"
-        and isinstance(lookup_id, str)
-        and lookup_id.startswith("core:_:")
-    ):
-        return None, None, None
     if lookup_id is None:
         return None, None, None
     if not isinstance(lookup_id, str):

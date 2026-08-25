@@ -122,7 +122,6 @@ class TestIdentifierDerivation:
             ("project", "_", "command", "speckit.constitution", "project:_:command:speckit.constitution"),
             ("project", "_", "template", "spec-template", "project:_:template:spec-template"),
             ("project", "_", "script", "setup-plan", "project:_:script:setup-plan"),
-            ("core", "_", "command", "speckit.plan", "core:_:command:speckit.plan"),
             ("preset", "speckit-core", "command", "speckit.plan", "preset:speckit-core:command:speckit.plan"),
             ("preset", "speckit-core", "template", "spec-template", "preset:speckit-core:template:spec-template"),
             ("preset", "speckit-core", "script", "setup-plan", "preset:speckit-core:script:setup-plan"),
@@ -157,6 +156,7 @@ class TestIdentifierDerivation:
         [
             ("preset", "speckit-core", "hook", "before_plan:speckit.plan"),
             ("unknown", "source", "command", "speckit.plan"),
+            ("core", "_", "command", "speckit.plan"),
         ],
     )
     def test_named_id_rejects_invalid_layer_or_kind(self, args):
@@ -179,7 +179,6 @@ class TestLayerKindFromLookupId:
     @pytest.mark.parametrize(
         "lookup_id, expected",
         [
-            ("core:_:command:speckit.plan", "core"),
             ("preset:speckit-core:template:spec-template", "preset"),
             ("extension:speckit-git:script:post-commit", "extension"),
             (f"{PROJECT_OVERRIDE_LAYER}:_:template:spec-template", PROJECT_OVERRIDE_LAYER),
@@ -197,6 +196,7 @@ class TestLayerKindFromLookupId:
         [
             "",
             "bogus:_:command:speckit.plan",
+            "core:_:command:speckit.plan",
             "core",
             ":_:command:speckit.plan",
             "core:not-an-id",
@@ -385,7 +385,7 @@ class TestLookupIdRoundTrip:
         resolver.templates_dir = project / "templates"
         layers = resolver.collect_all_layers("spec-template", "template")
         builtin_layer = next(layer for layer in layers if layer["source"] == "core")
-        assert builtin_layer["lookupId"] == "core:_:template:spec-template"
+        assert "lookupId" not in builtin_layer
 
     def test_preset_layer_lookup_id_matches_manifest_contribution_id(self, tmp_path):
         project = _make_project(tmp_path)
