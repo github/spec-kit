@@ -4292,22 +4292,37 @@ class PresetCatalog:
         if not config_path.exists():
             return None
         try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         except (yaml.YAMLError, OSError, UnicodeError) as e:
             raise PresetValidationError(
                 f"Failed to read catalog config {config_path}: {e}"
             )
+        # Do NOT coerce with ``or {}`` here: that also turns a FALSY
+        # non-mapping top level (``[]``, ``false``, ``0``, ``''``) into ``{}``
+        # and silently swallows it, while a TRUTHY non-mapping (``5``, a bare
+        # list) correctly raises below. Only an empty document/explicit
+        # ``null`` means "no document".
+        if data is None:
+            return None
         if not isinstance(data, dict):
             raise PresetValidationError(
                 f"Invalid catalog config {config_path}: expected a mapping at root, got {type(data).__name__}"
             )
-        catalogs_data = data.get("catalogs", [])
-        if not catalogs_data:
+        # Same asymmetry one nesting level down: the shape check has to run
+        # BEFORE the emptiness check, or a FALSY non-list ``catalogs`` value
+        # (``{}``, ``''``, ``0``, ``false``) is silently swallowed as "no
+        # catalogs" while a TRUTHY non-list (``catalogs: "not-a-list"``)
+        # correctly raises. An absent key or an explicit ``catalogs: null``
+        # both keep their existing "nothing configured here" behavior.
+        catalogs_data = data.get("catalogs")
+        if catalogs_data is None:
             return None
         if not isinstance(catalogs_data, list):
             raise PresetValidationError(
                 f"Invalid catalog config: 'catalogs' must be a list, got {type(catalogs_data).__name__}"
             )
+        if not catalogs_data:
+            return None
         entries: List[PresetCatalogEntry] = []
         for idx, item in enumerate(catalogs_data):
             if not isinstance(item, dict):
