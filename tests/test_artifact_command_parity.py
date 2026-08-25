@@ -62,7 +62,7 @@ class TestResolverParity:
         assert active["layer"] == "preset"
         assert active["lookupId"] == "preset:test-manifest-parity:command:speckit.manifest-declared"
 
-    def test_preset_manifest_id_mismatch_uses_registry_key(self, spec_kit_project: Path):
+    def test_preset_manifest_id_mismatch_uses_manifest_id(self, spec_kit_project: Path):
         pack = install_preset(
             spec_kit_project,
             "renamed-preset",
@@ -96,13 +96,16 @@ class TestResolverParity:
         )
 
         assert winner == "body-from-renamed-preset"
+        # Manifest-declared entries use the manifest's validated id, so the
+        # ``lookupId`` joins directly to ``PresetManifest.iter_contributions()``
+        # regardless of the installed directory name.
         assert active["lookupId"] == (
-            "preset:renamed-preset:command:speckit.preset-renamed.hello"
+            "preset:original-preset:command:speckit.preset-renamed.hello"
         )
         assert (
             PresetResolver(spec_kit_project)
             .collect_all_layers("speckit.preset-renamed.hello", "command")[0]["lookupId"]
-            == "preset:renamed-preset:command:speckit.preset-renamed.hello"
+            == "preset:original-preset:command:speckit.preset-renamed.hello"
         )
 
 

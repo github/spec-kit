@@ -639,6 +639,42 @@ class PresetRegistry:
         with open(self.registry_path, 'w', encoding='utf-8') as f:
             json.dump(self.data, f, indent=2)
 
+    def is_corrupt(self) -> bool:
+        """Report whether an existing registry file is present but unreadable.
+
+        ``_load`` deliberately recovers from a corrupt registry by normalizing
+        it to an empty mapping so install/enable/disable flows keep working.
+        Resolution paths (e.g. the artifact catalog), however, must fail
+        closed: a corrupt registry that normalizes to ``{}`` would otherwise
+        cause every installed preset to be silently dropped from the reported
+        inventory. This probe lets those callers distinguish "no registry"
+        (safe) from "registry exists but is invalid" (unsafe) without changing
+        recovery behavior. An absent registry returns ``False``; a directory,
+        broken or dangling symlink, non-regular file, unreadable file,
+        non-mapping root, or non-mapping ``presets`` value returns ``True``.
+
+        Mirrors :meth:`ExtensionRegistry.is_corrupt` — the two registries have
+        the same corruption model, so both surfaces (artifact catalog,
+        extension enumeration) can share the same fail-closed pattern.
+        """
+        # os.path.lexists (not Path.exists) so a dangling symlink is detected
+        # rather than followed to a non-existent target and mistaken for an
+        # absent registry.
+        if not os.path.lexists(self.registry_path):
+            return False
+        if not self.registry_path.is_file():
+            return True
+        try:
+            with open(self.registry_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+            return True
+        if not isinstance(data, dict):
+            return True
+        if "presets" in data and not isinstance(data["presets"], dict):
+            return True
+        return False
+
     def add(self, pack_id: str, metadata: dict):
         """Add preset to registry.
 
@@ -5653,12 +5689,25 @@ class PresetResolver:
                             # strategy ("replace") when content is unreadable/invalid.
                             pass
                     version = metadata.get("version", "?") if metadata else "?"
+                    # Manifest-declared entries derive their sourceId from the
+                    # manifest's validated ``id:``, so ``lookupId`` joins
+                    # directly to ``PresetManifest.iter_contributions()``'s
+                    # ``id`` even when the installed directory (``pack_id``)
+                    # was renamed. Convention-only contributions have no
+                    # manifest to consult, so they fall back to the directory
+                    # / registry key. The directory identity is still carried
+                    # separately via ``source`` for path/provenance display.
+                    source_id_for_lookup = pack_id
+                    if entry is not None:
+                        manifest = self._get_manifest(pack_dir)
+                        if manifest is not None and isinstance(manifest.id, str) and manifest.id:
+                            source_id_for_lookup = manifest.id
                     layers.append({
                         "path": candidate,
                         "source": f"{pack_id} v{version}",
                         "strategy": strategy,
                         "lookupId": derive_named_id(
-                            "preset", pack_id, template_type, template_name
+                            "preset", source_id_for_lookup, template_type, template_name
                         ),
                     })
 
@@ -5682,6 +5731,37 @@ class PresetResolver:
                     source = f"extension:{ext_id} v{version}"
                 else:
                     source = f"extension:{ext_id} (unregistered)"
+                # Manifest-declared entries use the manifest's validated ``id:``
+                # for the lookupId's sourceId, so ``lookupId`` joins directly to
+                # ``ExtensionManifest.iter_contributions()``'s ``id`` even when
+                # the installed directory (``ext_id``) was renamed. Convention-
+                # only contributions have no manifest to consult and fall back
+                # to the directory identity. The directory identity is retained
+                # separately via ``extension_id`` / ``extension_dir`` for path
+                # / provenance lookup.
+                source_id_for_lookup = ext_id
+                if entry is not None:
+                    ext_manifest_path = ext_dir / "extension.yml"
+                    if ext_manifest_path.is_file():
+                        try:
+                            from ..extensions import (
+                                ExtensionManifest,
+                                ValidationError as ExtValidationError,
+                            )
+                            ext_manifest = ExtensionManifest(ext_manifest_path)
+                            if isinstance(ext_manifest.id, str) and ext_manifest.id:
+                                source_id_for_lookup = ext_manifest.id
+                        except (
+                            ExtValidationError,
+                            yaml.YAMLError,
+                            OSError,
+                            TypeError,
+                            AttributeError,
+                        ):
+                            # Fall back to the directory identity when the
+                            # manifest can't be re-read — same recovery as
+                            # ``_extension_manifest_declared_template``.
+                            pass
                 layers.append({
                     "path": candidate,
                     "source": source,
@@ -5689,7 +5769,7 @@ class PresetResolver:
                     "extension_id": ext_id,
                     "extension_dir": ext_dir,
                     "lookupId": derive_named_id(
-                        "extension", ext_id, template_type, template_name
+                        "extension", source_id_for_lookup, template_type, template_name
                     ),
                 })
 

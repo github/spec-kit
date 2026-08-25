@@ -174,12 +174,12 @@ class TestListArtifactsContract:
         assert "disabled-template" not in names
         assert "missing-template" not in names
 
-    def test_unregistered_extension_uses_directory_id_for_lookup(self, spec_kit_project: Path):
+    def test_unregistered_extension_manifest_id_wins_for_lookup(self, spec_kit_project: Path):
         ext_dir = spec_kit_project / ".specify" / "extensions" / "renamed"
         ext_dir.mkdir()
         (ext_dir / "commands").mkdir()
         (ext_dir / "commands" / "actual.md").write_text(
-            "---\ndescription: Dir identity wins\n---\nbody\n",
+            "---\ndescription: Manifest identity wins\n---\nbody\n",
             encoding="utf-8",
         )
         (ext_dir / "extension.yml").write_text(
@@ -215,11 +215,14 @@ class TestListArtifactsContract:
             row.id for row in catalog.list_artifacts()
         }
         info = catalog.get_artifact_info("speckit.original.hello")
-        assert info["stack"][0]["lookupId"] == "extension:renamed:command:speckit.original.hello"
+        # Manifest-declared entries use ``extension.id`` for the ``lookupId``
+        # so the join to ``ExtensionManifest.iter_contributions()`` stays
+        # direct even when the installed directory (``renamed``) was renamed.
+        assert info["stack"][0]["lookupId"] == "extension:original:command:speckit.original.hello"
         assert (
             PresetResolver(spec_kit_project)
             .collect_all_layers("speckit.original.hello", "command")[0]["lookupId"]
-            == "extension:renamed:command:speckit.original.hello"
+            == "extension:original:command:speckit.original.hello"
         )
 
     def test_includes_project_local_core_assets(self, spec_kit_project: Path):
@@ -515,6 +518,20 @@ class TestErrors:
 
         with pytest.raises(ArtifactResolutionError):
             ArtifactCatalog(spec_kit_project).get_artifact_info("command:speckit.constitution")
+
+    def test_info_rejects_corrupt_preset_registry(self, spec_kit_project: Path):
+        registry = spec_kit_project / ".specify" / "presets" / ".registry"
+        registry.write_text("{invalid", encoding="utf-8")
+
+        with pytest.raises(ArtifactResolutionError):
+            ArtifactCatalog(spec_kit_project).get_artifact_info("command:speckit.constitution")
+
+    def test_list_rejects_corrupt_preset_registry(self, spec_kit_project: Path):
+        registry = spec_kit_project / ".specify" / "presets" / ".registry"
+        registry.write_text("{invalid", encoding="utf-8")
+
+        with pytest.raises(ArtifactResolutionError):
+            ArtifactCatalog(spec_kit_project).list_artifacts()
 
 
 class TestKindHint:

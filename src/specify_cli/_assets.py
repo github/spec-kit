@@ -50,7 +50,13 @@ def _locate_core_asset_dir(subdir: str) -> Path | None:
     core = _locate_core_pack()
     if core is not None:
         candidate = core / subdir
-        return candidate if candidate.is_dir() else None
+        if candidate.is_dir():
+            return candidate
+        # Fall through to the source checkout — a wheel bundle with a
+        # missing family subdir is treated the same as no bundle at all,
+        # matching the "wheel, then source" fallback pattern used by
+        # ``_locate_bundled_extension``/``_locate_bundled_workflow``/
+        # ``_locate_bundled_preset`` below.
     if subdir == "commands":
         candidate = _repo_root() / "templates" / "commands"
     else:

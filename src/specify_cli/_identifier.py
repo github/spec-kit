@@ -78,11 +78,20 @@ def validate_component(value: Any, field_label: str) -> str:
 def derive_named_id(layer: str, source_id: str, kind: str, name: str) -> str:
     """Build the identifier string for a named contribution kind.
 
-    Callers are expected to have already validated each component with
-    :func:`validate_component` at manifest-load time; this function does not
-    revalidate — it is a pure string join so the identifier can be computed
-    cheaply on every read.
+    Each component is revalidated with :func:`validate_component` before the
+    join. Manifest-load-time validators generally validate ahead of the join,
+    but resolver callers can pass raw filesystem-derived names (POSIX permits
+    ``:`` in filenames the way manifest validators do not), and every layer
+    dict downstream relies on ``lookupId`` being a round-trippable string that
+    :func:`layer_kind_from_lookup_id` can parse — so this is the shared
+    derivation boundary that must enforce the grammar. Callers passing raw
+    strings should either pre-validate or handle
+    :class:`IdentifierComponentError`.
     """
+    validate_component(layer, "layer")
+    validate_component(source_id, "sourceId")
+    validate_component(kind, "kind")
+    validate_component(name, "name")
     return f"{layer}:{source_id}:{kind}:{name}"
 
 
@@ -128,5 +137,13 @@ def derive_hook_id(
     event_name: str,
     command: str,
 ) -> str:
-    """Build the identifier string for a hook contribution."""
+    """Build the identifier string for a hook contribution.
+
+    Each component is revalidated with :func:`validate_component` — same
+    contract as :func:`derive_named_id`.
+    """
+    validate_component(layer, "layer")
+    validate_component(source_id, "sourceId")
+    validate_component(event_name, "eventName")
+    validate_component(command, "command")
     return f"{layer}:{source_id}:hook:{event_name}:{command}"

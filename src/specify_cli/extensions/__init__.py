@@ -801,7 +801,13 @@ class ExtensionManifest:
                 if command_value in deduped:
                     del deduped[command_value]
                 normalized = dict(entry)
-                normalized.setdefault("eventName", event_name)
+                # Overwrite (not setdefault) so an author-supplied
+                # ``eventName`` cannot contradict the containing hook key —
+                # otherwise an entry under ``before_plan`` carrying
+                # ``eventName: after_plan`` would be emitted with metadata
+                # that disagrees with its ``name`` and ``id`` (both of which
+                # derive from the hook key below).
+                normalized["eventName"] = event_name
                 deduped[command_value] = normalized
 
             for command_value, entry in deduped.items():

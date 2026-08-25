@@ -11,6 +11,7 @@ Technical reference for Spec Kit extension system APIs and manifest schema.
 5. [Hook System](#hook-system)
 6. [CLI Commands](#cli-commands)
 7. [Contribution Identifiers](#contribution-identifiers)
+8. [File System Layout](#file-system-layout)
 
 ---
 
@@ -862,7 +863,7 @@ satisfied = version_satisfies("1.2.3", ">=1.0.0,<2.0.0")  # bool
 
 ## Contribution Identifiers
 
-Every command, template, script, and hook contributed by an extension (or a preset, or the core layer) is addressable at read time by a deterministic opaque identifier. Resolved artifact-stack layers carry a matching `lookupId` field that points back to the contribution the layer came from. Identifiers are **computed on demand from author-declared manifest content** and are **never persisted** to `.specify/` or to any cache file.
+Every command, template, script, and hook contributed by an extension (or a preset, or the core layer) is addressable at read time by a deterministic opaque identifier. Resolved artifact-stack layers carry a matching `lookupId` field that shares this grammar and identifies the layer's stack position. Manifest contribution `id` values and resolver `lookupId` values are **not always equal** — they only join directly when the installed directory name matches the manifest-declared `id:` (see [Determinism guarantees](#determinism-guarantees) below). Identifiers are **computed on demand from author-declared manifest content** and are **never persisted** to `.specify/` or to any cache file.
 
 ### Grammar
 
@@ -909,7 +910,7 @@ Manifest contribution identifier derivation reads only the in-memory declared ma
 
 Identifiers are stable, but treat them as **opaque strings** in stored data (registries, cache files, external tooling). Do not parse them by string-splitting on `:` — hook ids contain a compound `{eventName}:{command}` component and future grammar extensions may otherwise catch you out. If you only need to classify a stack entry's layer, use `layer_kind_from_lookup_id`; `derive_named_id` and `derive_hook_id` construct new identifiers rather than parsing existing ones.
 
-
+## File System Layout
 
 ```text
 .specify/

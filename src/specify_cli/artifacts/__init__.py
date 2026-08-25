@@ -608,6 +608,26 @@ def _validate_extension_registry(project_root: Path) -> None:
         raise ArtifactResolutionError()
 
 
+def _validate_preset_registry(project_root: Path) -> None:
+    """Fail closed when the preset registry is present but unreadable.
+
+    ``PresetRegistry._load`` normalizes malformed JSON to an empty mapping so
+    install/enable/disable flows keep working, but that same recovery would
+    silently drop every installed preset from the artifact inventory. Callers
+    that treat the inventory as authoritative must therefore refuse to run
+    against a corrupt registry — same fail-closed contract as
+    :func:`_validate_extension_registry`.
+    """
+    presets_dir = project_root / ".specify" / "presets"
+    if not presets_dir.exists():
+        return
+
+    from ..presets import PresetRegistry
+
+    if PresetRegistry(presets_dir).is_corrupt():
+        raise ArtifactResolutionError()
+
+
 def _resolve_kind_hint(name: str, kind: ArtifactKind | None) -> tuple[str, ArtifactKind | None]:
     """Parse ``kind:name`` shorthand and reconcile it with an explicit ``--kind`` flag.
 
@@ -671,6 +691,7 @@ class ArtifactCatalog:
         """
         _validate_project(self.project_root)
         _validate_extension_registry(self.project_root)
+        _validate_preset_registry(self.project_root)
         baseline = self._get_baseline()
 
         from ..presets import PresetResolver  # lazy: avoids circular import
@@ -743,6 +764,7 @@ class ArtifactCatalog:
         """
         _validate_project(self.project_root)
         _validate_extension_registry(self.project_root)
+        _validate_preset_registry(self.project_root)
         bare, resolved_kind = _resolve_kind_hint(name, kind)
 
         if resolved_kind is None:
@@ -898,7 +920,15 @@ class ArtifactCatalog:
                 description = contribution.get("description", "")
                 if not isinstance(description, str):
                     description = ""
-                lookup_id = derive_named_id(layer, source_id, kind, name)
+                # Use the manifest-computed id verbatim so the join with
+                # ``collect_all_layers()`` stays direct even when the
+                # installed directory (``source_id``) differs from the
+                # manifest's declared ``id:`` (renamed pack). The resolver's
+                # manifest-declared preset/extension layers derive their
+                # ``lookupId`` from ``manifest.id`` for the same reason.
+                lookup_id = contribution.get("id")
+                if not isinstance(lookup_id, str) or not lookup_id:
+                    continue
                 if lookup_id in lookup_ids(kind, name):
                     yield kind, name, description, lookup_id
 
