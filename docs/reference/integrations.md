@@ -17,7 +17,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Command Code](https://commandcode.ai/docs)                                          | `command-code`   | Skills-based integration; installs skills into `.commandcode/skills/` and invokes them as `$speckit-<command>` |
 | [Cursor](https://cursor.sh/)                                                         | `cursor-agent`   |                                                                                                                                           |
 | [Devin for Terminal](https://cli.devin.ai/docs)                                      | `devin`          | Skills-based integration; installs skills into `.devin/skills/` and invokes them as `/speckit-<command>` |
-| [Docker Agent](https://docs.docker.com/ai/docker-agent/)                              | `docker-agent`   | Skills-based integration; installs skills into `.docker-agent/skills/`. Initialize with `--ignore-agent-tools`; detects `docker-agent run` or `docker agent run`; pass the agent config through `SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS=./agent.yaml` |
+| [Docker Agent](https://docs.docker.com/ai/docker-agent/)                              | `docker-agent`   | Skills-based integration; installs skills into `.agents/skills/` (the same directory used by Codex). Initialize with `--ignore-agent-tools` because the integration key is not the Docker CLI executable; supports zero-config execution and detects `docker-agent run` or `docker agent run`. See the [zero-config Quick Start](https://docs.docker.com/ai/docker-agent/getting-started/quickstart/#option-a-run-the-default-agent) |
 | [Factory Droid](https://docs.factory.ai/cli/getting-started/overview)               | `droid`          | Skills-based integration; installs skills into `.factory/skills/` and invokes them as `/speckit-<command>`                               |
 | [Firebender](https://firebender.com/)                                                | `firebender`     | IDE-based agent for Android Studio / IntelliJ                                                                                             |
 | [Forge](https://forgecode.dev/)                                                      | `forge`          |                                                                                                                                           |
@@ -281,6 +281,7 @@ The currently declared multi-install safe integrations are:
 | `cline` | `.clinerules/workflows` |
 | `codebuddy` | `.codebuddy/commands` |
 | `codex` | `.agents/skills` |
+
 | `command-code` | `.commandcode/skills` |
 | `cursor-agent` | `.cursor/skills` |
 | `droid` | `.factory/skills` |

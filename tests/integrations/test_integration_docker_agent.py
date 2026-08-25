@@ -1,49 +1,46 @@
 """Tests for the Docker Agent integration."""
 
-
-from specify_cli.integrations import get_integration
-from specify_cli.integrations.base import SkillsIntegration
 from specify_cli.integrations.docker_agent import DockerAgentIntegration
 
-
-def test_registered_metadata():
-    integration = get_integration("docker-agent")
-
-    assert isinstance(integration, DockerAgentIntegration)
-    assert isinstance(integration, SkillsIntegration)
-    assert integration.config["name"] == "Docker Agent"
-    assert integration.config["folder"] == ".docker-agent/"
-    assert integration.config["commands_subdir"] == "skills"
-    assert integration.config["requires_cli"] is True
-    assert integration.registrar_config["dir"] == ".docker-agent/skills"
-    assert integration.registrar_config["format"] == "markdown"
-    assert integration.registrar_config["args"] == "$ARGUMENTS"
-    assert integration.registrar_config["extension"] == "/SKILL.md"
-    assert integration.multi_install_safe is True
-    assert integration.CANONICAL_TO_NATIVE == {
-        "session_start": "session_start",
-        "pre_tool_use": "pre_tool_use",
-        "post_tool_use": "post_tool_use",
-        "session_end": "session_end",
-        "user_prompt_submit": "user_prompt_submit",
-        "stop": "stop",
-    }
+from .test_integration_base_skills import SkillsIntegrationTests
 
 
-def test_build_exec_args_without_config(monkeypatch):
+class TestDockerAgentIntegration(SkillsIntegrationTests):
+    KEY = "docker-agent"
+    FOLDER = ".agents/"
+    COMMANDS_SUBDIR = "skills"
+    REGISTRAR_DIR = ".agents/skills"
+
+    def test_multi_install_is_opt_in(self):
+        assert DockerAgentIntegration().multi_install_safe is False
+
+
+def test_zero_config_dispatch_uses_stdin(monkeypatch, tmp_path):
     monkeypatch.setattr("shutil.which", lambda name: None)
+    completed = type("CompletedProcess", (), {"returncode": 0})()
+    captured = {}
 
-    args = DockerAgentIntegration().build_exec_args("/speckit-specify build an API")
+    def fake_run(args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return completed
 
-    assert args == [
+    monkeypatch.setattr(
+        "specify_cli.integrations.docker_agent.subprocess.run", fake_run
+    )
+
+    result = DockerAgentIntegration().dispatch_command(
+        "speckit.specify", "prompt", project_root=tmp_path
+    )
+
+    assert result["exit_code"] == 0
+    assert captured["args"] == [
         "docker",
         "agent",
         "run",
         "--exec",
-        "--json",
-        "/speckit-specify build an API",
     ]
-
+    assert captured["kwargs"]["input"] == "/speckit-specify prompt"
 
 def test_uses_standalone_executable(monkeypatch):
     monkeypatch.setattr(
@@ -53,30 +50,30 @@ def test_uses_standalone_executable(monkeypatch):
 
     args = DockerAgentIntegration().build_exec_args("prompt", output_json=False)
 
-    assert args[:4] == ["docker-agent", "run", "--exec", "prompt"]
-
+    assert args == ["docker-agent", "run", "--exec"]
 
 def test_standalone_executable_has_priority(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/docker-agent")
 
     args = DockerAgentIntegration().build_exec_args("prompt", output_json=False)
 
-    assert args[:3] == ["docker-agent", "run", "--exec"]
+    assert args == ["docker-agent", "run", "--exec"]
 
-
-def test_extra_args_can_supply_agent_config(monkeypatch):
-    monkeypatch.setattr("shutil.which", lambda name: None)
+def test_executable_override(monkeypatch):
     monkeypatch.setenv(
-        "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", "./agent.yaml"
+        "SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", "/opt/docker-agent"
     )
 
     args = DockerAgentIntegration().build_exec_args("prompt", output_json=False)
 
-    assert args == [
-        "docker",
-        "agent",
-        "run",
-        "--exec",
-        "./agent.yaml",
-        "prompt",
-    ]
+    assert args == ["/opt/docker-agent", "run", "--exec"]
+
+
+def test_docker_executable_override_uses_agent_subcommand(monkeypatch):
+    monkeypatch.setenv(
+        "SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", "/opt/docker"
+    )
+
+    args = DockerAgentIntegration().build_exec_args("prompt", output_json=False)
+
+    assert args == ["/opt/docker", "agent", "run", "--exec"]
