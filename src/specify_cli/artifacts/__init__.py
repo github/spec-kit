@@ -563,10 +563,13 @@ class ArtifactCatalog:
 
         artifacts: list[Artifact] = []
         manifest_cache: dict[Path, Any | None] = {}
+        manifest_description_cache: dict[Path, dict[tuple[str, str, str], str]] = {}
         for kind, name in names:
             description = ""
             for layer in _layers_for(kind, name):
-                candidate = self._describe_layer(layer, kind, name, manifest_cache)
+                candidate = self._describe_layer(
+                    layer, kind, name, manifest_cache, manifest_description_cache
+                )
                 if candidate:
                     description = candidate
                     break
@@ -793,6 +796,7 @@ class ArtifactCatalog:
             ):
                 yield "command", name
 
+        seen_templates: set[str] = set()
         for directory in (
             _project_core_asset_root(self.project_root, "templates"),
             _core_asset_root("templates"),
@@ -800,7 +804,12 @@ class ArtifactCatalog:
             if directory is None:
                 continue
             for entry in sorted(directory.iterdir(), key=lambda p: p.name):
-                if entry.is_file() and entry.suffix == _TEMPLATE_SUFFIX:
+                if (
+                    entry.is_file()
+                    and entry.suffix == _TEMPLATE_SUFFIX
+                    and entry.stem not in seen_templates
+                ):
+                    seen_templates.add(entry.stem)
                     yield "template", entry.stem
 
         seen_scripts: set[str] = set()
@@ -831,10 +840,11 @@ class ArtifactCatalog:
         kind: ArtifactKind,
         name: str,
         manifest_cache: dict[Path, Any | None],
+        manifest_description_cache: dict[Path, dict[tuple[str, str, str], str]],
     ) -> str:
         """Return manifest metadata or on-disk metadata for one resolver layer."""
         manifest_description = self._manifest_description_for_layer(
-            layer, kind, name, manifest_cache
+            layer, kind, name, manifest_cache, manifest_description_cache
         )
         if manifest_description:
             return manifest_description
@@ -849,6 +859,7 @@ class ArtifactCatalog:
         kind: ArtifactKind,
         name: str,
         manifest_cache: dict[Path, Any | None],
+        manifest_description_cache: dict[Path, dict[tuple[str, str, str], str]],
     ) -> str:
         lookup_id = layer.get("lookupId", "")
         layer_kind = layer_kind_from_lookup_id(lookup_id)
@@ -901,15 +912,24 @@ class ArtifactCatalog:
                 manifest = manifest_cache[manifest_path]
         if manifest is None:
             return ""
-        for contribution in manifest.iter_contributions():
-            if (
-                contribution.get("id") == lookup_id
-                and contribution.get("kind") == kind
-                and contribution.get("name") == name
-            ):
+        if manifest_path not in manifest_description_cache:
+            descriptions: dict[tuple[str, str, str], str] = {}
+            for contribution in manifest.iter_contributions():
+                contribution_id = contribution.get("id")
+                contribution_kind = contribution.get("kind")
+                contribution_name = contribution.get("name")
                 description = contribution.get("description", "")
-                return description if isinstance(description, str) else ""
-        return ""
+                if (
+                    isinstance(contribution_id, str)
+                    and isinstance(contribution_kind, str)
+                    and isinstance(contribution_name, str)
+                    and isinstance(description, str)
+                ):
+                    descriptions[
+                        (contribution_kind, contribution_name, contribution_id)
+                    ] = description
+            manifest_description_cache[manifest_path] = descriptions
+        return manifest_description_cache[manifest_path].get((kind, name, lookup_id), "")
 
 
 _CONVENTION_SUBDIRS: tuple[tuple[str, ArtifactKind, str], ...] = (
