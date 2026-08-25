@@ -4,9 +4,9 @@ Every command / template / script / hook contribution surfaced by a preset or
 extension manifest exposes a computed ``id`` derived from author-declared data
 only, and every layer of a resolved artifact stack exposes a matching
 ``lookupId``. The scenarios below cover: the identifier grammar across every
-``layer x kind`` combination, the hook discriminator collision + rejection
-rules, cross-process byte-stability, path/mtime independence, and the
-additive-only shape guarantee for the enriched contribution dicts.
+``layer x kind`` combination, hook deduplication, cross-process byte-stability,
+path/mtime independence, and the additive-only shape guarantee for the
+enriched contribution dicts.
 """
 
 from __future__ import annotations
@@ -27,10 +27,8 @@ import yaml
 from specify_cli._identifier import (
     IdentifierComponentError,
     PROJECT_OVERRIDE_LAYER,
-    canonical_json,
     derive_hook_id,
     derive_named_id,
-    hook_discriminator,
     layer_kind_from_lookup_id,
     validate_component,
 )
@@ -143,11 +141,7 @@ class TestIdentifierDerivation:
         ],
     )
     def test_hook_id_no_discriminator(self, layer, source_id, event, command, expected):
-        siblings = [{"eventName": event, "command": command}]
-        assert (
-            derive_hook_id(layer, source_id, event, command, siblings, {})
-            == expected
-        )
+        assert derive_hook_id(layer, source_id, event, command) == expected
 
     def test_named_id_stable_across_two_derivations(self):
         a = derive_named_id("preset", "speckit-core", "command", "speckit.plan")
@@ -183,96 +177,30 @@ class TestLayerKindFromLookupId:
         assert layer_kind_from_lookup_id(lookup_id) is None
 
 
-# ---------------------------------------------------------------------------
-# Canonical JSON
-# ---------------------------------------------------------------------------
-
-
-class TestCanonicalJson:
-    def test_sorts_mapping_keys_at_every_depth(self):
-        payload = {"z": 1, "a": {"y": 2, "x": [3, {"n": 4, "m": 5}]}}
-        assert canonical_json(payload) == b'{"a":{"x":[3,{"m":5,"n":4}],"y":2},"z":1}'
-
-    def test_preserves_list_order(self):
-        assert canonical_json([3, 1, 2]) == b"[3,1,2]"
-
-    def test_utf8_no_ensure_ascii(self):
-        assert canonical_json({"k": "café"}).decode("utf-8") == '{"k":"café"}'
-
-
-# ---------------------------------------------------------------------------
-# Hook discriminator behaviour
-# ---------------------------------------------------------------------------
-
-
-class TestHookDiscriminator:
-    def test_no_discriminator_when_unique(self, tmp_path):
-        data = _extension_data(
-            hooks={
-                "before_specify": {"command": "speckit.speckitgit.branch"},
-            }
-        )
-        manifest = ExtensionManifest(_write_manifest(tmp_path, data, "extension.yml"))
-        hooks = [c for c in manifest.iter_contributions() if c["kind"] == "hook"]
-        assert len(hooks) == 1
-        assert hooks[0]["id"] == "extension:speckit-git:hook:before_specify:speckit.speckitgit.branch"
-
-    def test_discriminator_when_colliding(self, tmp_path):
+class TestHookContributions:
+    def test_duplicate_commands_are_last_wins_and_move_to_end(self, tmp_path):
         data = _extension_data(
             hooks={
                 "before_plan": [
                     {"command": "speckit.speckitgit.branch", "priority": 10},
-                    {"command": "speckit.speckitgit.branch", "priority": 20},
+                    {"command": "speckit.speckitgit.status", "priority": 20},
+                    {"command": "speckit.speckitgit.branch", "priority": 30},
                 ]
             }
         )
         manifest = ExtensionManifest(_write_manifest(tmp_path, data, "extension.yml"))
         hooks = [c for c in manifest.iter_contributions() if c["kind"] == "hook"]
         assert len(hooks) == 2
-        prefixes = {"extension:speckit-git:hook:before_plan:speckit.speckitgit.branch"}
-        for h in hooks:
-            assert h["id"].startswith(next(iter(prefixes)) + ":")
-            suffix = h["id"].rsplit(":", 1)[-1]
-            assert len(suffix) == 12
-            assert all(ch in "0123456789abcdef" for ch in suffix)
-        assert hooks[0]["id"] != hooks[1]["id"]
-
-    def test_discriminator_stable_under_reordering(self, tmp_path):
-        entries_a = [
-            {"command": "speckit.speckitgit.branch", "priority": 10},
-            {"command": "speckit.speckitgit.branch", "priority": 20},
+        assert [(hook["command"], hook["priority"]) for hook in hooks] == [
+            ("speckit.speckitgit.status", 20),
+            ("speckit.speckitgit.branch", 30),
         ]
-        entries_b = list(reversed([copy.deepcopy(e) for e in entries_a]))
-
-        dir_a = tmp_path / "a"
-        dir_a.mkdir()
-        dir_b = tmp_path / "b"
-        dir_b.mkdir()
-        manifest_a = ExtensionManifest(
-            _write_manifest(dir_a, _extension_data(hooks={"before_plan": entries_a}), "extension.yml")
+        assert hooks[-1]["id"] == (
+            "extension:speckit-git:hook:before_plan:speckit.speckitgit.branch"
         )
-        manifest_b = ExtensionManifest(
-            _write_manifest(dir_b, _extension_data(hooks={"before_plan": entries_b}), "extension.yml")
-        )
-
-        ids_a = {
-            (h["command"], h.get("priority")): h["id"]
-            for h in manifest_a.iter_contributions()
-            if h["kind"] == "hook"
-        }
-        ids_b = {
-            (h["command"], h.get("priority")): h["id"]
-            for h in manifest_b.iter_contributions()
-            if h["kind"] == "hook"
-        }
-        assert ids_a == ids_b
-
-    def test_hook_discriminator_helper_is_deterministic(self):
-        payload = {"priority": 10, "optional": True, "prompt": "Run?"}
-        a = hook_discriminator(payload)
-        b = hook_discriminator(dict(reversed(list(payload.items()))))
-        assert a == b
-        assert len(a) == 12
+        assert manifest.contribution_id(
+            "hook", "before_plan:speckit.speckitgit.branch"
+        ) == hooks[-1]["id"]
 
 
 # ---------------------------------------------------------------------------

@@ -792,46 +792,30 @@ class ExtensionManifest:
             )
             contributions.append(enriched)
 
-        hooks = self.hooks or {}
-        # Flatten every hook entry across every event so the discriminator
-        # decision has visibility into the full same-source sibling set.
-        flattened: List[tuple[str, dict]] = []
-        for event_name, hook_config in hooks.items():
+        for event_name, hook_config in (self.hooks or {}).items():
+            deduped: Dict[str, dict] = {}
             for entry in coerce_hook_entries(hook_config):
-                if isinstance(entry, dict):
-                    normalized = dict(entry)
-                    normalized.setdefault("eventName", event_name)
-                    flattened.append((event_name, normalized))
+                if not isinstance(entry, dict):
+                    continue
+                command_value = entry.get("command", "")
+                if command_value in deduped:
+                    del deduped[command_value]
+                normalized = dict(entry)
+                normalized.setdefault("eventName", event_name)
+                deduped[command_value] = normalized
 
-        siblings_for_id = [
-            {"eventName": event, "command": entry.get("command", "")}
-            for event, entry in flattened
-        ]
-
-        for event_name, entry in flattened:
-            command_value = entry.get("command", "")
-            declared_fields = {
-                k: v
-                for k, v in entry.items()
-                if k not in ("eventName", "command")
-            }
-            hook_id = derive_hook_id(
-                "extension",
-                source_id,
-                event_name,
-                command_value,
-                siblings_for_id,
-                declared_fields,
-            )
-            enriched = dict(entry)
-            enriched.update(
-                layer="extension",
-                sourceId=source_id,
-                kind="hook",
-                name=f"{event_name}:{command_value}",
-                id=hook_id,
-            )
-            contributions.append(enriched)
+            for command_value, entry in deduped.items():
+                enriched = dict(entry)
+                enriched.update(
+                    layer="extension",
+                    sourceId=source_id,
+                    kind="hook",
+                    name=f"{event_name}:{command_value}",
+                    id=derive_hook_id(
+                        "extension", source_id, event_name, command_value
+                    ),
+                )
+                contributions.append(enriched)
 
         return contributions
 
