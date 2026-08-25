@@ -5292,8 +5292,16 @@ class PresetResolver:
         return None
 
     @classmethod
-    def core_name_candidates(cls, logical_name: str) -> list[str]:
-        """Return exact-first filename candidates for a core logical name."""
+    def name_candidates(cls, logical_name: str) -> list[str]:
+        """Return exact-first filename candidates for a ``speckit.<stem>`` logical name.
+
+        Given a logical name like ``speckit.plan``, returns
+        ``["speckit.plan", "plan"]`` so callers can try the fully-qualified
+        filename first and then fall back to the bare stem.
+
+        Names that do not follow the ``speckit.<stem>`` convention return a
+        single-element list containing the original name.
+        """
         names = [logical_name]
         stem = cls._core_stem(logical_name)
         if stem and stem != logical_name:
@@ -5833,7 +5841,7 @@ class PresetResolver:
         if base is None:
             return None
 
-        for name in self.core_name_candidates(template_name):
+        for name in self.name_candidates(template_name):
             if template_type == "script":
                 c = next(
                     (path for path in script_variant_paths(base, name) if path.exists()),

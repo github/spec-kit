@@ -590,8 +590,6 @@ class ArtifactCatalog:
         """
         bare, resolved_kind = _resolve_kind_hint(name, kind)
 
-        from ..presets import PresetError, PresetResolver  # lazy: avoids circular import
-
         # Project and registry validation happens once, inside
         # ``_collect_inventory`` below — the same chokepoint ``list_artifacts``
         # uses — so both public methods fail closed identically instead of
@@ -620,13 +618,6 @@ class ArtifactCatalog:
         )
         if artifact is None:
             raise ArtifactNotFoundError(name)
-        try:
-            if PresetResolver(self.project_root).resolve_content(
-                validated_name, resolved_kind
-            ) is None:
-                raise ArtifactNotFoundError(name)
-        except (OSError, PresetError) as exc:
-            raise ArtifactResolutionError() from exc
         stack = _build_stack(
             self.project_root,
             resolved_kind,
@@ -856,7 +847,7 @@ class ArtifactCatalog:
             if any(
                 (directory / f"{candidate}.md").is_file()
                 for directory in command_dirs
-                for candidate in PresetResolver.core_name_candidates(name)
+                for candidate in PresetResolver.name_candidates(name)
             ):
                 yield "command", name
 
