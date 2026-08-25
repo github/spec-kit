@@ -58,8 +58,19 @@ class Artifact:
 
 @dataclass(frozen=True)
 class StackLayer:
-    """One row inside the ``stack`` array returned by ``get_artifact_info()``."""
+    """One row inside the ``stack`` array returned by ``get_artifact_info()``.
 
+    ``id`` is the source-agnostic round-trip key (``f"{kind}:{name}"``) for the
+    artifact this stack row belongs to — every row in a given stack carries
+    the same ``id``, matching the top-level ``id`` on the ``info`` payload and
+    the corresponding row's ``id`` on ``artifact list``. It is populated for
+    every row, including built-in-tier rows that have no ``lookupId``.
+    ``lookupId`` is separate, manifest-backed layer provenance: it is only
+    present when the row has a specific preset/extension/project-override
+    layer to point at, and is ``None`` for the built-in tier.
+    """
+
+    id: str
     layer: LayerName | None
     sourceId: str | None
     presetId: str | None
@@ -72,6 +83,7 @@ class StackLayer:
 
     def to_json_dict(self) -> dict[str, Any]:
         return {
+            "id": self.id,
             "layer": self.layer,
             "sourceId": self.sourceId,
             "presetId": self.presetId,
@@ -351,6 +363,7 @@ def _build_stack(
         None,
     )
 
+    public_id = derive_public_id(kind, name)
     rows: list[StackLayer] = []
     for idx, layer in enumerate(raw):
         strategy = layer["strategy"]
@@ -366,6 +379,7 @@ def _build_stack(
         if layer_kind == PROJECT_OVERRIDE_LAYER:
             rows.append(
                 StackLayer(
+                    id=public_id,
                     layer="project",
                     sourceId=source_id,
                     presetId=None,
@@ -383,6 +397,7 @@ def _build_stack(
             manifest_path = _derive_manifest_path(layer, project_root)
             rows.append(
                 StackLayer(
+                    id=public_id,
                     layer="extension",
                     sourceId=source_id,
                     presetId=None,
@@ -399,6 +414,7 @@ def _build_stack(
         if layer_kind is None:
             rows.append(
                 StackLayer(
+                    id=public_id,
                     layer=None,
                     sourceId=None,
                     presetId=None,
@@ -428,6 +444,7 @@ def _build_stack(
         manifest_path = _derive_manifest_path(layer, project_root)
         rows.append(
             StackLayer(
+                id=public_id,
                 layer="preset",
                 sourceId=source_id,
                 presetId=pack_id or None,

@@ -526,6 +526,21 @@ class TestInfoContract:
         info = cat.get_artifact_info("speckit.constitution")
         assert info["id"] == "command:speckit.constitution"
 
+    def test_every_stack_row_carries_id(self, spec_kit_project: Path):
+        """Every stack row carries a non-null ``id``, including built-in rows.
+
+        ``id`` is the source-agnostic round-trip key; it does not depend on
+        the row having a ``lookupId`` (manifest-backed layer provenance).
+        """
+        overrides = spec_kit_project / ".specify" / "templates" / "overrides"
+        overrides.mkdir()
+        (overrides / "speckit.constitution.md").write_text("override", encoding="utf-8")
+
+        info = ArtifactCatalog(spec_kit_project).get_artifact_info("speckit.constitution")
+        assert len(info["stack"]) >= 2
+        for layer in info["stack"]:
+            assert layer["id"] == "command:speckit.constitution"
+
 
 # ---------------------------------------------------------------------------
 # Error conditions — pinned strings for the artifact-error contract
@@ -635,6 +650,40 @@ class TestKindHint:
         with pytest.raises(ArtifactNotFoundError):
             ArtifactCatalog(spec_kit_project).get_artifact_info(name, kind=kind)
 
+    def test_id_form_round_trips_to_same_artifact(self, spec_kit_project: Path):
+        """``artifact info`` accepts the public ``id`` form (``kind:name``).
+
+        Given either the bare name or its ``id``, the resolved artifact is
+        the same — ``id`` is the source-agnostic round-trip key.
+        """
+        cat = ArtifactCatalog(spec_kit_project)
+        by_bare = cat.get_artifact_info("speckit.plan")
+        by_id = cat.get_artifact_info("command:speckit.plan")
+        assert by_id == by_bare
+
+    def test_id_form_resolves_template_despite_same_named_command(
+        self, spec_kit_project: Path
+    ):
+        """``kind:name`` disambiguates when a command shares a template's name."""
+        pack_dir = install_preset(
+            spec_kit_project,
+            "collide-pack",
+            {"commands": [{"name": "spec-template", "description": "cmd"}]},
+        )
+        (pack_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (pack_dir / "commands" / "spec-template.md").write_text(
+            "colliding command body", encoding="utf-8"
+        )
+
+        # Sanity check: without a kind hint, the bare name is ambiguous
+        # because both a command and a template named "spec-template" exist.
+        with pytest.raises(AmbiguousArtifactError):
+            ArtifactCatalog(spec_kit_project).get_artifact_info("spec-template")
+
+        info = ArtifactCatalog(spec_kit_project).get_artifact_info("template:spec-template")
+        assert info["kind"] == "template"
+        assert info["id"] == "template:spec-template"
+
 
 # ---------------------------------------------------------------------------
 # Skills exclusion
@@ -685,6 +734,17 @@ class TestCLI:
         assert result.exit_code == 0, result.stderr
         payload = json.loads(result.stdout)
         assert set(payload.keys()) == {"id", "name", "kind", "description", "stack"}
+
+    def test_info_accepts_id_form_on_cli(
+        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.chdir(spec_kit_project)
+        runner = CliRunner()
+        by_bare = runner.invoke(app, ["artifact", "info", "speckit.plan", "--json"])
+        by_id = runner.invoke(app, ["artifact", "info", "command:speckit.plan", "--json"])
+        assert by_bare.exit_code == 0, by_bare.stderr
+        assert by_id.exit_code == 0, by_id.stderr
+        assert json.loads(by_id.stdout) == json.loads(by_bare.stdout)
 
     def test_info_unknown_error_envelope(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.chdir(spec_kit_project)

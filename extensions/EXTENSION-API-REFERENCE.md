@@ -902,6 +902,18 @@ Project-local overrides in `.specify/templates/overrides/` are a resolver-only c
 
 `PresetResolver.collect_all_layers()` returns layer dicts that include a `lookupId` field for project overrides, preset contributions, and extension contributions. Manifest-declared preset and extension layers use the manifest's validated `id:` as the `lookupId` source id, so it matches the id `iter_contributions()` yields for that same contribution. Convention-only layers (no manifest entry declares the contribution) have no manifest id to consult, so their `lookupId` falls back to the resolver's registry key or on-disk directory name. Built-in fallback layers omit `lookupId`.
 
+### Round-trip via the public `id`
+
+The `id` field (shape `kind:name`) is the stable round-trip key for every artifact and is accepted as input by `specify artifact info`. The `lookupId` field carries manifest-backed layer provenance and is present only for artifacts contributed by presets, extensions, or project overrides. Built-in-tier artifacts have no `lookupId`; use `id` to round-trip them.
+
+For example, given a `specify artifact list --json` / `specify artifact info` stack row for a built-in artifact — which has only `id` populated (`layer`, `sourceId`, and `lookupId` are `null`) — the round-trip is:
+
+```bash
+specify artifact info command:speckit.plan --json
+```
+
+This resolves the same artifact as `specify artifact info speckit.plan --json`, because `id` (not `lookupId`) is the source-agnostic identifier every artifact carries.
+
 ### Determinism guarantees
 
 Manifest contribution identifier derivation reads only the in-memory declared manifest content. No filesystem paths, no `os.environ`, no timestamps, and no file-content hashes contribute to those manifest ids. Copying an extension or preset to a different machine (or touching its files) does not change the identifiers it produces. Manifest-declared resolver `lookupId` values share this stability — renaming the installed directory of a preset or extension that declares an `id:` does not change its `lookupId`. Only convention-only contributions (undeclared in any manifest) derive their `lookupId` from the on-disk directory name or registry key, so renaming that directory does change their `lookupId`.

@@ -65,6 +65,7 @@ specify artifact info <name> --json
   "description": "Create or update the feature specification.",
   "stack": [
     {
+      "id": "command:speckit.specify",
       "layer": "preset",
       "sourceId": "compliance",
       "presetId": "compliance",
@@ -76,6 +77,7 @@ specify artifact info <name> --json
       "lookupId": "preset:compliance:command:speckit.specify"
     },
     {
+      "id": "command:speckit.specify",
       "layer": null,
       "sourceId": null,
       "presetId": null,
@@ -98,6 +100,7 @@ The top-level `id`, `name`, `kind`, and `description` fields match the correspon
 
 | Field          | Description                                                                     |
 | -------------- | -------------------------------------------------------------------------------- |
+| `id`           | `{kind}:{name}` — the source-agnostic round-trip key, identical on every row of the same artifact's stack |
 | `layer`        | `project`, `preset`, or `extension`; `null` for built-in layers                    |
 | `sourceId`     | Source component of `lookupId`, or `null` when the layer has no provenance         |
 | `presetId`     | Preset pack directory id; `null` on built-in, `project`, and `extension` rows       |
@@ -108,9 +111,9 @@ The top-level `id`, `name`, `kind`, and `description` fields match the correspon
 | `manifestPath` | Project-relative path to the declaring manifest, or `null` when none applies      |
 | `lookupId`     | Deterministic `{layer}:{sourceId}:{kind}:{name}` identifier, or `null` for built-in layers |
 
-`active` and `hidden` are independent labels, not opposites. Composing strategies (`wrap`, `prepend`, `append`) keep lower layers in the composed output, so an inactive layer is not necessarily hidden: only layers below the first `replace` layer are marked `hidden`. Built-in rows have no provenance: `layer`, `sourceId`, and `lookupId` are `null`.
+`active` and `hidden` are independent labels, not opposites. Composing strategies (`wrap`, `prepend`, `append`) keep lower layers in the composed output, so an inactive layer is not necessarily hidden: only layers below the first `replace` layer are marked `hidden`. Built-in rows have no provenance: `layer`, `sourceId`, and `lookupId` are `null` — but `id` is always populated, even on built-in rows. `id` is the round-trip key: `specify artifact info` accepts it as input (for example, `specify artifact info command:speckit.specify --json`), and it resolves the same artifact whether the caller passes the bare name or the `id`.
 
-Lookup IDs use the same grammar as [preset contribution identifiers](presets.md#contribution-identifiers), so a `lookupId` from this command joins directly to `PresetManifest.iter_contributions()` / `ExtensionManifest.iter_contributions()` for manifest-declared layers. Project-local overrides carry a synthetic `project:_:{kind}:{name}` ID that intentionally matches no manifest contribution.
+Lookup IDs use the same grammar as [preset contribution identifiers](presets.md#contribution-identifiers), so a `lookupId` from this command joins directly to `PresetManifest.iter_contributions()` / `ExtensionManifest.iter_contributions()` for manifest-declared layers. Project-local overrides carry a synthetic `project:_:{kind}:{name}` ID that intentionally matches no manifest contribution. `lookupId` is manifest-backed layer provenance, not the round-trip key — use `id` for that.
 
 ## JSON Errors
 
