@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -51,6 +54,191 @@ def _ext_spec_is_url(ext_spec: str) -> bool:
         return urlparse(ext_spec).scheme in ("http", "https")
     except ValueError:
         return False
+
+
+def _snapshot_files(root: Path) -> dict[str, str]:
+    """Return SHA-256 digests for regular files below *root*."""
+    if not root.exists():
+        return {}
+
+    files: dict[str, str] = {}
+    for path in root.rglob("*"):
+        if not path.is_file() or path.is_symlink():
+            continue
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        files[path.relative_to(root).as_posix()] = digest
+    return files
+
+
+def _preview_manifest_provenance(staged_root: Path) -> dict[str, str]:
+    """Map manifest-tracked staged paths to their installation source."""
+    provenance: dict[str, str] = {}
+    manifests = staged_root / ".specify" / "integrations"
+    if not manifests.is_dir():
+        return provenance
+
+    for manifest_path in manifests.glob("*.manifest.json"):
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            key = str(manifest.get("key", manifest_path.stem.removesuffix(".manifest")))
+            source = "core" if key == "speckit" else f"integration:{key}"
+            for relative_path in manifest.get("files", {}):
+                provenance[str(relative_path)] = source
+        except (OSError, TypeError, ValueError):
+            continue
+    return provenance
+
+
+def _preview_default_provenance(relative_path: str) -> str:
+    if relative_path.startswith(".specify/workflows/"):
+        return "workflow"
+    if relative_path.startswith(".specify/extensions/"):
+        return "extension"
+    if relative_path.startswith(".specify/presets/"):
+        return "preset"
+    if relative_path.startswith(".specify/"):
+        return "core"
+    return "integration"
+
+
+def _build_preview_actions(
+    initial_files: dict[str, str], staged_root: Path
+) -> list[dict[str, str]]:
+    """Classify files produced by a staged initialization."""
+    staged_files = _snapshot_files(staged_root)
+    provenance = _preview_manifest_provenance(staged_root)
+    candidates = {
+        path
+        for path, digest in staged_files.items()
+        if initial_files.get(path) != digest
+    }
+    candidates.update(path for path in provenance if path in staged_files)
+
+    actions: list[dict[str, str]] = []
+    for path in sorted(candidates):
+        staged_digest = staged_files[path]
+        initial_digest = initial_files.get(path)
+        action = (
+            "create"
+            if initial_digest is None
+            else "overwrite"
+            if initial_digest != staged_digest
+            else "preserve"
+        )
+        actions.append(
+            {
+                "action": action,
+                "path": path,
+                "provenance": provenance.get(path, _preview_default_provenance(path)),
+            }
+        )
+    return actions
+
+
+def _emit_dry_run_preview(payload: dict[str, Any], *, json_output: bool) -> None:
+    """Render a stable human or machine-readable initialization preview."""
+    if json_output:
+        typer.echo(json.dumps(payload, sort_keys=True))
+        return
+
+    console.print("\n[bold cyan]Initialization preview[/bold cyan]")
+    if payload["conflict"]:
+        console.print(
+            "[yellow]conflict[/yellow]  target directory is non-empty; rerun with --force "
+            "to preview a forced merge"
+        )
+        return
+
+    for record in payload["actions"]:
+        console.print(
+            f"{record['action']:<10} {record['path']} "
+            f"[dim]({record['provenance']})[/dim]"
+        )
+
+
+def _preview_init(
+    *,
+    project_path: Path,
+    directory_conflict: bool,
+    script_type: str,
+    selected_integration: str,
+    ignore_agent_tools: bool,
+    preset: str | None,
+    integration_options: str | None,
+    extensions: list[str] | None,
+    trust_extension_urls: bool,
+    json_output: bool,
+) -> None:
+    """Run the canonical initializer in staging and report its file plan."""
+    payload: dict[str, Any] = {
+        "dry_run": True,
+        "target": str(project_path),
+        "conflict": directory_conflict,
+        "actions": [],
+    }
+    if directory_conflict:
+        _emit_dry_run_preview(payload, json_output=json_output)
+        return
+
+    initial_files = _snapshot_files(project_path)
+    url_extensions = [spec for spec in extensions or [] if _ext_spec_is_url(spec)]
+    staged_extensions = [spec for spec in extensions or [] if not _ext_spec_is_url(spec)]
+
+    with tempfile.TemporaryDirectory(prefix="specify-init-preview-") as tmp_dir:
+        staged_root = Path(tmp_dir) / "project"
+        if project_path.exists():
+            shutil.copytree(project_path, staged_root, symlinks=True)
+
+        # Run the same public CLI path in a child process.  Besides preventing
+        # mutations of the target root, this isolates Rich's Live output from
+        # the preview's human/JSON output contract.
+        command = [
+            sys.executable,
+            "-c",
+            "from specify_cli import main; main()",
+            "init",
+            str(staged_root),
+            "--force",
+            "--non-interactive",
+            "--integration",
+            selected_integration,
+            "--script",
+            script_type,
+        ]
+        if ignore_agent_tools:
+            command.append("--ignore-agent-tools")
+        if integration_options:
+            command.extend(["--integration-options", integration_options])
+        if preset:
+            command.extend(["--preset", preset])
+        for extension in staged_extensions:
+            command.extend(["--extension", extension])
+        if trust_extension_urls:
+            command.append("--trust-extension-urls")
+
+        result = subprocess.run(
+            command,
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode:
+            details = (result.stderr or result.stdout).strip().replace("\n", " ")
+            raise RuntimeError(f"staged initialization failed: {details[:240]}")
+
+        payload["actions"] = _build_preview_actions(initial_files, staged_root)
+
+    for spec in url_extensions:
+        payload["actions"].append(
+            {
+                "action": "unresolved",
+                "path": spec,
+                "provenance": "extension:url",
+            }
+        )
+    payload["actions"].sort(key=lambda action: action["path"])
+    _emit_dry_run_preview(payload, json_output=json_output)
 
 
 def _confirm_extension_url_trust(
@@ -336,6 +524,16 @@ def register(app: typer.Typer) -> None:
             "--trust-extension-urls",
             help="Pre-authorize installing extensions from external URLs without the interactive trust prompt (required for non-interactive URL installs).",
         ),
+        dry_run: bool = typer.Option(
+            False,
+            "--dry-run",
+            help="Preview initialization changes without writing to the target project.",
+        ),
+        json_output: bool = typer.Option(
+            False,
+            "--json",
+            help="Emit the dry-run preview as a single JSON document.",
+        ),
     ):
         """
         Initialize a new Specify project.
@@ -391,7 +589,12 @@ def register(app: typer.Typer) -> None:
             _write_integration_json,
         )
 
-        show_banner()
+        if not (dry_run and json_output):
+            show_banner()
+
+        if json_output and not dry_run:
+            console.print("[red]Error:[/red] --json requires --dry-run")
+            raise typer.Exit(1)
 
         from ..integrations import INTEGRATION_REGISTRY, get_integration
 
@@ -423,6 +626,7 @@ def register(app: typer.Typer) -> None:
             raise typer.Exit(1)
 
         dir_existed_before = False
+        directory_conflict = False
         if here:
             project_name = Path.cwd().name
             project_path = Path.cwd()
@@ -430,17 +634,21 @@ def register(app: typer.Typer) -> None:
 
             existing_items = list(project_path.iterdir())
             if existing_items:
-                console.print(
-                    f"[yellow]Warning:[/yellow] Current directory is not empty ({len(existing_items)} items)"
-                )
-                if force:
+                if not (dry_run and json_output):
+                    console.print(
+                        f"[yellow]Warning:[/yellow] Current directory is not empty ({len(existing_items)} items)"
+                    )
+                if dry_run and not force:
+                    directory_conflict = True
+                elif force:
                     # Proceeding: the merge/overwrite warning is accurate here.
-                    console.print(
-                        "[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]"
-                    )
-                    console.print(
-                        "[cyan]--force supplied: skipping confirmation and proceeding with merge[/cyan]"
-                    )
+                    if not (dry_run and json_output):
+                        console.print(
+                            "[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]"
+                        )
+                        console.print(
+                            "[cyan]--force supplied: skipping confirmation and proceeding with merge[/cyan]"
+                        )
                 elif non_interactive:
                     console.print(
                         "[red]Error:[/red] Current directory is not empty and "
@@ -492,17 +700,20 @@ def register(app: typer.Typer) -> None:
                     )
                     raise typer.Exit(1)
                 existing_items = list(project_path.iterdir())
-                if force:
-                    if existing_items:
+                if dry_run and not force:
+                    directory_conflict = True
+                elif force:
+                    if existing_items and not (dry_run and json_output):
                         console.print(
                             f"[yellow]Warning:[/yellow] Directory '{safe_name}' is not empty ({len(existing_items)} items)"
                         )
                         console.print(
                             "[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]"
                         )
-                    console.print(
-                        f"[cyan]--force supplied: merging into existing directory '[cyan]{safe_name}[/cyan]'[/cyan]"
-                    )
+                    if not (dry_run and json_output):
+                        console.print(
+                            f"[cyan]--force supplied: merging into existing directory '[cyan]{safe_name}[/cyan]'[/cyan]"
+                        )
                 else:
                     error_panel = Panel(
                         f"Directory already exists: '[cyan]{safe_name}[/cyan]'\n"
@@ -568,9 +779,10 @@ def register(app: typer.Typer) -> None:
                 f"{'Target Path':<15} [dim]{_escape_markup(str(project_path))}[/dim]"
             )
 
-        console.print(
-            Panel("\n".join(setup_lines), border_style="cyan", padding=(1, 2))
-        )
+        if not (dry_run and json_output):
+            console.print(
+                Panel("\n".join(setup_lines), border_style="cyan", padding=(1, 2))
+            )
 
         if not ignore_agent_tools:
             agent_config = AGENT_CONFIG.get(selected_ai)
@@ -610,8 +822,24 @@ def register(app: typer.Typer) -> None:
             else:
                 selected_script = default_script
 
-        console.print(f"[cyan]Selected coding agent integration:[/cyan] {selected_ai}")
-        console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
+        if not (dry_run and json_output):
+            console.print(f"[cyan]Selected coding agent integration:[/cyan] {selected_ai}")
+            console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
+
+        if dry_run:
+            _preview_init(
+                project_path=project_path,
+                directory_conflict=directory_conflict,
+                script_type=selected_script,
+                selected_integration=selected_ai,
+                ignore_agent_tools=ignore_agent_tools,
+                preset=preset,
+                integration_options=integration_options,
+                extensions=extensions,
+                trust_extension_urls=trust_extension_urls,
+                json_output=json_output,
+            )
+            return
 
         tracker = StepTracker("Initialize Specify Project")
 
