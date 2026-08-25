@@ -883,13 +883,9 @@ Hook contributions use a compound name-component built from the event and comman
 {layer}:{sourceId}:hook:{eventName}:{command}
 ```
 
-When two or more hook entries within the same source share the same `(eventName, command)` pair, a 12-hex-character discriminator is appended:
-
-```text
-{layer}:{sourceId}:hook:{eventName}:{command}:{discriminator}
-```
-
-The discriminator is the first 12 lowercase hex characters of `sha256(canonical_json(entry - {eventName, command}))`. If two entries are byte-identical after removing `eventName` and `command`, they collapse under the existing per-event, per-command last-write-wins hook merge semantics.
+Within a single event list, repeated `command` values collapse last-write-wins and
+move to the end, so each surviving `(eventName, command)` pair has the same
+identifier form above with no suffix.
 
 ### Reserved character
 
