@@ -13869,7 +13869,7 @@ class TestInstalledPresetRichMarkup:
 
         assert result.exit_code == 0, (result.output, result.exception)
         output = " ".join(strip_ansi(result.output).split())
-        assert "constitution.md" in "".join(output.split())
+        assert "constitution.md" in output
         assert "top layer from: core" in output
 
     def test_resolve_rejects_empty_command_segments(self, project_dir):
