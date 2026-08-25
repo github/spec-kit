@@ -28,12 +28,18 @@ def event_run(
     MAX_STDIN_BYTES = 1 * 1024 * 1024
     if not sys.stdin.isatty():
         raw = sys.stdin.read(MAX_STDIN_BYTES)
-        if not sys.stdin.eof:
-            raise typer.Exit(
-                code=1,
-                message="stdin payload exceeds 1 MiB limit; "
+        # File-like objects have no ``.eof`` attribute in Python; that check
+        # always raised AttributeError, crashing every piped-stdin invocation
+        # (the command's primary use case) regardless of payload size. Detect
+        # truncation instead by reading one more byte once the cap is hit: a
+        # non-empty result means more data was waiting beyond the cap.
+        if len(raw) >= MAX_STDIN_BYTES and sys.stdin.read(1):
+            typer.echo(
+                "stdin payload exceeds 1 MiB limit; "
                 "truncate or pipe a smaller payload",
+                err=True,
             )
+            raise typer.Exit(code=1)
         payload = raw
     else:
         payload = "{}"
