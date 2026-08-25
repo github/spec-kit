@@ -321,13 +321,16 @@ def _build_stack(
     ``active`` / ``hidden`` labels documented on the data model.
 
     Returns an empty list when the artifact is not visible from any tier
-    (no preset, no extension, no core asset).
+    (no preset, no extension, no built-in asset).
     """
-    from ..presets import PresetResolver  # lazy: avoids circular import
+    from ..presets import PresetError, PresetResolver  # lazy: avoids circular import
 
     resolver = PresetResolver(project_root)
     template_type = kind
-    raw = resolver.collect_all_layers(name, template_type)
+    try:
+        raw = resolver.collect_all_layers(name, template_type)
+    except (OSError, PresetError) as exc:
+        raise ArtifactResolutionError() from exc
     if not raw:
         return []
 
@@ -347,7 +350,11 @@ def _build_stack(
         else:
             hidden = idx > first_replace_idx
 
-        layer_kind = layer_kind_from_lookup_id(lookup_id) if isinstance(lookup_id, str) else None
+        layer_kind = (
+            layer_kind_from_lookup_id(lookup_id)
+            if isinstance(lookup_id, str)
+            else None
+        )
         source_id = lookup_id.split(":", 2)[1] if layer_kind else None
         if lookup_id is not None and layer_kind is None:
             raise ArtifactResolutionError()
@@ -527,14 +534,14 @@ class ArtifactCatalog:
         Sort order is deterministic — first by ``kind`` in the fixed
         ``["command", "template", "script"]`` order, then by ``name``.
         Returns an empty list when no artifacts are found rather than raising;
-        a fresh install with no presets, no extensions, and no core assets is
+        a fresh install with no presets, no extensions, and no built-in assets is
         still a valid Spec Kit project.
 
         Skills (``.github/skills/**/SKILL.md``) are intentionally excluded —
         they are integration-specific output, not a shipped asset family.
 
         Descriptions are picked from the highest-priority layer that has one,
-        not the first layer discovered — a core command that an active
+        not the first layer discovered — a built-in command that an active
         preset overrides must report the preset's description, and two
         competing packs must report the higher-precedence one's. Precedence
         is decided by :meth:`PresetResolver.collect_all_layers`'s own
@@ -544,7 +551,7 @@ class ArtifactCatalog:
         _validate_extension_registry(self.project_root)
         _validate_preset_registry(self.project_root)
 
-        from ..presets import PresetResolver  # lazy: avoids circular import
+        from ..presets import PresetError, PresetResolver  # lazy: avoids circular import
 
         resolver = PresetResolver(self.project_root)
         layers_cache: dict[tuple[ArtifactKind, str], list[dict[str, Any]]] = {}
@@ -553,22 +560,31 @@ class ArtifactCatalog:
         def _layers_for(kind: ArtifactKind, name: str) -> list[dict[str, Any]]:
             key = (kind, name)
             if key not in layers_cache:
-                layers_cache[key] = resolver.collect_all_layers(name, kind)
+                try:
+                    layers_cache[key] = resolver.collect_all_layers(name, kind)
+                except (OSError, PresetError) as exc:
+                    raise ArtifactResolutionError() from exc
             return layers_cache[key]
 
         def _is_resolved(kind: ArtifactKind, name: str) -> bool:
             key = (kind, name)
             if key not in resolved_cache:
-                resolved_cache[key] = resolver.resolve_content(name, kind) is not None
+                try:
+                    resolved_cache[key] = resolver.resolve_content(name, kind) is not None
+                except (OSError, PresetError) as exc:
+                    raise ArtifactResolutionError() from exc
             return resolved_cache[key]
 
         names: set[tuple[ArtifactKind, str]] = set()
-        for kind, name in self._iter_candidate_artifacts(resolver):
-            key = (kind, name)
-            if not _is_valid_artifact_name_component(name, kind):
-                continue
-            if _layers_for(kind, name) and _is_resolved(kind, name):
-                names.add(key)
+        try:
+            for kind, name in self._iter_candidate_artifacts(resolver):
+                key = (kind, name)
+                if not _is_valid_artifact_name_component(name, kind):
+                    continue
+                if _layers_for(kind, name) and _is_resolved(kind, name):
+                    names.add(key)
+        except (OSError, PresetError) as exc:
+            raise ArtifactResolutionError() from exc
 
         artifacts: list[Artifact] = []
         manifest_cache: dict[Path, Any | None] = {}

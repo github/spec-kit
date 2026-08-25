@@ -1,8 +1,8 @@
 # Artifacts
 
-An **artifact** is any command, template, or script Spec Kit exposes in a project, regardless of which layer contributes it — the core baseline, an installed preset, an installed extension, or a project-local override in `.specify/templates/overrides/`.
+An **artifact** is any command, template, or script Spec Kit exposes in a project, regardless of which layer contributes it — built-in assets, an installed preset, an installed extension, or a project-local override in `.specify/templates/overrides/`.
 
-The `specify artifact` command group is the read-only introspection surface for that inventory. `specify preset resolve <name>` answers "which file wins for this preset-managed name?"; `specify artifact` answers "what exists at all, and what is the full composition stack behind it?" — including core-only artifacts that no preset touches.
+The `specify artifact` command group is the read-only introspection surface for that inventory. `specify preset resolve <name>` answers "which file wins for this preset-managed name?"; `specify artifact` answers "what exists at all, and what is the full composition stack behind it?" — including built-in artifacts that no preset touches.
 
 Both subcommands currently require `--json`. Omitting it exits with code `2` and prints a usage message on stderr; no stdout is produced. Text rendering is deliberately deferred so the JSON shapes below are the only contract, and adding a default text renderer later stays a non-breaking, additive change.
 
@@ -42,7 +42,7 @@ Prints a flat inventory of every visible artifact — one row per `(kind, name)`
 | `kind`        | One of `command`, `template`, `script`                                  |
 | `description` | Description from the highest-precedence layer that declares one, else `""` |
 
-Core artifacts always appear, even when nothing overrides them. Descriptions come from the highest-priority layer that has one — a preset or project override that hides a core command reports its own description, not the hidden core text. Skills (`.github/skills/**/SKILL.md`) are excluded: they are integration-specific output, not a shipped asset family.
+Built-in artifacts always appear, even when nothing overrides them. Descriptions come from the highest-priority layer that has one — a preset or project override that hides a built-in command reports its own description, not the hidden built-in text. Skills (`.github/skills/**/SKILL.md`) are excluded: they are integration-specific output, not a shipped asset family.
 
 ## Artifact Info
 
@@ -125,6 +125,6 @@ On failure, nothing is written to stdout. A single-key JSON envelope is written 
 | `not a Spec Kit project: no .specify/ directory found` | Run outside an initialized project                             |
 | `unknown artifact <name>`                           | No artifact matches the requested name (and kind, when given)     |
 | `ambiguous artifact <name>: matches kinds [...]`    | The bare name matches more than one kind — re-run with `--kind`   |
-| `artifact resolution failed`                        | The preset/extension registries or a manifest could not be read   |
+| `artifact resolution failed`                        | The preset/extension registries could not be read, or artifact content could not be composed |
 
 Exit code `2` is reserved for usage errors — a missing `--json` flag or an invalid `--kind` value — and emits a plain-text message on stderr rather than a JSON envelope.

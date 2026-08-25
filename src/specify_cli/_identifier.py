@@ -9,7 +9,7 @@ random values, or list positions. That is what makes identifiers portable
 across machines, project locations, and reinstalls, and what lets consumers use
 them as stable join keys.
 
-Grammar for manifest-backed named contributions (commands, templates, scripts)::
+Grammar for provenance-backed named contributions (commands, templates, scripts)::
 
     id = "{layer}:{sourceId}:{kind}:{name}"
 
@@ -108,6 +108,10 @@ def derive_named_id(layer: str, source_id: str, kind: str, name: str) -> str:
 
 def derive_public_id(kind: str, name: str) -> str:
     """Build the source-agnostic public identifier for an artifact."""
+    if kind not in _NAMED_CONTRIBUTION_KINDS:
+        raise IdentifierComponentError(f"Invalid public artifact kind '{kind}'")
+    validate_component(kind, "kind")
+    validate_component(name, "name")
     return f"{kind}:{name}"
 
 
@@ -171,7 +175,7 @@ def derive_hook_id(
     Each component is revalidated with :func:`validate_component` — same
     contract as :func:`derive_named_id`.
     """
-    if layer not in _LAYER_KINDS:
+    if layer not in _LAYER_KINDS - {PROJECT_OVERRIDE_LAYER}:
         raise IdentifierComponentError(f"Invalid layer '{layer}'")
     validate_component(layer, "layer")
     validate_component(source_id, "sourceId")

@@ -892,7 +892,7 @@ identifier form above with no suffix.
 
 `:` is reserved as the identifier component separator. It cannot appear inside any of `layer`, `sourceId`, `kind`, `name`, `eventName`, or `command`. Extension ids, command names, template names, and script names are already constrained by their existing regex patterns (`^[a-z0-9-]+$` and friends), which forbid `:`. Hook event names (mapping keys) and hook `command` values are additionally validated to reject `:` at manifest load.
 
-### The `project:` sentinel
+### Project-local overrides
 
 Project-local overrides in `.specify/templates/overrides/` are a resolver-only concept — they have no backing manifest and cannot appear in `iter_contributions()`. Layers of that kind carry a synthetic `lookupId` of the form `project:_:{kind}:{name}` so consumers that reverse-lookup the id always see "not found", which is the intended behaviour: overrides are addressable at the stack level, not as first-class contributions.
 
@@ -900,7 +900,7 @@ Project-local overrides in `.specify/templates/overrides/` are a resolver-only c
 
 `ExtensionManifest.iter_contributions()` yields dicts of the form `{layer, sourceId, kind, name, id, ...author-declared fields}`; each entry's `id` is the computed identifier. `ExtensionManifest.contribution_id(kind, name)` returns the id for a single lookup, or `None` if no contribution matches. `PresetManifest` exposes the same two methods.
 
-`PresetResolver.collect_all_layers()` returns layer dicts that include a `lookupId` field for every layer type (`project override`, preset, extension, core, and bundled core). Manifest-declared preset and extension layers use the manifest's validated `id:` as the `lookupId` source id, so it matches the id `iter_contributions()` yields for that same contribution. Convention-only layers (no manifest entry declares the contribution) have no manifest id to consult, so their `lookupId` falls back to the resolver's registry key or on-disk directory name.
+`PresetResolver.collect_all_layers()` returns layer dicts that include a `lookupId` field for project overrides, preset contributions, and extension contributions. Manifest-declared preset and extension layers use the manifest's validated `id:` as the `lookupId` source id, so it matches the id `iter_contributions()` yields for that same contribution. Convention-only layers (no manifest entry declares the contribution) have no manifest id to consult, so their `lookupId` falls back to the resolver's registry key or on-disk directory name. Built-in fallback layers omit `lookupId`.
 
 ### Determinism guarantees
 

@@ -808,6 +808,35 @@ class TestStackComposition:
         assert info["id"] == "command:specify"
         assert catalog.get_artifact_info("specify", kind="command")["id"] == "command:specify"
 
+    def test_append_only_candidate_without_base_is_not_listed(
+        self, spec_kit_project: Path
+    ):
+        pack = install_preset(
+            spec_kit_project,
+            "append-only",
+            {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": "append-only-template",
+                        "strategy": "append",
+                    }
+                ]
+            },
+        )
+        (pack / "templates").mkdir()
+        (pack / "templates" / "append-only-template.md").write_text(
+            "append", encoding="utf-8"
+        )
+
+        catalog = ArtifactCatalog(spec_kit_project)
+
+        assert "template:append-only-template" not in {
+            row.id for row in catalog.list_artifacts()
+        }
+        with pytest.raises(ArtifactNotFoundError):
+            catalog.get_artifact_info("append-only-template", kind="template")
+
     def test_preset_replace_hides_core(self, spec_kit_project: Path):
         # Install a preset that replaces the constitution command.
         pack = install_preset(

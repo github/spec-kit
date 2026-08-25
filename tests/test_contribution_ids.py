@@ -136,7 +136,6 @@ class TestIdentifierDerivation:
     @pytest.mark.parametrize(
         "layer, source_id, event, command, expected",
         [
-            ("project", "_", "before_specify", "speckit.constitution", "project:_:hook:before_specify:speckit.constitution"),
             ("preset", "speckit-core", "before_plan", "speckit.plan", "preset:speckit-core:hook:before_plan:speckit.plan"),
             ("extension", "speckit-git", "before_specify", "speckit.git.branch", "extension:speckit-git:hook:before_specify:speckit.git.branch"),
         ],
@@ -151,6 +150,26 @@ class TestIdentifierDerivation:
 
     def test_public_id_is_source_agnostic(self):
         assert derive_public_id("command", "speckit.plan") == "command:speckit.plan"
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ("core", "_", "command", "speckit.plan"),
+            ("preset", "speckit-core", "hook", "before_plan:speckit.plan"),
+            ("unknown", "source", "command", "speckit.plan"),
+        ],
+    )
+    def test_named_id_rejects_invalid_layer_or_kind(self, args):
+        with pytest.raises(IdentifierComponentError):
+            derive_named_id(*args)
+
+    def test_public_id_rejects_non_artifact_kind(self):
+        with pytest.raises(IdentifierComponentError):
+            derive_public_id("hook", "before_plan:speckit.plan")
+
+    def test_hook_id_rejects_project_layer(self):
+        with pytest.raises(IdentifierComponentError):
+            derive_hook_id(PROJECT_OVERRIDE_LAYER, "_", "before_plan", "speckit.plan")
 
 
 class TestLayerKindFromLookupId:

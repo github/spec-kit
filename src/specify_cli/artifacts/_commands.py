@@ -9,7 +9,7 @@ Mirrors the shape used by ``src/specify_cli/presets/_commands.py`` and
 ``register(app)`` entry point invoked from ``src/specify_cli/__init__.py``.
 
 The user-facing contract for both subcommands — the ``list``/``info`` JSON
-shapes, stack semantics (``active``/``hidden``, core rows, lookup IDs), and
+shapes, stack semantics (``active``/``hidden``, built-in rows, lookup IDs), and
 the JSON error envelope — is documented in ``docs/reference/artifacts.md``.
 """
 
