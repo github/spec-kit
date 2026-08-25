@@ -10451,6 +10451,74 @@ class TestWorkflowStepAddCLI:
             project_dir / ".specify" / "workflows" / "steps" / "my-step"
         ).exists()
 
+    @pytest.mark.parametrize("step_yml_body", [b"[]", b"false", b"0", b"''"])
+    def test_add_rejects_falsy_non_mapping_step_yml(
+        self, project_dir, monkeypatch, step_yml_body
+    ):
+        """A FALSY non-mapping step.yml document ([], false, 0, '') must be
+        reported as "step.yml must be a YAML mapping", not silently coerced by
+        ``or {}`` into {} and then misreported as the unrelated "missing
+        'step.type_key'" error — matching how a TRUTHY non-mapping document
+        (e.g. a bare string) already reports the mapping-shape error."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.authentication import http as auth_http
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(
+            StepCatalog,
+            "get_step_info",
+            lambda self, step_id: {
+                "id": step_id,
+                "name": "Test Step",
+                "url": "https://example.com/step.yml",
+                "init_url": "https://example.com/__init__.py",
+                "_install_allowed": True,
+            },
+        )
+
+        class _FakeResponse:
+            def __init__(self, url):
+                self.url = url
+                self.body = step_yml_body if url.endswith("step.yml") else b""
+                self.offset = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def getheader(self, name):
+                return None
+
+            def geturl(self):
+                return self.url
+
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self.body) - self.offset
+                chunk = self.body[self.offset : self.offset + size]
+                self.offset += len(chunk)
+                return chunk
+
+        monkeypatch.setattr(
+            auth_http,
+            "open_url",
+            lambda url, timeout=30, redirect_validator=None: _FakeResponse(url),
+        )
+
+        result = CliRunner().invoke(
+            app, ["workflow", "step", "add", "my-step"]
+        )
+
+        assert result.exit_code != 0
+        assert "step.yml must be a YAML mapping" in result.output
+        assert not (
+            project_dir / ".specify" / "workflows" / "steps" / "my-step"
+        ).exists()
+
     @pytest.mark.parametrize(
         ("catalog_fields", "expected"),
         [

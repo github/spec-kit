@@ -3364,12 +3364,18 @@ def workflow_step_add(
         try:
             import yaml as _yaml
 
-            meta = _yaml.safe_load(step_yml_content.decode("utf-8")) or {}
+            meta = _yaml.safe_load(step_yml_content.decode("utf-8"))
         except Exception as exc:
             console.print(f"[red]Error:[/red] Invalid step.yml: {exc}")
             raise typer.Exit(1)
 
-        if not isinstance(meta, dict):
+        # Do NOT coerce with ``or {}`` here: that also turns a FALSY non-mapping
+        # (top-level ``[]``, ``false``, ``0``, ``''``) into ``{}`` and silently
+        # bypasses this shape check, surfacing the unrelated "missing
+        # 'step.type_key'" error below instead of the real problem.
+        if meta is None:
+            meta = {}
+        elif not isinstance(meta, dict):
             console.print("[red]Error:[/red] step.yml must be a YAML mapping")
             raise typer.Exit(1)
 
