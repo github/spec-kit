@@ -280,6 +280,9 @@ class TestListArtifactsContract:
 
         assert "legacy-root" in names
         assert "README" not in names
+        assert next(
+            row for row in catalog.list_artifacts() if row.name == "legacy-root"
+        ).description == "Legacy root template"
 
     @pytest.mark.parametrize("registry_dir, registry_name", [
         ("extensions", "extensions"),

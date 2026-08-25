@@ -962,10 +962,10 @@ class ArtifactCatalog:
         # Convention fallback: a preset/extension file placed at the
         # conventional path resolves whether or not the manifest declares it,
         # so it belongs in the inventory as well.
-        for kind, name in _iter_convention_contributions(pack_dir):
+        for kind, name, path in _iter_convention_contributions(pack_dir):
             lookup_id = derive_named_id(layer, source_id, kind, name)
             if lookup_id in lookup_ids(kind, name):
-                yield kind, name, "", lookup_id
+                yield kind, name, _describe_artifact_file(path, kind), lookup_id
 
     def _iter_project_override_artifacts(
         self,
@@ -1020,8 +1020,10 @@ _CONVENTION_SUBDIRS: tuple[tuple[str, ArtifactKind, str], ...] = (
 )
 
 
-def _iter_convention_contributions(pack_dir: Path) -> Iterable[tuple[ArtifactKind, str]]:
-    """Yield ``(kind, name)`` for files an extension exposes by convention.
+def _iter_convention_contributions(
+    pack_dir: Path,
+) -> Iterable[tuple[ArtifactKind, str, Path]]:
+    """Yield ``(kind, name, path)`` for files exposed by convention.
 
     Templates are also accepted at the pack root for legacy compatibility,
     matching the resolver's ``templates/``-then-root lookup order. README files
@@ -1033,7 +1035,7 @@ def _iter_convention_contributions(pack_dir: Path) -> Iterable[tuple[ArtifactKin
             continue
         for entry in sorted(candidate_dir.iterdir(), key=lambda p: p.name):
             if entry.is_file() and entry.suffix == suffix and ":" not in entry.stem:
-                yield kind, entry.stem
+                yield kind, entry.stem, entry
     for entry in sorted(pack_dir.iterdir(), key=lambda p: p.name):
         if (
             entry.is_file()
@@ -1041,7 +1043,7 @@ def _iter_convention_contributions(pack_dir: Path) -> Iterable[tuple[ArtifactKin
             and entry.stem.lower() != "readme"
             and ":" not in entry.stem
         ):
-            yield "template", entry.stem
+            yield "template", entry.stem, entry
 
 
 __all__ = [
