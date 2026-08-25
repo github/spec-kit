@@ -859,6 +859,42 @@ class TestConventionDiscovery:
         info = catalog.get_artifact_info("local-template")
         assert info["stack"][0]["layer"] == "project"
 
+    def test_project_override_reports_its_own_description(self, spec_kit_project: Path):
+        """An override's frontmatter/comment metadata wins over the hidden layer."""
+        commands_dir = spec_kit_project / ".specify" / "templates" / "commands"
+        commands_dir.mkdir(parents=True)
+        (commands_dir / "speckit.constitution.md").write_text(
+            "---\ndescription: Core description\n---\n", encoding="utf-8"
+        )
+        overrides = spec_kit_project / ".specify" / "templates" / "overrides"
+        (overrides / "scripts").mkdir(parents=True)
+        (overrides / "speckit.constitution.md").write_text(
+            "---\ndescription: Override description\n---\n", encoding="utf-8"
+        )
+        (overrides / "scripts" / "local-script.sh").write_text(
+            "#!/bin/sh\n# Override script description\n", encoding="utf-8"
+        )
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        rows = {row.id: row.description for row in catalog.list_artifacts()}
+        assert rows["command:speckit.constitution"] == "Override description"
+        assert rows["script:local-script"] == "Override script description"
+
+    def test_project_override_without_metadata_falls_back(self, spec_kit_project: Path):
+        """A metadata-free override still reports the hidden layer's description."""
+        commands_dir = spec_kit_project / ".specify" / "templates" / "commands"
+        commands_dir.mkdir(parents=True)
+        (commands_dir / "speckit.constitution.md").write_text(
+            "---\ndescription: Core description\n---\n", encoding="utf-8"
+        )
+        overrides = spec_kit_project / ".specify" / "templates" / "overrides"
+        overrides.mkdir(parents=True)
+        (overrides / "speckit.constitution.md").write_text("body\n", encoding="utf-8")
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        rows = {row.id: row.description for row in catalog.list_artifacts()}
+        assert rows["command:speckit.constitution"] == "Core description"
+
     def test_dotted_override_only_artifact_is_a_command(self, spec_kit_project: Path):
         overrides = spec_kit_project / ".specify" / "templates" / "overrides"
         overrides.mkdir(parents=True)

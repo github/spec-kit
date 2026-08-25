@@ -1173,6 +1173,31 @@ class TestPresetResolver:
         result = resolver.resolve("nonexistent-template")
         assert result is None
 
+    def test_core_fallback_uses_shared_asset_resolver(self, project_dir, monkeypatch):
+        """resolve() tier 5 and collect_all_layers() must agree on "core".
+
+        Regression test: the tier-5 branch used to read ``core_pack/<family>/``
+        directly, so a wheel bundle missing ``scripts/`` made ``resolve()``
+        return nothing while ``collect_all_layers()`` fell back to the source
+        checkout via ``_locate_core_asset_dir``.
+        """
+        import specify_cli._assets as assets
+
+        core_pack = project_dir.parent / "core_pack"
+        (core_pack / "commands").mkdir(parents=True)  # bundle exists, no scripts/
+        repo_root = project_dir.parent / "repo"
+        (repo_root / "scripts" / "bash").mkdir(parents=True)
+        script = repo_root / "scripts" / "bash" / "core-only.sh"
+        script.write_text("#!/bin/sh\n", encoding="utf-8")
+
+        monkeypatch.setattr(assets, "_locate_core_pack", lambda: core_pack)
+        monkeypatch.setattr(assets, "_repo_root", lambda: repo_root)
+
+        resolver = PresetResolver(project_dir)
+        assert resolver.resolve("core-only", "script") == script
+        layers = resolver.collect_all_layers("core-only", "script")
+        assert [layer["path"] for layer in layers] == [script]
+
     def test_resolver_ignores_traversing_registry_ids(self, project_dir):
         """Registry IDs cannot escape preset or extension install roots."""
         for registry_dir, registry_key, outside_name in (

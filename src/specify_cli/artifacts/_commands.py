@@ -7,6 +7,10 @@ serialization, exit-code selection, and error-envelope emission on stderr.
 Mirrors the shape used by ``src/specify_cli/presets/_commands.py`` and
 ``src/specify_cli/extensions/_commands.py``: a module-level Typer app plus a
 ``register(app)`` entry point invoked from ``src/specify_cli/__init__.py``.
+
+The user-facing contract for both subcommands — the ``list``/``info`` JSON
+shapes, stack semantics (``active``/``hidden``, core rows, lookup IDs), and
+the JSON error envelope — is documented in ``docs/reference/artifacts.md``.
 """
 
 from __future__ import annotations

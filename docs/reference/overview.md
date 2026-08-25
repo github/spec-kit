@@ -26,6 +26,12 @@ Presets customize how Spec Kit works — overriding command files, template file
 
 [Presets reference →](presets.md)
 
+## Artifacts
+
+Artifacts are the commands, templates, and scripts a project exposes, whichever layer contributes them. The `specify artifact` command group is the read-only introspection surface over that inventory — a flat list of everything visible, plus the full composition stack behind any single entry, including which layer wins and which layers are hidden.
+
+[Artifacts reference →](artifacts.md)
+
 ## Workflows
 
 Workflows automate multi-step Spec-Driven Development processes into repeatable sequences. They chain commands, prompts, shell steps, and human checkpoints together, with support for conditional logic, loops, fan-out/fan-in, and the ability to pause and resume from the exact point of interruption.
