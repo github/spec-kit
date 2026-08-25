@@ -46,6 +46,7 @@ ever emit a matching ``id``, so consumers see "not found" for the lookup, which
 is the correct outcome for a layer with no originating manifest entry.
 """
 
+
 class IdentifierComponentError(ValueError):
     """Raised when a manifest component would break identifier grammar."""
 
