@@ -837,7 +837,7 @@
       "name": "Stable Identifiers",
       "id": "stable-identifiers",
       "version": "0.1.0",
-      "description": "Makes Spec Kit identifiers sparse and permanent so they are never renumbered or re-issued: FR/SC/CHK and task T-numbers start at a multiple of 1000, step by 10, insert into the gap, and leave permanent holes on removal.",
+      "description": "Makes Spec Kit identifiers sparse and permanent so they are never renumbered or re-issued: FR/SC/CHK and task T-numbers start at a multiple of 1000, step by 10, insert into the gap, and leave permanent holes on removal. Use preset on the lowest priority as it steps over almost all skills.",
       "author": "Ira Abramov",
       "repository": "https://github.com/ira-at-work/spec-kit-preset-stable-identifiers",
       "download_url": "https://github.com/ira-at-work/spec-kit-preset-stable-identifiers/archive/refs/tags/v0.1.0.zip",
