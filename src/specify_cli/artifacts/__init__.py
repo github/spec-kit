@@ -1007,9 +1007,9 @@ _CONVENTION_SUBDIRS: tuple[tuple[str, ArtifactKind, str], ...] = (
 def _iter_convention_contributions(pack_dir: Path) -> Iterable[tuple[ArtifactKind, str]]:
     """Yield ``(kind, name)`` for files an extension exposes by convention.
 
-    Only the conventional subdirectories are scanned; loose ``.md`` files at
-    the extension root (``README.md`` and friends) are deliberately skipped so
-    packaging files don't show up as templates.
+    Templates are also accepted at the pack root for legacy compatibility,
+    matching the resolver's ``templates/``-then-root lookup order. README files
+    are packaging metadata rather than artifacts and are excluded consistently.
     """
     for subdir, kind, suffix in _CONVENTION_SUBDIRS:
         candidate_dir = pack_dir / subdir
@@ -1018,6 +1018,14 @@ def _iter_convention_contributions(pack_dir: Path) -> Iterable[tuple[ArtifactKin
         for entry in sorted(candidate_dir.iterdir(), key=lambda p: p.name):
             if entry.is_file() and entry.suffix == suffix and ":" not in entry.stem:
                 yield kind, entry.stem
+    for entry in sorted(pack_dir.iterdir(), key=lambda p: p.name):
+        if (
+            entry.is_file()
+            and entry.suffix == _TEMPLATE_SUFFIX
+            and entry.stem.lower() != "readme"
+            and ":" not in entry.stem
+        ):
+            yield "template", entry.stem
 
 
 __all__ = [

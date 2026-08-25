@@ -264,6 +264,23 @@ class TestListArtifactsContract:
             "core:_:script:legacy-script"
         )
 
+    def test_includes_root_level_pack_template_but_excludes_readme(
+        self, spec_kit_project: Path
+    ):
+        extension_dir = spec_kit_project / ".specify" / "extensions" / "legacy"
+        extension_dir.mkdir()
+        (extension_dir / "legacy-root.md").write_text(
+            "---\ndescription: Legacy root template\n---\n",
+            encoding="utf-8",
+        )
+        (extension_dir / "README.md").write_text("# Packaging notes\n", encoding="utf-8")
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        names = {row.name for row in catalog.list_artifacts()}
+
+        assert "legacy-root" in names
+        assert "README" not in names
+
     @pytest.mark.skipif(os.name == "nt", reason="':' filenames are unsupported on Windows")
     def test_skips_invalid_colon_names_in_project_local_inventory(self, spec_kit_project: Path):
         templates_dir = spec_kit_project / ".specify" / "templates"

@@ -96,6 +96,7 @@ def derive_named_id(layer: str, source_id: str, kind: str, name: str) -> str:
 
 
 _LAYER_KINDS = frozenset({"core", PROJECT_OVERRIDE_LAYER, "preset", "extension"})
+_CONTRIBUTION_KINDS = frozenset({"command", "template", "script", "hook"})
 
 
 def layer_kind_from_lookup_id(lookup_id: str) -> str | None:
@@ -122,6 +123,8 @@ def layer_kind_from_lookup_id(lookup_id: str) -> str | None:
         return None
     layer = parts[0]
     if layer not in _LAYER_KINDS:
+        return None
+    if parts[2] not in _CONTRIBUTION_KINDS:
         return None
     expected_len = 5 if parts[2] == "hook" else 4
     if len(parts) != expected_len:

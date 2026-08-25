@@ -180,6 +180,7 @@ class TestLayerKindFromLookupId:
             "core:_:command",
             "extension:speckit-git:hook:before_specify",
             "core::command:speckit.plan",
+            "core:_:bogus:speckit.plan",
         ],
     )
     def test_unrecognized_or_malformed_returns_none(self, lookup_id):

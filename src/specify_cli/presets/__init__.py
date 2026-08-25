@@ -5619,6 +5619,8 @@ class PresetResolver:
                 if subdir:
                     candidate = base_dir / subdir / f"{template_name}{ext}"
                 else:
+                    if template_name.lower() == "readme":
+                        continue
                     candidate = base_dir / f"{template_name}{ext}"
                 if candidate.exists():
                     return candidate
