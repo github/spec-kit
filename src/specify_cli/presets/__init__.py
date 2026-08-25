@@ -5696,7 +5696,8 @@ class PresetResolver:
                     # was renamed. Convention-only contributions have no
                     # manifest to consult, so they fall back to the directory
                     # / registry key. The directory identity is still carried
-                    # separately via ``source`` for path/provenance display.
+                    # separately via ``preset_id`` / ``pack_dir`` / ``source``
+                    # for on-disk path lookup and provenance display.
                     source_id_for_lookup = pack_id
                     if entry is not None:
                         manifest = self._get_manifest(pack_dir)
@@ -5706,6 +5707,8 @@ class PresetResolver:
                         "path": candidate,
                         "source": f"{pack_id} v{version}",
                         "strategy": strategy,
+                        "preset_id": pack_id,
+                        "pack_dir": pack_dir,
                         "lookupId": derive_named_id(
                             "preset", source_id_for_lookup, template_type, template_name
                         ),

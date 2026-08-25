@@ -224,6 +224,13 @@ class TestListArtifactsContract:
             .collect_all_layers("speckit.original.hello", "command")[0]["lookupId"]
             == "extension:original:command:speckit.original.hello"
         )
+        # The stack row's manifestPath must still reflect the actual on-disk
+        # extension directory (``renamed``), not the manifest id embedded in
+        # ``lookupId``.
+        assert (
+            info["stack"][0]["manifestPath"]
+            == ".specify/extensions/renamed/extension.yml"
+        )
 
     def test_includes_project_local_core_assets(self, spec_kit_project: Path):
         templates_dir = spec_kit_project / ".specify" / "templates"

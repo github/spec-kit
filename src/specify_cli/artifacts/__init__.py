@@ -407,13 +407,13 @@ def _derive_manifest_path(layer: dict[str, Any], project_root: Path) -> str | No
     Only ``preset`` and ``extension`` layers have an on-disk manifest — core
     and project-override layers return ``None``.
 
-    ``PresetResolver.collect_all_layers`` always reads a pack's files from
-    ``project_root / ".specify" / "<presets|extensions>" / "<sourceId>"``,
-    whether or not that pack is registered — registration only changes which
-    priority/version metadata is attached, never where the pack lives on
-    disk. That means the manifest's location is fully determined by the
-    layer's own ``lookupId`` (``"{layer}:{sourceId}:..."``), so it is derived
-    directly rather than walking upward from the contribution file.
+    Since the resolver may set the ``lookupId``'s ``sourceId`` component to
+    the manifest-declared ``id:`` (which can differ from the on-disk directory
+    name for renamed packs), the on-disk directory is read from the layer's
+    explicit ``preset_id`` / ``pack_dir`` (preset layers) or
+    ``extension_id`` / ``extension_dir`` (extension layers) keys, falling
+    back to the ``lookupId`` ``sourceId`` only when those explicit keys are
+    absent.
 
     Uses ``as_posix()`` so the string is stable across Windows and POSIX — a
     caller comparing snapshots between operating systems gets the same value
@@ -421,16 +421,34 @@ def _derive_manifest_path(layer: dict[str, Any], project_root: Path) -> str | No
     """
     lookup_id = layer.get("lookupId", "")
     layer_kind = layer_kind_from_lookup_id(lookup_id)
-    if layer_kind not in ("preset", "extension"):
+    if layer_kind == "preset":
+        pack_dir = layer.get("pack_dir")
+        if isinstance(pack_dir, Path):
+            manifest_path = pack_dir / "preset.yml"
+            if not manifest_path.is_file():
+                return None
+            try:
+                return manifest_path.relative_to(project_root).as_posix()
+            except ValueError:
+                return None
+        pack_id = layer.get("preset_id") or _extract_lookup_pack_id(lookup_id)
+        tier_dir, manifest_name = "presets", "preset.yml"
+    elif layer_kind == "extension":
+        ext_dir = layer.get("extension_dir")
+        if isinstance(ext_dir, Path):
+            manifest_path = ext_dir / "extension.yml"
+            if not manifest_path.is_file():
+                return None
+            try:
+                return manifest_path.relative_to(project_root).as_posix()
+            except ValueError:
+                return None
+        pack_id = layer.get("extension_id") or _extract_lookup_pack_id(lookup_id)
+        tier_dir, manifest_name = "extensions", "extension.yml"
+    else:
         return None
-    pack_id = _extract_lookup_pack_id(lookup_id)
     if not pack_id:
         return None
-    tier_dir, manifest_name = (
-        ("presets", "preset.yml")
-        if layer_kind == "preset"
-        else ("extensions", "extension.yml")
-    )
     manifest_path = project_root / ".specify" / tier_dir / pack_id / manifest_name
     if not manifest_path.is_file():
         return None
@@ -560,8 +578,17 @@ def _build_stack(
             )
             continue
 
-        pack_id = _extract_lookup_pack_id(lookup_id) or ""
-        pack_dir = project_root / ".specify" / "presets" / pack_id
+        # Preset layers carry the on-disk directory identity separately from
+        # ``lookupId`` (which may use the manifest-declared ``id:``): prefer
+        # the explicit ``preset_id`` / ``pack_dir`` keys before falling back
+        # to parsing ``lookupId``, so a renamed pack still resolves to the
+        # right on-disk directory for display-name and manifest-path lookup.
+        pack_id = layer.get("preset_id") or _extract_lookup_pack_id(lookup_id) or ""
+        pack_dir_layer = layer.get("pack_dir")
+        if isinstance(pack_dir_layer, Path):
+            pack_dir = pack_dir_layer
+        else:
+            pack_dir = project_root / ".specify" / "presets" / pack_id
         display = _preset_display_name(pack_dir, pack_id) if pack_id else pack_id
         manifest_path = _derive_manifest_path(layer, project_root)
         rows.append(

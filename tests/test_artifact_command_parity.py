@@ -107,6 +107,12 @@ class TestResolverParity:
             .collect_all_layers("speckit.preset-renamed.hello", "command")[0]["lookupId"]
             == "preset:original-preset:command:speckit.preset-renamed.hello"
         )
+        # The stack row's presetId / manifestPath must still reflect the
+        # actual on-disk directory (``renamed-preset``), not the manifest id
+        # embedded in ``lookupId`` — otherwise the display and manifest path
+        # would point to a non-existent location.
+        assert active["presetId"] == "renamed-preset"
+        assert active["manifestPath"] == ".specify/presets/renamed-preset/preset.yml"
 
 
 def test_module_imports():
