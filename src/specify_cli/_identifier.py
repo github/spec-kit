@@ -97,22 +97,22 @@ def derive_named_id(layer: str, source_id: str, kind: str, name: str) -> str:
     strings should either pre-validate or handle
     :class:`IdentifierComponentError`.
     """
+    validate_component(layer, "layer")
+    validate_component(source_id, "sourceId")
+    validate_component(kind, "kind")
     if layer not in _LAYER_KINDS:
         raise IdentifierComponentError(f"Invalid layer '{layer}'")
     if kind not in _NAMED_CONTRIBUTION_KINDS:
         raise IdentifierComponentError(f"Invalid named contribution kind '{kind}'")
-    validate_component(layer, "layer")
-    validate_component(source_id, "sourceId")
-    validate_component(kind, "kind")
     validate_component(name, "name")
     return f"{layer}:{source_id}:{kind}:{name}"
 
 
 def derive_public_id(kind: str, name: str) -> str:
     """Build the source-agnostic public identifier for an artifact."""
+    validate_component(kind, "kind")
     if kind not in _NAMED_CONTRIBUTION_KINDS:
         raise IdentifierComponentError(f"Invalid public artifact kind '{kind}'")
-    validate_component(kind, "kind")
     validate_component(name, "name")
     return f"{kind}:{name}"
 
@@ -177,10 +177,10 @@ def derive_hook_id(
     Each component is revalidated with :func:`validate_component` — same
     contract as :func:`derive_named_id`.
     """
-    if layer not in {"preset", "extension"}:
-        raise IdentifierComponentError(f"Invalid layer '{layer}'")
     validate_component(layer, "layer")
     validate_component(source_id, "sourceId")
+    if layer not in {"preset", "extension"}:
+        raise IdentifierComponentError(f"Invalid layer '{layer}'")
     validate_component(event_name, "eventName")
     validate_component(command, "command")
     return f"{layer}:{source_id}:hook:{event_name}:{command}"

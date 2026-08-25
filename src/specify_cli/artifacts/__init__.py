@@ -328,6 +328,7 @@ def _build_stack(
     project_root: Path,
     kind: ArtifactKind,
     name: str,
+    raw_layers: list[dict[str, Any]] | None = None,
 ) -> list[StackLayer]:
     """Build the ordered stack for a single artifact.
 
@@ -341,12 +342,15 @@ def _build_stack(
     """
     from ..presets import PresetError, PresetResolver  # lazy: avoids circular import
 
-    resolver = PresetResolver(project_root)
     template_type = kind
-    try:
-        raw = resolver.collect_all_layers(name, template_type)
-    except (OSError, PresetError) as exc:
-        raise ArtifactResolutionError() from exc
+    if raw_layers is None:
+        resolver = PresetResolver(project_root)
+        try:
+            raw = resolver.collect_all_layers(name, template_type)
+        except (OSError, PresetError) as exc:
+            raise ArtifactResolutionError() from exc
+    else:
+        raw = raw_layers
     if not raw:
         return []
 
@@ -555,6 +559,88 @@ class ArtifactCatalog:
         is decided by :meth:`PresetResolver.collect_all_layers`'s own
         ordering (index 0 = winner), not by enumeration order here.
         """
+        artifacts, _layers_cache = self._collect_inventory()
+        return artifacts
+
+    # ------------------------------------------------------------------ info
+    def get_artifact_info(
+        self,
+        name: str,
+        kind: ArtifactKind | None = None,
+    ) -> dict[str, Any]:
+        """Return the full JSON-ready dict for ``specify artifact info``.
+
+        Argument resolution:
+
+        * ``name`` accepts the ``kind:name`` grammar as shorthand; when both
+          the shorthand and ``kind`` are supplied they must agree.
+        * When neither the shorthand nor ``kind`` narrows the search and
+          more than one kind matches ``name``, raises
+          :class:`AmbiguousArtifactError`.
+        * When no artifact matches, raises :class:`ArtifactNotFoundError`.
+        """
+        _validate_project(self.project_root)
+        _validate_extension_registry(self.project_root)
+        _validate_preset_registry(self.project_root)
+        bare, resolved_kind = _resolve_kind_hint(name, kind)
+
+        from ..presets import PresetError, PresetResolver  # lazy: avoids circular import
+
+        inventory, layers_cache = self._collect_inventory()
+        if resolved_kind is None:
+            matches = [
+                (artifact.kind, artifact.name)
+                for artifact in inventory
+                if artifact.name == bare
+            ]
+            if not matches:
+                raise ArtifactNotFoundError(name)
+            if len(matches) > 1:
+                raise AmbiguousArtifactError(bare, [k for k, _ in matches])
+            resolved_kind = matches[0][0]
+
+        validated_name = _validate_artifact_name(bare, resolved_kind)
+        artifact = next(
+            (
+                item
+                for item in inventory
+                if item.kind == resolved_kind and item.name == validated_name
+            ),
+            None,
+        )
+        if artifact is None:
+            raise ArtifactNotFoundError(name)
+        try:
+            if PresetResolver(self.project_root).resolve_content(
+                validated_name, resolved_kind
+            ) is None:
+                raise ArtifactNotFoundError(name)
+        except (OSError, PresetError) as exc:
+            raise ArtifactResolutionError() from exc
+        stack = _build_stack(
+            self.project_root,
+            resolved_kind,
+            validated_name,
+            raw_layers=layers_cache.get((resolved_kind, validated_name)),
+        )
+        if not stack:
+            raise ArtifactNotFoundError(name)
+
+        return {
+            "id": derive_public_id(resolved_kind, validated_name),
+            "name": validated_name,
+            "kind": resolved_kind,
+            "description": artifact.description,
+            "stack": [layer.to_json_dict() for layer in stack],
+        }
+
+    # -------------------------------------------------------------- internals
+    def _collect_inventory(
+        self,
+    ) -> tuple[
+        list[Artifact],
+        dict[tuple[ArtifactKind, str], list[dict[str, Any]]],
+    ]:
         _validate_project(self.project_root)
         _validate_extension_registry(self.project_root)
         _validate_preset_registry(self.project_root)
@@ -601,80 +687,17 @@ class ArtifactCatalog:
                     description = candidate
                     break
             artifacts.append(
-                Artifact(id=derive_public_id(kind, name), name=name, kind=kind, description=description)
+                Artifact(
+                    id=derive_public_id(kind, name),
+                    name=name,
+                    kind=kind,
+                    description=description,
+                )
             )
 
         kind_order = {"command": 0, "template": 1, "script": 2}
-        return sorted(artifacts, key=lambda a: (kind_order[a.kind], a.name))
+        return sorted(artifacts, key=lambda a: (kind_order[a.kind], a.name)), layers_cache
 
-    # ------------------------------------------------------------------ info
-    def get_artifact_info(
-        self,
-        name: str,
-        kind: ArtifactKind | None = None,
-    ) -> dict[str, Any]:
-        """Return the full JSON-ready dict for ``specify artifact info``.
-
-        Argument resolution:
-
-        * ``name`` accepts the ``kind:name`` grammar as shorthand; when both
-          the shorthand and ``kind`` are supplied they must agree.
-        * When neither the shorthand nor ``kind`` narrows the search and
-          more than one kind matches ``name``, raises
-          :class:`AmbiguousArtifactError`.
-        * When no artifact matches, raises :class:`ArtifactNotFoundError`.
-        """
-        _validate_project(self.project_root)
-        _validate_extension_registry(self.project_root)
-        _validate_preset_registry(self.project_root)
-        bare, resolved_kind = _resolve_kind_hint(name, kind)
-
-        from ..presets import PresetError, PresetResolver  # lazy: avoids circular import
-
-        inventory = self.list_artifacts()
-        if resolved_kind is None:
-            matches = [
-                (artifact.kind, artifact.name)
-                for artifact in inventory
-                if artifact.name == bare
-            ]
-            if not matches:
-                raise ArtifactNotFoundError(name)
-            if len(matches) > 1:
-                raise AmbiguousArtifactError(bare, [k for k, _ in matches])
-            resolved_kind = matches[0][0]
-
-        validated_name = _validate_artifact_name(bare, resolved_kind)
-        artifact = next(
-            (
-                item
-                for item in inventory
-                if item.kind == resolved_kind and item.name == validated_name
-            ),
-            None,
-        )
-        if artifact is None:
-            raise ArtifactNotFoundError(name)
-        try:
-            if PresetResolver(self.project_root).resolve_content(
-                validated_name, resolved_kind
-            ) is None:
-                raise ArtifactNotFoundError(name)
-        except (OSError, PresetError) as exc:
-            raise ArtifactResolutionError() from exc
-        stack = _build_stack(self.project_root, resolved_kind, validated_name)
-        if not stack:
-            raise ArtifactNotFoundError(name)
-
-        return {
-            "id": derive_public_id(resolved_kind, validated_name),
-            "name": validated_name,
-            "kind": resolved_kind,
-            "description": artifact.description,
-            "stack": [layer.to_json_dict() for layer in stack],
-        }
-
-    # -------------------------------------------------------------- internals
     def _iter_candidate_artifacts(
         self,
         resolver: Any,
