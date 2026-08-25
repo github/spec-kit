@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 from pathlib import Path
 
 import pytest
@@ -1101,6 +1102,23 @@ class TestConventionDiscovery:
         assert info["stack"][0]["lookupId"] == (
             "preset:legacy-preset:template:legacy-preset-template"
         )
+
+    def test_stale_registry_entry_with_missing_pack_dir_is_skipped(
+        self, spec_kit_project: Path
+    ):
+        pack_dir = spec_kit_project / ".specify" / "presets" / "removed-preset"
+        pack_dir.mkdir()
+        PresetRegistry(pack_dir.parent).add(
+            "removed-preset", {"priority": 10, "version": "1.0.0"}
+        )
+        shutil.rmtree(pack_dir)
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        # Should not raise FileNotFoundError despite the registry entry
+        # pointing at a directory that no longer exists on disk; the stale
+        # preset contributes no artifacts.
+        ids = {row.id for row in catalog.list_artifacts()}
+        assert not any("removed-preset" in artifact_id for artifact_id in ids)
 
     def test_command_override_is_not_duplicated_as_template(self, spec_kit_project: Path):
         ext_dir = spec_kit_project / ".specify" / "extensions" / "legacy" / "commands"

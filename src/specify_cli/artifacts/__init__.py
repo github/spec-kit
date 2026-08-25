@@ -1010,6 +1010,8 @@ def _iter_convention_contributions(
         for entry in sorted(candidate_dir.iterdir(), key=lambda p: p.name):
             if entry.is_file() and entry.suffix == suffix and ":" not in entry.stem:
                 yield kind, entry.stem, entry
+    if not pack_dir.is_dir():
+        return
     for entry in sorted(pack_dir.iterdir(), key=lambda p: p.name):
         if (
             entry.is_file()
