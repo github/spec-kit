@@ -11266,6 +11266,68 @@ class TestConfigManagerNonMappingYaml:
         assert executor._evaluate_condition("config.x is set", "jira") is False
 
 
+class TestConfigManagerNonMappingManifestConfigSection:
+    """A non-mapping `config:` section in extension.yml must not crash.
+
+    Distinct from TestConfigManagerNonMappingYaml above: that class covers a
+    malformed *root* of the project ``<id>-config.yml`` file, which
+    ``_load_yaml_config`` already coerces to ``{}``. Here the YAML root of
+    ``extension.yml`` is a well-formed mapping, but its own ``config:`` key
+    (read by ``_get_extension_defaults`` for ``config.defaults``) is given
+    the wrong shape -- e.g. a list instead of a mapping. That is one level
+    deeper than ``_load_yaml_config``'s guard and was previously unchecked.
+    """
+
+    def _make(self, tmp_path, config_yaml_body: str):
+        ext_dir = tmp_path / ".specify" / "extensions" / "jira"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "extension.yml").write_text(config_yaml_body, encoding="utf-8")
+        return ConfigManager(tmp_path, "jira")
+
+    def test_get_config_coerces_list_config_section(self, tmp_path):
+        """A list `config:` section previously raised AttributeError.
+
+        ``manifest_data.get("config", {}).get("defaults", {})`` assumed the
+        'config' value was already a mapping; a list value made the chained
+        `.get()` raise ``AttributeError: 'list' object has no attribute
+        'get'`` instead of degrading like every other malformed config
+        source in this class.
+        """
+        cm = self._make(tmp_path, "config:\n  - foo\n  - bar\n")
+        assert cm.get_config() == {}
+
+    def test_get_config_coerces_scalar_config_section(self, tmp_path):
+        cm = self._make(tmp_path, "config: just-a-string\n")
+        assert cm.get_config() == {}
+
+    def test_get_config_coerces_non_mapping_defaults(self, tmp_path):
+        """A non-mapping `config.defaults` value degrades to {} as well."""
+        cm = self._make(tmp_path, "config:\n  defaults:\n    - foo\n")
+        assert cm.get_config() == {}
+
+    def test_valid_defaults_still_load(self, tmp_path):
+        """The fix must not regress the well-formed shape."""
+        cm = self._make(
+            tmp_path,
+            "config:\n  defaults:\n    feature:\n      enabled: true\n",
+        )
+        assert cm.get_value("feature.enabled") is True
+
+    def test_hook_condition_returns_false_without_raising(self, tmp_path):
+        """`config.x is set` against a malformed manifest config must not raise.
+
+        Before the fix, _get_extension_defaults raised AttributeError and the
+        exception was swallowed by should_execute_hook, silently disabling
+        every config-based hook for the extension. Assert on
+        _evaluate_condition directly so the crash isn't masked.
+        """
+        ext_dir = tmp_path / ".specify" / "extensions" / "jira"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "extension.yml").write_text("config:\n  - foo\n", encoding="utf-8")
+        executor = HookExecutor(tmp_path)
+        assert executor._evaluate_condition("config.x is set", "jira") is False
+
+
 class TestConfigManagerEnvPrefixCollision:
     """Prefix-colliding env vars must not crash or clobber nested config."""
 
