@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-20T00:00:00Z",
+  "updated_at": "2026-08-24T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -635,19 +635,19 @@
     "parallel-autonomous-run-governance": {
       "name": "Parallel Autonomous Run Governance",
       "id": "parallel-autonomous-run-governance",
-      "version": "0.2.4",
-      "description": "Coordinates permission-bounded autonomous campaigns while preserving the project's learner and accessibility contract across workers and consolidation.",
+      "version": "0.2.6",
+      "description": "Coordinates isolated autonomous campaigns and optionally gates worker scheduling on a current campaign intake review.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance/archive/refs/tags/v0.2.4.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance/archive/refs/tags/v0.2.6.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance/blob/v0.2.4/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance/blob/v0.2.6/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
       },
       "provides": {
-        "templates": 9,
+        "templates": 10,
         "commands": 5,
         "scripts": 2
       },
@@ -655,11 +655,11 @@
         "parallel",
         "autonomous",
         "governance",
-        "accessibility",
-        "orchestration"
+        "orchestration",
+        "model-routing"
       ],
       "created_at": "2026-07-22T00:00:00Z",
-      "updated_at": "2026-07-28T00:00:00Z"
+      "updated_at": "2026-08-24T00:00:00Z"
     },
     "pirate": {
       "name": "Pirate Speak (Full)",
@@ -809,11 +809,11 @@
     "specassay": {
       "name": "SpecAssay",
       "id": "specassay",
-      "version": "0.3.4",
+      "version": "0.4.12",
       "description": "Appends durable-ID, Carries, and SpecAssay vocabulary onto Spec Kit spec, tasks, and constitution templates.",
       "author": "Rik Dryfoos",
       "repository": "https://github.com/rdryfoos/specassay",
-      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.3.4/specassay-preset-0.3.4.zip",
+      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.4.12/specassay-preset-0.4.12.zip",
       "homepage": "https://github.com/rdryfoos/specassay",
       "documentation": "https://github.com/rdryfoos/specassay/blob/main/presets/specassay/README.md",
       "license": "MIT",
@@ -831,7 +831,7 @@
         "sdd"
       ],
       "created_at": "2026-08-14T00:00:00Z",
-      "updated_at": "2026-08-14T00:00:00Z"
+      "updated_at": "2026-08-21T00:00:00Z"
     },
     "test-first-governance": {
       "name": "Test-First Governance",
