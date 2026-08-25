@@ -1050,5 +1050,3 @@ __all__ = [
     "StackLayer",
     "Strategy",
 ]
-
-_ = derive_named_id  # keep the import edge visible for tooling
