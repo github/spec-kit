@@ -1704,7 +1704,7 @@ class TestPresetResolver:
         resolver = PresetResolver(project_dir)
         layers = resolver.collect_all_layers("speckit.implement", "command")
         assert layers, "expected a bundled core base layer to be found"
-        assert layers[-1]["source"] == "core (bundled)"
+        assert layers[-1]["source"] is None
         assert layers[-1]["path"].parts[-2:] == ("commands", "implement.md")
 
     def test_resolve_command_falls_back_to_bundled_core(self, project_dir):
@@ -12879,7 +12879,7 @@ class TestCollectAllLayers:
         resolver = PresetResolver(project_dir)
         layers = resolver.collect_all_layers("spec-template")
         assert len(layers) == 1
-        assert layers[0]["source"] == "core"
+        assert layers[0]["source"] is None
         assert layers[0]["strategy"] == "replace"
 
     def test_layers_include_presets(self, project_dir, temp_dir, valid_pack_data):
@@ -12894,7 +12894,7 @@ class TestCollectAllLayers:
         assert len(layers) == 2
         # Highest priority first
         assert "test-pack" in layers[0]["source"]
-        assert layers[1]["source"] == "core"
+        assert layers[1]["source"] is None
 
     def test_layers_order_matches_priority(self, project_dir, temp_dir, valid_pack_data):
         """Test that layers are ordered by priority (highest first)."""
@@ -12915,7 +12915,7 @@ class TestCollectAllLayers:
         assert len(layers) == 3  # pack-hi, pack-lo, core
         assert "pack-hi" in layers[0]["source"]
         assert "pack-lo" in layers[1]["source"]
-        assert layers[2]["source"] == "core"
+        assert layers[2]["source"] is None
 
     def test_layers_read_strategy_from_manifest(self, project_dir, temp_dir, valid_pack_data):
         """Test that layers read strategy from preset manifest."""
@@ -12978,7 +12978,7 @@ class TestCoreScriptRuntimeVariants:
         )
         assert len(layers) == 1
         assert layers[0]["path"] == path
-        assert layers[0]["source"] == "core"
+        assert layers[0]["source"] is None
 
     def test_resolve_finds_python_only_core_script(self, project_dir):
         """Only the underscored .py variant exists — the hyphenated logical
@@ -13002,7 +13002,7 @@ class TestCoreScriptRuntimeVariants:
         )
         assert len(layers) == 1
         assert layers[0]["path"] == path
-        assert layers[0]["source"] == "core"
+        assert layers[0]["source"] is None
 
     def test_resolve_finds_legacy_flat_core_script(self, project_dir):
         """The legacy flat .specify/templates/scripts/<name>.sh layout still
@@ -13027,7 +13027,7 @@ class TestCoreScriptRuntimeVariants:
         )
         assert len(layers) == 1
         assert layers[0]["path"] == path
-        assert layers[0]["source"] == "core"
+        assert layers[0]["source"] is None
 
 
 class TestRemoveReconciliation:
@@ -14094,7 +14094,7 @@ class TestConstitutionSyncPreset:
         assert len(layers) >= 2, "expected preset wrap layer plus a core base"
         assert layers[0]["strategy"] == "wrap"
         assert any("constitution-sync" in str(layer["path"]) for layer in layers)
-        assert layers[-1]["source"] == "core (bundled)"
+        assert layers[-1]["source"] is None
 
     def test_resolved_content_embeds_core_and_sync_pass(self, project_dir):
         """resolve_content substitutes {CORE_TEMPLATE} so the effective command

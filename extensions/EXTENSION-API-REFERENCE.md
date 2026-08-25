@@ -863,7 +863,7 @@ satisfied = version_satisfies("1.2.3", ">=1.0.0,<2.0.0")  # bool
 
 ## Contribution Identifiers
 
-Every command, template, script, and hook contributed by an extension (or a preset, or the core layer) is addressable at read time by a deterministic opaque identifier. Resolved artifact-stack layers carry a matching `lookupId` field that shares this grammar and identifies the layer's stack position. Manifest-declared preset and extension layers use the manifest's validated `id:` for `lookupId`'s `sourceId` component, so their `lookupId` joins directly to the matching `iter_contributions()` entry even after the installed directory is renamed; convention-only contributions have no manifest `id:` to consult and fall back to the on-disk directory / registry key instead (see [Determinism guarantees](#determinism-guarantees) below). Identifiers are **computed on demand from author-declared manifest content** and are **never persisted** to `.specify/` or to any cache file.
+Every command, template, script, and hook contributed by an extension or preset is addressable at read time by a deterministic opaque identifier. Resolved artifact-stack layers carry a matching `lookupId` field when they have provenance. Manifest-declared preset and extension layers use the manifest's validated `id:` for `lookupId`'s `sourceId` component, so their `lookupId` joins directly to the matching `iter_contributions()` entry even after the installed directory is renamed; convention-only contributions have no manifest `id:` to consult and fall back to the on-disk directory / registry key instead (see [Determinism guarantees](#determinism-guarantees) below). Identifiers are **computed on demand from author-declared manifest content** and are **never persisted** to `.specify/` or to any cache file.
 
 ### Grammar
 
@@ -873,9 +873,9 @@ Named contributions (commands, templates, scripts) follow:
 {layer}:{sourceId}:{kind}:{name}
 ```
 
-- `layer` is one of `core`, `preset`, or `extension`.
-- `sourceId` is `_` for `core`, the preset pack id for `preset`, or the extension id for `extension`.
-- `kind` is one of `command`, `template`, `script`, or `hook`.
+- `layer` is one of `preset` or `extension`.
+- `sourceId` is the preset pack id for `preset`, or the extension id for `extension`.
+- `kind` is one of `command`, `template`, or `script`.
 - `name` is the contribution's declared `name` field.
 
 Hook contributions use a compound name-component built from the event and command:

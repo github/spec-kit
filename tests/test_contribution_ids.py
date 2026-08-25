@@ -29,6 +29,7 @@ from specify_cli._identifier import (
     PROJECT_OVERRIDE_LAYER,
     derive_hook_id,
     derive_named_id,
+    derive_public_id,
     layer_kind_from_lookup_id,
     validate_component,
 )
@@ -118,9 +119,9 @@ class TestIdentifierDerivation:
     @pytest.mark.parametrize(
         "layer, source_id, kind, name, expected",
         [
-            ("core", "_", "command", "speckit.constitution", "core:_:command:speckit.constitution"),
-            ("core", "_", "template", "spec-template", "core:_:template:spec-template"),
-            ("core", "_", "script", "setup-plan", "core:_:script:setup-plan"),
+            ("project", "_", "command", "speckit.constitution", "project:_:command:speckit.constitution"),
+            ("project", "_", "template", "spec-template", "project:_:template:spec-template"),
+            ("project", "_", "script", "setup-plan", "project:_:script:setup-plan"),
             ("preset", "speckit-core", "command", "speckit.plan", "preset:speckit-core:command:speckit.plan"),
             ("preset", "speckit-core", "template", "spec-template", "preset:speckit-core:template:spec-template"),
             ("preset", "speckit-core", "script", "setup-plan", "preset:speckit-core:script:setup-plan"),
@@ -135,7 +136,7 @@ class TestIdentifierDerivation:
     @pytest.mark.parametrize(
         "layer, source_id, event, command, expected",
         [
-            ("core", "_", "before_specify", "speckit.constitution", "core:_:hook:before_specify:speckit.constitution"),
+            ("project", "_", "before_specify", "speckit.constitution", "project:_:hook:before_specify:speckit.constitution"),
             ("preset", "speckit-core", "before_plan", "speckit.plan", "preset:speckit-core:hook:before_plan:speckit.plan"),
             ("extension", "speckit-git", "before_specify", "speckit.git.branch", "extension:speckit-git:hook:before_specify:speckit.git.branch"),
         ],
@@ -148,6 +149,9 @@ class TestIdentifierDerivation:
         b = derive_named_id("preset", "speckit-core", "command", "speckit.plan")
         assert a == b
 
+    def test_public_id_is_source_agnostic(self):
+        assert derive_public_id("command", "speckit.plan") == "command:speckit.plan"
+
 
 class TestLayerKindFromLookupId:
     """``layer_kind_from_lookup_id`` extracts the layer segment of a lookupId."""
@@ -155,7 +159,6 @@ class TestLayerKindFromLookupId:
     @pytest.mark.parametrize(
         "lookup_id, expected",
         [
-            ("core:_:command:speckit.constitution", "core"),
             ("preset:speckit-core:template:spec-template", "preset"),
             ("extension:speckit-git:script:post-commit", "extension"),
             (f"{PROJECT_OVERRIDE_LAYER}:_:template:spec-template", PROJECT_OVERRIDE_LAYER),
@@ -173,6 +176,7 @@ class TestLayerKindFromLookupId:
         [
             "",
             "bogus:_:command:speckit.plan",
+            "core:_:command:speckit.plan",
             "core",
             ":_:command:speckit.plan",
             "core:not-an-id",
@@ -352,7 +356,7 @@ class TestLookupIdRoundTrip:
             PROJECT_OVERRIDE_LAYER, "_", "template", "spec-template"
         )
 
-    def test_core_layer_carries_core_lookup_id(self, tmp_path):
+    def test_builtin_layer_has_no_provenance(self, tmp_path):
         project = _make_project(tmp_path)
         (project / "templates" / "spec-template.md").write_text("core", encoding="utf-8")
         # PresetResolver reads templates from a bundled/repo path — point the
@@ -360,10 +364,8 @@ class TestLookupIdRoundTrip:
         resolver = PresetResolver(project)
         resolver.templates_dir = project / "templates"
         layers = resolver.collect_all_layers("spec-template", "template")
-        core_layer = next(layer for layer in layers if layer["source"] == "core")
-        assert core_layer["lookupId"] == derive_named_id(
-            "core", "_", "template", "spec-template"
-        )
+        builtin_layer = next(layer for layer in layers if "lookupId" not in layer)
+        assert builtin_layer["source"] is None
 
     def test_preset_layer_lookup_id_matches_manifest_contribution_id(self, tmp_path):
         project = _make_project(tmp_path)

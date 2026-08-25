@@ -9,18 +9,21 @@ random values, or list positions. That is what makes identifiers portable
 across machines, project locations, and reinstalls, and what lets consumers use
 them as stable join keys.
 
-Grammar for named contributions (commands, templates, scripts)::
+Grammar for manifest-backed named contributions (commands, templates, scripts)::
 
     id = "{layer}:{sourceId}:{kind}:{name}"
 
-    layer    ∈ {"core", "preset", "extension"}
-    sourceId = "_" when layer == "core"; the preset id or extension id otherwise
-    kind     ∈ {"command", "template", "script", "hook"}
+    layer    ∈ {"project", "preset", "extension"}
+    sourceId = "_" when layer == "project"; the preset or extension id otherwise
+    kind     ∈ {"command", "template", "script"}
     name     = the contribution's declared ``name``
 
 Hook identifiers use ``{eventName}:{command}`` as the name component::
 
     id = "{layer}:{sourceId}:hook:{eventName}:{command}"
+
+Built-in artifacts have no layer or lookup identifier. Their public identifier
+is source-agnostic: ``"{kind}:{name}"``.
 
 The functions in this module are pure — inputs are strings or in-memory
 mappings parsed from a manifest, outputs are strings. None of them read from
@@ -88,6 +91,10 @@ def derive_named_id(layer: str, source_id: str, kind: str, name: str) -> str:
     strings should either pre-validate or handle
     :class:`IdentifierComponentError`.
     """
+    if layer not in _LAYER_KINDS:
+        raise IdentifierComponentError(f"Invalid layer '{layer}'")
+    if kind not in _NAMED_CONTRIBUTION_KINDS:
+        raise IdentifierComponentError(f"Invalid named contribution kind '{kind}'")
     validate_component(layer, "layer")
     validate_component(source_id, "sourceId")
     validate_component(kind, "kind")
@@ -95,8 +102,14 @@ def derive_named_id(layer: str, source_id: str, kind: str, name: str) -> str:
     return f"{layer}:{source_id}:{kind}:{name}"
 
 
-_LAYER_KINDS = frozenset({"core", PROJECT_OVERRIDE_LAYER, "preset", "extension"})
+_LAYER_KINDS = frozenset({PROJECT_OVERRIDE_LAYER, "preset", "extension"})
 _CONTRIBUTION_KINDS = frozenset({"command", "template", "script", "hook"})
+_NAMED_CONTRIBUTION_KINDS = _CONTRIBUTION_KINDS - {"hook"}
+
+
+def derive_public_id(kind: str, name: str) -> str:
+    """Build the source-agnostic public identifier for an artifact."""
+    return f"{kind}:{name}"
 
 
 def layer_kind_from_lookup_id(lookup_id: str) -> str | None:
@@ -104,8 +117,8 @@ def layer_kind_from_lookup_id(lookup_id: str) -> str | None:
 
     ``lookupId`` values on resolved stack layers follow the same
     ``"{layer}:..."`` grammar as manifest-contribution ``id`` values (see
-    module docstring), with ``layer`` additionally taking on
-    :data:`PROJECT_OVERRIDE_LAYER` for resolver-only project-override layers.
+    module docstring), including :data:`PROJECT_OVERRIDE_LAYER` for
+    project-local override layers.
     This is the single place that knows the set of valid layer prefixes, so
     consumers can classify a lookupId without re-deriving the grammar via
     string-prefix checks of their own.
@@ -114,9 +127,9 @@ def layer_kind_from_lookup_id(lookup_id: str) -> str | None:
     named contributions require exactly the four ``{layer}:{sourceId}:{kind}:
     {name}`` components, and hook contributions require exactly the five
     ``{layer}:{sourceId}:hook:{eventName}:{command}`` components, with every
-    component non-empty. A value such as ``"core:not-an-id"`` or ``"preset:x"``
-    has a recognized layer prefix but the wrong number of components, so it is
-    malformed and returns ``None`` rather than being treated as authoritative.
+    component non-empty. A value such as ``"preset:x"`` has a recognized layer
+    prefix but the wrong number of components, so it is malformed and returns
+    ``None`` rather than being treated as authoritative.
     """
     parts = lookup_id.split(":")
     if len(parts) < 4 or any(not part for part in parts):
@@ -159,6 +172,8 @@ def derive_hook_id(
     Each component is revalidated with :func:`validate_component` — same
     contract as :func:`derive_named_id`.
     """
+    if layer not in _LAYER_KINDS:
+        raise IdentifierComponentError(f"Invalid layer '{layer}'")
     validate_component(layer, "layer")
     validate_component(source_id, "sourceId")
     validate_component(event_name, "eventName")

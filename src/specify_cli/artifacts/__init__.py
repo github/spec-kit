@@ -22,6 +22,7 @@ from .._assets import _locate_core_asset_dir
 from .._identifier import (
     PROJECT_OVERRIDE_LAYER,
     IdentifierComponentError,
+    derive_public_id,
     is_dotted_command_name,
     layer_kind_from_lookup_id,
     validate_component,
@@ -33,7 +34,7 @@ from .._script_variants import canonical_script_name
 # ---------------------------------------------------------------------------
 
 ArtifactKind = Literal["command", "template", "script"]
-LayerName = Literal["project", "preset", "extension", "core"]
+LayerName = Literal["project", "preset", "extension"]
 Strategy = Literal["replace", "wrap", "prepend", "append"]
 
 
@@ -59,18 +60,20 @@ class Artifact:
 class StackLayer:
     """One row inside the ``stack`` array returned by ``get_artifact_info()``."""
 
-    layer: LayerName
+    layer: LayerName | None
+    sourceId: str | None
     presetId: str | None
     presetName: str | None
     strategy: Strategy
     active: bool
     hidden: bool
     manifestPath: str | None
-    lookupId: str
+    lookupId: str | None
 
     def to_json_dict(self) -> dict[str, Any]:
         return {
             "layer": self.layer,
+            "sourceId": self.sourceId,
             "presetId": self.presetId,
             "presetName": self.presetName,
             "strategy": self.strategy,
@@ -335,8 +338,7 @@ def _build_stack(
 
     rows: list[StackLayer] = []
     for idx, layer in enumerate(raw):
-        lookup_id = layer.get("lookupId", "")
-        source = str(layer.get("source", ""))
+        lookup_id = layer.get("lookupId")
         strategy = layer["strategy"]
         active = idx == 0
 
@@ -345,32 +347,14 @@ def _build_stack(
         else:
             hidden = idx > first_replace_idx
 
-        # Layer classification: the lookupId prefix is the resolver's own
-        # grammar (see layer_kind_from_lookup_id) and is authoritative; the
-        # source-string check only guards against a malformed lookupId.
-        layer_kind = layer_kind_from_lookup_id(lookup_id)
+        layer_kind = layer_kind_from_lookup_id(lookup_id) if isinstance(lookup_id, str) else None
+        source_id = lookup_id.split(":", 2)[1] if layer_kind else None
 
-        if layer_kind == "core" or (layer_kind is None and source.startswith("core")):
-            rows.append(
-                StackLayer(
-                    layer="core",
-                    presetId=None,
-                    presetName=None,
-                    strategy=strategy,
-                    active=active,
-                    hidden=hidden,
-                    manifestPath=None,
-                    lookupId=lookup_id,
-                )
-            )
-            continue
-
-        if layer_kind == PROJECT_OVERRIDE_LAYER or (
-            layer_kind is None and source == "project override"
-        ):
+        if layer_kind == PROJECT_OVERRIDE_LAYER:
             rows.append(
                 StackLayer(
                     layer="project",
+                    sourceId=source_id,
                     presetId=None,
                     presetName=None,
                     strategy=strategy,
@@ -382,13 +366,12 @@ def _build_stack(
             )
             continue
 
-        if layer_kind == "extension" or (
-            layer_kind is None and source.startswith("extension:")
-        ):
+        if layer_kind == "extension":
             manifest_path = _derive_manifest_path(layer, project_root)
             rows.append(
                 StackLayer(
                     layer="extension",
+                    sourceId=source_id,
                     presetId=None,
                     presetName=None,
                     strategy=strategy,
@@ -396,6 +379,22 @@ def _build_stack(
                     hidden=hidden,
                     manifestPath=manifest_path,
                     lookupId=lookup_id,
+                )
+            )
+            continue
+
+        if layer_kind != "preset":
+            rows.append(
+                StackLayer(
+                    layer=None,
+                    sourceId=None,
+                    presetId=None,
+                    presetName=None,
+                    strategy=strategy,
+                    active=active,
+                    hidden=hidden,
+                    manifestPath=None,
+                    lookupId=None,
                 )
             )
             continue
@@ -417,6 +416,7 @@ def _build_stack(
         rows.append(
             StackLayer(
                 layer="preset",
+                sourceId=source_id,
                 presetId=pack_id or None,
                 presetName=display or None,
                 strategy=strategy,
@@ -546,6 +546,7 @@ class ArtifactCatalog:
 
         resolver = PresetResolver(self.project_root)
         layers_cache: dict[tuple[ArtifactKind, str], list[dict[str, Any]]] = {}
+        resolved_cache: dict[tuple[ArtifactKind, str], bool] = {}
 
         def _layers_for(kind: ArtifactKind, name: str) -> list[dict[str, Any]]:
             key = (kind, name)
@@ -553,12 +554,18 @@ class ArtifactCatalog:
                 layers_cache[key] = resolver.collect_all_layers(name, kind)
             return layers_cache[key]
 
+        def _is_resolved(kind: ArtifactKind, name: str) -> bool:
+            key = (kind, name)
+            if key not in resolved_cache:
+                resolved_cache[key] = resolver.resolve_content(name, kind) is not None
+            return resolved_cache[key]
+
         names: set[tuple[ArtifactKind, str]] = set()
         for kind, name in self._iter_candidate_artifacts(resolver):
             key = (kind, name)
             if not _is_valid_artifact_name_component(name, kind):
                 continue
-            if _layers_for(kind, name):
+            if _layers_for(kind, name) and _is_resolved(kind, name):
                 names.add(key)
 
         artifacts: list[Artifact] = []
@@ -574,7 +581,7 @@ class ArtifactCatalog:
                     description = candidate
                     break
             artifacts.append(
-                Artifact(id=f"{kind}:{name}", name=name, kind=kind, description=description)
+                Artifact(id=derive_public_id(kind, name), name=name, kind=kind, description=description)
             )
 
         kind_order = {"command": 0, "template": 1, "script": 2}
@@ -602,8 +609,9 @@ class ArtifactCatalog:
         _validate_preset_registry(self.project_root)
         bare, resolved_kind = _resolve_kind_hint(name, kind)
 
+        inventory = self.list_artifacts()
         if resolved_kind is None:
-            matches = self._find_matches(bare)
+            matches = [(artifact.kind, artifact.name) for artifact in inventory if artifact.name == bare]
             if not matches:
                 raise ArtifactNotFoundError(name)
             if len(matches) > 1:
@@ -611,39 +619,29 @@ class ArtifactCatalog:
             resolved_kind = matches[0][0]
 
         validated_name = _validate_artifact_name(bare, resolved_kind)
-        if not any(kind_name == resolved_kind for kind_name, _ in self._find_matches(validated_name)):
+        artifact = next(
+            (
+                item
+                for item in inventory
+                if item.kind == resolved_kind and item.name == validated_name
+            ),
+            None,
+        )
+        if artifact is None:
             raise ArtifactNotFoundError(name)
         stack = _build_stack(self.project_root, resolved_kind, validated_name)
         if not stack:
             raise ArtifactNotFoundError(name)
 
-        description = self._describe(resolved_kind, validated_name)
         return {
-            "id": f"{resolved_kind}:{validated_name}",
+            "id": derive_public_id(resolved_kind, validated_name),
             "name": validated_name,
             "kind": resolved_kind,
-            "description": description,
+            "description": artifact.description,
             "stack": [layer.to_json_dict() for layer in stack],
         }
 
     # -------------------------------------------------------------- internals
-    def _find_matches(self, name: str) -> list[tuple[ArtifactKind, str]]:
-        """Return every (kind, name) pair whose name matches exactly."""
-        artifacts = self.list_artifacts()
-        return [(a.kind, a.name) for a in artifacts if a.name == name]
-
-    def _describe(self, kind: ArtifactKind, name: str) -> str:
-        """Return the description that would appear on the flat-list row.
-
-        Sources the value from :meth:`list_artifacts` so the two commands
-        agree on the same string for the same artifact — the ``info`` output
-        promises "matching the same field on 'artifact list --json'".
-        """
-        for artifact in self.list_artifacts():
-            if artifact.kind == kind and artifact.name == name:
-                return artifact.description
-        return ""
-
     def _iter_candidate_artifacts(
         self,
         resolver: Any,

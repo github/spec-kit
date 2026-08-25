@@ -66,6 +66,7 @@ specify artifact info <name> --json
   "stack": [
     {
       "layer": "preset",
+      "sourceId": "compliance",
       "presetId": "compliance",
       "presetName": "Compliance Preset",
       "strategy": "replace",
@@ -75,14 +76,15 @@ specify artifact info <name> --json
       "lookupId": "preset:compliance:command:speckit.specify"
     },
     {
-      "layer": "core",
+      "layer": null,
+      "sourceId": null,
       "presetId": null,
       "presetName": null,
       "strategy": "replace",
       "active": false,
       "hidden": true,
       "manifestPath": null,
-      "lookupId": "core:_:command:speckit.specify"
+      "lookupId": null
     }
   ]
 }
@@ -96,16 +98,17 @@ The top-level `id`, `name`, `kind`, and `description` fields match the correspon
 
 | Field          | Description                                                                     |
 | -------------- | -------------------------------------------------------------------------------- |
-| `layer`        | `project`, `preset`, `extension`, or `core`                                       |
-| `presetId`     | Preset pack directory id; `null` on `core`, `project`, and `extension` rows       |
+| `layer`        | `project`, `preset`, or `extension`; `null` for built-in layers                    |
+| `sourceId`     | Source component of `lookupId`, or `null` when the layer has no provenance         |
+| `presetId`     | Preset pack directory id; `null` on built-in, `project`, and `extension` rows       |
 | `presetName`   | Preset display name when its manifest declares one, else the pack id; `null` when `presetId` is `null` |
 | `strategy`     | `replace`, `wrap`, `prepend`, or `append`                                         |
 | `active`       | `true` only for index `0` — the layer whose content is served                     |
 | `hidden`       | `true` when a lower-index `replace` layer cuts this layer out of the composition |
 | `manifestPath` | Project-relative path to the declaring manifest, or `null` when none applies      |
-| `lookupId`     | Deterministic `{layer}:{sourceId}:{kind}:{name}` identifier for the layer         |
+| `lookupId`     | Deterministic `{layer}:{sourceId}:{kind}:{name}` identifier, or `null` for built-in layers |
 
-`active` and `hidden` are independent labels, not opposites. Composing strategies (`wrap`, `prepend`, `append`) keep lower layers in the composed output, so an inactive layer is not necessarily hidden: only layers below the first `replace` layer are marked `hidden`. Core rows appear as the base of the stack with `presetId`/`presetName`/`manifestPath` set to `null` and a `core:_:{kind}:{name}` lookup ID.
+`active` and `hidden` are independent labels, not opposites. Composing strategies (`wrap`, `prepend`, `append`) keep lower layers in the composed output, so an inactive layer is not necessarily hidden: only layers below the first `replace` layer are marked `hidden`. Built-in rows have no provenance: `layer`, `sourceId`, and `lookupId` are `null`.
 
 Lookup IDs use the same grammar as [preset contribution identifiers](presets.md#contribution-identifiers), so a `lookupId` from this command joins directly to `PresetManifest.iter_contributions()` / `ExtensionManifest.iter_contributions()` for manifest-declared layers. Project-local overrides carry a synthetic `project:_:{kind}:{name}` ID that intentionally matches no manifest contribution.
 

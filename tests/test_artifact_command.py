@@ -113,7 +113,9 @@ class TestListArtifactsContract:
         }
         for script in scripts:
             info = catalog.get_artifact_info(script.id)
-            assert info["stack"][-1]["lookupId"] == f"core:_:script:{script.name}"
+            assert info["stack"][-1]["layer"] is None
+            assert info["stack"][-1]["sourceId"] is None
+            assert info["stack"][-1]["lookupId"] is None
 
     def test_excludes_disabled_and_unusable_manifest_contributions(
         self, spec_kit_project: Path
@@ -254,15 +256,11 @@ class TestListArtifactsContract:
         assert artifacts["template:legacy-template"].description == "Local template"
         assert artifacts["command:speckit.local-command"].description == "Local command"
         assert artifacts["script:legacy-script"].description == "Local script"
-        assert catalog.get_artifact_info("speckit.local-command")["stack"][0]["lookupId"] == (
-            "core:_:command:speckit.local-command"
-        )
-        assert catalog.get_artifact_info("legacy-template")["stack"][0]["lookupId"] == (
-            "core:_:template:legacy-template"
-        )
-        assert catalog.get_artifact_info("legacy-script")["stack"][0]["lookupId"] == (
-            "core:_:script:legacy-script"
-        )
+        for name in ("speckit.local-command", "legacy-template", "legacy-script"):
+            layer = catalog.get_artifact_info(name)["stack"][0]
+            assert layer["layer"] is None
+            assert layer["sourceId"] is None
+            assert layer["lookupId"] is None
 
     def test_includes_root_level_pack_template_but_excludes_readme(
         self, spec_kit_project: Path
@@ -470,14 +468,15 @@ class TestInfoContract:
         for layer in info["stack"][1:]:
             assert layer["active"] is False
 
-    def test_core_row_shape(self, spec_kit_project: Path):
+    def test_builtin_row_shape(self, spec_kit_project: Path):
         info = ArtifactCatalog(spec_kit_project).get_artifact_info("speckit.constitution")
-        core = next(layer for layer in info["stack"] if layer["layer"] == "core")
-        assert core["presetId"] is None
-        assert core["presetName"] is None
-        assert core["manifestPath"] is None
-        assert core["strategy"] == "replace"
-        assert re.match(r"^core:_:(command|template|script):[^:]+$", core["lookupId"])
+        builtin = next(layer for layer in info["stack"] if layer["layer"] is None)
+        assert builtin["sourceId"] is None
+        assert builtin["presetId"] is None
+        assert builtin["presetName"] is None
+        assert builtin["manifestPath"] is None
+        assert builtin["strategy"] == "replace"
+        assert builtin["lookupId"] is None
 
     def test_project_override_row_shape(self, spec_kit_project: Path):
         overrides = spec_kit_project / ".specify" / "templates" / "overrides"
@@ -491,13 +490,18 @@ class TestInfoContract:
         assert project["presetName"] is None
         assert project["manifestPath"] is None
         assert project["strategy"] == "replace"
+        assert project["sourceId"] == "_"
         assert re.match(r"^project:_:(command|template|script):[^:]+$", project["lookupId"])
 
     def test_lookup_id_grammar(self, spec_kit_project: Path):
         info = ArtifactCatalog(spec_kit_project).get_artifact_info("speckit.constitution")
         for layer in info["stack"]:
+            if layer["lookupId"] is None:
+                assert layer["layer"] is None
+                assert layer["sourceId"] is None
+                continue
             assert re.match(
-                r"^(project|preset|extension|core):[^:]+:(command|template|script):[^:]+(:[0-9a-f]{12})?$",
+                r"^(project|preset|extension):[^:]+:(command|template|script):[^:]+(:[0-9a-f]{12})?$",
                 layer["lookupId"],
             )
 
@@ -820,9 +824,9 @@ class TestStackComposition:
         stack = info["stack"]
         assert stack[0]["active"] is True
         assert stack[0]["hidden"] is False
-        # If a lower core layer exists it must be hidden.
-        core_rows = [layer for layer in stack if layer["layer"] == "core"]
-        for row in core_rows:
+        # If a lower built-in layer exists it must be hidden.
+        built_in_rows = [layer for layer in stack if layer["layer"] is None]
+        for row in built_in_rows:
             assert row["hidden"] is True
 
 
@@ -1095,13 +1099,13 @@ class TestManifestPathPortability:
         }
         assert _derive_manifest_path(layer, project_root) is None
 
-    def test_core_and_project_layers_have_no_manifest(self, tmp_path: Path):
+    def test_builtin_and_project_layers_have_no_manifest(self, tmp_path: Path):
         project_root = tmp_path / "proj"
         project_root.mkdir()
 
-        core_layer = {"lookupId": "core:_:template:spec-template"}
+        builtin_layer = {}
         project_layer = {"lookupId": "project:_:template:spec-template"}
-        assert _derive_manifest_path(core_layer, project_root) is None
+        assert _derive_manifest_path(builtin_layer, project_root) is None
         assert _derive_manifest_path(project_layer, project_root) is None
 
 

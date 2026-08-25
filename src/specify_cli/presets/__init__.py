@@ -1861,7 +1861,7 @@ class PresetManager:
                 if not registered:
                     # Top layer is a non-preset source (extension, core, or
                     # project override). Register directly from the layer path.
-                    source = layers[0]["source"]
+                    source = layers[0].get("source") or ""
                     extension_id = None
                     written: Dict[str, List[str]] = {}
                     if source.startswith("extension:"):
@@ -1985,7 +1985,7 @@ class PresetManager:
                     shared_composed.mkdir(parents=True, exist_ok=True)
                     composed_file = shared_composed / f"{cmd_name}.md"
                     composed_file.write_text(composed, encoding="utf-8")
-                    source = layers[0]["source"]
+                    source = layers[0].get("source") or ""
                     if source.startswith("extension:"):
                         source_id = source.split(":", 1)[1].split(" ", 1)[0]
                     else:
@@ -5784,11 +5784,8 @@ class PresetResolver:
         if core:
             layers.append({
                 "path": core,
-                "source": "core",
+                "source": None,
                 "strategy": "replace",
-                "lookupId": derive_named_id(
-                    "core", "_", template_type, template_name
-                ),
             })
         else:
             # Priority 5: Bundled core_pack (wheel install) or repo-root
@@ -5797,11 +5794,8 @@ class PresetResolver:
             if bundled:
                 layers.append({
                     "path": bundled,
-                    "source": "core (bundled)",
+                    "source": None,
                     "strategy": "replace",
-                    "lookupId": derive_named_id(
-                        "core", "_", template_type, template_name
-                    ),
                 })
 
         return layers
