@@ -35,6 +35,7 @@ def _repo_root() -> Path:
 def _locate_shared_asset_dir(subdir: str) -> Path | None:
     """Return an asset directory from the wheel bundle or source checkout.
 
+    ``subdir`` is ``"commands"``, ``"templates"``, or ``"scripts"``.
     Checks ``core_pack/<subdir>/`` first. In a source checkout, commands live
     under ``templates/commands/`` and the other asset families use ``<subdir>/``.
     """
