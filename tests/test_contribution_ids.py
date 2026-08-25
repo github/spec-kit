@@ -122,6 +122,7 @@ class TestIdentifierDerivation:
             ("project", "_", "command", "speckit.constitution", "project:_:command:speckit.constitution"),
             ("project", "_", "template", "spec-template", "project:_:template:spec-template"),
             ("project", "_", "script", "setup-plan", "project:_:script:setup-plan"),
+            ("core", "_", "command", "speckit.plan", "core:_:command:speckit.plan"),
             ("preset", "speckit-core", "command", "speckit.plan", "preset:speckit-core:command:speckit.plan"),
             ("preset", "speckit-core", "template", "spec-template", "preset:speckit-core:template:spec-template"),
             ("preset", "speckit-core", "script", "setup-plan", "preset:speckit-core:script:setup-plan"),
@@ -154,7 +155,6 @@ class TestIdentifierDerivation:
     @pytest.mark.parametrize(
         "args",
         [
-            ("core", "_", "command", "speckit.plan"),
             ("preset", "speckit-core", "hook", "before_plan:speckit.plan"),
             ("unknown", "source", "command", "speckit.plan"),
         ],
@@ -167,9 +167,10 @@ class TestIdentifierDerivation:
         with pytest.raises(IdentifierComponentError):
             derive_public_id("hook", "before_plan:speckit.plan")
 
-    def test_hook_id_rejects_project_layer(self):
+    @pytest.mark.parametrize("layer", [PROJECT_OVERRIDE_LAYER, "core"])
+    def test_hook_id_rejects_non_manifest_layer(self, layer):
         with pytest.raises(IdentifierComponentError):
-            derive_hook_id(PROJECT_OVERRIDE_LAYER, "_", "before_plan", "speckit.plan")
+            derive_hook_id(layer, "_", "before_plan", "speckit.plan")
 
 
 class TestLayerKindFromLookupId:
@@ -178,6 +179,7 @@ class TestLayerKindFromLookupId:
     @pytest.mark.parametrize(
         "lookup_id, expected",
         [
+            ("core:_:command:speckit.plan", "core"),
             ("preset:speckit-core:template:spec-template", "preset"),
             ("extension:speckit-git:script:post-commit", "extension"),
             (f"{PROJECT_OVERRIDE_LAYER}:_:template:spec-template", PROJECT_OVERRIDE_LAYER),
@@ -195,7 +197,6 @@ class TestLayerKindFromLookupId:
         [
             "",
             "bogus:_:command:speckit.plan",
-            "core:_:command:speckit.plan",
             "core",
             ":_:command:speckit.plan",
             "core:not-an-id",
@@ -375,7 +376,7 @@ class TestLookupIdRoundTrip:
             PROJECT_OVERRIDE_LAYER, "_", "template", "spec-template"
         )
 
-    def test_builtin_layer_has_no_provenance(self, tmp_path):
+    def test_builtin_layer_preserves_resolver_provenance(self, tmp_path):
         project = _make_project(tmp_path)
         (project / "templates" / "spec-template.md").write_text("core", encoding="utf-8")
         # PresetResolver reads templates from a bundled/repo path — point the
@@ -383,8 +384,8 @@ class TestLookupIdRoundTrip:
         resolver = PresetResolver(project)
         resolver.templates_dir = project / "templates"
         layers = resolver.collect_all_layers("spec-template", "template")
-        builtin_layer = next(layer for layer in layers if "lookupId" not in layer)
-        assert builtin_layer["source"] is None
+        builtin_layer = next(layer for layer in layers if layer["source"] == "core")
+        assert builtin_layer["lookupId"] == "core:_:template:spec-template"
 
     def test_preset_layer_lookup_id_matches_manifest_contribution_id(self, tmp_path):
         project = _make_project(tmp_path)

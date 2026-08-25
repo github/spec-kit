@@ -5782,8 +5782,11 @@ class PresetResolver:
         if core:
             layers.append({
                 "path": core,
-                "source": None,
+                "source": "core",
                 "strategy": "replace",
+                "lookupId": derive_named_id(
+                    "core", "_", template_type, template_name
+                ),
             })
         else:
             # Priority 5: Bundled core_pack (wheel install) or repo-root
@@ -5792,8 +5795,11 @@ class PresetResolver:
             if bundled:
                 layers.append({
                     "path": bundled,
-                    "source": None,
+                    "source": "core",
                     "strategy": "replace",
+                    "lookupId": derive_named_id(
+                        "core", "_", template_type, template_name
+                    ),
                 })
 
         return layers

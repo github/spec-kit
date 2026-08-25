@@ -27,6 +27,7 @@ from specify_cli.artifacts import (
     NotASpecKitProjectError,
     _derive_manifest_path,
     _preset_display_name,
+    _public_layer_shape,
 )
 from specify_cli.extensions import ExtensionRegistry
 from specify_cli.presets import PresetRegistry, PresetResolver
@@ -469,7 +470,14 @@ class TestInfoContract:
             assert layer["active"] is False
 
     def test_builtin_row_shape(self, spec_kit_project: Path):
+        resolver_layer = PresetResolver(spec_kit_project).collect_all_layers(
+            "speckit.constitution", "command"
+        )[-1]
+        assert resolver_layer["source"] == "core"
+        assert resolver_layer["lookupId"] == "core:_:command:speckit.constitution"
+
         info = ArtifactCatalog(spec_kit_project).get_artifact_info("speckit.constitution")
+        assert info["id"] == "command:speckit.constitution"
         builtin = next(layer for layer in info["stack"] if layer["layer"] is None)
         assert builtin["sourceId"] is None
         assert builtin["presetId"] is None
@@ -477,6 +485,14 @@ class TestInfoContract:
         assert builtin["manifestPath"] is None
         assert builtin["strategy"] == "replace"
         assert builtin["lookupId"] is None
+
+    def test_public_layer_shape_preserves_non_core_identity(self):
+        assert _public_layer_shape(
+            {
+                "source": "preset:foo v1",
+                "lookupId": "preset:foo:template:spec-template",
+            }
+        ) == ("preset", "foo", "preset:foo:template:spec-template")
 
     def test_project_override_row_shape(self, spec_kit_project: Path):
         overrides = spec_kit_project / ".specify" / "templates" / "overrides"

@@ -22,8 +22,10 @@ Hook identifiers use ``{eventName}:{command}`` as the name component::
 
     id = "{layer}:{sourceId}:hook:{eventName}:{command}"
 
-Built-in artifacts have no layer or lookup identifier. Their public identifier
-is source-agnostic: ``"{kind}:{name}"``.
+Built-in artifacts have no public layer or lookup identifier. Their public
+identifier is source-agnostic: ``"{kind}:{name}"``. The pre-existing resolver
+still uses ``core:_:...`` lookup IDs internally; consumers that expose public
+artifact data translate those IDs at their boundary.
 
 The functions in this module are pure — inputs are strings or in-memory
 mappings parsed from a manifest, outputs are strings. None of them read from
@@ -49,7 +51,7 @@ ever emit a matching ``id``, so consumers see "not found" for the lookup, which
 is the correct outcome for a layer with no originating manifest entry.
 """
 
-_LAYER_KINDS = frozenset({PROJECT_OVERRIDE_LAYER, "preset", "extension"})
+_LAYER_KINDS = frozenset({"core", PROJECT_OVERRIDE_LAYER, "preset", "extension"})
 _CONTRIBUTION_KINDS = frozenset({"command", "template", "script", "hook"})
 _NAMED_CONTRIBUTION_KINDS = _CONTRIBUTION_KINDS - {"hook"}
 
@@ -120,8 +122,8 @@ def layer_kind_from_lookup_id(lookup_id: str) -> str | None:
 
     ``lookupId`` values on resolved stack layers follow the same
     ``"{layer}:..."`` grammar as manifest-contribution ``id`` values (see
-    module docstring), including :data:`PROJECT_OVERRIDE_LAYER` for
-    project-local override layers.
+    module docstring), including ``core`` for built-in layers and
+    :data:`PROJECT_OVERRIDE_LAYER` for project-local override layers.
     This is the single place that knows the set of valid layer prefixes, so
     consumers can classify a lookupId without re-deriving the grammar via
     string-prefix checks of their own.
@@ -175,7 +177,7 @@ def derive_hook_id(
     Each component is revalidated with :func:`validate_component` — same
     contract as :func:`derive_named_id`.
     """
-    if layer not in _LAYER_KINDS - {PROJECT_OVERRIDE_LAYER}:
+    if layer not in {"preset", "extension"}:
         raise IdentifierComponentError(f"Invalid layer '{layer}'")
     validate_component(layer, "layer")
     validate_component(source_id, "sourceId")

@@ -231,6 +231,33 @@ def _describe_artifact_file(path: Path, kind: ArtifactKind) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _public_layer_shape(
+    resolver_layer: dict[str, Any],
+) -> tuple[LayerName | None, str | None, str | None]:
+    """Translate resolver provenance into the public layer identity triple.
+
+    The resolver preserves its pre-existing built-in identity with
+    ``source == "core"`` and a ``core:_:`` lookup ID. Public artifact output
+    omits that tier's identity while retaining preset, extension, and project
+    override identities unchanged.
+    """
+    lookup_id = resolver_layer.get("lookupId")
+    if (
+        resolver_layer.get("source") == "core"
+        and isinstance(lookup_id, str)
+        and lookup_id.startswith("core:_:")
+    ):
+        return None, None, None
+    if lookup_id is None:
+        return None, None, None
+    if not isinstance(lookup_id, str):
+        raise ArtifactResolutionError()
+    layer_kind = layer_kind_from_lookup_id(lookup_id)
+    if layer_kind not in ("project", "preset", "extension"):
+        raise ArtifactResolutionError()
+    return layer_kind, lookup_id.split(":", 2)[1], lookup_id
+
+
 def _derive_manifest_path(layer: dict[str, Any], project_root: Path) -> str | None:
     """Return a repo-relative POSIX path to the manifest declaring this layer.
 
@@ -330,7 +357,6 @@ def _build_stack(
 
     rows: list[StackLayer] = []
     for idx, layer in enumerate(raw):
-        lookup_id = layer.get("lookupId")
         strategy = layer["strategy"]
         active = idx == 0
 
@@ -339,14 +365,7 @@ def _build_stack(
         else:
             hidden = idx > first_replace_idx
 
-        layer_kind = (
-            layer_kind_from_lookup_id(lookup_id)
-            if isinstance(lookup_id, str)
-            else None
-        )
-        source_id = lookup_id.split(":", 2)[1] if layer_kind else None
-        if lookup_id is not None and layer_kind is None:
-            raise ArtifactResolutionError()
+        layer_kind, source_id, lookup_id = _public_layer_shape(layer)
 
         if layer_kind == PROJECT_OVERRIDE_LAYER:
             rows.append(
