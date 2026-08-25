@@ -554,7 +554,7 @@ class ArtifactCatalog:
                     raise ArtifactResolutionError() from exc
             return layers_cache[key]
 
-        def _has_replace_base(layers: list[dict[str, Any]]) -> bool:
+        def _has_any_replace_layer(layers: list[dict[str, Any]]) -> bool:
             return any(layer.get("strategy") == "replace" for layer in layers)
 
         names: set[tuple[ArtifactKind, str]] = set()
@@ -564,7 +564,7 @@ class ArtifactCatalog:
                 if not _is_valid_artifact_name_component(name, kind):
                     continue
                 layers = _layers_for(kind, name)
-                if layers and _has_replace_base(layers):
+                if layers and _has_any_replace_layer(layers):
                     names.add(key)
         except (OSError, PresetError) as exc:
             raise ArtifactResolutionError() from exc
