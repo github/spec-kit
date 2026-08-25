@@ -15,8 +15,9 @@ the JSON error envelope — is documented in ``docs/reference/artifacts.md``.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -42,18 +43,23 @@ artifact_app = typer.Typer(
 def _resolve_project_root() -> Path:
     """Return the project root without emitting Rich output on failure.
 
-    The stdout of ``specify artifact list --json`` and ``specify artifact
-    info <name> --json`` is a strict JSON envelope; any incidental Rich
-    output would corrupt it. The shared ``_resolve_init_dir_override`` emits
-    Rich errors for invalid overrides, so validate the override quietly here
-    and raise the module-local :class:`NotASpecKitProjectError` for the shared
-    error handler to serialize.
+    Delegates to :func:`specify_cli._require_specify_project` — the same
+    resolution chokepoint every other project-scoped subcommand (``preset``,
+    ``extension``, ``workflow``, ...) uses, including its ``SPECIFY_INIT_DIR``
+    override handling. That helper prints Rich error output and raises
+    ``typer.Exit`` on failure, which would corrupt the strict JSON envelope
+    ``specify artifact list --json`` and ``specify artifact info --json``
+    emit on stdout/stderr. The Rich output is suppressed here and the
+    failure is re-raised as the module-local :class:`NotASpecKitProjectError`
+    for the shared error handler to serialize instead.
     """
-    raw_override = os.environ.get("SPECIFY_INIT_DIR", "")
-    cwd = (Path.cwd() / raw_override).resolve() if raw_override else Path.cwd()
-    if not (cwd / ".specify").is_dir():
-        raise NotASpecKitProjectError()
-    return cwd
+    from .. import _require_specify_project  # lazy: avoids circular import
+
+    with contextlib.redirect_stderr(io.StringIO()):
+        try:
+            return _require_specify_project()
+        except typer.Exit:
+            raise NotASpecKitProjectError() from None
 
 
 def _emit_error_and_exit(exc: ArtifactError) -> None:
@@ -87,7 +93,7 @@ def _require_json_flag(json_flag: bool) -> None:
 
 
 @artifact_app.command("list")
-def list_command(
+def artifact_list(
     json_flag: bool = typer.Option(
         False,
         "--json",
@@ -112,7 +118,7 @@ def list_command(
 
 
 @artifact_app.command("info")
-def info_command(
+def artifact_info(
     name: str = typer.Argument(..., help="Artifact name, optionally 'kind:name'."),
     json_flag: bool = typer.Option(
         False,

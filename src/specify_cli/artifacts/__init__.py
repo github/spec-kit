@@ -588,13 +588,14 @@ class ArtifactCatalog:
           :class:`AmbiguousArtifactError`.
         * When no artifact matches, raises :class:`ArtifactNotFoundError`.
         """
-        _validate_project(self.project_root)
-        _validate_extension_registry(self.project_root)
-        _validate_preset_registry(self.project_root)
         bare, resolved_kind = _resolve_kind_hint(name, kind)
 
         from ..presets import PresetError, PresetResolver  # lazy: avoids circular import
 
+        # Project and registry validation happens once, inside
+        # ``_collect_inventory`` below — the same chokepoint ``list_artifacts``
+        # uses — so both public methods fail closed identically instead of
+        # each re-implementing the checks.
         inventory, layers_cache = self._collect_inventory()
         if resolved_kind is None:
             matches = [
