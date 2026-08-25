@@ -142,16 +142,16 @@ _SCRIPT_SUFFIX = ".sh"
 
 
 def _project_core_asset_root(project_root: Path | None, subdir: str) -> Path | None:
-    """Return the project-local core directory for an asset family, if present."""
+    """Return the project-local built-in-tier directory for an asset family, if present."""
     if project_root is None:
         return None
-    candidate = project_root / ".specify" / "templates"
-    if subdir == "commands":
-        candidate /= "commands"
-    elif subdir == "scripts":
-        candidate /= "scripts"
-    elif subdir != "templates":  # pragma: no cover — internal misuse
-        return None
+    if subdir not in {"commands", "scripts", "templates"}:
+        return None  # pragma: no cover — internal misuse
+    from ..presets import PresetResolver  # lazy: avoids circular import
+
+    candidate = PresetResolver(project_root).templates_dir
+    if subdir != "templates":
+        candidate = candidate / subdir
     return candidate if candidate.is_dir() else None
 
 
