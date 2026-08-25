@@ -544,7 +544,6 @@ class ArtifactCatalog:
 
         resolver = PresetResolver(self.project_root)
         layers_cache: dict[tuple[ArtifactKind, str], list[dict[str, Any]]] = {}
-        resolved_cache: dict[tuple[ArtifactKind, str], bool] = {}
 
         def _layers_for(kind: ArtifactKind, name: str) -> list[dict[str, Any]]:
             key = (kind, name)
@@ -555,14 +554,8 @@ class ArtifactCatalog:
                     raise ArtifactResolutionError() from exc
             return layers_cache[key]
 
-        def _is_resolved(kind: ArtifactKind, name: str) -> bool:
-            key = (kind, name)
-            if key not in resolved_cache:
-                try:
-                    resolved_cache[key] = resolver.resolve_content(name, kind) is not None
-                except (OSError, PresetError) as exc:
-                    raise ArtifactResolutionError() from exc
-            return resolved_cache[key]
+        def _has_replace_base(layers: list[dict[str, Any]]) -> bool:
+            return any(layer.get("strategy") == "replace" for layer in layers)
 
         names: set[tuple[ArtifactKind, str]] = set()
         try:
@@ -570,7 +563,8 @@ class ArtifactCatalog:
                 key = (kind, name)
                 if not _is_valid_artifact_name_component(name, kind):
                     continue
-                if _layers_for(kind, name) and _is_resolved(kind, name):
+                layers = _layers_for(kind, name)
+                if layers and _has_replace_base(layers):
                     names.add(key)
         except (OSError, PresetError) as exc:
             raise ArtifactResolutionError() from exc
@@ -616,9 +610,15 @@ class ArtifactCatalog:
         _validate_preset_registry(self.project_root)
         bare, resolved_kind = _resolve_kind_hint(name, kind)
 
+        from ..presets import PresetError, PresetResolver  # lazy: avoids circular import
+
         inventory = self.list_artifacts()
         if resolved_kind is None:
-            matches = [(artifact.kind, artifact.name) for artifact in inventory if artifact.name == bare]
+            matches = [
+                (artifact.kind, artifact.name)
+                for artifact in inventory
+                if artifact.name == bare
+            ]
             if not matches:
                 raise ArtifactNotFoundError(name)
             if len(matches) > 1:
@@ -636,6 +636,13 @@ class ArtifactCatalog:
         )
         if artifact is None:
             raise ArtifactNotFoundError(name)
+        try:
+            if PresetResolver(self.project_root).resolve_content(
+                validated_name, resolved_kind
+            ) is None:
+                raise ArtifactNotFoundError(name)
+        except (OSError, PresetError) as exc:
+            raise ArtifactResolutionError() from exc
         stack = _build_stack(self.project_root, resolved_kind, validated_name)
         if not stack:
             raise ArtifactNotFoundError(name)
