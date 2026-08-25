@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable, Literal
+from typing import Any, Iterable, Literal
 
 import yaml
 
@@ -554,7 +554,7 @@ class ArtifactCatalog:
             return layers_cache[key]
 
         names: set[tuple[ArtifactKind, str]] = set()
-        for kind, name in self._iter_candidate_artifacts(resolver, _layers_for):
+        for kind, name in self._iter_candidate_artifacts(resolver):
             key = (kind, name)
             if not _is_valid_artifact_name_component(name, kind):
                 continue
@@ -644,7 +644,6 @@ class ArtifactCatalog:
     def _iter_candidate_artifacts(
         self,
         resolver: Any,
-        layers_for: Callable[[ArtifactKind, str], list[dict[str, Any]]],
     ) -> Iterable[tuple[ArtifactKind, str]]:
         """Yield candidate ``(kind, name)`` pairs from every resolver tier.
 
@@ -700,7 +699,7 @@ class ArtifactCatalog:
                         manifest = None
             yield from self._iter_pack_candidates(manifest, ext_dir)
 
-        yield from self._iter_project_override_candidates(resolver, layers_for)
+        yield from self._iter_project_override_candidates(resolver)
         yield from self._iter_core_candidates()
 
     @staticmethod
@@ -726,7 +725,6 @@ class ArtifactCatalog:
     def _iter_project_override_candidates(
         self,
         resolver: Any,
-        layers_for: Callable[[ArtifactKind, str], list[dict[str, Any]]],
     ) -> Iterable[tuple[ArtifactKind, str]]:
         """Yield candidate ``(kind, name)`` pairs for project overrides.
 
