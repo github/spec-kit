@@ -222,7 +222,7 @@ Identifiers are computed on demand from author-declared manifest content and are
 
 `PresetResolver.collect_all_layers()` returns layer dicts that each include a `lookupId` field pointing back to the originating contribution's `id`. Project-local overrides in `.specify/templates/overrides/` are a resolver-only concept — they carry a synthetic `project:_:{kind}:{name}` `lookupId` that intentionally does not match any manifest contribution.
 
-For the full grammar, including the hook name-component convention and the discriminator recipe used by extensions, see the [Extension API Reference — Contribution Identifiers](../../extensions/EXTENSION-API-REFERENCE.md#contribution-identifiers) section.
+For the full grammar, including the hook name-component convention and last-write-wins deduplication used by extensions, see the [Extension API Reference — Contribution Identifiers](../../extensions/EXTENSION-API-REFERENCE.md#contribution-identifiers) section.
 
 ## FAQ
 

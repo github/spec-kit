@@ -907,7 +907,7 @@ Manifest contribution identifier derivation reads only the in-memory declared ma
 
 ### Opacity guidance
 
-Identifiers are stable, but treat them as **opaque strings** in stored data (registries, cache files, external tooling). Do not parse them by string-splitting on `:` — the discriminator suffix and future grammar extensions may otherwise catch you out. If you only need to classify a stack entry's layer, use `layer_kind_from_lookup_id`; `derive_named_id` and `derive_hook_id` construct new identifiers rather than parsing existing ones.
+Identifiers are stable, but treat them as **opaque strings** in stored data (registries, cache files, external tooling). Do not parse them by string-splitting on `:` — hook ids contain a compound `{eventName}:{command}` component and future grammar extensions may otherwise catch you out. If you only need to classify a stack entry's layer, use `layer_kind_from_lookup_id`; `derive_named_id` and `derive_hook_id` construct new identifiers rather than parsing existing ones.
 
 
 
