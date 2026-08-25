@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-25T00:00:00Z",
+  "updated_at": "2026-08-25T15:08:04Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -4994,6 +4994,46 @@
       "stars": 0,
       "created_at": "2026-03-02T00:00:00Z",
       "updated_at": "2026-03-02T00:00:00Z"
+    },
+    "taco": {
+      "name": "Taco Review",
+      "id": "taco",
+      "description": "Packages Spec Kit features for human review and syncs edits and comments back.",
+      "author": "Arcadia822",
+      "version": "0.3.1",
+      "download_url": "https://github.com/Arcadia822/taco/archive/refs/tags/v0.3.1.zip",
+      "repository": "https://github.com/Arcadia822/taco",
+      "homepage": "https://github.com/Arcadia822/taco",
+      "documentation": "https://github.com/Arcadia822/taco/blob/main/extensions/taco/README.md",
+      "changelog": "https://github.com/Arcadia822/taco/blob/v0.3.1/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.16.0,<2.0.0",
+        "tools": [
+          {
+            "name": "node",
+            "version": ">=22",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 8
+      },
+      "tags": [
+        "documentation",
+        "review",
+        "spec-kit",
+        "human-in-the-loop"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-25T00:00:00Z",
+      "updated_at": "2026-08-25T00:00:00Z"
     },
     "tasks-to-project": {
       "name": "Tasks to GitHub Project",
