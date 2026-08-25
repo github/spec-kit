@@ -22,7 +22,6 @@ from .._assets import _locate_core_asset_dir
 from .._identifier import (
     PROJECT_OVERRIDE_LAYER,
     IdentifierComponentError,
-    derive_named_id,
     is_dotted_command_name,
     layer_kind_from_lookup_id,
     validate_component,
@@ -123,20 +122,8 @@ class ArtifactResolutionError(ArtifactError):
         super().__init__(self.message)
 
 
-# ---------------------------------------------------------------------------
-# Core-baseline enumeration
-# ---------------------------------------------------------------------------
-
 _TEMPLATE_SUFFIX = ".md"
 _SCRIPT_SUFFIX = ".sh"
-
-
-@dataclass(frozen=True)
-class _CoreBaselineRow:
-    name: str
-    kind: ArtifactKind
-    path: Path
-    description: str
 
 
 def _core_asset_root(subdir: str) -> Path | None:
@@ -162,6 +149,10 @@ def _project_core_asset_root(project_root: Path | None, subdir: str) -> Path | N
     elif subdir != "templates":  # pragma: no cover — internal misuse
         return None
     return candidate if candidate.is_dir() else None
+
+
+def _core_command_logical_name(stem: str) -> str:
+    return stem if stem.startswith("speckit.") else f"speckit.{stem}"
 
 
 def _extract_frontmatter_description(text: str) -> str:
@@ -230,7 +221,7 @@ def _extract_script_description(text: str) -> str:
 def _describe_artifact_file(path: Path, kind: ArtifactKind) -> str:
     """Return the on-disk description for an artifact file, else ``""``.
 
-    Routes to the same extractors the core baseline uses so a project
+    Routes to the same extractors the inventory uses so a project
     override reports its own metadata instead of inheriting the description
     of the core/preset layer it hides.
     """
@@ -241,174 +232,6 @@ def _describe_artifact_file(path: Path, kind: ArtifactKind) -> str:
     if kind == "script":
         return _extract_script_description(text)
     return _extract_frontmatter_description(text)
-
-
-def _enumerate_core_commands(project_root: Path | None = None) -> list[_CoreBaselineRow]:
-    """Enumerate every command shipped in the core baseline.
-
-    Names are surfaced with the ``speckit.`` prefix so they collide with
-    preset/extension contributions in a stable way — this is what the id
-    grammar ``command:speckit.constitution`` requires.
-    """
-    from ..extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
-    from ..presets import PresetResolver
-
-    commands_dir = _core_asset_root("commands")
-    project_commands_dir = _project_core_asset_root(project_root, "commands")
-    rows: list[_CoreBaselineRow] = []
-    if commands_dir is None and project_commands_dir is None:
-        return rows
-    logical_names = {
-        name if name.startswith("speckit.") else f"speckit.{name}"
-        for name in CORE_COMMAND_NAMES
-    }
-    if commands_dir is not None:
-        logical_names.update(
-            entry.stem if entry.stem.startswith("speckit.") else f"speckit.{entry.stem}"
-            for entry in commands_dir.iterdir()
-            if entry.is_file() and entry.suffix == _TEMPLATE_SUFFIX
-        )
-    if project_commands_dir is not None:
-        logical_names.update(
-            entry.stem if entry.stem.startswith("speckit.") else f"speckit.{entry.stem}"
-            for entry in project_commands_dir.iterdir()
-            if entry.is_file() and entry.suffix == _TEMPLATE_SUFFIX
-        )
-    rows_by_name: dict[str, _CoreBaselineRow] = {}
-    for logical_name in sorted(logical_names):
-        name_candidates = PresetResolver.core_name_candidates(logical_name)
-        project_candidates = (
-            tuple(project_commands_dir / f"{name}.md" for name in name_candidates)
-            if project_commands_dir is not None
-            else ()
-        )
-        bundled_candidates = (
-            tuple(commands_dir / f"{name}.md" for name in name_candidates)
-            if commands_dir is not None
-            else ()
-        )
-        path = next(
-            (
-                candidate
-                for candidate in (*project_candidates, *bundled_candidates)
-                if candidate.is_file()
-            ),
-            None,
-        )
-        if path is None:
-            continue
-        if logical_name in rows_by_name:
-            continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            text = ""
-        rows_by_name[logical_name] = _CoreBaselineRow(
-            name=logical_name,
-            kind="command",
-            path=path,
-            description=_extract_frontmatter_description(text),
-        )
-    rows.extend(rows_by_name[name] for name in sorted(rows_by_name))
-    return rows
-
-
-def _enumerate_core_templates(project_root: Path | None = None) -> list[_CoreBaselineRow]:
-    templates_dir = _core_asset_root("templates")
-    project_templates_dir = _project_core_asset_root(project_root, "templates")
-    rows: list[_CoreBaselineRow] = []
-    seen: set[str] = set()
-    for directory in (project_templates_dir, templates_dir):
-        if directory is None:
-            continue
-        for entry in sorted(directory.iterdir(), key=lambda p: p.name):
-            if (
-                not entry.is_file()
-                or entry.suffix != _TEMPLATE_SUFFIX
-                or entry.stem in seen
-            ):
-                continue
-            seen.add(entry.stem)
-            try:
-                text = entry.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                text = ""
-            rows.append(
-                _CoreBaselineRow(
-                    name=entry.stem,
-                    kind="template",
-                    path=entry,
-                    description=_extract_frontmatter_description(text),
-                )
-            )
-    return rows
-
-
-def _enumerate_core_scripts(project_root: Path | None = None) -> list[_CoreBaselineRow]:
-    scripts_dir = _core_asset_root("scripts")
-    project_scripts_dir = _project_core_asset_root(project_root, "scripts")
-    rows: list[_CoreBaselineRow] = []
-    seen: dict[str, _CoreBaselineRow] = {}
-    for directory in (project_scripts_dir, scripts_dir):
-        if directory is None:
-            continue
-        for entry in sorted(directory.glob(f"*{_SCRIPT_SUFFIX}"), key=lambda p: p.name):
-            if entry.stem not in seen:
-                seen[entry.stem] = _core_script_row(entry, entry.stem)
-        for runtime_dir in sorted(directory.iterdir(), key=lambda p: p.name):
-            if not runtime_dir.is_dir():
-                continue
-            for entry in sorted(runtime_dir.iterdir(), key=lambda p: p.name):
-                if not entry.is_file():
-                    continue
-                name = canonical_script_name(entry)
-                if name is not None and name not in seen:
-                    seen[name] = _core_script_row(entry, name)
-    rows.extend(sorted(seen.values(), key=lambda r: r.name))
-    return rows
-
-
-def _core_script_row(path: Path, name: str) -> _CoreBaselineRow:
-    try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        text = ""
-    return _CoreBaselineRow(
-        name=name,
-        kind="script",
-        path=path,
-        description=_extract_script_description(text),
-    )
-
-
-@dataclass(frozen=True)
-class CoreBaseline:
-    """The union of the three core enumerators, indexed for O(1) lookup."""
-
-    commands: tuple[_CoreBaselineRow, ...]
-    templates: tuple[_CoreBaselineRow, ...]
-    scripts: tuple[_CoreBaselineRow, ...]
-
-    @classmethod
-    def load(cls, project_root: Path | None = None) -> "CoreBaseline":
-        return cls(
-            commands=tuple(_enumerate_core_commands(project_root)),
-            templates=tuple(_enumerate_core_templates(project_root)),
-            scripts=tuple(_enumerate_core_scripts(project_root)),
-        )
-
-    def by_kind(self, kind: ArtifactKind) -> tuple[_CoreBaselineRow, ...]:
-        return {
-            "command": self.commands,
-            "template": self.templates,
-            "script": self.scripts,
-        }[kind]
-
-    def find(self, kind: ArtifactKind, name: str) -> _CoreBaselineRow | None:
-        for row in self.by_kind(kind):
-            if row.name == name:
-                return row
-        return None
 
 
 # ---------------------------------------------------------------------------
@@ -495,7 +318,7 @@ def _build_stack(
     ``active`` / ``hidden`` labels documented on the data model.
 
     Returns an empty list when the artifact is not visible from any tier
-    (no preset, no extension, no core baseline row).
+    (no preset, no extension, no core asset).
     """
     from ..presets import PresetResolver  # lazy: avoids circular import
 
@@ -694,7 +517,6 @@ class ArtifactCatalog:
 
     def __init__(self, project_root: Path) -> None:
         self.project_root = project_root
-        self._baseline: CoreBaseline | None = None
 
     # ------------------------------------------------------------------ list
     def list_artifacts(self) -> list[Artifact]:
@@ -703,8 +525,8 @@ class ArtifactCatalog:
         Sort order is deterministic — first by ``kind`` in the fixed
         ``["command", "template", "script"]`` order, then by ``name``.
         Returns an empty list when no artifacts are found rather than raising;
-        a fresh install with no presets, no extensions, and an empty core
-        baseline is still a valid Spec Kit project.
+        a fresh install with no presets, no extensions, and no core assets is
+        still a valid Spec Kit project.
 
         Skills (``.github/skills/**/SKILL.md``) are intentionally excluded —
         they are integration-specific output, not a shipped asset family.
@@ -719,7 +541,6 @@ class ArtifactCatalog:
         _validate_project(self.project_root)
         _validate_extension_registry(self.project_root)
         _validate_preset_registry(self.project_root)
-        baseline = self._get_baseline()
 
         from ..presets import PresetResolver  # lazy: avoids circular import
 
@@ -733,35 +554,18 @@ class ArtifactCatalog:
             return layers_cache[key]
 
         names: set[tuple[ArtifactKind, str]] = set()
-        descriptions_by_layer: dict[tuple[ArtifactKind, str], dict[str, str]] = {}
-
-        for row in (*baseline.commands, *baseline.templates, *baseline.scripts):
-            if not _is_valid_artifact_name_component(row.name, row.kind):
-                continue
-            key = (row.kind, row.name)
-            names.add(key)
-            core_lookup_id = derive_named_id("core", "_", row.kind, row.name)
-            descriptions_by_layer.setdefault(key, {}).setdefault(
-                core_lookup_id, row.description
-            )
-
-        for kind, name, description, lookup_id in self._iter_contribution_artifacts(
-            resolver, _layers_for
-        ):
+        for kind, name in self._iter_candidate_artifacts(resolver, _layers_for):
             key = (kind, name)
-            names.add(key)
-            layer_descriptions = descriptions_by_layer.setdefault(key, {})
-            if lookup_id not in layer_descriptions or (
-                description and not layer_descriptions[lookup_id]
-            ):
-                layer_descriptions[lookup_id] = description
+            if not _is_valid_artifact_name_component(name, kind):
+                continue
+            if _layers_for(kind, name):
+                names.add(key)
 
         artifacts: list[Artifact] = []
         for kind, name in names:
-            layer_descriptions = descriptions_by_layer.get((kind, name), {})
             description = ""
             for layer in _layers_for(kind, name):
-                candidate = layer_descriptions.get(layer["lookupId"], "")
+                candidate = self._describe_layer(layer, kind, name)
                 if candidate:
                     description = candidate
                     break
@@ -819,11 +623,6 @@ class ArtifactCatalog:
         }
 
     # -------------------------------------------------------------- internals
-    def _get_baseline(self) -> CoreBaseline:
-        if self._baseline is None:
-            self._baseline = CoreBaseline.load(self.project_root)
-        return self._baseline
-
     def _find_matches(self, name: str) -> list[tuple[ArtifactKind, str]]:
         """Return every (kind, name) pair whose name matches exactly."""
         artifacts = self.list_artifacts()
@@ -841,14 +640,14 @@ class ArtifactCatalog:
                 return artifact.description
         return ""
 
-    def _iter_contribution_artifacts(
+    def _iter_candidate_artifacts(
         self,
         resolver: Any,
         layers_for: Callable[[ArtifactKind, str], list[dict[str, Any]]],
-    ) -> Iterable[tuple[ArtifactKind, str, str, str]]:
-        """Yield ``(kind, name, description, lookup_id)`` for visible contributions.
+    ) -> Iterable[tuple[ArtifactKind, str]]:
+        """Yield candidate ``(kind, name)`` pairs from every resolver tier.
 
-        Covers the two ways a pack can contribute an artifact:
+        Covers the ways a pack can contribute an artifact:
 
         * manifest-declared entries (``preset.yml`` / ``extension.yml``), read
           via each manifest class's own ``iter_contributions()`` rather than
@@ -856,23 +655,12 @@ class ArtifactCatalog:
         * convention-placed extension files (``commands/``, ``templates/``,
           ``scripts/``) that the resolver picks up even without a manifest.
 
-        Presets are enumerated through ``PresetManager.list_installed()`` —
-        presets have no unregistered-directory fallback in the resolver (see
-        ``PresetResolver._get_all_presets_by_priority``), so the registry is
-        the complete set. Extensions additionally admit unregistered
-        directories at implicit priority 10 (see
-        ``PresetResolver._get_all_extensions_by_priority``), so those are
-        folded in alongside the registered set. Either way, every yielded
-        contribution is still checked against the resolver's own
-        ``collect_all_layers()`` output (via ``layers_for``, the cache shared
-        with :meth:`list_artifacts`) before being surfaced, so a disabled
-        pack, an orphaned directory the resolver would not admit, or a
-        declared-but-unusable entry cannot appear in the inventory.
-
-        The ``lookup_id`` is the same ``lookupId`` string
-        ``collect_all_layers()`` uses for this layer, so the caller can
-        resolve each artifact's description by precedence instead of
-        enumeration order.
+        Presets and extensions are enumerated through the resolver's public
+        ``iter_*_by_priority()`` helpers, so the candidate set follows the same
+        install/enable/priority rules as resolution. Project overrides and
+        resolver-compatible core asset paths are included only as candidate
+        names; :meth:`PresetResolver.collect_all_layers` remains the source of
+        truth for which candidates are actually present and which layer wins.
 
         Project-local overrides under ``.specify/templates/overrides`` are
         included too, so an artifact that exists only as an override is still
@@ -886,24 +674,19 @@ class ArtifactCatalog:
         from ..extensions import ExtensionManager, ExtensionManifest, ValidationError
         from ..presets import PresetManager  # lazy: avoids circular import
 
-        def _lookup_ids(kind: ArtifactKind, name: str) -> set[str]:
-            return {layer["lookupId"] for layer in layers_for(kind, name)}
-
         # -- Presets: the registry is authoritative, no unregistered fallback.
         preset_manager = PresetManager(self.project_root)
         for pack_id, _metadata in resolver.iter_presets_by_priority():
             pack_dir = preset_manager.presets_dir / pack_id
             manifest = preset_manager.get_pack(pack_id)
-            yield from self._iter_pack_contributions(
-                manifest, pack_dir, "preset", pack_id, _lookup_ids
-            )
+            yield from self._iter_pack_candidates(manifest, pack_dir)
 
         # -- Extensions: use the resolver's own extension enumeration order and
         # identity (directory name), including safe-id and corrupt-registry
         # handling from PresetResolver.iter_extensions_by_priority().
         ext_manager = ExtensionManager(self.project_root)
         for _priority, ext_id, metadata in resolver.iter_extensions_by_priority():
-            ext_dir = ext_manager.extensions_dir / ext_id
+            ext_dir = resolver.extensions_dir / ext_id
             if metadata is not None:
                 manifest = ext_manager.get_extension(ext_id)
             else:
@@ -912,66 +695,34 @@ class ArtifactCatalog:
                 if manifest_path.is_file():
                     try:
                         manifest = ExtensionManifest(manifest_path)
-                    except ValidationError:
+                    except (ValidationError, OSError, TypeError, AttributeError):
                         manifest = None
-            yield from self._iter_pack_contributions(
-                manifest, ext_dir, "extension", ext_id, _lookup_ids
-            )
+            yield from self._iter_pack_candidates(manifest, ext_dir)
 
-        yield from self._iter_project_override_artifacts(resolver)
+        yield from self._iter_project_override_candidates(resolver, layers_for)
+        yield from self._iter_core_candidates()
 
     @staticmethod
-    def _iter_pack_contributions(
+    def _iter_pack_candidates(
         manifest: Any,
         pack_dir: Path,
-        layer: str,
-        source_id: str,
-        lookup_ids: Callable[[ArtifactKind, str], set[str]],
-    ) -> Iterable[tuple[ArtifactKind, str, str, str]]:
-        """Yield ``(kind, name, description, lookup_id)`` for one pack.
-
-        ``manifest`` is a validated ``PresetManifest``/``ExtensionManifest``
-        (or ``None`` if the pack has no usable manifest). Declared
-        contributions come from the manifest's own ``iter_contributions()``;
-        convention-placed files are scanned separately since they exist
-        whether or not any manifest declares them.
-        """
+    ) -> Iterable[tuple[ArtifactKind, str]]:
+        """Yield manifest-declared and convention-based candidate names."""
         if manifest is not None:
             for contribution in manifest.iter_contributions():
                 kind = contribution.get("kind")
                 name = contribution.get("name")
-                if kind not in ("command", "template", "script"):
-                    continue
-                if not isinstance(name, str) or not name or ":" in name:
-                    continue
-                description = contribution.get("description", "")
-                if not isinstance(description, str):
-                    description = ""
-                # Use the manifest-computed id verbatim so the join with
-                # ``collect_all_layers()`` stays direct even when the
-                # installed directory (``source_id``) differs from the
-                # manifest's declared ``id:`` (renamed pack). The resolver's
-                # manifest-declared preset/extension layers derive their
-                # ``lookupId`` from ``manifest.id`` for the same reason.
-                lookup_id = contribution.get("id")
-                if not isinstance(lookup_id, str) or not lookup_id:
-                    continue
-                if lookup_id in lookup_ids(kind, name):
-                    yield kind, name, description, lookup_id
+                if kind in ("command", "template", "script") and isinstance(name, str):
+                    yield kind, name
 
-        # Convention fallback: a preset/extension file placed at the
-        # conventional path resolves whether or not the manifest declares it,
-        # so it belongs in the inventory as well.
-        for kind, name, path in _iter_convention_contributions(pack_dir):
-            lookup_id = derive_named_id(layer, source_id, kind, name)
-            if lookup_id in lookup_ids(kind, name):
-                yield kind, name, _describe_artifact_file(path, kind), lookup_id
+        yield from ((kind, name) for kind, name, _path in _iter_convention_contributions(pack_dir))
 
-    def _iter_project_override_artifacts(
+    def _iter_project_override_candidates(
         self,
         resolver: Any,
-    ) -> Iterable[tuple[ArtifactKind, str, str, str]]:
-        """Yield ``(kind, name, description, lookup_id)`` for project overrides.
+        layers_for: Callable[[ArtifactKind, str], list[dict[str, Any]]],
+    ) -> Iterable[tuple[ArtifactKind, str]]:
+        """Yield candidate ``(kind, name)`` pairs for project overrides.
 
         A root ``overrides/<name>.md`` file is the override for both the
         ``template`` and the ``command`` lookup of ``<name>``. It is reported
@@ -1003,8 +754,7 @@ class ArtifactCatalog:
             if not backed_kinds:
                 backed_kinds.append("command" if is_dotted_command_name(name) else "template")
             for kind in backed_kinds:
-                lookup_id = derive_named_id(PROJECT_OVERRIDE_LAYER, "_", kind, name)
-                yield kind, name, _describe_artifact_file(entry, kind), lookup_id
+                yield kind, name
         scripts_dir = overrides_dir / "scripts"
         if not scripts_dir.is_dir():
             return
@@ -1012,8 +762,130 @@ class ArtifactCatalog:
             if entry.is_file() and entry.suffix == _SCRIPT_SUFFIX:
                 if not _is_valid_artifact_name_component(entry.stem, "script"):
                     continue
-                lookup_id = derive_named_id(PROJECT_OVERRIDE_LAYER, "_", "script", entry.stem)
-                yield "script", entry.stem, _describe_artifact_file(entry, "script"), lookup_id
+                yield "script", entry.stem
+
+    def _iter_core_candidates(self) -> Iterable[tuple[ArtifactKind, str]]:
+        """Yield candidate names from resolver-compatible core asset paths."""
+        from ..extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
+        from ..presets import PresetResolver
+
+        project_commands_dir = _project_core_asset_root(self.project_root, "commands")
+        bundled_commands_dir = _core_asset_root("commands")
+        command_dirs = tuple(
+            directory
+            for directory in (project_commands_dir, bundled_commands_dir)
+            if directory is not None
+        )
+        command_names = {_core_command_logical_name(name) for name in CORE_COMMAND_NAMES}
+        for directory in command_dirs:
+            for entry in sorted(directory.iterdir(), key=lambda p: p.name):
+                if entry.is_file() and entry.suffix == _TEMPLATE_SUFFIX:
+                    command_names.add(_core_command_logical_name(entry.stem))
+        for name in sorted(command_names):
+            if any(
+                (directory / f"{candidate}.md").is_file()
+                for directory in command_dirs
+                for candidate in PresetResolver.core_name_candidates(name)
+            ):
+                yield "command", name
+
+        for directory in (
+            _project_core_asset_root(self.project_root, "templates"),
+            _core_asset_root("templates"),
+        ):
+            if directory is None:
+                continue
+            for entry in sorted(directory.iterdir(), key=lambda p: p.name):
+                if entry.is_file() and entry.suffix == _TEMPLATE_SUFFIX:
+                    yield "template", entry.stem
+
+        seen_scripts: set[str] = set()
+        for directory in (
+            _project_core_asset_root(self.project_root, "scripts"),
+            _core_asset_root("scripts"),
+        ):
+            if directory is None:
+                continue
+            for entry in sorted(directory.glob(f"*{_SCRIPT_SUFFIX}"), key=lambda p: p.name):
+                if entry.stem not in seen_scripts:
+                    seen_scripts.add(entry.stem)
+                    yield "script", entry.stem
+            for runtime_dir in sorted(directory.iterdir(), key=lambda p: p.name):
+                if not runtime_dir.is_dir():
+                    continue
+                for entry in sorted(runtime_dir.iterdir(), key=lambda p: p.name):
+                    if not entry.is_file():
+                        continue
+                    name = canonical_script_name(entry)
+                    if name is not None and name not in seen_scripts:
+                        seen_scripts.add(name)
+                        yield "script", name
+
+    def _describe_layer(
+        self,
+        layer: dict[str, Any],
+        kind: ArtifactKind,
+        name: str,
+    ) -> str:
+        """Return manifest metadata or on-disk metadata for one resolver layer."""
+        manifest_description = self._manifest_description_for_layer(layer, kind, name)
+        if manifest_description:
+            return manifest_description
+        path = layer.get("path")
+        if isinstance(path, Path):
+            return _describe_artifact_file(path, kind)
+        return ""
+
+    def _manifest_description_for_layer(
+        self,
+        layer: dict[str, Any],
+        kind: ArtifactKind,
+        name: str,
+    ) -> str:
+        lookup_id = layer.get("lookupId", "")
+        layer_kind = layer_kind_from_lookup_id(lookup_id)
+        manifest = None
+        if layer_kind == "preset":
+            pack_dir = layer.get("pack_dir")
+            if not isinstance(pack_dir, Path):
+                preset_id = layer.get("preset_id")
+                if not preset_id:
+                    return ""
+                pack_dir = self.project_root / ".specify" / "presets" / preset_id
+            manifest_path = pack_dir / "preset.yml"
+            if manifest_path.is_file():
+                try:
+                    from ..presets import PresetManifest, PresetValidationError
+
+                    manifest = PresetManifest(manifest_path)
+                except (PresetValidationError, OSError, TypeError, AttributeError):
+                    manifest = None
+        elif layer_kind == "extension":
+            ext_dir = layer.get("extension_dir")
+            if not isinstance(ext_dir, Path):
+                extension_id = layer.get("extension_id")
+                if not extension_id:
+                    return ""
+                ext_dir = self.project_root / ".specify" / "extensions" / extension_id
+            manifest_path = ext_dir / "extension.yml"
+            if manifest_path.is_file():
+                try:
+                    from ..extensions import ExtensionManifest, ValidationError
+
+                    manifest = ExtensionManifest(manifest_path)
+                except (ValidationError, OSError, TypeError, AttributeError):
+                    manifest = None
+        if manifest is None:
+            return ""
+        for contribution in manifest.iter_contributions():
+            if (
+                contribution.get("id") == lookup_id
+                and contribution.get("kind") == kind
+                and contribution.get("name") == name
+            ):
+                description = contribution.get("description", "")
+                return description if isinstance(description, str) else ""
+        return ""
 
 
 _CONVENTION_SUBDIRS: tuple[tuple[str, ArtifactKind, str], ...] = (
@@ -1057,7 +929,6 @@ __all__ = [
     "ArtifactKind",
     "ArtifactNotFoundError",
     "ArtifactResolutionError",
-    "CoreBaseline",
     "LayerName",
     "NotASpecKitProjectError",
     "StackLayer",
