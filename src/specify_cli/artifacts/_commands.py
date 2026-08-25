@@ -105,7 +105,7 @@ def artifact_list(
     try:
         root = _resolve_project_root()
         catalog = ArtifactCatalog(root)
-        rows = [artifact.to_json_dict() for artifact in catalog.list_artifacts()]
+        rows = catalog.list_artifacts_with_stack()
     except ArtifactError as exc:
         _emit_error_and_exit(exc)
         return  # pragma: no cover — _emit_error_and_exit raises

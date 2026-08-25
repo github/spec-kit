@@ -571,6 +571,22 @@ class ArtifactCatalog:
         artifacts, _layers_cache = self._collect_inventory()
         return artifacts
 
+    def list_artifacts_with_stack(self) -> list[dict[str, Any]]:
+        """Return list rows enriched with each artifact's full composition stack."""
+        artifacts, layers_cache = self._collect_inventory()
+        rows: list[dict[str, Any]] = []
+        for artifact in artifacts:
+            stack = _build_stack(
+                self.project_root,
+                artifact.kind,
+                artifact.name,
+                raw_layers=layers_cache.get((artifact.kind, artifact.name)),
+            )
+            row = artifact.to_json_dict()
+            row["stack"] = [layer.to_json_dict() for layer in stack]
+            rows.append(row)
+        return rows
+
     # ------------------------------------------------------------------ info
     def get_artifact_info(
         self,

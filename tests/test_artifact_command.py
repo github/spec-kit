@@ -722,6 +722,23 @@ class TestCLI:
         assert isinstance(payload, list)
         assert result.stdout.endswith("\n")
 
+    def test_list_json_rows_include_stack(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.chdir(spec_kit_project)
+        runner = CliRunner()
+        result = runner.invoke(app, ["artifact", "list", "--json"])
+        assert result.exit_code == 0, result.stderr
+        payload = json.loads(result.stdout)
+        assert payload, "expected at least one artifact"
+
+        row = payload[0]
+        assert set(row.keys()) == {"id", "name", "kind", "description", "stack"}
+        assert isinstance(row["stack"], list)
+
+        info_result = runner.invoke(app, ["artifact", "info", row["id"], "--json"])
+        assert info_result.exit_code == 0, info_result.stderr
+        info = json.loads(info_result.stdout)
+        assert row["stack"] == info["stack"]
+
     def test_list_json_is_pretty_printed(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.chdir(spec_kit_project)
         runner = CliRunner()
