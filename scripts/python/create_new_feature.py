@@ -394,7 +394,37 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Error: {exc}", file=sys.stderr)
                 return 1
 
-        feature_dir.mkdir(parents=True, exist_ok=True)
+        # Exclusive create: mkdir without exist_ok fails if another invocation
+        # reserved the same FEATURE_DIR after the exists check above. Rescan
+        # and retry before writing spec.md so the loser cannot overwrite it.
+        while True:
+            if args.allow_existing and feature_dir.is_dir():
+                break
+            try:
+                feature_dir.mkdir(parents=True)
+                break
+            except FileExistsError:
+                if args.allow_existing:
+                    break
+                if args.use_timestamp:
+                    print(
+                        f"Error: Feature directory '{feature_dir}' already exists. "
+                        "Rerun to get a new timestamp or use a different --short-name.",
+                        file=sys.stderr,
+                    )
+                    return 1
+                number = _get_highest_from_specs(specs_dir) + 1
+                if number > _MAX_FEATURE_NUMBER:
+                    print(
+                        f"Error: feature number must be between 0 and "
+                        f"{_MAX_FEATURE_NUMBER}, got '{number}'",
+                        file=sys.stderr,
+                    )
+                    return 1
+                feature_num = f"{number:03d}"
+                branch_name = _fit_branch_name(feature_num, branch_suffix)
+                feature_dir = specs_dir / branch_name
+                spec_file = feature_dir / "spec.md"
 
         if needs_spec:
             if template_content is not None:

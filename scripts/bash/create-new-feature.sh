@@ -176,6 +176,21 @@ fit_branch_name() {
     printf '%s' "$branch_name"
 }
 
+# After a lost exclusive mkdir, pick the next sequential number.
+rescan_sequential_feature() {
+    local highest
+    highest=$(get_highest_from_specs "$SPECS_DIR")
+    if [ "$highest" -eq "$MAX_FEATURE_NUMBER" ]; then
+        echo "Error: feature number must be between 0 and $MAX_FEATURE_NUMBER, got '9223372036854775808'" >&2
+        exit 1
+    fi
+    BRANCH_NUMBER=$((highest + 1))
+    FEATURE_NUM=$(printf "%03d" "$((10#$BRANCH_NUMBER))")
+    BRANCH_NAME=$(fit_branch_name "$FEATURE_NUM" "$BRANCH_SUFFIX")
+    FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
+    SPEC_FILE="$FEATURE_DIR/spec.md"
+}
+
 # Quote a value for POSIX shell reuse, byte-identical to Python's shlex.quote
 # so the persistence hints match the Python variant exactly (printf %q output
 # differs between bash versions and from shlex.quote for spaces/metachars).
@@ -368,7 +383,29 @@ if [ "$DRY_RUN" != true ]; then
         fi
     fi
 
-    mkdir -p "$FEATURE_DIR"
+    # Exclusive create: plain mkdir fails with EEXIST if another invocation
+    # reserved the same FEATURE_DIR after the exists check above. Rescan
+    # and retry before writing spec.md so the loser cannot overwrite it.
+    while true; do
+        if [ "$ALLOW_EXISTING" = true ] && [ -d "$FEATURE_DIR" ]; then
+            break
+        fi
+        if mkdir "$FEATURE_DIR" 2>/dev/null; then
+            break
+        fi
+        if [ ! -d "$FEATURE_DIR" ]; then
+            echo "Error: could not create feature directory '$FEATURE_DIR'" >&2
+            exit 1
+        fi
+        if [ "$ALLOW_EXISTING" = true ]; then
+            break
+        fi
+        if [ "$USE_TIMESTAMP" = true ]; then
+            >&2 echo "Error: Feature directory '$FEATURE_DIR' already exists. Rerun to get a new timestamp or use a different --short-name."
+            exit 1
+        fi
+        rescan_sequential_feature
+    done
 
     if [ "$NEEDS_SPEC" = true ]; then
         if [ "$SPEC_TEMPLATE_FOUND" = true ]; then
