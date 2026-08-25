@@ -227,6 +227,22 @@ def _extract_script_description(text: str) -> str:
     return ""
 
 
+def _describe_artifact_file(path: Path, kind: ArtifactKind) -> str:
+    """Return the on-disk description for an artifact file, else ``""``.
+
+    Routes to the same extractors the core baseline uses so a project
+    override reports its own metadata instead of inheriting the description
+    of the core/preset layer it hides.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
+    if kind == "script":
+        return _extract_script_description(text)
+    return _extract_frontmatter_description(text)
+
+
 def _enumerate_core_commands(project_root: Path | None = None) -> list[_CoreBaselineRow]:
     """Enumerate every command shipped in the core baseline.
 
@@ -955,7 +971,7 @@ class ArtifactCatalog:
         self,
         resolver: Any,
     ) -> Iterable[tuple[ArtifactKind, str, str, str]]:
-        """Yield ``(kind, name, "", lookup_id)`` for project-local overrides.
+        """Yield ``(kind, name, description, lookup_id)`` for project overrides.
 
         A root ``overrides/<name>.md`` file is the override for both the
         ``template`` and the ``command`` lookup of ``<name>``, so it is
@@ -985,7 +1001,7 @@ class ArtifactCatalog:
             is_command = backed_by_command or is_dotted_command_name(name)
             kind: ArtifactKind = "command" if is_command else "template"
             lookup_id = derive_named_id(PROJECT_OVERRIDE_LAYER, "_", kind, name)
-            yield kind, name, "", lookup_id
+            yield kind, name, _describe_artifact_file(entry, kind), lookup_id
         scripts_dir = overrides_dir / "scripts"
         if not scripts_dir.is_dir():
             return
@@ -994,7 +1010,7 @@ class ArtifactCatalog:
                 if not _is_valid_artifact_name_component(entry.stem, "script"):
                     continue
                 lookup_id = derive_named_id(PROJECT_OVERRIDE_LAYER, "_", "script", entry.stem)
-                yield "script", entry.stem, "", lookup_id
+                yield "script", entry.stem, _describe_artifact_file(entry, "script"), lookup_id
 
 
 _CONVENTION_SUBDIRS: tuple[tuple[str, ArtifactKind, str], ...] = (
@@ -1042,5 +1058,3 @@ __all__ = [
     "StackLayer",
     "Strategy",
 ]
-
-_ = derive_named_id  # keep the import edge visible for tooling

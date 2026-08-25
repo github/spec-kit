@@ -5113,7 +5113,12 @@ class PresetResolver:
         """Return preset directories in resolver lookup order.
 
         Each entry is ``(pack_id, metadata)`` where ``pack_id`` is the registry
-        key/directory name used in lookup identifiers.
+        key / on-disk directory name. That key identifies *where* the pack
+        lives — it is used for lookup and provenance, and as the ``sourceId``
+        of convention-only contribution IDs. Manifest-declared layers instead
+        take their ``lookupId`` ``sourceId`` from ``PresetManifest.id`` so the
+        ID joins directly to the manifest's own contributions even when the
+        installed directory was renamed.
         """
         return self._get_all_presets_by_priority()
 
@@ -5266,7 +5271,12 @@ class PresetResolver:
         """Return extension directories in resolver lookup order.
 
         Each entry is ``(priority, ext_id, metadata_or_none)`` where ``ext_id``
-        is always the on-disk directory name used in lookup identifiers.
+        is always the on-disk directory name. That name identifies *where* the
+        extension lives — it is used for lookup and provenance, and as the
+        ``sourceId`` of convention-only contribution IDs. Manifest-declared
+        layers instead take their ``lookupId`` ``sourceId`` from
+        ``ExtensionManifest.id`` so the ID joins directly to the manifest's own
+        contributions even when the installed directory was renamed.
         """
         return self._get_all_extensions_by_priority()
 
@@ -5416,48 +5426,13 @@ class PresetResolver:
         # Priority 5: Bundled core_pack (wheel install) or repo-root templates
         # (source-checkout / editable install).  This is the canonical home for
         # speckit's built-in command/template files and must always be checked
-        # so that strategy:wrap presets can locate {CORE_TEMPLATE}.
-        from specify_cli import _locate_core_pack, _repo_root  # local import to avoid cycles
-        _core_pack = _locate_core_pack()
-        if _core_pack is not None:
-            # Wheel install path
-            if template_type == "template":
-                candidate = _core_pack / "templates" / f"{template_name}.md"
-            elif template_type == "command":
-                candidate = _core_pack / "commands" / f"{template_name}.md"
-                if not candidate.exists():
-                    stem = self._core_stem(template_name)
-                    if stem:
-                        candidate = _core_pack / "commands" / f"{stem}.md"
-            elif template_type == "script":
-                candidate = next(
-                    (path for path in script_variant_paths(_core_pack / "scripts", template_name) if path.exists()),
-                    None,
-                )
-            else:
-                candidate = _core_pack / f"{template_name}.md"
-            if candidate is not None and candidate.exists():
-                return candidate
-        else:
-            # Source-checkout / editable install: templates live at repo root
-            repo_root = _repo_root()
-            if template_type == "template":
-                candidate = repo_root / "templates" / f"{template_name}.md"
-            elif template_type == "command":
-                candidate = repo_root / "templates" / "commands" / f"{template_name}.md"
-                if not candidate.exists():
-                    stem = self._core_stem(template_name)
-                    if stem:
-                        candidate = repo_root / "templates" / "commands" / f"{stem}.md"
-            elif template_type == "script":
-                candidate = next(
-                    (path for path in script_variant_paths(repo_root / "scripts", template_name) if path.exists()),
-                    None,
-                )
-            else:
-                candidate = repo_root / f"{template_name}.md"
-            if candidate is not None and candidate.exists():
-                return candidate
+        # so that strategy:wrap presets can locate {CORE_TEMPLATE}.  Delegated
+        # to the shared core asset resolver via ``_find_bundled_core`` so this
+        # tier and ``collect_all_layers()`` never disagree about what "core"
+        # means on this machine.
+        bundled = self._find_bundled_core(template_name, template_type, ext)
+        if bundled is not None:
+            return bundled
 
         return None
 
