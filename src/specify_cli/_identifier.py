@@ -49,6 +49,10 @@ ever emit a matching ``id``, so consumers see "not found" for the lookup, which
 is the correct outcome for a layer with no originating manifest entry.
 """
 
+_LAYER_KINDS = frozenset({PROJECT_OVERRIDE_LAYER, "preset", "extension"})
+_CONTRIBUTION_KINDS = frozenset({"command", "template", "script", "hook"})
+_NAMED_CONTRIBUTION_KINDS = _CONTRIBUTION_KINDS - {"hook"}
+
 
 class IdentifierComponentError(ValueError):
     """Raised when a manifest component would break identifier grammar."""
@@ -100,11 +104,6 @@ def derive_named_id(layer: str, source_id: str, kind: str, name: str) -> str:
     validate_component(kind, "kind")
     validate_component(name, "name")
     return f"{layer}:{source_id}:{kind}:{name}"
-
-
-_LAYER_KINDS = frozenset({PROJECT_OVERRIDE_LAYER, "preset", "extension"})
-_CONTRIBUTION_KINDS = frozenset({"command", "template", "script", "hook"})
-_NAMED_CONTRIBUTION_KINDS = _CONTRIBUTION_KINDS - {"hook"}
 
 
 def derive_public_id(kind: str, name: str) -> str:

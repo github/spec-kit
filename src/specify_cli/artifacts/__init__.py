@@ -349,6 +349,8 @@ def _build_stack(
 
         layer_kind = layer_kind_from_lookup_id(lookup_id) if isinstance(lookup_id, str) else None
         source_id = lookup_id.split(":", 2)[1] if layer_kind else None
+        if lookup_id is not None and layer_kind is None:
+            raise ArtifactResolutionError()
 
         if layer_kind == PROJECT_OVERRIDE_LAYER:
             rows.append(
@@ -383,7 +385,7 @@ def _build_stack(
             )
             continue
 
-        if layer_kind != "preset":
+        if layer_kind is None:
             rows.append(
                 StackLayer(
                     layer=None,
