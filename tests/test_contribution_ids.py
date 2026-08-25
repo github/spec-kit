@@ -159,6 +159,10 @@ class TestLayerKindFromLookupId:
             ("preset:speckit-core:template:spec-template", "preset"),
             ("extension:speckit-git:script:post-commit", "extension"),
             (f"{PROJECT_OVERRIDE_LAYER}:_:template:spec-template", PROJECT_OVERRIDE_LAYER),
+            (
+                "extension:speckit-git:hook:before_specify:speckit.git.branch",
+                "extension",
+            ),
         ],
     )
     def test_recognized_layer_prefixes(self, lookup_id, expected):
@@ -171,6 +175,11 @@ class TestLayerKindFromLookupId:
             "bogus:_:command:speckit.plan",
             "core",
             ":_:command:speckit.plan",
+            "core:not-an-id",
+            "preset:x",
+            "core:_:command",
+            "extension:speckit-git:hook:before_specify",
+            "core::command:speckit.plan",
         ],
     )
     def test_unrecognized_or_malformed_returns_none(self, lookup_id):

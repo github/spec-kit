@@ -863,7 +863,7 @@ satisfied = version_satisfies("1.2.3", ">=1.0.0,<2.0.0")  # bool
 
 ## Contribution Identifiers
 
-Every command, template, script, and hook contributed by an extension (or a preset, or the core layer) is addressable at read time by a deterministic opaque identifier. Resolved artifact-stack layers carry a matching `lookupId` field that shares this grammar and identifies the layer's stack position. Manifest contribution `id` values and resolver `lookupId` values are **not always equal** — they only join directly when the installed directory name matches the manifest-declared `id:` (see [Determinism guarantees](#determinism-guarantees) below). Identifiers are **computed on demand from author-declared manifest content** and are **never persisted** to `.specify/` or to any cache file.
+Every command, template, script, and hook contributed by an extension (or a preset, or the core layer) is addressable at read time by a deterministic opaque identifier. Resolved artifact-stack layers carry a matching `lookupId` field that shares this grammar and identifies the layer's stack position. Manifest-declared preset and extension layers use the manifest's validated `id:` for `lookupId`'s `sourceId` component, so their `lookupId` joins directly to the matching `iter_contributions()` entry even after the installed directory is renamed; convention-only contributions have no manifest `id:` to consult and fall back to the on-disk directory / registry key instead (see [Determinism guarantees](#determinism-guarantees) below). Identifiers are **computed on demand from author-declared manifest content** and are **never persisted** to `.specify/` or to any cache file.
 
 ### Grammar
 
@@ -900,11 +900,11 @@ Project-local overrides in `.specify/templates/overrides/` are a resolver-only c
 
 `ExtensionManifest.iter_contributions()` yields dicts of the form `{layer, sourceId, kind, name, id, ...author-declared fields}`; each entry's `id` is the computed identifier. `ExtensionManifest.contribution_id(kind, name)` returns the id for a single lookup, or `None` if no contribution matches. `PresetManifest` exposes the same two methods.
 
-`PresetResolver.collect_all_layers()` returns layer dicts that include a `lookupId` field for every layer type (`project override`, preset, extension, core, and bundled core). Resolver `lookupId` values identify the layer by the resolver's registry key or directory name, which can differ from the manifest-declared source id used by `iter_contributions()`.
+`PresetResolver.collect_all_layers()` returns layer dicts that include a `lookupId` field for every layer type (`project override`, preset, extension, core, and bundled core). Manifest-declared preset and extension layers use the manifest's validated `id:` as the `lookupId` source id, so it matches the id `iter_contributions()` yields for that same contribution. Convention-only layers (no manifest entry declares the contribution) have no manifest id to consult, so their `lookupId` falls back to the resolver's registry key or on-disk directory name.
 
 ### Determinism guarantees
 
-Manifest contribution identifier derivation reads only the in-memory declared manifest content. No filesystem paths, no `os.environ`, no timestamps, and no file-content hashes contribute to those manifest ids. Copying an extension or preset to a different machine (or touching its files) does not change the identifiers it produces. Resolver `lookupId` values are stack identifiers, not manifest contribution ids: for example, an unregistered extension's directory name is the resolver source id, so renaming that directory changes its `lookupId`.
+Manifest contribution identifier derivation reads only the in-memory declared manifest content. No filesystem paths, no `os.environ`, no timestamps, and no file-content hashes contribute to those manifest ids. Copying an extension or preset to a different machine (or touching its files) does not change the identifiers it produces. Manifest-declared resolver `lookupId` values share this stability — renaming the installed directory of a preset or extension that declares an `id:` does not change its `lookupId`. Only convention-only contributions (undeclared in any manifest) derive their `lookupId` from the on-disk directory name or registry key, so renaming that directory does change their `lookupId`.
 
 ### Opacity guidance
 

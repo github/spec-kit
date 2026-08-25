@@ -407,13 +407,14 @@ def _derive_manifest_path(layer: dict[str, Any], project_root: Path) -> str | No
     Only ``preset`` and ``extension`` layers have an on-disk manifest — core
     and project-override layers return ``None``.
 
-    Since the resolver may set the ``lookupId``'s ``sourceId`` component to
-    the manifest-declared ``id:`` (which can differ from the on-disk directory
-    name for renamed packs), the on-disk directory is read from the layer's
-    explicit ``preset_id`` / ``pack_dir`` (preset layers) or
-    ``extension_id`` / ``extension_dir`` (extension layers) keys, falling
-    back to the ``lookupId`` ``sourceId`` only when those explicit keys are
-    absent.
+    The resolver may set the ``lookupId``'s ``sourceId`` component to the
+    manifest-declared ``id:`` (which can differ from the on-disk directory
+    name for renamed packs), so ``lookupId`` is never parsed for the on-disk
+    directory here. The on-disk directory identity is read exclusively from
+    the layer's explicit provenance keys — ``preset_id`` / ``pack_dir`` for
+    preset layers, ``extension_id`` / ``extension_dir`` for extension
+    layers — which ``collect_all_layers()`` always sets alongside
+    ``lookupId``. Missing provenance keys mean no manifest path is available.
 
     Uses ``as_posix()`` so the string is stable across Windows and POSIX — a
     caller comparing snapshots between operating systems gets the same value
@@ -423,36 +424,26 @@ def _derive_manifest_path(layer: dict[str, Any], project_root: Path) -> str | No
     layer_kind = layer_kind_from_lookup_id(lookup_id)
     if layer_kind == "preset":
         pack_dir = layer.get("pack_dir")
-        if isinstance(pack_dir, Path):
-            manifest_path = pack_dir / "preset.yml"
-            if not manifest_path.is_file():
-                return None
-            try:
-                return manifest_path.relative_to(project_root).as_posix()
-            except ValueError:
-                return None
-        pack_id = layer.get("preset_id") or _extract_lookup_pack_id(lookup_id)
+        pack_id = layer.get("preset_id")
         tier_dir, manifest_name = "presets", "preset.yml"
     elif layer_kind == "extension":
-        ext_dir = layer.get("extension_dir")
-        if isinstance(ext_dir, Path):
-            manifest_path = ext_dir / "extension.yml"
-            if not manifest_path.is_file():
-                return None
-            try:
-                return manifest_path.relative_to(project_root).as_posix()
-            except ValueError:
-                return None
-        pack_id = layer.get("extension_id") or _extract_lookup_pack_id(lookup_id)
+        pack_dir = layer.get("extension_dir")
+        pack_id = layer.get("extension_id")
         tier_dir, manifest_name = "extensions", "extension.yml"
     else:
         return None
-    if not pack_id:
+    if isinstance(pack_dir, Path):
+        manifest_path = pack_dir / manifest_name
+    elif pack_id:
+        manifest_path = project_root / ".specify" / tier_dir / pack_id / manifest_name
+    else:
         return None
-    manifest_path = project_root / ".specify" / tier_dir / pack_id / manifest_name
     if not manifest_path.is_file():
         return None
-    return manifest_path.relative_to(project_root).as_posix()
+    try:
+        return manifest_path.relative_to(project_root).as_posix()
+    except ValueError:
+        return None
 
 
 def _preset_display_name(pack_dir: Path, pack_id: str) -> str:
@@ -473,14 +464,6 @@ def _preset_display_name(pack_dir: Path, pack_id: str) -> str:
         return PresetManifest(manifest_path).name
     except PresetValidationError:
         return pack_id
-
-
-def _extract_lookup_pack_id(lookup_id: str) -> str | None:
-    """Return the ``sourceId`` segment of a lookupId, or ``None`` if malformed."""
-    parts = lookup_id.split(":")
-    if len(parts) < 4:
-        return None
-    return parts[1]
 
 
 def _build_stack(
@@ -579,11 +562,12 @@ def _build_stack(
             continue
 
         # Preset layers carry the on-disk directory identity separately from
-        # ``lookupId`` (which may use the manifest-declared ``id:``): prefer
-        # the explicit ``preset_id`` / ``pack_dir`` keys before falling back
-        # to parsing ``lookupId``, so a renamed pack still resolves to the
-        # right on-disk directory for display-name and manifest-path lookup.
-        pack_id = layer.get("preset_id") or _extract_lookup_pack_id(lookup_id) or ""
+        # ``lookupId`` (which may use the manifest-declared ``id:``): use the
+        # explicit ``preset_id`` / ``pack_dir`` keys ``collect_all_layers()``
+        # always sets, never ``lookupId`` parsing, so a renamed pack still
+        # resolves to the right on-disk directory for display-name and
+        # manifest-path lookup.
+        pack_id = layer.get("preset_id") or ""
         pack_dir_layer = layer.get("pack_dir")
         if isinstance(pack_dir_layer, Path):
             pack_dir = pack_dir_layer
@@ -994,9 +978,8 @@ class ArtifactCatalog:
                 continue
             command_layers = resolver.collect_all_layers(name, "command")
             backed_by_command = any(
-                not str(layer.get("lookupId", "")).startswith(
-                    f"{PROJECT_OVERRIDE_LAYER}:"
-                )
+                layer_kind_from_lookup_id(str(layer.get("lookupId", "")))
+                != PROJECT_OVERRIDE_LAYER
                 for layer in command_layers
             )
             is_command = backed_by_command or is_dotted_command_name(name)

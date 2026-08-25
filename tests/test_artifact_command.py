@@ -934,6 +934,8 @@ class TestManifestPathPortability:
         layer = {
             "lookupId": "preset:my-pack:template:spec-template",
             "path": pack_dir / "spec-template.md",
+            "preset_id": "my-pack",
+            "pack_dir": pack_dir,
         }
         assert (
             _derive_manifest_path(layer, project_root)
@@ -949,16 +951,57 @@ class TestManifestPathPortability:
         layer = {
             "lookupId": "extension:my-ext:command:speckit.my-ext.go",
             "path": ext_dir / "commands" / "speckit.my-ext.go.md",
+            "extension_id": "my-ext",
+            "extension_dir": ext_dir,
         }
         assert (
             _derive_manifest_path(layer, project_root)
             == ".specify/extensions/my-ext/extension.yml"
         )
 
+    def test_renamed_pack_directory_wins_over_lookup_id_source(self, tmp_path: Path):
+        """The manifest path must track the on-disk directory, never a stale
+        directory guessed from ``lookupId``'s manifest-declared ``sourceId``."""
+        project_root = tmp_path / "proj"
+        pack_dir = project_root / ".specify" / "presets" / "renamed-on-disk"
+        pack_dir.mkdir(parents=True)
+        (pack_dir / "preset.yml").write_text("id: original-manifest-id\n", encoding="utf-8")
+        # A stale directory matching the manifest id must not exist, so a
+        # lookupId-based guess would resolve to a nonexistent manifest.
+        stale_dir = project_root / ".specify" / "presets" / "original-manifest-id"
+        assert not stale_dir.exists()
+
+        layer = {
+            "lookupId": "preset:original-manifest-id:template:spec-template",
+            "path": pack_dir / "spec-template.md",
+            "preset_id": "renamed-on-disk",
+            "pack_dir": pack_dir,
+        }
+        assert (
+            _derive_manifest_path(layer, project_root)
+            == ".specify/presets/renamed-on-disk/preset.yml"
+        )
+
     def test_missing_manifest_file_is_none(self, tmp_path: Path):
         project_root = tmp_path / "proj"
         pack_dir = project_root / ".specify" / "presets" / "my-pack"
         pack_dir.mkdir(parents=True)
+
+        layer = {
+            "lookupId": "preset:my-pack:template:spec-template",
+            "path": pack_dir / "spec-template.md",
+            "preset_id": "my-pack",
+            "pack_dir": pack_dir,
+        }
+        assert _derive_manifest_path(layer, project_root) is None
+
+    def test_missing_provenance_keys_is_none(self, tmp_path: Path):
+        """Without explicit ``preset_id``/``pack_dir``, no path is guessed from
+        ``lookupId`` — the caller gets ``None`` instead of a wrong path."""
+        project_root = tmp_path / "proj"
+        pack_dir = project_root / ".specify" / "presets" / "my-pack"
+        pack_dir.mkdir(parents=True)
+        (pack_dir / "preset.yml").write_text("id: my-pack\n", encoding="utf-8")
 
         layer = {
             "lookupId": "preset:my-pack:template:spec-template",

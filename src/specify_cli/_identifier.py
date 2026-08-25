@@ -108,9 +108,23 @@ def layer_kind_from_lookup_id(lookup_id: str) -> str | None:
     This is the single place that knows the set of valid layer prefixes, so
     consumers can classify a lookupId without re-deriving the grammar via
     string-prefix checks of their own.
+
+    Validates the complete shape, not just the presence of a layer prefix:
+    named contributions require exactly the four ``{layer}:{sourceId}:{kind}:
+    {name}`` components, and hook contributions require exactly the five
+    ``{layer}:{sourceId}:hook:{eventName}:{command}`` components, with every
+    component non-empty. A value such as ``"core:not-an-id"`` or ``"preset:x"``
+    has a recognized layer prefix but the wrong number of components, so it is
+    malformed and returns ``None`` rather than being treated as authoritative.
     """
-    layer, _, rest = lookup_id.partition(":")
-    if not rest or layer not in _LAYER_KINDS:
+    parts = lookup_id.split(":")
+    if len(parts) < 4 or any(not part for part in parts):
+        return None
+    layer = parts[0]
+    if layer not in _LAYER_KINDS:
+        return None
+    expected_len = 5 if parts[2] == "hook" else 4
+    if len(parts) != expected_len:
         return None
     return layer
 
