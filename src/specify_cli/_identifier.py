@@ -52,6 +52,7 @@ is the correct outcome for a layer with no originating manifest entry.
 _LAYER_KINDS = frozenset({PROJECT_OVERRIDE_LAYER, "preset", "extension"})
 _CONTRIBUTION_KINDS = frozenset({"command", "template", "script", "hook"})
 _NAMED_CONTRIBUTION_KINDS = _CONTRIBUTION_KINDS - {"hook"}
+_HOOK_LAYERS = frozenset({"preset", "extension"})
 
 
 class IdentifierComponentError(ValueError):
@@ -132,7 +133,11 @@ def layer_kind_from_lookup_id(lookup_id: str) -> str | None:
     ``{layer}:{sourceId}:hook:{eventName}:{command}`` components, with every
     component non-empty. A value such as ``"preset:x"`` has a recognized layer
     prefix but the wrong number of components, so it is malformed and returns
-    ``None`` rather than being treated as authoritative.
+    ``None`` rather than being treated as authoritative. Hook IDs are only
+    valid on preset/extension layers (see :data:`_HOOK_LAYERS`); a value such
+    as ``"project:_:hook:some-event:some-command"`` is rejected even though it
+    otherwise has the right shape, matching :func:`derive_hook_id`'s refusal
+    to build hook IDs for other layers.
     """
     parts = lookup_id.split(":")
     if len(parts) < 4 or any(not part for part in parts):
@@ -144,6 +149,8 @@ def layer_kind_from_lookup_id(lookup_id: str) -> str | None:
         return None
     expected_len = 5 if parts[2] == "hook" else 4
     if len(parts) != expected_len:
+        return None
+    if parts[2] == "hook" and layer not in _HOOK_LAYERS:
         return None
     return layer
 
@@ -177,7 +184,7 @@ def derive_hook_id(
     """
     validate_component(layer, "layer")
     validate_component(source_id, "sourceId")
-    if layer not in {"preset", "extension"}:
+    if layer not in _HOOK_LAYERS:
         raise IdentifierComponentError(f"Invalid layer '{layer}'")
     validate_component(event_name, "eventName")
     validate_component(command, "command")
