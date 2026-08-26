@@ -1340,6 +1340,37 @@ class TestCommandRunner:
         assert argv[1] == "-File"
         assert PurePath(argv[2]).as_posix().endswith(".specify/scripts/powershell/boot.ps1")
 
+    def test_ps_variant_returns_none_when_no_launcher_available(self, tmp_path, monkeypatch):
+        """When NEITHER pwsh nor powershell is on PATH, the resolver must
+        degrade to "no argv" like every other failure branch in this
+        function — not fall back to a bare "pwsh" string, which would make
+        subprocess.run() raise FileNotFoundError instead of the caller's
+        clean "No script found for event command" warning.
+
+        The generated dispatcher's documented stdlib mirror, `_resolve_argv`,
+        already does this correctly (`if not launcher: return None`).
+        """
+        from specify_cli.events import _resolve_event_command_argv
+        import shutil as _shutil
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "boot.md").write_text(
+            "---\n"
+            "description: \"Boot\"\n"
+            "scripts:\n"
+            "  ps: scripts/powershell/boot.ps1\n"
+            "---\nBody\n",
+            encoding="utf-8",
+        )
+        ps_dir = tmp_path / ".specify" / "scripts" / "powershell"
+        ps_dir.mkdir(parents=True)
+        (ps_dir / "boot.ps1").write_text("exit 0\n", encoding="utf-8")
+
+        monkeypatch.setattr(_shutil, "which", lambda name: None)
+        argv = _resolve_event_command_argv(cmd_dir / "boot.md", tmp_path, None)
+        assert argv is None
+
     def test_run_command_executes_with_project_root_cwd(self, tmp_path):
         """R1: the event command runs with cwd set to the project root, not the
         caller's arbitrary working directory, so project-relative script logic
