@@ -41,7 +41,11 @@ def event_run(
                 err=True,
             )
             raise typer.Exit(code=1)
-        payload = raw.decode("utf-8")
+        try:
+            payload = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            typer.echo("stdin payload must be valid UTF-8", err=True)
+            raise typer.Exit(code=1) from None
     else:
         payload = "{}"
 
