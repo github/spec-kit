@@ -429,6 +429,8 @@ def _derive_source_path(
     project_root: Path,
     kind: ArtifactKind,
     name: str,
+    *,
+    active: bool,
 ) -> str | None:
     """Return the repo-relative concrete file backing a preset/extension layer.
 
@@ -437,6 +439,11 @@ def _derive_source_path(
     (``preset_id``/``pack_dir`` or ``extension_id``/``extension_dir``)
     alongside ``lookupId``; core and project rows intentionally do not produce
     a source path here.
+
+    The tracked materialized agent output is shared by every stack row that
+    contributed the same command name, so it only reflects the winning
+    (``active``) row's content. Lower ``replace``/``merge`` rows must report
+    their own installed pack file instead of that shared output.
     """
     lookup_id = layer.get("lookupId", "")
     layer_kind = layer_kind_from_lookup_id(lookup_id)
@@ -447,7 +454,7 @@ def _derive_source_path(
         from ..presets import PresetRegistry
 
         metadata = PresetRegistry(project_root / ".specify" / "presets").get(pack_id)
-        if kind == "command":
+        if kind == "command" and active:
             materialized = _materialized_command_source_path(
                 project_root, metadata, name, source="preset"
             )
@@ -460,7 +467,7 @@ def _derive_source_path(
         from ..extensions import ExtensionRegistry
 
         metadata = ExtensionRegistry(project_root / ".specify" / "extensions").get(extension_id)
-        if kind == "command":
+        if kind == "command" and active:
             materialized = _materialized_command_source_path(
                 project_root, metadata, name, source="extension"
             )
@@ -471,8 +478,9 @@ def _derive_source_path(
         # artifact contract's perspective, so their sourcePath stays null.
         return None
 
-    # Non-command preset/extension layers, and command layers without a tracked
-    # materialized agent output, report the installed pack file from the raw
+    # Non-active command layers, non-command preset/extension layers, and
+    # active command layers without a tracked materialized agent output all
+    # report the installed pack file from the raw
     # PresetResolver.collect_all_layers() row's concrete ``path`` key.
     path = layer.get("path")
     if isinstance(path, Path):
@@ -547,7 +555,7 @@ def _build_stack(
             hidden = idx > first_replace_idx
 
         layer_kind, source_id, lookup_id = _public_layer_shape(layer)
-        source_path = _derive_source_path(layer, project_root, kind, name)
+        source_path = _derive_source_path(layer, project_root, kind, name, active=active)
 
         if layer_kind == PROJECT_OVERRIDE_LAYER:
             rows.append(

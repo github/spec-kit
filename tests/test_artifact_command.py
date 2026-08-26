@@ -743,6 +743,86 @@ class TestCLI:
         info = json.loads(info_result.stdout)
         assert row["stack"] == info["stack"]
 
+    def test_hidden_command_layer_source_path_is_own_pack_file(
+        self, spec_kit_project: Path
+    ):
+        """A hidden (non-active) command row must not report the winner's
+        shared materialized agent output as its ``sourcePath``.
+
+        Both presets below register the same command name and the same
+        agent skill name, so the tracked materialized output is a single
+        shared file. Only the active (winning) row may report that shared
+        file; the hidden loser row must report its own installed pack file.
+        """
+        pack_low = install_preset(
+            spec_kit_project,
+            "aaa-low-priority-preset",
+            {
+                "commands": [
+                    {
+                        "name": "speckit.compliance.plan",
+                        "file": "commands/speckit.compliance.plan.md",
+                        "description": "Loser",
+                    }
+                ]
+            },
+            priority=20,
+        )
+        (pack_low / "commands").mkdir()
+        (pack_low / "commands" / "speckit.compliance.plan.md").write_text(
+            "---\ndescription: Loser\n---\nloser body\n", encoding="utf-8"
+        )
+        PresetRegistry(spec_kit_project / ".specify" / "presets").update(
+            "aaa-low-priority-preset",
+            {"registered_skills": {"copilot": ["speckit-compliance-plan"]}},
+        )
+
+        pack_high = install_preset(
+            spec_kit_project,
+            "zzz-high-priority-preset",
+            {
+                "commands": [
+                    {
+                        "name": "speckit.compliance.plan",
+                        "file": "commands/speckit.compliance.plan.md",
+                        "description": "Winner",
+                    }
+                ]
+            },
+            priority=5,
+        )
+        (pack_high / "commands").mkdir()
+        (pack_high / "commands" / "speckit.compliance.plan.md").write_text(
+            "---\ndescription: Winner\n---\nwinner body\n", encoding="utf-8"
+        )
+        PresetRegistry(spec_kit_project / ".specify" / "presets").update(
+            "zzz-high-priority-preset",
+            {"registered_skills": {"copilot": ["speckit-compliance-plan"]}},
+        )
+
+        skill_file = (
+            spec_kit_project
+            / ".github"
+            / "skills"
+            / "speckit-compliance-plan"
+            / "SKILL.md"
+        )
+        skill_file.parent.mkdir(parents=True)
+        skill_file.write_text("---\nname: speckit-compliance-plan\n---\n", encoding="utf-8")
+
+        info = ArtifactCatalog(spec_kit_project).get_artifact_info("speckit.compliance.plan")
+        stack = info["stack"]
+        assert stack[0]["active"] is True
+        assert stack[0]["sourcePath"] == ".github/skills/speckit-compliance-plan/SKILL.md"
+
+        hidden_rows = [layer for layer in stack if layer["active"] is False]
+        assert hidden_rows
+        for row in hidden_rows:
+            assert row["sourcePath"] != stack[0]["sourcePath"]
+            assert row["sourcePath"] == (
+                ".specify/presets/aaa-low-priority-preset/commands/speckit.compliance.plan.md"
+            )
+
     def test_list_json_stack_source_path_contract(
         self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
     ):
