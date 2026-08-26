@@ -6298,6 +6298,100 @@ steps:
         # Falls back to the default cap of 10, not range(True - 1) == 1 run.
         assert counter_file.read_text(encoding="utf-8").strip() == "10"
 
+    def test_while_loop_namespaces_nested_descendant_steps(self, project_dir):
+        """A step nested one level deeper than the loop body's direct child
+        (e.g. a `shell` step inside an `if` inside the `while` body) must get
+        a unique namespaced key per iteration, not just the immediate child.
+
+        Previously only the direct child's id was namespaced
+        (`retry-loop:guard:1`); the grandchild `leaf` kept its bare id across
+        every iteration, so each iteration silently overwrote the previous
+        one's entry in `state.step_results["leaf"]` and no per-iteration
+        record of it ever existed.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "while-nested-descendant"
+  name: "While Nested Descendant"
+  version: "1.0.0"
+steps:
+  - id: retry-loop
+    type: while
+    condition: "true"
+    max_iterations: 3
+    steps:
+      - id: guard
+        type: if
+        condition: "true"
+        then:
+          - id: leaf
+            type: shell
+            run: "echo tick"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        # The unprefixed key still holds the latest iteration's result
+        # (sibling steps in the loop body and the loop condition read it).
+        assert state.step_results["leaf"]["output"]["stdout"] == "tick\n"
+        # Every iteration's grandchild result is separately recoverable.
+        assert "retry-loop:leaf:1" in state.step_results
+        assert "retry-loop:leaf:2" in state.step_results
+
+    def test_fan_out_namespaces_nested_descendant_steps(self, project_dir):
+        """A step nested inside a fan-out template's `if`/`switch` branch
+        must get a unique namespaced key per item, not just the template's
+        own top-level id.
+
+        Previously only the template's own id was namespaced
+        (`fan:item:0`); a grandchild step like `leaf` kept its bare id
+        across every item, so each item silently overwrote the previous
+        item's entry in `state.step_results["leaf"]` — losing every item's
+        nested result except the last. Nested/template step ids are exempt
+        from the workflow's global id-uniqueness validation specifically
+        because runtime namespacing is assumed to make collisions safe, so
+        an unnamespaced grandchild id can also collide with an unrelated
+        step of the same id elsewhere in the workflow.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "fan-out-nested-descendant"
+  name: "Fan Out Nested Descendant"
+  version: "1.0.0"
+steps:
+  - id: fan
+    type: fan-out
+    items: "{{ ['a', 'b', 'c'] }}"
+    max_concurrency: 1
+    step:
+      id: item
+      type: if
+      condition: "true"
+      then:
+        - id: leaf
+          type: shell
+          run: "echo {{ item }}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        # Every item's grandchild result is separately recoverable.
+        assert state.step_results["fan:leaf:0"]["output"]["stdout"] == "a\n"
+        assert state.step_results["fan:leaf:1"]["output"]["stdout"] == "b\n"
+        assert state.step_results["fan:leaf:2"]["output"]["stdout"] == "c\n"
+
     def test_do_while_loop_runs_to_max_when_condition_stays_true(self, project_dir):
         """Do-while loop must still run to max_iterations when the condition
         never becomes false.
