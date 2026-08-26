@@ -36,7 +36,8 @@ Prints the full inventory of every visible artifact — one row per `(kind, name
         "active": true,
         "hidden": false,
         "manifestPath": null,
-        "lookupId": null
+        "lookupId": null,
+        "sourcePath": null
       }
     ]
   },
@@ -56,7 +57,8 @@ Prints the full inventory of every visible artifact — one row per `(kind, name
         "active": true,
         "hidden": false,
         "manifestPath": null,
-        "lookupId": null
+        "lookupId": null,
+        "sourcePath": null
       }
     ]
   }
@@ -103,7 +105,8 @@ specify artifact info <name> --json
       "active": true,
       "hidden": false,
       "manifestPath": ".specify/presets/compliance/preset.yml",
-      "lookupId": "preset:compliance:command:speckit.specify"
+      "lookupId": "preset:compliance:command:speckit.specify",
+      "sourcePath": ".github/skills/speckit-specify/SKILL.md"
     },
     {
       "id": "command:speckit.specify",
@@ -115,7 +118,8 @@ specify artifact info <name> --json
       "active": false,
       "hidden": true,
       "manifestPath": null,
-      "lookupId": null
+      "lookupId": null,
+      "sourcePath": null
     }
   ]
 }
@@ -139,10 +143,11 @@ The top-level `id`, `name`, `kind`, `description`, and `stack` fields match the 
 | `hidden`       | `true` when a lower-index `replace` layer cuts this layer out of the composition |
 | `manifestPath` | Project-relative path to the declaring manifest, or `null` when none applies      |
 | `lookupId`     | Deterministic `{layer}:{sourceId}:{kind}:{name}` identifier, or `null` for built-in layers |
+| `sourcePath`   | Project-relative POSIX path to the concrete file backing the layer, or `null` for built-in/synthetic layers |
 
 `active` and `hidden` are independent labels, not opposites. Composing strategies (`wrap`, `prepend`, `append`) keep lower layers in the composed output, so an inactive layer is not necessarily hidden: only layers below the first `replace` layer are marked `hidden`. Built-in rows have no provenance: `layer`, `sourceId`, and `lookupId` are `null` — but `id` is always populated, even on built-in rows. `id` is the round-trip key: `specify artifact info` accepts it as input (for example, `specify artifact info command:speckit.specify --json`), and it resolves the same artifact whether the caller passes the bare name or the `id`.
 
-Lookup IDs use the same grammar as [preset contribution identifiers](presets.md#contribution-identifiers), so a `lookupId` from this command joins directly to `PresetManifest.iter_contributions()` / `ExtensionManifest.iter_contributions()` for manifest-declared layers. Project-local overrides carry a synthetic `project:_:{kind}:{name}` ID that intentionally matches no manifest contribution. `lookupId` is manifest-backed layer provenance, not the round-trip key — use `id` for that.
+Lookup IDs use the same grammar as [preset contribution identifiers](presets.md#contribution-identifiers), so a `lookupId` from this command joins directly to `PresetManifest.iter_contributions()` / `ExtensionManifest.iter_contributions()` for manifest-declared layers. Project-local overrides carry a synthetic `project:_:{kind}:{name}` ID that intentionally matches no manifest contribution. `lookupId` is manifest-backed layer provenance, not the round-trip key — use `id` for that. `sourcePath` is populated only when the layer maps to a concrete installed preset/extension file or a tracked agent materialization; core, project-override, and other synthetic rows report `null`.
 
 ## JSON Errors
 

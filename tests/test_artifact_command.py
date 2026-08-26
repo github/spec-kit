@@ -118,6 +118,7 @@ class TestListArtifactsContract:
             assert info["stack"][-1]["layer"] is None
             assert info["stack"][-1]["sourceId"] is None
             assert info["stack"][-1]["lookupId"] is None
+            assert info["stack"][-1]["sourcePath"] is None
 
     def test_excludes_disabled_and_unusable_manifest_contributions(
         self, spec_kit_project: Path
@@ -263,6 +264,7 @@ class TestListArtifactsContract:
             assert layer["layer"] is None
             assert layer["sourceId"] is None
             assert layer["lookupId"] is None
+            assert layer["sourcePath"] is None
 
     def test_includes_root_level_pack_template_but_excludes_readme(
         self, spec_kit_project: Path
@@ -486,6 +488,7 @@ class TestInfoContract:
         assert builtin["manifestPath"] is None
         assert builtin["strategy"] == "replace"
         assert builtin["lookupId"] is None
+        assert builtin["sourcePath"] is None
 
     def test_public_layer_shape_preserves_non_core_identity(self):
         assert _public_layer_shape(
@@ -506,6 +509,7 @@ class TestInfoContract:
         assert project["presetId"] is None
         assert project["presetName"] is None
         assert project["manifestPath"] is None
+        assert project["sourcePath"] is None
         assert project["strategy"] == "replace"
         assert project["sourceId"] == "_"
         assert re.match(r"^project:_:(command|template|script):[^:]+$", project["lookupId"])
@@ -738,6 +742,100 @@ class TestCLI:
         assert info_result.exit_code == 0, info_result.stderr
         info = json.loads(info_result.stdout)
         assert row["stack"] == info["stack"]
+
+    def test_list_json_stack_source_path_contract(
+        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        preset_pack = install_preset(
+            spec_kit_project,
+            "compliance",
+            {
+                "commands": [
+                    {
+                        "name": "speckit.compliance.plan",
+                        "file": "commands/speckit.compliance.plan.md",
+                        "description": "Compliance plan",
+                    }
+                ]
+            },
+        )
+        (preset_pack / "commands").mkdir()
+        (preset_pack / "commands" / "speckit.compliance.plan.md").write_text(
+            "---\ndescription: Compliance plan\n---\nbody\n", encoding="utf-8"
+        )
+        PresetRegistry(spec_kit_project / ".specify" / "presets").update(
+            "compliance",
+            {
+                "registered_skills": {
+                    "copilot": ["speckit-compliance-plan"],
+                }
+            },
+        )
+        skill_file = (
+            spec_kit_project
+            / ".github"
+            / "skills"
+            / "speckit-compliance-plan"
+            / "SKILL.md"
+        )
+        skill_file.parent.mkdir(parents=True)
+        skill_file.write_text("---\nname: speckit-compliance-plan\n---\n", encoding="utf-8")
+
+        extension_dir = spec_kit_project / ".specify" / "extensions" / "quality"
+        (extension_dir / "templates").mkdir(parents=True)
+        (extension_dir / "templates" / "checklist.md").write_text(
+            "---\ndescription: Extension checklist\n---\n", encoding="utf-8"
+        )
+        (extension_dir / "extension.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "extension": {
+                        "id": "quality",
+                        "name": "Quality",
+                        "version": "1.0.0",
+                        "description": "test",
+                        "author": "test",
+                        "repository": "https://example.com",
+                        "license": "MIT",
+                    },
+                    "requires": {"speckit_version": ">=0.2.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "name": "checklist",
+                                "file": "templates/checklist.md",
+                                "description": "Extension checklist",
+                            }
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        ExtensionRegistry(spec_kit_project / ".specify" / "extensions").add(
+            "quality", {"version": "1.0.0", "enabled": True}
+        )
+
+        monkeypatch.chdir(spec_kit_project)
+        runner = CliRunner()
+        result = runner.invoke(app, ["artifact", "list", "--json"])
+        assert result.exit_code == 0, result.stderr
+        payload = json.loads(result.stdout)
+
+        non_null_source_paths: set[str] = set()
+        for row in payload:
+            for layer in row["stack"]:
+                assert "sourcePath" in layer
+                source_path = layer["sourcePath"]
+                if source_path is None:
+                    continue
+                assert isinstance(source_path, str)
+                assert (spec_kit_project / source_path).is_file()
+                non_null_source_paths.add(source_path)
+
+        assert ".github/skills/speckit-compliance-plan/SKILL.md" in non_null_source_paths
+        assert ".specify/extensions/quality/templates/checklist.md" in non_null_source_paths
 
     def test_list_json_is_pretty_printed(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.chdir(spec_kit_project)

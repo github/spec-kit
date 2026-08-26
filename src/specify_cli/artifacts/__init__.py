@@ -80,6 +80,7 @@ class StackLayer:
     hidden: bool
     manifestPath: str | None
     lookupId: str | None
+    sourcePath: str | None
 
     def to_json_dict(self) -> dict[str, Any]:
         return {
@@ -93,6 +94,7 @@ class StackLayer:
             "hidden": self.hidden,
             "manifestPath": self.manifestPath,
             "lookupId": self.lookupId,
+            "sourcePath": self.sourcePath,
         }
 
 
@@ -308,6 +310,159 @@ def _derive_manifest_path(layer: dict[str, Any], project_root: Path) -> str | No
         return None
 
 
+def _repo_relative_existing_file(project_root: Path, path: Path) -> str | None:
+    """Return *path* relative to the project root when it is an existing file."""
+    if not path.is_file():
+        return None
+    try:
+        return path.relative_to(project_root).as_posix()
+    except ValueError:
+        return None
+
+
+def _is_safe_path_component(value: str) -> bool:
+    """Return true when *value* is a single non-traversing path component."""
+    if not value or value in (".", ".."):
+        return False
+    path = Path(value)
+    return not path.is_absolute() and len(path.parts) == 1 and path.name == value
+
+
+def _materialized_command_source_path(
+    project_root: Path,
+    metadata: dict[str, Any] | None,
+    name: str,
+    *,
+    source: Literal["preset", "extension"],
+) -> str | None:
+    """Return the tracked agent output path for an installed command layer."""
+    if not isinstance(metadata, dict):
+        return None
+
+    try:
+        from ..agents import CommandRegistrar
+    except ImportError:
+        return None
+
+    registrar = CommandRegistrar()
+
+    registered_commands = metadata.get("registered_commands")
+    if isinstance(registered_commands, dict):
+        for agent_name in sorted(registered_commands):
+            cmd_names = registered_commands.get(agent_name)
+            if not isinstance(agent_name, str) or not isinstance(cmd_names, list):
+                continue
+            if name not in cmd_names:
+                continue
+            agent_config = registrar.AGENT_CONFIGS.get(agent_name)
+            if agent_config is None:
+                continue
+            output_name = registrar._compute_output_name(agent_name, name, agent_config)
+            command_path = (
+                registrar._resolve_agent_dir(agent_name, agent_config, project_root)
+                / f"{output_name}{agent_config['extension']}"
+            )
+            rel = _repo_relative_existing_file(project_root, command_path)
+            if rel is not None:
+                return rel
+
+    registered_skills = metadata.get("registered_skills")
+    if source == "preset":
+        skill_names_by_agent = registered_skills if isinstance(registered_skills, dict) else {}
+    else:
+        skill_names_by_agent = {
+            agent_name: registered_skills
+            for agent_name in sorted(registrar.AGENT_CONFIGS)
+            if isinstance(registered_skills, list)
+        }
+
+    expected_skill_names: set[str] | None = None
+    if source == "extension":
+        try:
+            from ..extensions import ExtensionManager
+
+            expected_skill_names = {ExtensionManager._skill_name_for_command(name)}
+        except ImportError:
+            expected_skill_names = None
+    elif isinstance(skill_names_by_agent, dict):
+        try:
+            from ..presets import PresetManager
+
+            expected_skill_names = set(PresetManager._skill_names_for_command(name))
+        except ImportError:
+            expected_skill_names = None
+
+    if isinstance(skill_names_by_agent, dict):
+        from .. import _get_skills_dir as _project_skills_dir
+
+        for agent_name in sorted(skill_names_by_agent):
+            skill_names = skill_names_by_agent.get(agent_name)
+            if not isinstance(agent_name, str) or not isinstance(skill_names, list):
+                continue
+            agent_config = registrar.AGENT_CONFIGS.get(agent_name)
+            if agent_config is None:
+                continue
+            if agent_config.get("extension") == "/SKILL.md":
+                skills_dir = registrar._resolve_agent_dir(agent_name, agent_config, project_root)
+            else:
+                skills_dir = _project_skills_dir(project_root, agent_name)
+            for skill_name in sorted(
+                n for n in skill_names if isinstance(n, str) and _is_safe_path_component(n)
+            ):
+                if expected_skill_names is not None and skill_name not in expected_skill_names:
+                    continue
+                skill_path = skills_dir / skill_name / "SKILL.md"
+                rel = _repo_relative_existing_file(project_root, skill_path)
+                if rel is not None:
+                    return rel
+
+    return None
+
+
+def _derive_source_path(
+    layer: dict[str, Any],
+    project_root: Path,
+    kind: ArtifactKind,
+    name: str,
+) -> str | None:
+    """Return the repo-relative concrete file backing a preset/extension layer."""
+    lookup_id = layer.get("lookupId", "")
+    layer_kind = layer_kind_from_lookup_id(lookup_id)
+    if layer_kind == "preset":
+        pack_id = layer.get("preset_id")
+        if not isinstance(pack_id, str) or not pack_id:
+            return None
+        from ..presets import PresetRegistry
+
+        metadata = PresetRegistry(project_root / ".specify" / "presets").get(pack_id)
+        if kind == "command":
+            materialized = _materialized_command_source_path(
+                project_root, metadata, name, source="preset"
+            )
+            if materialized is not None:
+                return materialized
+    elif layer_kind == "extension":
+        extension_id = layer.get("extension_id")
+        if not isinstance(extension_id, str) or not extension_id:
+            return None
+        from ..extensions import ExtensionRegistry
+
+        metadata = ExtensionRegistry(project_root / ".specify" / "extensions").get(extension_id)
+        if kind == "command":
+            materialized = _materialized_command_source_path(
+                project_root, metadata, name, source="extension"
+            )
+            if materialized is not None:
+                return materialized
+    else:
+        return None
+
+    path = layer.get("path")
+    if isinstance(path, Path):
+        return _repo_relative_existing_file(project_root, path)
+    return None
+
+
 def _preset_display_name(pack_dir: Path, pack_id: str) -> str:
     """Return the preset's human-friendly name from ``preset.yml``, or ``pack_id``.
 
@@ -375,6 +530,7 @@ def _build_stack(
             hidden = idx > first_replace_idx
 
         layer_kind, source_id, lookup_id = _public_layer_shape(layer)
+        source_path = _derive_source_path(layer, project_root, kind, name)
 
         if layer_kind == PROJECT_OVERRIDE_LAYER:
             rows.append(
@@ -389,6 +545,7 @@ def _build_stack(
                     hidden=hidden,
                     manifestPath=None,
                     lookupId=lookup_id,
+                    sourcePath=source_path,
                 )
             )
             continue
@@ -407,6 +564,7 @@ def _build_stack(
                     hidden=hidden,
                     manifestPath=manifest_path,
                     lookupId=lookup_id,
+                    sourcePath=source_path,
                 )
             )
             continue
@@ -424,6 +582,7 @@ def _build_stack(
                     hidden=hidden,
                     manifestPath=None,
                     lookupId=None,
+                    sourcePath=source_path,
                 )
             )
             continue
@@ -454,6 +613,7 @@ def _build_stack(
                 hidden=hidden,
                 manifestPath=manifest_path,
                 lookupId=lookup_id,
+                sourcePath=source_path,
             )
         )
     return rows
