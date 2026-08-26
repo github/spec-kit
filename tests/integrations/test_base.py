@@ -436,16 +436,16 @@ class TestResolveCommandRefs:
         assert result == "/speckit.code-review.request-changes"
 
     def test_hyphen_adjacent_to_digit(self):
-        """A hyphen directly next to a digit (e.g. a version suffix) round-trips."""
-        text = "__SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE-V2__"
+        """A hyphen directly next to a digit round-trips."""
+        text = "__SPECKIT_COMMAND_STEP-2_RUN__"
         result = IntegrationBase.resolve_command_refs(text, ".")
-        assert result == "/speckit.agent-context.update-v2"
+        assert result == "/speckit.step-2.run"
 
     def test_multiple_hyphens_within_one_segment(self):
-        """A segment with more than one hyphen (a multi-word compound) round-trips."""
-        text = "__SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE-WITH-EXAMPLE__"
+        """A segment with more than one hyphen round-trips."""
+        text = "__SPECKIT_COMMAND_MULTI-WORD-SEGMENT__"
         result = IntegrationBase.resolve_command_refs(text, ".")
-        assert result == "/speckit.agent-context.update-with-example"
+        assert result == "/speckit.multi-word-segment"
 
     def test_no_limit_on_segment_count(self):
         """The token isn't limited to two dotted segments; any number works."""
