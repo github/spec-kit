@@ -128,4 +128,15 @@ This separation keeps triage read-only and lets you decide per bug whether it is
 
 ## Hooks
 
-This extension registers no hooks. The commands are always invoked explicitly by the user.
+This extension registers one hook:
+
+- **`after_bug_assess`** → `speckit.bug.issue` — a **mandatory** (Automatic) hook that files the
+  GitHub issue after `speckit.bug.assess` writes the assessment. It is bound as `optional: false` but
+  gated by the `auto_create_issue` config condition (`config.auto_create_issue == 'true'`), so it only
+  executes when that setting is enabled. With `auto_create_issue: false` (the default) the condition
+  fails and the hook is skipped, so `assess` simply *suggests* the issue step as before.
+
+This is how the `auto_create_issue` setting takes effect: it is not re-read inline by `assess`. Instead,
+when `auto_create_issue: true`, the installed hook is an Automatic Hook (`optional: false`) that runs
+`speckit.bug.issue` automatically after each assessment. Toggle the setting in
+`.specify/extensions/bug/bug-config.yml` — no reinstall is required.

@@ -42,6 +42,19 @@ provides:
       description: "Bug workflow configuration (issue auto-creation, branch prefix)"
       required: false
 
+hooks:
+  # Fires after speckit.bug.assess writes the assessment. Bound as a *mandatory*
+  # (optional: false) Automatic Hook, but gated by the `auto_create_issue`
+  # config so it only executes when that setting is enabled — when the config
+  # is false/absent the condition fails and the hook is skipped. This keeps the
+  # create-issue step out of the agent's "optional" path: with auto_create_issue
+  # true it runs automatically instead of merely being suggested.
+  after_bug_assess:
+    command: speckit.bug.issue
+    optional: false
+    condition: "config.auto_create_issue == 'true'"
+    description: "Auto-file the GitHub issue after assessment when auto_create_issue is enabled"
+
 tags:
   - "bug"
   - "triage"

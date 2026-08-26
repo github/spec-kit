@@ -162,13 +162,16 @@ Do not attempt to validate the URL by issuing a preflight `HEAD` (or any other) 
 
 ### Optional — file the GitHub issue (report phase)
 
-By default, `assess` only writes a **local** assessment; it does **not** file a GitHub issue. "Assess" means *triage*, not *report*. Before reporting back, decide whether to also report the bug by evaluating these in order:
+By default, `assess` only writes a **local** assessment; it does **not** file a GitHub issue. "Assess" means *triage*, not *report*. File the issue in one of two ways:
 
-1. **Explicit opt-in**: if the user passed a truthy `issue` / `--issue` flag (or `issue=true`), file the issue now.
-2. **Config opt-in**: read `.specify/extensions/bug/bug-config.yml` (scaffolded at install). If it exists and `auto_create_issue` is `true` (or `1` / `yes` / `on`), file the issue now — the user enabled this explicitly, so no further confirmation is required.
-3. **Otherwise**: do not file it; only **suggest** the issue step in the report-back below.
+1. **Explicit opt-in (per run)**: if the user passed a truthy `issue` / `--issue` flag (or `issue=true`), file the issue now by performing the same procedure as `__SPECKIT_COMMAND_BUG_ISSUE__` for this slug: read the assessment you just wrote, create the GitHub issue via `gh`, and record `BUG_DIR/issue.md`.
+2. **Automatic opt-in (config-driven hook)**: after writing the assessment, check the project's extension hooks for the `after_bug_assess` event (via the extension hook executor / `.specify/extensions.yml`). If an **Automatic Hook** is returned, execute it — the bug extension registers one (`optional: false`, gated by the `auto_create_issue` config) that runs `__SPECKIT_COMMAND_BUG_ISSUE__` for this slug. With `auto_create_issue` set to `true` in `.specify/extensions/bug/bug-config.yml` the hook condition is satisfied, so the issue is filed **automatically** (no further confirmation). If no hook is returned — e.g. the setting is `false` or absent — do not file the issue.
 
-When filing, perform the same procedure as `__SPECKIT_COMMAND_BUG_ISSUE__` for this slug: read the assessment you just wrote, create the GitHub issue via `gh`, and record `BUG_DIR/issue.md`. If `gh` / GitHub remote / auth is unavailable, write `BUG_DIR/issue-draft.md` and note it — do not error.
+**Otherwise** (neither path triggered): do not file the issue; only **suggest** the issue step in the report-back below.
+
+When filing, if `gh` / GitHub remote / auth is unavailable, write `BUG_DIR/issue-draft.md` and note it — do not error.
+
+> The `auto_create_issue` config is honored through the `after_bug_assess` hook, not by re-reading the config inline here. That keeps create-issue out of the agent's "optional" path: with the setting enabled the hook is registered as `optional: false` and fires automatically.
 
 7. **Report back** with:
    - The slug used and whether it was user-provided, asked-for, or auto-generated. State it on its own line (e.g. `Slug: <BUG_SLUG>`) so it is easy to spot — downstream commands in the same session may reuse it from context without re-prompting.

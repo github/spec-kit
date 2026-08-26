@@ -117,3 +117,73 @@ class TestExtensionInstall:
 
         names = {c["name"] for c in manifest.commands}
         assert names == EXPECTED_COMMANDS
+
+
+class TestAutoCreateIssueHook:
+    """The bug extension must register a non-optional create-issue hook.
+
+    When ``auto_create_issue`` is enabled, the ``after_bug_assess`` hook runs
+    ``speckit.bug.issue`` automatically (optional: false). The hook is gated by
+    a ``config.auto_create_issue == 'true'`` condition so it only fires when the
+    user has opted in.
+    """
+
+    def test_manifest_declares_hook_optional_false(self):
+        manifest = yaml.safe_load(
+            (EXT_DIR / "extension.yml").read_text(encoding="utf-8")
+        )
+        hooks = manifest.get("hooks", {})
+        assert "after_bug_assess" in hooks
+
+        entry = hooks["after_bug_assess"]
+        # Accept either the single-mapping or list form.
+        if isinstance(entry, list):
+            entry = entry[0]
+        assert entry["command"] == "speckit.bug.issue"
+        assert entry["optional"] is False
+        assert entry["condition"] == "config.auto_create_issue == 'true'"
+
+    def test_register_hooks_writes_optional_false(self, tmp_path: Path):
+        from specify_cli.extensions import ExtensionManager, HookExecutor
+
+        (tmp_path / ".specify").mkdir()
+        manager = ExtensionManager(tmp_path)
+        manager.install_from_directory(EXT_DIR, "0.9.0", register_commands=False)
+
+        executor = HookExecutor(tmp_path)
+        config = executor.get_project_config()
+        hook_entries = config.get("hooks", {}).get("after_bug_assess", [])
+        assert hook_entries, "after_bug_assess hook was not registered"
+
+        hook = hook_entries[0]
+        assert hook["extension"] == "bug"
+        assert hook["command"] == "speckit.bug.issue"
+        # The create-issue hook must be mandatory (optional: false), not a
+        # soft suggestion the agent may skip.
+        assert hook["optional"] is False
+        assert hook["condition"] == "config.auto_create_issue == 'true'"
+
+    def test_hook_fires_only_when_auto_create_issue_enabled(self, tmp_path: Path):
+        from specify_cli.extensions import ExtensionManager, HookExecutor
+
+        (tmp_path / ".specify").mkdir()
+        manager = ExtensionManager(tmp_path)
+        manager.install_from_directory(EXT_DIR, "0.9.0", register_commands=False)
+
+        executor = HookExecutor(tmp_path)
+        # No config present (auto_create_issue absent) -> condition fails -> no
+        # executable hook.
+        result = executor.check_hooks_for_event("after_bug_assess")
+        assert result["has_hooks"] is False
+
+        # Enable auto_create_issue and re-check: the hook becomes executable.
+        config_dir = tmp_path / ".specify" / "extensions" / "bug"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "bug-config.yml").write_text(
+            "auto_create_issue: true\n", encoding="utf-8"
+        )
+
+        result = executor.check_hooks_for_event("after_bug_assess")
+        assert result["has_hooks"] is True
+        assert result["hooks"][0]["command"] == "speckit.bug.issue"
+
