@@ -4,7 +4,7 @@
 
 ## Unreleased
 
-### Changed
+### Added
 
 - feat(artifacts): include `sourcePath` on artifact stack layers for installed preset and extension contributions.
 

@@ -425,7 +425,14 @@ def _derive_source_path(
     kind: ArtifactKind,
     name: str,
 ) -> str | None:
-    """Return the repo-relative concrete file backing a preset/extension layer."""
+    """Return the repo-relative concrete file backing a preset/extension layer.
+
+    ``layer`` is one raw ``PresetResolver.collect_all_layers()`` row. Preset
+    and extension rows carry explicit on-disk provenance keys
+    (``preset_id``/``pack_dir`` or ``extension_id``/``extension_dir``)
+    alongside ``lookupId``; core and project rows intentionally do not produce
+    a source path here.
+    """
     lookup_id = layer.get("lookupId", "")
     layer_kind = layer_kind_from_lookup_id(lookup_id)
     if layer_kind == "preset":
