@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-25T15:08:04Z",
+  "updated_at": "2026-08-26T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -220,6 +220,45 @@
       "stars": 0,
       "created_at": "2026-08-18T00:00:00Z",
       "updated_at": "2026-08-18T00:00:00Z"
+    },
+    "agentdocx-speckitv2": {
+      "name": "AgentDocx SpecKit V2",
+      "id": "agentdocx-speckitv2",
+      "description": "AgentDocx evolved: same pipeline + far more autonomous Ticket Manager (5 CLI, per-project Kanban, bulk sync, auto-switch, Auditor).",
+      "author": "Ahmed Aziz Ammar",
+      "version": "2.0.0",
+      "download_url": "https://github.com/ahmed200346/Extension_GithubSpecKit/archive/refs/tags/v2.0.0.zip",
+      "repository": "https://github.com/ahmed200346/Extension_GithubSpecKit",
+      "homepage": "https://github.com/ahmed200346/Extension_GithubSpecKit",
+      "documentation": "https://github.com/ahmed200346/Extension_GithubSpecKit/blob/main/README.md",
+      "changelog": "https://github.com/ahmed200346/Extension_GithubSpecKit/blob/extension/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          { "name": "python", "required": true },
+          { "name": "node", "required": true },
+          { "name": "postgresql", "required": true }
+        ]
+      },
+      "provides": {
+        "commands": 0,
+        "hooks": 0
+      },
+      "tags": [
+        "integration",
+        "kanban",
+        "ticket-management",
+        "vscode-extension",
+        "multi-agent"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-26T00:00:00Z",
+      "updated_at": "2026-08-26T00:00:00Z"
     },
     "analytics": {
       "name": "Analytics",
