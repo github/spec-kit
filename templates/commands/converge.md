@@ -201,6 +201,23 @@ Append to the **end** of `tasks.md`, per the append contract:
 
 1. Scan all existing task IDs; let `M` be the maximum. Determine the next phase number `N`
    (highest existing phase + 1).
+
+   **Drop findings that existing unchecked tasks already cover.** Compare each actionable
+   finding against every `- [ ]` task already in `tasks.md` — outside code fences, the same
+   rule `__SPECKIT_COMMAND_CLARIFY__` applies — matching on the work described and the file
+   paths or `<source-ref>` it names, not on wording. A finding that an unchecked task
+   already represents is **not** appended: it is unbuilt work that is already tracked, and
+   appending it again splits one piece of work across two IDs.
+
+   This is what makes the command idempotent. Converge run twice, or run before
+   `__SPECKIT_COMMAND_IMPLEMENT__` has worked through the list, would otherwise append the
+   same remediation tasks under fresh IDs each time — the second run cannot tell its own
+   previous output apart from the plan's original tasks.
+
+   Report the dropped ones in the summary rather than silently discarding them:
+   `F3 — already tracked by T017, not appended`. If **every** finding is already tracked,
+   there is nothing to append: take the `converged` path below and say why, so the operator
+   sees "the work is known" rather than "the codebase is complete".
 2. Write a single new section header `## Phase N: Convergence`.
 3. Emit one checklist item per actionable finding, ordered CRITICAL/HIGH first, assigning
    zero-padded IDs `T{M+1:03d}, T{M+2:03d}, …`:
