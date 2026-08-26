@@ -24,6 +24,7 @@ ISSUE_TEMPLATE_AGENT_KEYS = [
     "command-code",
     "cursor-agent",
     "devin",
+    "docker-agent",
     "droid",
     "firebender",
     "forge",

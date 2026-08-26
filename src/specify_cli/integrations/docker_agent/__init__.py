@@ -6,8 +6,10 @@ configuration is owned by Docker Agent and is not managed by Spec Kit.
 
 from __future__ import annotations
 
-import shutil
-from pathlib import Path
+import os
+import shlex
+
+from specify_cli._utils import docker_agent_command
 
 from ..base import IntegrationOption, SkillsIntegration
 
@@ -22,8 +24,6 @@ class DockerAgentIntegration(SkillsIntegration):
         "commands_subdir": "skills",
         "install_url": "https://docs.docker.com/ai/docker-agent/getting-started/installation/",
         # Docker Agent is exposed as either `docker-agent` or `docker agent`.
-        # The init command documents --ignore-agent-tools for the plugin form,
-        # because the generic preflight check looks up the integration key.
         "requires_cli": True,
     }
     registrar_config = {
@@ -46,14 +46,14 @@ class DockerAgentIntegration(SkillsIntegration):
         # The shared executable override supports both a standalone
         # ``docker-agent`` binary and the Docker CLI plugin form.
         executable = self._resolve_executable()
-
-        if executable != self.key:
-            if Path(executable).name in {"docker", "docker.exe"}:
-                return [executable, "agent", "run"]
+        command = docker_agent_command(
+            None if executable == self.key else executable
+        )
+        if command is None:
+            # Preserve the normal executable-shaped argv for dispatch callers;
+            # preflight and the subprocess runner report the unavailable CLI.
             return [executable, "run"]
-        if shutil.which("docker-agent"):
-            return ["docker-agent", "run"]
-        return ["docker", "agent", "run"]
+        return command
 
 
     @classmethod
@@ -77,6 +77,31 @@ class DockerAgentIntegration(SkillsIntegration):
         output_json: bool = True,
     ) -> list[str] | None:
         """Build a headless Docker Agent invocation with an agent config."""
+        extra_env_name = "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS"
+        extra_args = os.environ.get(extra_env_name, "").strip()
+        if not extra_args:
+            raise ValueError(
+                "Docker Agent requires an agent configuration reference. "
+                f"Set {extra_env_name}, for example: "
+                f"{extra_env_name}=./agent.yaml"
+            )
+        # Validate only the argument shape here: require a first positional
+        # agent reference and reject malformed quoting or a leading option.
+        # The reference may be a local file or a registry reference, so its
+        # existence and validity are intentionally left to Docker Agent.
+        try:
+            first_arg = shlex.split(extra_args)[0]
+        except (IndexError, ValueError) as exc:
+            raise ValueError(
+                f"{extra_env_name} must start with an agent configuration reference, "
+                "for example ./agent.yaml"
+            ) from exc
+        if first_arg.startswith("-"):
+            raise ValueError(
+                f"{extra_env_name} must start with an agent configuration reference, "
+                "for example ./agent.yaml"
+            )
+
         args = [*self._agent_command(), "--exec"]
 
         # Extra args carry the required agent source (for example
