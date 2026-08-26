@@ -357,11 +357,11 @@ def _materialized_command_source_path(
             agent_config = registrar.AGENT_CONFIGS.get(agent_name)
             if agent_config is None:
                 continue
-            output_name = registrar._compute_output_name(agent_name, name, agent_config)
-            command_path = (
-                registrar._resolve_agent_dir(agent_name, agent_config, project_root)
-                / f"{output_name}{agent_config['extension']}"
+            command_path = registrar.resolve_command_output_path(
+                agent_name, name, project_root
             )
+            if command_path is None:
+                continue
             rel = _repo_relative_existing_file(project_root, command_path)
             if rel is not None:
                 return rel
@@ -406,9 +406,11 @@ def _materialized_command_source_path(
             if agent_config is None:
                 continue
             if agent_config.get("extension") == "/SKILL.md":
-                skills_dir = registrar._resolve_agent_dir(agent_name, agent_config, project_root)
+                skills_dir = registrar.resolve_agent_dir(agent_name, project_root)
             else:
                 skills_dir = _project_skills_dir(project_root, agent_name)
+            if skills_dir is None:
+                continue
             for skill_name in sorted(
                 n for n in skill_names if isinstance(n, str) and _is_safe_path_component(n)
             ):

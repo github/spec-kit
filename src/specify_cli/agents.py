@@ -1049,6 +1049,28 @@ class CommandRegistrar:
                     return legacy_dir
         return agent_dir
 
+    def resolve_agent_dir(self, agent_name: str, project_root: Path) -> Optional[Path]:
+        """Return the configured output directory for *agent_name*, if known."""
+        self._ensure_configs()
+        agent_config = self.AGENT_CONFIGS.get(agent_name)
+        if agent_config is None:
+            return None
+        return self._resolve_agent_dir(agent_name, agent_config, project_root)
+
+    def resolve_command_output_path(
+        self, agent_name: str, cmd_name: str, project_root: Path
+    ) -> Optional[Path]:
+        """Return the command/skill output path this registrar uses for a command."""
+        self._ensure_configs()
+        agent_config = self.AGENT_CONFIGS.get(agent_name)
+        if agent_config is None:
+            return None
+        output_name = self._compute_output_name(agent_name, cmd_name, agent_config)
+        return (
+            self._resolve_agent_dir(agent_name, agent_config, project_root)
+            / f"{output_name}{agent_config['extension']}"
+        )
+
     def register_commands_for_all_agents(
         self,
         commands: List[Dict[str, Any]],
