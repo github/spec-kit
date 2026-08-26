@@ -350,7 +350,7 @@ def _materialized_command_source_path(
     if isinstance(registered_commands, dict):
         for agent_name in sorted(registered_commands):
             cmd_names = registered_commands.get(agent_name)
-            if not isinstance(agent_name, str) or not isinstance(cmd_names, list):
+            if not isinstance(cmd_names, list):
                 continue
             if name not in cmd_names:
                 continue
@@ -387,7 +387,7 @@ def _materialized_command_source_path(
             expected_skill_names = {ExtensionManager._skill_name_for_command(name)}
         except ImportError:
             expected_skill_names = None
-    elif isinstance(skill_names_by_agent, dict):
+    else:
         try:
             from ..presets import PresetManager
 
@@ -470,7 +470,8 @@ def _derive_source_path(
         return None
 
     # Non-command preset/extension layers, and command layers without a tracked
-    # materialized agent output, report the installed pack file the resolver used.
+    # materialized agent output, report the installed pack file from the raw
+    # PresetResolver.collect_all_layers() row's concrete ``path`` key.
     path = layer.get("path")
     if isinstance(path, Path):
         return _repo_relative_existing_file(project_root, path)
