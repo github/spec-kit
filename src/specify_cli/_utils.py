@@ -137,6 +137,13 @@ def check_tool(tool: str, tracker=None) -> bool:
         found = shutil.which("kiro-cli") is not None or shutil.which("kiro") is not None
     elif tool == "rovodev":
         found = shutil.which("acli") is not None
+    elif tool == "docker-agent":
+        # Docker Agent is available either as a standalone binary or as a
+        # Docker CLI plugin (`docker agent`).
+        found = (
+            shutil.which("docker-agent") is not None
+            or shutil.which("docker") is not None
+        )
     else:
         found = shutil.which(tool) is not None
 

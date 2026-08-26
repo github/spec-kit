@@ -120,6 +120,20 @@ class TestCheckToolOther:
         with patch("shutil.which", side_effect=fake_which):
             assert check_tool("rovodev") is True
 
+    def test_docker_agent_plugin_fallback(self):
+        """docker-agent should also detect the Docker CLI plugin form."""
+
+        def fake_which(name):
+            return "/usr/bin/docker" if name == "docker" else None
+
+        with patch("shutil.which", side_effect=fake_which):
+            assert check_tool("docker-agent") is True
+
+    def test_docker_agent_missing(self):
+        """docker-agent should be missing when neither form is installed."""
+        with patch("shutil.which", return_value=None):
+            assert check_tool("docker-agent") is False
+
 
 class TestCheckTip:
     """`specify check` should point users to the existing version check."""
