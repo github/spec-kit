@@ -1057,6 +1057,12 @@ class CommandRegistrar:
             return None
         return self._resolve_agent_dir(agent_name, agent_config, project_root)
 
+    def uses_skill_output(self, agent_name: str) -> bool:
+        """Return true when *agent_name* writes commands as ``SKILL.md`` files."""
+        self._ensure_configs()
+        agent_config = self.AGENT_CONFIGS.get(agent_name)
+        return bool(agent_config and agent_config.get("extension") == "/SKILL.md")
+
     def resolve_command_output_path(
         self, agent_name: str, cmd_name: str, project_root: Path
     ) -> Optional[Path]:

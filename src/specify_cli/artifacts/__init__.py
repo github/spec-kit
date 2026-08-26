@@ -405,7 +405,7 @@ def _materialized_command_source_path(
             agent_config = registrar.AGENT_CONFIGS.get(agent_name)
             if agent_config is None:
                 continue
-            if agent_config.get("extension") == "/SKILL.md":
+            if registrar.uses_skill_output(agent_name):
                 skills_dir = registrar.resolve_agent_dir(agent_name, project_root)
             else:
                 skills_dir = _project_skills_dir(project_root, agent_name)
