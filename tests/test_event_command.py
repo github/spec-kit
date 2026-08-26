@@ -103,6 +103,24 @@ def test_event_run_oversized_stdin_reports_clean_error():
     assert not mock_run.called
 
 
+def test_event_run_invalid_utf8_reports_clean_error():
+    """A piped payload that isn't valid UTF-8 must exit 1 with the encoding
+    error message, not propagate a raw `UnicodeDecodeError`, and the handler
+    must never be invoked with undecodable data."""
+    with patch(
+        "specify_cli.events.resolve_and_run_event_command", return_value=0
+    ) as mock_run:
+        result = CliRunner().invoke(
+            app,
+            ["event", "run", "some-command", "session_start"],
+            input=b"\xff\xfe",
+        )
+
+    assert result.exit_code == 1, result.output
+    assert "must be valid UTF-8" in result.output
+    assert not mock_run.called
+
+
 def test_event_run_multibyte_payload_enforces_byte_limit():
     """The 1 MiB cap must be enforced in encoded bytes, not decoded characters.
 
