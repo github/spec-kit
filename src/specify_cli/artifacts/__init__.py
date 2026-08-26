@@ -369,12 +369,15 @@ def _materialized_command_source_path(
     registered_skills = metadata.get("registered_skills")
     if source == "preset":
         skill_names_by_agent = registered_skills if isinstance(registered_skills, dict) else {}
-    else:
+    elif isinstance(registered_skills, list):
+        # Extension registries store skills as a flat list, unlike presets'
+        # per-agent map. Probe every known agent's project-local skills
+        # directory and return the first extant tracked file.
         skill_names_by_agent = {
-            agent_name: registered_skills
-            for agent_name in sorted(registrar.AGENT_CONFIGS)
-            if isinstance(registered_skills, list)
+            agent_name: registered_skills for agent_name in sorted(registrar.AGENT_CONFIGS)
         }
+    else:
+        skill_names_by_agent = {}
 
     expected_skill_names: set[str] | None = None
     if source == "extension":
@@ -462,8 +465,12 @@ def _derive_source_path(
             if materialized is not None:
                 return materialized
     else:
+        # Core and project-override rows are built-in/synthetic from the public
+        # artifact contract's perspective, so their sourcePath stays null.
         return None
 
+    # Non-command preset/extension layers, and command layers without a tracked
+    # materialized agent output, report the installed pack file the resolver used.
     path = layer.get("path")
     if isinstance(path, Path):
         return _repo_relative_existing_file(project_root, path)
