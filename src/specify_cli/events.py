@@ -375,7 +375,21 @@ def main():
     # hookEventName field (required by Qwen's hooks spec; included by
     # Gemini/Tabnine/Devin which derive from the same protocol).
     native_event = sys.argv[5] if len(sys.argv) >= 6 else ""
-    payload = sys.stdin.read() if not sys.stdin.isatty() else "{}"
+    # Cap piped stdin at 1 MiB to prevent a DoS (mirrors the same guard on the
+    # `specify event run` CLI command). Read from the binary buffer so the cap
+    # counts encoded bytes, not decoded characters.
+    MAX_STDIN_BYTES = 1 * 1024 * 1024
+    if not sys.stdin.isatty():
+        raw = sys.stdin.buffer.read(MAX_STDIN_BYTES + 1)
+        if len(raw) > MAX_STDIN_BYTES:
+            print(
+                "stdin payload exceeds 1 MiB limit; truncate or pipe a smaller payload",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        payload = raw.decode("utf-8")
+    else:
+        payload = "{}"
     project_root = Path(__file__).parent.parent.resolve()
 
     # Preferred path: specify_cli is importable (durable install) — delegate to

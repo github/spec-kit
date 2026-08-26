@@ -1503,6 +1503,111 @@ class TestCommandRunner:
         )
         assert not ran.exists(), f"stale package ran; stderr={result.stderr!r}"
 
+    def test_dispatcher_rejects_oversized_stdin(self, tmp_path):
+        """The generated dispatcher — the actual script native hooks invoke —
+        must enforce the same 1 MiB stdin cap as `specify event run`. The
+        #3857 DoS guard previously only applied to the CLI command; the
+        template's own `sys.stdin.read()` had no cap at all."""
+        import subprocess as _sp
+        import sys as _sys
+
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"session_start": [{"command": "speckit.boot"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+
+        oversized = "x" * (1 * 1024 * 1024 + 10)
+        result = _sp.run(
+            [_sys.executable, str(dispatcher), "speckit.boot", "session_start", "60"],
+            input=oversized,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 1, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        assert "1 MiB limit" in result.stderr
+
+    def test_dispatcher_stdin_cap_counts_bytes_not_characters(self, tmp_path):
+        """~300k emoji is ~1.14 MiB of UTF-8 but only 300k *characters* —
+        comfortably under a text-mode `sys.stdin.read(N)` character cap. The
+        dispatcher must still reject it by reading from the binary buffer."""
+        import subprocess as _sp
+        import sys as _sys
+
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"session_start": [{"command": "speckit.boot"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+
+        oversized = "\U0001F600" * 300_000  # 4 bytes each in UTF-8
+        assert len(oversized) < 1 * 1024 * 1024  # under a character-based cap
+        result = _sp.run(
+            [_sys.executable, str(dispatcher), "speckit.boot", "session_start", "60"],
+            input=oversized,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 1, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        assert "1 MiB limit" in result.stderr
+
+    def test_dispatcher_underlimit_stdin_still_runs(self, tmp_path):
+        """A normal, under-the-cap piped payload must still reach the handler
+        (regression guard against an over-eager cap check)."""
+        import subprocess as _sp
+        import sys as _sys
+
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"session_start": [{"command": "speckit.boot"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        out_file = tmp_path / "payload.out"
+        (cmd_dir / "boot.md").write_text(
+            "---\ndescription: \"Boot\"\nscripts:\n  sh: scripts/boot.sh\n---\nBody\n",
+            encoding="utf-8",
+        )
+        script_dir = tmp_path / ".specify" / "scripts"
+        script_dir.mkdir(parents=True)
+        script = script_dir / "boot.sh"
+        script.write_text(f"#!/bin/sh\ncat > {shlex.quote(str(out_file))}\nexit 0\n", encoding="utf-8")
+        script.chmod(0o755)
+
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        result = _sp.run(
+            [_sys.executable, str(dispatcher), "speckit.boot", "session_start", "60"],
+            input='{"key": "value"}',
+            capture_output=True,
+            text=True,
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        assert out_file.read_text() == '{"key": "value"}'
+
     def test_dispatcher_threads_per_handler_timeout(self, tmp_path):
         """S4: the generated dispatcher reads an optional 4th timeout arg and
         uses it for the inner subprocess, instead of a fixed 120s cap that
