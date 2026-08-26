@@ -61,6 +61,7 @@ def _register_builtins() -> None:
     from .cursor_agent import CursorAgentIntegration
     from .devin import DevinIntegration
     from .droid import DroidIntegration
+    from .dsh import DshIntegration
     from .firebender import FirebenderIntegration
     from .forge import ForgeIntegration
     from .gemini import GeminiIntegration
@@ -101,6 +102,7 @@ def _register_builtins() -> None:
     _register(CursorAgentIntegration())
     _register(DevinIntegration())
     _register(DroidIntegration())
+    _register(DshIntegration())
     _register(FirebenderIntegration())
     _register(ForgeIntegration())
     _register(GeminiIntegration())

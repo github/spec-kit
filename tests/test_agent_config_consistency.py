@@ -25,6 +25,7 @@ ISSUE_TEMPLATE_AGENT_KEYS = [
     "cursor-agent",
     "devin",
     "droid",
+    "dsh",
     "firebender",
     "forge",
     "gemini",

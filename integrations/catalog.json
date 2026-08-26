@@ -66,6 +66,15 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli", "skills", "factory"]
     },
+    "dsh": {
+      "id": "dsh",
+      "name": "DeepSeek Harness",
+      "version": "1.0.0",
+      "description": "DeepSeek Harness (DSH) CLI skills-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "skills"]
+    },
     "amp": {
       "id": "amp",
       "name": "Amp",
