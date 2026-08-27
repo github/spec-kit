@@ -4,7 +4,7 @@ Covers:
 - Step registry & auto-discovery
 - Base classes (StepBase, StepContext, StepResult)
 - Expression engine
-- All 10 built-in step types
+- All 12 built-in step types
 - Workflow definition loading & validation
 - Workflow engine execution & state persistence
 - Workflow catalog & registry
@@ -108,7 +108,7 @@ class TestStepRegistry:
 
         expected = {
             "command", "shell", "prompt", "gate", "if", "switch",
-            "while", "do-while", "fan-out", "fan-in", "init",
+            "while", "do-while", "fan-out", "fan-in", "init", "plugin",
         }
         assert expected.issubset(set(STEP_REGISTRY.keys()))
 

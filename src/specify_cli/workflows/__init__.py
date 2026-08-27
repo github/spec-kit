@@ -51,6 +51,7 @@ def _register_builtin_steps() -> None:
     from .steps.gate import GateStep
     from .steps.if_then import IfThenStep
     from .steps.init import InitStep
+    from .steps.plugin import PluginStep
     from .steps.prompt import PromptStep
     from .steps.shell import ShellStep
     from .steps.switch import SwitchStep
@@ -63,6 +64,7 @@ def _register_builtin_steps() -> None:
     _register_step(GateStep())
     _register_step(IfThenStep())
     _register_step(InitStep())
+    _register_step(PluginStep())
     _register_step(PromptStep())
     _register_step(ShellStep())
     _register_step(SwitchStep())

@@ -1,0 +1,229 @@
+"""Tests for the plugin workflow extension-point step."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+import yaml
+
+from specify_cli.workflows import BUILTIN_STEP_TYPES, get_step_type
+from specify_cli.workflows.base import RunStatus, StepContext, StepStatus
+from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine, validate_workflow
+from specify_cli.workflows.overlays import WorkflowResolver
+from specify_cli.workflows.steps.plugin import PluginStep
+
+
+def _workflow_data(steps: list[dict[str, object]]) -> dict[str, object]:
+    return {
+        "schema_version": "1.0",
+        "workflow": {"id": "plugin-workflow", "name": "Plugin Workflow", "version": "1.0.0"},
+        "steps": steps,
+    }
+
+
+def _write_workflow(project_root: Path, data: dict[str, object]) -> None:
+    workflow_dir = project_root / ".specify" / "workflows" / "plugin-workflow"
+    workflow_dir.mkdir(parents=True, exist_ok=True)
+    (workflow_dir / "workflow.yml").write_text(
+        yaml.safe_dump(data), encoding="utf-8"
+    )
+
+
+def _write_overlay(project_root: Path, data: dict[str, object]) -> None:
+    overlay_dir = (
+        project_root / ".specify" / "workflows" / "overlays" / "plugin-workflow"
+    )
+    overlay_dir.mkdir(parents=True, exist_ok=True)
+    (overlay_dir / "fill-slot.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+
+
+def test_plugin_step_is_registered_as_builtin():
+    step = get_step_type("plugin")
+
+    assert isinstance(step, PluginStep)
+    assert step.type_key == "plugin"
+    assert "plugin" in BUILTIN_STEP_TYPES
+
+
+def test_plugin_step_validate_returns_errors_for_malformed_names():
+    step = PluginStep()
+
+    assert any("missing required 'id'" in error for error in step.validate({}))
+    assert "requires a 'name' field" in step.validate({"id": "slot"})[0]
+    assert "requires a 'name' field" in step.validate({"id": "slot", "name": None})[0]
+    for name in ("", "   ", 123):
+        errors = step.validate({"id": "slot", "name": name})
+        assert len(errors) == 1
+        assert "non-blank string" in errors[0]
+    assert step.validate({"id": "slot", "name": "lint"}) == []
+
+
+@pytest.mark.parametrize(
+    ("name", "expected_error"),
+    [
+        (None, "requires a 'name' field"),
+        ("", "non-blank string"),
+        ("  ", "non-blank string"),
+        (123, "non-blank string"),
+    ],
+)
+def test_plugin_step_errors_are_reported_through_workflow_validation(
+    name: object, expected_error: str
+):
+    definition = WorkflowDefinition(
+        _workflow_data([{"id": "slot", "type": "plugin", "name": name}])
+    )
+
+    errors = validate_workflow(definition)
+
+    assert any("Plugin step 'slot'" in error for error in errors)
+    assert any(expected_error in error for error in errors)
+
+
+def test_addressable_nested_plugin_step_validates_cleanly():
+    definition = WorkflowDefinition(
+        _workflow_data(
+            [
+                {
+                    "id": "conditional",
+                    "type": "if",
+                    "condition": "true",
+                    "then": [{"id": "slot", "type": "plugin", "name": "lint"}],
+                }
+            ]
+        )
+    )
+
+    assert validate_workflow(definition) == []
+
+
+def test_plugin_step_skips_without_mutating_the_shared_instance():
+    step = PluginStep()
+    before = vars(step).copy()
+
+    result = step.execute({"id": "slot", "name": "lint"}, StepContext())
+
+    assert result.status is StepStatus.SKIPPED
+    assert result.output == {"slot": "lint"}
+    assert vars(step) == before
+
+
+def test_unfilled_plugin_slot_is_persisted_and_does_not_halt_workflow(project_dir):
+    _write_workflow(
+        project_dir,
+        _workflow_data(
+            [
+                {"id": "slot", "type": "plugin", "name": "post-implement"},
+                {"id": "marker", "type": "shell", "run": "echo marker"},
+            ]
+        ),
+    )
+    engine = WorkflowEngine(project_dir)
+
+    definition = engine.load_workflow("plugin-workflow")
+    assert engine.validate(definition) == []
+    state = engine.execute(definition, run_id="plugin-run")
+
+    assert state.status is RunStatus.COMPLETED
+    state_data = json.loads((state.runs_dir / "state.json").read_text(encoding="utf-8"))
+    assert state_data["step_results"]["slot"]["status"] == "skipped"
+    assert state_data["step_results"]["slot"]["output"] == {"slot": "post-implement"}
+    assert state_data["step_results"]["marker"]["status"] == "completed"
+
+    log_entries = [
+        json.loads(line)
+        for line in (state.runs_dir / "log.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    skipped_events = [
+        entry
+        for entry in log_entries
+        if entry["event"] == "step_completed" and entry["step_id"] == "slot"
+    ]
+    assert len(skipped_events) == 1
+    assert skipped_events[0]["status"] == "skipped"
+
+
+def test_overlay_replaces_plugin_slot_and_attributes_it_to_the_overlay(project_dir):
+    _write_workflow(
+        project_dir,
+        _workflow_data(
+            [
+                {"id": "before", "type": "shell", "run": "echo before"},
+                {"id": "slot", "type": "plugin", "name": "post-implement"},
+                {"id": "after", "type": "shell", "run": "echo after"},
+            ]
+        ),
+    )
+    _write_overlay(
+        project_dir,
+        {
+            "id": "fill-slot",
+            "extends": "plugin-workflow",
+            "edits": [
+                {
+                    "replace": "slot",
+                    "step": {"id": "slot", "type": "shell", "run": "echo filled"},
+                }
+            ],
+        },
+    )
+    engine = WorkflowEngine(project_dir)
+
+    definition = engine.load_workflow("plugin-workflow")
+    assert [step["id"] for step in definition.steps] == ["before", "slot", "after"]
+    assert definition.steps[1]["type"] == "shell"
+    assert engine.validate(definition) == []
+    state = engine.execute(definition, run_id="filled-slot-run")
+    assert state.status is RunStatus.COMPLETED
+    assert "filled" in state.step_results["slot"]["output"]["stdout"]
+
+    _definition, _layers, attribution = WorkflowResolver(project_dir).resolve_with_layers(
+        "plugin-workflow"
+    )
+    sources = {step.step_id: step.source for step in attribution}
+    assert sources == {
+        "before": "base",
+        "slot": "project:fill-slot",
+        "after": "base",
+    }
+
+
+def test_plugin_steps_are_rejected_inside_fan_out_templates():
+    definition = WorkflowDefinition(
+        _workflow_data(
+            [
+                {
+                    "id": "fan",
+                    "type": "fan-out",
+                    "items": [],
+                    "step": {"id": "slot", "type": "plugin", "name": "per-item"},
+                }
+            ]
+        )
+    )
+
+    errors = validate_workflow(definition)
+
+    assert any(
+        "Plugin step 'slot' is not supported inside fan-out templates" in error
+        for error in errors
+    )
+
+
+def test_non_plugin_fan_out_templates_remain_valid():
+    definition = WorkflowDefinition(
+        _workflow_data(
+            [
+                {
+                    "id": "fan",
+                    "type": "fan-out",
+                    "items": [],
+                    "step": {"id": "template", "type": "shell", "run": "echo item"},
+                }
+            ]
+        )
+    )
+
+    assert validate_workflow(definition) == []
