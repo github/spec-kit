@@ -18,7 +18,12 @@ from typer.testing import CliRunner
 from specify_cli import app
 from specify_cli.bundler import BundlerError
 from specify_cli.commands.bundle import _local_manifest_source
-from tests.bundler_helpers import make_project, valid_manifest_dict, write_manifest
+from tests.bundler_helpers import (
+    bundled_extension_version,
+    make_project,
+    valid_manifest_dict,
+    write_manifest,
+)
 
 
 def test_local_source_none_for_non_path():
@@ -116,7 +121,12 @@ def test_install_bundled_extension_from_zip_offline(tmp_path: Path):
                 },
                 "requires": {"speckit_version": ">=0.1.0"},
                 "provides": {
-                    "extensions": [{"id": "agent-context", "version": "1.0.0"}]
+                    "extensions": [
+                        {
+                            "id": "agent-context",
+                            "version": bundled_extension_version("agent-context"),
+                        }
+                    ]
                 },
             }
         ),
