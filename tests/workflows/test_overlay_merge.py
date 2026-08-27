@@ -736,13 +736,19 @@ class TestMergeStepsIdCollision:
 
 
 class TestMergeStepsSameOverlayFateEdits:
-    """An overlay's replace/remove must survive its own trailing insert.
+    """An overlay's `replace` must survive its own trailing insert.
 
     `_traverse_and_apply` decided an anchor's fate with `edits[-1]`, which
     treats declaration order *inside one overlay file* as a precedence signal.
     Priority is a per-overlay property, so two edits from the same overlay have
     no priority relation to break — yet a trailing `insert_after` reverted the
     anchor to the base step and discarded that overlay's own `replace`.
+
+    `remove` is explicitly out of scope: it destroys the anchor, so an insert
+    relative to it cannot also apply. Layers combining `remove` with a trailing
+    insert — with or without a `replace` alongside — keep their pre-existing
+    behaviour, as `test_remove_then_insert_after_same_overlay_is_unchanged` and
+    `test_replace_and_remove_with_trailing_insert_is_unchanged` pin.
     """
 
     def test_replace_then_insert_after_same_overlay_keeps_replacement(self):
@@ -805,6 +811,49 @@ class TestMergeStepsSameOverlayFateEdits:
         steps, _ = merge_steps(base, [_layer(overlay, "project:ov")])
 
         assert [s["id"] for s in steps] == ["implement", "lint", "tail"]
+
+    @pytest.mark.parametrize(
+        "order",
+        ["replace_first", "remove_first"],
+    )
+    def test_replace_and_remove_with_trailing_insert_is_unchanged(self, order):
+        """A layer asking for two incompatible fates keeps the old outcome.
+
+        The rescue applies only to an unambiguous replace-plus-insert layer. If
+        the winning layer also declared a `remove` on the anchor it is asking
+        for two incompatible fates, and choosing one is the separate question
+        this change deliberately does not answer — so the trailing-insert
+        outcome is preserved and the base step survives, exactly as it did
+        before the rescue existed. Pinned in both declaration orders so the
+        rescue cannot start honouring whichever of the two happens to come
+        first.
+        """
+        base = [_step("implement"), _step("tail")]
+        replace_edit = OverlayEdit(
+            "replace", "implement", {**_step("implement"), "command": "custom.impl"}
+        )
+        remove_edit = OverlayEdit("remove", "implement")
+        fate_edits = (
+            [replace_edit, remove_edit]
+            if order == "replace_first"
+            else [remove_edit, replace_edit]
+        )
+        overlay = Overlay(
+            id="ov",
+            extends="wf",
+            priority=10,
+            edits=[
+                *fate_edits,
+                OverlayEdit("insert_after", "implement", _step("lint")),
+            ],
+        )
+
+        steps, _ = merge_steps(base, [_layer(overlay, "project:ov")])
+
+        assert [s["id"] for s in steps] == ["implement", "lint", "tail"]
+        # The base step, not the replacement: the ambiguous layer is left alone.
+        by_id = {s["id"]: s for s in steps}
+        assert by_id["implement"].get("command") != "custom.impl"
 
     def test_higher_priority_insert_only_overlay_keeps_base_step(self):
         """A later layer that only inserts must NOT resurrect a lower layer's

@@ -248,6 +248,13 @@ def _winning_fate_edit(
     insert relative to it cannot also apply, and choosing between them is a
     separate question. That combination keeps its existing behaviour.
 
+    For the same reason the rescue applies only to an *unambiguous*
+    replace-plus-insert layer. If the winning layer also declared a ``remove``
+    on this anchor, the layer is asking for two incompatible fates and picking
+    one is that same separate question -- so the previous trailing-insert
+    outcome is preserved and such layers stay byte-identical to their
+    pre-rescue behaviour.
+
     Returns ``None`` only when there are no edits.
     """
     if not edits:
@@ -257,7 +264,13 @@ def _winning_fate_edit(
         return edits[-1]
     replacement: tuple[OverlayLayer, OverlayEdit] | None = None
     for layer, edit in edits:
-        if layer is winning_layer and edit.operation == "replace":
+        if layer is not winning_layer:
+            continue
+        if edit.operation == "remove":
+            # Ambiguous layer (replace *and* remove on one anchor): leave the
+            # pre-existing trailing-insert fate untouched.
+            return edits[-1]
+        if edit.operation == "replace":
             replacement = (layer, edit)
     return replacement if replacement is not None else edits[-1]
 
@@ -276,7 +289,10 @@ def _traverse_and_apply(
     steps).
 
     *edits* are expected to be in merge order (lowest priority first, highest
-    priority last); the winning edit for each anchor is ``edits[-1]``.
+    priority last). The winning edit for each anchor is chosen by
+    ``_winning_fate_edit`` -- normally ``edits[-1]``, except that a trailing
+    ``insert_*`` does not cancel a ``replace`` declared earlier by that same
+    overlay. Go through that helper rather than reading ``edits[-1]`` directly.
     """
     result: list[dict[str, Any]] = []
 
