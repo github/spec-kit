@@ -1,6 +1,7 @@
 """Docker Agent integration — skills-based Docker CLI agent.
 
-Docker Agent discovers project skills from ``.agents/skills``. Runtime
+Docker Agent discovers project skills from ``.agents/skills`` when the selected
+agent configuration enables local skills and filesystem reads. Runtime
 configuration is owned by Docker Agent and is not managed by Spec Kit.
 """
 
