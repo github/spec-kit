@@ -9,7 +9,10 @@ import json
 import os
 import time
 from io import StringIO
+from pathlib import Path
 from typing import Any, cast
+
+import pytest
 
 from specify_cli._version import (
     _check_for_updates,
@@ -33,6 +36,14 @@ class _CaptureConsole:
 
     def getvalue(self) -> str:
         return self._output.getvalue()
+
+
+def _symlink_or_skip(target: Path, link: Path) -> None:
+    """Create a symlink, or skip when the platform/user cannot do so."""
+    try:
+        os.symlink(target, link)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
 
 
 class TestCache:
@@ -101,7 +112,7 @@ class TestCache:
         target = tmp_path / "victim.txt"
         target.write_text("untouched")
         cache_file = tmp_path / "version_check.json"
-        os.symlink(target, cache_file)
+        _symlink_or_skip(target, cache_file)
 
         _write_update_check_cache(cache_file, "v9.9.9")
 
@@ -115,7 +126,7 @@ class TestCache:
         victim = real_target_dir / "version_check.json"
 
         link_parent = tmp_path / "cache_dir"
-        os.symlink(real_target_dir, link_parent)
+        _symlink_or_skip(real_target_dir, link_parent)
         cache_file = link_parent / "version_check.json"
 
         _write_update_check_cache(cache_file, "v9.9.9")
@@ -131,14 +142,13 @@ class TestCache:
         real_target_dir.mkdir()
 
         link_ancestor = tmp_path / "cache_root"
-        os.symlink(real_target_dir, link_ancestor)
+        _symlink_or_skip(real_target_dir, link_ancestor)
         cache_file = link_ancestor / "specify-cli" / "version_check.json"
 
         _write_update_check_cache(cache_file, "v9.9.9")
 
         assert not (real_target_dir / "specify-cli").exists()
         assert not cache_file.exists()
-
 
 
 class TestCheckForUpdates:

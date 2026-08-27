@@ -1520,13 +1520,11 @@ def _write_update_check_cache(path: Path, latest: str | None) -> None:
         if path.is_symlink():
             return
 
-        payload = json.dumps({"checked_at": time.time(), "latest": latest}).encode("utf-8")
+        payload = json.dumps({"checked_at": time.time(), "latest": latest})
         flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
         fd = os.open(str(path), flags, 0o600)
-        try:
-            os.write(fd, payload)
-        finally:
-            os.close(fd)
+        with os.fdopen(fd, "w", encoding="utf-8") as cache_file:
+            cache_file.write(payload)
     except Exception:
         # Cache write failures are non-fatal.
         pass
