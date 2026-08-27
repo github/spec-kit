@@ -110,9 +110,17 @@ class DockerAgentIntegration(SkillsIntegration):
         # also preserves shell-style quoting when splitting multiple args.
         self._apply_extra_args_env_var(args)
 
-        args.append(prompt)
         if output_json:
             args.append("--json")
         if model:
             args.extend(["--model", model])
+
+        # Stop Cobra flag parsing before the user prompt so values such as
+        # ``--help`` or ``--json`` are passed as messages, not CLI options.
+        # For example, the complete argv is
+        # ``docker-agent run --exec ./agent.yaml --agent root -- --help``;
+        # everything before ``--`` is parsed by Docker Agent, while ``--help``
+        # is passed to the configured agent as the user message.
+        args.extend(["--", prompt])
+
         return args
