@@ -3,13 +3,15 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import typer
+from rich.markup import escape
 
 from .._agent_config import SCRIPT_TYPE_CHOICES
 from .._console import console
 from ..integration_runtime import (
+    invoke_prefix_for_integration as _invoke_prefix_for_integration,
     invoke_separator_for_integration as _invoke_separator_for_integration,
     resolve_integration_options as _resolve_integration_options_impl,
     with_integration_setting as _with_integration_setting,
@@ -103,45 +105,23 @@ def _refresh_init_options_speckit_version(project_root: Path) -> None:
 
 
 def _clear_init_options_for_integration(project_root: Path, integration_key: str) -> None:
-    """Clear active integration keys from init-options.json when they match.
-
-    Also clears ``context_file`` from the agent-context extension config so
-    no stale path is left behind when the integration is uninstalled.
-    """
+    """Clear active integration keys from init-options.json when they match."""
     from .. import (
-        _AGENT_CTX_EXT_CONFIG,
-        _update_agent_context_config_file,
         load_init_options,
         save_init_options,
     )
     opts = load_init_options(project_root)
-    has_legacy_context_keys = ("context_file" in opts) or ("context_markers" in opts)
-    # Remove legacy fields that older versions may have written.
-    opts.pop("context_file", None)
-    opts.pop("context_markers", None)
-
     if opts.get("integration") == integration_key or opts.get("ai") == integration_key:
         opts.pop("integration", None)
         opts.pop("ai", None)
         opts.pop("ai_skills", None)
-        save_init_options(project_root, opts)
-        # Clear context_file in the extension config if it already exists.
-        # Avoid creating the config (and parent dirs) in projects where the
-        # agent-context extension was never installed.
-        ext_cfg_path = project_root / _AGENT_CTX_EXT_CONFIG
-        if ext_cfg_path.exists():
-            _update_agent_context_config_file(
-                project_root, "", preserve_markers=True
-            )
-    elif has_legacy_context_keys:
         save_init_options(project_root, opts)
 
 
 def _remove_integration_json(project_root: Path) -> None:
     """Remove ``.specify/integration.json`` if it exists."""
     path = project_root / INTEGRATION_JSON
-    if path.exists():
-        path.unlink()
+    path.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +191,15 @@ def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, 
     """
     import shlex
     parsed: dict[str, Any] = {}
-    tokens = shlex.split(raw_options)
+    try:
+        tokens = shlex.split(raw_options)
+    except ValueError as exc:
+        # An unbalanced quote (e.g. --integration-options='--commands-dir "foo')
+        # makes shlex raise "No closing quotation". Translate it into the same
+        # clean exit-1 UX as every other bad-input path below rather than
+        # letting a raw traceback escape.
+        console.print(f"[red]Error:[/red] Could not parse integration options: {exc}.")
+        raise typer.Exit(1)
     declared_options = list(integration.options())
     declared = {opt.name.lstrip("-"): opt for opt in declared_options}
     allowed = ", ".join(sorted(opt.name for opt in declared_options))
@@ -219,7 +207,7 @@ def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, 
     while i < len(tokens):
         token = tokens[i]
         if not token.startswith("-"):
-            console.print(f"[red]Error:[/red] Unexpected integration option value '{token}'.")
+            console.print(f"[red]Error:[/red] Unexpected integration option value '{escape(token)}'.")
             if allowed:
                 console.print(f"Allowed options: {allowed}")
             raise typer.Exit(1)
@@ -230,7 +218,7 @@ def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, 
             name, value = name.split("=", 1)
         opt = declared.get(name)
         if not opt:
-            console.print(f"[red]Error:[/red] Unknown integration option '{token}'.")
+            console.print(f"[red]Error:[/red] Unknown integration option '{escape(token)}'.")
             if allowed:
                 console.print(f"Allowed options: {allowed}")
             raise typer.Exit(1)
@@ -273,55 +261,34 @@ def _update_init_options_for_integration(
     project_root: Path,
     integration: Any,
     script_type: str | None = None,
+    parsed_options: dict[str, Any] | None = None,
 ) -> None:
-    """Update init-options.json and the agent-context extension config to
-    reflect *integration* as the active one.
+    """Update init-options.json to reflect *integration* as the active one.
 
-    ``context_file`` and ``context_markers`` are stored in the agent-context
-    extension config (``.specify/extensions/agent-context/agent-context-config.yml``),
-    not in ``init-options.json``.  Existing user-customised markers are
-    always preserved when the config already exists; invalid marker values
-    are silently ignored at runtime by ``_resolve_context_markers()`` which
-    falls back to the class-level defaults.
+    Agent context/instruction files are owned entirely by the opt-in
+    agent-context extension, so this function never touches the extension
+    or its config.
     """
     from .. import (
-        _AGENT_CTX_EXT_CONFIG,
-        _update_agent_context_config_file,
         load_init_options,
         save_init_options,
     )
-    from .base import SkillsIntegration
     opts = load_init_options(project_root)
     opts["integration"] = integration.key
     opts["ai"] = integration.key
-    # Remove legacy fields if they were written by an older version.
-    opts.pop("context_file", None)
-    opts.pop("context_markers", None)
     opts["speckit_version"] = _get_speckit_version()
     if script_type:
         opts["script"] = script_type
-    if isinstance(integration, SkillsIntegration) or getattr(integration, "_skills_mode", False):
+    # Whether skills mode is active is owned by each integration via the
+    # ``is_skills_mode`` hook (base default honors ``--skills``;
+    # SkillsIntegration returns True; skills-first integrations with a legacy
+    # opt-out such as Bob override it). This keeps shared code free of
+    # ``isinstance`` / ``_skills_mode`` probing. Passing parsed_options lets it
+    # work on the ``use``/``install`` path where no setup() runs (issue #3550).
+    if integration.is_skills_mode(parsed_options, project_root=project_root):
         opts["ai_skills"] = True
     else:
         opts.pop("ai_skills", None)
-
-    # Update the agent-context extension config BEFORE init-options.json
-    # so a failure here doesn't leave init-options partially updated.
-    ext_cfg_path = project_root / _AGENT_CTX_EXT_CONFIG
-    if ext_cfg_path.exists():
-        _update_agent_context_config_file(
-            project_root,
-            integration.context_file,
-            preserve_markers=True,
-        )
-    elif integration.context_file:
-        # Extension config doesn't exist yet (extension not installed).
-        # Write defaults so scripts have something to read.
-        _update_agent_context_config_file(
-            project_root,
-            integration.context_file,
-            preserve_markers=False,
-        )
 
     save_init_options(project_root, opts)
 
@@ -354,6 +321,7 @@ def _set_default_integration(
         script_type=resolved_script,
         raw_options=raw_options,
         parsed_options=parsed_options,
+        project_root=project_root,
     )
 
     if refresh_templates:
@@ -362,7 +330,11 @@ def _set_default_integration(
                 project_root,
                 resolved_script,
                 invoke_separator=_invoke_separator_for_integration(
-                    integration, {"integration_settings": settings}, key, parsed_options
+                    integration, {"integration_settings": settings}, key, parsed_options,
+                    project_root=project_root,
+                ),
+                invoke_prefix=_invoke_prefix_for_integration(
+                    integration, key, parsed_options, project_root
                 ),
                 force=refresh_templates_force,
                 refresh_managed=True,
@@ -374,7 +346,9 @@ def _set_default_integration(
             ) from exc
 
     _write_integration_json(project_root, key, installed_keys, settings)
-    _update_init_options_for_integration(project_root, integration, script_type=resolved_script)
+    _update_init_options_for_integration(
+        project_root, integration, script_type=resolved_script, parsed_options=parsed_options
+    )
 
 
 def _set_default_integration_or_exit(*args: Any, **kwargs: Any) -> None:
@@ -383,6 +357,179 @@ def _set_default_integration_or_exit(*args: Any, **kwargs: Any) -> None:
     except _SharedTemplateRefreshError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Extension (un)registration helpers (shared by use / switch / upgrade)
+# ---------------------------------------------------------------------------
+
+def _best_effort_extension_op(
+    project_root: Path,
+    agent_key: str,
+    op: Callable[[Any, str], None],
+    *,
+    phase: str,
+    continuing: str,
+) -> None:
+    """Run a best-effort ``ExtensionManager`` operation for ``agent_key``.
+
+    ``op`` receives the ``ExtensionManager`` and ``agent_key``. Any failure is
+    surfaced as a warning via ``_print_cli_warning`` and never aborts the
+    surrounding integration operation. ``continuing`` describes what already
+    succeeded so the warning makes the partial outcome clear.
+    """
+    try:
+        from ..extensions import ExtensionManager
+
+        ext_mgr = ExtensionManager(project_root)
+        op(ext_mgr, agent_key)
+    except Exception as ext_err:
+        from .. import _print_cli_warning
+
+        _print_cli_warning(phase, "integration", agent_key, ext_err, continuing=continuing)
+
+
+def _register_extensions_for_agent(
+    project_root: Path,
+    agent_key: str,
+    *,
+    continuing: str,
+    force: bool = False,
+) -> None:
+    """Register all enabled extensions' commands/skills for ``agent_key``.
+
+    ``use`` / ``switch`` re-register enabled extensions for the agent they
+    activate (rescaffold); ``upgrade`` does so only for the *active*
+    integration. Plain ``install`` and upgrade of a non-active integration
+    deliberately skip this helper so a secondary integration has no extension
+    side effects until it is selected. See issues #2886 and #2948.
+
+    Callers always pass the active agent (use/switch activate the target
+    before registering), so extension *skill* rendering — which is scoped to
+    the active ``ai`` / ``ai_skills`` init-options — matches ``agent_key``.
+
+    When ``force=True``, existing skill files are overwritten even when they
+    are not dev-mode symlinks. Pass ``force=True`` in the upgrade path so that
+    extension content is layered on top of the core-template files that
+    ``setup()`` just regenerated (fixes the skip-guard bug for skills mode).
+
+    Best-effort: never aborts the surrounding integration operation. Callers
+    invoke it *after* the use/upgrade/switch transaction has committed so a
+    failure here cannot trigger a rollback.
+    """
+    _best_effort_extension_op(
+        project_root,
+        agent_key,
+        lambda mgr, key: mgr.register_enabled_extensions_for_agent(key, force=force),
+        phase="register extension artifacts for",
+        continuing=continuing,
+    )
+
+
+def _unregister_extensions_for_agent(
+    project_root: Path,
+    agent_key: str,
+    *,
+    continuing: str,
+) -> None:
+    """Best-effort removal of ``agent_key``'s extension artifacts.
+
+    Used by ``switch`` when uninstalling the previous integration so its
+    extension command/skill files don't linger as orphans in the old agent's
+    directory.
+    """
+    _best_effort_extension_op(
+        project_root,
+        agent_key,
+        lambda mgr, key: mgr.unregister_agent_artifacts(key),
+        phase="clean up extension artifacts for",
+        continuing=continuing,
+    )
+
+
+def _register_presets_for_agent(
+    project_root: Path,
+    agent_key: str,
+    *,
+    continuing: str,
+) -> None:
+    """Register all enabled presets' command overrides/skills for ``agent_key``.
+
+    Presets follow the same single-active rule as extensions (#2948):
+    ``use`` / ``switch`` re-register enabled presets for the agent they
+    activate (rescaffold), so a preset installed while a different
+    integration was active is not left targeting that inactive integration.
+
+    Best-effort: never aborts the surrounding integration operation.
+    """
+    try:
+        from ..presets import PresetManager
+
+        preset_mgr = PresetManager(project_root)
+        preset_mgr.register_enabled_presets_for_agent(agent_key)
+    except Exception as preset_err:
+        from .. import _print_cli_warning
+
+        _print_cli_warning(
+            "register preset artifacts for",
+            "integration",
+            agent_key,
+            preset_err,
+            continuing=continuing,
+        )
+
+
+def _unregister_presets_for_agent(
+    project_root: Path,
+    agent_key: str,
+    *,
+    continuing: str,
+) -> None:
+    """Best-effort removal of ``agent_key``'s preset command/skill artifacts.
+
+    Mirrors ``_unregister_extensions_for_agent``: used by ``switch`` when
+    uninstalling the previous integration so its preset command overrides
+    and skill mirrors don't linger as orphans in the old agent's directory
+    once a different (possibly not-yet-installed) integration becomes
+    active (#2948).
+
+    Best-effort: never aborts the surrounding integration operation.
+    """
+    try:
+        from ..presets import PresetManager
+
+        preset_mgr = PresetManager(project_root)
+        preset_mgr.unregister_agent_artifacts(agent_key)
+    except Exception as preset_err:
+        from .. import _print_cli_warning
+
+        _print_cli_warning(
+            "clean up preset artifacts for",
+            "integration",
+            agent_key,
+            preset_err,
+            continuing=continuing,
+        )
+
+
+def _unregister_enabled_extension_commands_for_agent(
+    project_root: Path,
+    agent_key: str,
+    *,
+    continuing: str,
+) -> None:
+    """Best-effort removal of enabled extension command artifacts for ``agent_key``."""
+    _best_effort_extension_op(
+        project_root,
+        agent_key,
+        lambda mgr, key: mgr.unregister_agent_artifacts(
+            key,
+            enabled_only=True,
+            commands_only=True,
+        ),
+        phase="clean up enabled extension command artifacts for",
+        continuing=continuing,
+    )
 
 
 # ---------------------------------------------------------------------------

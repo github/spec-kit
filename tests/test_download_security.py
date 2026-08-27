@@ -1,0 +1,1435 @@
+"""Tests for bounded download and ZIP extraction helpers."""
+
+from __future__ import annotations
+
+import io
+import stat
+import struct
+import tarfile
+import weakref
+import zipfile
+import zlib
+
+import pytest
+
+from specify_cli._download_security import (
+    MAX_ZIP_CENTRAL_DIRECTORY_BYTES,
+    archive_format_from_content_type,
+    archive_format_from_name,
+    build_safe_download_path,
+    detect_archive_format,
+    is_https_or_localhost_http,
+    is_loopback_url,
+    read_response_limited,
+    read_zip_member_limited,
+    safe_extract_archive,
+    safe_extract_tar,
+    safe_extract_zip,
+)
+
+
+@pytest.mark.parametrize(
+    "url, allowed",
+    [
+        ("https://example.com/preset.zip", True),
+        ("http://localhost:8000/preset.zip", True),
+        ("http://127.0.0.1/preset.zip", True),
+        ("http://127.0.0.2/preset.zip", True),
+        ("http://127.255.255.254/preset.zip", True),
+        ("http://[::1]/preset.zip", True),
+        ("http://[0:0:0:0:0:0:0:1]/preset.zip", True),
+        ("http://[::ffff:127.0.0.2]/preset.zip", True),
+        ("http://[::1%25lo0]/preset.zip", True),
+        # Non-loopback HTTP is rejected.
+        ("http://example.com/preset.zip", False),
+        ("http://192.0.2.1/preset.zip", False),
+        ("http://[fe80::1]/preset.zip", False),
+        ("http://[fe80::1%25lo0]/preset.zip", False),
+        ("http://0.0.0.0/preset.zip", False),
+        ("http://0/preset.zip", False),
+        ("http://[::]/preset.zip", False),
+        ("http://[::ffff:0.0.0.0]/preset.zip", False),
+        # Ambiguous/platform-dependent spellings may never authorize HTTP.
+        ("http://127.1/preset.zip", False),
+        ("http://2130706433/preset.zip", False),
+        ("http://0x7f000001/preset.zip", False),
+        ("http://017700000001/preset.zip", False),
+        ("http://0177.0.0.1/preset.zip", False),
+        ("http://00177.0.0.1/preset.zip", False),
+        ("http://localhost./preset.zip", False),
+        ("http://ℓocalhost/preset.zip", False),
+        ("http://127。0。0。1/preset.zip", False),
+        # A hostname is always required, even for HTTPS.
+        ("https:///preset.zip", False),
+        ("https://", False),
+        # Invalid ports must be rejected before urllib opens the URL.
+        ("https://example.com:notaport/preset.zip", False),
+        ("https://example.com:+443/preset.zip", False),
+        ("https://example.com:65536/preset.zip", False),
+        # urllib decodes escapes in the authority before connecting; reject
+        # encoded reg-names so validation and connection cannot disagree.
+        ("https://127%2e0%2e0%2e1/preset.zip", False),
+        ("https://%31%32%37.0.0.1/preset.zip", False),
+        ("https://local%68ost/preset.zip", False),
+        ("https://example.com%3a443/preset.zip", False),
+        ("https://[::1%lo0]/preset.zip", False),
+        ("https://[::ffff:127%2e0.0.1]/preset.zip", False),
+        ("https://[::ffff:7f00%3a1]/preset.zip", False),
+        ("https://[::ffff%3a127.0.0.1]/preset.zip", False),
+    ],
+)
+def test_is_https_or_localhost_http(url, allowed):
+    assert is_https_or_localhost_http(url) is allowed
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://localhost/internal",
+        "https://127.0.0.2/internal",
+        "https://[::1]/internal",
+        "https://[::1%25lo0]/internal",
+        "https://[::ffff:127.0.0.2]/internal",
+    ],
+)
+def test_is_loopback_url_recognizes_effective_loopback_literals(url):
+    assert is_loopback_url(url) is True
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://localhost./internal",
+        "https://service.localhost/internal",
+        "https://service.localhost./internal",
+        "https://127.1/internal",
+        "https://2130706433/internal",
+        "https://0x7f000001/internal",
+        "https://017700000001/internal",
+        "https://0177.0.0.1/internal",
+        "https://ℓocalhost/internal",
+        "https://127。0。0。1/internal",
+        "https://127%2e0%2e0%2e1/internal",
+        "https://0.0.0.0/internal",
+        "https://0/internal",
+        "https://00.00.00.00/internal",
+        "https://[::]/internal",
+        "https://[::ffff:0.0.0.0]/internal",
+    ],
+)
+def test_is_loopback_url_does_not_authorize_ambiguous_spellings(url):
+    assert is_loopback_url(url) is False
+
+
+class _Response:
+    """Faithful stream stand-in: read() advances a cursor and returns b"" at EOF."""
+
+    def __init__(self, data: bytes, *, chunk: int | None = None):
+        self.data = data
+        self.pos = 0
+        self.chunk = chunk
+
+    def read(self, size: int = -1) -> bytes:
+        if size < 0:
+            size = len(self.data) - self.pos
+        if self.chunk is not None:
+            size = min(size, self.chunk)
+        out = self.data[self.pos : self.pos + size]
+        self.pos += len(out)
+        return out
+
+
+class _RecordingResponse(_Response):
+    def __init__(self, data: bytes, *, chunk: int | None = None):
+        super().__init__(data, chunk=chunk)
+        self.requested_sizes: list[int] = []
+
+    def read(self, size: int = -1) -> bytes:
+        self.requested_sizes.append(size)
+        return super().read(size)
+
+
+class _TrackedChunk(bytearray):
+    pass
+
+
+class _OneByteResponse:
+    """Return distinct weak-referenceable chunks to detect retained fragments."""
+
+    def __init__(self, count: int):
+        self.remaining = count
+        self.refs: list[weakref.ReferenceType[_TrackedChunk]] = []
+        self.peak_live = 0
+
+    def read(self, _size: int = -1) -> bytes | _TrackedChunk:
+        if self.remaining == 0:
+            return b""
+        self.remaining -= 1
+        chunk = _TrackedChunk(b"x")
+        self.refs.append(weakref.ref(chunk))
+        self.peak_live = max(
+            self.peak_live,
+            sum(ref() is not None for ref in self.refs),
+        )
+        return chunk
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, _exc_type, _exc, _tb):
+        return False
+
+
+class _CustomZipError(ValueError):
+    pass
+
+
+class _ExplodingResponse:
+    def read(self, _size: int = -1) -> bytes:
+        raise zlib.error("corrupt compressed data")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, _exc_type, _exc, _tb):
+        return False
+
+
+class _FakeZipArchive:
+    def __init__(
+        self,
+        response,
+        *,
+        filename: str = "extension.yml",
+        file_size: int = 0,
+    ):
+        self.response = response
+        self.info = zipfile.ZipInfo(filename)
+        self.info.file_size = file_size
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, _exc_type, _exc, _tb):
+        return False
+
+    def getinfo(self, _name):
+        return self.info
+
+    def infolist(self):
+        return [self.info]
+
+    def open(self, _member, _mode="r"):
+        return self.response
+
+
+def test_read_response_limited_rejects_oversized_download():
+    with pytest.raises(ValueError, match="exceeds maximum size"):
+        read_response_limited(_Response(b"abcde"), max_bytes=4)
+
+
+def test_read_response_limited_returns_full_body_within_limit():
+    assert read_response_limited(_Response(b"abcde"), max_bytes=10) == b"abcde"
+
+
+def test_read_response_limited_enforces_bound_under_short_reads():
+    response = _Response(b"x" * 100, chunk=8)
+    with pytest.raises(ValueError, match="exceeds maximum size"):
+        read_response_limited(response, max_bytes=16)
+
+
+def test_read_response_limited_does_not_retain_short_read_fragments():
+    response = _OneByteResponse(64)
+
+    assert read_response_limited(response, max_bytes=64) == b"x" * 64
+    assert response.peak_live <= 2
+
+
+def test_read_response_limited_caps_underlying_reads_at_64_kib():
+    response = _RecordingResponse(b"x" * (64 * 1024 + 1))
+
+    with pytest.raises(ValueError, match="exceeds maximum size"):
+        read_response_limited(response, max_bytes=64 * 1024)
+
+    assert max(response.requested_sizes) <= 64 * 1024
+
+
+@pytest.mark.parametrize("value", [None, "1", 1.5, True])
+def test_read_response_limited_rejects_non_integer_limits(value):
+    with pytest.raises(TypeError, match="integer"):
+        read_response_limited(_Response(b""), max_bytes=value)
+
+
+def test_read_response_limited_rejects_negative_limit_without_reading():
+    response = _RecordingResponse(b"")
+
+    with pytest.raises(ValueError, match="non-negative"):
+        read_response_limited(response, max_bytes=-1)
+
+    assert response.requested_sizes == []
+
+
+def test_read_response_limited_allows_empty_response_at_zero_limit():
+    assert read_response_limited(_Response(b""), max_bytes=0) == b""
+
+
+class _CustomLimitError(Exception):
+    pass
+
+
+def test_read_response_limited_rejects_first_byte_at_zero_limit():
+    with pytest.raises(_CustomLimitError, match="exceeds maximum size"):
+        read_response_limited(
+            _Response(b"x"),
+            max_bytes=0,
+            error_type=_CustomLimitError,
+        )
+
+
+def test_read_response_limited_escapes_control_characters_in_label():
+    with pytest.raises(ValueError) as exc_info:
+        read_response_limited(
+            _Response(b"x"),
+            max_bytes=0,
+            label="bad\x1b[2J download",
+        )
+
+    assert "\x1b" not in str(exc_info.value)
+    assert "\\x1b" in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "identifier",
+    [
+        "../outside",
+        "..\\outside",
+        "a" * 256,
+        "delete\x7f",
+        "csi\x9b[2J",
+        "\ud800",
+    ],
+)
+def test_build_safe_download_path_rejects_nonportable_identifiers(
+    tmp_path, identifier
+):
+    with pytest.raises(ValueError, match="Unsafe archive download filename"):
+        build_safe_download_path(
+            tmp_path,
+            identifier,
+            "1.0.0",
+        )
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("package.zip", "zip"),
+        ("PACKAGE.TAR.GZ", "tar.gz"),
+        ("https://example.com/package.tgz?download=1", "tar.gz"),
+        ("package.tar", None),
+    ],
+)
+def test_archive_format_from_name(name, expected):
+    assert archive_format_from_name(name) == expected
+
+
+@pytest.mark.parametrize(
+    ("content_type", "expected"),
+    [
+        ("application/zip", "zip"),
+        ("application/x-zip-compressed; charset=binary", "zip"),
+        ("application/gzip", "tar.gz"),
+        ("application/x-gzip", "tar.gz"),
+        ("application/octet-stream", None),
+    ],
+)
+def test_archive_format_from_content_type(content_type, expected):
+    assert archive_format_from_content_type(content_type) == expected
+
+
+def _write_tar_gz(path, members):
+    with tarfile.open(path, "w:gz") as archive:
+        for name, content in members:
+            info = tarfile.TarInfo(name)
+            info.size = len(content)
+            archive.addfile(info, io.BytesIO(content))
+
+
+@pytest.mark.parametrize("suffix", [".tar.gz", ".tgz"])
+def test_detect_archive_format_accepts_tar_suffixes(tmp_path, suffix):
+    archive_path = tmp_path / f"package{suffix}"
+    _write_tar_gz(archive_path, [("file.txt", b"contents")])
+
+    assert detect_archive_format(archive_path) == "tar.gz"
+
+
+def test_detect_archive_format_allows_content_type_fallback(tmp_path):
+    archive_path = tmp_path / "download"
+    _write_tar_gz(archive_path, [("file.txt", b"contents")])
+
+    assert (
+        detect_archive_format(
+            archive_path,
+            source_name="https://example.com/download",
+            content_type="application/gzip",
+        )
+        == "tar.gz"
+    )
+
+
+def test_detect_archive_format_rejects_suffix_content_mismatch(tmp_path):
+    archive_path = tmp_path / "package.zip"
+    _write_tar_gz(archive_path, [("file.txt", b"contents")])
+
+    with pytest.raises(ValueError, match="format mismatch"):
+        detect_archive_format(archive_path)
+
+
+def test_detect_archive_format_rejects_suffix_header_mismatch(tmp_path):
+    archive_path = tmp_path / "package.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("file.txt", "contents")
+
+    with pytest.raises(ValueError, match="Content-Type"):
+        detect_archive_format(
+            archive_path,
+            content_type="application/gzip",
+        )
+
+
+def test_build_safe_download_path_uses_archive_suffix(tmp_path):
+    path = build_safe_download_path(tmp_path, "package", "1.0.0", suffix=".tar.gz")
+    assert path.name == "package-1.0.0.tar.gz"
+
+
+@pytest.mark.parametrize(
+    "member_name",
+    ["../evil.txt", "nested/../../evil.txt", "C:/Windows/evil.txt"],
+)
+def test_safe_extract_tar_rejects_traversal(tmp_path, member_name):
+    archive_path = tmp_path / "bad.tar.gz"
+    _write_tar_gz(archive_path, [(member_name, b"nope")])
+
+    with pytest.raises(ValueError, match="Unsafe path"):
+        safe_extract_tar(archive_path, tmp_path / "out")
+
+
+@pytest.mark.parametrize(
+    ("link_type", "message"),
+    [(tarfile.SYMTYPE, "symlink"), (tarfile.LNKTYPE, "hard link")],
+)
+def test_safe_extract_tar_rejects_links_without_partial_extraction(
+    tmp_path, link_type, message
+):
+    archive_path = tmp_path / "bad.tar.gz"
+    with tarfile.open(archive_path, "w:gz") as archive:
+        safe = tarfile.TarInfo("safe.txt")
+        safe.size = 4
+        archive.addfile(safe, io.BytesIO(b"safe"))
+        link = tarfile.TarInfo("escape")
+        link.type = link_type
+        link.linkname = "../../outside"
+        archive.addfile(link)
+
+    out_dir = tmp_path / "out"
+    with pytest.raises(ValueError, match=message):
+        safe_extract_tar(archive_path, out_dir)
+
+    assert not out_dir.exists() or not any(out_dir.rglob("*"))
+
+
+def test_safe_extract_tar_rejects_special_file(tmp_path):
+    archive_path = tmp_path / "bad.tar.gz"
+    with tarfile.open(archive_path, "w:gz") as archive:
+        fifo = tarfile.TarInfo("pipe")
+        fifo.type = tarfile.FIFOTYPE
+        archive.addfile(fifo)
+
+    with pytest.raises(ValueError, match="Unsafe member type"):
+        safe_extract_tar(archive_path, tmp_path / "out")
+
+
+def test_safe_extract_tar_rejects_conflicting_paths(tmp_path):
+    archive_path = tmp_path / "bad.tar.gz"
+    _write_tar_gz(
+        archive_path,
+        [("Folder/file.txt", b"one"), ("folder/FILE.txt", b"two")],
+    )
+
+    with pytest.raises(ValueError, match="Conflicting path"):
+        safe_extract_tar(archive_path, tmp_path / "out")
+
+
+def test_safe_extract_tar_enforces_entry_and_size_limits(tmp_path):
+    archive_path = tmp_path / "bad.tar.gz"
+    _write_tar_gz(
+        archive_path,
+        [("one.txt", b"1234"), ("two.txt", b"5678")],
+    )
+
+    with pytest.raises(ValueError, match="too many entries"):
+        safe_extract_tar(archive_path, tmp_path / "entries", max_entries=1)
+    with pytest.raises(ValueError, match="member.*maximum size"):
+        safe_extract_tar(archive_path, tmp_path / "member", max_member_bytes=3)
+    with pytest.raises(ValueError, match="uncompressed size"):
+        safe_extract_tar(archive_path, tmp_path / "total", max_total_bytes=7)
+
+
+def _truncated_tar_gz_bytes(keep_bytes):
+    """Return the leading *keep_bytes* of a multi-member tar.gz's bytes.
+
+    A gzip stream cut short this way ends before its end-of-stream marker, so
+    reading it raises a bare ``EOFError`` from the gzip layer. ``tarfile``
+    decompresses lazily, so *where* that surfaces depends on how much is kept:
+    a very short prefix fails in ``tarfile.open`` itself, while a longer one
+    opens fine and only fails once members are iterated.
+    """
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        for index in range(5):
+            info = tarfile.TarInfo(f"file{index}.txt")
+            content = bytes(range(256)) * 400
+            info.size = len(content)
+            archive.addfile(info, io.BytesIO(content))
+    return buffer.getvalue()[:keep_bytes]
+
+
+def test_detect_archive_format_rejects_truncated_tar_gz(tmp_path):
+    # A gzip stream truncated before tarfile can read its first header raises a
+    # bare EOFError -- not a TarError -- from the format probe. Catching only
+    # TarError let it escape as a raw exception instead of leaving is_tar_gz
+    # False and reporting the module's clean format-mismatch error.
+    archive_path = tmp_path / "truncated.tar.gz"
+    archive_path.write_bytes(_truncated_tar_gz_bytes(64))
+
+    with pytest.raises(ValueError, match="format mismatch"):
+        detect_archive_format(archive_path)
+
+
+@pytest.mark.parametrize("keep_bytes", [64, 512, 2048])
+def test_safe_extract_tar_rejects_truncated_archive(tmp_path, keep_bytes):
+    # The same bare EOFError, from tarfile.open on a short prefix and from
+    # member iteration on a longer one. Both sites reported it raw.
+    archive_path = tmp_path / f"truncated-{keep_bytes}.tar.gz"
+    archive_path.write_bytes(_truncated_tar_gz_bytes(keep_bytes))
+
+    with pytest.raises(ValueError, match="Invalid tar.gz archive"):
+        safe_extract_tar(archive_path, tmp_path / f"out-{keep_bytes}")
+
+
+def test_safe_extract_tar_wraps_truncation_in_caller_error_type(tmp_path):
+    # The leak bypassed the caller's domain error type entirely, so callers
+    # that only catch their own error (or ValueError) crashed the command.
+    archive_path = tmp_path / "truncated.tar.gz"
+    archive_path.write_bytes(_truncated_tar_gz_bytes(2048))
+
+    with pytest.raises(_CustomZipError, match="Invalid tar.gz archive"):
+        safe_extract_tar(
+            archive_path,
+            tmp_path / "out",
+            error_type=_CustomZipError,
+        )
+
+
+def test_safe_extract_archive_rejects_truncated_tar_gz(tmp_path):
+    archive_path = tmp_path / "truncated.tar.gz"
+    archive_path.write_bytes(_truncated_tar_gz_bytes(2048))
+
+    with pytest.raises(ValueError):
+        safe_extract_archive(archive_path, tmp_path / "out")
+
+
+#: Bytes of the first member's data that decompress cleanly before the invalid
+#: deflate block. Must exceed the gzip read buffer so ``tarfile`` has to seek
+#: forward over member data to reach the second header -- see
+#: ``_corrupt_deflate_tar_gz_bytes``. The members are twice this size, so the
+#: corruption stays well inside the first member's data.
+_CORRUPT_DEFLATE_CLEAN_BYTES = 256 * 1024
+_CORRUPT_DEFLATE_MEMBER_BYTES = 2 * _CORRUPT_DEFLATE_CLEAN_BYTES
+
+
+def _corrupt_deflate_tar_gz_bytes():
+    """Return a tar.gz whose deflate stream is corrupt mid-member.
+
+    Unlike truncation, which the gzip layer reports as ``EOFError``, an invalid
+    deflate block raises ``zlib.error``. ``tarfile`` converts that to
+    ``ReadError`` when it surfaces while reading a member *header*, but the
+    forward seek it performs to skip over member *data* sits outside that
+    conversion, so the raw ``zlib.error`` escapes from there.
+
+    Two details keep this deterministic across zlib versions:
+
+    * The corruption is a block header whose ``BTYPE`` is the reserved value
+      ``0b11``, which every zlib rejects as "invalid block type". Mangling
+      arbitrary bytes instead is *not* portable -- the garbage may still decode
+      structurally and fail the later gzip CRC check as ``BadGzipFile`` (an
+      ``OSError``, which the handler already caught) rather than raising
+      ``zlib.error`` at all.
+    * The stream is assembled by hand so the invalid block lands after
+      ``_CORRUPT_DEFLATE_CLEAN_BYTES`` of valid data. That is past the gzip read
+      buffer, so the first header reads clean and the failure happens during the
+      seek over member data rather than during a header read.
+    """
+    plain = io.BytesIO()
+    with tarfile.open(fileobj=plain, mode="w") as archive:
+        for index in range(2):
+            info = tarfile.TarInfo(f"file{index}.txt")
+            content = bytes((i * 7 + index) % 256 for i in range(1024)) * (
+                _CORRUPT_DEFLATE_MEMBER_BYTES // 1024
+            )
+            info.size = len(content)
+            archive.addfile(info, io.BytesIO(content))
+
+    clean_prefix = plain.getvalue()[:_CORRUPT_DEFLATE_CLEAN_BYTES]
+    compressor = zlib.compressobj(1, zlib.DEFLATED, -15)
+    deflate = compressor.compress(clean_prefix)
+    deflate += compressor.flush(zlib.Z_SYNC_FLUSH)
+    deflate += b"\x06"  # BTYPE=0b11 (reserved) -> "invalid block type"
+
+    gzip_header = b"\x1f\x8b\x08\x00" + b"\x00" * 4 + b"\x00\xff"
+    trailer = struct.pack("<II", zlib.crc32(clean_prefix), len(clean_prefix))
+    return gzip_header + deflate + trailer
+
+
+def test_corrupt_deflate_fixture_raises_bare_zlib_error():
+    # Guards the fixture itself: the tests below are only meaningful while this
+    # archive reaches the module as a bare zlib.error -- neither a TarError nor
+    # an OSError, so a (TarError, OSError) handler would miss it. If a future
+    # Python or zlib wraps it, this fails loudly instead of the coverage
+    # silently decaying into a duplicate of the EOFError cases.
+    archive_file = io.BytesIO(_corrupt_deflate_tar_gz_bytes())
+
+    with tarfile.open(fileobj=archive_file, mode="r:gz") as archive:
+        with pytest.raises(zlib.error) as excinfo:
+            for _member in archive:
+                pass
+
+    # The whole point of the zlib.error arm: a (TarError, OSError) handler --
+    # what the two extraction sites had before the fix -- does not catch this.
+    # tarfile.ReadError and gzip.BadGzipFile would both be caught already, so
+    # if the fixture ever degrades into one of those it proves nothing.
+    assert not isinstance(excinfo.value, tarfile.TarError)
+    assert not isinstance(excinfo.value, OSError)
+
+
+def test_detect_archive_format_accepts_corrupt_deflate_tar_gz(tmp_path):
+    # Detection is a format probe, not an integrity check: tarfile.open reads
+    # only the first member header, which is intact here, so the archive is
+    # correctly identified as tar.gz and the corruption is caught later by
+    # safe_extract_tar (see the tests below).
+    #
+    # Note this does not exercise the probe's zlib.error handling, which is
+    # unreachable: the header read is inside tarfile's own
+    # zlib.error -> ReadError conversion, so the probe sees ReadError. The
+    # zlib.error arm of _TAR_DECOMPRESSION_ERRORS is defensive at this site and
+    # load-bearing only at the two safe_extract_tar sites.
+    archive_path = tmp_path / "corrupt.tar.gz"
+    archive_path.write_bytes(_corrupt_deflate_tar_gz_bytes())
+
+    assert detect_archive_format(archive_path) == "tar.gz"
+
+
+def test_safe_extract_tar_rejects_corrupt_deflate(tmp_path):
+    archive_path = tmp_path / "corrupt.tar.gz"
+    archive_path.write_bytes(_corrupt_deflate_tar_gz_bytes())
+
+    with pytest.raises(ValueError, match="Invalid tar.gz archive"):
+        safe_extract_tar(archive_path, tmp_path / "out")
+
+
+def test_safe_extract_tar_wraps_corrupt_deflate_in_caller_error_type(tmp_path):
+    # zlib.error must reach the caller's domain error type, exactly as EOFError
+    # does, so this cannot regress independently of the truncation handling.
+    archive_path = tmp_path / "corrupt.tar.gz"
+    archive_path.write_bytes(_corrupt_deflate_tar_gz_bytes())
+
+    with pytest.raises(_CustomZipError, match="Invalid tar.gz archive"):
+        safe_extract_tar(
+            archive_path,
+            tmp_path / "out",
+            error_type=_CustomZipError,
+        )
+
+
+def test_safe_extract_archive_wraps_corrupt_deflate_in_caller_error_type(tmp_path):
+    archive_path = tmp_path / "corrupt.tar.gz"
+    archive_path.write_bytes(_corrupt_deflate_tar_gz_bytes())
+
+    with pytest.raises(_CustomZipError, match="Invalid tar.gz archive"):
+        safe_extract_archive(
+            archive_path,
+            tmp_path / "out",
+            error_type=_CustomZipError,
+        )
+
+
+@pytest.mark.parametrize("suffix", [".zip", ".tar.gz", ".tgz"])
+def test_safe_extract_archive_has_format_parity(tmp_path, suffix):
+    archive_path = tmp_path / f"package{suffix}"
+    if suffix == ".zip":
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            archive.writestr("nested/file.txt", b"contents")
+    else:
+        _write_tar_gz(archive_path, [("nested/file.txt", b"contents")])
+
+    out_dir = tmp_path / f"out-{suffix.replace('.', '-')}"
+    safe_extract_archive(archive_path, out_dir)
+
+    assert (out_dir / "nested" / "file.txt").read_bytes() == b"contents"
+
+
+@pytest.mark.parametrize(
+    "member_name",
+    [
+        "../evil.txt",
+        "nested/../../evil.txt",
+        "nested\\..\\evil.txt",
+        "C:\\Windows\\evil.txt",
+        "C:drive-relative.txt",
+    ],
+)
+def test_safe_extract_zip_rejects_traversal(tmp_path, member_name):
+    zip_path = tmp_path / "bad.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr(member_name, "nope")
+
+    with pytest.raises(ValueError, match="Unsafe path"):
+        safe_extract_zip(zip_path, tmp_path / "out")
+
+
+@pytest.mark.parametrize("member_name", [".", "./file.txt", "nested/./file.txt", "nested//file.txt"])
+def test_safe_extract_zip_rejects_dot_path_segments(tmp_path, member_name):
+    zip_path = tmp_path / "bad.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr(member_name, "nope")
+
+    with pytest.raises(_CustomZipError, match="Unsafe path"):
+        safe_extract_zip(zip_path, tmp_path / "out", error_type=_CustomZipError)
+
+
+def test_safe_extract_zip_rejects_symlinks(tmp_path):
+    zip_path = tmp_path / "bad.zip"
+    info = zipfile.ZipInfo("link")
+    info.external_attr = (stat.S_IFLNK | 0o777) << 16
+
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr(info, "target")
+
+    with pytest.raises(ValueError, match="Unsafe symlink"):
+        safe_extract_zip(zip_path, tmp_path / "out")
+
+
+def test_safe_extract_zip_rejects_symlink_without_partial_extraction(tmp_path):
+    zip_path = tmp_path / "mixed.zip"
+    link = zipfile.ZipInfo("evil-link")
+    link.external_attr = (stat.S_IFLNK | 0o777) << 16
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("safe/first.txt", "hello")
+        zf.writestr(link, "target")
+        zf.writestr("safe/second.txt", "world")
+
+    out_dir = tmp_path / "out"
+    with pytest.raises(ValueError, match="Unsafe symlink"):
+        safe_extract_zip(zip_path, out_dir)
+
+    assert not out_dir.exists() or not any(out_dir.rglob("*"))
+
+
+def test_safe_extract_zip_rejects_oversized_member(tmp_path):
+    zip_path = tmp_path / "bad.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("big.txt", "abcde")
+
+    with pytest.raises(ValueError, match="exceeds maximum size"):
+        safe_extract_zip(zip_path, tmp_path / "out", max_member_bytes=4)
+
+
+def test_safe_extract_zip_rejects_too_many_entries(tmp_path):
+    zip_path = tmp_path / "bad.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("one.txt", "1")
+        zf.writestr("two.txt", "2")
+
+    with pytest.raises(ValueError, match="too many entries"):
+        safe_extract_zip(zip_path, tmp_path / "out", max_entries=1)
+
+
+def _legacy_zip_eocd(
+    *,
+    entries: int,
+    central_directory_size: int,
+    central_directory_offset: int = 0,
+    comment_size: int = 0,
+) -> bytes:
+    return struct.pack(
+        "<4s4H2LH",
+        b"PK\x05\x06",
+        0,
+        0,
+        entries,
+        entries,
+        central_directory_size,
+        central_directory_offset,
+        comment_size,
+    )
+
+
+def test_safe_extract_zip_preflights_declared_entry_count(tmp_path, monkeypatch):
+    zip_path = tmp_path / "too-many.zip"
+    zip_path.write_bytes(
+        _legacy_zip_eocd(entries=513, central_directory_size=0)
+    )
+    monkeypatch.setattr(
+        zipfile,
+        "ZipFile",
+        lambda *_args, **_kwargs: pytest.fail("ZipFile constructor was called"),
+    )
+
+    with pytest.raises(ValueError, match="too many entries"):
+        safe_extract_zip(zip_path, tmp_path / "out")
+
+
+def test_safe_extract_zip_preflights_actual_entry_count_when_eocd_lies(
+    tmp_path, monkeypatch
+):
+    central_header = b"PK\x01\x02" + b"\x00" * 42
+    central_directory = central_header * 513
+    zip_path = tmp_path / "lying-count.zip"
+    zip_path.write_bytes(
+        central_directory
+        + _legacy_zip_eocd(
+            entries=1,
+            central_directory_size=len(central_directory),
+        )
+    )
+    monkeypatch.setattr(
+        zipfile,
+        "ZipFile",
+        lambda *_args, **_kwargs: pytest.fail("ZipFile constructor was called"),
+    )
+
+    with pytest.raises(ValueError, match="too many entries"):
+        safe_extract_zip(zip_path, tmp_path / "out")
+
+
+def test_safe_extract_zip_rejects_truncated_last_eocd_comment(
+    tmp_path, monkeypatch
+):
+    trailing_eocd = _legacy_zip_eocd(
+        entries=0,
+        central_directory_size=0,
+        comment_size=1,
+    )
+    zip_path = tmp_path / "ambiguous-eocd.zip"
+    zip_path.write_bytes(
+        _legacy_zip_eocd(
+            entries=0,
+            central_directory_size=0,
+            comment_size=len(trailing_eocd),
+        )
+        + trailing_eocd
+    )
+    monkeypatch.setattr(
+        zipfile,
+        "ZipFile",
+        lambda *_args, **_kwargs: pytest.fail("ZipFile constructor was called"),
+    )
+
+    with pytest.raises(ValueError, match="Invalid ZIP archive"):
+        safe_extract_zip(zip_path, tmp_path / "out")
+
+
+def test_safe_extract_zip_rejects_zip64_before_zipfile_construction(
+    tmp_path, monkeypatch
+):
+    zip64_eocd = struct.pack(
+        "<4sQ2H2L4Q",
+        b"PK\x06\x06",
+        44,
+        45,
+        45,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    )
+    zip64_locator = struct.pack(
+        "<4sLQL",
+        b"PK\x06\x07",
+        0,
+        0,
+        1,
+    )
+    zip_path = tmp_path / "zip64.zip"
+    zip_path.write_bytes(
+        zip64_eocd
+        + zip64_locator
+        + _legacy_zip_eocd(
+            entries=0xFFFF,
+            central_directory_size=0xFFFFFFFF,
+            central_directory_offset=0xFFFFFFFF,
+        )
+    )
+    with zipfile.ZipFile(zip_path) as zf:
+        assert zf.namelist() == []
+    monkeypatch.setattr(
+        zipfile,
+        "ZipFile",
+        lambda *_args, **_kwargs: pytest.fail("ZipFile constructor was called"),
+    )
+
+    with pytest.raises(ValueError, match="ZIP64"):
+        safe_extract_zip(zip_path, tmp_path / "out")
+
+
+@pytest.mark.parametrize(
+    "indicator",
+    [
+        "central-sizes",
+        "central-offset",
+        "central-disk",
+        "local-sizes",
+    ],
+)
+def test_safe_extract_zip_rejects_entry_zip64_before_zipfile_construction(
+    tmp_path, monkeypatch, indicator
+):
+    contents = b"contents"
+    if indicator == "central-offset":
+        zip64_payload = struct.pack("<Q", 0)
+    elif indicator == "central-disk":
+        zip64_payload = struct.pack("<L", 0)
+    else:
+        zip64_payload = struct.pack("<QQ", len(contents), len(contents))
+
+    info = zipfile.ZipInfo("file.txt")
+    info.extra = struct.pack("<HH", 0xCAFE, len(zip64_payload)) + zip64_payload
+    zip_path = tmp_path / f"{indicator}.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr(info, contents)
+
+    archive = bytearray(zip_path.read_bytes())
+    local_header = archive.index(b"PK\x03\x04")
+    central_header = archive.index(b"PK\x01\x02")
+    if indicator.startswith("central"):
+        filename_size = struct.unpack_from("<H", archive, central_header + 28)[0]
+        extra_offset = central_header + 46 + filename_size
+        struct.pack_into("<H", archive, extra_offset, 0x0001)
+        if indicator == "central-sizes":
+            struct.pack_into("<LL", archive, central_header + 20, 0xFFFFFFFF, 0xFFFFFFFF)
+        elif indicator == "central-offset":
+            struct.pack_into("<L", archive, central_header + 42, 0xFFFFFFFF)
+        else:
+            struct.pack_into("<H", archive, central_header + 34, 0xFFFF)
+    else:
+        filename_size = struct.unpack_from("<H", archive, local_header + 26)[0]
+        extra_offset = local_header + 30 + filename_size
+        struct.pack_into("<H", archive, extra_offset, 0x0001)
+        struct.pack_into("<LL", archive, local_header + 18, 0xFFFFFFFF, 0xFFFFFFFF)
+    zip_path.write_bytes(archive)
+
+    # The stdlib accepts each hybrid ZIP64 entry. The bounded opener must reject
+    # it during preflight, before handing the archive to ZipFile.
+    with zipfile.ZipFile(zip_path) as zf:
+        assert zf.read("file.txt") == contents
+    monkeypatch.setattr(
+        zipfile,
+        "ZipFile",
+        lambda *_args, **_kwargs: pytest.fail("ZipFile constructor was called"),
+    )
+
+    with pytest.raises(ValueError, match="ZIP64"):
+        safe_extract_zip(zip_path, tmp_path / "out")
+
+
+@pytest.mark.parametrize("header_kind", ["central", "local"])
+def test_safe_extract_zip_rejects_zip64_extra_without_sentinel_before_zipfile(
+    tmp_path, monkeypatch, header_kind
+):
+    info = zipfile.ZipInfo("file.txt")
+    info.extra = struct.pack("<HH", 0xCAFE, 0)
+    zip_path = tmp_path / f"{header_kind}-extra.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr(info, b"contents")
+
+    archive = bytearray(zip_path.read_bytes())
+    if header_kind == "central":
+        header_offset = archive.index(b"PK\x01\x02")
+        filename_size = struct.unpack_from("<H", archive, header_offset + 28)[0]
+        extra_offset = header_offset + 46 + filename_size
+    else:
+        header_offset = archive.index(b"PK\x03\x04")
+        filename_size = struct.unpack_from("<H", archive, header_offset + 26)[0]
+        extra_offset = header_offset + 30 + filename_size
+    struct.pack_into("<H", archive, extra_offset, 0x0001)
+    zip_path.write_bytes(archive)
+
+    with zipfile.ZipFile(zip_path) as zf:
+        assert zf.read("file.txt") == b"contents"
+    monkeypatch.setattr(
+        zipfile,
+        "ZipFile",
+        lambda *_args, **_kwargs: pytest.fail("ZipFile constructor was called"),
+    )
+
+    with pytest.raises(ValueError, match="ZIP64"):
+        safe_extract_zip(zip_path, tmp_path / "out")
+
+
+def test_safe_extract_zip_rejects_force_zip64_local_header_before_zipfile(
+    tmp_path, monkeypatch
+):
+    zip_path = tmp_path / "forced-local-zip64.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        with zf.open("file.txt", "w", force_zip64=True) as target:
+            target.write(b"contents")
+
+    # For a small streamed member, ZipFile leaves the central directory and
+    # EOCD legacy-sized while placing ZIP64 sentinels and extra data locally.
+    with zipfile.ZipFile(zip_path) as zf:
+        assert zf.read("file.txt") == b"contents"
+    monkeypatch.setattr(
+        zipfile,
+        "ZipFile",
+        lambda *_args, **_kwargs: pytest.fail("ZipFile constructor was called"),
+    )
+
+    with pytest.raises(ValueError, match="ZIP64"):
+        safe_extract_zip(zip_path, tmp_path / "out")
+
+
+@pytest.mark.parametrize("extract_version", [45, 46])
+@pytest.mark.parametrize("visible_version", ["central", "local"])
+def test_safe_extract_zip_rejects_masked_zip64_data_descriptor_version_or_newer(
+    tmp_path, monkeypatch, visible_version, extract_version
+):
+    class UnseekableBuffer(io.BytesIO):
+        def seek(self, *_args, **_kwargs):
+            raise io.UnsupportedOperation
+
+    stream = UnseekableBuffer()
+    with zipfile.ZipFile(stream, "w") as zf:
+        with zf.open("file.txt", "w", force_zip64=True) as target:
+            target.write(b"contents")
+
+    archive = bytearray(stream.getvalue())
+    local_header = archive.index(b"PK\x03\x04")
+    central_header = archive.index(b"PK\x01\x02")
+    assert struct.unpack_from("<H", archive, local_header + 6)[0] & 0x0008
+    assert struct.unpack_from("<H", archive, local_header + 4)[0] == 45
+    assert struct.unpack_from("<H", archive, central_header + 6)[0] == 45
+
+    # Hide the local size sentinels and ZIP64 extra ID while retaining the
+    # 64-bit data descriptor emitted by ZipFile. Leave a ZIP64-or-newer
+    # extractor version visible in exactly one header to exercise both
+    # preflight checks.
+    struct.pack_into("<LL", archive, local_header + 18, 0, 0)
+    filename_size = struct.unpack_from("<H", archive, local_header + 26)[0]
+    local_extra = local_header + 30 + filename_size
+    struct.pack_into("<H", archive, local_extra, 0xCAFE)
+    struct.pack_into("<H", archive, local_header + 4, 20)
+    struct.pack_into("<H", archive, central_header + 6, 20)
+    if visible_version == "central":
+        struct.pack_into("<H", archive, central_header + 6, extract_version)
+    else:
+        struct.pack_into("<H", archive, local_header + 4, extract_version)
+
+    zip_path = tmp_path / f"masked-{visible_version}-v{extract_version}.zip"
+    zip_path.write_bytes(archive)
+    with zipfile.ZipFile(zip_path) as zf:
+        assert zf.read("file.txt") == b"contents"
+    monkeypatch.setattr(
+        zipfile,
+        "ZipFile",
+        lambda *_args, **_kwargs: pytest.fail("ZipFile constructor was called"),
+    )
+
+    with pytest.raises(ValueError, match="extractor version 4.5 or newer"):
+        safe_extract_zip(zip_path, tmp_path / "out")
+
+
+@pytest.mark.parametrize("compression", [zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA])
+def test_safe_extract_zip_rejects_unbounded_compression_before_zipfile(
+    tmp_path, monkeypatch, compression
+):
+    zip_path = tmp_path / f"unsupported-{compression}.zip"
+    with zipfile.ZipFile(zip_path, "w", compression=compression) as zf:
+        zf.writestr("bomb.txt", b"A" * (1024 * 1024))
+
+    # Lie about the output size. For BZIP2/LZMA, ZipExtFile materializes the
+    # whole decompressor result before slicing it to the requested length.
+    archive = bytearray(zip_path.read_bytes())
+    central_header = archive.index(b"PK\x01\x02")
+    struct.pack_into("<L", archive, central_header + 24, 1)
+    zip_path.write_bytes(archive)
+    monkeypatch.setattr(
+        zipfile,
+        "ZipFile",
+        lambda *_args, **_kwargs: pytest.fail("ZipFile constructor was called"),
+    )
+
+    with pytest.raises(ValueError, match="supports only STORED and DEFLATED"):
+        safe_extract_zip(zip_path, tmp_path / "out")
+
+
+@pytest.mark.parametrize(
+    "compression",
+    [zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED],
+)
+def test_safe_extract_zip_accepts_bounded_compression_methods(
+    tmp_path, compression
+):
+    zip_path = tmp_path / f"supported-{compression}.zip"
+    with zipfile.ZipFile(zip_path, "w", compression=compression) as zf:
+        zf.writestr("file.txt", b"contents")
+
+    out_dir = tmp_path / "out"
+    safe_extract_zip(zip_path, out_dir)
+
+    assert (out_dir / "file.txt").read_bytes() == b"contents"
+
+
+def test_safe_extract_zip_accepts_archive_with_prepended_data(tmp_path):
+    zip_path = tmp_path / "prefixed.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("file.txt", "contents")
+    zip_path.write_bytes(b"launcher-prefix" + zip_path.read_bytes())
+
+    out_dir = tmp_path / "out"
+    safe_extract_zip(zip_path, out_dir)
+
+    assert (out_dir / "file.txt").read_text(encoding="utf-8") == "contents"
+
+
+def test_safe_extract_zip_rejects_central_entry_from_another_disk(tmp_path):
+    zip_path = tmp_path / "multi-disk-entry.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("file.txt", "contents")
+
+    archive = bytearray(zip_path.read_bytes())
+    central_header = archive.index(b"PK\x01\x02")
+    struct.pack_into("<H", archive, central_header + 34, 1)
+    zip_path.write_bytes(archive)
+
+    with pytest.raises(ValueError, match="Multi-disk"):
+        safe_extract_zip(zip_path, tmp_path / "out")
+
+
+def test_safe_extract_zip_caps_central_directory_before_zipfile(
+    tmp_path, monkeypatch
+):
+    zip_path = tmp_path / "large-directory.zip"
+    zip_path.write_bytes(
+        _legacy_zip_eocd(
+            entries=1,
+            central_directory_size=MAX_ZIP_CENTRAL_DIRECTORY_BYTES + 1,
+        )
+    )
+    monkeypatch.setattr(
+        zipfile,
+        "ZipFile",
+        lambda *_args, **_kwargs: pytest.fail("ZipFile constructor was called"),
+    )
+
+    with pytest.raises(ValueError, match="central directory exceeds"):
+        safe_extract_zip(zip_path, tmp_path / "out")
+
+
+def test_safe_extract_zip_rejects_total_uncompressed_size(tmp_path):
+    zip_path = tmp_path / "bad.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("one.txt", "123")
+        zf.writestr("two.txt", "456")
+
+    with pytest.raises(ValueError, match="maximum uncompressed size"):
+        safe_extract_zip(zip_path, tmp_path / "out", max_total_bytes=5)
+
+
+def test_safe_extract_zip_wraps_bad_zip_file(tmp_path):
+    zip_path = tmp_path / "bad.zip"
+    zip_path.write_bytes(b"not a zip archive")
+
+    with pytest.raises(_CustomZipError, match="Invalid ZIP archive"):
+        safe_extract_zip(zip_path, tmp_path / "out", error_type=_CustomZipError)
+
+
+def test_safe_extract_zip_wraps_unsupported_zip_version(tmp_path):
+    zip_path = tmp_path / "unsupported.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("file.txt", "contents")
+
+    archive = bytearray(zip_path.read_bytes())
+    central_header = archive.index(b"PK\x01\x02")
+    struct.pack_into("<H", archive, central_header + 6, 99)
+    zip_path.write_bytes(archive)
+
+    with pytest.raises(
+        _CustomZipError,
+        match="extractor version 4.5 or newer",
+    ):
+        safe_extract_zip(zip_path, tmp_path / "out", error_type=_CustomZipError)
+
+
+def test_read_zip_member_limited_returns_member_within_limit(tmp_path):
+    zip_path = tmp_path / "ok.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("extension.yml", "extension:\n  id: demo\n")
+
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        data = read_zip_member_limited(zf, "extension.yml")
+
+    assert data == b"extension:\n  id: demo\n"
+
+
+def test_read_zip_member_limited_does_not_retain_short_read_fragments():
+    response = _OneByteResponse(64)
+    archive = _FakeZipArchive(response, file_size=64)
+
+    assert (
+        read_zip_member_limited(archive, "extension.yml", max_bytes=64)
+        == b"x" * 64
+    )
+    assert response.peak_live <= 2
+
+
+@pytest.mark.parametrize("value", [None, "1", 1.5, True])
+def test_read_zip_member_limited_rejects_non_integer_limits(value):
+    archive = _FakeZipArchive(_OneByteResponse(0))
+
+    with pytest.raises(TypeError, match="integer"):
+        read_zip_member_limited(archive, "extension.yml", max_bytes=value)
+
+
+def test_read_zip_member_limited_rejects_negative_limit_without_opening():
+    archive = _FakeZipArchive(_OneByteResponse(0))
+
+    with pytest.raises(ValueError, match="non-negative"):
+        read_zip_member_limited(archive, "extension.yml", max_bytes=-1)
+
+
+def test_read_zip_member_limited_rejects_oversized_member(tmp_path):
+    zip_path = tmp_path / "bomb.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("extension.yml", "a" * 5000)
+
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        with pytest.raises(ValueError, match="exceeds maximum size"):
+            read_zip_member_limited(zf, "extension.yml", max_bytes=16)
+
+
+def test_read_zip_member_limited_rejects_when_declared_size_is_too_small():
+    archive = _FakeZipArchive(_OneByteResponse(5), file_size=1)
+
+    with pytest.raises(ValueError, match="exceeds maximum size"):
+        read_zip_member_limited(
+            archive,
+            "extension.yml",
+            max_bytes=4,
+        )
+
+
+def test_read_zip_member_limited_escapes_control_characters_in_errors():
+    member_name = "bad\x1b[2J/extension.yml"
+    archive = _FakeZipArchive(
+        _OneByteResponse(0),
+        filename=member_name,
+        file_size=5,
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        read_zip_member_limited(
+            archive,
+            member_name,
+            max_bytes=4,
+        )
+
+    assert "\x1b" not in str(exc_info.value)
+    assert "\\x1b" in str(exc_info.value)
+
+
+def test_read_zip_member_limited_wraps_missing_member(tmp_path):
+    zip_path = tmp_path / "ok.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("other.txt", "x")
+
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        with pytest.raises(_CustomZipError, match="ZIP member not found"):
+            read_zip_member_limited(zf, "extension.yml", error_type=_CustomZipError)
+
+
+def test_read_zip_member_limited_wraps_decompression_errors():
+    archive = _FakeZipArchive(_ExplodingResponse(), file_size=1)
+
+    with pytest.raises(_CustomZipError, match="Failed to read ZIP member"):
+        read_zip_member_limited(
+            archive,
+            "extension.yml",
+            error_type=_CustomZipError,
+        )
+
+
+@pytest.mark.parametrize(
+    "members",
+    [
+        [("nested\\file.txt", "first"), ("nested/file.txt", "second")],
+        [("node", "file"), ("node/child.txt", "child")],
+        [("node/child.txt", "child"), ("node", "file")],
+        [("Readme.txt", "first"), ("README.TXT", "second")],
+        [("caf\u00e9.txt", "first"), ("cafe\u0301.txt", "second")],
+    ],
+)
+def test_safe_extract_zip_rejects_conflicting_paths_before_writing(
+    tmp_path, members
+):
+    zip_path = tmp_path / "conflict.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        for name, contents in members:
+            zf.writestr(name, contents)
+
+    out_dir = tmp_path / "out"
+    with pytest.raises(ValueError, match="Conflicting path"):
+        safe_extract_zip(zip_path, out_dir)
+
+    assert not out_dir.exists() or not any(out_dir.rglob("*"))
+
+
+@pytest.mark.parametrize(
+    "member_name",
+    [
+        "file::$DATA",
+        "file.",
+        "file ",
+        " leading.txt",
+        "NUL.txt",
+        "COM\u00b9.log",
+        "COM1 .txt",
+        "CONOUT$.log",
+        "nested/name?.txt",
+        "nested/control\u0001.txt",
+        "nested/delete\u007f.txt",
+        "nested/csi\u009b[2J.txt",
+    ],
+)
+def test_safe_extract_zip_rejects_nonportable_member_names(tmp_path, member_name):
+    zip_path = tmp_path / "nonportable.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr(member_name, "contents")
+
+    out_dir = tmp_path / "out"
+    with pytest.raises(ValueError, match="Unsafe path"):
+        safe_extract_zip(zip_path, out_dir)
+
+    assert not out_dir.exists() or not any(out_dir.rglob("*"))
+
+
+@pytest.mark.parametrize(
+    "member_name",
+    [
+        "a" * 256,
+        "a/" * 2048 + "file.txt",
+    ],
+)
+def test_safe_extract_zip_rejects_excessively_long_paths(tmp_path, member_name):
+    zip_path = tmp_path / "nonportable.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr(member_name, "contents")
+
+    out_dir = tmp_path / "out"
+    with pytest.raises(ValueError, match="Unsafe path"):
+        safe_extract_zip(zip_path, out_dir)
+
+    assert not out_dir.exists() or not any(out_dir.rglob("*"))
+
+
+@pytest.mark.parametrize(
+    ("control_character", "escaped_character"),
+    [
+        ("\x1b", "\\x1b"),
+        ("\x7f", "\\x7f"),
+        ("\x9b", "\\x9b"),
+    ],
+)
+def test_safe_extract_zip_escapes_unicode_control_characters_in_errors(
+    tmp_path,
+    control_character,
+    escaped_character,
+):
+    zip_path = tmp_path / "terminal-control.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr(f"bad{control_character}[2J.txt", "contents")
+
+    with pytest.raises(ValueError) as exc_info:
+        safe_extract_zip(zip_path, tmp_path / "out")
+
+    assert control_character not in str(exc_info.value)
+    assert escaped_character in str(exc_info.value)
+
+
+def test_safe_extract_zip_accepts_single_decomposed_unicode_name(tmp_path):
+    zip_path = tmp_path / "unicode.zip"
+    out_dir = tmp_path / "out"
+    decomposed_name = "cafe\u0301.txt"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr(decomposed_name, "contents")
+
+    safe_extract_zip(zip_path, out_dir)
+
+    assert (out_dir / decomposed_name).read_text(encoding="utf-8") == "contents"
+
+
+def test_safe_extract_zip_wraps_decompression_errors(tmp_path, monkeypatch):
+    zip_path = tmp_path / "corrupt.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("extension.yml", "x")
+
+    archive = _FakeZipArchive(_ExplodingResponse(), file_size=1)
+    monkeypatch.setattr(zipfile, "ZipFile", lambda *_args, **_kwargs: archive)
+
+    with pytest.raises(_CustomZipError, match="Failed to extract ZIP member"):
+        safe_extract_zip(
+            zip_path,
+            tmp_path / "out",
+            error_type=_CustomZipError,
+        )
+
+
+def test_safe_extract_zip_enforces_actual_member_size(tmp_path, monkeypatch):
+    zip_path = tmp_path / "lying-size.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("extension.yml", "x")
+
+    archive = _FakeZipArchive(_OneByteResponse(5), file_size=1)
+    monkeypatch.setattr(zipfile, "ZipFile", lambda *_args, **_kwargs: archive)
+
+    with pytest.raises(ValueError, match="exceeds maximum size"):
+        safe_extract_zip(
+            zip_path,
+            tmp_path / "out",
+            max_member_bytes=4,
+        )
+
+
+def test_safe_extract_zip_extracts_safe_archive(tmp_path):
+    zip_path = tmp_path / "ok.zip"
+    out_dir = tmp_path / "out"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("nested/file.txt", "hello")
+
+    safe_extract_zip(zip_path, out_dir)
+
+    assert (out_dir / "nested" / "file.txt").read_text(encoding="utf-8") == "hello"
+
+
+def test_safe_extract_zip_treats_normalized_trailing_backslash_as_directory(tmp_path):
+    zip_path = tmp_path / "ok.zip"
+    out_dir = tmp_path / "out"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("nested\\", "")
+        zf.writestr("nested/file.txt", "hello")
+
+    safe_extract_zip(zip_path, out_dir)
+
+    assert (out_dir / "nested").is_dir()
+    assert (out_dir / "nested" / "file.txt").read_text(encoding="utf-8") == "hello"

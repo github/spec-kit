@@ -5,9 +5,11 @@ from __future__ import annotations
 import base64
 import json as _json
 import os
+import shutil
 import subprocess
 from typing import TYPE_CHECKING
 
+from .._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
 from .base import AuthProvider
 
 if TYPE_CHECKING:
@@ -15,6 +17,20 @@ if TYPE_CHECKING:
 
 # Azure DevOps resource ID for OAuth / Azure AD token acquisition.
 _ADO_RESOURCE_ID = "499b84ac-1321-427f-aa17-267ca6975798"
+
+
+class _TokenResponseTooLarge(Exception):
+    """Raised when an Azure AD token response exceeds the bounded read limit."""
+
+
+def _extract_token(payload: object, key: str) -> str | None:
+    """Return a normalized token from a JSON object, or None for other shapes."""
+    if not isinstance(payload, dict):
+        return None
+    token = payload.get(key)
+    if not isinstance(token, str):
+        return None
+    return token.strip() or None
 
 
 class AzureDevOpsAuth(AuthProvider):
@@ -56,9 +72,27 @@ class AzureDevOpsAuth(AuthProvider):
     def _acquire_via_az_cli() -> str | None:
         """Run ``az account get-access-token`` and return the access token."""
         try:
+            # Windows: ``subprocess.run`` calls ``CreateProcess``, which does
+            # not consult ``PATHEXT``, so a bare ``"az"`` (installed as
+            # ``az.cmd``) fails with ``WinError 2`` even after ``az login``.
+            # Resolve via ``shutil.which`` (which honors ``PATHEXT``) so the
+            # ``.cmd`` shim works. On POSIX this is a harmless lookup that
+            # returns the same executable.
+            #
+            # Require an ABSOLUTE result: on Windows ``shutil.which`` prepends
+            # the current directory to the search path (unless
+            # ``NoDefaultCurrentDirectoryInExePath`` is set), so a stray
+            # ``.\az.cmd`` in the working directory would otherwise be resolved
+            # ahead of the real Azure CLI and run for a credential operation. A
+            # legitimate install always resolves to an absolute path, so this
+            # costs nothing; falling back to the bare ``"az"`` preserves the
+            # prior behavior (and the existing OSError path) when ``az`` is
+            # absent.
+            resolved = shutil.which("az")
+            az = resolved if resolved and os.path.isabs(resolved) else "az"
             result = subprocess.run(  # noqa: S603, S607
                 [
-                    "az",
+                    az,
                     "account",
                     "get-access-token",
                     "--resource",
@@ -74,9 +108,18 @@ class AzureDevOpsAuth(AuthProvider):
             if result.returncode != 0:
                 return None
             payload = _json.loads(result.stdout)
-            token = payload.get("accessToken", "").strip()
-            return token or None
-        except (OSError, subprocess.TimeoutExpired, _json.JSONDecodeError, KeyError):
+            return _extract_token(payload, "accessToken")
+        except (
+            OSError,
+            subprocess.TimeoutExpired,
+            _json.JSONDecodeError,
+            UnicodeDecodeError,
+            KeyError,
+        ):
+            # UnicodeDecodeError: text=True decodes az stdout with the locale
+            # encoding, which raises (not a JSONDecodeError) if the output isn't
+            # decodable — this helper's contract is to return None on any
+            # failure, never to propagate.
             return None
 
     @staticmethod
@@ -109,9 +152,37 @@ class AzureDevOpsAuth(AuthProvider):
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
-                payload = _json.loads(resp.read().decode("utf-8"))
-                token = payload.get("access_token", "").strip()
-                return token or None
-        except (urllib.error.URLError, OSError, _json.JSONDecodeError, KeyError):
+            from specify_cli.authentication.http import _StripAuthOnRedirect
+
+            def reject_token_redirect(_old_url: str, new_url: str) -> None:
+                # A 307/308 redirect preserves this POST body, including the
+                # client_secret. Refuse every redirect so credentials cannot
+                # leave the fixed Microsoft token endpoint.
+                raise urllib.error.URLError(
+                    f"Azure AD token request must not be redirected to {new_url}"
+                )
+
+            opener = urllib.request.build_opener(
+                _StripAuthOnRedirect((), reject_token_redirect)
+            )
+            with opener.open(req, timeout=30) as resp:  # noqa: S310
+                payload = _json.loads(
+                    read_response_limited(
+                        resp,
+                        max_bytes=MAX_JSON_METADATA_BYTES,
+                        error_type=_TokenResponseTooLarge,
+                        label="Azure DevOps token response",
+                    ).decode("utf-8")
+                )
+                return _extract_token(payload, "access_token")
+        except (
+            urllib.error.URLError,
+            OSError,
+            _json.JSONDecodeError,
+            UnicodeDecodeError,
+            _TokenResponseTooLarge,
+        ):
+            # Network failure, malformed JSON, or an oversized response — fall
+            # through to the next strategy. Unrelated programming errors (other
+            # ValueErrors, KeyErrors) intentionally propagate so they surface.
             return None

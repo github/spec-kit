@@ -18,7 +18,7 @@ from typing import Any
 
 import yaml
 
-from ..base import IntegrationOption, SkillsIntegration
+from ..base import IntegrationOption, SkillsIntegration, yaml_quote
 from ..manifest import IntegrationManifest
 
 
@@ -50,7 +50,6 @@ class HermesIntegration(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
-    context_file = "AGENTS.md"
 
     # -- Helpers -----------------------------------------------------------
 
@@ -122,13 +121,27 @@ class HermesIntegration(SkillsIntegration):
             command_name = src_file.stem  # e.g. "plan"
             skill_name = f"speckit-{command_name.replace('.', '-')}"
 
-            # Parse frontmatter for description
+            # Parse frontmatter for description. Locate the closing ``---`` on
+            # its own line rather than with ``raw.split("---", 2)`` — a bare
+            # substring split stops at the first ``---`` *anywhere*, including
+            # one inside a value such as ``description: Separate sections
+            # with ---``, which truncates the frontmatter and drops later keys.
+            # The block between the delimiters is parsed unstripped so trailing
+            # newlines in literal (``|``) block scalars survive.
             frontmatter: dict[str, Any] = {}
             if raw.startswith("---"):
-                parts = raw.split("---", 2)
-                if len(parts) >= 3:
+                fm_lines = raw.splitlines(keepends=True)
+                fm_close = next(
+                    (
+                        i
+                        for i in range(1, len(fm_lines))
+                        if fm_lines[i].rstrip() == "---"
+                    ),
+                    None,
+                )
+                if fm_close is not None:
                     try:
-                        fm = yaml.safe_load(parts[1])
+                        fm = yaml.safe_load("".join(fm_lines[1:fm_close]))
                         if isinstance(fm, dict):
                             frontmatter = fm
                     except yaml.YAMLError:
@@ -140,34 +153,48 @@ class HermesIntegration(SkillsIntegration):
                 self.key,
                 script_type,
                 arg_placeholder,
-                context_file=self.context_file or "",
                 invoke_separator=self.invoke_separator,
+                project_root=project_root,
             )
             # Strip the processed frontmatter — we rebuild it for skills.
+            # Scan for the closing ``---`` on its own line rather than
+            # ``split("---", 2)`` so a ``---`` embedded in a value does not
+            # truncate the frontmatter and spill it into the body.
             if processed_body.startswith("---"):
-                parts = processed_body.split("---", 2)
-                if len(parts) >= 3:
-                    processed_body = parts[2]
+                body_lines = processed_body.splitlines(keepends=True)
+                close_idx = next(
+                    (
+                        i
+                        for i in range(1, len(body_lines))
+                        if body_lines[i].rstrip() == "---"
+                    ),
+                    None,
+                )
+                if close_idx is not None:
+                    # Keep whatever trails the ``---`` marker on the closing
+                    # line so the body stays byte-for-byte identical to
+                    # ``split("---", 2)[2]`` for well-formed templates.
+                    processed_body = body_lines[close_idx][3:] + "".join(
+                        body_lines[close_idx + 1 :]
+                    )
 
             # Select description
             description = frontmatter.get("description", "")
             if not description:
                 description = f"Spec Kit: {command_name} workflow"
 
-            # Build SKILL.md with manually formatted frontmatter
-            def _quote(v: str) -> str:
-                escaped = v.replace("\\", "\\\\").replace('"', '\\"')
-                return f'"{escaped}"'
-
+            # Build SKILL.md with manually formatted frontmatter. yaml_quote
+            # escapes newlines and control characters that a plain quoted
+            # f-string cannot carry.
             skill_content = (
                 f"---\n"
-                f"name: {_quote(skill_name)}\n"
-                f"description: {_quote(description)}\n"
+                f"name: {yaml_quote(skill_name)}\n"
+                f"description: {yaml_quote(description)}\n"
                 f"compatibility: "
-                f"{_quote('Requires spec-kit project structure with .specify/ directory')}\n"
+                f"{yaml_quote('Requires spec-kit project structure with .specify/ directory')}\n"
                 f"metadata:\n"
-                f"  author: {_quote('github-spec-kit')}\n"
-                f"  source: {_quote('templates/commands/' + src_file.name)}\n"
+                f"  author: {yaml_quote('github-spec-kit')}\n"
+                f"  source: {yaml_quote('templates/commands/' + src_file.name)}\n"
                 f"---\n"
                 f"{processed_body}"
             )
@@ -182,8 +209,6 @@ class HermesIntegration(SkillsIntegration):
             skill_file.write_bytes(normalized.encode("utf-8"))
             created.append(skill_file)
 
-        # Upsert managed context section into the agent context file
-        self.upsert_context_section(project_root)
 
         # Create project-local marker directory so extension commands
         # (e.g. git) can detect Hermes as an active integration.
@@ -203,8 +228,7 @@ class HermesIntegration(SkillsIntegration):
     ) -> tuple[list[Path], list[Path]]:
         """Uninstall integration files including global Hermes skills.
 
-        Removes the managed context section from AGENTS.md, removes the
-        project-local marker directory (if empty), delegates to
+        Removes the project-local marker directory (if empty), delegates to
         ``manifest.uninstall()`` for project-local tracked files, and
         removes all ``speckit-*`` skills under ``~/.hermes/skills/``.
 
@@ -212,8 +236,6 @@ class HermesIntegration(SkillsIntegration):
         standard integration behaviour where all files created by the
         integration are removed on ``specify integration uninstall``.
         """
-        # Remove managed context section from AGENTS.md
-        self.remove_context_section(project_root)
 
         # Delegate to manifest for project-local tracked files (scripts,
         # templates, context entries tracked in the manifest).
@@ -258,6 +280,11 @@ class HermesIntegration(SkillsIntegration):
         dispatch.
         """
         args = [self._resolve_executable(), "chat", "-Q"]
+
+        # Operator-supplied SPECKIT_INTEGRATION_HERMES_EXTRA_ARGS go here —
+        # after the base command but before Spec Kit's canonical -m/--json/-s/-q
+        # flags — so they can't displace or clobber them (mirrors opencode).
+        self._apply_extra_args_env_var(args)
 
         if model:
             args.extend(["-m", model])

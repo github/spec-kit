@@ -90,7 +90,7 @@ def _create_extension_dir(temp_dir: Path, ext_id: str = "test-ext") -> Path:
     }
 
     with open(ext_dir / "extension.yml", "w") as f:
-        yaml.dump(manifest_data, f)
+        yaml.safe_dump(manifest_data, f)
 
     commands_dir = ext_dir / "commands"
     commands_dir.mkdir()
@@ -116,6 +116,158 @@ def _create_extension_dir(temp_dir: Path, ext_id: str = "test-ext") -> Path:
         "Run this to greet the world.\n"
     )
 
+    return ext_dir
+
+
+def _create_extension_dir_with_aliases(
+    temp_dir: Path, ext_id: str, command_specs: list
+) -> Path:
+    """Create an extension directory whose commands carry aliases.
+
+    ``command_specs`` is a list of ``(short_name, [alias, ...])`` tuples;
+    the primary command name is ``speckit.<ext_id>.<short_name>`` and each
+    alias is used verbatim as its own tracked/rendered command name,
+    mirroring how ``CommandRegistrar.register_commands()`` tracks and
+    returns primary + alias names flattened together (#2948).
+    """
+    ext_dir = temp_dir / ext_id
+    ext_dir.mkdir()
+
+    commands = []
+    for short_name, aliases in command_specs:
+        commands.append({
+            "name": f"speckit.{ext_id}.{short_name}",
+            "file": f"commands/{short_name}.md",
+            "description": f"Test {short_name} command",
+            "aliases": list(aliases),
+        })
+
+    manifest_data = {
+        "schema_version": "1.0",
+        "extension": {
+            "id": ext_id,
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "description": "A test extension for alias skill registration",
+        },
+        "requires": {
+            "speckit_version": ">=0.1.0",
+        },
+        "provides": {"commands": commands},
+    }
+
+    with open(ext_dir / "extension.yml", "w") as f:
+        yaml.safe_dump(manifest_data, f)
+
+    commands_dir = ext_dir / "commands"
+    commands_dir.mkdir()
+    for short_name, _aliases in command_specs:
+        (commands_dir / f"{short_name}.md").write_text(
+            "---\n"
+            f"description: \"Test {short_name} command\"\n"
+            "---\n"
+            "\n"
+            f"# {short_name.title()} Command\n"
+            "\n"
+            f"Run this to {short_name}.\n"
+        )
+
+    return ext_dir
+
+
+def _create_unicode_extension_dir(temp_dir: Path, ext_id: str = "uni-ext") -> Path:
+    """Create an extension whose command description contains non-ASCII characters."""
+    ext_dir = temp_dir / ext_id
+    ext_dir.mkdir()
+    description = "Prüfe Konformität der Implementierung"
+
+    manifest_data = {
+        "schema_version": "1.0",
+        "extension": {
+            "id": ext_id,
+            "name": "Unicode Extension",
+            "version": "1.0.0",
+            "description": description,
+        },
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {
+            "commands": [
+                {
+                    "name": f"speckit.{ext_id}.hello",
+                    "file": "commands/hello.md",
+                    "description": description,
+                },
+            ]
+        },
+    }
+
+    with open(ext_dir / "extension.yml", "w", encoding="utf-8") as f:
+        yaml.safe_dump(manifest_data, f, allow_unicode=True)
+
+    commands_dir = ext_dir / "commands"
+    commands_dir.mkdir()
+    (commands_dir / "hello.md").write_text(
+        "---\n"
+        f'description: "{description}"\n'
+        "---\n"
+        "\n"
+        "# Hello\n"
+        "\n"
+        "Body.\n",
+        encoding="utf-8",
+    )
+    return ext_dir
+
+
+def _create_dashed_description_extension_dir(
+    temp_dir: Path, ext_id: str = "dash-ext"
+) -> Path:
+    """Create an extension whose command description contains a ``---`` run.
+
+    A ``---`` inside the description survives into the generated SKILL.md
+    frontmatter and exercises the delimiter-line parsing used when reading
+    metadata.source back during removal (regression guard for the
+    split("---", 2) substring bug, mirroring #3590).
+    """
+    ext_dir = temp_dir / ext_id
+    ext_dir.mkdir()
+    description = "Separate sections with --- markers"
+
+    manifest_data = {
+        "schema_version": "1.0",
+        "extension": {
+            "id": ext_id,
+            "name": "Dashed Extension",
+            "version": "1.0.0",
+            "description": description,
+        },
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {
+            "commands": [
+                {
+                    "name": f"speckit.{ext_id}.hello",
+                    "file": "commands/hello.md",
+                    "description": description,
+                },
+            ]
+        },
+    }
+
+    with open(ext_dir / "extension.yml", "w", encoding="utf-8") as f:
+        yaml.safe_dump(manifest_data, f, allow_unicode=True)
+
+    commands_dir = ext_dir / "commands"
+    commands_dir.mkdir()
+    (commands_dir / "hello.md").write_text(
+        "---\n"
+        f'description: "{description}"\n'
+        "---\n"
+        "\n"
+        "# Hello\n"
+        "\n"
+        "Body.\n",
+        encoding="utf-8",
+    )
     return ext_dir
 
 
@@ -214,6 +366,16 @@ class TestExtensionManagerGetSkillsDir:
         result = manager._get_skills_dir()
         assert result is not None
         assert result.is_dir()
+
+    def test_read_only_lookup_does_not_create_skills_dir(self, project_dir):
+        """Backup discovery can resolve the target without mutating the project."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+
+        result = manager._get_skills_dir(create=False)
+
+        assert result == project_dir / ".claude" / "skills"
+        assert not result.exists()
 
     def test_returns_kimi_skills_dir_when_ai_skills_disabled(self, project_dir):
         """Kimi should still use its native skills dir when ai_skills is false."""
@@ -432,6 +594,18 @@ class TestExtensionSkillRegistration:
         parsed = yaml.safe_load(skill_file.read_text(encoding="utf-8").split("---", 2)[1])
         assert "argument-hint" not in parsed
 
+    def test_skill_md_unicode(self, skills_project, temp_dir):
+        """SKILL.md generation should preserve non-ASCII characters."""
+        project_dir, skills_dir = skills_project
+        ext_dir = _create_unicode_extension_dir(temp_dir)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        skill_file = skills_dir / "speckit-uni-ext-hello" / "SKILL.md"
+        content = skill_file.read_text(encoding="utf-8")
+
+        assert "Prüfe Konformität" in content
+
     def test_no_skills_when_ai_skills_disabled(self, no_skills_project, extension_dir):
         """No skills should be created when ai_skills is false."""
         manager = ExtensionManager(no_skills_project)
@@ -477,6 +651,27 @@ class TestExtensionSkillRegistration:
         # The pre-existing one should NOT be in registered_skills (it was skipped)
         assert "speckit-test-ext-hello" not in metadata["registered_skills"]
 
+    def test_existing_skill_directory_without_marker_is_not_modified(
+        self, skills_project, extension_dir
+    ):
+        """A user directory without SKILL.md must not become extension-owned."""
+        project_dir, skills_dir = skills_project
+        custom_dir = skills_dir / "speckit-test-ext-hello"
+        custom_dir.mkdir(parents=True)
+        support_file = custom_dir / "support.txt"
+        support_file.write_text("USER CONTENT", encoding="utf-8")
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        assert support_file.read_text(encoding="utf-8") == "USER CONTENT"
+        assert not (custom_dir / "SKILL.md").exists()
+        metadata = manager.registry.get(manifest.id)
+        assert "speckit-test-ext-hello" not in metadata["registered_skills"]
+        assert "speckit-test-ext-world" in metadata["registered_skills"]
+
     def test_dev_skill_symlink_refreshes_existing_cache(
         self, skills_project, extension_dir, temp_dir
     ):
@@ -516,6 +711,84 @@ class TestExtensionSkillRegistration:
 
         assert "speckit-test-ext-hello" in written
         assert "Run this updated hello." in skill_file.read_text(encoding="utf-8")
+
+    def test_codex_dev_skill_registration_replaces_existing_dev_symlink(
+        self, project_dir, extension_dir, temp_dir
+    ):
+        """Codex dev skill registration should migrate prior dev symlinks to files."""
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        _create_init_options(project_dir, ai="codex", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="codex")
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        skill_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file = (
+            extension_dir
+            / ".specify-dev"
+            / "extension-skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        )
+        cache_file.parent.mkdir(parents=True)
+        cache_file.write_text("old linked content", encoding="utf-8")
+        os.symlink(os.path.relpath(cache_file, skill_file.parent), skill_file)
+
+        written = manager._register_extension_skills(
+            manifest,
+            extension_dir,
+            link_outputs=True,
+        )
+
+        assert "speckit-test-ext-hello" in written
+        assert skill_file.exists()
+        assert not skill_file.is_symlink()
+        assert "Run this to say hello." in skill_file.read_text(encoding="utf-8")
+        assert cache_file.read_text(encoding="utf-8") == "old linked content"
+
+    def test_codex_dev_skill_registration_preserves_unrelated_symlink(
+        self, project_dir, extension_dir, temp_dir
+    ):
+        """Codex dev registration should not overwrite user-owned symlinks."""
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        _create_init_options(project_dir, ai="codex", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="codex")
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        skill_file.parent.mkdir(parents=True, exist_ok=True)
+        unrelated_cache_file = (
+            temp_dir
+            / "other-extension"
+            / ".specify-dev"
+            / "extension-skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        )
+        unrelated_cache_file.parent.mkdir(parents=True)
+        unrelated_cache_file.write_text("user-owned linked content", encoding="utf-8")
+        os.symlink(
+            os.path.relpath(unrelated_cache_file, skill_file.parent), skill_file
+        )
+
+        written = manager._register_extension_skills(
+            manifest,
+            extension_dir,
+            link_outputs=True,
+        )
+
+        assert "speckit-test-ext-hello" not in written
+        assert skill_file.is_symlink()
+        assert skill_file.resolve(strict=True) == unrelated_cache_file.resolve()
+        assert unrelated_cache_file.read_text(encoding="utf-8") == (
+            "user-owned linked content"
+        )
 
     def test_dev_skill_registration_falls_back_to_copy_when_symlink_fails(
         self, skills_project, extension_dir, monkeypatch
@@ -692,7 +965,7 @@ class TestExtensionSkillRegistration:
             },
         }
         with open(ext_dir / "extension.yml", "w") as f:
-            yaml.dump(manifest_data, f)
+            yaml.safe_dump(manifest_data, f)
 
         (ext_dir / "commands").mkdir()
         (ext_dir / "commands" / "plan.md").write_text(
@@ -715,6 +988,234 @@ class TestExtensionSkillRegistration:
         assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
         assert ".specify/templates/checklist.md" in content
         assert ".specify/memory/constitution.md" in content
+
+    def test_skill_registration_uses_extension_local_script_paths(self, project_dir, temp_dir):
+        """Auto-registered skills should not rewrite extension scripts into core scripts."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+
+        ext_dir = temp_dir / "scripted-ext"
+        ext_dir.mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "scripted-ext",
+                "name": "Scripted Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.scripted-ext.check",
+                        "file": "commands/check.md",
+                        "description": "Scripted check command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.safe_dump(manifest_data, f)
+
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "scripts" / "bash").mkdir(parents=True)
+        (ext_dir / "scripts" / "bash" / "resolve-skill.sh").write_text(
+            "#!/usr/bin/env bash\n"
+        )
+        (ext_dir / "scripts" / "bash" / "ensure-skills.sh").write_text(
+            "#!/usr/bin/env bash\n"
+        )
+        (ext_dir / "commands" / "check.md").write_text(
+            "---\n"
+            "description: Scripted check command\n"
+            "scripts:\n"
+            '  sh: scripts/bash/resolve-skill.sh "{ARGS}"\n'
+            "---\n\n"
+            "Run {SCRIPT}\n"
+            "Then run scripts/bash/ensure-skills.sh.\n"
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        content = (skills_dir / "speckit-scripted-ext-check" / "SKILL.md").read_text()
+        assert "{SCRIPT}" not in content
+        assert "{ARGS}" not in content
+        assert (
+            '.specify/extensions/scripted-ext/scripts/bash/resolve-skill.sh "$ARGUMENTS"'
+            in content
+        )
+        assert ".specify/extensions/scripted-ext/scripts/bash/ensure-skills.sh" in content
+        assert ".specify/scripts/bash/resolve-skill.sh" not in content
+        assert ".specify/scripts/bash/ensure-skills.sh" not in content
+
+    def test_skill_registration_rewrites_extension_subdir_paths(self, project_dir, temp_dir):
+        """Auto-registered skills should resolve extension-relative subdir
+        references (agents/, knowledge-base/) to their installed location,
+        matching the rewrite already applied by register_commands() (#2101)."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+
+        ext_dir = temp_dir / "path-ext"
+        ext_dir.mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "path-ext",
+                "name": "Path Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.path-ext.run",
+                        "file": "commands/run.md",
+                        "description": "Run command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.safe_dump(manifest_data, f)
+
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "agents" / "control").mkdir(parents=True)
+        (ext_dir / "agents" / "control" / "commander.md").write_text("# Commander\n")
+        (ext_dir / "knowledge-base").mkdir()
+        (ext_dir / "knowledge-base" / "agent-scores.yaml").write_text("scores: {}\n")
+        (ext_dir / "templates").mkdir()
+        (ext_dir / "templates" / "kill-report.md").write_text("# Kill Report\n")
+
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Run command\n"
+            "---\n\n"
+            "Read agents/control/commander.md and knowledge-base/agent-scores.yaml.\n"
+            "Use templates/kill-report.md as the report template.\n"
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        content = (skills_dir / "speckit-path-ext-run" / "SKILL.md").read_text()
+        assert ".specify/extensions/path-ext/agents/control/commander.md" in content
+        assert ".specify/extensions/path-ext/knowledge-base/agent-scores.yaml" in content
+        # extension's own templates/ dir must resolve under the extension,
+        # not the project-level .specify/templates/
+        assert ".specify/extensions/path-ext/templates/kill-report.md" in content
+        assert "Read agents/control" not in content
+        assert "and knowledge-base/" not in content
+
+    @pytest.mark.parametrize(
+        ("ai", "expected_invocation"),
+        [
+            ("claude", "/speckit-plan"),
+            ("copilot", "/speckit-plan"),
+            ("codex", "$speckit-plan"),
+            ("kimi", "/skill:speckit-plan"),
+            ("zcode", "$speckit-plan"),
+            ("bob", "/speckit-plan"),
+        ],
+    )
+    def test_skill_registration_resolves_command_ref_tokens(
+        self, project_dir, temp_dir, ai, expected_invocation
+    ):
+        """Auto-registered skills should resolve explicit command ref tokens."""
+        _create_init_options(project_dir, ai=ai, ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai=ai)
+
+        ext_dir = temp_dir / "command-ref-ext"
+        ext_dir.mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "command-ref-ext",
+                "name": "Command Ref Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.command-ref-ext.run",
+                        "file": "commands/run.md",
+                        "description": "Run command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.safe_dump(manifest_data, f)
+
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Run command\n"
+            "---\n\n"
+            "Use __SPECKIT_COMMAND_PLAN__ before proceeding.\n"
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        content = (skills_dir / "speckit-command-ref-ext-run" / "SKILL.md").read_text()
+        assert "__SPECKIT_COMMAND_PLAN__" not in content
+        assert expected_invocation in content
+
+    def test_skill_registration_does_not_rewrite_literal_speckit_text(
+        self, project_dir, temp_dir
+    ):
+        """Auto-registered skills should leave literal speckit text untouched."""
+        _create_init_options(project_dir, ai="codex", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="codex")
+
+        ext_dir = temp_dir / "literal-ref-ext"
+        ext_dir.mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "literal-ref-ext",
+                "name": "Literal Ref Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.literal-ref-ext.run",
+                        "file": "commands/run.md",
+                        "description": "Run command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.safe_dump(manifest_data, f)
+
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Run command\n"
+            "---\n\n"
+            "Literal slash form: /speckit.foo.bar\n"
+            "Literal skill form: /speckit-plan\n"
+            "Literal bare form: speckit.foo.bar\n"
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        content = (skills_dir / "speckit-literal-ref-ext-run" / "SKILL.md").read_text()
+        assert "/speckit.foo.bar" in content
+        assert "/speckit-plan" in content
+        assert "speckit.foo.bar" in content
+        assert "/speckit-foo-bar" not in content
+        assert "$speckit-plan" not in content
 
     def test_missing_command_file_skipped(self, skills_project, temp_dir):
         """Commands with missing source files should be skipped gracefully."""
@@ -747,7 +1248,7 @@ class TestExtensionSkillRegistration:
             },
         }
         with open(ext_dir / "extension.yml", "w") as f:
-            yaml.dump(manifest_data, f)
+            yaml.safe_dump(manifest_data, f)
 
         (ext_dir / "commands").mkdir()
         (ext_dir / "commands" / "exists.md").write_text(
@@ -980,6 +1481,1264 @@ class TestExtensionSkillRegistration:
         assert metadata["registered_skills"] == []
         assert (project_dir / ".github" / "agents").is_dir()
 
+    def test_one_failing_extension_does_not_abort_the_rest(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """A single failing extension must not block registration of the others.
+
+        Regression for #2950: ``register_enabled_extensions_for_agent`` iterates
+        enabled extensions; before the per-extension isolation, the first one
+        that raised (e.g. an OSError writing a command file) aborted the loop and
+        the exception propagated, so every later extension was silently skipped.
+        """
+        from specify_cli.extensions import CommandRegistrar
+
+        _create_init_options(project_dir, ai="claude", ai_skills=False)
+        manager = ExtensionManager(project_dir)
+        # Two enabled extensions; the first one iterated ("aaa-fail") will raise.
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="aaa-fail"), "0.1.0",
+            register_commands=False,
+        )
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="bbb-ok"), "0.1.0",
+            register_commands=False,
+        )
+
+        original = CommandRegistrar.register_commands_for_agent
+
+        def flaky(self, agent_name, manifest, ext_dir, project_root, link_outputs=False):
+            if manifest.id == "aaa-fail":
+                raise OSError("simulated command-file write failure")
+            return original(
+                self, agent_name, manifest, ext_dir, project_root,
+                link_outputs=link_outputs,
+            )
+
+        monkeypatch.setattr(CommandRegistrar, "register_commands_for_agent", flaky)
+
+        # Must not propagate, despite the first extension failing.
+        manager.register_enabled_extensions_for_agent("claude")
+
+        # The healthy extension was still registered for the agent...
+        ok_meta = manager.registry.get("bbb-ok")
+        assert "claude" in ok_meta["registered_commands"], (
+            "a later extension must still register after an earlier one fails (#2950)"
+        )
+        # ...and the failing one was not.
+        fail_meta = manager.registry.get("aaa-fail")
+        assert "claude" not in fail_meta.get("registered_commands", {})
+
+    def test_skill_registration_failure_preserves_registered_commands(
+        self, project_dir, temp_dir, monkeypatch, capsys
+    ):
+        """Persist successful command registration even if skills fail.
+
+        If command files are written but skill generation raises, the command
+        registry must still be updated so later unregister/cleanup can find the
+        command files.
+        """
+        _create_init_options(project_dir, ai="claude", ai_skills=False)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="skill-fail"), "0.1.0",
+            register_commands=False,
+        )
+
+        def fail_skills(self, manifest, ext_dir, link_outputs=False):
+            raise OSError("simulated skill directory failure")
+
+        monkeypatch.setattr(
+            ExtensionManager, "_register_extension_skills", fail_skills
+        )
+
+        manager.register_enabled_extensions_for_agent("claude")
+
+        metadata = manager.registry.get("skill-fail")
+        assert metadata is not None
+        assert metadata["registered_commands"] == {
+            "claude": [
+                "speckit.skill-fail.hello",
+                "speckit.skill-fail.world",
+            ]
+        }
+        assert metadata["registered_skills"] == []
+
+        captured = capsys.readouterr()
+        assert "register extension skills for extension 'skill-fail'" in captured.out
+        assert "Continuing with available registration results" in captured.out
+
+    def test_rescaffold_toggle_command_to_skills_removes_stale_extension_command_file(
+        self, project_dir, temp_dir
+    ):
+        """Toggling the *same* active agent from command mode to skills mode
+        must remove the stale extension command-mode artifact, not just add
+        the skills-mode one.
+
+        Copilot stays the active agent throughout (mirroring ``integration
+        upgrade copilot --skills``, not a switch to a different agent).
+        ``register_enabled_extensions_for_agent`` skips the commands phase
+        once ``skills_mode_active`` is true, but before this fix it never
+        removed the ``.agent.md`` file (and ``registered_commands["copilot"]``
+        entry) the commands phase previously wrote while command mode was
+        active — leaving both artifacts on disk at once and violating the
+        command/skill mutual-exclusion the PR description claims (#2948).
+        """
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="toggle-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        agents_dir = project_dir / ".github" / "agents"
+        cmd_file = agents_dir / "speckit.toggle-ext.hello.agent.md"
+        assert cmd_file.exists(), "sanity: command mode should write .agent.md"
+
+        # Toggle ai_skills on for the same active agent (copilot) and
+        # rescaffold, mirroring `integration upgrade copilot --skills`.
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert not cmd_file.exists(), (
+            "the stale command-mode .agent.md file must be removed once "
+            "this agent toggles to skills mode, not left alongside the "
+            "new SKILL.md (#2948)"
+        )
+        metadata = manager.registry.get("toggle-ext")
+        registered_commands = metadata.get("registered_commands", {})
+        assert not registered_commands.get("copilot"), (
+            "registered_commands tracking for copilot must be cleared "
+            "once its command file is removed on toggle (#2948)"
+        )
+        skills_dir = project_dir / ".github" / "skills"
+        skill_file = skills_dir / "speckit-toggle-ext-hello" / "SKILL.md"
+        assert skill_file.exists(), "sanity: skills mode should write SKILL.md"
+
+    def test_toggle_command_to_skills_preserves_old_extension_command_on_skills_failure(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """An extension command->skills toggle must not destroy the old
+        command artifact before the new skill registration has actually
+        succeeded.
+
+        Mirrors the analogous preset-side fix
+        (``test_toggle_command_to_skills_preserves_old_command_on_skills_failure``
+        in ``tests/test_presets.py``): before the fix, the stale
+        command-mode file/tracking was unregistered unconditionally as soon
+        as the commands phase was skipped for ``skills_mode_active``,
+        regardless of whether the subsequent, independently-fallible
+        ``_register_extension_skills()`` call actually succeeded. If skills
+        raises, the exception handler just warns and continues, leaving
+        neither the old command file nor a new skill file (#2948).
+        """
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="toggle-fail-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        agents_dir = project_dir / ".github" / "agents"
+        cmd_file = agents_dir / "speckit.toggle-fail-ext.hello.agent.md"
+        assert cmd_file.exists(), "sanity: command mode should write .agent.md"
+        metadata = manager.registry.get("toggle-fail-ext")
+        assert metadata.get("registered_commands", {}).get("copilot"), (
+            "sanity: the command-mode write should be tracked for copilot"
+        )
+
+        # Toggle ai_skills on for the same active agent (copilot), but with
+        # skills registration injected to fail.
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+
+        def _raise_register_extension_skills(*args, **kwargs):
+            raise OSError("simulated extension skills-phase failure")
+
+        monkeypatch.setattr(
+            manager, "_register_extension_skills", _raise_register_extension_skills
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert cmd_file.exists(), (
+            "the old command-mode artifact must survive when the "
+            "replacement skills registration fails — deleting it before "
+            "the new artifact is confirmed leaves neither in place (#2948)"
+        )
+        metadata = manager.registry.get("toggle-fail-ext")
+        assert metadata.get("registered_commands", {}).get("copilot"), (
+            "registered_commands must keep tracking copilot's still-live "
+            "command file when the skills replacement failed (#2948)"
+        )
+
+    def test_toggle_command_to_skills_empty_result_preserves_old_extension_command(
+        self, project_dir, temp_dir
+    ):
+        """An empty (non-raising) skills result must not delete any old
+        extension command artifact.
+
+        Deleting both of the extension's own installed command source
+        files makes ``_register_extension_skills`` genuinely return ``[]``
+        for copilot without raising — a real "missing source" case, not an
+        injected exception — which must leave both old command-mode
+        artifacts and their tracking untouched (#2948).
+        """
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="toggle-empty-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        agents_dir = project_dir / ".github" / "agents"
+        hello_cmd_file = agents_dir / "speckit.toggle-empty-ext.hello.agent.md"
+        world_cmd_file = agents_dir / "speckit.toggle-empty-ext.world.agent.md"
+        assert hello_cmd_file.exists() and world_cmd_file.exists(), (
+            "sanity: command mode should have written both command files"
+        )
+
+        # Remove both installed command sources so _register_extension_skills
+        # can find nothing to render for either command.
+        ext_commands_dir = manager.extensions_dir / "toggle-empty-ext" / "commands"
+        (ext_commands_dir / "hello.md").unlink()
+        (ext_commands_dir / "world.md").unlink()
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert hello_cmd_file.exists() and world_cmd_file.exists(), (
+            "an empty (non-raising) skills registration result must not "
+            "cause the old command-mode artifacts to be deleted (#2948)"
+        )
+        metadata = manager.registry.get("toggle-empty-ext")
+        registered_commands = metadata.get("registered_commands", {}).get("copilot", [])
+        assert set(registered_commands) == {
+            "speckit.toggle-empty-ext.hello", "speckit.toggle-empty-ext.world",
+        }, (
+            "registered_commands must keep tracking copilot's still-live "
+            "command files when nothing was actually replaced (#2948)"
+        )
+        skills_dir = project_dir / ".github" / "skills"
+        assert not (skills_dir / "speckit-toggle-empty-ext-hello").exists(), (
+            "sanity: no skill should have been written when both sources "
+            "were missing"
+        )
+        assert not (skills_dir / "speckit-toggle-empty-ext-world").exists()
+
+    def test_toggle_command_to_skills_partial_result_only_removes_replaced_extension_command(
+        self, project_dir, temp_dir
+    ):
+        """Only the extension command whose skill replacement actually
+        landed is retired.
+
+        A two-command extension (hello, world) where only ``world``'s
+        installed source goes missing right before the toggle, so
+        ``_register_extension_skills`` genuinely returns a partial result
+        (only ``hello``'s skill). ``hello``'s old command artifact must be
+        retired; ``world``'s must survive with its tracking intact, since
+        no replacement for it landed (#2948).
+        """
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="toggle-partial-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        agents_dir = project_dir / ".github" / "agents"
+        hello_cmd_file = agents_dir / "speckit.toggle-partial-ext.hello.agent.md"
+        world_cmd_file = agents_dir / "speckit.toggle-partial-ext.world.agent.md"
+        assert hello_cmd_file.exists() and world_cmd_file.exists(), (
+            "sanity: command mode should have written both command files"
+        )
+
+        # Remove only world's installed source so its skill replacement is
+        # silently skipped (missing source), while hello's succeeds.
+        ext_commands_dir = manager.extensions_dir / "toggle-partial-ext" / "commands"
+        (ext_commands_dir / "world.md").unlink()
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert not hello_cmd_file.exists(), (
+            "hello's old command artifact must be retired since its skill "
+            "replacement actually landed (#2948)"
+        )
+        assert world_cmd_file.exists(), (
+            "world's old command artifact must survive since its skill "
+            "replacement never landed (missing source) (#2948)"
+        )
+        metadata = manager.registry.get("toggle-partial-ext")
+        registered_commands = metadata.get("registered_commands", {}).get("copilot", [])
+        assert registered_commands == ["speckit.toggle-partial-ext.world"], (
+            "registered_commands must stop tracking hello (retired) but "
+            "keep tracking world (still live) (#2948)"
+        )
+        skills_dir = project_dir / ".github" / "skills"
+        assert (skills_dir / "speckit-toggle-partial-ext-hello" / "SKILL.md").exists()
+        assert not (skills_dir / "speckit-toggle-partial-ext-world").exists()
+
+    def test_toggle_skills_to_command_empty_result_preserves_old_extension_skill(
+        self, project_dir, temp_dir
+    ):
+        """An empty (non-raising) command result must not delete any old
+        extension skill artifact.
+
+        Mirror image of the empty-result command->skills case: deleting
+        both of the extension's own installed command source files makes
+        ``register_commands_for_agent`` genuinely return an empty/falsy
+        result for copilot without raising, which must leave both old
+        skill-mode artifacts and their tracking untouched (#2948).
+        """
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="toggle-skill-empty-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        skills_dir = project_dir / ".github" / "skills"
+        hello_skill_file = skills_dir / "speckit-toggle-skill-empty-ext-hello" / "SKILL.md"
+        world_skill_file = skills_dir / "speckit-toggle-skill-empty-ext-world" / "SKILL.md"
+        assert hello_skill_file.exists() and world_skill_file.exists(), (
+            "sanity: skills mode should have written both SKILL.md mirrors"
+        )
+
+        # Remove both installed command sources so register_commands_for_agent
+        # can find nothing to render for either command.
+        ext_commands_dir = manager.extensions_dir / "toggle-skill-empty-ext" / "commands"
+        (ext_commands_dir / "hello.md").unlink()
+        (ext_commands_dir / "world.md").unlink()
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert hello_skill_file.exists() and world_skill_file.exists(), (
+            "an empty (non-raising) command registration result must not "
+            "cause the old skills-mode artifacts to be deleted (#2948)"
+        )
+        metadata = manager.registry.get("toggle-skill-empty-ext")
+        registered_skills = metadata.get("registered_skills", [])
+        assert {
+            "speckit-toggle-skill-empty-ext-hello",
+            "speckit-toggle-skill-empty-ext-world",
+        } <= set(registered_skills), (
+            "registered_skills must keep tracking copilot's still-live "
+            "skill files when nothing was actually replaced (#2948)"
+        )
+
+    def test_toggle_skills_to_command_partial_result_only_removes_replaced_extension_skill(
+        self, project_dir, temp_dir
+    ):
+        """Only the extension skill whose command replacement actually
+        landed is retired.
+
+        Mirror image of the partial-result command->skills case: a
+        two-command extension where only ``world``'s installed source goes
+        missing right before the toggle, so ``register_commands_for_agent``
+        genuinely returns a partial result (only ``hello``'s command).
+        ``hello``'s old skill artifact must be retired; ``world``'s must
+        survive with its tracking intact, since no replacement for it
+        landed (#2948).
+        """
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="toggle-skill-partial-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        skills_dir = project_dir / ".github" / "skills"
+        hello_skill_file = skills_dir / "speckit-toggle-skill-partial-ext-hello" / "SKILL.md"
+        world_skill_file = skills_dir / "speckit-toggle-skill-partial-ext-world" / "SKILL.md"
+        assert hello_skill_file.exists() and world_skill_file.exists(), (
+            "sanity: skills mode should have written both SKILL.md mirrors"
+        )
+
+        # Remove only world's installed source so its command replacement
+        # is silently skipped (missing source), while hello's succeeds.
+        ext_commands_dir = manager.extensions_dir / "toggle-skill-partial-ext" / "commands"
+        (ext_commands_dir / "world.md").unlink()
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert not hello_skill_file.exists(), (
+            "hello's old skill artifact must be retired since its command "
+            "replacement actually landed (#2948)"
+        )
+        assert world_skill_file.exists(), (
+            "world's old skill artifact must survive since its command "
+            "replacement never landed (missing source) (#2948)"
+        )
+        metadata = manager.registry.get("toggle-skill-partial-ext")
+        registered_skills = metadata.get("registered_skills", [])
+        assert "speckit-toggle-skill-partial-ext-hello" not in registered_skills, (
+            "hello must stop being tracked as a skill once its artifact "
+            "has been unregistered (#2948)"
+        )
+        assert "speckit-toggle-skill-partial-ext-world" in registered_skills, (
+            "world must keep being tracked as a skill since its old "
+            "artifact is still on disk (#2948)"
+        )
+
+    def test_toggle_command_to_skills_retires_alias_group_when_primary_skill_lands(
+        self, project_dir, temp_dir
+    ):
+        """An extension command's aliases must be retired together with
+        its primary once the primary's skill replacement lands.
+
+        ``CommandRegistrar.register_commands_for_agent()`` tracks and
+        returns primary + alias names flattened together, but
+        ``_register_extension_skills()`` only ever renders/returns the
+        *primary* command name's skill. Without grouping by primary, the
+        alias command artifact and its tracking entry would survive
+        forever even after mutual exclusion is otherwise enforced for the
+        primary (#2948).
+        """
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir_with_aliases(
+                temp_dir, "alias-group-success-ext",
+                [("hello", ["speckit.hello-alias"])],
+            ),
+            "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        agents_dir = project_dir / ".github" / "agents"
+        primary_cmd_file = agents_dir / "speckit.alias-group-success-ext.hello.agent.md"
+        alias_cmd_file = agents_dir / "speckit.hello-alias.agent.md"
+        assert primary_cmd_file.exists() and alias_cmd_file.exists(), (
+            "sanity: command mode should have written both the primary "
+            "and alias command files"
+        )
+        metadata = manager.registry.get("alias-group-success-ext")
+        assert set(metadata["registered_commands"].get("copilot", [])) == {
+            "speckit.alias-group-success-ext.hello", "speckit.hello-alias",
+        }, "sanity: both primary and alias should be tracked for copilot"
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert not primary_cmd_file.exists(), (
+            "the primary's old command artifact must be retired once its "
+            "skill replacement lands (#2948)"
+        )
+        assert not alias_cmd_file.exists(), (
+            "the alias's old command artifact must be retired together "
+            "with its primary once the primary's skill replacement lands "
+            "(#2948)"
+        )
+        metadata = manager.registry.get("alias-group-success-ext")
+        registered_commands = metadata.get("registered_commands", {})
+        assert not registered_commands.get("copilot"), (
+            "neither the primary nor the alias should remain tracked as "
+            "commands once both artifacts are retired (#2948)"
+        )
+        skill_file = (
+            project_dir / ".github" / "skills"
+            / "speckit-alias-group-success-ext-hello" / "SKILL.md"
+        )
+        assert skill_file.exists(), "sanity: the primary's skill should have been written"
+
+    def test_toggle_command_to_skills_keeps_alias_group_when_primary_skill_missing(
+        self, project_dir, temp_dir
+    ):
+        """An extension command's aliases must survive together with its
+        primary when the primary's skill replacement never lands.
+
+        Mirror image of the group-retirement case: deleting the
+        extension's own installed command source makes
+        ``_register_extension_skills`` genuinely return nothing for the
+        primary, so neither the primary nor its alias have a real
+        replacement — both old command artifacts and their tracking must
+        survive (#2948).
+        """
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir_with_aliases(
+                temp_dir, "alias-group-failure-ext",
+                [("hello", ["speckit.hello-alias-2"])],
+            ),
+            "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        agents_dir = project_dir / ".github" / "agents"
+        primary_cmd_file = agents_dir / "speckit.alias-group-failure-ext.hello.agent.md"
+        alias_cmd_file = agents_dir / "speckit.hello-alias-2.agent.md"
+        assert primary_cmd_file.exists() and alias_cmd_file.exists(), (
+            "sanity: command mode should have written both the primary "
+            "and alias command files"
+        )
+
+        # Remove the installed source so _register_extension_skills can
+        # find nothing to render for the primary command.
+        ext_commands_dir = manager.extensions_dir / "alias-group-failure-ext" / "commands"
+        (ext_commands_dir / "hello.md").unlink()
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert primary_cmd_file.exists(), (
+            "the primary's old command artifact must survive since its "
+            "skill replacement never landed (#2948)"
+        )
+        assert alias_cmd_file.exists(), (
+            "the alias's old command artifact must survive together with "
+            "its primary since neither has a real replacement (#2948)"
+        )
+        metadata = manager.registry.get("alias-group-failure-ext")
+        assert set(metadata["registered_commands"].get("copilot", [])) == {
+            "speckit.alias-group-failure-ext.hello", "speckit.hello-alias-2",
+        }, (
+            "both the primary and alias must keep being tracked since "
+            "nothing was actually replaced (#2948)"
+        )
+        skill_file = (
+            project_dir / ".github" / "skills"
+            / "speckit-alias-group-failure-ext-hello" / "SKILL.md"
+        )
+        assert not skill_file.exists(), (
+            "sanity: no skill should have been written when the source "
+            "was missing"
+        )
+
+    def test_rescaffold_toggle_skills_to_command_removes_stale_extension_skill_file(
+        self, project_dir, temp_dir
+    ):
+        """Toggling the *same* active agent from skills mode to command mode
+        must remove the stale extension skills-mode artifact, not just add
+        the command-mode one.
+
+        Mirror image of the command->skills toggle: ``_register_extension_skills``
+        returns an empty list once skills mode is off for this agent (its
+        skills directory no longer resolves), but before this fix an empty
+        result was silently treated as "nothing to register" rather than
+        "this agent's skill was rendered here previously and is now stale",
+        so the ``SKILL.md`` this extension wrote while skills mode was
+        active stayed on disk even though a fresh ``.agent.md`` was written
+        right alongside it (#2948).
+        """
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="toggle-ext2"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        skills_dir = project_dir / ".github" / "skills"
+        skill_file = skills_dir / "speckit-toggle-ext2-hello" / "SKILL.md"
+        assert skill_file.exists(), "sanity: skills mode should write SKILL.md"
+
+        # Toggle ai_skills off for the same active agent (copilot) and
+        # rescaffold, mirroring `integration upgrade copilot --commands`.
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        agents_dir = project_dir / ".github" / "agents"
+        cmd_file = agents_dir / "speckit.toggle-ext2.hello.agent.md"
+        assert cmd_file.exists(), "sanity: command mode should write .agent.md"
+
+        assert not skill_file.exists(), (
+            "the stale skills-mode SKILL.md file must be removed once this "
+            "agent toggles to command mode, not left alongside the new "
+            ".agent.md (#2948)"
+        )
+        metadata = manager.registry.get("toggle-ext2")
+        registered_skills = metadata.get("registered_skills", [])
+        assert "speckit-toggle-ext2-hello" not in registered_skills, (
+            "registered_skills tracking must be cleared for the removed "
+            "skill file, not left dangling once it's orphaned (#2948)"
+        )
+
+    def test_toggle_to_command_preserves_tracking_for_mirror_in_other_agent_dir(
+        self, project_dir, temp_dir
+    ):
+        """Skills->command toggle cleanup must not drop global tracking for a
+        skill name that still has a mirror under a *different* agent's
+        skills directory from an earlier activation.
+
+        ``registered_skills`` is a flat, agent-agnostic list for extensions
+        (skills are only ever rendered for the currently active agent, by
+        design). Auggie is activated first (skills mode), writing a mirror
+        under ``.augment/skills``. Copilot is then activated (also skills
+        mode), writing its own mirror under ``.github/skills`` for the same
+        skill names — the flat list already contains those names, so
+        nothing new is added. Copilot is then toggled to command mode: its
+        own ``.github/skills`` mirror becomes stale and must be removed,
+        but the still-existing Auggie mirror means the extension still
+        globally owns these skill names. Before this fix, the recompute
+        after toggle-cleanup only checked *copilot's* directory, so it
+        dropped the names from ``registered_skills`` entirely — losing
+        track of Auggie's still-existing mirror, which a later `remove()`
+        would then never find and clean up (or restore during override
+        reconciliation), permanently orphaning it (#2948).
+        """
+        _create_init_options(project_dir, ai="auggie", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="multi-agent-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("auggie")
+
+        auggie_skills_dir = project_dir / ".augment" / "skills"
+        auggie_hello = auggie_skills_dir / "speckit-multi-agent-ext-hello" / "SKILL.md"
+        auggie_world = auggie_skills_dir / "speckit-multi-agent-ext-world" / "SKILL.md"
+        assert auggie_hello.exists() and auggie_world.exists(), (
+            "sanity: auggie's skills-mode activation should mirror both "
+            "extension commands as SKILL.md files"
+        )
+
+        # Activate copilot in skills mode too (no intervening removal of
+        # auggie's mirrors) — the same extension's skills get mirrored a
+        # second time, under a different agent's directory.
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        copilot_skills_dir = project_dir / ".github" / "skills"
+        copilot_hello = copilot_skills_dir / "speckit-multi-agent-ext-hello" / "SKILL.md"
+        copilot_world = copilot_skills_dir / "speckit-multi-agent-ext-world" / "SKILL.md"
+        assert copilot_hello.exists() and copilot_world.exists(), (
+            "sanity: copilot's skills-mode activation should also mirror "
+            "both extension commands"
+        )
+
+        # Toggle copilot to command mode (mirroring `integration upgrade
+        # copilot --commands`) — copilot's mirror is now stale.
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert not copilot_hello.exists() and not copilot_world.exists(), (
+            "copilot's own stale skills-mode mirrors must be removed once "
+            "it toggles to command mode"
+        )
+        assert auggie_hello.exists() and auggie_world.exists(), (
+            "auggie's mirrors from an earlier activation must be left "
+            "untouched by copilot's own toggle cleanup"
+        )
+
+        metadata = manager.registry.get("multi-agent-ext")
+        registered_skills = metadata.get("registered_skills", [])
+        assert set(registered_skills) == {
+            "speckit-multi-agent-ext-hello",
+            "speckit-multi-agent-ext-world",
+        }, (
+            "registered_skills must retain both names: auggie's mirrors "
+            "still exist on disk, so the extension still globally owns "
+            "these skill names even though copilot's own copy is now gone "
+            "(#2948)"
+        )
+
+        # Full removal must still find and clean up Auggie's remaining
+        # mirrors via the preserved tracking.
+        assert manager.remove("multi-agent-ext") is True
+        assert not auggie_hello.exists() and not auggie_world.exists(), (
+            "removal must clean up every remaining extension-owned mirror, "
+            "not just the ones under the last-active agent's directory — "
+            "this only works if registered_skills tracking wasn't "
+            "prematurely dropped during the earlier toggle (#2948)"
+        )
+
+    def test_remove_while_second_agent_still_in_skills_mode_cleans_up_first_agent_mirror(
+        self, project_dir, temp_dir
+    ):
+        """Full extension removal must clean up every previously-active
+        agent's mirror, not just the currently active one, even with no
+        intervening toggle.
+
+        Auggie is activated first (skills mode), writing a mirror.
+        Copilot is then activated (also skills mode, still active at
+        removal time) and writes its own mirror for the same names.
+        ``remove()`` calls ``_unregister_extension_skills(registered_skills,
+        extension_id)`` with no explicit ``skills_dir`` — genuinely
+        unscoped, "clean up everywhere this extension owns something".
+        Before this fix, omitting ``skills_dir`` caused the method to
+        resolve the *currently active* agent's directory via
+        ``_get_skills_dir()`` and take the scoped fast path instead of the
+        all-directory fallback scan, so only Copilot's mirror was removed
+        and Auggie's was silently left orphaned (#2948).
+        """
+        _create_init_options(project_dir, ai="auggie", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="remove-multi-agent-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("auggie")
+
+        auggie_skills_dir = project_dir / ".augment" / "skills"
+        auggie_hello = auggie_skills_dir / "speckit-remove-multi-agent-ext-hello" / "SKILL.md"
+        auggie_world = auggie_skills_dir / "speckit-remove-multi-agent-ext-world" / "SKILL.md"
+        assert auggie_hello.exists() and auggie_world.exists(), (
+            "sanity: auggie's skills-mode activation should mirror both "
+            "extension commands as SKILL.md files"
+        )
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        copilot_skills_dir = project_dir / ".github" / "skills"
+        copilot_hello = copilot_skills_dir / "speckit-remove-multi-agent-ext-hello" / "SKILL.md"
+        copilot_world = copilot_skills_dir / "speckit-remove-multi-agent-ext-world" / "SKILL.md"
+        assert copilot_hello.exists() and copilot_world.exists(), (
+            "sanity: copilot's skills-mode activation should also mirror "
+            "both extension commands"
+        )
+
+        # Remove the extension while copilot (the second agent) is still
+        # the active, skills-mode agent — no toggle, no intervening
+        # rescaffold for auggie.
+        assert manager.remove("remove-multi-agent-ext") is True
+
+        assert not copilot_hello.exists() and not copilot_world.exists(), (
+            "sanity: the currently active agent's mirrors must be removed"
+        )
+        assert not auggie_hello.exists() and not auggie_world.exists(), (
+            "removal must also clean up the first agent's (auggie) "
+            "mirrors even though it is no longer the active agent — "
+            "omitting skills_dir must trigger the all-directory fallback "
+            "scan, not silently narrow to the currently active agent's "
+            "directory (#2948)"
+        )
+
+    def test_unscoped_cleanup_preserves_unqualified_hermes_home_skill(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """Flat registry provenance cannot own another project's home output."""
+        home = temp_dir / "home"
+        monkeypatch.setattr(Path, "home", lambda: home)
+        _create_init_options(project_dir, ai="hermes", ai_skills=True)
+        skill_name = "speckit-hermes-cleanup-hello"
+        skill_dir = home / ".hermes" / "skills" / skill_name
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: speckit-hermes-cleanup-hello\n"
+            "metadata:\n"
+            "  source: extension:hermes-cleanup\n"
+            "---\n",
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager._unregister_extension_skills(
+            [skill_name], "hermes-cleanup"
+        )
+
+        assert skill_dir.exists()
+
+    def test_unregister_agent_artifacts_stays_scoped_when_agent_dir_absent(
+        self, project_dir, temp_dir
+    ):
+        """``unregister_agent_artifacts`` must remain scoped to the given
+        agent even when that agent's own skills directory does not exist —
+        it must never fall through to the genuinely-unscoped, all-directory
+        removal semantics reserved for ``remove()``.
+
+        Auggie and Copilot are both activated in skills mode, each writing
+        its own mirror. ``unregister_agent_artifacts("cursor-agent")`` is
+        then called for a supported agent that was *never* activated, so
+        its skills directory does not exist on disk. Before this fix, the
+        caller converted the resolved-but-absent directory to ``None``
+        before calling ``_unregister_extension_skills`` — and after the
+        prior fix (1d8f9e3), omitting ``skills_dir`` means "scan and clean
+        up every configured agent's directory", not "this specific agent
+        has nothing to clean up". That silently deleted Auggie's and
+        Copilot's still-live mirrors while "cleaning up" an agent that was
+        never even active.
+        """
+        _create_init_options(project_dir, ai="auggie", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="scoped-unregister-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("auggie")
+
+        auggie_skills_dir = project_dir / ".augment" / "skills"
+        auggie_hello = auggie_skills_dir / "speckit-scoped-unregister-ext-hello" / "SKILL.md"
+        auggie_world = auggie_skills_dir / "speckit-scoped-unregister-ext-world" / "SKILL.md"
+        assert auggie_hello.exists() and auggie_world.exists(), (
+            "sanity: auggie's skills-mode activation should mirror both "
+            "extension commands as SKILL.md files"
+        )
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        copilot_skills_dir = project_dir / ".github" / "skills"
+        copilot_hello = copilot_skills_dir / "speckit-scoped-unregister-ext-hello" / "SKILL.md"
+        copilot_world = copilot_skills_dir / "speckit-scoped-unregister-ext-world" / "SKILL.md"
+        assert copilot_hello.exists() and copilot_world.exists(), (
+            "sanity: copilot's skills-mode activation should also mirror "
+            "both extension commands"
+        )
+
+        cursor_skills_dir = project_dir / ".cursor" / "skills"
+        assert not cursor_skills_dir.exists(), (
+            "sanity: cursor-agent was never activated so it has no "
+            "skills directory on disk"
+        )
+
+        # Unregister artifacts for an agent that was never activated (its
+        # skills directory is absent). This must be a no-op with respect
+        # to other agents' live mirrors.
+        manager.unregister_agent_artifacts("cursor-agent")
+
+        assert auggie_hello.exists() and auggie_world.exists(), (
+            "unregistering a never-activated agent's artifacts must not "
+            "delete auggie's live mirror — an absent target directory "
+            "must not widen cleanup to every configured agent directory"
+        )
+        assert copilot_hello.exists() and copilot_world.exists(), (
+            "unregistering a never-activated agent's artifacts must not "
+            "delete copilot's live mirror — an absent target directory "
+            "must not widen cleanup to every configured agent directory"
+        )
+
+    def test_unregister_agent_artifacts_preserves_tracking_for_other_agent_mirror(
+        self, project_dir, temp_dir
+    ):
+        """Present-directory reconciliation in ``unregister_agent_artifacts``
+        must not drop global ``registered_skills`` tracking for a name that
+        still has a marker-verified mirror under a *different* agent's
+        directory.
+
+        Auggie and Copilot are both activated in skills mode, each writing
+        its own mirror for the same extension skill names into the single,
+        agent-agnostic flat ``registered_skills`` list.
+        ``unregister_agent_artifacts("auggie")`` removes auggie's own
+        mirror (its directory exists, so the fast path finds and deletes
+        it) — but before this fix, the registry reconciliation afterward
+        only checked whether each name still existed under *auggie's* own
+        (now-empty) directory, concluding every name was gone and wiping
+        ``registered_skills`` to ``[]`` even though Copilot's mirror was
+        still live and now untracked. A later full ``remove()`` would then
+        read an empty registry and leave Copilot's mirror permanently
+        orphaned (#2948).
+        """
+        _create_init_options(project_dir, ai="auggie", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="dual-agent-unregister-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("auggie")
+
+        auggie_skills_dir = project_dir / ".augment" / "skills"
+        auggie_hello = auggie_skills_dir / "speckit-dual-agent-unregister-ext-hello" / "SKILL.md"
+        auggie_world = auggie_skills_dir / "speckit-dual-agent-unregister-ext-world" / "SKILL.md"
+        assert auggie_hello.exists() and auggie_world.exists(), (
+            "sanity: auggie's skills-mode activation should mirror both "
+            "extension commands as SKILL.md files"
+        )
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        copilot_skills_dir = project_dir / ".github" / "skills"
+        copilot_hello = copilot_skills_dir / "speckit-dual-agent-unregister-ext-hello" / "SKILL.md"
+        copilot_world = copilot_skills_dir / "speckit-dual-agent-unregister-ext-world" / "SKILL.md"
+        assert copilot_hello.exists() and copilot_world.exists(), (
+            "sanity: copilot's skills-mode activation should also mirror "
+            "both extension commands"
+        )
+
+        # Unregister artifacts for auggie only (its directory exists and
+        # is cleaned up), while copilot's mirror is untouched and remains
+        # live on disk.
+        manager.unregister_agent_artifacts("auggie")
+
+        assert not auggie_hello.exists() and not auggie_world.exists(), (
+            "sanity: auggie's own mirror must be removed"
+        )
+        assert copilot_hello.exists() and copilot_world.exists(), (
+            "sanity: copilot's mirror must be untouched by an auggie-scoped "
+            "unregister call"
+        )
+
+        registry_metadata = manager.registry.get("dual-agent-unregister-ext")
+        tracked = registry_metadata.get("registered_skills", [])
+        assert "speckit-dual-agent-unregister-ext-hello" in tracked, (
+            "registered_skills tracking must be preserved for names still "
+            "owned by copilot's live mirror, even though they were removed "
+            "from auggie's own (now nonexistent) directory — reconciling "
+            "against only the just-cleaned agent's directory incorrectly "
+            "concludes the name is gone everywhere (#2948)"
+        )
+        assert "speckit-dual-agent-unregister-ext-world" in tracked, (
+            "registered_skills tracking must be preserved for names still "
+            "owned by copilot's live mirror, even though they were removed "
+            "from auggie's own (now nonexistent) directory — reconciling "
+            "against only the just-cleaned agent's directory incorrectly "
+            "concludes the name is gone everywhere (#2948)"
+        )
+
+        # A subsequent full extension removal must still find and clean up
+        # copilot's remaining mirror via the preserved tracking.
+        assert manager.remove("dual-agent-unregister-ext") is True
+        assert not copilot_hello.exists() and not copilot_world.exists(), (
+            "full removal must clean up copilot's remaining mirror — this "
+            "only works if registered_skills tracking wasn't prematurely "
+            "dropped by the earlier auggie-scoped unregister call (#2948)"
+        )
+
+    def test_unregister_agent_artifacts_preserves_dashed_description_mirror_tracking(
+        self, project_dir, temp_dir
+    ):
+        """A ``---`` substring in frontmatter must not hide mirror ownership."""
+        extension_id = "dash-mirror-ext"
+        skill_name = f"speckit-{extension_id}-hello"
+
+        _create_init_options(project_dir, ai="auggie", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_dashed_description_extension_dir(
+                temp_dir, ext_id=extension_id
+            ),
+            "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("auggie")
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        auggie_skill = (
+            project_dir / ".augment" / "skills" / skill_name / "SKILL.md"
+        )
+        copilot_skill = (
+            project_dir / ".github" / "skills" / skill_name / "SKILL.md"
+        )
+        assert auggie_skill.exists() and copilot_skill.exists()
+        assert "--- markers" in copilot_skill.read_text(encoding="utf-8")
+
+        manager.unregister_agent_artifacts("auggie")
+
+        assert not auggie_skill.exists()
+        assert copilot_skill.exists()
+        metadata = manager.registry.get(extension_id)
+        assert skill_name in metadata.get("registered_skills", []), (
+            "tracking must survive while another marker-owned mirror exists"
+        )
+
+        assert manager.remove(extension_id) is True
+        assert not copilot_skill.exists()
+
+    def test_extension_owned_skill_names_rejects_symlinked_candidate_directory(
+        self, project_dir, temp_dir
+    ):
+        """Provenance probing must not follow a symlinked candidate skills
+        directory that escapes the project root, even when a marker-
+        matching SKILL.md exists at the symlink target.
+
+        Both ``_extension_owned_skill_names`` and its sibling
+        ``_unregister_extension_skills`` previously called
+        ``skills_candidate.resolve()`` and then checked children relative
+        to that *already-resolved* candidate — so if the candidate
+        directory itself (e.g. ``.gemini/skills``) was a symlink pointing
+        outside the project root, both the resolve and the subsequent
+        containment check silently passed *through* the symlink instead
+        of rejecting it. A marker-matching ``SKILL.md`` at the symlink
+        target would therefore be falsely attributed to the extension.
+        """
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        external_dir = temp_dir / "external-skills-root"
+        external_dir.mkdir()
+        (external_dir / "precious_file.txt").write_text(
+            "do not touch", encoding="utf-8"
+        )
+        external_skill_subdir = external_dir / "speckit-sym-escape-ext-hello"
+        external_skill_subdir.mkdir()
+        (external_skill_subdir / "SKILL.md").write_text(
+            "---\n"
+            "name: speckit-sym-escape-ext-hello\n"
+            "description: external marker-matching skill\n"
+            "metadata:\n"
+            "  source: extension:sym-escape-ext\n"
+            "---\n\n"
+            "external body\n",
+            encoding="utf-8",
+        )
+
+        gemini_dir = project_dir / ".gemini"
+        gemini_dir.mkdir()
+        os.symlink(str(external_dir), str(gemini_dir / "skills"))
+
+        manager = ExtensionManager(project_dir)
+        owned = manager._extension_owned_skill_names(
+            ["speckit-sym-escape-ext-hello"], "sym-escape-ext"
+        )
+
+        assert owned == [], (
+            "a symlinked candidate skills directory escaping the project "
+            "root must never be followed for provenance attribution, "
+            "even when a marker-matching SKILL.md exists at its target"
+        )
+
+    def test_unregister_extension_skills_fallback_does_not_follow_symlinked_dir(
+        self, project_dir, temp_dir
+    ):
+        """Fallback removal scanning must not delete through a symlinked
+        candidate skills directory escaping the project root.
+
+        Mirrors the previous test but exercises the actual deletion path:
+        before the fix, a symlinked ``.gemini/skills`` pointing outside
+        the project root would be resolved and scanned, and the
+        marker-matching external ``SKILL.md`` directory would be deleted
+        via ``shutil.rmtree`` — collateral damage to unrelated external
+        content (here, ``precious_file.txt`` sitting alongside it).
+        """
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        external_dir = temp_dir / "external-skills-root2"
+        external_dir.mkdir()
+        precious_file = external_dir / "precious_file.txt"
+        precious_file.write_text("do not touch", encoding="utf-8")
+        external_skill_subdir = external_dir / "speckit-sym-escape-ext2-hello"
+        external_skill_subdir.mkdir()
+        external_skill_md = external_skill_subdir / "SKILL.md"
+        external_skill_md.write_text(
+            "---\n"
+            "name: speckit-sym-escape-ext2-hello\n"
+            "description: external marker-matching skill\n"
+            "metadata:\n"
+            "  source: extension:sym-escape-ext2\n"
+            "---\n\n"
+            "external body\n",
+            encoding="utf-8",
+        )
+
+        gemini_dir = project_dir / ".gemini"
+        gemini_dir.mkdir()
+        os.symlink(str(external_dir), str(gemini_dir / "skills"))
+
+        manager = ExtensionManager(project_dir)
+        # Exercise the fallback scan (skills_dir=None) exactly as a full
+        # `remove()` would invoke it.
+        manager._unregister_extension_skills(
+            ["speckit-sym-escape-ext2-hello"], "sym-escape-ext2"
+        )
+
+        assert precious_file.exists(), (
+            "unrelated external content must survive: the fallback scan "
+            "must never delete through a symlinked candidate directory "
+            "escaping the project root"
+        )
+        assert external_skill_md.exists(), (
+            "the external marker-matching skill directory itself must "
+            "not be removed via a symlinked candidate path"
+        )
+
+    def test_unregister_extension_skills_fast_path_rejects_symlinked_explicit_dir(
+        self, project_dir, temp_dir
+    ):
+        """Explicit-skills_dir fast path must reject a symlinked directory
+        escaping the project root, mirroring the register-time call site
+        where a caller resolves a specific agent's directory without
+        side effects and passes it straight through.
+        """
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        external_dir = temp_dir / "external-skills-root3"
+        external_dir.mkdir()
+        precious_file = external_dir / "precious_file.txt"
+        precious_file.write_text("do not touch", encoding="utf-8")
+        external_skill_subdir = external_dir / "speckit-sym-escape-ext3-hello"
+        external_skill_subdir.mkdir()
+        (external_skill_subdir / "SKILL.md").write_text(
+            "---\n"
+            "name: speckit-sym-escape-ext3-hello\n"
+            "description: external marker-matching skill\n"
+            "metadata:\n"
+            "  source: extension:sym-escape-ext3\n"
+            "---\n\n"
+            "external body\n",
+            encoding="utf-8",
+        )
+
+        gemini_dir = project_dir / ".gemini"
+        gemini_dir.mkdir()
+        symlinked_skills_dir = gemini_dir / "skills"
+        os.symlink(str(external_dir), str(symlinked_skills_dir))
+
+        manager = ExtensionManager(project_dir)
+        manager._unregister_extension_skills(
+            ["speckit-sym-escape-ext3-hello"],
+            "sym-escape-ext3",
+            skills_dir=symlinked_skills_dir,
+        )
+
+        assert precious_file.exists(), (
+            "unrelated external content must survive: the fast path must "
+            "refuse to delete through an explicit but symlinked skills_dir "
+            "escaping the project root"
+        )
+        assert external_skill_subdir.exists(), (
+            "the external marker-matching skill directory must not be "
+            "removed via an explicit symlinked directory argument"
+        )
+
+    def test_extension_owned_skill_names_rejects_symlinked_child_skill_dir(
+        self, project_dir, temp_dir
+    ):
+        """Provenance probing must reject a per-skill child directory that
+        is itself a symlink, even when its resolved target stays inside
+        the (real, non-symlinked) skills root.
+
+        Both ``_extension_owned_skill_names`` and
+        ``_unregister_extension_skills`` previously only validated the
+        *parent* ``skills_dir`` for symlink escape, then resolved
+        ``skills_dir / skill_name`` and checked containment relative to
+        the already-resolved parent. A child symlink whose target
+        resolves inside that same root passes that containment check, so
+        a corrupted or attacker-controlled registry entry naming a
+        symlink alias could cause a legitimate, unrelated skill directory
+        to be falsely attributed as extension-owned via the alias.
+        """
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        # A real, legitimately marker-matching skill directory under its
+        # own name — this represents genuine extension-owned content.
+        real_skill_dir = skills_dir / "speckit-child-sym-real"
+        real_skill_dir.mkdir()
+        (real_skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: speckit-child-sym-real\n"
+            "description: real skill\n"
+            "metadata:\n"
+            "  source: extension:child-sym-ext\n"
+            "---\n\n"
+            "real body\n",
+            encoding="utf-8",
+        )
+
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        # A *different* registered name that is merely a symlink alias
+        # pointing at the real skill directory above — both still live
+        # inside the same, non-symlinked skills root.
+        alias_name = "speckit-child-sym-alias"
+        os.symlink(str(real_skill_dir), str(skills_dir / alias_name))
+
+        manager = ExtensionManager(project_dir)
+        owned = manager._extension_owned_skill_names(
+            [alias_name], "child-sym-ext"
+        )
+
+        assert owned == [], (
+            "a per-skill child directory that is itself a symlink must "
+            "never be followed for provenance attribution, even when its "
+            "resolved target remains inside the skills root"
+        )
+
+    def test_unregister_extension_skills_explicit_dir_rejects_symlinked_child(
+        self, project_dir, temp_dir
+    ):
+        """Fast (explicit ``skills_dir``) removal path must refuse to
+        delete through a per-skill child directory that is itself a
+        symlink, even when the resolved target stays inside the skills
+        root — deleting the resolved target would destroy a legitimate,
+        differently-named skill directory via the alias.
+        """
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        precious_skill_dir = skills_dir / "speckit-child-sym-precious"
+        precious_skill_dir.mkdir()
+        precious_skill_md = precious_skill_dir / "SKILL.md"
+        precious_skill_md.write_text(
+            "---\n"
+            "name: speckit-child-sym-precious\n"
+            "description: precious skill\n"
+            "metadata:\n"
+            "  source: extension:child-sym-ext2\n"
+            "---\n\n"
+            "precious body\n",
+            encoding="utf-8",
+        )
+
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        alias_name = "speckit-child-sym-alias2"
+        os.symlink(str(precious_skill_dir), str(skills_dir / alias_name))
+
+        manager = ExtensionManager(project_dir)
+        manager._unregister_extension_skills(
+            [alias_name], "child-sym-ext2", skills_dir=skills_dir,
+        )
+
+        assert precious_skill_dir.exists(), (
+            "the real skill directory reached only through a symlink "
+            "alias must survive removal of the alias name (#2948)"
+        )
+        assert precious_skill_md.exists(), (
+            "the real skill directory's SKILL.md must not be deleted via "
+            "a differently-named symlink alias"
+        )
+
+    def test_unregister_extension_skills_fallback_rejects_symlinked_child(
+        self, project_dir, temp_dir
+    ):
+        """Fallback (unscoped, ``skills_dir=None``) removal scan must also
+        refuse to delete through a per-skill child symlink, mirroring the
+        explicit-dir fast path.
+        """
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        precious_skill_dir = skills_dir / "speckit-child-sym-precious3"
+        precious_skill_dir.mkdir()
+        precious_skill_md = precious_skill_dir / "SKILL.md"
+        precious_skill_md.write_text(
+            "---\n"
+            "name: speckit-child-sym-precious3\n"
+            "description: precious skill\n"
+            "metadata:\n"
+            "  source: extension:child-sym-ext3\n"
+            "---\n\n"
+            "precious body\n",
+            encoding="utf-8",
+        )
+
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        alias_name = "speckit-child-sym-alias3"
+        os.symlink(str(precious_skill_dir), str(skills_dir / alias_name))
+
+        manager = ExtensionManager(project_dir)
+        manager._unregister_extension_skills([alias_name], "child-sym-ext3")
+
+        assert precious_skill_dir.exists(), (
+            "the real skill directory reached only through a symlink "
+            "alias must survive the unscoped fallback removal scan (#2948)"
+        )
+        assert precious_skill_md.exists(), (
+            "the real skill directory's SKILL.md must not be deleted via "
+            "a differently-named symlink alias during fallback removal"
+        )
+
     def test_existing_agent_command_path_file_is_not_detected(
         self, project_dir, temp_dir
     ):
@@ -1184,10 +2943,319 @@ class TestExtensionSkillRegistration:
         assert "speckit-early-ext-world" in metadata["registered_skills"]
 
 
+
+# ===== Regression test: upgrade-overwrites-copilot-skills (#3849) =====
+
+class TestRegisterExtensionSkillsForceFlag:
+    """Regression tests for the ``force`` flag on ``_register_extension_skills``.
+
+    Issue #3849: ``integration upgrade --force`` called ``setup()`` which
+    regenerated all core-template SKILL.md files, then called
+    ``register_enabled_extensions_for_agent()``.  The skip-guard in
+    ``_register_extension_skills`` treated the freshly-written core files as
+    existing user content and skipped every extension skill, leaving only core
+    template content on disk.
+
+    The fix introduces ``force=True`` in the upgrade path so the guard does not
+    fire for core-template files that setup() just wrote.
+    """
+
+    def test_force_false_skips_existing_skill(self, project_dir, temp_dir):
+        """Without force=True the skip guard must still protect existing files."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+        ext_dir = _create_extension_dir(temp_dir)
+
+        # Manually pre-create a SKILL.md as if setup() had already written it
+        skill_subdir = skills_dir / "speckit-test-ext-hello"
+        skill_subdir.mkdir(parents=True, exist_ok=True)
+        skill_file = skill_subdir / "SKILL.md"
+        skill_file.write_text("core-template content only", encoding="utf-8")
+
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+
+        # Default (force=False): existing file must not be overwritten
+        written = manager._register_extension_skills(manifest, ext_dir, force=False)
+        assert "speckit-test-ext-hello" not in written
+        assert skill_file.read_text(encoding="utf-8") == "core-template content only"
+
+    def test_force_true_overwrites_existing_skill(self, project_dir, temp_dir):
+        """With force=True the function must overwrite the existing SKILL.md.
+
+        This is the core regression test for #3849: calling
+        ``_register_extension_skills(force=True)`` after ``setup()`` has
+        written a fresh core-template SKILL.md must replace it with the
+        composed extension content.
+        """
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+        ext_dir = _create_extension_dir(temp_dir)
+
+        # Simulate what setup() writes: a bare core-template SKILL.md
+        skill_subdir = skills_dir / "speckit-test-ext-hello"
+        skill_subdir.mkdir(parents=True, exist_ok=True)
+        skill_file = skill_subdir / "SKILL.md"
+        skill_file.write_text("core-template content only", encoding="utf-8")
+
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+
+        # Upgrade path (force=True): extension content should replace the core file
+        written = manager._register_extension_skills(manifest, ext_dir, force=True)
+        assert "speckit-test-ext-hello" in written, (
+            "force=True should overwrite the core-template file and return the skill name"
+        )
+        content = skill_file.read_text(encoding="utf-8")
+        assert "Run this to say hello." in content, (
+            "Extension command body must appear in the overwritten SKILL.md"
+        )
+        assert "core-template content only" not in content, (
+            "Core-template placeholder must have been replaced by extension content"
+        )
+
+    def test_register_enabled_extensions_for_agent_force_flag_threads_through(
+        self, project_dir, temp_dir
+    ):
+        """force=True on register_enabled_extensions_for_agent must reach _register_extension_skills.
+
+        End-to-end check: after an upgrade writes a fresh core-template SKILL.md,
+        ``register_enabled_extensions_for_agent(force=True)`` must produce a
+        SKILL.md that contains the extension content.
+        """
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+        ext_dir = _create_extension_dir(temp_dir)
+
+        manager = ExtensionManager(project_dir)
+        # Install extension so it is in the registry
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        # Simulate a freshly-regenerated core-template SKILL.md (as setup() would write)
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        skill_file.write_text("core-template content only", encoding="utf-8")
+
+        # Re-register with force=True (upgrade path)
+        manager.register_enabled_extensions_for_agent("claude", force=True)
+
+        content = skill_file.read_text(encoding="utf-8")
+        assert "Run this to say hello." in content, (
+            "After register_enabled_extensions_for_agent(force=True), the SKILL.md "
+            "must contain the extension body, not just the core-template stub."
+        )
+
+    def test_force_true_with_preexisting_dir_but_no_skill_file(
+        self, project_dir, temp_dir
+    ):
+        """force=True must write into a pre-existing directory with no SKILL.md.
+
+        The second skip guard (``elif skill_dir_preexists``) should also be
+        bypassed by force=True so an upgrade can create a missing SKILL.md
+        even when the skill sub-directory already exists.
+        """
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+        ext_dir = _create_extension_dir(temp_dir)
+
+        # Create the skill directory without the SKILL.md file
+        skill_subdir = skills_dir / "speckit-test-ext-hello"
+        skill_subdir.mkdir(parents=True, exist_ok=True)
+        skill_file = skill_subdir / "SKILL.md"
+        assert not skill_file.exists()
+
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+
+        written = manager._register_extension_skills(manifest, ext_dir, force=True)
+        assert "speckit-test-ext-hello" in written
+        assert skill_file.exists()
+        assert "Run this to say hello." in skill_file.read_text(encoding="utf-8")
+
+
 # ===== Extension Skill Unregistration Tests =====
 
 class TestExtensionSkillUnregistration:
     """Test _unregister_extension_skills() on ExtensionManager."""
+
+    def test_read_only_discovery_includes_fallback_when_target_is_missing(
+        self, project_dir
+    ):
+        """Backup discovery covers removal's fallback without creating a target."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        configured_dir = project_dir / ".claude" / "skills"
+        fallback_skill = (
+            project_dir
+            / ".agents"
+            / "skills"
+            / "speckit-test-ext-hello"
+        )
+        fallback_skill.mkdir(parents=True)
+        frontmatter = yaml.safe_dump(
+            {
+                "name": fallback_skill.name,
+                "description": "Fallback skill",
+                "metadata": {"source": "extension:test-ext"},
+            },
+            sort_keys=False,
+        )
+        (fallback_skill / "SKILL.md").write_text(
+            f"---\n{frontmatter}---\n\nFallback\n",
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        found = manager._find_extension_skill_dirs(
+            [fallback_skill.name],
+            "test-ext",
+            create_skills_dir=False,
+        )
+
+        assert found == [fallback_skill.resolve()]
+        assert not configured_dir.exists()
+
+    def test_read_only_discovery_includes_fallback_when_target_is_symlinked(
+        self, project_dir
+    ):
+        """Backup and remove agree when the configured target is unsafe."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        configured_dir = project_dir / ".claude" / "skills"
+        configured_dir.parent.mkdir(parents=True)
+        symlink_target = project_dir / "linked-skills"
+        symlink_target.mkdir()
+        try:
+            os.symlink(
+                symlink_target,
+                configured_dir,
+                target_is_directory=True,
+            )
+        except OSError:
+            pytest.skip("Current platform/user cannot create directory symlinks")
+
+        fallback_skill = (
+            project_dir
+            / ".agents"
+            / "skills"
+            / "speckit-test-ext-hello"
+        )
+        fallback_skill.mkdir(parents=True)
+        frontmatter = yaml.safe_dump(
+            {
+                "name": fallback_skill.name,
+                "description": "Fallback skill",
+                "metadata": {"source": "extension:test-ext"},
+            },
+            sort_keys=False,
+        )
+        (fallback_skill / "SKILL.md").write_text(
+            f"---\n{frontmatter}---\n\nFallback\n",
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        found = manager._find_extension_skill_dirs(
+            [fallback_skill.name],
+            "test-ext",
+            create_skills_dir=False,
+        )
+
+        assert found == [fallback_skill.resolve()]
+        assert configured_dir.is_symlink()
+
+    def test_fallback_scan_rejects_symlinked_root_outside_project(
+        self, project_dir, temp_dir
+    ):
+        """Fallback discovery must not authorize a root by resolving it first."""
+        if not hasattr(os, "symlink"):
+            pytest.skip("symlinks are unavailable")
+
+        from specify_cli import AGENT_CONFIG, DEFAULT_SKILLS_DIR
+
+        skill_name = "speckit-test-ext-hello"
+        frontmatter = yaml.safe_dump(
+            {
+                "name": skill_name,
+                "description": "Extension skill",
+                "metadata": {"source": "extension:test-ext"},
+            },
+            sort_keys=False,
+        )
+        skill_content = f"---\n{frontmatter}---\n\nExtension skill\n"
+
+        safe_skill = project_dir / DEFAULT_SKILLS_DIR / skill_name
+        safe_skill.mkdir(parents=True)
+        (safe_skill / "SKILL.md").write_text(skill_content, encoding="utf-8")
+
+        outside_skills = temp_dir / "outside-skills"
+        outside_skill = outside_skills / skill_name
+        outside_skill.mkdir(parents=True)
+        outside_skill_file = outside_skill / "SKILL.md"
+        outside_skill_file.write_text(skill_content, encoding="utf-8")
+
+        agent_folder = AGENT_CONFIG["claude"]["folder"].rstrip("/")
+        symlinked_fallback = project_dir / agent_folder / "skills"
+        symlinked_fallback.parent.mkdir(parents=True)
+        try:
+            os.symlink(
+                outside_skills,
+                symlinked_fallback,
+                target_is_directory=True,
+            )
+        except OSError:
+            pytest.skip("Current platform/user cannot create directory symlinks")
+
+        manager = ExtensionManager(project_dir)
+        found = manager._find_extension_skill_dirs(
+            [skill_name],
+            "test-ext",
+        )
+
+        assert found == [safe_skill.resolve()]
+
+        manager._unregister_extension_skills([skill_name], "test-ext")
+
+        assert not safe_skill.exists()
+        assert outside_skill.is_dir()
+        assert outside_skill_file.read_text(encoding="utf-8") == skill_content
+
+    def test_configured_global_skills_root_remains_supported(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """A trusted configured global root must not be treated as a fallback."""
+        home = temp_dir / "home"
+        home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: home)
+        _create_init_options(project_dir, ai="hermes", ai_skills=True)
+
+        skill_name = "speckit-test-ext-hello"
+        skill_dir = home / ".hermes" / "skills" / skill_name
+        skill_dir.mkdir(parents=True)
+        frontmatter = yaml.safe_dump(
+            {
+                "name": skill_name,
+                "description": "Global extension skill",
+                "metadata": {"source": "extension:test-ext"},
+            },
+            sort_keys=False,
+        )
+        (skill_dir / "SKILL.md").write_text(
+            f"---\n{frontmatter}---\n\nGlobal extension skill\n",
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        found = manager._find_extension_skill_dirs(
+            [skill_name],
+            "test-ext",
+            skills_dir=skill_dir.parent,
+            create_skills_dir=False,
+        )
+
+        assert found == [skill_dir.resolve()]
+
+        manager._unregister_extension_skills(
+            [skill_name], "test-ext", skills_dir=skill_dir.parent
+        )
+        assert not skill_dir.exists()
 
     def test_skills_removed_on_extension_remove(self, skills_project, extension_dir):
         """Removing an extension should clean up its skill directories."""
@@ -1208,6 +3276,65 @@ class TestExtensionSkillUnregistration:
         # Skills should be gone
         assert not (skills_dir / "speckit-test-ext-hello").exists()
         assert not (skills_dir / "speckit-test-ext-world").exists()
+
+    def test_skills_removed_when_description_contains_dashes(
+        self, skills_project, temp_dir
+    ):
+        """A ``---`` in the command description must not orphan the skill dir.
+
+        The removal safety check reads metadata.source back from the generated
+        SKILL.md. A raw ``split("---", 2)`` stopped at the ``---`` embedded in
+        the description, so metadata.source parsed empty, the skill looked
+        unrelated, and its directory was left behind. Regression guard for the
+        delimiter-line fix (mirrors #3590).
+        """
+        project_dir, skills_dir = skills_project
+        ext_dir = _create_dashed_description_extension_dir(temp_dir)
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(
+            ext_dir, "0.1.0", register_commands=False
+        )
+
+        skill_dir = skills_dir / "speckit-dash-ext-hello"
+        skill_md = skill_dir / "SKILL.md"
+        assert skill_md.exists()
+        # The dashed description must have survived into the frontmatter.
+        assert "--- markers" in skill_md.read_text(encoding="utf-8")
+
+        result = manager.remove(manifest.id, keep_config=False)
+        assert result is True
+
+        # The extension's own skill must be recognised and removed, not orphaned.
+        assert not skill_dir.exists()
+
+    def test_skills_removed_with_dashes_via_fallback_scan(
+        self, skills_project, temp_dir
+    ):
+        """Same ``---`` guard, but exercised through the fallback scan branch.
+
+        The fast path resolves the skills dir from init-options; the fallback
+        branch scans every candidate agent dir when that resolution returns
+        None, and it re-reads metadata.source with an independently duplicated
+        parser. Deleting init-options.json after install forces removal down
+        the fallback path so a substring-split regression there is caught too.
+        """
+        project_dir, skills_dir = skills_project
+        ext_dir = _create_dashed_description_extension_dir(temp_dir)
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(
+            ext_dir, "0.1.0", register_commands=False
+        )
+
+        skill_dir = skills_dir / "speckit-dash-ext-hello"
+        assert (skill_dir / "SKILL.md").exists()
+
+        # Drop init-options so _get_skills_dir() returns None and removal takes
+        # the fallback directory-scan branch instead of the fast path.
+        (project_dir / ".specify" / "init-options.json").unlink()
+
+        result = manager.remove(manifest.id, keep_config=False)
+        assert result is True
+        assert not skill_dir.exists()
 
     def test_other_skills_preserved_on_remove(self, skills_project, extension_dir):
         """Non-extension skills should not be affected by extension removal."""
@@ -1303,7 +3430,7 @@ class TestExtensionSkillEdgeCases:
             },
         }
         with open(ext_dir / "extension.yml", "w") as f:
-            yaml.dump(manifest_data, f)
+            yaml.safe_dump(manifest_data, f)
 
         (ext_dir / "commands").mkdir()
         (ext_dir / "commands" / "plain.md").write_text(
@@ -1390,7 +3517,7 @@ class TestExtensionSkillEdgeCases:
             },
         }
         with open(ext_dir / "extension.yml", "w") as f:
-            yaml.dump(manifest_data, f)
+            yaml.safe_dump(manifest_data, f)
 
         (ext_dir / "commands").mkdir()
         # Malformed YAML: invalid key-value syntax

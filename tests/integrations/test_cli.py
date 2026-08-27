@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import runpy
 
 import pytest
 import yaml
@@ -68,8 +69,11 @@ class TestInitIntegrationFlag:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init failed: {result.output}"
-        assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
-        assert (project / ".github" / "prompts" / "speckit.plan.prompt.md").exists()
+        assert (
+            project / ".github" / "skills" / "speckit-plan" / "SKILL.md"
+        ).exists()
+        assert not (project / ".github" / "agents").exists()
+        assert not (project / ".github" / "prompts").exists()
         assert (project / ".specify" / "scripts" / "bash" / "common.sh").exists()
 
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
@@ -77,23 +81,18 @@ class TestInitIntegrationFlag:
 
         opts = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
         assert opts["integration"] == "copilot"
-        # context_file lives in the agent-context extension config, not init-options.json
+        assert opts["ai_skills"] is True
+        # init must not leave any legacy agent-context keys in init-options.json
         assert "context_file" not in opts
 
-        import yaml as _yaml
+        # agent-context is fully opt-in: init must not install it or write its config
         ext_cfg_path = project / ".specify" / "extensions" / "agent-context" / "agent-context-config.yml"
-        assert ext_cfg_path.exists(), "agent-context extension config must be created on init"
-        ext_cfg = _yaml.safe_load(ext_cfg_path.read_text(encoding="utf-8"))
-        assert ext_cfg["context_file"] == ".github/copilot-instructions.md"
+        assert not ext_cfg_path.exists(), "init must not create the agent-context extension config"
 
         assert (project / ".specify" / "integrations" / "copilot.manifest.json").exists()
 
-        # Context section should be upserted into the copilot instructions file
-        ctx_file = project / ".github" / "copilot-instructions.md"
-        assert ctx_file.exists()
-        ctx_content = ctx_file.read_text(encoding="utf-8")
-        assert "<!-- SPECKIT START -->" in ctx_content
-        assert "<!-- SPECKIT END -->" in ctx_content
+        # init must not create or manage the agent context file
+        assert not (project / ".github" / "copilot-instructions.md").exists()
 
         shared_manifest = project / ".specify" / "integrations" / "speckit.manifest.json"
         assert shared_manifest.exists()
@@ -116,10 +115,259 @@ class TestInitIntegrationFlag:
 
         assert result.exit_code == 0, result.output
         assert f"defaulting to '{specify_cli.DEFAULT_INIT_INTEGRATION}'" in result.output
-        assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
+        assert (
+            project / ".github" / "skills" / "speckit-plan" / "SKILL.md"
+        ).exists()
 
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == specify_cli.DEFAULT_INIT_INTEGRATION
+
+    def test_noninteractive_flag_skips_pickers_when_stdin_is_a_tty(
+        self, tmp_path, monkeypatch
+    ):
+        """Agent harnesses often allocate a PTY (isatty True) but cannot send
+        arrow keys. ``--non-interactive`` must still skip both pickers and apply
+        documented defaults — the hang reported in #4152.
+        """
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli
+        import specify_cli.commands.init as init_mod
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError(
+                "--non-interactive must not open select_with_arrows even on a TTY"
+            )
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        runner = CliRunner()
+        project = tmp_path / "agent-pty"
+        result = runner.invoke(
+            app,
+            ["init", str(project), "--non-interactive", "--ignore-agent-tools"],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert f"defaulting to '{specify_cli.DEFAULT_INIT_INTEGRATION}'" in result.output
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == specify_cli.DEFAULT_INIT_INTEGRATION
+
+    def test_noninteractive_flag_here_nonempty_requires_force(
+        self, tmp_path, monkeypatch
+    ):
+        """``--non-interactive`` on a non-empty --here directory must fail fast
+        asking for --force, even when stdin looks like a TTY.
+        """
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli.commands.init as init_mod
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("picker must not run under --non-interactive")
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        def fail_confirm(*_args, **_kwargs):
+            raise AssertionError(
+                "--non-interactive must not call typer.confirm for a non-empty --here directory"
+            )
+
+        monkeypatch.setattr("typer.confirm", fail_confirm)
+
+        project = tmp_path / "nonempty-here-flag"
+        project.mkdir()
+        (project / "existing.txt").write_text("keep me", encoding="utf-8")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--non-interactive",
+                    "--integration",
+                    "copilot",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 1, result.output
+        assert "--force" in result.output
+        assert "--non-interactive" in result.output
+        assert (project / "existing.txt").read_text(encoding="utf-8") == "keep me"
+
+    def test_noninteractive_flag_here_force_completes_without_script_flag(
+        self, tmp_path, monkeypatch
+    ):
+        """The #4152 reproduction: ``--here --force --integration`` without
+        ``--script`` must not hang on the script picker when --non-interactive
+        is set, even if stdin is a TTY.
+        """
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli.commands.init as init_mod
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("script picker must not run under --non-interactive")
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        project = tmp_path / "here-force-agent"
+        project.mkdir()
+        (project / "existing.txt").write_text("keep me", encoding="utf-8")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--force",
+                    "--non-interactive",
+                    "--integration",
+                    "claude",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert (project / ".specify" / "init-options.json").exists()
+
+    def test_noninteractive_init_honors_default_integration_env_var(
+        self, tmp_path, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("non-interactive init should not open the integration picker")
+
+        monkeypatch.setattr(specify_cli, "select_with_arrows", fail_select)
+        monkeypatch.setenv(
+            specify_cli.DEFAULT_INIT_INTEGRATION_ENV_VAR, "gemini"
+        )
+
+        runner = CliRunner()
+        project = tmp_path / "noninteractive_env"
+        result = runner.invoke(app, [
+            "init", str(project), "--script", "sh", "--ignore-agent-tools",
+        ], catch_exceptions=False)
+
+        assert result.exit_code == 0, result.output
+        assert "defaulting to 'gemini'" in result.output
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == "gemini"
+
+    def test_interactive_init_picker_default_honors_env_var(
+        self, tmp_path, monkeypatch
+    ):
+        # The interactive integration picker must receive the resolved
+        # SPECKIT_INTEGRATION_DEFAULT value as its default_key, not the
+        # hardcoded constant (guards the picker wiring against regression).
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli.commands.init as init_mod
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+        monkeypatch.setenv("SPECKIT_INTEGRATION_DEFAULT", "gemini")
+
+        captured = {}
+
+        def fake_select(options, prompt_text=None, default_key=None, **_kwargs):
+            # Only capture the integration picker (not the script picker).
+            if "Choose your coding agent integration" in (prompt_text or ""):
+                captured["default_key"] = default_key
+            return default_key
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fake_select)
+
+        runner = CliRunner()
+        project = tmp_path / "interactive_env"
+        result = runner.invoke(app, [
+            "init", str(project), "--script", "sh", "--ignore-agent-tools",
+        ], catch_exceptions=False)
+
+        assert result.exit_code == 0, result.output
+        assert captured.get("default_key") == "gemini"
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == "gemini"
+
+    def test_init_here_nonempty_noninteractive_errors_with_force_guidance(self, tmp_path):
+        """`init --here` on a non-empty directory with no confirmation input (empty
+        stdin) must fail fast with guidance to use --force, instead of the bare
+        'Aborted.' from an EOF on typer.confirm. CliRunner with no `input=` provides
+        empty stdin, so typer.confirm raises Abort, which the command converts to the
+        actionable error."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "nonempty-here"
+        project.mkdir()
+        (project / "existing.txt").write_text("keep me", encoding="utf-8")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(app, [
+                "init", "--here", "--integration", "copilot", "--script", "sh", "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 1, result.output
+        assert "--force" in result.output
+        # Aborted before scaffolding: the pre-existing file is untouched.
+        assert (project / "existing.txt").read_text(encoding="utf-8") == "keep me"
+
+    def test_init_here_interactive_cancel_exits_zero(self, tmp_path, monkeypatch):
+        """An interactive Ctrl+C at the merge confirmation (typer.Abort on a TTY)
+        is a normal cancellation — exit 0, "cancelled" — NOT the missing-input
+        --force error, which is reserved for non-interactive EOF. Guards the
+        regression where Abort was caught unconditionally and every cancel became
+        an exit-1 --force error."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli.commands.init as init_mod
+
+        # Simulate an interactive terminal so the Abort is treated as a cancel.
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        project = tmp_path / "cancel-here"
+        project.mkdir()
+        (project / "existing.txt").write_text("keep me", encoding="utf-8")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            # No input → typer.confirm raises Abort (stands in for Ctrl+C).
+            result = CliRunner().invoke(app, [
+                "init", "--here", "--integration", "copilot", "--script", "sh", "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert "cancelled" in result.output.lower()
+        assert "--force" not in result.output  # not the missing-input error
+        assert (project / "existing.txt").read_text(encoding="utf-8") == "keep me"
 
     def test_integration_copilot_auto_promotes(self, tmp_path):
         from typer.testing import CliRunner
@@ -136,7 +384,9 @@ class TestInitIntegrationFlag:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
-        assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
+        assert (
+            project / ".github" / "skills" / "speckit-plan" / "SKILL.md"
+        ).exists()
 
     def test_init_optional_preset_failure_reports_target_and_continues(
         self, tmp_path, monkeypatch
@@ -172,6 +422,66 @@ class TestInitIntegrationFlag:
         assert "preset install exploded with context" in normalized
         assert "Continuing without the optional preset" in normalized
         assert "Project ready" in normalized
+
+    def test_init_with_local_preset_seeds_manifest_constitution(
+        self, tmp_path, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.presets import PresetManager
+
+        monkeypatch.setattr(
+            PresetManager,
+            "_seed_constitution_from_preset",
+            lambda *_args, **_kwargs: None,
+        )
+
+        preset_dir = tmp_path / "constitution-preset"
+        (preset_dir / "organization").mkdir(parents=True)
+        preset_content = "# Ratified Organization Constitution\n"
+        (preset_dir / "organization" / "ratified.md").write_text(preset_content)
+        (preset_dir / "preset.yml").write_text(
+            yaml.safe_dump({
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "constitution-preset",
+                    "name": "Constitution Preset",
+                    "version": "1.0.0",
+                    "description": "Provides a ratified constitution",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "templates": [{
+                        "type": "template",
+                        "name": "constitution-template",
+                        "file": "organization/ratified.md",
+                        "strategy": "replace",
+                    }]
+                },
+            })
+        )
+        project = tmp_path / "init-with-preset"
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "init",
+                str(project),
+                "--integration",
+                "copilot",
+                "--script",
+                "sh",
+                "--ignore-agent-tools",
+                "--preset",
+                str(preset_dir),
+            ],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert (
+            project / ".specify" / "memory" / "constitution.md"
+        ).read_text() == preset_content
 
     def test_integration_claude_here_preserves_preexisting_commands(self, tmp_path):
         from typer.testing import CliRunner
@@ -262,6 +572,218 @@ class TestInitIntegrationFlag:
         # Other shared files should also be installed
         assert (scripts_dir / "setup-plan.sh").exists()
         assert (templates_dir / "plan-template.md").exists()
+
+    def test_shared_infra_installs_python_scripts_for_py(self, tmp_path):
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "python-scripts"
+        project.mkdir()
+
+        _install_shared_infra(project, "py")
+
+        assert (
+            project / ".specify" / "scripts" / "python" / "common.py"
+        ).exists()
+
+    def test_shared_infra_removes_stale_managed_script(self, tmp_path):
+        """A managed script the core no longer ships (e.g. the legacy
+        update-agent-context.sh, superseded by the agent-context extension) is
+        removed, and the manifest stops tracking it (#3076)."""
+        from specify_cli import _install_shared_infra
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "stale-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+
+        # Legacy orphan the current bundle no longer ships, recorded in the
+        # manifest as a managed file (hash matches on disk) — a pre-refactor install.
+        stale_rel = ".specify/scripts/bash/update-agent-context.sh"
+        (scripts_dir / "update-agent-context.sh").write_text("# legacy orphan\n", encoding="utf-8")
+        manifest = IntegrationManifest("speckit", project, version="test")
+        manifest.record_existing(stale_rel)
+        manifest.save()
+
+        _install_shared_infra(project, "sh", force=False)
+
+        # The orphan is gone and the manifest no longer tracks it.
+        assert not (scripts_dir / "update-agent-context.sh").exists()
+        refreshed = IntegrationManifest.load("speckit", project)
+        assert stale_rel not in refreshed.files
+        # Scripts the core DOES ship are installed and tracked.
+        assert (scripts_dir / "common.sh").exists()
+        assert ".specify/scripts/bash/common.sh" in refreshed.files
+
+    def test_shared_infra_preserves_modified_stale_script(self, tmp_path):
+        """A user-modified stale script is preserved (hash diverges from the
+        managed baseline), never silently deleted (#3076)."""
+        from specify_cli import _install_shared_infra
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "stale-modified"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+
+        stale = scripts_dir / "update-agent-context.sh"
+        stale.write_text("# original managed\n", encoding="utf-8")
+        manifest = IntegrationManifest("speckit", project, version="test")
+        manifest.record_existing(".specify/scripts/bash/update-agent-context.sh")
+        manifest.save()
+
+        # User customizes it after install → on-disk hash now diverges.
+        stale.write_text("# user customization\n", encoding="utf-8")
+
+        _install_shared_infra(project, "sh", force=False)
+
+        # Preserved: it is no longer a managed (hash-matching) copy.
+        assert stale.exists()
+        assert stale.read_text(encoding="utf-8") == "# user customization\n"
+
+    def test_shared_infra_prunes_orphan_manifest_entry_when_file_absent(self, tmp_path):
+        """A stale manifest entry whose file is already gone from disk is pruned
+        so the manifest stays consistent, not left tracked forever (#3076 review)."""
+        from specify_cli import _install_shared_infra
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "orphan-entry"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+
+        stale_rel = ".specify/scripts/bash/update-agent-context.sh"
+        stale = scripts_dir / "update-agent-context.sh"
+        stale.write_text("# legacy orphan\n", encoding="utf-8")
+        manifest = IntegrationManifest("speckit", project, version="test")
+        manifest.record_existing(stale_rel)
+        manifest.save()
+        # File removed out of band, but the manifest still tracks it.
+        stale.unlink()
+
+        _install_shared_infra(project, "sh", force=False)
+
+        refreshed = IntegrationManifest.load("speckit", project)
+        assert stale_rel not in refreshed.files
+
+    def test_shared_infra_empty_script_source_keeps_tracked_scripts(self, tmp_path, monkeypatch):
+        """If the bundle's script source dir exists but is empty, stale-cleanup
+        must NOT run (no source files seen → can't tell what's obsolete): a
+        previously-tracked script is preserved, never mass-deleted (#3076 review)."""
+        from specify_cli import _install_shared_infra, shared_infra
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        # Point the script source at an empty ``bash/`` directory.
+        empty_src = tmp_path / "empty-bundle" / "scripts"
+        (empty_src / "bash").mkdir(parents=True)
+        monkeypatch.setattr(shared_infra, "shared_scripts_source", lambda **kw: empty_src)
+
+        project = tmp_path / "empty-source"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        tracked_rel = ".specify/scripts/bash/common.sh"
+        (scripts_dir / "common.sh").write_text("# tracked\n", encoding="utf-8")
+        manifest = IntegrationManifest("speckit", project, version="test")
+        manifest.record_existing(tracked_rel)
+        manifest.save()
+
+        _install_shared_infra(project, "sh", force=False)
+
+        # Empty source → scripts_scanned stays False → nothing deleted.
+        assert (scripts_dir / "common.sh").exists()
+        refreshed = IntegrationManifest.load("speckit", project)
+        assert tracked_rel in refreshed.files
+
+    def test_shared_infra_stale_cleanup_ignores_unsafe_manifest_keys(self, tmp_path):
+        """A corrupted/hand-edited manifest key with a ``..`` segment is skipped
+        before any filesystem access — its traversal target is never deleted
+        (#3076 review, containment guard)."""
+        import hashlib
+        import json
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "unsafe-key"
+        project.mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        manifest_dir = project / ".specify" / "integrations"
+        manifest_dir.mkdir(parents=True)
+
+        # A file the traversal key would resolve to (outside scripts/bash/).
+        victim = project / ".specify" / "scripts" / "keep-me.sh"
+        victim_bytes = b"# do not touch\n"
+        victim.write_bytes(victim_bytes)
+
+        # Hand-crafted manifest: a key under the script prefix but with a ``..``
+        # segment, with the *matching* hash so that — absent the containment guard
+        # — stale-cleanup would consider it managed and unlink the target.
+        traversal_key = ".specify/scripts/bash/../keep-me.sh"
+        (manifest_dir / "speckit.manifest.json").write_text(
+            json.dumps({
+                "integration": "speckit",
+                "version": "test",
+                "files": {traversal_key: hashlib.sha256(victim_bytes).hexdigest()},
+            }),
+            encoding="utf-8",
+        )
+
+        _install_shared_infra(project, "sh", force=False)
+
+        # The unsafe key was skipped; its target file is untouched.
+        assert victim.exists()
+        assert victim.read_bytes() == victim_bytes
+
+    def test_shared_infra_stale_cleanup_skips_escaping_key_without_failing(
+        self, tmp_path, monkeypatch
+    ):
+        """A key that passes the lexical guard but escapes containment — e.g. a
+        Windows drive-relative ``C:tmp`` that is not ``is_absolute()`` yet discards
+        the project root when joined — is skipped via ``_validate_rel_path``, never
+        unlinked, and never turned into an install-time hard failure (#3076 review
+        round 4). Simulated portably by forcing ``_validate_rel_path`` to reject the
+        managed key, since real drive-relative paths only escape on Windows."""
+        from specify_cli import _install_shared_infra
+        from specify_cli.integrations import manifest as manifest_mod
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "escaping-key"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+
+        # A managed stale orphan that would normally be removed.
+        stale_rel = ".specify/scripts/bash/update-agent-context.sh"
+        stale = scripts_dir / "update-agent-context.sh"
+        stale.write_text("# legacy orphan\n", encoding="utf-8")
+        manifest = IntegrationManifest("speckit", project, version="test")
+        manifest.record_existing(stale_rel)
+        manifest.save()
+
+        # Force the containment check to reject this key, as it would for a
+        # drive-relative escape on Windows. The cleanup must skip it gracefully.
+        real_validate = manifest_mod._validate_rel_path
+
+        def fake_validate(rel, root):
+            if str(rel).endswith("update-agent-context.sh"):
+                raise ValueError("simulated drive-relative escape")
+            return real_validate(rel, root)
+
+        monkeypatch.setattr(manifest_mod, "_validate_rel_path", fake_validate)
+
+        # Must not raise (no install-time hard failure from a corrupted key).
+        _install_shared_infra(project, "sh", force=False)
+
+        # The escaping key was skipped, so its file is left untouched...
+        assert stale.exists()
+        assert stale.read_text(encoding="utf-8") == "# legacy orphan\n"
+        # ...yet the install otherwise completed: real scripts are installed.
+        assert (scripts_dir / "common.sh").exists()
 
     def test_shared_infra_skip_warning_displayed(self, tmp_path, capsys):
         """Console warning is displayed when files are skipped."""
@@ -641,7 +1163,8 @@ class TestInitIntegrationFlag:
         assert (scripts_dir / "common.sh").read_text(encoding="utf-8") != custom_content
 
     def test_init_here_without_force_preserves_shared_infra(self, tmp_path):
-        """E2E: specify init --here (no --force) preserves existing shared infra files."""
+        """E2E: confirming the merge with piped "y" (no --force) preserves
+        existing shared infra files (unlike --force, which overwrites them)."""
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -670,6 +1193,99 @@ class TestInitIntegrationFlag:
         assert (scripts_dir / "common.sh").read_text(encoding="utf-8") == custom_content
         # Warning about skipped files should appear
         assert "not updated" in result.output
+
+
+    def test_init_here_force_reapplies_installed_presets(self, tmp_path, monkeypatch):
+        """Regression for #3990: init --here --force must call _register_presets_for_agent
+        after setup() so preset-composed files are not silently reverted to core."""
+        from unittest.mock import MagicMock, patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        project = tmp_path / "force-preset-reapply"
+        project.mkdir()
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+
+            # First init to create a valid project structure.
+            result = runner.invoke(app, [
+                "init", "--here", "--force",
+                "--integration", "claude",
+                "--script", "sh",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
+            assert result.exit_code == 0, result.output
+
+            # Second init --here --force: verify _register_presets_for_agent is called.
+            # Patch at the source module since init.py does a lazy import of these functions.
+            mock_presets = MagicMock()
+            mock_extensions = MagicMock()
+            with (
+                patch(
+                    "specify_cli.integrations._helpers._register_presets_for_agent",
+                    mock_presets,
+                ),
+                patch(
+                    "specify_cli.integrations._helpers._register_extensions_for_agent",
+                    mock_extensions,
+                ),
+            ):
+                result2 = runner.invoke(app, [
+                    "init", "--here", "--force",
+                    "--integration", "claude",
+                    "--script", "sh",
+                    "--ignore-agent-tools",
+                ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result2.exit_code == 0, result2.output
+        assert mock_presets.called, (
+            "_register_presets_for_agent was not called during init --here --force"
+        )
+        assert mock_extensions.called, (
+            "_register_extensions_for_agent was not called during init --here --force"
+        )
+
+    def test_init_here_without_force_does_not_reapply_presets(self, tmp_path):
+        """Without --force (fresh project), _register_presets_for_agent should NOT be called."""
+        from unittest.mock import MagicMock, patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        project = tmp_path / "no-force-preset"
+        project.mkdir()
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            mock_presets = MagicMock()
+            with patch(
+                "specify_cli.integrations._helpers._register_presets_for_agent",
+                mock_presets,
+            ):
+                result = runner.invoke(app, [
+                    "init", "--here",
+                    "--integration", "claude",
+                    "--script", "sh",
+                    "--ignore-agent-tools",
+                ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        # On a fresh project without --force the reapply guard should not fire.
+        assert not mock_presets.called, (
+            "_register_presets_for_agent should not be called on a fresh init without --force"
+        )
 
 
 class TestForceExistingDirectory:
@@ -856,6 +1472,23 @@ class TestSharedInfraCommandRefs:
         assert "__SPECKIT_COMMAND_" not in content
         assert "/speckit-tasks" in content
 
+    def test_dollar_prefix_in_page_templates(self, tmp_path):
+        """Dollar-style skills agents get $speckit-<name> in page templates."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "dollar-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        _install_shared_infra(
+            project, "sh", invoke_separator="-", invoke_prefix="$"
+        )
+
+        plan = project / ".specify" / "templates" / "plan-template.md"
+        content = plan.read_text(encoding="utf-8")
+        assert "$speckit-plan" in content
+        assert "/speckit-plan" not in content
+
     @pytest.mark.parametrize("script_type", ["sh", "ps"])
     def test_dot_separator_in_shared_scripts(self, tmp_path, script_type):
         """Markdown agents get /speckit.<name> in shared script hints."""
@@ -896,6 +1529,48 @@ class TestSharedInfraCommandRefs:
         assert "/speckit.plan" not in content
         assert "/speckit.tasks" not in content
 
+    @pytest.mark.parametrize("script_type", ["sh", "ps", "py"])
+    def test_dollar_prefix_in_shared_scripts(self, tmp_path, script_type):
+        """Dollar-style skills agents get native prefixes in shared script hints."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / f"dollar-script-{script_type}"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        _install_shared_infra(
+            project, script_type, invoke_separator="-", invoke_prefix="$"
+        )
+
+        if script_type == "py":
+            state = {
+                "integration": "codex",
+                "integration_settings": {
+                    "codex": {"invoke_separator": "-"},
+                },
+            }
+            (project / ".specify" / "integration.json").write_text(
+                json.dumps(state), encoding="utf-8"
+            )
+            common = project / ".specify" / "scripts" / "python" / "common.py"
+            namespace = runpy.run_path(str(common))
+            assert namespace["format_speckit_command"]("plan", project) == (
+                "$speckit-plan"
+            )
+            return
+
+        content = self._combined_script_content(project, script_type)
+        assert "$speckit-specify" in content
+        assert "$speckit-plan" in content
+        assert "$speckit-tasks" in content
+        assert "/speckit-specify" not in content
+        assert "/speckit-plan" not in content
+        assert "/speckit-tasks" not in content
+        if script_type == "sh":
+            assert r"\$speckit-specify" in content
+            assert r"\$speckit-plan" in content
+            assert r"\$speckit-tasks" in content
+
     def test_full_init_claude_resolves_page_templates(self, tmp_path):
         """Full CLI init with Claude (skills agent) produces hyphen refs in page templates."""
         from typer.testing import CliRunner
@@ -927,7 +1602,7 @@ class TestSharedInfraCommandRefs:
         assert "/speckit.specify" not in script_content
 
     def test_full_init_copilot_resolves_page_templates(self, tmp_path):
-        """Full CLI init with Copilot (markdown agent) produces dot refs in page templates."""
+        """Default Copilot skills mode produces hyphen refs in page templates."""
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -949,27 +1624,28 @@ class TestSharedInfraCommandRefs:
 
         plan = project / ".specify" / "templates" / "plan-template.md"
         content = plan.read_text(encoding="utf-8")
-        assert "/speckit.plan" in content, "Copilot (markdown) should use /speckit.plan"
+        assert "/speckit-plan" in content, "Copilot skills should use /speckit-plan"
+        assert "/speckit.plan" not in content
         assert "__SPECKIT_COMMAND_" not in content
 
         script_content = self._combined_script_content(project, "sh")
-        assert "/speckit.specify" in script_content
-        assert "/speckit-specify" not in script_content
+        assert "/speckit-specify" in script_content
+        assert "/speckit.specify" not in script_content
 
-    def test_full_init_copilot_skills_resolves_page_templates(self, tmp_path):
-        """Full CLI init with Copilot --skills produces hyphen refs in page templates."""
+    def test_full_init_copilot_commands_resolves_page_templates(self, tmp_path):
+        """Copilot --commands produces dot refs in page templates."""
         from typer.testing import CliRunner
         from specify_cli import app
 
         runner = CliRunner()
-        project = tmp_path / "init-copilot-skills"
+        project = tmp_path / "init-copilot-commands"
         old_cwd = os.getcwd()
         try:
             os.chdir(tmp_path)
             result = runner.invoke(app, [
                 "init", str(project),
                 "--integration", "copilot",
-                "--integration-options", "--skills",
+                "--integration-options", "--commands",
                 "--script", "sh",
                 "--ignore-agent-tools",
             ], catch_exceptions=False)
@@ -980,13 +1656,13 @@ class TestSharedInfraCommandRefs:
 
         plan = project / ".specify" / "templates" / "plan-template.md"
         content = plan.read_text(encoding="utf-8")
-        assert "/speckit-plan" in content, "Copilot --skills should use /speckit-plan"
-        assert "/speckit.plan" not in content, "dot-notation leaked into Copilot skills page template"
+        assert "/speckit.plan" in content, "Copilot --commands should use /speckit.plan"
+        assert "/speckit-plan" not in content
         assert "__SPECKIT_COMMAND_" not in content
 
         script_content = self._combined_script_content(project, "sh")
-        assert "/speckit-specify" in script_content
-        assert "/speckit.specify" not in script_content
+        assert "/speckit.specify" in script_content
+        assert "/speckit-specify" not in script_content
 
 
 class TestIntegrationCatalogDiscoveryCLI:
@@ -1019,6 +1695,18 @@ class TestIntegrationCatalogDiscoveryCLI:
             "_install_allowed": True,
         },
     ]
+    MARKUP_INTEGRATION = {
+        "id": "[red]markup-id[/red]",
+        "name": "[green]Markup Name[/green]",
+        "version": "[blue]1.0.0[/blue]",
+        "description": "[yellow]Markup Description[/yellow]",
+        "author": "[magenta]Markup Author[/magenta]",
+        "license": "[cyan]Markup License[/cyan]",
+        "repository": "[bold]Markup Repository[/bold]",
+        "tags": ["[italic]markup-tag[/italic]"],
+        "_catalog_name": "[underline]markup-catalog[/underline]",
+        "_install_allowed": False,
+    }
 
     def _make_project(self, tmp_path):
         project = tmp_path / "proj"
@@ -1070,7 +1758,6 @@ class TestIntegrationCatalogDiscoveryCLI:
                 "args": "$ARGUMENTS",
                 "extension": ".md",
             }
-            context_file = "BROKEN.md"
 
             def setup(self, project_root, manifest, **kwargs):
                 raise OSError("setup exploded\nwith context")
@@ -1193,14 +1880,14 @@ class TestIntegrationCatalogDiscoveryCLI:
         project.mkdir()
         result = self._invoke(["integration", "search"], project)
         assert result.exit_code == 1
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_catalog_list_requires_specify_project(self, tmp_path):
         project = tmp_path / "bare"
         project.mkdir()
         result = self._invoke(["integration", "catalog", "list"], project)
         assert result.exit_code == 1
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_primary_integration_commands_require_specify_project(self, tmp_path):
         project = tmp_path / "bare"
@@ -1220,7 +1907,7 @@ class TestIntegrationCatalogDiscoveryCLI:
                 f"command={command!r}, exit_code={result.exit_code}, output={result.output!r}"
             )
             assert result.exit_code == 1, failure_context
-            assert "Not a spec-kit project" in result.output, failure_context
+            assert "Not a Spec Kit project" in result.output, failure_context
 
     def test_integration_commands_require_specify_directory(self, tmp_path):
         project = tmp_path / "bad"
@@ -1235,7 +1922,7 @@ class TestIntegrationCatalogDiscoveryCLI:
         for command in commands:
             result = self._invoke(command, project)
             assert result.exit_code == 1, result.output
-            assert "Not a spec-kit project" in result.output
+            assert "Not a Spec Kit project" in result.output
 
     def test_project_scoped_commands_require_specify_directory(self, tmp_path):
         project = tmp_path / "bad-feature-commands"
@@ -1286,7 +1973,7 @@ class TestIntegrationCatalogDiscoveryCLI:
                 f"command={command!r}, exit_code={result.exit_code}, output={result.output!r}"
             )
             assert result.exit_code == 1, failure_context
-            assert "Not a spec-kit project" in result.output, failure_context
+            assert "Not a Spec Kit project" in result.output, failure_context
 
     def test_catalog_config_output_uses_posix_paths(self, tmp_path):
         project = self._make_project(tmp_path)
@@ -1314,6 +2001,78 @@ class TestIntegrationCatalogDiscoveryCLI:
         extension_list = self._invoke(["extension", "catalog", "list"], project)
         assert extension_list.exit_code == 0, extension_list.output
         assert "Config: .specify/extension-catalogs.yml" in extension_list.output
+
+    def test_extension_catalog_add_rejects_non_mapping_config_root(self, tmp_path):
+        project = self._make_project(tmp_path)
+        cfg_path = project / ".specify" / "extension-catalogs.yml"
+        cfg_path.write_text("- not\n- a\n- mapping\n", encoding="utf-8")
+
+        result = self._invoke([
+            "extension", "catalog", "add",
+            "https://example.com/extension-catalog.yml",
+            "--name", "demo-extensions",
+        ], project)
+
+        assert result.exit_code == 1, result.output
+        output = _normalize_cli_output(result.output)
+        assert "Invalid catalog config .specify/extension-catalogs.yml" in output
+        assert "expected a YAML mapping at the root" in output
+        assert "AttributeError" not in output
+
+    def test_extension_catalog_remove_rejects_non_mapping_config_root(self, tmp_path):
+        project = self._make_project(tmp_path)
+        cfg_path = project / ".specify" / "extension-catalogs.yml"
+        cfg_path.write_text("- not\n- a\n- mapping\n", encoding="utf-8")
+
+        result = self._invoke(["extension", "catalog", "remove", "demo"], project)
+
+        assert result.exit_code == 1, result.output
+        output = _normalize_cli_output(result.output)
+        assert "Invalid catalog config .specify/extension-catalogs.yml" in output
+        assert "expected a YAML mapping at the root" in output
+        assert "AttributeError" not in output
+
+    def test_extension_catalog_add_escapes_catalog_name_markup(self, tmp_path):
+        project = self._make_project(tmp_path)
+        catalog_name = "[red]demo[/red]"
+
+        result = self._invoke([
+            "extension", "catalog", "add",
+            "https://example.com/extension-catalog.yml",
+            "--name", catalog_name,
+        ], project)
+
+        assert result.exit_code == 0, result.output
+        output = _normalize_cli_output(result.output)
+        assert f"Added catalog '{catalog_name}'" in output
+
+    def test_extension_catalog_remove_escapes_catalog_name_markup(self, tmp_path):
+        project = self._make_project(tmp_path)
+        catalog_name = "[red]demo[/red]"
+        cfg_path = project / ".specify" / "extension-catalogs.yml"
+        cfg_path.write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": catalog_name,
+                            "url": "https://example.com/extension-catalog.yml",
+                            "priority": 10,
+                            "install_allowed": False,
+                            "description": "",
+                        }
+                    ]
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+
+        result = self._invoke(["extension", "catalog", "remove", catalog_name], project)
+
+        assert result.exit_code == 0, result.output
+        output = _normalize_cli_output(result.output)
+        assert f"Removed catalog '{catalog_name}'" in output
 
     # -- search ------------------------------------------------------------
 
@@ -1411,6 +2170,25 @@ class TestIntegrationCatalogDiscoveryCLI:
         # acme-coder is flagged _install_allowed=False, so we should warn
         assert "Not directly installable" in result.output
 
+    def test_search_escapes_catalog_markup(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch, integrations=[self.MARKUP_INTEGRATION])
+
+        result = self._invoke(["integration", "search"], project)
+
+        assert result.exit_code == 0, result.output
+        output = _normalize_cli_output(result.output)
+        for value in (
+            self.MARKUP_INTEGRATION["id"],
+            self.MARKUP_INTEGRATION["name"],
+            self.MARKUP_INTEGRATION["version"],
+            self.MARKUP_INTEGRATION["description"],
+            self.MARKUP_INTEGRATION["author"],
+            self.MARKUP_INTEGRATION["tags"][0],
+            self.MARKUP_INTEGRATION["_catalog_name"],
+        ):
+            assert value in output
+
     # -- info --------------------------------------------------------------
 
     def test_info_found(self, tmp_path, monkeypatch):
@@ -1433,6 +2211,19 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert result.exit_code == 1
         assert "not found" in result.output
 
+    def test_info_not_found_escapes_query_markup(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch)
+        integration_id = "[red]does-not-exist[/red]"
+
+        result = self._invoke(
+            ["integration", "info", integration_id],
+            project,
+        )
+
+        assert result.exit_code == 1
+        assert integration_id in _normalize_cli_output(result.output)
+
     def test_info_builtin_not_in_catalog(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)
         # Empty catalog, but copilot is a registered built-in.
@@ -1440,6 +2231,30 @@ class TestIntegrationCatalogDiscoveryCLI:
         result = self._invoke(["integration", "info", "copilot"], project)
         assert result.exit_code == 0, result.output
         assert "Built-in integration" in result.output
+
+    def test_info_escapes_catalog_markup(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch, integrations=[self.MARKUP_INTEGRATION])
+
+        result = self._invoke(
+            ["integration", "info", self.MARKUP_INTEGRATION["id"]],
+            project,
+        )
+
+        assert result.exit_code == 0, result.output
+        output = _normalize_cli_output(result.output)
+        for value in (
+            self.MARKUP_INTEGRATION["id"],
+            self.MARKUP_INTEGRATION["name"],
+            self.MARKUP_INTEGRATION["version"],
+            self.MARKUP_INTEGRATION["description"],
+            self.MARKUP_INTEGRATION["author"],
+            self.MARKUP_INTEGRATION["license"],
+            self.MARKUP_INTEGRATION["repository"],
+            self.MARKUP_INTEGRATION["tags"][0],
+            self.MARKUP_INTEGRATION["_catalog_name"],
+        ):
+            assert value in output
 
     # -- validation vs network guidance ------------------------------------
 
@@ -1808,3 +2623,444 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert listing.exit_code == 0, listing.output
         assert "default" in listing.output
         assert "community" in listing.output
+
+
+def test_refresh_shared_templates_preserves_recovered_user_file(tmp_path):
+    """refresh_shared_templates must not overwrite a recovered (pre-existing
+    user) template without --force, matching install_shared_infra's gate (#2918).
+    """
+    from specify_cli.shared_infra import (
+        load_speckit_manifest,
+        refresh_shared_templates,
+    )
+
+    project = tmp_path / "proj"
+    templates_dir = project / ".specify" / "templates"
+    templates_dir.mkdir(parents=True)
+    user_file = templates_dir / "spec-template.md"
+    user_file.write_text("# USER CUSTOM CONTENT\n", encoding="utf-8")
+
+    # Record the pre-existing file as recovered (its hash was adopted, not written).
+    manifest = load_speckit_manifest(project, version="test", console=_NoopConsole())
+    rel = ".specify/templates/spec-template.md"
+    manifest.record_existing(rel, recovered=True)
+    manifest.save()
+
+    # Bundled source ships a different body for the same template.
+    core_pack = tmp_path / "core-pack"
+    src = core_pack / "templates"
+    src.mkdir(parents=True)
+    (src / "spec-template.md").write_text("# BUNDLED CONTENT v2\n", encoding="utf-8")
+
+    refresh_shared_templates(
+        project,
+        version="test",
+        core_pack=core_pack,
+        repo_root=tmp_path / "unused",
+        console=_NoopConsole(),
+        invoke_separator=".",
+        force=False,
+    )
+
+    # Recovered user content must survive (fail-before: replaced by bundled body).
+    assert user_file.read_text(encoding="utf-8") == "# USER CUSTOM CONTENT\n"
+
+
+class TestExtensionFlag:
+    """Tests for the --extension flag on specify init."""
+
+    def _run_init(self, tmp_path, args, project_name="ext-test"):
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / project_name
+        project.mkdir(exist_ok=True)
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            # Patch get_speckit_version to return a stable (non-dev) version so that
+            # the extension compatibility check (SpecifierSet(">=0.2.0")) passes.
+            with patch(
+                "specify_cli.commands.init.get_speckit_version",
+                return_value="0.8.2",
+            ):
+                result = runner.invoke(app, [
+                    "init", "--here",
+                    "--integration", "copilot",
+                    "--script", "sh",
+                    "--ignore-agent-tools",
+                ] + args, catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        return project, result
+
+    def test_bundled_extension_installed(self, tmp_path):
+        """--extension git installs the bundled git extension."""
+        project, result = self._run_init(tmp_path, ["--extension", "git"], project_name="ext-bundled")
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+
+        ext_dir = project / ".specify" / "extensions" / "git"
+        assert ext_dir.exists(), "git extension directory not found"
+        assert (ext_dir / "extension.yml").exists(), "extension.yml not found"
+
+        # Tracker should show extension step as done
+        normalized = _normalize_cli_output(result.output)
+        assert "Install extension: git" in normalized
+
+    def test_multiple_extensions_installed(self, tmp_path):
+        """--extension can be specified multiple times."""
+        project, result = self._run_init(
+            tmp_path,
+            ["--extension", "git", "--extension", "selftest"],
+            project_name="ext-multi",
+        )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+
+        ext_dir_git = project / ".specify" / "extensions" / "git"
+        ext_dir_selftest = project / ".specify" / "extensions" / "selftest"
+        assert ext_dir_git.exists(), "git extension not installed"
+        assert ext_dir_selftest.exists(), "selftest extension not installed"
+
+    def test_local_path_extension_installed(self, tmp_path):
+        """--extension /abs/path installs from a local absolute directory path."""
+        from specify_cli import _locate_bundled_extension
+
+        # Use the bundled git extension directory as our "local" extension source
+        bundled_git = _locate_bundled_extension("git")
+        assert bundled_git is not None, "bundled git extension not found; cannot run test"
+
+        # Pass the absolute path directly (starts with "/")
+        project, result = self._run_init(
+            tmp_path,
+            ["--extension", str(bundled_git)],
+            project_name="ext-local",
+        )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+
+        ext_dir = project / ".specify" / "extensions" / "git"
+        assert ext_dir.exists(), "extension from local path not installed"
+
+    def test_unknown_extension_shows_error_in_tracker(self, tmp_path):
+        """An unknown extension name records a tracker error but does not abort init."""
+        project, result = self._run_init(
+            tmp_path,
+            ["--extension", "nonexistent-xyz-ext"],
+            project_name="ext-unknown",
+        )
+
+        assert result.exit_code == 0, "init should not abort on unknown extension"
+        normalized = _normalize_cli_output(result.output)
+        assert "failed" in normalized.lower(), "expected 'failed' for unknown extension"
+
+    def test_extension_flag_works_with_preset(self, tmp_path):
+        """--extension and --preset can be combined."""
+        project, result = self._run_init(
+            tmp_path,
+            ["--extension", "git", "--preset", "lean"],
+            project_name="ext-preset",
+        )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+
+        ext_dir = project / ".specify" / "extensions" / "git"
+        assert ext_dir.exists(), "git extension not installed alongside preset"
+
+    @staticmethod
+    def _zip_bytes_from_dir(source_dir):
+        """Build in-memory ZIP bytes from an extension directory (yml at root)."""
+        import io
+        import zipfile
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for path in sorted(source_dir.rglob("*")):
+                if path.is_file():
+                    zf.write(path, arcname=str(path.relative_to(source_dir)))
+        return buf.getvalue()
+
+    def test_url_extension_rejects_non_https(self, tmp_path):
+        """A non-HTTPS URL is rejected before any download; init is not aborted."""
+        project, result = self._run_init(
+            tmp_path,
+            ["--extension", "http://example.com/ext.zip", "--trust-extension-urls"],
+            project_name="ext-http",
+        )
+
+        assert result.exit_code == 0, "init should not abort on a rejected URL"
+        normalized = _normalize_cli_output(result.output)
+        assert "failed" in normalized.lower()
+        # No extension directory should have been created for the bad URL.
+        assert not (project / ".specify" / "extensions" / "ext").exists()
+
+    def test_url_extension_skipped_without_trust(self, tmp_path):
+        """Non-interactive URL install without --trust-extension-urls is denied."""
+        from unittest.mock import patch
+
+        with patch(
+            "specify_cli.commands.init._stdin_is_interactive", return_value=False
+        ), patch("specify_cli.authentication.http.open_url") as mock_open:
+            project, result = self._run_init(
+                tmp_path,
+                ["--extension", "https://example.com/git.zip"],
+                project_name="ext-url-denied",
+            )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+        # Default-deny: no download attempted, nothing installed.
+        mock_open.assert_not_called()
+        normalized = _normalize_cli_output(result.output)
+        assert "untrusted url" in normalized.lower()
+        assert not (project / ".specify" / "extensions" / "git").exists()
+
+    def test_noninteractive_flag_skips_url_trust_prompt_when_stdin_is_a_tty(
+        self, tmp_path, monkeypatch
+    ):
+        """``--non-interactive`` must not call ``typer.confirm`` for an HTTPS
+        ``--extension`` even when stdin is a TTY. Without
+        ``--trust-extension-urls`` the URL is denied (default-deny). Guards the
+        ``allow_prompt`` wiring added for #4152.
+        """
+        from unittest.mock import patch
+
+        import specify_cli.commands.init as init_mod
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("--non-interactive must not open select_with_arrows")
+
+        def fail_confirm(*_args, **_kwargs):
+            raise AssertionError(
+                "--non-interactive must not prompt for URL extension trust"
+            )
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        with patch("typer.confirm", side_effect=fail_confirm), patch(
+            "specify_cli.authentication.http.open_url"
+        ) as mock_open:
+            project, result = self._run_init(
+                tmp_path,
+                [
+                    "--non-interactive",
+                    "--extension",
+                    "https://example.com/git.zip",
+                ],
+                project_name="ext-url-noninteractive-tty",
+            )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+        mock_open.assert_not_called()
+        normalized = _normalize_cli_output(result.output)
+        assert "untrusted url" in normalized.lower()
+        assert "--trust-extension-urls" in result.output
+        assert not (project / ".specify" / "extensions" / "git").exists()
+
+    def test_noninteractive_flag_trust_urls_installs_without_confirm(
+        self, tmp_path, monkeypatch
+    ):
+        """``--non-interactive --trust-extension-urls`` installs an HTTPS
+        extension without calling ``typer.confirm``, even when stdin is a TTY.
+        """
+        import io
+
+        from unittest.mock import patch
+
+        from specify_cli import _locate_bundled_extension
+        import specify_cli.commands.init as init_mod
+
+        bundled_git = _locate_bundled_extension("git")
+        assert bundled_git is not None, "bundled git extension not found"
+        zip_bytes = self._zip_bytes_from_dir(bundled_git)
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def _cache_dir_stand_in(project_root):
+            d = project_root / ".specify" / "extensions" / ".cache" / "downloads"
+            d.mkdir(parents=True, exist_ok=True)
+            return d
+
+        def _open_download_zip(project_root, download_dir, zip_filename):
+            target = download_dir / zip_filename
+            o_temporary = getattr(os, "O_TEMPORARY", 0)
+            if o_temporary:
+                return os.open(
+                    target, os.O_RDWR | os.O_CREAT | os.O_EXCL | o_temporary, 0o600
+                )
+            fd = os.open(target, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                os.unlink(target)
+            except OSError:
+                os.close(fd)
+                raise
+            return fd
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("--non-interactive must not open select_with_arrows")
+
+        def fail_confirm(*_args, **_kwargs):
+            raise AssertionError(
+                "--non-interactive must not prompt for URL extension trust"
+            )
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        with patch("typer.confirm", side_effect=fail_confirm), patch(
+            "specify_cli.authentication.http.open_url",
+            return_value=FakeResponse(zip_bytes),
+        ), patch(
+            "specify_cli.extensions._commands._validate_safe_cache_dir",
+            side_effect=_cache_dir_stand_in,
+        ), patch(
+            "specify_cli.extensions._commands._safe_open_download_zip",
+            side_effect=_open_download_zip,
+        ):
+            project, result = self._run_init(
+                tmp_path,
+                [
+                    "--non-interactive",
+                    "--extension",
+                    "https://example.com/git.zip",
+                    "--trust-extension-urls",
+                ],
+                project_name="ext-url-noninteractive-trust",
+            )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+        assert (project / ".specify" / "extensions" / "git").exists()
+
+    def test_url_extension_interactive_confirm_installs(self, tmp_path):
+        """An interactive 'yes' to the trust prompt allows the URL install."""
+        import io
+
+        from unittest.mock import patch
+
+        from specify_cli import _locate_bundled_extension
+
+        bundled_git = _locate_bundled_extension("git")
+        assert bundled_git is not None, "bundled git extension not found"
+        zip_bytes = self._zip_bytes_from_dir(bundled_git)
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def _cache_dir_stand_in(project_root):
+            d = project_root / ".specify" / "extensions" / ".cache" / "downloads"
+            d.mkdir(parents=True, exist_ok=True)
+            return d
+
+        def _open_download_zip(project_root, download_dir, zip_filename):
+            target = download_dir / zip_filename
+            o_temporary = getattr(os, "O_TEMPORARY", 0)
+            if o_temporary:
+                return os.open(
+                    target, os.O_RDWR | os.O_CREAT | os.O_EXCL | o_temporary, 0o600
+                )
+            fd = os.open(target, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                os.unlink(target)
+            except OSError:
+                os.close(fd)
+                raise
+            return fd
+
+        with patch(
+            "specify_cli.commands.init._stdin_is_interactive", return_value=True
+        ), patch("typer.confirm", return_value=True), patch(
+            "specify_cli.authentication.http.open_url",
+            return_value=FakeResponse(zip_bytes),
+        ), patch(
+            "specify_cli.extensions._commands._validate_safe_cache_dir",
+            side_effect=_cache_dir_stand_in,
+        ), patch(
+            "specify_cli.extensions._commands._safe_open_download_zip",
+            side_effect=_open_download_zip,
+        ):
+            project, result = self._run_init(
+                tmp_path,
+                ["--extension", "https://example.com/git.zip"],
+                project_name="ext-url-confirm",
+            )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+        assert (project / ".specify" / "extensions" / "git").exists()
+
+    def test_url_extension_installs_zip(self, tmp_path):
+        """A successful HTTPS ZIP download installs via the shared hardened path."""
+        import io
+
+        from unittest.mock import patch
+
+        from specify_cli import _locate_bundled_extension
+
+        bundled_git = _locate_bundled_extension("git")
+        assert bundled_git is not None, "bundled git extension not found"
+        zip_bytes = self._zip_bytes_from_dir(bundled_git)
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def _cache_dir_stand_in(project_root):
+            d = project_root / ".specify" / "extensions" / ".cache" / "downloads"
+            d.mkdir(parents=True, exist_ok=True)
+            return d
+
+        def _open_download_zip(project_root, download_dir, zip_filename):
+            target = download_dir / zip_filename
+            o_temporary = getattr(os, "O_TEMPORARY", 0)
+            if o_temporary:
+                return os.open(
+                    target, os.O_RDWR | os.O_CREAT | os.O_EXCL | o_temporary, 0o600
+                )
+            fd = os.open(target, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                os.unlink(target)
+            except OSError:
+                os.close(fd)
+                raise
+            return fd
+
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            return_value=FakeResponse(zip_bytes),
+        ), patch(
+            "specify_cli.extensions._commands._validate_safe_cache_dir",
+            side_effect=_cache_dir_stand_in,
+        ), patch(
+            "specify_cli.extensions._commands._safe_open_download_zip",
+            side_effect=_open_download_zip,
+        ):
+            project, result = self._run_init(
+                tmp_path,
+                ["--extension", "https://example.com/git.zip", "--trust-extension-urls"],
+                project_name="ext-url",
+            )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+        ext_dir = project / ".specify" / "extensions" / "git"
+        assert ext_dir.exists(), "extension from URL not installed"
+        assert (ext_dir / "extension.yml").exists()
+        # Transient download archive must not linger in the cache.
+        cache_dir = project / ".specify" / "extensions" / ".cache" / "downloads"
+        leftover = list(cache_dir.glob("*.zip")) if cache_dir.exists() else []
+        assert not leftover, f"download cache not cleaned: {leftover}"

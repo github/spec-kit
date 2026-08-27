@@ -1,195 +1,130 @@
 # Quick Start Guide
 
-This guide will help you get started with Spec-Driven Development using Spec Kit.
+This guide will help you get started with Spec-Driven Development using Spec Kit. Throughout, we illustrate each step with a running example: **Taskify**, a small team productivity platform.
 
 > [!NOTE]
-> All automation scripts now provide both Bash (`.sh`) and PowerShell (`.ps1`) variants. The `specify` CLI auto-selects based on OS unless you pass `--script sh|ps`.
+> Automation scripts are provided as Bash (`.sh`), PowerShell (`.ps1`), and Python (`.py`) variants. Interactive `specify init` prompts you to choose one; non-interactive runs (no TTY, or `--non-interactive`) default to a shell variant for your OS. Pass `--script sh|ps|py` to select explicitly.
 
-## Recommended Workflow
+Commands are shown here in `/speckit.*` form, but the exact invocation depends on your agent. Some skills-based agents use `$speckit-*` (e.g. Codex, ZCode) or `/skill:speckit-*` (e.g. Kimi). Use whichever form your agent exposes — the steps are otherwise identical.
+
+## Recommended Process
 
 > [!TIP]
-> **Context Awareness**: Spec Kit commands automatically detect the active feature based on your current Git branch (e.g., `001-feature-name`). To switch between different specifications, simply switch Git branches.
+> **Context Awareness**: Spec Kit tracks the active feature by the feature directory recorded in `.specify/feature.json` (overridable with the `SPECIFY_FEATURE_DIRECTORY` environment variable). Commands resolve the feature from that state, **not** from the checked-out Git branch — no Git required. The opt-in **git** extension adds numbered feature branches (e.g. `001-feature-name`) for organizing work in version control, but the active feature is still whichever directory that state points to; `git checkout` alone does not change it. To point commands at a different feature, update `.specify/feature.json` (or set `SPECIFY_FEATURE_DIRECTORY`).
 
-After installing Spec Kit and defining your project constitution, quick experiments can use the lean feature path: `/speckit.specify` -> `/speckit.plan` -> `/speckit.tasks` -> `/speckit.implement`. For production features or any work with meaningful ambiguity, treat `/speckit.clarify`, `/speckit.checklist`, and `/speckit.analyze` as regular quality gates:
+After installing Spec Kit, each command below is a step in the process. Two paths are common:
+
+**Shorter path** — for smaller features:
+
+1. `/speckit.specify`
+2. `/speckit.plan`
+3. `/speckit.tasks`
+4. `/speckit.implement`
+5. `/speckit.converge`
+
+**Full path** — for production features, adding `/speckit.clarify`, `/speckit.checklist`, and `/speckit.analyze` as quality gates:
+
+1. `/speckit.constitution`
+2. `/speckit.specify`
+3. `/speckit.clarify`
+4. `/speckit.plan`
+5. `/speckit.checklist`
+6. `/speckit.tasks`
+7. `/speckit.analyze`
+8. `/speckit.implement`
+9. `/speckit.converge`
+
+### Install Specify
+
+**In your terminal**, install the CLI from PyPI (requires [uv](install/uv.md)), then initialize your project:
+
+```bash
+uv tool install specify-cli
+specify init taskify   # or: specify init .   to use the current directory
+```
+
+`init` lets you pick your coding agent interactively, or pass it explicitly with `--integration` (e.g. `--integration copilot`). For CI and AI agent harnesses, add `--non-interactive` so unspecified choices use documented defaults instead of hanging on an arrow-key picker.
+
+> [!NOTE]
+> Prefer `pipx`, one-time `uvx` runs, a pinned release, or an offline/air-gapped setup? See the [Installation Guide](installation.md) for all supported methods.
+> Adding Spec Kit to a repository that already contains code? Follow
+> [Adopting Spec Kit in an Existing Project](guides/existing-projects.md) before
+> starting the workflow below.
+
+### Step 1: `/speckit.constitution` — set the ground rules
+
+Establishes the project's guiding principles, which every later step is evaluated against. Run it once up front, passing your principles as arguments.
 
 ```text
-/speckit.constitution -> /speckit.specify -> /speckit.clarify -> /speckit.checklist -> /speckit.plan -> /speckit.tasks -> /speckit.analyze -> /speckit.implement
-```
-
-Use `/speckit.clarify` to reduce requirement ambiguity before planning, `/speckit.checklist` to validate requirements quality before planning, and `/speckit.analyze` to check spec/plan/task consistency before implementation starts. You can repeat `/speckit.analyze` after implementation as an extra review, but keep the first analysis before `/speckit.implement` so gaps are caught while the plan and tasks can still be adjusted.
-
-### Step 1: Install Specify
-
-**In your terminal**, run the `specify` CLI command to initialize your project:
-
-```bash
-# Create a new project directory
-uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
-
-# OR initialize in the current directory
-uvx --from git+https://github.com/github/spec-kit.git specify init .
-```
-
-> [!NOTE]
-> You can also install the CLI persistently with `pipx`:
->
-> ```bash
-> pipx install git+https://github.com/github/spec-kit.git
-> ```
->
-> After installing with `pipx`, run `specify` directly instead of `uvx --from ... specify`, for example:
->
-> ```bash
-> specify init <PROJECT_NAME>
-> specify init .
-> ```
-
-Pick script type explicitly (optional):
-
-```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME> --script ps  # Force PowerShell
-uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME> --script sh  # Force POSIX shell
-```
-
-### Step 2: Define Your Constitution
-
-**In your coding agent's chat interface**, use the `/speckit.constitution` slash command to establish the core rules and principles for your project. You should provide your project's specific principles as arguments.
-
-```markdown
-/speckit.constitution This project follows a "Library-First" approach. All features must be implemented as standalone libraries first. We use TDD strictly. We prefer functional programming patterns.
-```
-
-### Step 3: Create the Spec
-
-**In the chat**, use the `/speckit.specify` slash command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
-
-```markdown
-/speckit.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
-```
-
-### Step 4: Refine and Validate the Spec
-
-**In the chat**, use the `/speckit.clarify` slash command to identify and resolve ambiguities in your specification. You can provide specific focus areas as arguments.
-
-```bash
-/speckit.clarify Focus on security and performance requirements.
-```
-
-Then validate the requirements with `/speckit.checklist` before creating the technical plan:
-
-```bash
-/speckit.checklist
-```
-
-### Step 5: Create a Technical Implementation Plan
-
-**In the chat**, use the `/speckit.plan` slash command to provide your tech stack and architecture choices.
-
-```markdown
-/speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
-```
-
-### Step 6: Break Down, Analyze, and Implement
-
-**In the chat**, use the `/speckit.tasks` slash command to create an actionable task list.
-
-```markdown
-/speckit.tasks
-```
-
-Validate cross-artifact consistency with `/speckit.analyze` before implementation:
-
-```markdown
-/speckit.analyze
-```
-
-Use the `/speckit.implement` slash command to execute the plan.
-
-```markdown
-/speckit.implement
-```
-
-> [!TIP]
-> **Phased Implementation**: For complex projects, implement in phases to avoid overwhelming the agent's context. Start with core functionality, validate it works, then add features incrementally.
-
-## Detailed Example: Building Taskify
-
-Here's a complete example of building a team productivity platform:
-
-### Step 1: Define Constitution
-
-Initialize the project's constitution to set ground rules:
-
-```markdown
 /speckit.constitution Taskify is a "Security-First" application. All user inputs must be validated. We use a microservices architecture. Code must be fully documented.
 ```
 
-### Step 2: Define Requirements with `/speckit.specify`
+### Step 2: `/speckit.specify` — describe what to build
+
+Creates the feature specification from a natural-language description. Focus on the **what** and **why**, not the tech stack.
 
 ```text
-Develop Taskify, a team productivity platform. It should allow users to create projects, add team members,
-assign tasks, comment and move tasks between boards in Kanban style. In this initial phase for this feature,
-let's call it "Create Taskify," let's have multiple users but the users will be declared ahead of time, predefined.
-I want five users in two different categories, one product manager and four engineers. Let's create three
-different sample projects. Let's have the standard Kanban columns for the status of each task, such as "To Do,"
-"In Progress," "In Review," and "Done." There will be no login for this application as this is just the very
-first testing thing to ensure that our basic features are set up.
+/speckit.specify Develop Taskify, a team productivity platform where predefined users create projects, assign tasks, comment, and move tasks across Kanban columns (To Do, In Progress, In Review, Done). Five users (one product manager, four engineers), three sample projects, no login for this first phase.
 ```
 
-### Step 3: Refine the Specification
+### Step 3: `/speckit.clarify` — resolve ambiguities
 
-Use the `/speckit.clarify` command to interactively resolve any ambiguities in your specification. You can also provide specific details you want to ensure are included.
+Asks targeted questions about anything underspecified and folds your answers back into the spec, so you're not planning on top of ambiguity. Run it before planning, optionally with a focus area.
 
-```bash
-/speckit.clarify I want to clarify the task card details. For each task in the UI for a task card, you should be able to change the current status of the task between the different columns in the Kanban work board. You should be able to leave an unlimited number of comments for a particular card. You should be able to, from that task card, assign one of the valid users.
+```text
+/speckit.clarify Focus on task card behavior — status changes, comment permissions, and user assignment.
 ```
 
-You can continue to refine the spec with more details using `/speckit.clarify`:
+### Step 4: `/speckit.plan` — choose the tech stack
 
-```bash
-/speckit.clarify When you first launch Taskify, it's going to give you a list of the five users to pick from. There will be no password required. When you click on a user, you go into the main view, which displays the list of projects. When you click on a project, you open the Kanban board for that project. You're going to see the columns. You'll be able to drag and drop cards back and forth between different columns. You will see any cards that are assigned to you, the currently logged in user, in a different color from all the other ones, so you can quickly see yours. You can edit any comments that you make, but you can't edit comments that other people made. You can delete any comments that you made, but you can't delete comments anybody else made.
+Generates the design artifacts from the spec. This is where implementation detail belongs — provide your tech stack and architecture.
+
+```text
+/speckit.plan Use .NET Aspire with Postgres. The frontend is Blazor Server with drag-and-drop boards and real-time updates. Expose REST APIs for projects, tasks, and notifications.
 ```
 
-### Step 4: Validate the Spec
+### Step 5: `/speckit.checklist` — validate the spec
 
-Validate the specification checklist using the `/speckit.checklist` command:
+Generates a custom quality checklist — "unit tests for your requirements" — to confirm the spec is complete, clear, and consistent before you break the work down. These custom checklists are reviewer-owned requirements-quality review artifacts: mark an item `[x]` only when the reviewer determines that requirement-quality criterion is satisfied. Checked custom items do not mean implementation work is complete.
 
-```bash
+```text
 /speckit.checklist
 ```
 
-### Step 5: Generate Technical Plan with `/speckit.plan`
+### Step 6: `/speckit.tasks` — break the work down
 
-Be specific about your tech stack and technical requirements:
+Generates an actionable, dependency-ordered `tasks.md` from the design artifacts.
 
-```bash
-/speckit.plan We are going to generate this using .NET Aspire, using Postgres as the database. The frontend should use Blazor server with drag-and-drop task boards, real-time updates. There should be a REST API created with a projects API, tasks API, and a notifications API.
-```
-
-### Step 6: Define Tasks
-
-Generate an actionable task list using the `/speckit.tasks` command:
-
-```bash
+```text
 /speckit.tasks
 ```
 
-### Step 7: Validate and Implement
+### Step 7: `/speckit.analyze` — check consistency
 
-Have your coding agent audit the spec, plan, and tasks with `/speckit.analyze` before implementation:
+Reports conflicts, gaps, and ambiguities across `spec.md`, `plan.md`, and `tasks.md`. It's read-only — if it flags issues, fix them at the source and re-run before implementing.
 
-```bash
+```text
 /speckit.analyze
 ```
 
-Finally, implement the solution:
+### Step 8: `/speckit.implement` — build it
 
-```bash
+Executes the tasks in `tasks.md` in dependency order. Before implementation, it reads checklist checkbox state as a gate and asks before proceeding if any checklist items are unchecked; it does not change any checklist files or markers. The built-in `checklists/requirements.md` checklist is maintained by `/speckit.specify` and `/speckit.clarify`, while custom checklists remain reviewer-owned. Run it once to build everything, or scope it to one phase at a time for large features.
+
+```text
 /speckit.implement
 ```
 
+### Step 9: `/speckit.converge` — verify completeness
+
+Checks the codebase against the spec, plan, and tasks. If it finds gaps, it appends new tasks to `tasks.md`; run `/speckit.implement` and converge again until it reports converged. Otherwise you're done — proceed to review or open a PR.
+
+```text
+/speckit.converge
+```
+
 > [!TIP]
-> **Phased Implementation**: For large projects like Taskify, consider implementing in phases (e.g., Phase 1: Basic project/task structure, Phase 2: Kanban functionality, Phase 3: Comments and assignments). This prevents context saturation and allows for validation at each stage.
+> For a full reference on each command — arguments, output, phased implementation, and how they interact — see [Agentic SDD](reference/agentic-sdd.md).
 
 ## Key Principles
 
@@ -201,6 +136,8 @@ Finally, implement the solution:
 
 ## Next Steps
 
+- See the [Agentic SDD](reference/agentic-sdd.md) reference for full detail on every command
 - Read the [complete methodology](https://github.com/github/spec-kit/blob/main/spec-driven.md) for in-depth guidance
-- Check out [more examples](https://github.com/github/spec-kit/tree/main/templates) in the repository
+- Compare the [core templates](https://github.com/github/spec-kit/tree/main/templates) with
+  [community walkthroughs](community/walkthroughs.md) to see how Spec-Driven Development is used in real projects
 - Explore the [source code on GitHub](https://github.com/github/spec-kit)

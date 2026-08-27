@@ -23,8 +23,9 @@ spec_kit_effective_branch_name() {
 }
 
 # Validate that a branch name matches the expected feature branch pattern.
-# Accepts sequential (###-* with >=3 digits) or timestamp (YYYYMMDD-HHMMSS-*) formats.
-# Logic aligned with scripts/bash/common.sh check_feature_branch after effective-name normalization.
+# Accepts sequential (###-* with >=3 digits) or timestamp (YYYYMMDD-HHMMSS-*) formats,
+# either at the start of the branch or after path-style namespace prefixes.
+# Logic aligned with the git extension's PowerShell Test-FeatureBranch twin.
 check_feature_branch() {
     local raw="$1"
     local has_git_repo="$2"
@@ -37,16 +38,17 @@ check_feature_branch() {
 
     local branch
     branch=$(spec_kit_effective_branch_name "$raw")
+    local feature_segment="${branch##*/}"
 
     # Accept sequential prefix (3+ digits) but exclude malformed timestamps
     # Malformed: 7-or-8 digit date + 6-digit time with no trailing slug (e.g. "2026031-143022" or "20260319-143022")
     local is_sequential=false
-    if [[ "$branch" =~ ^[0-9]{3,}- ]] && [[ ! "$branch" =~ ^[0-9]{7}-[0-9]{6}- ]] && [[ ! "$branch" =~ ^[0-9]{7,8}-[0-9]{6}$ ]]; then
+    if [[ "$feature_segment" =~ ^[0-9]{3,}- ]] && [[ ! "$feature_segment" =~ ^[0-9]{7}-[0-9]{6}- ]] && [[ ! "$feature_segment" =~ ^[0-9]{7,8}-[0-9]{6}$ ]]; then
         is_sequential=true
     fi
-    if [[ "$is_sequential" != "true" ]] && [[ ! "$branch" =~ ^[0-9]{8}-[0-9]{6}- ]]; then
+    if [[ "$is_sequential" != "true" ]] && [[ ! "$feature_segment" =~ ^[0-9]{8}-[0-9]{6}- ]]; then
         echo "ERROR: Not on a feature branch. Current branch: $raw" >&2
-        echo "Feature branches should be named like: 001-feature-name, 1234-feature-name, or 20260319-143022-feature-name" >&2
+        echo "Feature branches should be named like: 001-feature-name, 1234-feature-name, 20260319-143022-feature-name, or <prefix>/001-feature-name" >&2
         return 1
     fi
 

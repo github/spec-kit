@@ -1,8 +1,8 @@
 """Reusable test mixin for standard SkillsIntegration subclasses.
 
 Each per-agent test file sets ``KEY``, ``FOLDER``, ``COMMANDS_SUBDIR``,
-``REGISTRAR_DIR``, and ``CONTEXT_FILE``, then inherits all verification
-logic from ``SkillsIntegrationTests``.
+and ``REGISTRAR_DIR``, then inherits all verification logic from
+``SkillsIntegrationTests``.
 
 Mirrors ``MarkdownIntegrationTests`` / ``TomlIntegrationTests`` closely,
 adapted for the ``speckit-<name>/SKILL.md`` skills layout.
@@ -26,14 +26,12 @@ class SkillsIntegrationTests:
         FOLDER: str           — e.g. ".agents/"
         COMMANDS_SUBDIR: str  — e.g. "skills"
         REGISTRAR_DIR: str    — e.g. ".agents/skills"
-        CONTEXT_FILE: str     — e.g. "AGENTS.md"
     """
 
     KEY: str
     FOLDER: str
     COMMANDS_SUBDIR: str
     REGISTRAR_DIR: str
-    CONTEXT_FILE: str
 
     # -- Registration -----------------------------------------------------
 
@@ -60,10 +58,6 @@ class SkillsIntegrationTests:
         assert i.registrar_config["format"] == "markdown"
         assert i.registrar_config["args"] == "$ARGUMENTS"
         assert i.registrar_config["extension"] == "/SKILL.md"
-
-    def test_context_file(self):
-        i = get_integration(self.KEY)
-        assert i.context_file == self.CONTEXT_FILE
 
     # -- Setup / teardown -------------------------------------------------
 
@@ -100,7 +94,7 @@ class SkillsIntegrationTests:
         skill_files = [f for f in created if "scripts" not in f.parts]
 
         expected_commands = {
-            "analyze", "clarify", "constitution", "implement",
+            "analyze", "clarify", "constitution", "converge", "implement",
             "plan", "checklist", "specify", "tasks", "taskstoissues",
         }
 
@@ -146,6 +140,91 @@ class SkillsIntegrationTests:
             # Description must be a non-empty string (from the template)
             assert isinstance(fm["description"], str)
             assert len(fm["description"]) > 0, f"{f} has empty description"
+
+    def test_skill_frontmatter_preserves_multiline_description(
+        self, tmp_path, monkeypatch
+    ):
+        """A multiline (block-scalar) description must round-trip exactly.
+
+        The hand-built SKILL.md frontmatter used to only escape backslash and
+        quote, so a block-scalar description was emitted with raw newlines inside
+        a double-quoted scalar and reparsed with those newlines collapsed to
+        spaces. The description must survive byte-for-byte."""
+        from pathlib import Path
+
+        i = get_integration(self.KEY)
+        # Hermes writes to ~/.hermes/skills/ — isolate Path.home() to prevent
+        # overwriting a developer's real global skill directory.
+        if self.KEY == "hermes":
+            home = tmp_path / "home"
+            home.mkdir(exist_ok=True)
+            monkeypatch.setattr(Path, "home", lambda: home)
+
+        template = tmp_path / "sample.md"
+        template.write_text(
+            "---\n"
+            "description: |\n"
+            "  first line\n"
+            "  second line\n"
+            "scripts:\n"
+            "  sh: scripts/bash/x.sh\n"
+            "---\n"
+            "Body\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(i, "list_command_templates", lambda: [template])
+
+        m = IntegrationManifest(self.KEY, tmp_path)
+        created = i.setup(tmp_path, m)
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) == 1
+
+        content = skill_files[0].read_text(encoding="utf-8")
+        fm = yaml.safe_load(content.split("---", 2)[1])
+        assert "\n" in fm["description"]
+        assert fm["description"] == "first line\nsecond line\n"
+
+    def test_skill_frontmatter_preserves_control_characters(
+        self, tmp_path, monkeypatch
+    ):
+        """A description carrying a C0/DEL control char must round-trip exactly.
+
+        A control character can reach ``description`` via a YAML escape in the
+        source template (``"a\\x08b"`` parses to a real U+0008). The old
+        hand-built frontmatter only escaped backslash and quote, so the raw
+        control char landed inside the emitted double-quoted scalar and made the
+        SKILL.md unparseable / lossy. ``yaml_quote`` must escape it so the
+        value survives byte-for-byte."""
+        from pathlib import Path
+
+        i = get_integration(self.KEY)
+        # Hermes writes to ~/.hermes/skills/ — isolate Path.home() to prevent
+        # overwriting a developer's real global skill directory.
+        if self.KEY == "hermes":
+            home = tmp_path / "home"
+            home.mkdir(exist_ok=True)
+            monkeypatch.setattr(Path, "home", lambda: home)
+
+        template = tmp_path / "sample.md"
+        template.write_text(
+            "---\n"
+            'description: "a\\x08b\\ttab"\n'
+            "scripts:\n"
+            "  sh: scripts/bash/x.sh\n"
+            "---\n"
+            "Body\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(i, "list_command_templates", lambda: [template])
+
+        m = IntegrationManifest(self.KEY, tmp_path)
+        created = i.setup(tmp_path, m)
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) == 1
+
+        content = skill_files[0].read_text(encoding="utf-8")
+        fm = yaml.safe_load(content.split("---", 2)[1])
+        assert fm["description"] == "a\x08b\ttab"
 
     def test_templates_are_processed(self, tmp_path):
         """Skill body must have placeholders replaced, not raw templates."""
@@ -197,7 +276,7 @@ class SkillsIntegrationTests:
             "---\n"
             "name: test\n"
             "---\n\n"
-            "- When constructing slash commands from hook command names, "
+            "- When constructing command invocations from hook command names, "
             "replace dots (`.`) with hyphens (`-`). "
             "For example, `speckit.git.commit` → `/speckit-git-commit`.\n"
             "- For each executable hook, output the following first block:\n"
@@ -222,19 +301,18 @@ class SkillsIntegrationTests:
             body = parts[2].strip() if len(parts) >= 3 else ""
             assert len(body) > 0, f"{f} has empty body"
 
-    def test_plan_references_correct_context_file(self, tmp_path):
-        """The generated plan skill must reference this integration's context file."""
+    def test_plan_skill_has_no_context_placeholder(self, tmp_path):
+        """The generated plan skill must not carry a context-file placeholder.
+
+        Agent context files are owned entirely by the opt-in agent-context
+        extension, so the core plan skill must not reference one.
+        """
         i = get_integration(self.KEY)
-        if not i.context_file:
-            return
         m = IntegrationManifest(self.KEY, tmp_path)
         i.setup(tmp_path, m)
         plan_file = i.skills_dest(tmp_path) / "speckit-plan" / "SKILL.md"
         assert plan_file.exists(), f"Plan skill {plan_file} not created"
         content = plan_file.read_text(encoding="utf-8")
-        assert i.context_file in content, (
-            f"Plan skill should reference {i.context_file!r} but it was not found"
-        )
         assert "__CONTEXT_FILE__" not in content, (
             "Plan skill has unprocessed __CONTEXT_FILE__ placeholder"
         )
@@ -283,34 +361,32 @@ class SkillsIntegrationTests:
 
         assert (foreign_dir / "SKILL.md").exists(), "Foreign skill was removed"
 
-    # -- Context section ---------------------------------------------------
+    # -- Context file ownership (extension-owned, opt-in) -----------------
 
-    def test_setup_upserts_context_section(self, tmp_path):
+    def test_setup_does_not_write_context_section(self, tmp_path):
+        """Setup must not create or manage any agent context file — that is
+        owned entirely by the opt-in agent-context extension."""
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         i.setup(tmp_path, m)
-        if i.context_file:
-            ctx_path = tmp_path / i.context_file
-            assert ctx_path.exists(), f"Context file {i.context_file} not created for {self.KEY}"
-            content = ctx_path.read_text(encoding="utf-8")
-            assert "<!-- SPECKIT START -->" in content
-            assert "<!-- SPECKIT END -->" in content
-            assert "read the current plan" in content
+        for path in tmp_path.rglob("*"):
+            if path.is_file():
+                text = path.read_text(encoding="utf-8", errors="ignore")
+                assert "<!-- SPECKIT START -->" not in text, (
+                    f"Setup wrote a managed context section into {path} for {self.KEY}"
+                )
 
-    def test_teardown_removes_context_section(self, tmp_path):
+    def test_teardown_leaves_existing_context_file_intact(self, tmp_path):
+        """A user-authored context file must survive setup + teardown untouched."""
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
+        ctx_path = tmp_path / "AGENTS.md"
+        original = "# My Rules\n\nUser content.\n"
+        ctx_path.write_text(original, encoding="utf-8")
         i.setup(tmp_path, m)
         m.save()
-        if i.context_file:
-            ctx_path = tmp_path / i.context_file
-            content = ctx_path.read_text(encoding="utf-8")
-            ctx_path.write_text("# My Rules\n\n" + content + "\n# Footer\n", encoding="utf-8")
-            i.teardown(tmp_path, m)
-            remaining = ctx_path.read_text(encoding="utf-8")
-            assert "<!-- SPECKIT START -->" not in remaining
-            assert "<!-- SPECKIT END -->" not in remaining
-            assert "# My Rules" in remaining
+        i.teardown(tmp_path, m)
+        assert ctx_path.read_text(encoding="utf-8") == original
 
     # -- CLI integration flag -------------------------------------------------
 
@@ -356,9 +432,9 @@ class SkillsIntegrationTests:
         skills_dir = i.skills_dest(project)
         assert skills_dir.is_dir(), f"Skills directory {skills_dir} not created"
 
-    def test_init_options_includes_context_file(self, tmp_path):
-        """agent-context extension config must include context_file for the active integration."""
-        import yaml
+    def test_init_does_not_create_agent_context_config(self, tmp_path):
+        """agent-context is opt-in: init must not auto-install the extension
+        or write its config."""
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -375,11 +451,7 @@ class SkillsIntegrationTests:
             os.chdir(old_cwd)
         assert result.exit_code == 0
         ext_cfg_path = project / ".specify" / "extensions" / "agent-context" / "agent-context-config.yml"
-        ext_cfg = yaml.safe_load(ext_cfg_path.read_text(encoding="utf-8")) if ext_cfg_path.exists() else {}
-        i = get_integration(self.KEY)
-        assert ext_cfg.get("context_file") == i.context_file, (
-            f"Expected context_file={i.context_file!r}, got {ext_cfg.get('context_file')!r}"
-        )
+        assert not ext_cfg_path.exists()
 
     # -- IntegrationOption ------------------------------------------------
 
@@ -393,7 +465,7 @@ class SkillsIntegrationTests:
     # -- Complete file inventory ------------------------------------------
 
     _SKILL_COMMANDS = [
-        "analyze", "clarify", "constitution", "implement",
+        "analyze", "clarify", "constitution", "converge", "implement",
         "plan", "checklist", "specify", "tasks", "taskstoissues",
     ]
 
@@ -406,14 +478,14 @@ class SkillsIntegrationTests:
         # Skill files (core commands)
         for cmd in self._SKILL_COMMANDS:
             files.append(f"{skills_prefix}/speckit-{cmd}/SKILL.md")
-        # Extension-installed skill (agent-context)
-        files.append(f"{skills_prefix}/speckit-agent-context-update/SKILL.md")
         # Integration metadata
         files += [
             ".specify/init-options.json",
             ".specify/integration.json",
             f".specify/integrations/{self.KEY}.manifest.json",
             ".specify/integrations/speckit.manifest.json",
+            ".specify/.gitignore",
+            ".specify/memory/.constitution-template.json",
             ".specify/memory/constitution.md",
         ]
         # Script variant
@@ -422,6 +494,7 @@ class SkillsIntegrationTests:
                 ".specify/scripts/bash/check-prerequisites.sh",
                 ".specify/scripts/bash/common.sh",
                 ".specify/scripts/bash/create-new-feature.sh",
+                ".specify/scripts/bash/resolve-template.sh",
                 ".specify/scripts/bash/setup-plan.sh",
                 ".specify/scripts/bash/setup-tasks.sh",
             ]
@@ -430,6 +503,7 @@ class SkillsIntegrationTests:
                 ".specify/scripts/powershell/check-prerequisites.ps1",
                 ".specify/scripts/powershell/common.ps1",
                 ".specify/scripts/powershell/create-new-feature.ps1",
+                ".specify/scripts/powershell/resolve-template.ps1",
                 ".specify/scripts/powershell/setup-plan.ps1",
                 ".specify/scripts/powershell/setup-tasks.ps1",
             ]
@@ -446,18 +520,6 @@ class SkillsIntegrationTests:
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
         ]
-        # Bundled agent-context extension
-        files.append(".specify/extensions.yml")
-        files.append(".specify/extensions/.registry")
-        files.append(".specify/extensions/agent-context/README.md")
-        files.append(".specify/extensions/agent-context/agent-context-config.yml")
-        files.append(".specify/extensions/agent-context/commands/speckit.agent-context.update.md")
-        files.append(".specify/extensions/agent-context/extension.yml")
-        files.append(".specify/extensions/agent-context/scripts/bash/update-agent-context.sh")
-        files.append(".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1")
-        # Agent context file (if set)
-        if i.context_file:
-            files.append(i.context_file)
         return sorted(files)
 
     def test_complete_file_inventory_sh(self, tmp_path):

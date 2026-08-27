@@ -116,6 +116,34 @@ class TestManifestPathTraversal:
         assert len(removed) == 1
         assert removed[0].name == "safe.txt"
 
+    def test_remove_drops_entry_and_is_noop_second_time(self, tmp_path):
+        (tmp_path / "f.txt").write_text("x", encoding="utf-8")
+        m = IntegrationManifest("test", tmp_path)
+        m.record_existing("f.txt")
+        assert "f.txt" in m.files
+        assert m.remove("f.txt") is True
+        assert "f.txt" not in m.files
+        assert m.remove("f.txt") is False  # already gone → no-op
+
+    def test_remove_rejects_absolute_path(self, tmp_path):
+        # Matches record_existing/is_recovered: an absolute key can never be a
+        # canonical manifest key, so remove() rejects it lexically and leaves
+        # the tracked entry untouched.
+        (tmp_path / "f.txt").write_text("x", encoding="utf-8")
+        m = IntegrationManifest("test", tmp_path)
+        m.record_existing("f.txt")
+        import sys
+        abs_input = "C:\\tmp\\f.txt" if sys.platform == "win32" else "/tmp/f.txt"
+        assert m.remove(abs_input) is False
+        assert "f.txt" in m.files
+
+    def test_remove_rejects_parent_traversal(self, tmp_path):
+        (tmp_path / "f.txt").write_text("x", encoding="utf-8")
+        m = IntegrationManifest("test", tmp_path)
+        m.record_existing("f.txt")
+        assert m.remove("../f.txt") is False
+        assert "f.txt" in m.files
+
 
 class TestManifestCheckModified:
     def test_unmodified_file(self, tmp_path):
@@ -191,6 +219,56 @@ class TestManifestUninstall:
         assert m.manifest_path.exists()
         m.uninstall()
         assert not m.manifest_path.exists()
+
+    def test_remove_manifest_false_preserves_manifest_file(self, tmp_path):
+        """Regression (review #3415, 4724160183): a partial cleanup must not
+        delete ``{key}.manifest.json``.
+
+        The upgrade stale-file pass builds a throwaway manifest sharing the
+        integration's key over a subset of files and uninstalls it.  With
+        ``remove_manifest=False`` the tracked files are still removed but the
+        real, freshly-saved manifest for that key survives — otherwise a
+        layout-shrinking upgrade (e.g. Bob migrating legacy commands → skills)
+        would leave the integration untracked and un-upgradeable.
+        """
+        m = IntegrationManifest("test", tmp_path, version="1.0")
+        m.record_file("f.txt", "content")
+        m.save()
+        assert m.manifest_path.exists()
+        removed, skipped = m.uninstall(remove_manifest=False)
+        assert len(removed) == 1
+        assert not (tmp_path / "f.txt").exists()
+        assert m.manifest_path.exists(), (
+            "remove_manifest=False must keep the manifest file on disk"
+        )
+
+    def test_undeletable_manifest_is_skipped_not_raised(self, tmp_path):
+        """An undeletable manifest must not abort the whole uninstall.
+
+        The tracked files are removed *before* the manifest, so raising here
+        loses the ``(removed, skipped)`` result the caller needs: the CLI's
+        post-uninstall bookkeeping (reassigning the default integration,
+        rewriting/removing ``integration.json``, clearing init options) never
+        runs, leaving a removed integration still recorded as installed.
+
+        Leaving a directory at the manifest path is a portable way to make
+        ``unlink()`` fail with no chmod and no monkeypatch: it raises
+        ``IsADirectoryError`` on Linux and ``PermissionError`` on
+        Windows/macOS, both ``OSError`` subclasses.
+        """
+        m = IntegrationManifest("test", tmp_path, version="1.0")
+        m.record_file("f.txt", "content")
+        m.save()
+        m.manifest_path.unlink()
+        m.manifest_path.mkdir()
+
+        removed, skipped = m.uninstall()
+
+        assert removed == [tmp_path / "f.txt"]
+        assert not (tmp_path / "f.txt").exists()
+        assert m.manifest_path in skipped, (
+            "an undeletable manifest must be reported in skipped"
+        )
 
     def test_cleans_empty_parent_dirs(self, tmp_path):
         m = IntegrationManifest("test", tmp_path)
@@ -295,6 +373,14 @@ class TestManifestLoadValidation:
         path.parent.mkdir(parents=True)
         path.write_text("{not valid json", encoding="utf-8")
         with pytest.raises(ValueError, match="invalid JSON"):
+            IntegrationManifest.load("bad", tmp_path)
+
+    def test_load_non_utf8_json_raises_value_error(self, tmp_path):
+        path = tmp_path / ".specify" / "integrations" / "bad.manifest.json"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"\xff\xfe")
+
+        with pytest.raises(ValueError, match="valid UTF-8"):
             IntegrationManifest.load("bad", tmp_path)
 
     def test_load_filters_recovered_files_not_in_files(self, tmp_path):
@@ -453,3 +539,40 @@ class TestRecordExistingNewGuards:
         m = IntegrationManifest("test", tmp_path)
         with pytest.raises(ValueError, match=r"canonical|'\.\.' segments"):
             m.record_existing("dir/../file.txt")
+
+
+class TestManifestUnreadableFile:
+    """A managed file that is unreadable (e.g. PermissionError) must not crash
+    check_modified()/uninstall() — the CLI handlers surfaced a raw traceback."""
+
+    def _mk(self, tmp_path):
+        m = IntegrationManifest("test", tmp_path)
+        m.record_file("sub/f.md", "content")
+        return m
+
+    def test_check_modified_treats_unreadable_as_modified(self, tmp_path, monkeypatch):
+        m = self._mk(tmp_path)
+
+        def raise_perm(_path):
+            raise PermissionError("unreadable")
+
+        monkeypatch.setattr(
+            "specify_cli.integrations.manifest._sha256", raise_perm
+        )
+        # Before the fix this raised PermissionError.
+        assert m.check_modified() == ["sub/f.md"]
+
+    def test_uninstall_preserves_unreadable_file(self, tmp_path, monkeypatch):
+        m = self._mk(tmp_path)
+
+        def raise_perm(_path):
+            raise PermissionError("unreadable")
+
+        monkeypatch.setattr(
+            "specify_cli.integrations.manifest._sha256", raise_perm
+        )
+        removed, skipped = m.uninstall(force=False)
+        # Can't verify ownership => preserve, don't crash and don't delete.
+        assert removed == []
+        assert (tmp_path / "sub" / "f.md") in skipped
+        assert (tmp_path / "sub" / "f.md").exists()

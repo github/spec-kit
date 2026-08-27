@@ -10,7 +10,6 @@ class TestAgyIntegration(SkillsIntegrationTests):
     FOLDER = ".agents/"
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = ".agents/skills"
-    CONTEXT_FILE = "AGENTS.md"
 
     def test_options_include_skills_flag(self):
         """Override inherited test: AgyIntegration should not expose a --skills flag because .agents/ is its only layout."""
@@ -81,6 +80,26 @@ class TestAgyBuildExecArgs:
         i = get_integration("agy")
         result = i.build_exec_args("my prompt", output_json=False)
         assert result == ["agy", "--print", "my prompt"]
+
+    def test_build_exec_args_honors_extra_args(self, monkeypatch):
+        """SPECKIT_INTEGRATION_AGY_EXTRA_ARGS must be appended after the prompt.
+
+        agy previously skipped _apply_extra_args_env_var entirely, so the
+        documented per-integration extra-args hook was silently ignored
+        (same class as the merged cursor-agent fix #3265).
+        """
+        from specify_cli.integrations import get_integration
+        monkeypatch.setenv("SPECKIT_INTEGRATION_AGY_EXTRA_ARGS", "--verbose")
+        i = get_integration("agy")
+        assert i.build_exec_args("my prompt") == [
+            "agy", "--print", "my prompt", "--verbose",
+        ]
+
+    def test_build_exec_args_honors_executable_override(self, monkeypatch):
+        from specify_cli.integrations import get_integration
+        monkeypatch.setenv("SPECKIT_INTEGRATION_AGY_EXECUTABLE", "/custom/agy")
+        i = get_integration("agy")
+        assert i.build_exec_args("my prompt")[0] == "/custom/agy"
 
 
 class TestAgyHookCommandNote:

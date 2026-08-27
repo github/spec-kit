@@ -19,7 +19,23 @@ class OpencodeIntegration(MarkdownIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
-    context_file = "AGENTS.md"
+
+    CANONICAL_TO_NATIVE = {
+        "pre_tool_use": "tool.execute.before",
+        "post_tool_use": "tool.execute.after",
+        # session_start maps to the system-prompt transform hook (not the
+        # session.created event) so the handler's stdout is injected into the
+        # system prompt — session.created has no output channel. The hook
+        # fires per LLM request, which keeps the context present across
+        # compaction at the cost of running the handler per turn.
+        "session_start": "experimental.chat.system.transform",
+        # user_prompt_submit maps to chat.message so handler stdout is
+        # injected as a synthetic text part on the user's message.
+        "user_prompt_submit": "chat.message",
+        "session_end": "session.deleted",
+    }
+    events_config_file = "opencode.json"
+    events_format = "ts-plugin"
 
     def build_exec_args(
         self,

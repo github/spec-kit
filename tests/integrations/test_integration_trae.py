@@ -8,4 +8,3 @@ class TestTraeIntegration(SkillsIntegrationTests):
     FOLDER = ".trae/"
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = ".trae/skills"
-    CONTEXT_FILE = ".trae/rules/project_rules.md"

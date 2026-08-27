@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import logging
 import os
 import re
 import tempfile
@@ -10,6 +13,90 @@ from typing import Any
 
 from .integrations.base import IntegrationBase
 from .integrations.manifest import IntegrationManifest
+
+logger = logging.getLogger(__name__)
+
+# Managed ``.specify/.gitignore``. Keeps machine-local Spec Kit state out of
+# version control while leaving shareable project files (specs, constitution,
+# templates, scripts, extension config) tracked. Patterns are relative to the
+# ``.specify/`` directory the file lives in.
+SPECIFY_GITIGNORE_CONTENT = """\
+# Machine-local Spec Kit state — not meant to be shared.
+# Managed by the Specify CLI; safe to edit (your changes are preserved on refresh).
+
+# Local pointer to the current feature directory. Rewritten every time you
+# switch features, so it is per-checkout state rather than something to share.
+feature.json
+
+# Per-machine extension config overrides.
+extensions/*/local-config.yml
+"""
+
+# Matches a SHA-256 digest in its normalized form: exactly 64 hexadecimal
+# characters. Callers lowercase the declared value before matching (see
+# ``expected_hex = raw.lower()`` below), so an uppercase digest is accepted and
+# normalized rather than rejected.
+_SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def verify_archive_sha256(
+    data: bytes,
+    expected: str | None,
+    name: str,
+    error_cls: type[Exception],
+) -> None:
+    """Verify downloaded archive bytes against a catalog-declared SHA-256.
+
+    Catalog entries may pin the expected digest of their release archive in a
+    ``sha256`` field (optionally prefixed with ``"sha256:"``). When present, the
+    downloaded bytes must match before they are written to disk and installed,
+    so a corrupted or tampered archive is rejected even though the transport was
+    HTTPS. Entries without a declared digest are accepted unchanged, keeping the
+    check backwards compatible.
+
+    Args:
+        data: The raw downloaded archive bytes.
+        expected: The catalog-declared SHA-256 hex digest, or ``None``.
+        name: The extension/preset id, used in the error message.
+        error_cls: Exception type to raise on mismatch (e.g. ``ExtensionError``).
+
+    Raises:
+        error_cls: If ``expected`` is provided and is not a well-formed
+            SHA-256 hex digest, or does not match ``data``.
+    """
+    # Skip only when no digest is declared at all (``None``). A declared but
+    # empty/blank value (e.g. ``sha256: ""``) is an authoring error, not an
+    # opt-out: let it fall through to the format check below so it is rejected
+    # rather than silently disabling verification.
+    if expected is None:
+        logger.debug(
+            "No sha256 declared for %r; archive integrity was not verified.",
+            name,
+        )
+        return
+    # Strip *only* a literal ``sha256:`` algorithm prefix (case-insensitive).
+    # Any other prefix is part of the value and must not be silently dropped,
+    # otherwise a malformed or wrong-algorithm digest (e.g. ``md5:...``) would
+    # be quietly accepted as if it were a valid SHA-256.
+    raw = str(expected).strip()
+    if raw[:7].lower() == "sha256:":
+        raw = raw[7:].strip()
+    expected_hex = raw.lower()
+    if not _SHA256_HEX_RE.match(expected_hex):
+        raise error_cls(
+            f"Invalid sha256 declared for {name!r}: expected 64 hexadecimal "
+            f"characters (optionally prefixed with 'sha256:'), got "
+            f"{expected!r}."
+        )
+    actual_hex = hashlib.sha256(data).hexdigest()
+    # Constant-time comparison: both sides are fixed-length hex digests, so use
+    # ``hmac.compare_digest`` to avoid leaking information through timing.
+    if not hmac.compare_digest(actual_hex, expected_hex):
+        raise error_cls(
+            f"Integrity check failed for {name!r}: the catalog declares "
+            f"sha256 {expected_hex}, but the downloaded archive is "
+            f"{actual_hex}. The archive may be corrupted or tampered with."
+        )
 
 
 class SymlinkedSharedPathError(ValueError):
@@ -191,8 +278,7 @@ def _write_shared_bytes(
         _ensure_safe_shared_destination(project_path, dest)
         os.replace(temp_path, dest)
     finally:
-        if temp_path.exists():
-            temp_path.unlink()
+        temp_path.unlink(missing_ok=True)
 
 
 _BASH_FORMAT_COMMAND_RE = re.compile(
@@ -201,27 +287,56 @@ _BASH_FORMAT_COMMAND_RE = re.compile(
 _POWERSHELL_FORMAT_COMMAND_RE = re.compile(
     r"Format-SpecKitCommand\s+-CommandName\s+(['\"])([A-Za-z0-9_.-]+)\1(?:\s+-RepoRoot\s+[^\r\n]+)?"
 )
+_PYTHON_FORMAT_COMMAND_RETURN_RE = re.compile(
+    r'return f"/speckit\{separator\}\{name\}"'
+)
+_BASH_FORMATTER_RETURN_RE = re.compile(
+    r'''printf '/speckit%s%s\\n' "\$separator" "\$command_name"'''
+)
+_POWERSHELL_FORMATTER_RETURN_RE = re.compile(
+    r'return "/speckit\$separator\$name"'
+)
 
 
-def _format_speckit_command(command_name: str, separator: str) -> str:
+def _format_speckit_command(
+    command_name: str, separator: str, prefix: str = "/"
+) -> str:
     name = command_name.strip().lstrip("/")
     if name.startswith("speckit."):
         name = name[len("speckit.") :]
     elif name.startswith("speckit-"):
         name = name[len("speckit-") :]
     name = name.replace(".", separator)
-    return f"/speckit{separator}{name}"
+    return f"{prefix}speckit{separator}{name}"
 
 
-def _resolve_dynamic_command_refs(content: str, separator: str) -> str:
+def _resolve_dynamic_command_refs(
+    content: str, separator: str, prefix: str = "/"
+) -> str:
     """Render script runtime command helpers for managed shared infra copies."""
 
+    bash_prefix = r"\$" if prefix == "$" else prefix
     content = _BASH_FORMAT_COMMAND_RE.sub(
-        lambda match: _format_speckit_command(match.group(2), separator),
+        lambda match: _format_speckit_command(
+            match.group(2), separator, bash_prefix
+        ),
         content,
     )
-    return _POWERSHELL_FORMAT_COMMAND_RE.sub(
-        lambda match: f"'{_format_speckit_command(match.group(2), separator)}'",
+    content = _POWERSHELL_FORMAT_COMMAND_RE.sub(
+        lambda match: f"'{_format_speckit_command(match.group(2), separator, prefix)}'",
+        content,
+    )
+    content = _BASH_FORMATTER_RETURN_RE.sub(
+        f'''printf '{prefix}speckit%s%s\\\\n' "$separator" "$command_name"''',
+        content,
+    )
+    powershell_prefix = "`$" if prefix == "$" else prefix
+    content = _POWERSHELL_FORMATTER_RETURN_RE.sub(
+        f'return "{powershell_prefix}speckit$separator$name"',
+        content,
+    )
+    return _PYTHON_FORMAT_COMMAND_RETURN_RE.sub(
+        f'return f"{prefix}speckit{{separator}}{{name}}"',
         content,
     )
 
@@ -234,6 +349,7 @@ def refresh_shared_templates(
     repo_root: Path,
     console: Any,
     invoke_separator: str,
+    invoke_prefix: str = "/",
     force: bool = False,
 ) -> None:
     """Refresh default-sensitive shared templates without touching scripts."""
@@ -257,12 +373,17 @@ def refresh_shared_templates(
         _ensure_safe_shared_destination(project_path, dst)
         rel = dst.relative_to(project_path).as_posix()
         if dst.exists() and not force:
-            if rel not in tracked_files or rel in modified:
+            if rel not in tracked_files or rel in modified or manifest.is_recovered(rel):
+                # Never overwrite a recovered (pre-existing user) file without
+                # --force, matching install_shared_infra's is_recovered gate
+                # (#2918). Without this, refresh clobbers user content.
                 skipped_files.append(rel)
                 continue
 
         content = src.read_text(encoding="utf-8")
-        content = IntegrationBase.resolve_command_refs(content, invoke_separator)
+        content = IntegrationBase.resolve_command_refs(
+            content, invoke_separator, invoke_prefix
+        )
         planned_updates.append((dst, rel, content))
 
     for dst, rel, content in planned_updates:
@@ -273,7 +394,7 @@ def refresh_shared_templates(
 
     if skipped_files:
         console.print(
-            f"[yellow]⚠[/yellow]  {len(skipped_files)} modified or untracked shared template file(s) were not updated:"
+            f"[yellow]⚠[/yellow]  {len(skipped_files)} modified, untracked, or preserved (recovered) shared template file(s) were not updated:"
         )
         for rel in skipped_files:
             console.print(f"    {rel}")
@@ -289,6 +410,7 @@ def install_shared_infra(
     console: Any,
     force: bool = False,
     invoke_separator: str = ".",
+    invoke_prefix: str = "/",
     refresh_managed: bool = False,
     refresh_hint: str | None = None,
 ) -> bool:
@@ -304,7 +426,7 @@ def install_shared_infra(
     customization warning to tell the user which flag would overwrite their
     customizations.
     """
-    from .integrations.manifest import _sha256
+    from .integrations.manifest import _sha256, _validate_rel_path
 
     manifest = load_speckit_manifest(project_path, version=version, console=console)
     prior_hashes = dict(manifest.files)
@@ -325,6 +447,16 @@ def install_shared_infra(
     symlinked_files: list[str] = []
     planned_copies: list[tuple[Path, str, bytes, int]] = []
     planned_templates: list[tuple[Path, str, str]] = []
+    # Track every shared path the current bundle produces so we can detect
+    # manifest entries the core no longer ships (stale-script cleanup, #3076).
+    seen_rels: set[str] = set()
+    scanned_variant_dirs: set[str] = set()
+    shell_variant = "powershell" if os.name == "nt" else "bash"
+    variant_dirs = (
+        ("python", shell_variant)
+        if script_type == "py"
+        else ("bash" if script_type == "sh" else "powershell",)
+    )
 
     def _decide_overwrite(rel: str, dst: Path) -> tuple[bool, str | None]:
         """Return (write, bucket) where bucket is 'skip', 'preserved', or None."""
@@ -379,58 +511,73 @@ def install_shared_infra(
     if scripts_src.is_dir():
         dest_scripts = project_path / ".specify" / "scripts"
         if _ensure_or_bucket_dir(dest_scripts):
-            variant_dir = "bash" if script_type == "sh" else "powershell"
-            variant_src = scripts_src / variant_dir
-            if variant_src.is_dir():
+            for variant_dir in variant_dirs:
+                variant_src = scripts_src / variant_dir
+                if not variant_src.is_dir():
+                    continue
                 dest_variant = dest_scripts / variant_dir
-                if _ensure_or_bucket_dir(dest_variant):
-                    for src_path in variant_src.rglob("*"):
-                        if not src_path.is_file():
-                            continue
+                if not _ensure_or_bucket_dir(dest_variant):
+                    continue
+                for src_path in variant_src.rglob("*"):
+                    if not src_path.is_file():
+                        continue
+                    # Python bytecode caches are local artifacts, not
+                    # workflow scripts — never install them.
+                    if "__pycache__" in src_path.parts:
+                        continue
+                    # Mark scanned only once a real source file is seen. An
+                    # empty (or symlink-skipped) variant stays untracked, so
+                    # stale-cleanup cannot treat its managed scripts as obsolete.
+                    scanned_variant_dirs.add(variant_dir)
 
-                        rel_path = src_path.relative_to(variant_src)
-                        dst_path = dest_variant / rel_path
-                        rel = dst_path.relative_to(project_path).as_posix()
-                        if not _safe_dest_or_bucket(dst_path, rel, parent_must_exist=False):
-                            continue
-                        write, bucket = _decide_overwrite(rel, dst_path)
-                        if not write:
-                            if bucket == "preserved":
-                                preserved_user_files.append(rel)
-                            else:
-                                skipped_files.append(rel)
-                                # Record the existing-on-disk file in the manifest so a
-                                # fresh manifest run against an already-populated
-                                # ``.specify/`` tree does not silently drop it (#2107).
-                                # ``prior_hashes`` is the function-scope snapshot taken
-                                # at entry, so this membership check is O(1) and avoids
-                                # the repeated ``dict(self._files)`` copy that
-                                # ``manifest.files`` performs on every access.
-                                if dst_path.is_file() and rel not in prior_hashes:
-                                    try:
-                                        manifest.record_existing(rel, recovered=True)
-                                    except (OSError, ValueError) as exc:
-                                        # Tolerate races / permission issues / non-file
-                                        # collisions so one weird path does not abort
-                                        # the whole install.
-                                        console.print(
-                                            f"[yellow]⚠[/yellow]  could not record {rel} in manifest: {exc}"
-                                        )
-                            continue
+                    rel_path = src_path.relative_to(variant_src)
+                    dst_path = dest_variant / rel_path
+                    rel = dst_path.relative_to(project_path).as_posix()
+                    seen_rels.add(rel)
+                    if not _safe_dest_or_bucket(dst_path, rel, parent_must_exist=False):
+                        continue
+                    write, bucket = _decide_overwrite(rel, dst_path)
+                    if not write:
+                        if bucket == "preserved":
+                            preserved_user_files.append(rel)
+                        else:
+                            skipped_files.append(rel)
+                            # Record the existing-on-disk file in the manifest so a
+                            # fresh manifest run against an already-populated
+                            # ``.specify/`` tree does not silently drop it (#2107).
+                            # ``prior_hashes`` is the function-scope snapshot taken
+                            # at entry, so this membership check is O(1) and avoids
+                            # the repeated ``dict(self._files)`` copy that
+                            # ``manifest.files`` performs on every access.
+                            if dst_path.is_file() and rel not in prior_hashes:
+                                try:
+                                    manifest.record_existing(rel, recovered=True)
+                                except (OSError, ValueError) as exc:
+                                    # Tolerate races / permission issues / non-file
+                                    # collisions so one weird path does not abort
+                                    # the whole install.
+                                    console.print(
+                                        f"[yellow]⚠[/yellow]  could not record {rel} in manifest: {exc}"
+                                    )
+                        continue
 
-                        if not _ensure_or_bucket_dir(dst_path.parent):
-                            continue
-                        content = src_path.read_text(encoding="utf-8")
-                        content = IntegrationBase.resolve_command_refs(content, invoke_separator)
-                        content = _resolve_dynamic_command_refs(content, invoke_separator)
-                        planned_copies.append(
-                            (
-                                dst_path,
-                                rel,
-                                content.encode("utf-8"),
-                                src_path.stat().st_mode & 0o777,
-                            )
+                    if not _ensure_or_bucket_dir(dst_path.parent):
+                        continue
+                    content = src_path.read_text(encoding="utf-8")
+                    content = IntegrationBase.resolve_command_refs(
+                        content, invoke_separator, invoke_prefix
+                    )
+                    content = _resolve_dynamic_command_refs(
+                        content, invoke_separator, invoke_prefix
+                    )
+                    planned_copies.append(
+                        (
+                            dst_path,
+                            rel,
+                            content.encode("utf-8"),
+                            src_path.stat().st_mode & 0o777,
                         )
+                    )
 
     templates_src = shared_templates_source(core_pack=core_pack, repo_root=repo_root)
     if templates_src.is_dir():
@@ -442,6 +589,7 @@ def install_shared_infra(
 
                 dst = dest_templates / src.name
                 rel = dst.relative_to(project_path).as_posix()
+                seen_rels.add(rel)
                 if not _safe_dest_or_bucket(dst, rel):
                     continue
                 write, bucket = _decide_overwrite(rel, dst)
@@ -470,8 +618,40 @@ def install_shared_infra(
                     continue
 
                 content = src.read_text(encoding="utf-8")
-                content = IntegrationBase.resolve_command_refs(content, invoke_separator)
+                content = IntegrationBase.resolve_command_refs(
+                    content, invoke_separator, invoke_prefix
+                )
                 planned_templates.append((dst, rel, content))
+
+    # Managed ``.specify/.gitignore`` — keeps machine-local state (the
+    # ``feature.json`` pointer and per-machine ``local-config.yml`` overrides)
+    # out of git while leaving everything else shareable. Routed through the
+    # same overwrite/skip/preserve policy as templates so ``--force`` refreshes
+    # it and user edits are preserved. Like every other shared-infra file it is
+    # tracked in ``speckit.manifest.json`` (not the per-integration manifest) and
+    # is therefore intentionally left in place by ``integration uninstall``.
+    specify_dir = project_path / ".specify"
+    if _ensure_or_bucket_dir(specify_dir):
+        gitignore_dst = specify_dir / ".gitignore"
+        gitignore_rel = gitignore_dst.relative_to(project_path).as_posix()
+        seen_rels.add(gitignore_rel)
+        if _safe_dest_or_bucket(gitignore_dst, gitignore_rel):
+            write, bucket = _decide_overwrite(gitignore_rel, gitignore_dst)
+            if write:
+                planned_templates.append(
+                    (gitignore_dst, gitignore_rel, SPECIFY_GITIGNORE_CONTENT)
+                )
+            elif bucket == "preserved":
+                preserved_user_files.append(gitignore_rel)
+            else:
+                skipped_files.append(gitignore_rel)
+                if gitignore_dst.is_file() and gitignore_rel not in prior_hashes:
+                    try:
+                        manifest.record_existing(gitignore_rel, recovered=True)
+                    except (OSError, ValueError) as exc:
+                        console.print(
+                            f"[yellow]⚠[/yellow]  could not record {gitignore_rel} in manifest: {exc}"
+                        )
 
     for dst_path, rel, content, mode in planned_copies:
         if not _ensure_or_bucket_dir(dst_path.parent):
@@ -520,6 +700,66 @@ def install_shared_infra(
             console.print(f"    {path}")
         if refresh_hint:
             console.print(refresh_hint)
+
+    # Remove stale managed scripts: paths a previous install recorded that the
+    # current core no longer ships — e.g. the legacy
+    # ``scripts/<variant>/update-agent-context.sh`` superseded by the bundled
+    # agent-context extension. Left behind, such an orphan can crash when it
+    # sources a refreshed ``common.sh`` (#3076). Only run when the script source
+    # was actually scanned (so a missing/empty source never triggers mass
+    # deletion), scoped to the selected variants, and only for *managed* copies —
+    # a user-customized file (hash diverges), a symlink, or a recovered entry is
+    # preserved by ``_is_managed``.
+    if scanned_variant_dirs:
+        stale_removed: list[str] = []
+        script_prefixes = tuple(
+            f".specify/scripts/{variant_dir}/" for variant_dir in scanned_variant_dirs
+        )
+        for rel in list(prior_hashes):
+            if rel in seen_rels or not rel.startswith(script_prefixes):
+                continue
+            # Guard corrupted/hand-edited manifest keys BEFORE any filesystem
+            # access: absolute, ``..``, or (on Windows) drive-relative keys such
+            # as ``C:tmp`` are not ``is_absolute()`` yet discard the project root
+            # when joined. The lexical check is a fast reject; ``_validate_rel_path``
+            # resolves the join and confirms containment, catching the rest. A key
+            # that still escapes is *skipped*, never turned into an install-time
+            # hard failure. Mirrors IntegrationManifest.is_recovered / remove.
+            rel_path = Path(rel)
+            if rel_path.is_absolute() or ".." in rel_path.parts:
+                continue
+            try:
+                _validate_rel_path(rel_path, project_path)
+            except ValueError:
+                continue
+            dst = project_path / rel_path
+            # Already gone from disk but still tracked: drop the orphaned manifest
+            # entry so the manifest stays consistent (nothing to unlink).
+            if not dst.exists() and not dst.is_symlink():
+                manifest.remove(rel)
+                continue
+            if not _is_managed(rel, dst):
+                continue  # user-modified / symlink / recovered → preserve
+            # Never unlink through a symlinked ancestor (writes/deletes could
+            # escape the project root). The safe-destination check buckets such
+            # paths under ``symlinked_files`` and we leave them in place.
+            if not _safe_dest_or_bucket(dst, rel):
+                continue
+            try:
+                dst.unlink()
+            except OSError as exc:
+                console.print(f"[yellow]⚠[/yellow]  could not remove stale {rel}: {exc}")
+                continue
+            manifest.remove(rel)
+            stale_removed.append(rel)
+
+        if stale_removed:
+            console.print(
+                f"[yellow]⚠[/yellow]  Removed {len(stale_removed)} obsolete shared "
+                "script(s) left by a previous install:"
+            )
+            for path in stale_removed:
+                console.print(f"    {path}")
 
     manifest.save()
     return True

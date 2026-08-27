@@ -30,7 +30,27 @@ class DevinIntegration(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
-    context_file = "AGENTS.md"
+
+    CANONICAL_TO_NATIVE = {
+        "session_start": "SessionStart",
+        "pre_tool_use": "PreToolUse",
+        "post_tool_use": "PostToolUse",
+        "session_end": "SessionEnd",
+        "user_prompt_submit": "UserPromptSubmit",
+        "stop": "Stop",
+    }
+    events_config_file = ".devin/hooks.v1.json"
+    # Devin's hooks.v1.json is a root event map ({"PreToolUse": [...]}) with no
+    # top-level "hooks" wrapper (U2), unlike the settings.json formats. The
+    # json-root-nested writer/remover operate directly on the root event keys.
+    events_format = "json-root-nested"
+    # Devin's hooks protocol is JSON-stdout; additionalContext is the
+    # documented injection field for SessionStart/UserPromptSubmit (C13).
+    events_context_envelope = {
+        "*": "suppress",
+        "session_start": "hookSpecificOutput",
+        "user_prompt_submit": "hookSpecificOutput",
+    }
 
     def build_exec_args(
         self,
@@ -56,11 +76,16 @@ class DevinIntegration(SkillsIntegration):
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
-        return [
+        # Compose with super() so the base class declares --events for this
+        # event-capable integration; otherwise --integration-options
+        # "--events false" is rejected as unknown (#8).
+        opts = super().options()
+        opts.append(
             IntegrationOption(
                 "--skills",
                 is_flag=True,
                 default=True,
                 help="Install as agent skills (default for Devin)",
             ),
-        ]
+        )
+        return opts

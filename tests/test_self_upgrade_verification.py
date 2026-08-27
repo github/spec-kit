@@ -8,6 +8,7 @@ import specify_cli
 from specify_cli import app
 
 from tests.self_upgrade_helpers import (
+    route_opener_open_through_urlopen,  # noqa: F401 (autouse fixture)
     SENTINEL_GH_TOKEN,
     SENTINEL_GITHUB_TOKEN,
     _InstallMethod,
@@ -470,6 +471,26 @@ class TestTagValidation:
         assert result.exit_code == 1
         output = strip_ansi(result.output)
         assert "Invalid --tag" in output or "expected vMAJOR.MINOR.PATCH" in output
+
+    def test_rejection_message_keeps_the_suffix_token(
+        self, uv_tool_argv0, clean_environ
+    ):
+        """Rich must not swallow the literal `[suffix]`.
+
+        Unescaped it is parsed as a style tag and dropped, so the user is told
+        only "expected vMAJOR.MINOR.PATCH" -- implying a bare vX.Y.Z is the only
+        accepted form, when -rc1 / .dev0 / +build.42 are all valid and are
+        documented as such in docs/upgrade.md and README.md.
+        """
+        result = runner.invoke(app, ["self", "upgrade", "--tag", "latest"])
+        assert result.exit_code == 1
+        assert "expected vMAJOR.MINOR.PATCH[suffix]" in strip_ansi(result.output)
+
+    def test_tag_option_help_keeps_the_suffix_token(self):
+        """Typer renders option help through Rich, so `--help` dropped it too."""
+        result = runner.invoke(app, ["self", "upgrade", "--help"])
+        assert result.exit_code == 0
+        assert "[suffix]" in strip_ansi(result.output)
 
 
 class TestUnknownCurrent:

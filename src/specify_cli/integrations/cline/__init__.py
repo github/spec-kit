@@ -70,13 +70,25 @@ class ClineIntegration(MarkdownIntegration):
         "format_name": format_cline_command_name,
         "invoke_separator": "-",
     }
-    context_file = ".clinerules/specify-rules.md"
     invoke_separator = "-"
     multi_install_safe = True
 
     def command_filename(self, template_name: str) -> str:
         """Cline uses hyphenated filenames (e.g. speckit-git-commit.md)."""
         return format_cline_command_name(template_name) + ".md"
+
+    def build_command_invocation(self, command_name: str, args: str = "") -> str:
+        """Cline installs hyphenated slash-commands (``/speckit-<name>``), so the
+        dispatch invocation must match. The inherited MarkdownIntegration default
+        builds the dotted ``/speckit.<name>``, which references a command Cline
+        never registered. Reuse the same hyphenation as command_filename /
+        the injected frontmatter name (see ``format_cline_command_name``),
+        mirroring the forge integration.
+        """
+        invocation = "/" + format_cline_command_name(command_name)
+        if args:
+            invocation = f"{invocation} {args}"
+        return invocation
 
     def process_template(self, *args, **kwargs):
         """Ensure shared templates render Cline command references with hyphens."""
@@ -97,7 +109,11 @@ class ClineIntegration(MarkdownIntegration):
         def repl(m: re.Match[str]) -> str:
             indent = m.group(1)
             instruction = m.group(2)
-            eol = m.group(3)
+            # ``eol`` is empty when the regex matched via ``$`` because the
+            # instruction was the final line of a file with no trailing
+            # newline. Default to ``\n`` so the note never collapses onto
+            # the same line as the instruction.
+            eol = m.group(3) or "\n"
             return (
                 indent
                 + _HOOK_COMMAND_NOTE.rstrip("\n")
@@ -122,8 +138,14 @@ class ClineIntegration(MarkdownIntegration):
             content,
         )
 
-    def post_process_content(self, content: str) -> str:
-        """Apply Cline-specific transformations to command content."""
+    def post_process_command_content(self, content: str) -> str:
+        """Apply Cline-specific transformations to command content.
+
+        Overrides the ``IntegrationBase`` hook of the same name so that
+        ``CommandRegistrar.register_commands()`` (which dispatches to
+        ``post_process_command_content``) applies these transforms to
+        extension/preset command files too, not just core commands.
+        """
         updated = self._inject_hook_command_note(content)
         updated = self._rewrite_handoff_references(updated)
         return updated
@@ -153,7 +175,7 @@ class ClineIntegration(MarkdownIntegration):
             content_bytes = path.read_bytes()
             content = content_bytes.decode("utf-8")
 
-            updated = self.post_process_content(content)
+            updated = self.post_process_command_content(content)
 
             if updated != content:
                 path.write_bytes(updated.encode("utf-8"))

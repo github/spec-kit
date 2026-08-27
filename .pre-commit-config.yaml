@@ -1,0 +1,12 @@
+---
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-executables-have-shebangs
+      - id: check-yaml
+        exclude: \.lock\.yml$
+      - id: end-of-file-fixer
+        exclude: \.lock\.yml$
+      - id: trailing-whitespace
+        exclude: \.lock\.yml$

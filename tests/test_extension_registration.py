@@ -17,7 +17,7 @@ class TestExtensionRegistration:
         """Standard registration: Adding an extension should add it to the list."""
         executor = HookExecutor(project_dir)
         executor.register_extension("test-ext")
-        
+
         config = executor.get_project_config()
         assert "installed" in config
         assert config["installed"] == ["test-ext"]
@@ -28,7 +28,7 @@ class TestExtensionRegistration:
         executor.register_extension("zebra-ext")
         executor.register_extension("apple-ext")
         executor.register_extension("middle-ext")
-        
+
         config = executor.get_project_config()
         assert config["installed"] == ["apple-ext", "middle-ext", "zebra-ext"]
 
@@ -37,7 +37,7 @@ class TestExtensionRegistration:
         executor = HookExecutor(project_dir)
         executor.register_extension("test-ext")
         executor.register_extension("test-ext")
-        
+
         config = executor.get_project_config()
         assert config["installed"] == ["test-ext"]
         assert len(config["installed"]) == 1
@@ -47,9 +47,9 @@ class TestExtensionRegistration:
         executor = HookExecutor(project_dir)
         executor.register_extension("ext-1")
         executor.register_extension("ext-2")
-        
+
         executor.unregister_extension("ext-1")
-        
+
         config = executor.get_project_config()
         assert config["installed"] == ["ext-2"]
 
@@ -57,10 +57,10 @@ class TestExtensionRegistration:
         """Safe Removal: Unregistering a non-existent extension should do nothing."""
         executor = HookExecutor(project_dir)
         executor.register_extension("ext-1")
-        
+
         # Should not raise or change the list
         executor.unregister_extension("ext-nonexistent")
-        
+
         config = executor.get_project_config()
         assert config["installed"] == ["ext-1"]
 
@@ -87,27 +87,27 @@ class TestExtensionRegistration:
         manifest_path = tmp_path / "extension.yml"
         with open(manifest_path, "w") as f:
             yaml.dump(manifest_data, f)
-        
+
         manifest = ExtensionManifest(manifest_path)
         executor = HookExecutor(project_dir)
-        
+
         # This should call register_extension internally
         executor.register_hooks(manifest)
-        
+
         config = executor.get_project_config()
         assert "hook-ext" in config["installed"]
 
     def test_missing_installed_key_initialization(self, project_dir):
         """Graceful Initialization: If 'installed' key is missing, it should be created."""
         executor = HookExecutor(project_dir)
-        
+
         # Manually create a config without 'installed'
         config_path = project_dir / ".specify" / "extensions.yml"
         config_path.write_text(yaml.dump({"settings": {"auto_execute_hooks": True}}))
-        
+
         # This should detect the missing key and initialize it
         executor.register_extension("new-ext")
-        
+
         config = executor.get_project_config()
         assert "installed" in config
         assert config["installed"] == ["new-ext"]
@@ -135,20 +135,20 @@ class TestExtensionRegistration:
         manifest_path = tmp_path / "extension.yml"
         with open(manifest_path, "w") as f:
             yaml.dump(manifest_data, f)
-        
+
         manifest = ExtensionManifest(manifest_path)
         executor = HookExecutor(project_dir)
-        
+
         # Register hooks first
         executor.register_hooks(manifest)
-        
+
         config = executor.get_project_config()
         assert "hook-ext" in config["installed"]
         assert "after_tasks" in config["hooks"]
-        
+
         # Now unregister hooks
         executor.unregister_hooks("hook-ext")
-        
+
         config = executor.get_project_config()
         assert "hook-ext" not in config["installed"]
         # unregister_hooks() removes the empty hook array entirely, so the key is absent
@@ -157,16 +157,16 @@ class TestExtensionRegistration:
     def test_unregister_hooks_no_hooks_key(self, project_dir):
         """Resilience: unregister_hooks should work even if config has no 'hooks' key."""
         executor = HookExecutor(project_dir)
-        
+
         # Register extension without hooks
         executor.register_extension("ext-no-hooks")
-        
+
         config = executor.get_project_config()
         assert "ext-no-hooks" in config["installed"]
-        
+
         # Unregister should not crash even if no hooks key exists
         executor.unregister_hooks("ext-no-hooks")
-        
+
         config = executor.get_project_config()
         assert "ext-no-hooks" not in config["installed"]
 
@@ -175,12 +175,12 @@ class TestExtensionRegistration:
         # Create a corrupted config (root is a list)
         config_path = project_dir / ".specify" / "extensions.yml"
         config_path.write_text(yaml.dump(["corrupted", "list"]))
-        
+
         executor = HookExecutor(project_dir)
-        
+
         # Should not raise even with corrupted config
         executor.unregister_hooks("non-existent")
-        
+
         # Config should remain as-is or be handled gracefully
         config = executor.get_project_config()
         # If it's corrupted, it's returned as-is or handled by defensive logic
@@ -223,30 +223,30 @@ class TestExtensionRegistration:
                 "after_tasks": {"command": "speckit.ext-2.run"}
             }
         }
-        
+
         manifest_path_1 = tmp_path / "extension1.yml"
         manifest_path_2 = tmp_path / "extension2.yml"
         with open(manifest_path_1, "w") as f:
             yaml.dump(manifest_data_1, f)
         with open(manifest_path_2, "w") as f:
             yaml.dump(manifest_data_2, f)
-        
+
         manifest1 = ExtensionManifest(manifest_path_1)
         manifest2 = ExtensionManifest(manifest_path_2)
         executor = HookExecutor(project_dir)
-        
+
         # Register both extensions
         executor.register_hooks(manifest1)
         executor.register_hooks(manifest2)
-        
+
         config = executor.get_project_config()
         assert "ext-1" in config["installed"]
         assert "ext-2" in config["installed"]
         assert len(config["hooks"]["after_tasks"]) == 2
-        
+
         # Unregister first extension
         executor.unregister_hooks("ext-1")
-        
+
         config = executor.get_project_config()
         assert "ext-1" not in config["installed"]
         assert "ext-2" in config["installed"]
@@ -346,9 +346,9 @@ class TestExtensionRegistration:
         manifest_path = tmp_path / "extension.yml"
         with open(manifest_path, "w") as f:
             yaml.dump(manifest_data, f)
-        
+
         manifest = ExtensionManifest(manifest_path)
-        
+
         # Should not raise TypeError when trying to append to None
         executor.register_hooks(manifest)
 
@@ -378,16 +378,16 @@ class TestExtensionRegistration:
         """Review Feedback: register_extension should support and preserve dict entries."""
         executor = HookExecutor(project_dir)
         config_path = project_dir / ".specify" / "extensions.yml"
-        
+
         # Setup config with a pinned extension (dict)
         pinned_ext = {"id": "pinned-ext", "version": "1.0.0"}
         config_path.write_text(yaml.dump({
             "installed": [pinned_ext, "string-ext"]
         }))
-        
+
         # Register a new extension
         executor.register_extension("new-ext")
-        
+
         config = executor.get_project_config()
         # Should contain all three, sorted by id: new-ext, pinned-ext, string-ext
         assert config["installed"] == ["new-ext", pinned_ext, "string-ext"]
@@ -396,15 +396,15 @@ class TestExtensionRegistration:
         """Review Feedback: unregister_extension should support removing matching dict entries."""
         executor = HookExecutor(project_dir)
         config_path = project_dir / ".specify" / "extensions.yml"
-        
+
         pinned_ext = {"id": "to-remove", "version": "1.0.0"}
         config_path.write_text(yaml.dump({
             "installed": [pinned_ext, "other-ext"]
         }))
-        
+
         # Unregister by ID
         executor.unregister_extension("to-remove")
-        
+
         config = executor.get_project_config()
         assert config["installed"] == ["other-ext"]
 
@@ -412,14 +412,14 @@ class TestExtensionRegistration:
         """Hardening: unregister_extension should handle non-list installed key."""
         executor = HookExecutor(project_dir)
         config_path = project_dir / ".specify" / "extensions.yml"
-        
+
         config_path.write_text(yaml.dump({
             "installed": "not-a-list"
         }))
-        
+
         # Should not crash and should normalize to []
         executor.unregister_extension("any-ext")
-        
+
         config = executor.get_project_config()
         assert config["installed"] == []
     def test_register_hooks_mixed_type_hook_list(self, project_dir, tmp_path):
@@ -458,7 +458,7 @@ class TestExtensionRegistration:
 
         config = executor.get_project_config()
         hooks = config["hooks"]["after_tasks"]
-        
+
         # Should have 2 valid dict hooks, and 0 non-dict items
         assert len(hooks) == 2
         assert all(isinstance(h, dict) for h in hooks)
@@ -469,12 +469,12 @@ class TestExtensionRegistration:
         """Hardening: unregister_extension should handle scalar root config."""
         executor = HookExecutor(project_dir)
         config_path = project_dir / ".specify" / "extensions.yml"
-        
+
         config_path.write_text(yaml.dump(123))
-        
+
         # Should not crash and should normalize to {}
         executor.unregister_extension("any-ext")
-        
+
         config = executor.get_project_config()
         assert isinstance(config, dict)
         assert config["installed"] == []
@@ -483,15 +483,15 @@ class TestExtensionRegistration:
         """Regression: unregister_hooks() must handle scalar hook event values."""
         executor = HookExecutor(project_dir)
         config_path = project_dir / ".specify" / "extensions.yml"
-        
+
         config_path.write_text(yaml.dump({
             "installed": ["some-ext"],
             "hooks": {"after_tasks": 123}
         }))
-        
+
         # Should not raise TypeError when iterating
         executor.unregister_hooks("some-ext")
-        
+
         config = executor.get_project_config()
         assert "some-ext" not in config["installed"]
         assert "after_tasks" not in config["hooks"]

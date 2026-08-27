@@ -69,6 +69,33 @@ Either `token` or `token_env` must be set for `bearer` and `basic-pat` schemes.
 }
 ```
 
+### GitHub Enterprise Server (GHES)
+
+To use a private catalog or extension hosted on a GitHub Enterprise Server
+instance, add a `github` entry listing your GHES host(s). The same entry
+authenticates both catalog JSON fetches **and** private release-asset
+downloads — Specify recognizes the listed hosts as GitHub Enterprise and
+resolves release downloads through the GHES REST API (`/api/v3`).
+
+```json
+{
+  "providers": [
+    {
+      "hosts": ["ghes.example.com", "raw.ghes.example.com", "codeload.ghes.example.com"],
+      "provider": "github",
+      "auth": "bearer",
+      "token_env": "GH_ENTERPRISE_TOKEN"
+    }
+  ]
+}
+```
+
+List the **bare** web host (e.g. `ghes.example.com`) — release-download URLs
+live there. If your instance uses subdomain isolation, also list the `raw.`
+and `codeload.` subdomains your catalog/extension URLs use. A
+`*.ghes.example.com` wildcard matches subdomains but **not** the bare host,
+so always include the bare host explicitly.
+
 ### Azure DevOps (`azure-devops`)
 
 | Scheme | Header | Use for |

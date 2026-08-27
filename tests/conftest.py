@@ -83,6 +83,20 @@ def _isolate_auth_config(monkeypatch):
     monkeypatch.setattr(_auth_http, "_config_cache", None)
 
 
+@pytest.fixture(autouse=True)
+def _strip_specify_env(monkeypatch):
+    """Drop any inherited SPECIFY_* vars for every test.
+
+    The Python CLI's project resolver (`_require_specify_project`) now honors
+    SPECIFY_INIT_DIR, and the shell resolvers honor SPECIFY_FEATURE* — so a
+    developer or CI runner with any SPECIFY_* var exported would silently
+    retarget (or hard-error) the many command/script tests that resolve a
+    project. Stripping them here keeps resolution tests deterministic; a test
+    that wants an override sets it explicitly via monkeypatch afterwards."""
+    for key in [k for k in os.environ if k.startswith("SPECIFY_")]:
+        monkeypatch.delenv(key, raising=False)
+
+
 @pytest.fixture
 def clean_environ(monkeypatch):
     """Strip any real GH_TOKEN / GITHUB_TOKEN from the test environment."""

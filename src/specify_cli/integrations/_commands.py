@@ -31,4 +31,5 @@ def register(app: typer.Typer) -> None:
     from . import _install_commands  # noqa: F401 — registers handlers via decorators
     from . import _migrate_commands  # noqa: F401
     from . import _query_commands    # noqa: F401
+    from . import _scaffold_commands  # noqa: F401
     app.add_typer(integration_app, name="integration")

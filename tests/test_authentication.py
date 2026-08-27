@@ -14,6 +14,7 @@ Covers:
 from __future__ import annotations
 
 import base64
+import io
 import json
 import os
 
@@ -91,6 +92,27 @@ class TestLoadAuthConfig:
         assert entries[0].auth == "bearer"
         assert entries[0].token_env == "GH_TOKEN"
 
+    def test_padded_token_env_is_normalized_and_resolves(self, tmp_path, monkeypatch):
+        # token_env is validated on its stripped form but was stored raw, so a
+        # padded env-var name passed validation yet broke the verbatim
+        # os.environ.get() lookup — resolve_token silently returned None.
+        monkeypatch.setenv("GH_TOKEN", "secret-tok")
+        cfg = tmp_path / "auth.json"
+        cfg.write_text(json.dumps({
+            "providers": [{
+                "hosts": ["github.com"],
+                "provider": "github",
+                "auth": "bearer",
+                "token_env": "  GH_TOKEN  ",
+            }]
+        }))
+        entries = load_auth_config(cfg)
+        assert len(entries) == 1
+        # Stored normalized (matching how hosts are normalized), ...
+        assert entries[0].token_env == "GH_TOKEN"
+        # ... so the env lookup finds the token instead of returning None.
+        assert GitHubAuth().resolve_token(entries[0]) == "secret-tok"
+
     def test_valid_ado_config(self, tmp_path):
         cfg = tmp_path / "auth.json"
         cfg.write_text(json.dumps({
@@ -134,6 +156,26 @@ class TestLoadAuthConfig:
         entries = load_auth_config(cfg)
         assert entries[0].auth == "azure-ad"
         assert entries[0].tenant_id == "tid"
+
+    def test_padded_azure_ad_refs_are_normalized(self, tmp_path):
+        # The normalization also covers tenant_id / client_id / client_secret_env
+        # (used verbatim in the OAuth token URL/body and os.environ.get). Padded
+        # values were validated on their stripped form but stored raw.
+        cfg = tmp_path / "auth.json"
+        cfg.write_text(json.dumps({
+            "providers": [{
+                "hosts": ["dev.azure.com"],
+                "provider": "azure-devops",
+                "auth": "azure-ad",
+                "tenant_id": "  tid  ",
+                "client_id": "  cid  ",
+                "client_secret_env": "  SECRET  ",
+            }]
+        }))
+        entries = load_auth_config(cfg)
+        assert entries[0].tenant_id == "tid"
+        assert entries[0].client_id == "cid"
+        assert entries[0].client_secret_env == "SECRET"
 
     def test_azure_cli_config(self, tmp_path):
         cfg = tmp_path / "auth.json"
@@ -260,6 +302,20 @@ class TestLoadAuthConfig:
         with pytest.raises(ValueError, match="invalid host pattern"):
             load_auth_config(cfg)
 
+    @pytest.mark.parametrize("host", ["gith?b.com", "[a-z].example.com"])
+    def test_unsupported_glob_metacharacters_raise(self, tmp_path, host):
+        cfg = tmp_path / "auth.json"
+        cfg.write_text(json.dumps({
+            "providers": [{
+                "hosts": [host],
+                "provider": "github",
+                "auth": "bearer",
+                "token_env": "X",
+            }]
+        }))
+        with pytest.raises(ValueError, match="invalid host pattern"):
+            load_auth_config(cfg)
+
     def test_valid_star_dot_host_accepted(self, tmp_path):
         cfg = tmp_path / "auth.json"
         cfg.write_text(json.dumps({
@@ -302,6 +358,39 @@ class TestFindEntriesForUrl:
         result = find_entries_for_url("https://myorg.visualstudio.com/project", [entry])
         assert result == [entry]
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://visualstudio.com/project",
+            "https://evilvisualstudio.com/project",
+            "https://visualstudio.com.evil.example/project",
+        ],
+    )
+    def test_wildcard_does_not_match_apex_or_lookalikes(self, url):
+        entry = AuthConfigEntry(
+            hosts=("*.visualstudio.com",),
+            provider="azure-devops",
+            auth="basic-pat",
+            token_env="ADO_PAT",
+        )
+        assert find_entries_for_url(url, [entry]) == []
+
+    @pytest.mark.parametrize(
+        ("pattern", "url"),
+        [
+            ("gith?b.com", "https://github.com/org/repo"),
+            ("[a-z].example.com", "https://a.example.com/file"),
+        ],
+    )
+    def test_exact_hosts_do_not_apply_glob_semantics(self, pattern, url):
+        entry = AuthConfigEntry(
+            hosts=(pattern,),
+            provider="github",
+            auth="bearer",
+            token="sentinel",
+        )
+        assert find_entries_for_url(url, [entry]) == []
+
     def test_no_match_returns_empty(self):
         entry = _github_entry()
         result = find_entries_for_url("https://evil.example.com/file", [entry])
@@ -314,6 +403,20 @@ class TestFindEntriesForUrl:
 
     def test_empty_url_returns_empty(self):
         assert find_entries_for_url("", [_github_entry()]) == []
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://[::1",                 # unterminated ipv6 bracket
+            "https://[not-an-ip]/file",     # bracketed non-ip host
+        ],
+    )
+    def test_malformed_url_returns_empty(self, url):
+        # A malformed authority makes urlparse/hostname raise ValueError.
+        # Since no entry can match such a URL, this must return no matches
+        # (like a host-less URL) rather than leaking a raw ValueError out of
+        # the shared HTTP client.
+        assert find_entries_for_url(url, [_github_entry()]) == []
 
     def test_empty_entries_returns_empty(self):
         assert find_entries_for_url("https://github.com/org/repo", []) == []
@@ -479,6 +582,57 @@ class TestAzureDevOpsAuth:
         with patch("specify_cli.authentication.azure_devops.subprocess.run", return_value=result):
             assert AzureDevOpsAuth().resolve_token(entry) is None
 
+    def test_resolve_token_azure_cli_resolves_executable(self):
+        """The az executable is resolved via shutil.which before invocation, so
+        the .cmd/.bat shim on Windows (CreateProcess ignores PATHEXT) is used."""
+        from unittest.mock import patch, MagicMock
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
+        )
+        # Build the absolute path with the HOST's rules: the production code
+        # calls os.path.isabs(), so a hardcoded Windows path would read as
+        # RELATIVE on POSIX runners and silently exercise the fallback branch
+        # instead of the one under test.
+        resolved_path = os.path.join(os.path.abspath(os.sep), "opt", "az", "az.CMD")
+        assert os.path.isabs(resolved_path)
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = '{"accessToken": "tok"}'
+        with patch(
+            "specify_cli.authentication.azure_devops.shutil.which",
+            return_value=resolved_path,
+        ), patch(
+            "specify_cli.authentication.azure_devops.subprocess.run",
+            return_value=result,
+        ) as run:
+            assert AzureDevOpsAuth().resolve_token(entry) == "tok"
+        argv = run.call_args.args[0]
+        assert argv[0] == resolved_path
+        assert argv[1:4] == ["account", "get-access-token", "--resource"]
+
+    @pytest.mark.parametrize("which_result", [None, r".\az.CMD", "az.cmd", "./az"])
+    def test_resolve_token_azure_cli_falls_back_to_bare_az(self, which_result):
+        """Fall back to the bare "az" when shutil.which finds nothing OR returns a
+        NON-ABSOLUTE path. On Windows shutil.which searches the current directory
+        first, so a stray .\\az.cmd must never be executed for a credential
+        operation; the bare name also preserves the not-installed OSError path."""
+        from unittest.mock import patch, MagicMock
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
+        )
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = '{"accessToken": "tok"}'
+        with patch(
+            "specify_cli.authentication.azure_devops.shutil.which",
+            return_value=which_result,
+        ), patch(
+            "specify_cli.authentication.azure_devops.subprocess.run",
+            return_value=result,
+        ) as run:
+            assert AzureDevOpsAuth().resolve_token(entry) == "tok"
+        assert run.call_args.args[0][0] == "az", which_result
+
     def test_resolve_token_azure_cli_not_installed_returns_none(self):
         """azure-cli returns None when az is not installed."""
         from unittest.mock import patch
@@ -486,6 +640,36 @@ class TestAzureDevOpsAuth:
             hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
         )
         with patch("specify_cli.authentication.azure_devops.subprocess.run", side_effect=OSError("not found")):
+            assert AzureDevOpsAuth().resolve_token(entry) is None
+
+    def test_resolve_token_azure_cli_undecodable_output_returns_none(self):
+        """Undecodable az output returns None, not a crash. With text=True,
+        subprocess.run decodes stdout with the locale encoding and raises
+        UnicodeDecodeError (not a JSONDecodeError) when it can't — the helper's
+        contract is to return None on any failure."""
+        from unittest.mock import patch
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
+        )
+        boom = UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1, "invalid start byte")
+        with patch("specify_cli.authentication.azure_devops.subprocess.run", side_effect=boom):
+            assert AzureDevOpsAuth().resolve_token(entry) is None
+
+    @pytest.mark.parametrize("payload", [[], {"accessToken": None}, {"accessToken": 123}])
+    def test_resolve_token_azure_cli_unexpected_json_shape_returns_none(
+        self, payload
+    ):
+        from unittest.mock import MagicMock, patch
+
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
+        )
+        result = MagicMock(returncode=0, stdout=json.dumps(payload))
+
+        with patch(
+            "specify_cli.authentication.azure_devops.subprocess.run",
+            return_value=result,
+        ):
             assert AzureDevOpsAuth().resolve_token(entry) is None
 
     def test_resolve_token_azure_ad_success(self, monkeypatch):
@@ -497,10 +681,15 @@ class TestAzureDevOpsAuth:
             tenant_id="tid", client_id="cid", client_secret_env="MY_SECRET",
         )
         mock_resp = MagicMock()
-        mock_resp.read.return_value = b'{"access_token": "ad-acquired-token"}'
+        mock_resp.read.side_effect = io.BytesIO(b'{"access_token": "ad-acquired-token"}').read
         mock_resp.__enter__ = lambda s: s
         mock_resp.__exit__ = MagicMock(return_value=False)
-        with patch("urllib.request.urlopen", return_value=mock_resp):
+        # The token request goes through a strict-redirect opener (so a 307/308
+        # cannot forward the client_secret body to a non-HTTPS host), not bare
+        # urlopen; patch the opener it builds.
+        mock_opener = MagicMock()
+        mock_opener.open.return_value = mock_resp
+        with patch("urllib.request.build_opener", return_value=mock_opener):
             assert AzureDevOpsAuth().resolve_token(entry) == "ad-acquired-token"
 
     def test_resolve_token_azure_ad_missing_secret_returns_none(self, monkeypatch):
@@ -515,14 +704,123 @@ class TestAzureDevOpsAuth:
     def test_resolve_token_azure_ad_network_error_returns_none(self, monkeypatch):
         """azure-ad returns None on network errors."""
         import urllib.error
-        from unittest.mock import patch
+        from unittest.mock import MagicMock, patch
         monkeypatch.setenv("MY_SECRET", "secret-value")
         entry = AuthConfigEntry(
             hosts=("dev.azure.com",), provider="azure-devops", auth="azure-ad",
             tenant_id="tid", client_id="cid", client_secret_env="MY_SECRET",
         )
-        with patch("urllib.request.urlopen",
-                    side_effect=urllib.error.URLError("connection refused")):
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = urllib.error.URLError("connection refused")
+        with patch("urllib.request.build_opener", return_value=mock_opener):
+            assert AzureDevOpsAuth().resolve_token(entry) is None
+
+    @pytest.mark.parametrize(
+        ("status", "reason"),
+        [(307, "Temporary Redirect"), (308, "Permanent Redirect")],
+    )
+    def test_resolve_token_azure_ad_rejects_https_redirect(
+        self, monkeypatch, status, reason
+    ):
+        """The client-secret POST must never be redirected to another host."""
+        import urllib.error
+        from unittest.mock import MagicMock, patch
+        from urllib.request import Request
+
+        monkeypatch.setenv("MY_SECRET", "secret-value")
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-ad",
+            tenant_id="tid", client_id="cid", client_secret_env="MY_SECRET",
+        )
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = urllib.error.URLError("stop after setup")
+
+        with patch("urllib.request.build_opener", return_value=mock_opener) as build_opener:
+            assert AzureDevOpsAuth().resolve_token(entry) is None
+
+        redirect_handler = build_opener.call_args.args[0]
+        request = Request(
+            "https://login.microsoftonline.com/tid/oauth2/v2.0/token",
+            data=b"grant_type=client_credentials&client_secret=secret-value",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert request.get_method() == "POST"
+        assert b"client_secret=secret-value" in request.data
+        with pytest.raises(urllib.error.URLError, match="must not be redirected"):
+            redirect_handler.redirect_request(
+                request,
+                io.BytesIO(b""),
+                status,
+                reason,
+                {},
+                "https://evil.example/token",
+            )
+
+    def test_resolve_token_azure_ad_oversized_response_returns_none(
+        self, monkeypatch
+    ):
+        """Oversized token metadata is rejected before JSON parsing."""
+        from unittest.mock import MagicMock, patch
+
+        from specify_cli._download_security import MAX_JSON_METADATA_BYTES
+
+        monkeypatch.setenv("MY_SECRET", "secret-value")
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-ad",
+            tenant_id="tid", client_id="cid", client_secret_env="MY_SECRET",
+        )
+        mock_resp = MagicMock()
+        mock_resp.read.side_effect = io.BytesIO(
+            b"x" * (MAX_JSON_METADATA_BYTES + 1)
+        ).read
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_opener = MagicMock()
+        mock_opener.open.return_value = mock_resp
+
+        with patch("urllib.request.build_opener", return_value=mock_opener), patch(
+            "specify_cli.authentication.azure_devops._json.loads",
+            side_effect=AssertionError("oversized body must not be parsed"),
+        ):
+            assert AzureDevOpsAuth().resolve_token(entry) is None
+
+    @pytest.mark.parametrize("payload", [[], {"access_token": None}, {"access_token": 123}])
+    def test_resolve_token_azure_ad_unexpected_json_shape_returns_none(
+        self, monkeypatch, payload
+    ):
+        from unittest.mock import MagicMock, patch
+
+        monkeypatch.setenv("MY_SECRET", "secret-value")
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-ad",
+            tenant_id="tid", client_id="cid", client_secret_env="MY_SECRET",
+        )
+        mock_resp = MagicMock()
+        mock_resp.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_opener = MagicMock()
+        mock_opener.open.return_value = mock_resp
+
+        with patch("urllib.request.build_opener", return_value=mock_opener):
+            assert AzureDevOpsAuth().resolve_token(entry) is None
+
+    def test_resolve_token_azure_ad_invalid_utf8_returns_none(self, monkeypatch):
+        """azure-ad returns None when the token response is not valid UTF-8."""
+        from unittest.mock import MagicMock, patch
+        monkeypatch.setenv("MY_SECRET", "secret-value")
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-ad",
+            tenant_id="tid", client_id="cid", client_secret_env="MY_SECRET",
+        )
+        mock_resp = MagicMock()
+        mock_resp.read.side_effect = io.BytesIO(b"\xff").read
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_opener = MagicMock()
+        mock_opener.open.return_value = mock_resp
+
+        with patch("urllib.request.build_opener", return_value=mock_opener):
             assert AzureDevOpsAuth().resolve_token(entry) is None
 
 
@@ -588,13 +886,15 @@ class TestAuthenticatedHttp:
         monkeypatch.setenv("GH_TOKEN", "my-token")
         self._set_config(monkeypatch, [_github_entry()])
         captured = {}
-        def fake_urlopen(req, timeout=None):
+        def fake_open(req, timeout=None):
             captured["req"] = req
             resp = MagicMock()
             resp.__enter__ = lambda s: s
             resp.__exit__ = MagicMock(return_value=False)
             return resp
-        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=fake_urlopen):
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = fake_open
+        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             open_url("https://example.com/file.json")
         assert captured["req"].get_header("Authorization") is None
 
@@ -603,13 +903,15 @@ class TestAuthenticatedHttp:
         from specify_cli.authentication.http import open_url
         self._set_config(monkeypatch, [])
         captured = {}
-        def fake_urlopen(req, timeout=None):
+        def fake_open(req, timeout=None):
             captured["req"] = req
             resp = MagicMock()
             resp.__enter__ = lambda s: s
             resp.__exit__ = MagicMock(return_value=False)
             return resp
-        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=fake_urlopen):
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = fake_open
+        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             open_url("https://github.com/org/repo")
         assert captured["req"].get_header("Authorization") is None
 
@@ -631,8 +933,7 @@ class TestAuthenticatedHttp:
             return resp
         mock_opener = MagicMock()
         mock_opener.open.side_effect = fake_side_effect
-        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener), \
-             patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=fake_side_effect):
+        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             open_url("https://github.com/org/repo")
         assert call_count == 2
 
@@ -673,21 +974,23 @@ class TestAuthenticatedHttpNegative:
 
     def test_urlerror_propagates(self, monkeypatch):
         import urllib.error
-        from unittest.mock import patch
+        from unittest.mock import MagicMock, patch
         from specify_cli.authentication.http import open_url
         self._set_config(monkeypatch, [])
-        with patch("specify_cli.authentication.http.urllib.request.urlopen",
-                    side_effect=urllib.error.URLError("refused")):
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = urllib.error.URLError("refused")
+        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             with pytest.raises(urllib.error.URLError):
                 open_url("https://example.com/file")
 
     def test_timeout_propagates(self, monkeypatch):
         import socket
-        from unittest.mock import patch
+        from unittest.mock import MagicMock, patch
         from specify_cli.authentication.http import open_url
         self._set_config(monkeypatch, [])
-        with patch("specify_cli.authentication.http.urllib.request.urlopen",
-                    side_effect=socket.timeout("timed out")):
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = socket.timeout("timed out")
+        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             with pytest.raises(socket.timeout):
                 open_url("https://example.com/file")
 
@@ -793,17 +1096,51 @@ class TestRedirectStripping:
         assert new_req.headers.get("Authorization") is None
         assert new_req.unredirected_hdrs.get("Authorization") is None
 
-    def test_https_to_http_same_host_redirect_strips_auth(self):
+    @pytest.mark.parametrize(
+        ("hosts", "target", "expected_auth"),
+        [
+            (("*.example.com",), "https://api.example.com/asset", "Bearer tok"),
+            (("*.example.com",), "https://example.com/asset", None),
+            (("*.example.com",), "https://evil-example.com/asset", None),
+            (("gith?b.com",), "https://github.com/asset", None),
+            (("[a-z].example.com",), "https://a.example.com/asset", None),
+        ],
+    )
+    def test_redirect_host_patterns_use_literal_safe_matching(
+        self, hosts, target, expected_auth
+    ):
         from specify_cli.authentication.http import _StripAuthOnRedirect
         from urllib.request import Request
         import io
+
+        handler = _StripAuthOnRedirect(hosts)
+        req = Request(
+            "https://source.example.org/file",
+            headers={"Authorization": "Bearer tok"},
+        )
+        new_req = handler.redirect_request(
+            req, io.BytesIO(b""), 302, "Found", {}, target
+        )
+
+        assert new_req is not None
+        auth = (
+            new_req.get_header("Authorization")
+            or new_req.unredirected_hdrs.get("Authorization")
+        )
+        assert auth == expected_auth
+
+    def test_https_to_http_same_host_redirect_rejected(self):
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+        from urllib.request import Request
+        import io
+        import urllib.error
+
         handler = _StripAuthOnRedirect(("github.com",))
         req = Request("https://github.com/org/repo", headers={"Authorization": "Bearer tok"})
-        new_req = handler.redirect_request(req, io.BytesIO(b""), 302, "Found", {},
-                                           "http://github.com/org/repo")
-        assert new_req is not None
-        assert new_req.headers.get("Authorization") is None
-        assert new_req.unredirected_hdrs.get("Authorization") is None
+
+        with pytest.raises(urllib.error.URLError, match="unsafe redirect"):
+            handler.redirect_request(req, io.BytesIO(b""), 302, "Found", {},
+                                     "http://github.com/org/repo")
 
     def test_redirect_validator_can_reject_before_following_redirect(self):
         import urllib.error
@@ -845,6 +1182,193 @@ class TestRedirectStripping:
         auth3 = req3.get_header("Authorization") or req3.unredirected_hdrs.get("Authorization")
         assert auth3 == "Bearer tok"
 
+    def test_malformed_redirect_url_raises_urlerror_not_valueerror(self):
+        """A redirect to a malformed URL (unterminated IPv6 bracket) surfaces
+        as URLError, which download paths already handle, rather than an
+        unhandled ValueError traceback."""
+        import urllib.error
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+        from urllib.request import Request
+        import io
+
+        handler = _StripAuthOnRedirect(("github.com",))
+        req = Request("https://github.com/org/repo")
+
+        with pytest.raises(urllib.error.URLError):
+            handler.redirect_request(req, io.BytesIO(b""), 302, "Found", {},
+                                     "https://[::1/asset")
+
+    def test_redirect_rejects_https_downgrade(self):
+        """HTTPS downloads must not follow redirects to non-local HTTP URLs."""
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+        from urllib.request import Request
+        import io
+        import urllib.error
+        handler = _StripAuthOnRedirect(("example.com",))
+        req = Request("https://example.com/archive.zip")
+        with pytest.raises(urllib.error.URLError, match="unsafe redirect"):
+            handler.redirect_request(req, io.BytesIO(b""), 302, "Found", {},
+                                     "http://evil.example.com/archive.zip")
+
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "http://127.0.0.1/internal",
+            "https://localhost/internal",
+            "https://localhost./internal",
+            "https://service.localhost/internal",
+            "https://service.localhost./internal",
+            "https://127.0.0.2/internal",
+            "https://127.1/internal",
+            "https://2130706433/internal",
+            "https://0x7f000001/internal",
+            "https://017700000001/internal",
+            "https://0177.0.0.1/internal",
+            "https://[::1]/internal",
+            "https://[::1%25lo0]/internal",
+            "https://[::ffff:127.0.0.1]/internal",
+            "https://127%2e0%2e0%2e1/internal",
+            "https://%31%32%37.0.0.1/internal",
+            "https://127%2E1/internal",
+            "https://local%68ost/internal",
+            "https://[::ffff:127%2e0.0.1]/internal",
+            "https://[::ffff:7f00%3a1]/internal",
+            "https://[::ffff%3a127.0.0.1]/internal",
+            "https://ℓocalhost/internal",
+            "https://ｌｏｃａｌｈｏｓｔ/internal",
+            "https://127。0。0。1/internal",
+            "https://0.0.0.0/internal",
+            "https://0/internal",
+            "https://00.00.00.00/internal",
+            "https://[::]/internal",
+            "https://[::ffff:0.0.0.0]/internal",
+        ],
+    )
+    def test_redirect_rejects_remote_to_loopback(self, target):
+        """A remote response must not redirect a download into loopback."""
+        import io
+        import urllib.error
+        from urllib.request import Request
+
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+
+        handler = _StripAuthOnRedirect(())
+        request = Request("https://example.com/archive.zip")
+
+        with pytest.raises(urllib.error.URLError, match="unsafe redirect"):
+            handler.redirect_request(
+                request,
+                io.BytesIO(b""),
+                302,
+                "Found",
+                {},
+                target,
+            )
+
+    @pytest.mark.parametrize(
+        ("source", "target"),
+        [
+            (
+                "http://localhost:8000/archive.zip",
+                "http://127.0.0.1:8001/archive.zip",
+            ),
+            (
+                "http://127.0.0.2:8000/archive.zip",
+                "http://127.255.255.254:8001/archive.zip",
+            ),
+            (
+                "https://[0:0:0:0:0:0:0:1]/archive.zip",
+                "http://[::1]:8001/archive.zip",
+            ),
+        ],
+    )
+    def test_redirect_allows_loopback_to_http_loopback(self, source, target):
+        """Local development may continue redirecting between loopback URLs."""
+        import io
+        from urllib.request import Request
+
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+
+        handler = _StripAuthOnRedirect(())
+        request = Request(source)
+        redirected = handler.redirect_request(
+            request,
+            io.BytesIO(b""),
+            302,
+            "Found",
+            {},
+            target,
+        )
+
+        assert redirected is not None
+
+    def test_multi_hop_remote_to_loopback_chain_is_rejected_at_first_hop(self):
+        import io
+        import urllib.error
+        from urllib.request import Request
+
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+
+        handler = _StripAuthOnRedirect(())
+        request = Request("https://example.com/archive.zip")
+
+        with pytest.raises(urllib.error.URLError, match="unsafe redirect"):
+            handler.redirect_request(
+                request,
+                io.BytesIO(b""),
+                302,
+                "Found",
+                {},
+                "https://localhost:4443/hop",
+            )
+
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "https://example.com:notaport/archive.zip",
+            "https://example.com:+443/archive.zip",
+            "https://example.com:65536/archive.zip",
+        ],
+    )
+    def test_malformed_redirect_port_raises_urlerror(self, target):
+        import io
+        import urllib.error
+        from urllib.request import Request
+
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+
+        handler = _StripAuthOnRedirect(())
+        request = Request("https://example.com/archive.zip")
+
+        with pytest.raises(urllib.error.URLError, match="malformed redirect URL"):
+            handler.redirect_request(
+                request,
+                io.BytesIO(b""),
+                302,
+                "Found",
+                {},
+                target,
+            )
+
+    def test_strict_redirect_error_describes_target_and_allowed_localhost(self):
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+        from urllib.request import Request
+        import io
+        import urllib.error
+
+        handler = _StripAuthOnRedirect(("example.com",))
+        req = Request("https://example.com/archive.zip")
+
+        with pytest.raises(urllib.error.URLError) as exc_info:
+            handler.redirect_request(req, io.BytesIO(b""), 302, "Found", {},
+                                     "http://evil.example.com/archive.zip")
+
+        error_message = str(exc_info.value)
+        assert "http://evil.example.com/archive.zip" in error_message
+        assert "localhost" in error_message
+        assert "127.0.0.1" in error_message
+        assert "::1" in error_message
+
 
 # ---------------------------------------------------------------------------
 # _fetch_latest_release_tag delegation
@@ -864,7 +1388,7 @@ class TestFetchLatestReleaseTagDelegation:
             captured["request"] = req
             body = _json.dumps({"tag_name": "v9.9.9"}).encode()
             resp = MagicMock()
-            resp.read.return_value = body
+            resp.read.side_effect = io.BytesIO(body).read
             cm = MagicMock()
             cm.__enter__.return_value = resp
             cm.__exit__.return_value = False
@@ -884,19 +1408,66 @@ class TestFetchLatestReleaseTagDelegation:
         assert captured["request"].get_header("Authorization") == "Bearer forwarded-sentinel"
 
     def test_no_config_means_no_auth(self, monkeypatch):
-        from unittest.mock import patch
+        from unittest.mock import MagicMock, patch
         from specify_cli._version import _fetch_latest_release_tag
         self._set_config(monkeypatch, [])
         captured, side_effect = self._capture_request()
-        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect):
+        # The unauthenticated path uses the strict redirect opener too.
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = side_effect
+        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             _fetch_latest_release_tag()
         assert captured["request"].get_header("Authorization") is None
 
     def test_accept_header_present(self, monkeypatch):
-        from unittest.mock import patch
+        from unittest.mock import MagicMock, patch
         from specify_cli._version import _fetch_latest_release_tag
         self._set_config(monkeypatch, [])
         captured, side_effect = self._capture_request()
-        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect):
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = side_effect
+        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             _fetch_latest_release_tag()
         assert captured["request"].get_header("Accept") == "application/vnd.github+json"
+
+
+# ---------------------------------------------------------------------------
+# github_provider_hosts
+# ---------------------------------------------------------------------------
+
+
+class TestGithubProviderHosts:
+    """Tests for github_provider_hosts() — the GHES host allowlist source."""
+
+    def _set_config(self, monkeypatch, entries):
+        from specify_cli.authentication import http as _auth_http
+        monkeypatch.setattr(_auth_http, "_config_override", entries)
+
+    def test_returns_hosts_from_github_entries(self, monkeypatch):
+        from specify_cli.authentication.http import github_provider_hosts
+        self._set_config(monkeypatch, [
+            AuthConfigEntry(hosts=("ghes.example", "raw.ghes.example"),
+                            provider="github", auth="bearer", token="t"),
+        ])
+        assert github_provider_hosts() == ("ghes.example", "raw.ghes.example")
+
+    def test_empty_when_no_config(self, monkeypatch):
+        from specify_cli.authentication.http import github_provider_hosts
+        self._set_config(monkeypatch, [])
+        assert github_provider_hosts() == ()
+
+    def test_ignores_non_github_providers(self, monkeypatch):
+        from specify_cli.authentication.http import github_provider_hosts
+        self._set_config(monkeypatch, [
+            AuthConfigEntry(hosts=("dev.azure.com",), provider="azure-devops",
+                            auth="basic-pat", token="t"),
+        ])
+        assert github_provider_hosts() == ()
+
+    def test_unions_multiple_github_entries(self, monkeypatch):
+        from specify_cli.authentication.http import github_provider_hosts
+        self._set_config(monkeypatch, [
+            AuthConfigEntry(hosts=("ghes.example",), provider="github", auth="bearer", token="t"),
+            AuthConfigEntry(hosts=("github.com",), provider="github", auth="bearer", token="t"),
+        ])
+        assert github_provider_hosts() == ("ghes.example", "github.com")

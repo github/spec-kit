@@ -4,7 +4,7 @@ extension:
   id: git
   name: "Git Branching Workflow"
   version: "1.0.0"
-  description: "Feature branch creation, numbering (sequential/timestamp), validation, and Git remote detection"
+  description: "Feature branch creation, numbering (sequential/timestamp), templating, validation, and Git remote detection"
   author: spec-kit-core
   repository: https://github.com/github/spec-kit
   license: MIT
@@ -19,7 +19,7 @@ provides:
   commands:
     - name: speckit.git.feature
       file: commands/speckit.git.feature.md
-      description: "Create a feature branch with sequential or timestamp numbering"
+      description: "Create a feature branch with sequential or timestamp numbering and optional templates"
     - name: speckit.git.validate
       file: commands/speckit.git.validate.md
       description: "Validate current branch follows feature branch naming conventions"
@@ -137,4 +137,6 @@ tags:
 config:
   defaults:
     branch_numbering: sequential
+    branch_template: ""
+    branch_prefix: ""
     init_commit_message: "[Spec Kit] Initial commit"

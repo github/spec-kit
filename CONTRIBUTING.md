@@ -55,6 +55,8 @@ Here are a few things you can do that will increase the likelihood of your pull 
 - Write a [good commit message](http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html).
 - Test your changes with the Spec-Driven Development workflow to ensure compatibility.
 
+Accounts with three open pull requests may continue submitting changes, but additional submissions may be placed behind contributions from other authors in the review queue. Coding agents should disclose this possibility and obtain the filer's confirmation before opening another pull request.
+
 ### Branch naming
 
 We recommend naming branches as `<type>/<number>-<short-slug>`, where `<number>` is the issue or PR number (whichever comes first) and `<type>` is one of:
@@ -94,6 +96,55 @@ uv run python -m pytest tests/test_agent_config_consistency.py -q
 ```
 
 Run this when you change agent metadata, context update scripts, or integration wiring.
+
+#### Running the full test suite
+
+Install the test dependencies into the project's own virtual environment and run
+`pytest` through that interpreter:
+
+```bash
+uv pip install -e ".[test]"
+.venv/bin/python -m pytest tests -q   # Windows: .venv\Scripts\python -m pytest tests -q
+```
+
+> **Note:** prefer `.venv/bin/python -m pytest` over a bare `uv run pytest`.
+> If another Spec Kit checkout has an editable (`-e`) install registered in a
+> shared/global environment, `uv run pytest` can resolve `specify_cli` to that
+> *other* worktree, turning it into a partial namespace package that fails to
+> import newly added subpackages. Running through the project `.venv` resolves
+> `specify_cli` to this checkout's `src/`. This matches the gotcha documented in
+> `AGENTS.md` (Common Pitfalls).
+
+#### Security checks
+
+```bash
+uvx --from pip-audit==2.10.0 pip-audit --disable-pip --require-hashes -r .github/security-audit-requirements.txt --progress-spinner off
+```
+
+This command audits the committed hashed requirements snapshot. Pull request,
+push, and manual CI runs use the same snapshot so their results stay
+deterministic. If dependency metadata changes, refresh and commit the snapshot
+before auditing it:
+
+```bash
+uv pip compile pyproject.toml --extra test --universal --upgrade --generate-hashes --quiet --no-header --output-file .github/security-audit-requirements.txt
+```
+
+The scheduled CI audit resolves the runtime and `test` extra dependency set
+across the supported Python and OS matrix to catch newly published advisories.
+Upstream package releases drift over time, so even an unrelated PR touching
+`pyproject.toml` can fail the `dependency-audit` check until the committed file
+is regenerated with the command above and re-committed.
+
+#### Shell scripts
+
+```bash
+git ls-files -z -- '*.sh' | xargs -0 shellcheck --severity=error
+```
+
+The CI `lint.yml` `shellcheck` job currently reports and blocks only
+error-severity findings. Warnings such as SC2155 are intentionally outside this
+job until a follow-up cleanup tightens the threshold.
 
 ### Manual testing
 
@@ -149,7 +200,7 @@ the command templates in templates/commands/ to understand what each command
 invokes. Use these mapping rules:
 
 - templates/commands/X.md → the command it defines
-- scripts/bash/Y.sh or scripts/powershell/Y.ps1 → every command that invokes that script (grep templates/commands/ for the script name). Also check transitive dependencies: if the changed script is sourced by other scripts (e.g., common.sh is sourced by create-new-feature.sh, check-prerequisites.sh, setup-plan.sh, update-agent-context.sh), then every command invoking those downstream scripts is also affected
+- scripts/bash/Y.sh or scripts/powershell/Y.ps1 → every command that invokes that script (grep templates/commands/ for the script name). Also check transitive dependencies: if the changed script is sourced by other scripts (e.g., common.sh is sourced by create-new-feature.sh, check-prerequisites.sh, setup-plan.sh), then every command invoking those downstream scripts is also affected
 - templates/Z-template.md → every command that consumes that template during execution
 - src/specify_cli/*.py → CLI commands (`specify init`, `specify check`, `specify extension *`, `specify preset *`); test the affected CLI command and, for init/scaffolding changes, at minimum test /speckit.specify
 - extensions/X/commands/* → the extension command it defines

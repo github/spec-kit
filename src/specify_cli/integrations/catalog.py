@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 from packaging import version as pkg_version
 
+from .._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
 from ..catalogs import CatalogEntry, CatalogStackBase
 
 
@@ -38,6 +39,25 @@ class IntegrationValidationError(IntegrationCatalogError):
 
 class IntegrationDescriptorError(Exception):
     """Raised when an integration.yml descriptor is invalid."""
+
+
+def _catalog_shape_error(payload: Any) -> Optional[str]:
+    """Return a human-readable reason if *payload* is not a valid integration
+    catalog document, else ``None``.
+
+    Shared by the fresh-fetch and cache-read paths so both enforce the same
+    format contract: a JSON object carrying ``schema_version`` and a mapping
+    ``integrations``. Keeping a single validator prevents the two paths from
+    drifting (e.g. a cache that skips the ``schema_version`` check and lets an
+    older/poisoned payload bypass validation).
+    """
+    if not isinstance(payload, dict):
+        return "expected a JSON object"
+    if "schema_version" not in payload or "integrations" not in payload:
+        return "missing required 'schema_version' or 'integrations' key"
+    if not isinstance(payload.get("integrations"), dict):
+        return "'integrations' must be a JSON object"
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +173,18 @@ class IntegrationCatalog(CatalogStackBase):
                     cached_at = cached_at.replace(tzinfo=timezone.utc)
                 age = (datetime.now(timezone.utc) - cached_at).total_seconds()
                 if age < self.CACHE_DURATION:
-                    return json.loads(cache_file.read_text(encoding="utf-8"))
+                    cached = json.loads(cache_file.read_text(encoding="utf-8"))
+                    # A poisoned/older-format cache must clear the SAME shape
+                    # contract as a fresh fetch (via the shared validator) —
+                    # otherwise a payload like [], {"integrations": []}, or one
+                    # missing "schema_version" is returned and later crashes on
+                    # .items()/.get() or silently bypasses the format contract.
+                    # The ValueError is caught just below, which drops the
+                    # corrupt cache and refetches from source.
+                    shape_error = _catalog_shape_error(cached)
+                    if shape_error is not None:
+                        raise ValueError(f"cached catalog has invalid shape: {shape_error}")
+                    return cached
             except (json.JSONDecodeError, ValueError, KeyError, TypeError, AttributeError, OSError, UnicodeError):
                 # Cache is invalid or stale metadata; delete and refetch from source.
                 try:
@@ -170,22 +201,19 @@ class IntegrationCatalog(CatalogStackBase):
                 final_url = resp.geturl()
                 if final_url != entry.url:
                     self._validate_catalog_url(final_url)
-                catalog_data = json.loads(resp.read())
+                catalog_data = json.loads(
+                    read_response_limited(
+                        resp,
+                        max_bytes=MAX_JSON_METADATA_BYTES,
+                        error_type=IntegrationCatalogError,
+                        label=f"catalog from {entry.url}",
+                    ).decode("utf-8")
+                )
 
-            if not isinstance(catalog_data, dict):
+            shape_error = _catalog_shape_error(catalog_data)
+            if shape_error is not None:
                 raise IntegrationCatalogError(
-                    f"Invalid catalog format from {entry.url}: expected a JSON object"
-                )
-            if (
-                "schema_version" not in catalog_data
-                or "integrations" not in catalog_data
-            ):
-                raise IntegrationCatalogError(
-                    f"Invalid catalog format from {entry.url}"
-                )
-            if not isinstance(catalog_data.get("integrations"), dict):
-                raise IntegrationCatalogError(
-                    f"Invalid catalog format from {entry.url}: 'integrations' must be a JSON object"
+                    f"Invalid catalog format from {entry.url}: {shape_error}"
                 )
 
             try:
@@ -208,6 +236,15 @@ class IntegrationCatalog(CatalogStackBase):
         except urllib.error.URLError as exc:
             raise IntegrationCatalogError(
                 f"Failed to fetch catalog from {entry.url}: {exc}"
+            )
+        except UnicodeDecodeError as exc:
+            # A non-UTF-8 response body fails at .decode() before json.loads()
+            # ever runs, so JSONDecodeError below does not cover it (the two are
+            # sibling ValueError subclasses, not parent/child). Without this the
+            # raw UnicodeDecodeError escapes _get_merged_integrations()'s
+            # "warn and skip this catalog" handler and kills the whole command.
+            raise IntegrationCatalogError(
+                f"Catalog from {entry.url} is not valid UTF-8: {exc}"
             )
         except json.JSONDecodeError as exc:
             raise IntegrationCatalogError(
@@ -429,7 +466,8 @@ class IntegrationCatalog(CatalogStackBase):
                     )
                 try:
                     normalized_priority = int(raw_priority)
-                except (TypeError, ValueError):
+                except (TypeError, ValueError, OverflowError):
+                    # OverflowError: int(float("inf")) — a ``priority: .inf``.
                     raise IntegrationValidationError(
                         f"Invalid catalog entry at index {idx} in {config_path}: "
                         f"'priority' must be an integer, got "
@@ -537,7 +575,8 @@ class IntegrationCatalog(CatalogStackBase):
             else:
                 try:
                     priority = int(raw_priority)
-                except (TypeError, ValueError):
+                except (TypeError, ValueError, OverflowError):
+                    # OverflowError: int(float("inf")) — a ``priority: .inf``.
                     priority = yaml_idx + 1
             priority_pairs.append((priority, yaml_idx))
         if not priority_pairs:
@@ -635,16 +674,37 @@ class IntegrationDescriptor:
     @staticmethod
     def _load(path: Path) -> dict:
         try:
-            with open(path, "r", encoding="utf-8") as fh:
-                return yaml.safe_load(fh) or {}
-        except yaml.YAMLError as exc:
-            raise IntegrationDescriptorError(f"Invalid YAML in {path}: {exc}")
+            text = path.read_text(encoding="utf-8")
         except FileNotFoundError:
             raise IntegrationDescriptorError(f"Descriptor not found: {path}")
         except (OSError, UnicodeError) as exc:
             raise IntegrationDescriptorError(
                 f"Unable to read descriptor {path}: {exc}"
             )
+        try:
+            # ``safe_load`` returns None for BOTH an empty document and an
+            # explicit null scalar (``null``, ``~``, ``Null``, ``NULL``), so it
+            # cannot tell them apart on its own. ``compose`` yields no node
+            # only for a genuinely empty document.
+            node = yaml.compose(text)
+            data = yaml.safe_load(text)
+            is_empty_document = node is None or (
+                data is None
+                and isinstance(node, yaml.nodes.ScalarNode)
+                and node.value == ""
+                and node.start_mark.index == node.end_mark.index
+            )
+        except yaml.YAMLError as exc:
+            raise IntegrationDescriptorError(f"Invalid YAML in {path}: {exc}")
+        # Only a genuinely EMPTY document becomes an empty mapping, so its
+        # missing-field errors are reported. Every non-mapping document --
+        # including an explicit ``null``/``~`` and the falsy shapes ``[]``,
+        # ``false``, ``0``, ``''`` that a plain ``or {}`` would mask -- must
+        # reach ``_validate`` unchanged so it reports the wrong descriptor
+        # shape, like the truthy twins (``- a``, ``hello``) already do.
+        if is_empty_document:
+            data = {}
+        return data
 
     # -- Validation -------------------------------------------------------
 
@@ -811,5 +871,8 @@ class IntegrationDescriptor:
 
     def get_hash(self) -> str:
         """SHA-256 hash of the descriptor file."""
+        h = hashlib.sha256()
         with open(self.path, "rb") as fh:
-            return f"sha256:{hashlib.sha256(fh.read()).hexdigest()}"
+            for chunk in iter(lambda: fh.read(8192), b""):
+                h.update(chunk)
+        return f"sha256:{h.hexdigest()}"

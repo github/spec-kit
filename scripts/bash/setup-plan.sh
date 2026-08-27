@@ -8,17 +8,17 @@ ARGS=()
 
 for arg in "$@"; do
     case "$arg" in
-        --json) 
-            JSON_MODE=true 
+        --json)
+            JSON_MODE=true
             ;;
-        --help|-h) 
+        --help|-h)
             echo "Usage: $0 [--json]"
             echo "  --json    Output results in JSON format"
             echo "  --help    Show this help message"
-            exit 0 
+            exit 0
             ;;
-        *) 
-            ARGS+=("$arg") 
+        *)
+            ARGS+=("$arg")
             ;;
     esac
 done
@@ -43,21 +43,23 @@ if [[ -f "$IMPL_PLAN" ]]; then
         echo "Plan already exists at $IMPL_PLAN, skipping template copy"
     fi
 else
-    TEMPLATE=$(resolve_template "plan-template" "$REPO_ROOT") || true
-    if [[ -n "$TEMPLATE" ]] && [[ -f "$TEMPLATE" ]]; then
-        cp "$TEMPLATE" "$IMPL_PLAN"
+    if resolve_template_content "plan-template" "$REPO_ROOT" > "$IMPL_PLAN"; then
         if $JSON_MODE; then
             echo "Copied plan template to $IMPL_PLAN" >&2
         else
             echo "Copied plan template to $IMPL_PLAN"
         fi
     else
+        resolve_status=$?
+        rm -f "$IMPL_PLAN"
+        if [ "$resolve_status" -ne 1 ]; then
+            exit "$resolve_status"
+        fi
         if $JSON_MODE; then
             echo "Warning: Plan template not found" >&2
         else
             echo "Warning: Plan template not found"
         fi
-        # Create a basic plan file if template doesn't exist
         touch "$IMPL_PLAN"
     fi
 fi
@@ -77,8 +79,7 @@ if $JSON_MODE; then
     fi
 else
     echo "FEATURE_SPEC: $FEATURE_SPEC"
-    echo "IMPL_PLAN: $IMPL_PLAN" 
+    echo "IMPL_PLAN: $IMPL_PLAN"
     echo "SPECS_DIR: $FEATURE_DIR"
     echo "BRANCH: $CURRENT_BRANCH"
 fi
-

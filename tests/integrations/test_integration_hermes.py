@@ -30,7 +30,6 @@ class TestHermesIntegration(SkillsIntegrationTests):
     FOLDER = ".hermes/"
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = "~/.hermes/skills"
-    CONTEXT_FILE = "AGENTS.md"
 
     # -- Hermes-specific setup: skills go to ~/.hermes/skills/ -------------
 
@@ -72,23 +71,19 @@ class TestHermesIntegration(SkillsIntegrationTests):
         """Override: Hermes writes to global, not project-local."""
         self.test_setup_writes_to_global_skills_dir(tmp_path, monkeypatch)
 
-    def test_plan_references_correct_context_file(self, tmp_path, monkeypatch):
-        """Plan skill goes to global dir, but we check it still references AGENTS.md."""
+    def test_plan_skill_has_no_context_placeholder(self, tmp_path, monkeypatch):
+        """The core plan skill must not carry a context-file placeholder —
+        agent context files are owned by the opt-in agent-context extension."""
         home = _fake_home(tmp_path)
         monkeypatch.setattr(Path, "home", lambda: home)
 
         i = get_integration(self.KEY)
-        if not i.context_file:
-            return
         m = IntegrationManifest(self.KEY, tmp_path)
         i.setup(tmp_path, m)
         # Find the plan skill in global ~/.hermes/skills/
         plan_file = home / ".hermes" / "skills" / "speckit-plan" / "SKILL.md"
         assert plan_file.exists(), f"Plan skill {plan_file} not created globally"
         content = plan_file.read_text(encoding="utf-8")
-        assert i.context_file in content, (
-            f"Plan skill should reference {i.context_file!r} but it was not found"
-        )
         assert "__CONTEXT_FILE__" not in content, (
             "Plan skill has unprocessed __CONTEXT_FILE__ placeholder"
         )
@@ -358,3 +353,38 @@ class TestHermesInitFlow:
             if "agent-context" not in d.name
         ]
         assert local_skills == [], f"Local skills dir should be empty, got: {local_skills}"
+
+
+class TestHermesBuildExecArgs:
+    """CLI dispatch argv, including the operator extra-args env hook."""
+
+    def test_build_exec_args_default_shape(self):
+        i = get_integration("hermes")
+        assert i.build_exec_args("/speckit-plan hi", output_json=True) == [
+            "hermes", "chat", "-Q", "--json", "-s", "speckit-plan", "-q", "hi",
+        ]
+
+    def test_build_exec_args_honors_extra_args(self, monkeypatch):
+        """SPECKIT_INTEGRATION_HERMES_EXTRA_ARGS is injected before the
+        canonical -m/--json/-s/-q flags (same env hook as codex/opencode/
+        devin; hermes previously skipped _apply_extra_args_env_var entirely).
+        """
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_HERMES_EXTRA_ARGS", "--temperature 0.2"
+        )
+        i = get_integration("hermes")
+        args = i.build_exec_args("/speckit-plan hi", output_json=True)
+        assert args == [
+            "hermes", "chat", "-Q", "--temperature", "0.2",
+            "--json", "-s", "speckit-plan", "-q", "hi",
+        ]
+        # Injected before the canonical flags so it can't displace them.
+        assert args.index("--temperature") < args.index("--json")
+        assert args.index("--temperature") < args.index("-s")
+
+    def test_build_exec_args_honors_executable_override(self, monkeypatch):
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_HERMES_EXECUTABLE", "/custom/hermes"
+        )
+        i = get_integration("hermes")
+        assert i.build_exec_args("/speckit-plan hi")[0] == "/custom/hermes"

@@ -232,6 +232,30 @@ class IntegrationManifest:
             # transition. ``discard`` is a no-op when the key is absent.
             self._recovered_files.discard(normalized)
 
+    def remove(self, rel_path: str | Path) -> bool:
+        """Drop *rel_path* from the tracked file set and any recovered marker.
+
+        Operates purely on the manifest's recorded key; it does NOT touch the
+        file on disk. Returns ``True`` if an entry was present and removed.
+        Used to keep the manifest consistent after a caller deletes a stale
+        managed file that the current install no longer ships.
+
+        Input is normalized through the same lexical pipeline as
+        ``record_existing`` / ``is_recovered``: absolute paths and paths
+        containing ``..`` segments are rejected (return ``False``) — such paths
+        can never be canonical manifest keys, so there is nothing to remove.
+        """
+        rel = Path(rel_path)
+        if rel.is_absolute() or ".." in rel.parts:
+            return False
+        try:
+            abs_path = _validate_rel_path(rel, self.project_root)
+            normalized = abs_path.relative_to(self.project_root).as_posix()
+        except ValueError:
+            return False
+        self._recovered_files.discard(normalized)
+        return self._files.pop(normalized, None) is not None
+
     # -- Querying ---------------------------------------------------------
 
     @property
@@ -285,7 +309,14 @@ class IntegrationManifest:
             if abs_path.is_symlink() or not abs_path.is_file():
                 modified.append(rel)
                 continue
-            if _sha256(abs_path) != expected_hash:
+            try:
+                changed = _sha256(abs_path) != expected_hash
+            except OSError:
+                # Unreadable regular file (e.g. permission denied): treat as
+                # modified, consistent with the symlink / non-regular-file
+                # handling above, rather than letting the OSError escape.
+                changed = True
+            if changed:
                 modified.append(rel)
         return modified
 
@@ -296,12 +327,18 @@ class IntegrationManifest:
         project_root: Path | None = None,
         *,
         force: bool = False,
+        remove_manifest: bool = True,
     ) -> tuple[list[Path], list[Path]]:
         """Remove tracked files whose hash still matches.
 
         Parameters:
-            project_root: Override for the project root.
-            force:        If ``True``, remove files even if modified.
+            project_root:    Override for the project root.
+            force:           If ``True``, remove files even if modified.
+            remove_manifest: If ``True`` (default), also delete this
+                integration's ``{key}.manifest.json``. Set ``False`` for
+                *partial* cleanups (e.g. the upgrade stale-file pass, which
+                builds a throwaway manifest over a subset of files) so the
+                real, freshly-saved manifest for the same key is not destroyed.
 
         Returns:
             ``(removed, skipped)`` — absolute paths.
@@ -334,9 +371,17 @@ class IntegrationManifest:
                     skipped.append(path)
                     continue
             else:
-                if not force and _sha256(path) != expected_hash:
-                    skipped.append(path)
-                    continue
+                if not force:
+                    try:
+                        matches = _sha256(path) == expected_hash
+                    except OSError:
+                        # Unreadable: can't verify it's ours, so preserve it
+                        # (mirrors the path.unlink() OSError guard below).
+                        skipped.append(path)
+                        continue
+                    if not matches:
+                        skipped.append(path)
+                        continue
             try:
                 path.unlink()
             except OSError:
@@ -354,8 +399,20 @@ class IntegrationManifest:
 
         # Remove the manifest file itself
         manifest = root / ".specify" / "integrations" / f"{self.key}.manifest.json"
-        if manifest.exists():
-            manifest.unlink()
+        if remove_manifest and manifest.exists():
+            try:
+                manifest.unlink()
+            except OSError:
+                # An undeletable manifest (read-only file, a directory left at
+                # the path, a Windows lock) must not abort the uninstall after
+                # the tracked files were already removed: the caller would lose
+                # the (removed, skipped) result and never run its post-uninstall
+                # bookkeeping. Report it like any other file we could not
+                # remove, mirroring the path.unlink() guard above. The
+                # empty-parent cleanup below is left unconditional: with the
+                # manifest still on disk its parent is non-empty, so the first
+                # rmdir() raises and breaks immediately.
+                skipped.append(manifest)
             parent = manifest.parent
             while parent != root:
                 try:
@@ -394,8 +451,7 @@ class IntegrationManifest:
             _ensure_safe_manifest_destination(self.project_root, path)
             os.replace(temp_path, path)
         finally:
-            if temp_path.exists():
-                temp_path.unlink()
+            temp_path.unlink(missing_ok=True)
         return path
 
     @classmethod
@@ -414,6 +470,10 @@ class IntegrationManifest:
         path = inst.manifest_path
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
+        except UnicodeDecodeError as exc:
+            raise ValueError(
+                f"Integration manifest at {path} is not valid UTF-8"
+            ) from exc
         except json.JSONDecodeError as exc:
             raise ValueError(
                 f"Integration manifest at {path} contains invalid JSON"

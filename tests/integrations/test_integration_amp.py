@@ -8,4 +8,3 @@ class TestAmpIntegration(MarkdownIntegrationTests):
     FOLDER = ".agents/"
     COMMANDS_SUBDIR = "commands"
     REGISTRAR_DIR = ".agents/commands"
-    CONTEXT_FILE = "AGENTS.md"

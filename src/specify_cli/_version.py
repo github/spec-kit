@@ -4,8 +4,8 @@ Pure helpers for comparing PEP 440 versions and fetching the latest GitHub
 release tag.  The ``self_app`` Typer sub-command group is co-located here so
 all version-related logic lives in one place.
 
-Dependencies: stdlib + packaging + ._console only (no other internal imports
-at module level, keeping this layer thin and circular-import-safe).
+Dependencies: stdlib + packaging + ._console + ._download_security only
+(keeping this layer thin and circular-import-safe).
 """
 from __future__ import annotations
 
@@ -28,7 +28,9 @@ from pathlib import Path
 
 import typer
 from packaging.version import InvalidVersion, Version
+from rich.markup import escape as _escape_markup
 
+from ._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
 from ._console import console
 
 GITHUB_API_LATEST = "https://api.github.com/repos/github/spec-kit/releases/latest"
@@ -120,7 +122,13 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
             timeout=5,
             extra_headers={"Accept": "application/vnd.github+json"},
         ) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
+            payload = json.loads(
+                read_response_limited(
+                    resp,
+                    max_bytes=MAX_JSON_METADATA_BYTES,
+                    label="GitHub latest release",
+                ).decode("utf-8")
+            )
             tag = payload.get("tag_name")
             if not isinstance(tag, str) or not tag:
                 raise ValueError("GitHub API response missing valid tag_name")
@@ -1224,7 +1232,10 @@ def self_upgrade(
     tag: str | None = typer.Option(
         None,
         "--tag",
-        help="Pin the target version (vX.Y.Z[suffix]). Without --tag, the "
+        # Typer renders help through Rich, so escape the literal bracket (\[)
+        # or `[suffix]` is parsed as a style tag and dropped -- `--help` then
+        # advertises only `(vX.Y.Z)`, contradicting docs/upgrade.md and README.
+        help="Pin the target version (vX.Y.Z\\[suffix]). Without --tag, the "
         "latest stable release is resolved via GitHub Releases.",
     ),
 ) -> None:
@@ -1264,7 +1275,14 @@ def self_upgrade(
         try:
             tag = _validate_tag(tag)
         except typer.BadParameter as exc:
-            console.print(str(exc), soft_wrap=True)
+            # Escape at the print site rather than baking `\[` into
+            # _INVALID_TAG_MESSAGE: the message is also raised through
+            # typer.BadParameter, which Click renders without Rich, so the
+            # constant must stay plain text. Unescaped, Rich parses the literal
+            # `[suffix]` as a style tag and drops it, leaving the user with
+            # "expected vMAJOR.MINOR.PATCH" -- implying a bare vX.Y.Z is the only
+            # accepted form when -rc1 / .dev0 / +build.42 are all valid.
+            console.print(_escape_markup(str(exc)), soft_wrap=True)
             raise typer.Exit(1) from exc
 
     plan, failure_reason = _build_upgrade_plan(target_tag_override=tag)

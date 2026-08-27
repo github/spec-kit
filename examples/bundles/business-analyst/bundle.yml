@@ -1,0 +1,33 @@
+schema_version: "1.0"
+
+bundle:
+  id: "business-analyst"
+  name: "Business Analyst"
+  version: "1.0.0"
+  role: "business-analyst"
+  description: "Spec-Driven Development setup for business analysts: requirements elicitation, traceability, and acceptance criteria."
+  author: "spec-kit-examples"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.9.0"
+  tools: []
+  mcp: []
+
+provides:
+  extensions:
+    - id: "agent-context"
+      version: "1.0.0"
+  presets:
+    - id: "requirements-elicitation"
+      version: "1.0.0"
+      priority: 10
+      strategy: "append"
+  steps:
+    - id: "capture-requirements"
+    - id: "trace-acceptance-criteria"
+  workflows:
+    - id: "requirements-to-spec"
+      version: "1.0.0"
+
+tags: ["requirements", "traceability", "analysis"]

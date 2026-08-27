@@ -26,7 +26,8 @@ class GateStep(StepBase):
     later with ``specify workflow resume``.
 
     The user's choice is stored in ``output.choice``.  ``on_reject``
-    controls abort / skip behaviour.
+    controls abort / skip / retry behaviour.  ``verdict_input`` can name a
+    workflow input to use as the choice when resuming non-interactively.
     """
 
     type_key = "gate"
@@ -42,6 +43,82 @@ class GateStep(StepBase):
 
         options = config.get("options", ["approve", "reject"])
         on_reject = config.get("on_reject", "abort")
+        has_verdict_input = "verdict_input" in config
+        verdict_input = config.get("verdict_input")
+
+        # ``validate`` rejects a non-list (or empty) ``options``, and requires
+        # every option to be a string, but the engine does not auto-validate
+        # before ``execute``. An unvalidated run with a scalar/dict/None
+        # ``options`` would otherwise reach ``_prompt`` and crash the whole run
+        # with a raw ``TypeError`` (``enumerate``/``len`` on a non-iterable) or
+        # ``KeyError`` (indexing a dict); a non-string option would crash at the
+        # ``choice.lower()`` reject check with ``AttributeError``. Fail this step
+        # loudly instead — mirroring the switch 'cases' and command 'input'
+        # guards. Checked before the non-TTY short-circuit so the error surfaces
+        # in CI too, rather than PAUSING and crashing later on interactive resume.
+        if (
+            not isinstance(options, list)
+            or not options
+            or not all(isinstance(o, str) for o in options)
+        ):
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Gate step {config.get('id', '?')!r}: 'options' must be a "
+                    f"non-empty list of strings, got {type(options).__name__}."
+                ),
+                output={
+                    "message": message,
+                    "options": options,
+                    "on_reject": on_reject,
+                    "choice": None,
+                },
+            )
+
+        # ``validate`` rejects an ``on_reject`` outside abort/skip/retry, but the
+        # engine does not auto-validate before ``execute``. The reject branch
+        # below handles only "abort" and "retry" and then falls through to its
+        # ``on_reject == "skip"`` case, so on an unvalidated run any other value
+        # makes a REJECTED gate report COMPLETED and the run walks straight past
+        # the review the gate exists to enforce. Reachable by a capitalisation
+        # slip ("Abort"), a guessed verb ("fail", "stop"), a non-string, or the
+        # ``None`` that a bare ``on_reject:`` yields -- note ``config.get(k,
+        # default)`` does NOT substitute the default for an explicit null. Fail
+        # loudly instead, mirroring the ``options``/``verdict_input`` guards here.
+        if on_reject not in ("abort", "skip", "retry"):
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Gate step {config.get('id', '?')!r}: 'on_reject' must be "
+                    f"'abort', 'skip', or 'retry', got {on_reject!r}."
+                ),
+                output={
+                    "message": message,
+                    "options": options,
+                    "on_reject": on_reject,
+                    "choice": None,
+                },
+            )
+
+        if has_verdict_input and (
+            not isinstance(verdict_input, str) or not verdict_input
+        ):
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Gate step {config.get('id', '?')!r}: 'verdict_input' must be "
+                    "a non-empty string."
+                ),
+            )
+
+        if has_verdict_input and context.inside_fan_out:
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Gate step {config.get('id', '?')!r}: 'verdict_input' is "
+                    "not supported inside fan-out templates."
+                ),
+            )
 
         show_file = config.get("show_file")
         if isinstance(show_file, str) and "{{" in show_file:
@@ -61,19 +138,58 @@ class GateStep(StepBase):
             "choice": None,
         }
 
-        # Non-interactive: pause for later resume (the file is not read here)
-        if not sys.stdin.isatty():
-            return StepResult(status=StepStatus.PAUSED, output=output)
+        choice: str | None = None
+        bound_verdict_input: str | None = None
+        if verdict_input is not None:
+            value = context.inputs.get(verdict_input)
+            if value is not None and value != "":
+                if not isinstance(value, str):
+                    return StepResult(
+                        status=StepStatus.FAILED,
+                        output=output,
+                        error=(
+                            f"Gate step {config.get('id', '?')!r}: verdict input "
+                            f"{verdict_input!r} must be a string, got "
+                            f"{type(value).__name__}."
+                        ),
+                    )
+                choice = next(
+                    (option for option in options if option.lower() == value.lower()),
+                    None,
+                )
+                if choice is None:
+                    return StepResult(
+                        status=StepStatus.FAILED,
+                        output=output,
+                        error=(
+                            f"Gate step {config.get('id', '?')!r}: verdict input "
+                            f"{verdict_input!r} value {value!r} does not match any "
+                            "configured option."
+                        ),
+                    )
+                bound_verdict_input = verdict_input
 
-        # Interactive: prompt the user. ``show_file`` contents are folded
-        # into the displayed message so the operator can review the
-        # referenced material before choosing. Composing the prompt text
-        # here keeps ``_prompt`` to its ``(message, options)`` contract, so
-        # adding review material never widens the interactive seam.
-        choice = self._prompt(self._compose_prompt(message, show_file), options)
+        if choice is None:
+            # Non-interactive: pause for later resume (the file is not read here)
+            if not sys.stdin.isatty():
+                return StepResult(status=StepStatus.PAUSED, output=output)
+
+            # Interactive: prompt the user. ``show_file`` contents are folded
+            # into the displayed message so the operator can review the
+            # referenced material before choosing. Composing the prompt text
+            # here keeps ``_prompt`` to its ``(message, options)`` contract, so
+            # adding review material never widens the interactive seam.
+            choice = self._prompt(self._compose_prompt(message, show_file), options)
         output["choice"] = choice
 
-        if choice in ("reject", "abort"):
+        # Match rejection case-insensitively. ``_prompt`` echoes the option's
+        # original casing, and ``validate`` accepts a reject option
+        # case-insensitively (``o.lower() in {"reject", "abort"}``), so a gate
+        # authored as ``options: [Approve, Reject]`` passes validation. Comparing
+        # ``choice`` case-sensitively here would then treat a ``Reject`` pick as
+        # approval and silently skip the abort — the reject path must agree with
+        # the check that let the option through.
+        if choice.lower() in ("reject", "abort"):
             if on_reject == "abort":
                 output["aborted"] = True
                 return StepResult(
@@ -83,6 +199,8 @@ class GateStep(StepBase):
                 )
             if on_reject == "retry":
                 # Pause so the next resume re-executes this gate
+                if bound_verdict_input is not None:
+                    context.inputs[bound_verdict_input] = ""
                 return StepResult(status=StepStatus.PAUSED, output=output)
             # on_reject == "skip" → completed, downstream steps decide
             return StepResult(status=StepStatus.COMPLETED, output=output)
@@ -132,7 +250,11 @@ class GateStep(StepBase):
             except (EOFError, KeyboardInterrupt):
                 print()
                 return options[-1]  # default to last (usually reject)
-            if raw.isdigit() and 1 <= int(raw) <= len(options):
+            # isdecimal() (not isdigit()): int() accepts exactly the decimal-digit
+            # set, whereas isdigit() also returns True for superscripts/subscripts
+            # (e.g. "²") that int() then rejects with ValueError — crashing
+            # this interactive loop.
+            if raw.isdecimal() and 1 <= int(raw) <= len(options):
                 return options[int(raw) - 1]
             # Also accept the option name directly
             if raw.lower() in [o.lower() for o in options]:
@@ -194,7 +316,21 @@ class GateStep(StepBase):
                 f"Gate step {config.get('id', '?')!r}: 'on_reject' must be "
                 f"'abort', 'skip', or 'retry'."
             )
-        if on_reject in ("abort", "retry") and isinstance(options, list):
+        if "verdict_input" in config and (
+            not isinstance(config["verdict_input"], str) or not config["verdict_input"]
+        ):
+            errors.append(
+                f"Gate step {config.get('id', '?')!r}: 'verdict_input' must be "
+                "a non-empty string."
+            )
+        # Only inspect option text when every option is a string; otherwise the
+        # `o.lower()` below would raise AttributeError on a non-string option
+        # (already reported above) and break validate_workflow's never-raise contract.
+        if (
+            on_reject in ("abort", "retry")
+            and isinstance(options, list)
+            and all(isinstance(o, str) for o in options)
+        ):
             reject_choices = {"reject", "abort"}
             if not any(o.lower() in reject_choices for o in options):
                 errors.append(

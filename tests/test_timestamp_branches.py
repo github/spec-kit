@@ -240,6 +240,17 @@ class TestSequentialBranch:
         assert branch is not None
         assert re.match(r"^\d{3,}-new-feat$", branch), f"unexpected branch: {branch}"
 
+    def test_branch_name_short_word_case_sensitivity(self, git_repo: Path):
+        """A short word is dropped from the derived branch name unless it appears
+        as an acronym in UPPERCASE in the description. The PowerShell twin must use
+        case-sensitive -cmatch to produce the same result."""
+        r1 = run_script(git_repo, "--json", "--dry-run", "Add go support")
+        assert r1.returncode == 0, r1.stderr
+        assert json.loads(r1.stdout)["BRANCH_NAME"] == "001-support"
+        r2 = run_script(git_repo, "--json", "--dry-run", "Use GO now")
+        assert r2.returncode == 0, r2.stderr
+        assert json.loads(r2.stdout)["BRANCH_NAME"] == "001-use-go-now"
+
     def test_sequential_ignores_timestamp_dirs(self, git_repo: Path):
         """Sequential numbering skips timestamp dirs when computing next number."""
         (git_repo / "specs" / "002-first-feat").mkdir(parents=True)
@@ -264,6 +275,63 @@ class TestSequentialBranch:
                 branch = line.split(":", 1)[1].strip()
         assert branch == "1001-next-feat", f"expected 1001-next-feat, got: {branch}"
 
+    def test_explicit_number_zero_is_honored(self, git_repo: Path):
+        """An explicit --number 0 is honored literally (FEATURE_NUM 000), not treated
+        as auto-detect, even when higher-numbered specs already exist. This pins the
+        canonical bash behavior the PowerShell twin must mirror."""
+        (git_repo / "specs" / "003-existing").mkdir(parents=True)
+        r = run_script(
+            git_repo, "--json", "--dry-run", "--number", "0", "--short-name", "zero", "Zero feature",
+        )
+        assert r.returncode == 0, r.stderr
+        data = json.loads(r.stdout)
+        assert data["FEATURE_NUM"] == "000"
+        assert data["BRANCH_NAME"] == "000-zero"
+
+    def test_explicit_conflicting_number_uses_next_spec_prefix(self, git_repo: Path):
+        """An explicit number is advanced when its spec prefix already exists."""
+        (git_repo / "specs" / "001-existing").mkdir(parents=True)
+        (git_repo / "specs" / "1000-latest").mkdir()
+
+        result = run_script(
+            git_repo,
+            "--json",
+            "--dry-run",
+            "--number",
+            "1",
+            "--short-name",
+            "test",
+            "Test feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["FEATURE_NUM"] == "1001"
+        assert data["BRANCH_NAME"] == "1001-test"
+        assert "--number 001 conflicts with an existing spec directory" in result.stderr
+        assert "using 1001 instead" in result.stderr
+
+    def test_explicit_number_ignores_matching_file(self, git_repo: Path):
+        """A matching file does not count as a conflicting spec directory."""
+        specs_dir = git_repo / "specs"
+        specs_dir.mkdir()
+        (specs_dir / "001-placeholder").write_text("not a directory", encoding="utf-8")
+
+        result = run_script(
+            git_repo,
+            "--json",
+            "--dry-run",
+            "--number",
+            "1",
+            "--short-name",
+            "test",
+            "Test feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["FEATURE_NUM"] == "001"
+        assert "conflicts with an existing spec directory" not in result.stderr
+
 
 class TestSequentialBranchPowerShell:
     def test_powershell_scanner_uses_long_tryparse_for_large_prefixes(self):
@@ -271,6 +339,107 @@ class TestSequentialBranchPowerShell:
         content = CREATE_FEATURE_PS.read_text(encoding="utf-8")
         assert "[long]::TryParse($matches[1], [ref]$num)" in content
         assert "$num = [int]$matches[1]" not in content
+
+    @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
+    def test_branch_name_short_word_case_sensitivity(self, ps_git_repo: Path):
+        """Core create-new-feature.ps1 must drop a short word unless it appears as
+        an acronym in UPPERCASE (case-sensitive -cmatch), matching the bash twin."""
+        script = ps_git_repo / "scripts" / "powershell" / "create-new-feature.ps1"
+
+        def _run(desc: str) -> subprocess.CompletedProcess:
+            return subprocess.run(
+                ["pwsh", "-NoProfile", "-File", str(script), "-Json", "-DryRun", desc],
+                cwd=ps_git_repo, capture_output=True, text=True,
+            )
+
+        r1 = _run("Add go support")
+        assert r1.returncode == 0, r1.stderr
+        assert json.loads(r1.stdout)["BRANCH_NAME"] == "001-support"
+        r2 = _run("Use GO now")
+        assert r2.returncode == 0, r2.stderr
+        assert json.loads(r2.stdout)["BRANCH_NAME"] == "001-use-go-now"
+
+    @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
+    def test_explicit_number_zero_is_honored_matching_bash(self, ps_git_repo: Path):
+        """An explicit -Number 0 must be honored (FEATURE_NUM 000) like the bash twin,
+        even when higher-numbered specs exist. Before the fix, PowerShell could not
+        distinguish -Number 0 from the default and silently auto-detected (e.g. 004)."""
+        script = ps_git_repo / "scripts" / "powershell" / "create-new-feature.ps1"
+        (ps_git_repo / "specs" / "003-existing").mkdir(parents=True)
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-File", str(script),
+             "-Json", "-DryRun", "-Number", "0", "-ShortName", "zero", "Zero feature"],
+            cwd=ps_git_repo, capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["FEATURE_NUM"] == "000"
+        assert data["BRANCH_NAME"] == "000-zero"
+
+    @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
+    def test_explicit_conflicting_number_uses_next_spec_prefix(
+        self, ps_git_repo: Path
+    ):
+        """PowerShell advances an explicit number when its spec prefix exists."""
+        script = ps_git_repo / "scripts" / "powershell" / "create-new-feature.ps1"
+        (ps_git_repo / "specs" / "001-existing").mkdir(parents=True)
+        (ps_git_repo / "specs" / "1000-latest").mkdir()
+
+        result = subprocess.run(
+            [
+                "pwsh", "-NoProfile", "-File", str(script), "-Json", "-DryRun",
+                "-Number", "1", "-ShortName", "test", "Test feature",
+            ],
+            cwd=ps_git_repo, capture_output=True, text=True,
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["FEATURE_NUM"] == "1001"
+        assert data["BRANCH_NAME"] == "1001-test"
+        assert "-Number 001 conflicts with an existing spec directory" in result.stderr
+        assert "using 1001 instead" in result.stderr
+
+    @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
+    def test_explicit_number_ignores_matching_file(self, ps_git_repo: Path):
+        """PowerShell ignores files that resemble numbered spec directories."""
+        script = ps_git_repo / "scripts" / "powershell" / "create-new-feature.ps1"
+        specs_dir = ps_git_repo / "specs"
+        specs_dir.mkdir()
+        (specs_dir / "001-placeholder").write_text("not a directory", encoding="utf-8")
+
+        result = subprocess.run(
+            [
+                "pwsh", "-NoProfile", "-File", str(script), "-Json", "-DryRun",
+                "-Number", "1", "-ShortName", "test", "Test feature",
+            ],
+            cwd=ps_git_repo, capture_output=True, text=True,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["FEATURE_NUM"] == "001"
+        assert "conflicts with an existing spec directory" not in result.stderr
+
+    @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
+    def test_missing_spec_template_warns_matching_bash(self, ps_git_repo: Path):
+        """When no spec template can be resolved, create-new-feature.ps1 must warn on
+        stderr (and still create an empty spec file), matching the bash twin's
+        'Warning: Spec template not found; created empty spec file'. Before the fix
+        PowerShell created the empty file silently."""
+        # Remove the template the fixture installs so resolution finds nothing.
+        (ps_git_repo / ".specify" / "templates" / "spec-template.md").unlink()
+        script = ps_git_repo / "scripts" / "powershell" / "create-new-feature.ps1"
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-File", str(script),
+             "-Json", "-ShortName", "no-tmpl", "No template feature"],
+            cwd=ps_git_repo, capture_output=True, text=True, encoding="utf-8",
+        )
+        assert result.returncode == 0, result.stderr
+        assert "Spec template not found" in result.stderr
+        # stdout stays parseable JSON and the empty spec file is still created.
+        data = json.loads(result.stdout)
+        spec_file = Path(data["SPEC_FILE"])
+        assert spec_file.is_file()
 
 
 # ── check_feature_branch Tests ───────────────────────────────────────────────
@@ -450,14 +619,15 @@ class TestAllowExistingBranch:
         assert feature_dir.is_dir()
         assert (feature_dir / "spec.md").exists()
 
-    def test_without_flag_still_errors(self, git_repo: Path):
-        """T009: Existing feature directories still fail without the flag."""
+    def test_without_flag_auto_corrects_existing_prefix(self, git_repo: Path):
+        """T009: Existing prefix advances when exact reuse is not allowed."""
         (git_repo / "specs" / "007-no-flag").mkdir(parents=True)
         result = run_script(
             git_repo, "--short-name", "no-flag", "--number", "7", "No flag feature",
         )
-        assert result.returncode != 0, "should fail without --allow-existing-branch"
-        assert "already exists" in result.stderr
+        assert result.returncode == 0, result.stderr
+        assert (git_repo / "specs" / "008-no-flag").is_dir()
+        assert "using 008 instead" in result.stderr
 
     def test_allow_existing_no_overwrite_spec(self, git_repo: Path):
         """T010: Pre-create spec.md with content, verify it is preserved."""
@@ -516,6 +686,26 @@ class TestAllowExistingBranchPowerShell:
         contents = CREATE_FEATURE_PS.read_text(encoding="utf-8")
         assert "Feature directory '$featureDir' already exists" in contents
         assert "-not $AllowExistingBranch" in contents
+
+    @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
+    def test_powershell_reuses_exact_feature_dir(self, ps_git_repo: Path):
+        """PowerShell exact-directory reuse bypasses prefix auto-correction."""
+        script = ps_git_repo / "scripts" / "powershell" / "create-new-feature.ps1"
+        feature_dir = ps_git_repo / "specs" / "004-pre-exist"
+        feature_dir.mkdir(parents=True)
+
+        result = subprocess.run(
+            [
+                "pwsh", "-NoProfile", "-File", str(script), "-Json",
+                "-AllowExistingBranch", "-Number", "4", "-ShortName",
+                "pre-exist", "Pre-existing feature",
+            ],
+            cwd=ps_git_repo, capture_output=True, text=True,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["BRANCH_NAME"] == "004-pre-exist"
+        assert (feature_dir / "spec.md").is_file()
 
     @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
     @pytest.mark.skipif(
@@ -869,6 +1059,52 @@ class TestPowerShellDryRun:
         assert "DRY_RUN" not in data, f"DRY_RUN should not be in normal JSON: {data}"
 
 
+# ── Short-Word / Acronym Branch-Name Tests ──────────────────────────────────
+
+
+def _branch_from_output(stdout: str) -> str | None:
+    for line in stdout.splitlines():
+        if line.startswith("BRANCH_NAME:"):
+            return line.split(":", 1)[1].strip()
+    return None
+
+
+SHORT_WORD_CASES = [
+    # description, expected branch — "go" (lowercase short word) is dropped,
+    # "AI" (uppercase short word / acronym) is kept, "now" (>=3 chars) is kept.
+    ("go AI now", "001-ai-now"),
+    # A short word that is lowercase everywhere is dropped entirely.
+    ("go to the pub", "001-pub"),
+]
+
+
+@requires_bash
+class TestShortWordRetentionBash:
+    """A short word is kept only when it appears in uppercase (an acronym)."""
+
+    @pytest.mark.parametrize("description,expected", SHORT_WORD_CASES)
+    def test_short_word_retention(self, git_repo: Path, description: str, expected: str):
+        result = run_script(git_repo, "--dry-run", description)
+        assert result.returncode == 0, result.stderr
+        assert _branch_from_output(result.stdout) == expected
+
+
+@pytest.mark.skipif(not _has_pwsh(), reason="pwsh not available")
+class TestShortWordRetentionPowerShell:
+    """PowerShell must match bash: a short word is kept only when uppercase.
+
+    Regression guard for the `-match` (case-insensitive) vs `-cmatch`
+    (case-sensitive) divergence — with `-match`, every short non-stop word
+    leaked into the branch name even when it was lowercase.
+    """
+
+    @pytest.mark.parametrize("description,expected", SHORT_WORD_CASES)
+    def test_short_word_retention(self, ps_git_repo: Path, description: str, expected: str):
+        result = run_ps_script(ps_git_repo, "-DryRun", description)
+        assert result.returncode == 0, result.stderr
+        assert _branch_from_output(result.stdout) == expected
+
+
 # ── GIT_BRANCH_NAME Override Tests ──────────────────────────────────────────
 
 
@@ -1194,4 +1430,3 @@ class TestDescriptionQuoting:
         """Plain description without special characters continues to work."""
         result = run_script(git_repo, "--dry-run", "--short-name", "feat", "Add login feature")
         assert result.returncode == 0, result.stderr
-        

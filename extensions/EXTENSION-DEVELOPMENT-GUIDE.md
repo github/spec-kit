@@ -177,9 +177,16 @@ Compatibility requirements.
 
 What the extension provides.
 
-**Optional sub-fields**:
+**Optional sub-fields:**
 
-- `commands`: Array of command objects (at least one command or hook is required)
+- `commands`: Array of command objects
+- `templates`: Array of template objects
+- `scripts`: Array of script objects
+
+`hooks` and `events` are separate top-level manifest fields (siblings of
+`provides`, not nested under it — see [`hooks`](#hooks) below). At least one
+of `provides.commands`, `provides.templates`, `provides.scripts`, `hooks`, or
+`events` is required.
 
 **Command object**:
 
@@ -187,6 +194,21 @@ What the extension provides.
 - `file`: Path to command file (relative to extension root)
 - `description`: Command description (optional)
 - `aliases`: Alternative command names (optional, array; each must match `speckit.{ext-id}.{command}`)
+
+**Template object**:
+
+- `name`: Template name (lowercase, alphanumeric, hyphens — e.g. `myext-template`)
+- `file`: Path to template file (relative to extension root)
+- `description`: Template description (optional)
+
+**Script object**:
+
+- `name`: Script name (lowercase, alphanumeric, hyphens — e.g. `myext-collect`)
+- `file`: Path to script file (relative to extension root)
+- `description`: Script description (optional)
+- `runtimes`: Runtimes the script supports (optional, array; subset of `bash`, `powershell`, `python` — informational only, not used to select or invoke the script)
+
+Extension-provided templates and scripts always resolve as `replace`; a manifest that includes a `strategy` key on one of these entries is rejected with a `ValidationError`. Composable strategies (`wrap`/`prepend`/`append`) are preset-only.
 
 ### Optional Fields
 
@@ -252,6 +274,7 @@ Use standard Markdown with special placeholders:
 
 - `$ARGUMENTS`: User-provided arguments
 - `{SCRIPT}`: Replaced with script path during registration
+- `__SPECKIT_COMMAND_<NAME>__`: Replaced with the invocation of another command, rendered using the active integration's separator (see [Referencing other commands](#referencing-other-commands))
 
 **Example**:
 
@@ -266,6 +289,40 @@ args="$ARGUMENTS"
 echo "Running with args: $args"
 ```
 ````
+
+### Referencing other commands
+
+A command body is a *template* that Spec Kit renders once per agent. Different agents invoke commands with different surface syntax — for example `/speckit.plan` (dot separator) or `/speckit-plan` (hyphen separator). Some agents also use different prefixes in skills mode (e.g. Kimi `/skill:speckit-plan`, Codex/ZCode `$speckit-plan`). So when you reference a sibling command from a body, **do not hard-code a literal invocation** like `/speckit.my-ext.prepare`. A literal is correct for exactly one agent and breaks on the rest.
+
+Instead use the agent-neutral token `__SPECKIT_COMMAND_<NAME>__`. Spec Kit resolves it to a `/speckit<separator>...` invocation using the active integration's `invoke_separator` (and integrations may post-process that further in skills output).
+
+Encode the command name in upper case, dropping the `speckit.` prefix and turning each dotted segment separator into an underscore:
+
+| Command file | Token |
+| --- | --- |
+| `speckit.plan.md` | `__SPECKIT_COMMAND_PLAN__` |
+| `speckit.bug.fix.md` | `__SPECKIT_COMMAND_BUG_FIX__` |
+| `speckit.git.commit.md` | `__SPECKIT_COMMAND_GIT_COMMIT__` |
+
+The resolver maps each underscore back to the active agent's separator, so use tokens to reference commands whose name segments are single words. (Command names are dotted segments like `git.commit`; the token scheme rebuilds those dots and does not carry hyphens within a segment.)
+
+**Example** — a command body that points the user at the next step:
+
+```markdown
+Once the assessment exists, the next step is `__SPECKIT_COMMAND_BUG_FIX__ slug=<slug>`.
+```
+
+This renders as `/speckit.bug.fix slug=<slug>` for a slash-based agent, `/speckit-bug-fix slug=<slug>` for a skills-based agent, and so on — the author writes it once and it stays portable. The first-party `bug` and `git` extensions use this token exclusively; see `extensions/bug/commands/` for working examples.
+
+> **Current limitation — skills mode.** Token resolution runs in the
+> command-rendering path (`CommandRegistrar`), so it applies when an extension
+> installs *command files*. It does **not** yet run when an extension is
+> registered as *skills* for a skills-based agent: `_register_extension_skills`
+> resolves placeholders and post-processes content but never calls
+> `resolve_command_refs`, so a `__SPECKIT_COMMAND_<NAME>__` token reaches
+> agents such as Codex, ZCode, and Kimi verbatim in that mode. Until that
+> rendering step lands, prefer the token for command-file extensions and avoid
+> relying on it inside skill bodies destined for skills-based agents.
 
 ### Script Path Rewriting
 
@@ -687,7 +744,7 @@ hooks:
 
 **Error**: `Extension requires spec-kit >=0.2.0`
 
-- **Fix**: Update spec-kit with `uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git`. The bare `specify-cli` package on PyPI is a different, unrelated project — installing it without `--from git+...` will give you a stub CLI that does not include `extension`, `preset`, or other spec-kit commands.
+- **Fix**: Upgrade Spec Kit using the [Upgrade Guide](../docs/upgrade.md). `uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git` remains available as a source-install fallback. If you installed from PyPI and want to stay on that route, follow the [PyPI upgrade guidance](../docs/install/pypi.md#upgrade).
 
 **Error**: `Command file not found`
 

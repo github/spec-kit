@@ -8,4 +8,3 @@ class TestQwenIntegration(MarkdownIntegrationTests):
     FOLDER = ".qwen/"
     COMMANDS_SUBDIR = "commands"
     REGISTRAR_DIR = ".qwen/commands"
-    CONTEXT_FILE = "QWEN.md"

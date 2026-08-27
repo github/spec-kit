@@ -8,4 +8,3 @@ class TestAuggieIntegration(MarkdownIntegrationTests):
     FOLDER = ".augment/"
     COMMANDS_SUBDIR = "commands"
     REGISTRAR_DIR = ".augment/commands"
-    CONTEXT_FILE = ".augment/rules/specify-rules.md"

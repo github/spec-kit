@@ -11,8 +11,8 @@ import json
 import os
 import stat
 from dataclasses import dataclass
-from fnmatch import fnmatch
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 
@@ -47,10 +47,34 @@ def _is_valid_host_pattern(pattern: str) -> bool:
     * ``*.example.com``         — leading ``*.`` wildcard; matches subdomains
       such as ``myorg.example.com`` but not ``example.com`` itself
     """
+    if any(char in pattern for char in "?[]"):
+        return False
     if "*" not in pattern:
         return True  # exact hostname — already validated as non-empty
     # Only *.suffix is allowed; no other wildcard positions
-    return pattern.startswith("*.") and "*" not in pattern[2:]
+    return pattern.startswith("*.") and len(pattern) > 2 and "*" not in pattern[2:]
+
+
+def _host_matches_pattern(hostname: str, pattern: str) -> bool:
+    """Match a hostname against an exact host or leading ``*.`` wildcard."""
+    hostname = hostname.lower()
+    pattern = pattern.lower()
+    if pattern.startswith("*.") and _is_valid_host_pattern(pattern):
+        return hostname.endswith(pattern[1:])
+    return hostname == pattern
+
+
+def _norm(value: Any) -> Any:
+    """Strip surrounding whitespace from a whitespace-insignificant string
+    config reference (env-var names, tenant/client ids) before it is stored.
+
+    These fields are validated on their ``.strip()``ed form, so an accidentally
+    padded value passes validation but then silently breaks the verbatim
+    ``os.environ.get(...)`` / URL lookups downstream. Normalizing at store time
+    mirrors how ``hosts`` is already handled (``h.strip().lower()``). Non-string
+    values (e.g. ``None``) pass through unchanged.
+    """
+    return value.strip() if isinstance(value, str) else value
 
 
 def load_auth_config(
@@ -182,10 +206,10 @@ def load_auth_config(
                 provider=provider,
                 auth=auth,
                 token=token,
-                token_env=token_env,
-                tenant_id=entry_raw.get("tenant_id"),
-                client_id=entry_raw.get("client_id"),
-                client_secret_env=entry_raw.get("client_secret_env"),
+                token_env=_norm(token_env),
+                tenant_id=_norm(entry_raw.get("tenant_id")),
+                client_id=_norm(entry_raw.get("client_id")),
+                client_secret_env=_norm(entry_raw.get("client_secret_env")),
             )
         )
 
@@ -196,14 +220,19 @@ def find_entries_for_url(
     url: str, entries: list[AuthConfigEntry]
 ) -> list[AuthConfigEntry]:
     """Return entries whose ``hosts`` match the hostname of *url*."""
-    hostname = (urlparse(url).hostname or "").lower()
+    # A malformed authority (e.g. an unterminated IPv6 bracket "https://[::1")
+    # makes urlparse/hostname raise ValueError. Treat that the same as a
+    # host-less URL: no entry can match, so return no matches rather than
+    # leaking a raw ValueError out of the shared HTTP client (build_request /
+    # open_url call this before any URL validation).
+    try:
+        hostname = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        return []
     if not hostname:
         return []
     return [
         e
         for e in entries
-        if any(
-            pattern == hostname or fnmatch(hostname, pattern)
-            for pattern in e.hosts
-        )
+        if any(_host_matches_pattern(hostname, pattern) for pattern in e.hosts)
     ]

@@ -268,9 +268,22 @@ When releasing a new version:
 
 ### Shell Steps
 
+- **Shell runs with the user's privileges** — a `shell` step executes a local command directly; there is no capability sandbox. `requires` is an advisory pre-condition block (recognised keys: `speckit_version`, `integrations`), **not** a runtime permission gate — there is no `requires.permissions`. Gate sensitive commands explicitly with a `gate` step.
 - **Avoid destructive commands** — don't delete files or directories without explicit confirmation via a gate
 - **Quote variables** — use proper quoting in shell commands to handle spaces
 - **Check exit codes** — shell step failures stop the workflow; make sure commands are robust
+
+#### Security: shell steps execute arbitrary code
+
+Workflow `shell` steps execute their `run` field through `/bin/sh` (POSIX) or the platform shell. There is no sandbox between the step and the user's machine: a malicious or buggy `run` block can read environment variables, modify files outside the project, exfiltrate data, or escalate privileges.
+
+Catalog-listed workflows are reviewed at submission time (see [Verification Process](#verification-process)), but you should still treat every install as code-execution from an untrusted source until you have read the `workflow.yml`:
+
+- **Before installing a workflow**, fetch the raw YAML and audit every `shell` step's `run` field directly. `specify workflow info <name>` only shows metadata (name, version, inputs, step IDs/types) — not the shell content that would actually execute.
+- **Constrain interpolated values, don't just quote them** in `run` blocks: expressions are spliced in as raw text with no automatic escaping, and there is no shell-escaping filter, so quoting is not a security boundary. Restrict `{{ inputs.something }}` substitutions to a fixed set with `enum`/an allowlist so a malicious input can't inject shell syntax; treat quoting only as correctness handling for already-constrained values.
+- **Treat prior-step output as untrusted too** — `{{ steps.*.output.* }}` from a `prompt` step is AI-generated text that upstream content can influence. Don't interpolate agent output into a `run` field at all when you can't constrain it; branch on it with `if`/`switch` or act on it in a non-shell step instead.
+- **Limit privilege**: shell steps inherit the user's environment. Workflows that need elevated access (sudo, secrets, GitHub tokens) should call them out explicitly in the README so reviewers can spot the requirement.
+- **Authors**: if your workflow has shell steps that look risky out of context (deletions, network calls, credential reads), document the rationale in your README. Maintainers will reject submissions whose shell steps can't be justified at review time.
 
 ### Integration Flexibility
 

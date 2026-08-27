@@ -15,19 +15,38 @@ from tests.conftest import strip_ansi
 runner = CliRunner()
 
 
-def _init_project(tmp_path, integration="copilot"):
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["init", "--help"],
+        ["integration", "install", "--help"],
+        ["integration", "switch", "--help"],
+        ["integration", "upgrade", "--help"],
+    ],
+)
+def test_script_help_includes_python_variant(args):
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 0
+    assert "sh, ps, or py" in " ".join(strip_ansi(result.output).split())
+
+
+def _init_project(tmp_path, integration="copilot", integration_options=None):
     """Helper: init a spec-kit project with the given integration."""
     project = tmp_path / "proj"
     project.mkdir()
+    args = [
+        "init", "--here",
+        "--integration", integration,
+        "--script", "sh",
+        "--ignore-agent-tools",
+    ]
+    if integration_options:
+        args += ["--integration-options", integration_options]
     old_cwd = os.getcwd()
     try:
         os.chdir(project)
-        result = runner.invoke(app, [
-            "init", "--here",
-            "--integration", integration,
-            "--script", "sh",
-            "--ignore-agent-tools",
-        ], catch_exceptions=False)
+        result = runner.invoke(app, args, catch_exceptions=False)
     finally:
         os.chdir(old_cwd)
     assert result.exit_code == 0, f"init failed: {result.output}"
@@ -48,6 +67,26 @@ def _write_invalid_manifest(project, key):
     manifest = project / ".specify" / "integrations" / f"{key}.manifest.json"
     manifest.write_bytes(b"\xff\xfe\x00")
     return manifest
+
+
+def _move_kilocode_install_to_legacy_layout(project):
+    """Simulate a pre-.kilo Kilo install tracked under .kilocode/workflows."""
+    canonical = project / ".kilo" / "commands"
+    legacy = project / ".kilocode" / "workflows"
+    assert canonical.is_dir(), "init should have created .kilo/commands/"
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    canonical.rename(legacy)
+    assert legacy.is_dir()
+    assert not canonical.exists()
+
+    manifest_path = project / ".specify" / "integrations" / "kilocode.manifest.json"
+    manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest_data["files"] = {
+        path.replace(".kilo/commands/", ".kilocode/workflows/"): info
+        for path, info in manifest_data.get("files", {}).items()
+    }
+    manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+    return canonical, legacy
 
 
 def _copy_project_template(tmp_path, template):
@@ -94,7 +133,7 @@ class TestIntegrationList:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code != 0
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_list_shows_installed(self, tmp_path):
         project = _init_project(tmp_path, "copilot")
@@ -120,6 +159,7 @@ class TestIntegrationList:
         # Should show multiple integrations
         assert "claude" in result.output
         assert "gemini" in result.output
+        assert "zed" in result.output
 
     def test_list_shows_multi_install_safe_status(self, tmp_path):
         project = _init_project(tmp_path, "claude")
@@ -163,7 +203,7 @@ class TestIntegrationStatus:
         monkeypatch.chdir(tmp_path)
         result = runner.invoke(app, ["integration", "status"])
         assert result.exit_code != 0
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_status_reports_healthy_project(self, copilot_project):
         result = _run_in_project(copilot_project, ["integration", "status"])
@@ -984,7 +1024,7 @@ class TestIntegrationInstall:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code != 0
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_install_unknown_integration(self, tmp_path):
         project = _init_project(tmp_path)
@@ -1236,6 +1276,344 @@ class TestIntegrationInstall:
         assert "/speckit-specify" in script_content
         assert "/speckit.specify" not in script_content
 
+    def test_install_dollar_skill_into_bare_project_gets_native_shared_refs(
+        self, tmp_path
+    ):
+        """A dollar-style integration supplies its prefix without a default."""
+        project = tmp_path / "bare-codex"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        result = _run_in_project(
+            project, ["integration", "install", "codex", "--script", "sh"]
+        )
+
+        assert result.exit_code == 0, result.output
+        plan = project / ".specify" / "templates" / "plan-template.md"
+        plan_content = plan.read_text(encoding="utf-8")
+        assert "$speckit-plan" in plan_content
+        assert "/speckit-plan" not in plan_content
+
+    def test_install_defers_extension_commands_until_use(self, tmp_path):
+        """Installing a second integration does not register enabled extensions.
+
+        Maintainer-requested behavior for #2886: extension command back-fill is
+        limited to ``integration use`` / ``switch`` / ``upgrade``. Plain
+        ``install`` only adds the integration; selecting it with ``use`` then
+        registers the enabled extensions for that agent.
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "claude" in registered
+        assert "codex" not in registered, "precondition: codex not yet installed"
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # Install alone does not back-fill the git extension for the secondary
+        # agent.
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "claude" in registered, "existing agent registration preserved"
+        assert "codex" not in registered
+        assert not (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
+        result = _run_in_project(project, ["integration", "use", "codex"])
+        assert result.exit_code == 0, result.output
+
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "codex" in registered, "use should register extension commands (#2886)"
+        assert (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
+    def test_install_does_not_register_disabled_extensions(self, tmp_path):
+        """A disabled extension must not be registered for a newly installed agent."""
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        result = _run_in_project(project, ["extension", "disable", "git"])
+        assert result.exit_code == 0, result.output
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        git_meta = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]
+        assert git_meta["enabled"] is False
+        assert "codex" not in git_meta["registered_commands"]
+        assert not (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
+    def test_install_skills_mode_secondary_agent_defers_extension_artifacts(self, tmp_path):
+        """A non-active skills-mode agent gets extension artifacts only on use.
+
+        Plain ``install`` has no extension side effects. Once the secondary
+        Copilot ``--skills`` integration is selected with ``use``, it becomes the
+        active agent and receives extension skills.
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        # Copilot is not multi_install_safe, so --force is required to add it
+        # alongside the existing default integration.
+        result = _run_in_project(project, [
+            "integration", "install", "copilot",
+            "--script", "sh",
+            "--integration-options", "--skills",
+            "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # Precondition that makes --skills load-bearing: copilot IS in skills
+        # mode, so its own core commands are scaffolded as skills.
+        assert (
+            project / ".github" / "skills" / "speckit-specify" / "SKILL.md"
+        ).exists(), "precondition: copilot installed in skills mode"
+
+        # The git extension is not registered for the non-active copilot agent
+        # during install.
+        git_meta = json.loads(
+            (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")
+        )["extensions"]["git"]
+        assert "copilot" not in git_meta["registered_commands"]
+        assert not (
+            project / ".github" / "agents" / "speckit.git.feature.agent.md"
+        ).exists()
+        assert not (
+            project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
+        result = _run_in_project(project, ["integration", "use", "copilot"])
+        assert result.exit_code == 0, result.output
+
+        git_meta = json.loads(
+            (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")
+        )["extensions"]["git"]
+        # `use` makes copilot active, so extension artifacts follow copilot's
+        # skills-mode layout.
+        assert "copilot" not in git_meta["registered_commands"]
+        assert "speckit-git-feature" in git_meta["registered_skills"]
+        assert not (
+            project / ".github" / "agents" / "speckit.git.feature.agent.md"
+        ).exists()
+        assert (
+            project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
+    def test_extension_add_registers_active_integration_only(self, tmp_path):
+        """``extension add`` registers commands for the active integration only.
+
+        Maintainer-requested behavior for #2948: with multiple integrations
+        installed, ``extension add`` must treat the project as single-active —
+        only the current integration gets the new extension's commands.
+        Non-active integrations receive them when selected via
+        ``integration use`` / ``switch`` (rescaffold).
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "claude" in registered, "active integration gets the extension"
+        assert "codex" not in registered, (
+            "non-active integration must not be registered on add (#2948)"
+        )
+        assert (
+            project / ".claude" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+        assert not (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
+        # Selecting the other integration rescaffolds it with the extension.
+        result = _run_in_project(project, ["integration", "use", "codex"])
+        assert result.exit_code == 0, result.output
+
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "codex" in registered, "use registers extensions for the new active agent"
+        assert (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
+    def test_extension_add_generic_active_does_not_backfill_other_agents(self, tmp_path):
+        """A recorded but unsupported active key (``generic``) must not
+        fall back to registering every detected agent.
+
+        ``generic`` is deliberately excluded from ``AGENT_CONFIGS`` because
+        its output directory is only known via ``--commands-dir``, not a
+        static config. Before the fix, treating that active key like "no
+        active integration recorded" made the fallback register the
+        extension for every other detected agent — exactly the multi-target
+        behavior #2948 is meant to stop.
+        """
+        project = _init_project(
+            tmp_path, "generic",
+            integration_options="--commands-dir .myagent/commands",
+        )
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "codex" not in registered, (
+            "a recorded but unsupported active key must not target other "
+            "detected agents (#2948)"
+        )
+
+    def test_extension_add_malformed_ai_value_fails_closed(self, tmp_path):
+        """A recorded but malformed ``ai`` value (e.g. a list) must not be
+        treated as "no active integration recorded" and must not crash.
+
+        Before the fix, ``init_options.get("ai")`` being falsy (``[]``,
+        ``""``, ``0``) triggered the same all-agents fallback as a missing
+        key, and a *truthy* non-string value (e.g. a non-empty list) would
+        reach ``AGENT_CONFIGS.get(active_agent)`` and raise ``TypeError``
+        because a list is unhashable. Corrupted init-options must instead
+        fail closed: register nothing rather than crash or back-fill every
+        detected agent.
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        init_options_path = project / ".specify" / "init-options.json"
+        init_options = json.loads(init_options_path.read_text(encoding="utf-8"))
+        init_options["ai"] = []
+        init_options_path.write_text(json.dumps(init_options), encoding="utf-8")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert registered == {}, (
+            "a malformed recorded 'ai' value must fail closed, not "
+            "back-fill every detected agent (#2948)"
+        )
+
+    def test_extension_add_corrupted_init_options_file_fails_closed(self, tmp_path):
+        """A present-but-unparseable init-options.json must fail closed too,
+        not be treated the same as "no file at all".
+
+        ``load_init_options`` returns ``{}`` for a corrupted/unreadable
+        file just like it does for a missing file, so a naive "no active
+        agent recorded" check based on ``load_init_options`` alone can't
+        tell a legacy pre-init-options project (legitimate all-agent
+        fallback) apart from a corrupted-but-present file for a #2948
+        project (must fail closed). Corrupting the file after a normal
+        init must not reintroduce the all-agent fallback.
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        init_options_path = project / ".specify" / "init-options.json"
+        init_options_path.write_text("{not valid json", encoding="utf-8")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert registered == {}, (
+            "a corrupted init-options.json must fail closed, not be "
+            "treated like a legacy project missing the file entirely (#2948)"
+        )
+
+    def test_extension_add_dangling_init_options_symlink_fails_closed(self, tmp_path):
+        """A dangling init-options.json symlink must fail closed too, not be
+        treated the same as "no file at all".
+
+        ``Path.exists()`` follows symlinks and returns False for a broken
+        symlink whose target doesn't exist, so a naive presence check based
+        on ``Path.exists()`` alone mistakes a dangling symlink for "no file"
+        and falls back to registering every detected agent.
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        init_options_path = project / ".specify" / "init-options.json"
+        init_options_path.unlink()
+        init_options_path.symlink_to(project / ".specify" / "does-not-exist.json")
+        assert not init_options_path.exists()  # sanity: dangling
+        assert init_options_path.is_symlink()
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert registered == {}, (
+            "a dangling init-options.json symlink must fail closed, not be "
+            "treated like a legacy project missing the file entirely (#2948)"
+        )
+
 
 # ── uninstall ────────────────────────────────────────────────────────
 
@@ -1249,7 +1627,7 @@ class TestIntegrationUninstall:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code != 0
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_uninstall_no_integration(self, tmp_path):
         project = tmp_path / "proj"
@@ -1431,6 +1809,43 @@ class TestIntegrationUse:
         assert opts["integration"] == "codex"
         assert opts["ai"] == "codex"
 
+    def test_use_preserves_copilot_skills_mode(self, tmp_path):
+        """`use` on a skills-mode Copilot keeps ``ai_skills`` (issue #3550).
+
+        Re-selecting the same skills-mode Copilot must not drop ``ai_skills``
+        from init-options.json nor regenerate extension commands in the legacy
+        ``.agent.md``/``.prompt.md`` layout.
+        """
+        project = _init_project(tmp_path, "copilot", integration_options="--skills")
+
+        opts = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
+        assert opts.get("ai_skills") is True, "precondition: init recorded skills mode"
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        # Simulate a fresh process: `use` in real life runs in its own process
+        # where the registry's Copilot instance has _skills_mode == False (it is
+        # only set during setup()). In-process test invocations otherwise reuse
+        # the singleton left in skills mode by init, masking the bug (#3550).
+        from specify_cli.integrations import get_integration
+
+        get_integration("copilot")._skills_mode = False
+
+        result = _run_in_project(project, ["integration", "use", "copilot"])
+        assert result.exit_code == 0, result.output
+
+        opts = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
+        assert opts.get("ai_skills") is True, "ai_skills must survive `use copilot`"
+
+        # No legacy command-layout files should be regenerated for the
+        # skills-mode agent.
+        assert not (project / ".github" / "agents" / "speckit.git.feature.agent.md").exists()
+        assert not (project / ".github" / "prompts" / "speckit.git.feature.prompt.md").exists()
+        assert (
+            project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
     def test_use_requires_installed_integration(self, tmp_path):
         project = _init_project(tmp_path, "claude")
         old_cwd = os.getcwd()
@@ -1441,6 +1856,156 @@ class TestIntegrationUse:
             os.chdir(old_cwd)
         assert result.exit_code != 0
         assert "not installed" in result.output
+
+    def test_use_registers_presets_for_the_newly_active_agent(self, tmp_path):
+        """``integration use`` is the single rescaffold point for presets too.
+
+        Mirrors the extension single-active rule (#2948): a preset command
+        override installed while ``claude`` was active must not target the
+        inactive ``codex`` integration, and switching via ``integration use``
+        must rescaffold it there.
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        preset_src = tmp_path / "cmd-preset"
+        (preset_src / "commands").mkdir(parents=True)
+        (preset_src / "commands" / "speckit.specify.md").write_text(
+            "---\ndescription: Overridden specify\n---\nOverridden content\n",
+            encoding="utf-8",
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "cmd-preset",
+                "name": "Command Preset",
+                "version": "1.0.0",
+                "description": "Test preset with a command override",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.specify",
+                        "file": "commands/speckit.specify.md",
+                    }
+                ]
+            },
+        }
+        import yaml
+
+        (preset_src / "preset.yml").write_text(yaml.dump(manifest_data), encoding="utf-8")
+
+        result = _run_in_project(project, ["preset", "add", "--dev", str(preset_src)])
+        assert result.exit_code == 0, f"preset add failed: {result.output}"
+
+        registry_path = project / ".specify" / "presets" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "presets"
+        ]["cmd-preset"]["registered_commands"]
+        assert "claude" in registered, "active integration gets the preset command override"
+        assert "codex" not in registered, (
+            "non-active integration must not be registered on preset add (#2948)"
+        )
+
+        result = _run_in_project(project, ["integration", "use", "codex"])
+        assert result.exit_code == 0, result.output
+
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "presets"
+        ]["cmd-preset"]["registered_commands"]
+        assert "codex" in registered, "use registers presets for the new active agent"
+        assert "claude" in registered, "the previous agent's registration is preserved"
+
+    def test_use_reregisters_presets_highest_precedence_last(self, tmp_path):
+        """When two enabled presets override the same command, the
+        higher-precedence preset (lower priority number) must win the
+        materialized file after ``integration use`` rescaffolds them.
+
+        ``register_enabled_presets_for_agent`` iterates presets and each
+        pass overwrites the same target file, so the write order matters.
+        Before the fix, presets were processed lowest-number-first (highest
+        precedence first), so the lower-precedence preset was written last
+        and won -- reversing the documented priority stack (#2948).
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        import yaml
+
+        def _make_preset(pack_id: str, content: str) -> Path:
+            src = tmp_path / pack_id
+            (src / "commands").mkdir(parents=True)
+            (src / "commands" / "speckit.specify.md").write_text(
+                f"---\ndescription: {pack_id}\n---\n{content}\n",
+                encoding="utf-8",
+            )
+            manifest_data = {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": pack_id,
+                    "name": pack_id,
+                    "version": "1.0.0",
+                    "description": f"Test preset {pack_id}",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "templates": [
+                        {
+                            "type": "command",
+                            "name": "speckit.specify",
+                            "file": "commands/speckit.specify.md",
+                        }
+                    ]
+                },
+            }
+            (src / "preset.yml").write_text(yaml.dump(manifest_data), encoding="utf-8")
+            return src
+
+        # Lower-precedence preset (higher priority number), installed first.
+        low_precedence_src = _make_preset("low-precedence-preset", "LOW PRECEDENCE CONTENT")
+        result = _run_in_project(project, [
+            "preset", "add", "--dev", str(low_precedence_src), "--priority", "20",
+        ])
+        assert result.exit_code == 0, f"preset add (low) failed: {result.output}"
+
+        # Higher-precedence preset (lower priority number), installed second.
+        high_precedence_src = _make_preset("high-precedence-preset", "HIGH PRECEDENCE CONTENT")
+        result = _run_in_project(project, [
+            "preset", "add", "--dev", str(high_precedence_src), "--priority", "1",
+        ])
+        assert result.exit_code == 0, f"preset add (high) failed: {result.output}"
+
+        # Sanity: the priority stack already picks the high-precedence
+        # preset's content for the active (claude) integration.
+        claude_skill = project / ".claude" / "skills" / "speckit-specify" / "SKILL.md"
+        assert "HIGH PRECEDENCE CONTENT" in claude_skill.read_text(encoding="utf-8")
+        assert "LOW PRECEDENCE CONTENT" not in claude_skill.read_text(encoding="utf-8")
+
+        result = _run_in_project(project, ["integration", "use", "codex"])
+        assert result.exit_code == 0, result.output
+
+        # After rescaffolding for the newly active codex integration, the
+        # high-precedence preset must still win -- not whichever preset
+        # register_enabled_presets_for_agent happened to write last.
+        codex_skill = project / ".agents" / "skills" / "speckit-specify" / "SKILL.md"
+        content = codex_skill.read_text(encoding="utf-8")
+        assert "HIGH PRECEDENCE CONTENT" in content, (
+            "highest-precedence preset must win after `use` rescaffolds "
+            "presets for the newly active integration (#2948)"
+        )
+        assert "LOW PRECEDENCE CONTENT" not in content
 
     def test_use_refreshes_shared_templates_between_command_styles(self, tmp_path):
         project = _init_project(tmp_path, "claude")
@@ -1552,7 +2117,7 @@ class TestIntegrationSwitch:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code != 0
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_switch_unknown_target(self, tmp_path):
         project = _init_project(tmp_path)
@@ -1659,14 +2224,98 @@ class TestIntegrationSwitch:
         # Old claude files removed
         assert not (project / ".claude" / "skills" / "speckit-plan" / "SKILL.md").exists()
 
-        # New copilot files created
-        assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
-        assert "/speckit.specify" in shared_script.read_text(encoding="utf-8")
-        assert "/speckit-specify" not in shared_script.read_text(encoding="utf-8")
+        # New default Copilot skills created
+        assert (
+            project / ".github" / "skills" / "speckit-plan" / "SKILL.md"
+        ).exists()
+        assert "/speckit-specify" in shared_script.read_text(encoding="utf-8")
+        assert "/speckit.specify" not in shared_script.read_text(encoding="utf-8")
 
         # integration.json updated
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == "copilot"
+
+    def test_switch_rejects_conflicting_copilot_modes_before_uninstall(
+        self, tmp_path
+    ):
+        project = _init_project(tmp_path, "claude")
+        claude_skill = (
+            project / ".claude" / "skills" / "speckit-plan" / "SKILL.md"
+        )
+        before_state = json.loads(
+            (project / ".specify" / "integration.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        result = _run_in_project(
+            project,
+            [
+                "integration",
+                "switch",
+                "copilot",
+                "--integration-options",
+                "--skills --commands",
+                "--script",
+                "sh",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "--skills and --commands are mutually exclusive" in result.output
+        assert claude_skill.exists()
+        assert not (project / ".github" / "skills").exists()
+        assert not (project / ".github" / "agents").exists()
+        after_state = json.loads(
+            (project / ".specify" / "integration.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert after_state == before_state
+
+    def test_switch_preserves_target_options_with_fallback_integration(
+        self, tmp_path
+    ):
+        project = _init_project(tmp_path, "claude")
+        install = _run_in_project(
+            project,
+            [
+                "integration",
+                "install",
+                "opencode",
+                "--script",
+                "sh",
+                "--force",
+            ],
+        )
+        assert install.exit_code == 0, install.output
+
+        result = _run_in_project(
+            project,
+            [
+                "integration",
+                "switch",
+                "copilot",
+                "--integration-options",
+                "--commands",
+                "--script",
+                "sh",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert (
+            project / ".github" / "agents" / "speckit.plan.agent.md"
+        ).exists()
+        assert not (project / ".github" / "skills").exists()
+        state = json.loads(
+            (project / ".specify" / "integration.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert state["integration_settings"]["copilot"]["parsed_options"] == {
+            "commands": True
+        }
 
     def test_switch_migrates_extension_commands(self, tmp_path):
         """Switching should migrate extension commands to the new agent directory."""
@@ -1677,7 +2326,7 @@ class TestIntegrationSwitch:
         assert result.exit_code == 0, f"extension add failed: {result.output}"
 
         # Verify git extension skills exist for kimi
-        kimi_git_feature = project / ".kimi" / "skills" / "speckit-git-feature" / "SKILL.md"
+        kimi_git_feature = project / ".kimi-code" / "skills" / "speckit-git-feature" / "SKILL.md"
         assert kimi_git_feature.exists(), "Git extension skill should exist for kimi"
 
         result = _run_in_project(project, [
@@ -1722,6 +2371,40 @@ class TestIntegrationSwitch:
         registered_commands = registry["extensions"]["git"]["registered_commands"]
         assert "claude" in registered_commands
         assert "opencode" not in registered_commands
+
+    def test_switch_installed_target_backfills_extension_commands(self, tmp_path):
+        """Switching to an already-installed agent should register extensions."""
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "claude" in registered
+        assert "codex" not in registered, "precondition: codex not yet installed"
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        codex_git_feature = (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        )
+        assert not codex_git_feature.exists()
+
+        result = _run_in_project(project, ["integration", "switch", "codex"])
+        assert result.exit_code == 0, result.output
+
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "codex" in registered
+        assert codex_git_feature.exists()
 
     def test_switch_migrates_copilot_skills_extension_commands(self, tmp_path):
         """Copilot --skills should receive extension skills, not .agent.md files."""
@@ -1773,6 +2456,83 @@ class TestIntegrationSwitch:
         assert "opencode" in git_meta["registered_commands"]
         assert "copilot" not in git_meta["registered_commands"]
 
+    def test_switch_to_not_yet_installed_unregisters_old_preset_artifacts(self, tmp_path):
+        """Switching to a not-yet-installed integration must also clean up
+        the old agent's preset command overrides, mirroring the existing
+        extension cleanup on the same code path (#2948).
+
+        Without this, a preset's command override -- including a custom
+        preset command -- rendered for the previous agent lingers as an
+        orphan once a different, not-yet-installed integration becomes the
+        new active agent.
+        """
+        project = _init_project(tmp_path, "auggie")
+
+        preset_src = tmp_path / "switch-cleanup-preset"
+        (preset_src / "commands").mkdir(parents=True)
+        (preset_src / "commands" / "speckit.specify.md").write_text(
+            "---\ndescription: Custom preset command\n---\nOverridden content\n",
+            encoding="utf-8",
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "switch-cleanup-preset",
+                "name": "Switch Cleanup Preset",
+                "version": "1.0.0",
+                "description": "Test preset with a custom command override",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.specify",
+                        "file": "commands/speckit.specify.md",
+                    }
+                ]
+            },
+        }
+        import yaml
+
+        (preset_src / "preset.yml").write_text(yaml.dump(manifest_data), encoding="utf-8")
+
+        result = _run_in_project(project, ["preset", "add", "--dev", str(preset_src)])
+        assert result.exit_code == 0, f"preset add failed: {result.output}"
+
+        auggie_cmd = project / ".augment" / "commands" / "speckit.specify.md"
+        assert auggie_cmd.exists(), "sanity: preset command registered for auggie"
+
+        registry_path = project / ".specify" / "presets" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "presets"
+        ]["switch-cleanup-preset"]["registered_commands"]
+        assert "auggie" in registered, "sanity: auggie tracked before switch"
+
+        # opencode is not yet installed in this project.
+        result = _run_in_project(project, [
+            "integration", "switch", "opencode",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        assert not auggie_cmd.exists(), (
+            "old agent's preset command override must be removed on switch "
+            "to a not-yet-installed integration, mirroring the existing "
+            "extension cleanup on this same code path (#2948)"
+        )
+
+        opencode_cmd = project / ".opencode" / "commands" / "speckit.specify.md"
+        assert opencode_cmd.exists(), "preset command should be registered for the new agent"
+
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "presets"
+        ]["switch-cleanup-preset"]["registered_commands"]
+        assert "auggie" not in registered, (
+            "old agent's tracking must be dropped after switch cleanup"
+        )
+        assert "opencode" in registered
+
     def test_switch_does_not_register_disabled_extensions(self, tmp_path):
         """Disabled extensions should stay disabled and should not migrate commands."""
         project = _init_project(tmp_path, "opencode")
@@ -1816,6 +2576,7 @@ class TestIntegrationSwitch:
             os.chdir(project)
             result = runner.invoke(app, [
                 "integration", "switch", "copilot",
+                "--integration-options", "--commands",
                 "--script", "sh",
             ], catch_exceptions=False)
         finally:
@@ -1854,6 +2615,7 @@ class TestIntegrationSwitch:
             os.chdir(project)
             result = runner.invoke(app, [
                 "integration", "switch", "copilot",
+                "--integration-options", "--commands",
                 "--script", "sh",
             ], catch_exceptions=False)
         finally:
@@ -1882,6 +2644,7 @@ class TestIntegrationSwitch:
             os.chdir(project)
             result = runner.invoke(app, [
                 "integration", "switch", "copilot",
+                "--integration-options", "--commands",
                 "--script", "sh",
             ], catch_exceptions=False)
         finally:
@@ -1906,6 +2669,7 @@ class TestIntegrationSwitch:
             os.chdir(project)
             result = runner.invoke(app, [
                 "integration", "switch", "copilot",
+                "--integration-options", "--commands",
                 "--script", "sh",
                 "--refresh-shared-infra",
             ], catch_exceptions=False)
@@ -2067,7 +2831,55 @@ class TestIntegrationSwitch:
         assert opts["ai"] == "codex"
 
         template = project / ".specify" / "templates" / "plan-template.md"
-        assert "/speckit-plan" in template.read_text(encoding="utf-8")
+        assert "$speckit-plan" in template.read_text(encoding="utf-8")
+
+    def test_failed_switch_rescaffolds_fallback_extensions(self, tmp_path):
+        """Regression (review 3624184343).
+
+        When Phase 2 of a switch fails, rollback selects another installed
+        integration as the new default. Under active-only registration that
+        fallback may never have received extension artifacts (it was
+        installed while another integration was active), and Phase 1 already
+        unregistered the outgoing agent's artifacts — so the restored default
+        must be rescaffolded, not just written to metadata.
+        """
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "codex" not in registered, (
+            "precondition: secondary install has no extension artifacts"
+        )
+
+        result = _run_in_project(project, [
+            "integration", "switch", "generic",
+            "--script", "sh",
+        ])
+        assert result.exit_code != 0
+
+        data = json.loads(
+            (project / ".specify" / "integration.json").read_text(encoding="utf-8")
+        )
+        assert data["integration"] == "codex", "precondition: fallback restored"
+
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "codex" in registered, (
+            "rollback must rescaffold extensions for the restored default"
+        )
+        assert (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
 
 
 class TestIntegrationUpgrade:
@@ -2170,7 +2982,9 @@ class TestIntegrationUpgrade:
         assert manifest_path.read_text(encoding="utf-8") == before_manifest
 
     def test_upgrade_default_refreshes_shared_script_refs_for_option_separator_change(self, tmp_path):
-        project = _init_project(tmp_path, "copilot")
+        project = _init_project(
+            tmp_path, "copilot", integration_options="--commands"
+        )
         template = project / ".specify" / "templates" / "plan-template.md"
         managed_script = project / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
         customized_script = project / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
@@ -2191,6 +3005,46 @@ class TestIntegrationUpgrade:
         assert "/speckit-specify" in managed_content
         assert "/speckit.specify" not in managed_content
         assert customized_script.read_text(encoding="utf-8") == customized_before
+
+    def test_upgrade_preserves_historical_copilot_commands_without_options(
+        self, tmp_path
+    ):
+        """A command manifest restores missing files instead of migrating."""
+        project = _init_project(
+            tmp_path, "copilot", integration_options="--commands"
+        )
+        state_path = project / ".specify" / "integration.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        copilot_settings = state["integration_settings"]["copilot"]
+        copilot_settings.pop("raw_options", None)
+        copilot_settings.pop("parsed_options", None)
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+
+        for path in (project / ".github" / "agents").glob(
+            "speckit.*.agent.md"
+        ):
+            path.unlink()
+        for path in (project / ".github" / "prompts").glob(
+            "speckit.*.prompt.md"
+        ):
+            path.unlink()
+
+        result = _run_in_project(
+            project,
+            ["integration", "upgrade", "copilot", "--script", "sh", "--force"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert (
+            project / ".github" / "agents" / "speckit.plan.agent.md"
+        ).exists()
+        assert not (project / ".github" / "skills").exists()
+        init_options = json.loads(
+            (project / ".specify" / "init-options.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert init_options.get("ai_skills") is not True
 
     def test_upgrade_non_default_keeps_default_template_invocations(self, tmp_path):
         project = _init_project(tmp_path, "gemini")
@@ -2270,6 +3124,1171 @@ class TestIntegrationUpgrade:
             f"Legacy .opencode/command/ should have no core speckit files after upgrade, "
             f"found: {[f.name for f in core_remaining]}"
         )
+
+    def test_upgrade_migrates_kilocode_legacy_dir(self, tmp_path):
+        """Upgrade moves Kilo commands from .kilocode/workflows/ to .kilo/commands/."""
+        project = _init_project(tmp_path, "kilocode")
+        canonical, legacy = _move_kilocode_install_to_legacy_layout(project)
+
+        old_commands = sorted(legacy.glob("speckit.*.md"))
+        assert old_commands, "Legacy dir should have speckit command files"
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "kilocode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code == 0, f"upgrade failed: {result.output}"
+
+        assert canonical.is_dir(), ".kilo/commands/ should exist after upgrade"
+        new_commands = sorted(canonical.glob("speckit.*.md"))
+        assert new_commands, "Commands should exist in .kilo/commands/"
+
+        core_remaining = [
+            f for f in legacy.glob("speckit.*.md")
+            if "agent-context" not in f.name
+        ]
+        assert core_remaining == [], (
+            "Legacy .kilocode/workflows/ should have no core speckit files "
+            f"after upgrade, found: {[f.name for f in core_remaining]}"
+        )
+
+    def test_upgrade_migrates_qodercli_extension_commands_to_skills(self, tmp_path):
+        """Qoder upgrade retires old extension commands after skills exist."""
+        project = _init_project(tmp_path, "qodercli")
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        skills = project / ".qoder" / "skills"
+        commands = project / ".qoder" / "commands"
+        commands.mkdir(parents=True)
+
+        manifest_path = (
+            project / ".specify" / "integrations" / "qodercli.manifest.json"
+        )
+        manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        legacy_manifest_files = {}
+        for path, info in manifest_data["files"].items():
+            skill_path = project / path
+            command_name = skill_path.parent.name.replace("speckit-", "speckit.", 1)
+            legacy_path = commands / f"{command_name}.md"
+            legacy_path.write_bytes(skill_path.read_bytes())
+            legacy_manifest_files[
+                legacy_path.relative_to(project).as_posix()
+            ] = info
+        manifest_data["files"] = legacy_manifest_files
+        manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        git_metadata = registry["extensions"]["git"]
+        registered_commands = git_metadata["registered_commands"]["qodercli"]
+        for command_name in registered_commands:
+            skill_name = command_name.replace("speckit.", "speckit-", 1).replace(
+                ".", "-"
+            )
+            old_command = commands / f"{command_name}.md"
+            old_command.write_bytes(
+                (skills / skill_name / "SKILL.md").read_bytes()
+            )
+        missing_replacement = commands / "speckit.git.missing.md"
+        missing_replacement.write_text("# preserve until replaced\n", encoding="utf-8")
+        registered_commands.append("speckit.git.missing")
+        git_metadata["registered_skills"] = []
+        registry_path.write_text(json.dumps(registry), encoding="utf-8")
+
+        shutil.rmtree(skills)
+        result = _run_in_project(project, [
+            "integration", "upgrade", "qodercli", "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, f"upgrade failed: {result.output}"
+
+        for command_name in registered_commands[:-1]:
+            skill_name = command_name.replace("speckit.", "speckit-", 1).replace(
+                ".", "-"
+            )
+            assert (skills / skill_name / "SKILL.md").is_file()
+            assert not (commands / f"{command_name}.md").exists()
+        assert missing_replacement.is_file(), (
+            "a legacy command must remain when no replacement skill was written"
+        )
+
+    def test_upgrade_kilocode_legacy_dir_rejects_installed_preset_overrides(
+        self, tmp_path
+    ):
+        """Kilo legacy command-root migration must fail closed with presets."""
+        project = _init_project(tmp_path, "kilocode")
+        canonical, legacy = _move_kilocode_install_to_legacy_layout(project)
+
+        preset_file = legacy / "speckit.plan.md"
+        preset_file.write_text("# preset plan override\n", encoding="utf-8")
+
+        presets_dir = project / ".specify" / "presets"
+        presets_dir.mkdir(parents=True, exist_ok=True)
+        (presets_dir / ".registry").write_text(
+            json.dumps({
+                "presets": {
+                    "my-preset": {
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "registered_commands": {"kilocode": ["speckit.plan"]},
+                        "registered_skills": [],
+                    }
+                }
+            }),
+            encoding="utf-8",
+        )
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "kilocode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code != 0, (
+            "Kilo legacy command-root migration with presets must be rejected"
+        )
+        assert "preset" in result.output.lower()
+        assert "my-preset" in result.output
+        assert ".kilocode/workflows" in strip_ansi(result.output)
+        assert ".kilo/commands" in strip_ansi(result.output)
+        assert not canonical.exists(), (
+            "canonical Kilo commands must not be scaffolded after rejection"
+        )
+        assert preset_file.read_text(encoding="utf-8") == "# preset plan override\n"
+
+    def test_upgrade_reconciles_kilocode_legacy_extension_artifacts(self, tmp_path):
+        """Kilo upgrade moves enabled extension commands to the canonical dir."""
+        project = _init_project(tmp_path, "kilocode")
+        canonical, legacy = _move_kilocode_install_to_legacy_layout(project)
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        assert sorted(legacy.glob("speckit.git.*.md")), (
+            "legacy Kilo should render the git extension under .kilocode/workflows"
+        )
+        assert not canonical.exists()
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "kilocode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code == 0, f"upgrade failed: {result.output}"
+
+        assert sorted(canonical.glob("speckit.git.*.md")), (
+            "enabled git extension commands should be recreated in .kilo/commands"
+        )
+        assert not sorted(legacy.glob("speckit.git.*.md")), (
+            "legacy git extension commands should be removed after Kilo upgrade"
+        )
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "kilocode" in registered
+
+    def test_upgrade_preserves_disabled_kilocode_legacy_extension_and_user_file(
+        self, tmp_path
+    ):
+        """Legacy reconciliation must not clean disabled or user-owned files."""
+        project = _init_project(tmp_path, "kilocode")
+        canonical, legacy = _move_kilocode_install_to_legacy_layout(project)
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        result = _run_in_project(project, ["extension", "disable", "git"])
+        assert result.exit_code == 0, f"extension disable failed: {result.output}"
+
+        disabled_extension_files = sorted(legacy.glob("speckit.git.*.md"))
+        assert disabled_extension_files, "disabled extension artifact should remain pre-upgrade"
+
+        user_file = legacy / "speckit.user-owned.md"
+        user_file.write_text("# user-owned legacy command", encoding="utf-8")
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "kilocode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code == 0, f"upgrade failed: {result.output}"
+
+        assert canonical.is_dir(), ".kilo/commands/ should exist after upgrade"
+        assert user_file.read_text(encoding="utf-8") == "# user-owned legacy command"
+        for disabled_file in disabled_extension_files:
+            assert disabled_file.exists(), (
+                "disabled extension artifacts should be preserved during "
+                "legacy command-root reconciliation"
+            )
+        assert not sorted(canonical.glob("speckit.git.*.md")), (
+            "disabled extensions must not be re-registered in the canonical dir"
+        )
+
+    def test_upgrade_secondary_kilocode_legacy_dir_cleans_commands_without_backfill(
+        self, tmp_path
+    ):
+        """Kilo cleanup stays agent-scoped without inactive extension backfill."""
+        project = _init_project(tmp_path, "copilot", integration_options="--skills")
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        skill = project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
+        assert skill.exists(), "precondition: active copilot has the git extension skill"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+
+        def _git_skills():
+            data = json.loads(registry_path.read_text(encoding="utf-8"))
+            return data["extensions"]["git"].get("registered_skills", [])
+
+        assert _git_skills(), "precondition: git skills registered for active copilot"
+
+        result = _run_in_project(project, [
+            "integration", "install", "kilocode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        canonical, legacy = _move_kilocode_install_to_legacy_layout(project)
+        legacy_git_command = legacy / "speckit.git.feature.md"
+        legacy_git_command.write_text("# legacy Kilo git command\n", encoding="utf-8")
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        registry["extensions"]["git"].setdefault("registered_commands", {})[
+            "kilocode"
+        ] = ["speckit.git.feature"]
+        registry_path.write_text(json.dumps(registry), encoding="utf-8")
+        assert legacy_git_command.exists(), (
+            "precondition: secondary Kilo has a legacy extension command file"
+        )
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "kilocode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        assert canonical.is_dir(), ".kilo/commands/ should exist after upgrade"
+        assert not sorted(canonical.glob("speckit.git.*.md")), (
+            "inactive Kilo must wait for use/switch before extension rescaffolding"
+        )
+        assert not legacy_git_command.exists(), (
+            "secondary Kilo legacy extension commands should still be cleaned up"
+        )
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        registered_commands = registry["extensions"]["git"].get(
+            "registered_commands", {}
+        )
+        assert "kilocode" not in registered_commands
+        assert skill.exists(), (
+            "secondary Kilo legacy cleanup must not delete the active agent's "
+            "extension skill"
+        )
+        assert _git_skills(), (
+            "secondary Kilo legacy cleanup must not untrack the active agent's "
+            "extension skills in the registry"
+        )
+
+    def test_upgrade_bob_skills_migration_preserves_manifest(self, tmp_path):
+        """Regression (review #3415, 4724160183, comment 1).
+
+        ``integration upgrade bob --integration-options="--skills"`` migrates a
+        legacy Bob 1.x install (``.bob/commands/*.md``) to the skills layout
+        (``.bob/skills/speckit-*/SKILL.md``) and stale-removes the old command
+        files.  Because that stale-file pass shrinks the tracked set, the
+        upgrade's Phase 2 must NOT delete the freshly-saved ``bob.manifest.json``
+        — otherwise the migrated project is left untracked and un-upgradeable.
+        """
+        project = _init_project(
+            tmp_path, "bob", integration_options="--legacy-commands"
+        )
+
+        commands = project / ".bob" / "commands"
+        skills = project / ".bob" / "skills"
+        manifest_path = (
+            project / ".specify" / "integrations" / "bob.manifest.json"
+        )
+        assert commands.is_dir() and sorted(commands.glob("speckit.*.md"))
+        assert not skills.exists()
+        assert manifest_path.is_file()
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, f"migration upgrade failed: {result.output}"
+
+        # Skills layout scaffolded; legacy core command files removed.
+        assert skills.is_dir(), ".bob/skills/ must exist after --skills migration"
+        assert sorted(skills.glob("speckit-*")), "expected migrated skill dirs"
+        core_commands = [
+            f for f in commands.glob("speckit.*.md")
+            if "agent-context" not in f.name
+        ] if commands.exists() else []
+        assert core_commands == [], (
+            f"legacy core command files should be removed, found: "
+            f"{[f.name for f in core_commands]}"
+        )
+
+        # The manifest must survive so the project stays tracked/upgradeable.
+        assert manifest_path.is_file(), (
+            "bob.manifest.json must survive a layout-shrinking migration"
+        )
+        reupgrade = _run_in_project(project, [
+            "integration", "upgrade", "bob", "--script", "sh", "--force",
+        ])
+        assert reupgrade.exit_code == 0, (
+            f"migrated project must remain upgradeable: {reupgrade.output}"
+        )
+
+    def test_upgrade_bob_layout_change_reconciles_extension_artifacts(self, tmp_path):
+        """Regression (review #3415, 4725829110).
+
+        When a dual-mode agent (Bob) flips layout across an upgrade, the old
+        layout's *extension* artifacts must be reconciled — not left orphaned.
+        A legacy Bob install renders enabled extensions as ``.bob/commands/``
+        command files; migrating to skills via ``--skills`` must remove those
+        command files, recreate the extension as ``.bob/skills/`` skills, and
+        update the extension registry accordingly (and vice-versa for the
+        reverse ``--legacy-commands`` migration).
+        """
+        project = _init_project(
+            tmp_path, "bob", integration_options="--legacy-commands"
+        )
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        commands = project / ".bob" / "commands"
+        skills = project / ".bob" / "skills"
+        registry_path = project / ".specify" / "extensions" / ".registry"
+
+        def _git_registry():
+            data = json.loads(registry_path.read_text(encoding="utf-8"))
+            g = data["extensions"]["git"]
+            return list(g.get("registered_commands", {})), g.get(
+                "registered_skills", []
+            )
+
+        # Legacy precondition: git renders as command files under .bob/commands.
+        assert sorted(commands.glob("speckit.git.*.md")), (
+            "legacy Bob should render the git extension as command files"
+        )
+        assert not list(skills.glob("speckit-git-*")) if skills.exists() else True
+        cmds_agents, skill_names = _git_registry()
+        assert "bob" in cmds_agents and not skill_names
+
+        # Migrate legacy -> skills.
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, f"--skills migration failed: {result.output}"
+
+        # Old-layout git command files removed; skills recreated.
+        assert not sorted(commands.glob("speckit.git.*.md")), (
+            "git extension command files must be removed after --skills migration"
+        )
+        assert sorted(skills.glob("speckit-git-*")), (
+            "git extension must be recreated as skills after --skills migration"
+        )
+        cmds_agents, skill_names = _git_registry()
+        assert "bob" not in cmds_agents, (
+            "extension registry must drop the stale bob command entry"
+        )
+        assert skill_names, "extension registry must record the migrated skills"
+
+        # Migrate skills -> legacy: the reverse reconciliation must also hold.
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--legacy-commands",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, (
+            f"--legacy-commands migration failed: {result.output}"
+        )
+        assert not sorted(skills.glob("speckit-git-*")), (
+            "git extension skills must be removed after --legacy-commands migration"
+        )
+        assert sorted(commands.glob("speckit.git.*.md")), (
+            "git extension command files must be recreated in legacy layout"
+        )
+        cmds_agents, skill_names = _git_registry()
+        assert "bob" in cmds_agents and not skill_names
+
+    def test_upgrade_layout_change_preserves_extension_artifacts_when_reregistration_fails(
+        self, tmp_path
+    ):
+        """Regression (review 3624075109).
+
+        A layout-changing upgrade must not eagerly unregister the agent's
+        extension artifacts before re-registration: the retirement of each
+        opposite-mode artifact belongs to
+        ``register_enabled_extensions_for_agent``'s deferred toggle cleanup,
+        which retires an old artifact only after its replacement in the new
+        layout is confirmed. If re-registration cannot rebuild an extension
+        (here: its installed manifest is corrupted), the old artifact and its
+        registry tracking must survive instead of leaving the extension with
+        no artifacts at all.
+        """
+        project = _init_project(
+            tmp_path, "bob", integration_options="--legacy-commands"
+        )
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        commands = project / ".bob" / "commands"
+        assert sorted(commands.glob("speckit.git.*.md")), (
+            "precondition: git extension renders as legacy command files"
+        )
+
+        # Corrupt the installed extension manifest so re-registration cannot
+        # rebuild the artifacts in the new layout.
+        (
+            project / ".specify" / "extensions" / "git" / "extension.yml"
+        ).write_text("invalid: [", encoding="utf-8")
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, (
+            f"upgrade is best-effort about extensions: {result.output}"
+        )
+
+        assert sorted(commands.glob("speckit.git.*.md")), (
+            "old-layout extension artifacts must survive when their "
+            "replacement could not be registered"
+        )
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        data = json.loads(registry_path.read_text(encoding="utf-8"))
+        assert "bob" in data["extensions"]["git"].get("registered_commands", {}), (
+            "extension registry must keep tracking the surviving artifacts"
+        )
+
+    def test_upgrade_active_layout_change_rejected_before_missing_preset_source_can_lose_override(
+        self, tmp_path
+    ):
+        """Regression (review 3623357447).
+
+        Layout-changing upgrades must fail closed even for the active
+        integration. Preset rescaffolding is best-effort, so a missing source
+        file could otherwise let stale integration cleanup delete the tracked
+        old-layout override without creating its replacement.
+        """
+        project = _init_project(
+            tmp_path, "bob", integration_options="--legacy-commands"
+        )
+        commands = project / ".bob" / "commands"
+        skills = project / ".bob" / "skills"
+
+        preset_src = tmp_path / "cmd-preset"
+        (preset_src / "commands").mkdir(parents=True)
+        (preset_src / "commands" / "speckit.plan.md").write_text(
+            "---\ndescription: Overridden plan\n---\nOverridden plan content\n",
+            encoding="utf-8",
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "cmd-preset",
+                "name": "Command Preset",
+                "version": "1.0.0",
+                "description": "Test preset with a command override",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.plan",
+                        "file": "commands/speckit.plan.md",
+                    }
+                ]
+            },
+        }
+        import yaml
+
+        (preset_src / "preset.yml").write_text(
+            yaml.dump(manifest_data), encoding="utf-8"
+        )
+        result = _run_in_project(project, ["preset", "add", "--dev", str(preset_src)])
+        assert result.exit_code == 0, f"preset add failed: {result.output}"
+
+        cmd_file = commands / "speckit.plan.md"
+        assert "Overridden plan content" in cmd_file.read_text(encoding="utf-8")
+
+        installed_source = (
+            project
+            / ".specify"
+            / "presets"
+            / "cmd-preset"
+            / "commands"
+            / "speckit.plan.md"
+        )
+        assert installed_source.exists(), "precondition: preset source was installed"
+        installed_source.unlink()
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code != 0, (
+            "layout change with tracked preset artifacts must be rejected"
+        )
+        assert "cmd-preset" in result.output
+        assert not skills.exists(), "no skills layout must be scaffolded on rejection"
+        assert "Overridden plan content" in cmd_file.read_text(encoding="utf-8"), (
+            "tracked old-layout override must remain untouched"
+        )
+
+    def test_upgrade_active_layout_change_rejected_with_disabled_preset(
+        self, tmp_path
+    ):
+        """Regression (review 3623779277).
+
+        The post-upgrade rescaffold iterates *enabled* presets only, and a
+        disabled preset's artifacts are deliberately frozen until removal
+        (``preset disable``). An active-agent layout change must therefore be
+        rejected while a disabled preset still owns artifacts for the agent —
+        proceeding would delete its old-layout files in stale-manifest
+        cleanup, skip recreating them, and leave its registry entries stale.
+        Re-enabling does not make a non-transactional layout migration safe.
+        """
+        project = _init_project(
+            tmp_path, "bob", integration_options="--legacy-commands"
+        )
+        commands = project / ".bob" / "commands"
+        skills = project / ".bob" / "skills"
+
+        preset_src = tmp_path / "cmd-preset"
+        (preset_src / "commands").mkdir(parents=True)
+        (preset_src / "commands" / "speckit.plan.md").write_text(
+            "---\ndescription: Overridden plan\n---\nOverridden plan content\n",
+            encoding="utf-8",
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "cmd-preset",
+                "name": "Command Preset",
+                "version": "1.0.0",
+                "description": "Test preset with a command override",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.plan",
+                        "file": "commands/speckit.plan.md",
+                    }
+                ]
+            },
+        }
+        import yaml
+
+        (preset_src / "preset.yml").write_text(
+            yaml.dump(manifest_data), encoding="utf-8"
+        )
+        result = _run_in_project(project, ["preset", "add", "--dev", str(preset_src)])
+        assert result.exit_code == 0, f"preset add failed: {result.output}"
+        result = _run_in_project(project, ["preset", "disable", "cmd-preset"])
+        assert result.exit_code == 0, f"preset disable failed: {result.output}"
+
+        cmd_file = commands / "speckit.plan.md"
+        assert "Overridden plan content" in cmd_file.read_text(encoding="utf-8")
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code != 0, (
+            "layout change with a disabled preset must be rejected"
+        )
+        assert "cmd-preset" in result.output
+        assert not skills.exists(), "no skills layout must be scaffolded on rejection"
+        assert "Overridden plan content" in cmd_file.read_text(encoding="utf-8"), (
+            "the disabled preset's command file must be left untouched"
+        )
+
+        # Enabled presets are also rejected: rescaffolding can still fail.
+        result = _run_in_project(project, ["preset", "enable", "cmd-preset"])
+        assert result.exit_code == 0, f"preset enable failed: {result.output}"
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code != 0
+        assert "cmd-preset" in result.output
+        assert not skills.exists()
+        assert "Overridden plan content" in cmd_file.read_text(encoding="utf-8")
+
+    def test_upgrade_secondary_layout_change_rejected_with_presets_installed(
+        self, tmp_path
+    ):
+        """Regression (review #3415, 4726193915; updated for review 3623357447).
+
+        Preset rescaffolding is active-agent-only, so a layout-changing
+        ``upgrade`` of a *non-active* integration still cannot reconcile that
+        agent's preset artifacts. It must reject the migration with an
+        actionable error *before any mutation* when preset overrides are
+        installed for that agent. A same-layout upgrade must still succeed.
+        """
+        project = _init_project(tmp_path, "copilot")
+        result = _run_in_project(project, [
+            "integration", "install", "bob",
+            "--integration-options", "--legacy-commands",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, result.output
+        commands = project / ".bob" / "commands"
+        skills = project / ".bob" / "skills"
+        assert sorted(commands.glob("speckit.*.md"))
+
+        # Simulate a historical preset registration for the non-active bob.
+        presets_dir = project / ".specify" / "presets"
+        presets_dir.mkdir(parents=True, exist_ok=True)
+        (presets_dir / ".registry").write_text(
+            json.dumps({
+                "presets": {
+                    "my-preset": {
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "registered_commands": {"bob": ["speckit.plan"]},
+                        "registered_skills": {},
+                    }
+                }
+            }),
+            encoding="utf-8",
+        )
+
+        # Layout-changing upgrade of the secondary agent is rejected untouched.
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code != 0, (
+            "secondary layout change with presets must be rejected"
+        )
+        assert "preset" in result.output.lower()
+        assert "my-preset" in result.output
+        assert not skills.exists(), "no skills layout must be scaffolded on rejection"
+        assert sorted(commands.glob("speckit.*.md")), (
+            "legacy command files must be left untouched on rejection"
+        )
+
+        # A same-layout upgrade (no flag) must still succeed with presets present.
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob", "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, (
+            f"same-layout upgrade must not be blocked by presets: {result.output}"
+        )
+
+    def test_upgrade_bob_layout_change_rejected_when_preset_registry_unreadable(
+        self, tmp_path
+    ):
+        """Regression (review #3415, 4744636079).
+
+        The preset guard must fail *closed*: if the preset registry exists but
+        cannot be read/parsed (corruption, permissions), the layout-changing
+        upgrade must be rejected before any mutation rather than proceeding on
+        a false "no presets installed" assumption (which would let ``--force``
+        delete preset-overridden command files while their registry state is
+        unknown). A genuinely absent registry must still be allowed.
+        """
+        project = _init_project(
+            tmp_path, "bob", integration_options="--legacy-commands"
+        )
+        commands = project / ".bob" / "commands"
+        skills = project / ".bob" / "skills"
+        assert sorted(commands.glob("speckit.*.md"))
+
+        # Corrupted (unparseable) registry: exists but cannot be read as JSON.
+        presets_dir = project / ".specify" / "presets"
+        presets_dir.mkdir(parents=True, exist_ok=True)
+        (presets_dir / ".registry").write_text("{ not valid json", encoding="utf-8")
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code != 0, (
+            "layout change must be rejected when preset registry is unreadable"
+        )
+        assert "preset registry" in result.output.lower()
+        assert not skills.exists(), "no skills layout may be scaffolded on rejection"
+        assert sorted(commands.glob("speckit.*.md")), (
+            "legacy command files must be untouched when failing closed"
+        )
+
+        # A valid, empty registry must NOT block the migration.
+        (presets_dir / ".registry").write_text(
+            json.dumps({"presets": {}}), encoding="utf-8"
+        )
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, (
+            f"valid empty preset registry must not block migration: {result.output}"
+        )
+        assert skills.exists(), "skills layout should be scaffolded once unblocked"
+
+    def test_upgrade_secondary_bob_layout_change_preserves_active_agent_skills(
+        self, tmp_path
+    ):
+        """Regression (review #3415, 4726347306).
+
+        ``integration upgrade`` supports upgrading a *secondary* (non-active)
+        integration. The layout-change extension reconciliation must NOT run
+        for a secondary agent: ``unregister_agent_artifacts`` treats the
+        unscoped per-extension ``registered_skills`` as belonging to the passed
+        agent and, if that agent's skills dir is absent, scans every agent's
+        skills dir — which could delete/untrack the *active* agent's extension
+        skills. The following re-registration cannot repair that because
+        extension skill rendering is active-agent-scoped (#2948).
+        """
+        # Active agent: copilot in skills mode → git extension renders as skills.
+        project = _init_project(tmp_path, "copilot", integration_options="--skills")
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        skill = project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
+        assert skill.exists(), "precondition: active copilot has the git extension skill"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+
+        def _git_skills():
+            data = json.loads(registry_path.read_text(encoding="utf-8"))
+            return data["extensions"]["git"].get("registered_skills", [])
+
+        assert _git_skills(), "precondition: git skills registered for active copilot"
+
+        # Add a secondary (non-active) Bob in the legacy commands layout.
+        result = _run_in_project(project, [
+            "integration", "install", "bob",
+            "--integration-options", "--legacy-commands",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # Flip the *secondary* Bob's layout to skills. copilot stays active.
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # The active agent's extension skill must be untouched on disk and in
+        # the registry — the secondary layout change must not reconcile it.
+        assert skill.exists(), (
+            "secondary Bob layout change must not delete the active agent's "
+            "extension skill"
+        )
+        assert _git_skills(), (
+            "secondary Bob layout change must not untrack the active agent's "
+            "extension skills in the registry"
+        )
+
+    def test_upgrade_preserves_existing_vscode_settings(self, tmp_path):
+        """Regression: copilot upgrade must not stale-delete .vscode/settings.json.
+
+        On init the file is created and recorded in the manifest. On upgrade,
+        setup() merges into the now-existing file and intentionally stops
+        tracking it, so without ``stale_cleanup_exclusions()`` the Phase 2
+        stale cleanup would delete it (destroying the user's settings).
+        """
+        project = _init_project(
+            tmp_path, "copilot", integration_options="--commands"
+        )
+        settings = project / ".vscode" / "settings.json"
+        assert settings.is_file(), "init should create .vscode/settings.json"
+        before = json.loads(settings.read_text(encoding="utf-8"))
+        assert before, "settings.json should contain managed defaults"
+
+        # Simulate a user editing their settings: add a custom key that the
+        # integration does not manage.  It must survive the upgrade.
+        before["editor.fontSize"] = 17
+        settings.write_text(json.dumps(before), encoding="utf-8")
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "copilot",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        assert settings.is_file(), ".vscode/settings.json must survive upgrade"
+        after = json.loads(settings.read_text(encoding="utf-8"))
+        assert after.get("editor.fontSize") == 17, (
+            "user-defined settings must be preserved after upgrade"
+        )
+
+    def test_upgrade_restores_executable_bit_on_shared_scripts(self, tmp_path):
+        """Regression: scripts refreshed by the managed-refresh step stay +x."""
+        if os.name == "nt":
+            pytest.skip("POSIX execute bits are not meaningful on Windows")
+        project = _init_project(tmp_path, "copilot")
+        script = project / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
+        assert script.is_file()
+        # Simulate a perms-losing install (e.g. wheel extraction dropping +x).
+        script.chmod(0o644)
+        assert not (script.stat().st_mode & 0o111)
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "copilot",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        assert script.stat().st_mode & 0o111, (
+            "shared .sh scripts must be executable after upgrade"
+        )
+
+    def test_upgrade_does_not_backfill_non_active_integration(self, tmp_path):
+        """Upgrading a non-active integration must not register extensions for it.
+
+        Maintainer-requested behavior for #2948 (reverses the #2886 upgrade
+        back-fill): non-active integrations only receive extension artifacts
+        when selected via ``integration use`` / ``switch``. Upgrade of a
+        non-active integration refreshes its own files and nothing else.
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        assert "codex" not in json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "codex" not in registered, (
+            "upgrade must not back-fill non-active integrations (#2948)"
+        )
+        assert not (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
+    def test_upgrade_active_integration_reregisters_extensions(self, tmp_path):
+        """Upgrading the active integration restores its extension commands.
+
+        The active integration keeps the re-registration pass on upgrade so
+        missing or stale extension command files are recreated (#2948 scopes
+        the pass to the active integration; #2886 introduced it).
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        cmd_file = project / ".claude" / "skills" / "speckit-git-feature" / "SKILL.md"
+        assert cmd_file.exists(), "precondition: extension command registered"
+        cmd_file.unlink()
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "claude",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        assert cmd_file.exists(), (
+            "upgrade of the active integration re-registers extension commands"
+        )
+
+    def test_upgrade_copilot_skills_restores_extension_skill_over_regenerated_dir(
+        self, tmp_path
+    ):
+        """End-to-end regression for #3849 (upgrade-overwrites-copilot-skills).
+
+        In Copilot skills mode, ``integration upgrade`` runs ``setup()`` — which
+        regenerates the core-template skill directories — *before* re-registering
+        installed extensions. The extension re-registration then hits the
+        ``skill_dir_preexists`` guard in ``_register_extension_skills`` (the skill
+        sub-directory exists, courtesy of ``setup()``, but its ``SKILL.md`` has
+        not been rewritten with extension content), so pre-fix the extension
+        skill was silently left missing — its command content lost even though the
+        extension remained installed and registered.
+
+        The fix threads ``force=True`` from ``integration_upgrade()`` down to
+        ``_register_extension_skills`` so the guard is bypassed and the extension
+        content is re-composed on top of the just-regenerated directory. This test
+        exercises the full ``specify integration upgrade`` command path and fails
+        without the fix (the skill is never recreated).
+        """
+        project = _init_project(
+            tmp_path, "copilot", integration_options="--skills"
+        )
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        skill_dir = project / ".github" / "skills" / "speckit-git-feature"
+        skill_file = skill_dir / "SKILL.md"
+        assert skill_file.exists(), (
+            "precondition: git extension renders as a Copilot skill"
+        )
+        original = skill_file.read_text(encoding="utf-8")
+        assert "source: extension:git" in original, (
+            "precondition: skill carries the git extension ownership marker"
+        )
+
+        # Simulate the exact pre-condition the bug depends on: the skill file is
+        # gone but its directory survives (as it does once setup() regenerates the
+        # core-template layout during upgrade), triggering the skill_dir_preexists
+        # skip guard on re-registration.
+        skill_file.unlink()
+        assert skill_dir.exists() and not skill_file.exists()
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "copilot",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        assert skill_file.exists(), (
+            "upgrade must restore the extension skill even when its directory "
+            "already exists (regression #3849)"
+        )
+        restored = skill_file.read_text(encoding="utf-8")
+        assert "source: extension:git" in restored, (
+            "restored skill must contain the git extension content, not a bare "
+            "core-template stub"
+        )
+        assert "# Git Feature Skill" in restored
+
+    def test_upgrade_active_integration_reregisters_presets(self, tmp_path):
+        """Upgrading the active integration restores missing preset artifacts."""
+        import yaml
+
+        project = _init_project(tmp_path, "claude")
+        preset_src = tmp_path / "upgrade-preset"
+        (preset_src / "commands").mkdir(parents=True)
+        (preset_src / "commands" / "speckit.upgrade-check.md").write_text(
+            "---\ndescription: Upgrade check\n---\nPreset upgrade body\n",
+            encoding="utf-8",
+        )
+        manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "upgrade-preset",
+                "name": "Upgrade Preset",
+                "version": "1.0.0",
+                "description": "Upgrade preset test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.upgrade-check",
+                        "file": "commands/speckit.upgrade-check.md",
+                    }
+                ]
+            },
+        }
+        (preset_src / "preset.yml").write_text(
+            yaml.dump(manifest), encoding="utf-8"
+        )
+
+        result = _run_in_project(
+            project, ["preset", "add", "--dev", str(preset_src)]
+        )
+        assert result.exit_code == 0, result.output
+
+        skill_dir = (
+            project / ".claude" / "skills" / "speckit-upgrade-check"
+        )
+        skill_file = skill_dir / "SKILL.md"
+        assert "Preset upgrade body" in skill_file.read_text(encoding="utf-8")
+        shutil.rmtree(skill_dir)
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "claude",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+        assert "Preset upgrade body" in skill_file.read_text(encoding="utf-8")
+
+    def test_upgrade_non_active_agent_preserves_active_agent_skills(self, tmp_path):
+        """Upgrading a non-active agent must not touch the active agent's skills.
+
+        Regression for the #2886 wiring: extension skill rendering is
+        active-agent-scoped, so routing upgrade of a *secondary* agent through
+        ``register_enabled_extensions_for_agent`` used to re-render the
+        *active* skills-mode agent's extension skills as a side effect —
+        resurrecting skill files the user had deliberately deleted. The skills
+        pass is now gated on the target being the active agent. (Skills parity
+        for non-active agents is tracked separately in #2948.)
+        """
+        # Active agent: copilot in skills mode → git extension renders as skills.
+        project = _init_project(tmp_path, "copilot", integration_options="--skills")
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        skill = project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
+        assert skill.exists(), "precondition: active copilot has the git extension skill"
+
+        # Add a secondary (non-active) agent; copilot is not multi_install_safe.
+        result = _run_in_project(project, [
+            "integration", "install", "codex", "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # The user deliberately removes the active agent's git skill.
+        shutil.rmtree(skill.parent)
+        assert not skill.exists()
+
+        # Upgrading the *non-active* agent must not re-render copilot's skills.
+        result = _run_in_project(project, [
+            "integration", "upgrade", "codex", "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+        assert not skill.exists(), (
+            "upgrading a non-active agent must not resurrect the active agent's "
+            "deleted extension skill (#2886)"
+        )
+
+    def test_installed_presets_affecting_agent_absent_vs_unreadable(self, tmp_path):
+        """Unit (review #3415, 4744636079): fail closed only when unreadable.
+
+        The preset guard helper must return an empty list for a genuinely
+        absent registry, but raise ``_PresetRegistryUnreadableError`` when the
+        registry exists yet cannot be read/parsed — so a layout-changing
+        upgrade never proceeds on a false "no presets" result.
+        """
+        from specify_cli.integrations._migrate_commands import (
+            _PresetRegistryUnreadableError,
+            _installed_command_presets_affecting_agent,
+            _installed_presets_affecting_agent,
+        )
+
+        project = tmp_path / "proj"
+        project.mkdir()
+
+        # Genuinely absent registry → empty list (safe to proceed).
+        assert _installed_presets_affecting_agent(project, "bob") == []
+
+        presets_dir = project / ".specify" / "presets"
+        presets_dir.mkdir(parents=True)
+        registry = presets_dir / ".registry"
+
+        # Corrupted JSON → unreadable → raise.
+        registry.write_text("{ not json", encoding="utf-8")
+        with pytest.raises(_PresetRegistryUnreadableError):
+            _installed_presets_affecting_agent(project, "bob")
+
+        # Malformed structure (presets not a dict) → unreadable → raise.
+        registry.write_text(json.dumps({"presets": []}), encoding="utf-8")
+        with pytest.raises(_PresetRegistryUnreadableError):
+            _installed_presets_affecting_agent(project, "bob")
+
+        # Malformed per-preset entry (not a dict) → ownership unknown → raise.
+        registry.write_text(
+            json.dumps({"presets": {"p1": []}}), encoding="utf-8"
+        )
+        with pytest.raises(_PresetRegistryUnreadableError):
+            _installed_presets_affecting_agent(project, "bob")
+
+        # Malformed registered_commands (not a dict) → raise.
+        registry.write_text(
+            json.dumps({"presets": {"p1": {"registered_commands": []}}}),
+            encoding="utf-8",
+        )
+        with pytest.raises(_PresetRegistryUnreadableError):
+            _installed_presets_affecting_agent(project, "bob")
+
+        # Malformed registered_skills (neither list nor dict) → raise.
+        registry.write_text(
+            json.dumps({"presets": {"p1": {"registered_skills": "oops"}}}),
+            encoding="utf-8",
+        )
+        with pytest.raises(_PresetRegistryUnreadableError):
+            _installed_presets_affecting_agent(project, "bob")
+
+        # Dict-shaped fields with non-list values (ownership undecidable)
+        # must also fail closed, not read as "no artifacts".
+        registry.write_text(
+            json.dumps(
+                {"presets": {"p1": {"registered_skills": {"bob": None}}}}
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(_PresetRegistryUnreadableError):
+            _installed_presets_affecting_agent(project, "bob")
+        registry.write_text(
+            json.dumps(
+                {"presets": {"p1": {"registered_commands": {"bob": ""}}}}
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(_PresetRegistryUnreadableError):
+            _installed_presets_affecting_agent(project, "bob")
+
+        # Valid, empty registry → empty list.
+        registry.write_text(json.dumps({"presets": {}}), encoding="utf-8")
+        assert _installed_presets_affecting_agent(project, "bob") == []
+
+        # Valid registry with a preset registered for bob → report its ID.
+        # registered_skills comes in two shapes: a legacy flat list (not
+        # agent-scoped → fail closed, any entry affects) and the per-agent
+        # dict written by preset registration ({agent: [skill names]} → only
+        # this agent's entries affect it).
+        registry.write_text(
+            json.dumps({
+                "presets": {
+                    "p1": {"registered_commands": {"bob": ["speckit.plan"]}},
+                    "p2": {"registered_commands": {"codex": ["speckit.plan"]}},
+                    "p3": {"registered_skills": ["speckit-x"]},
+                    "p4": {"registered_skills": {"bob": ["speckit-y"]}},
+                    "p5": {"registered_skills": {"codex": ["speckit-z"]}},
+                    "p6": {"registered_skills": {"bob": []}},
+                    "p7": {
+                        "enabled": False,
+                        "registered_commands": {"bob": ["speckit.tasks"]},
+                    },
+                }
+            }),
+            encoding="utf-8",
+        )
+        assert sorted(_installed_presets_affecting_agent(project, "bob")) == [
+            "p1",
+            "p3",
+            "p4",
+            "p7",
+        ]
+        assert _installed_command_presets_affecting_agent(project, "bob") == [
+            "p1",
+            "p7",
+        ]
 
 
 # ── Full lifecycle ───────────────────────────────────────────────────
@@ -2366,6 +4385,51 @@ class TestParseIntegrationOptionsEqualsForm:
         assert result_equals is not None
         assert result_space["commands_dir"] == "./mydir"
         assert result_equals["commands_dir"] == "./mydir"
+
+    def test_unbalanced_quote_exits_cleanly(self, capsys):
+        """An unbalanced quote must exit(1) with a message, not a raw ValueError.
+
+        shlex.split() raises ValueError("No closing quotation") on an unbalanced
+        quote; the parser must translate that into the same clean typer.Exit(1)
+        UX as unknown-option / missing-value, rather than letting the traceback
+        escape (issue #3457).
+        """
+        import typer
+
+        from specify_cli.integrations._commands import _parse_integration_options
+        from specify_cli.integrations import get_integration
+
+        integration = get_integration("generic")
+        assert integration is not None
+
+        with pytest.raises(typer.Exit) as excinfo:
+            _parse_integration_options(integration, '--commands-dir "foo')
+        assert excinfo.value.exit_code == 1
+        assert "Error: Could not parse integration options: No closing quotation." in capsys.readouterr().out
+
+    def test_bad_option_token_with_rich_markup_exits_cleanly(self):
+        """A bad option token carrying Rich markup must exit cleanly, not crash.
+
+        The token is user-controlled and gets interpolated into console.print.
+        A value like '[/red]foo' parses fine through shlex but is an unexpected
+        value / unknown option — and an unbalanced Rich tag would raise
+        rich.errors.MarkupError inside console.print, leaking a traceback
+        instead of the intended typer.Exit(1). The token must be escaped."""
+        import typer
+
+        from specify_cli.integrations._commands import _parse_integration_options
+        from specify_cli.integrations import get_integration
+
+        integration = get_integration("generic")
+        assert integration is not None
+
+        # Unexpected value token carrying markup.
+        with pytest.raises(typer.Exit):
+            _parse_integration_options(integration, "[/red]foo")
+
+        # Unknown option token carrying markup.
+        with pytest.raises(typer.Exit):
+            _parse_integration_options(integration, "--[/red]bad")
 
 
 class TestUninstallNoManifestClearsInitOptions:

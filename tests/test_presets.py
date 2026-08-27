@@ -14,12 +14,15 @@ import pytest
 import io
 import json
 import tempfile
+import tarfile
 import shutil
 import warnings
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import yaml
 
@@ -195,6 +198,160 @@ class TestPresetManifest:
             with pytest.raises(PresetValidationError, match="YAML mapping"):
                 PresetManifest(manifest_path)
 
+    @pytest.mark.parametrize("section", ["preset", "requires", "provides"])
+    @pytest.mark.parametrize("bad_value", [None, [], "text"])
+    def test_required_section_not_mapping_raises_validation_error(
+        self, temp_dir, valid_pack_data, section, bad_value
+    ):
+        """Required manifest sections reject null, list, and scalar values."""
+        valid_pack_data[section] = bad_value
+        manifest_path = temp_dir / "preset.yml"
+        manifest_path.write_text(
+            yaml.safe_dump(valid_pack_data),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(
+            PresetValidationError,
+            match=rf"Invalid {section}: expected a mapping",
+        ):
+            PresetManifest(manifest_path)
+
+    @pytest.mark.parametrize("field", ["id", "name", "version", "description"])
+    @pytest.mark.parametrize("bad", [1.0, 5, None, ["a"], {"a": 1}, True])
+    def test_preset_metadata_field_not_string_raises_validation_error(
+        self, temp_dir, valid_pack_data, field, bad
+    ):
+        """A non-string preset.<field> raises PresetValidationError, not a raw
+        TypeError.
+
+        The loop over these four fields only checked key PRESENCE, then fed the
+        values to ``re.match`` (id) and ``packaging.Version`` (version), both of
+        which raise a bare TypeError on a non-string. YAML makes that an easy
+        authoring slip: unquoted ``version: 1.0`` parses as a float and ``id: 2``
+        as an int. TypeError is not a PresetValidationError, so it escaped
+        list_installed()'s "Corrupted preset" fallback and made
+        `specify preset list` exit 1 with a raw traceback, hiding every healthy
+        preset too. The sibling IntegrationDescriptor already type-checks the
+        same four fields.
+        """
+        valid_pack_data["preset"][field] = bad
+        manifest_path = temp_dir / "preset.yml"
+        manifest_path.write_text(yaml.safe_dump(valid_pack_data), encoding="utf-8")
+
+        with pytest.raises(
+            PresetValidationError,
+            match=rf"Invalid preset\.{field}: expected a string",
+        ):
+            PresetManifest(manifest_path)
+
+    @pytest.mark.parametrize("field", ["name", "file"])
+    @pytest.mark.parametrize("bad", [1.0, 5, None, ["a"], {"a": 1}, True])
+    def test_template_entry_field_not_string_raises_validation_error(
+        self, temp_dir, valid_pack_data, field, bad
+    ):
+        """A non-string template ``name``/``file`` raises PresetValidationError.
+
+        ``name`` reaches ``re.match`` and ``file`` reaches ``os.path.normpath``;
+        both raise a bare TypeError on a non-string. The sibling extension
+        manifest already rejects a non-string command ``file`` via
+        relative_extension_path_violation().
+        """
+        valid_pack_data["provides"]["templates"][0][field] = bad
+        manifest_path = temp_dir / "preset.yml"
+        manifest_path.write_text(yaml.safe_dump(valid_pack_data), encoding="utf-8")
+
+        with pytest.raises(
+            PresetValidationError,
+            match=rf"Invalid template {field}: expected a string",
+        ):
+            PresetManifest(manifest_path)
+
+    def test_one_bad_manifest_does_not_hide_healthy_presets(self, temp_dir):
+        """End-to-end guard for the symptom: an unquoted ``version: 1.0`` in one
+        installed preset must degrade to "Corrupted preset" and still let
+        list_installed() report the healthy ones, instead of raising TypeError
+        out of the whole call.
+        """
+        preset_root = temp_dir / ".specify" / "presets"
+        for pack_id, version in (("good-pack", '"1.0.0"'), ("bad-pack", "1.0")):
+            pack_path = preset_root / pack_id
+            pack_path.mkdir(parents=True, exist_ok=True)
+            (pack_path / "preset.yml").write_text(
+                f"""schema_version: "1.0"
+preset:
+  id: {pack_id}
+  name: {pack_id}
+  version: {version}
+  description: desc
+requires:
+  speckit_version: ">=0.1.0"
+provides:
+  templates:
+    - type: template
+      name: spec
+      file: templates/spec.md
+""",
+                encoding="utf-8",
+            )
+        (preset_root / ".registry").write_text(
+            json.dumps(
+                {
+                    "schema_version": "1.0",
+                    "presets": {
+                        "good-pack": {"version": "1.0.0", "enabled": True},
+                        "bad-pack": {"version": "1.0", "enabled": True},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        listed = {row["id"]: row for row in PresetManager(temp_dir).list_installed()}
+
+        assert set(listed) == {"good-pack", "bad-pack"}
+        assert "Corrupted" not in listed["good-pack"]["description"]
+        assert "Corrupted" in listed["bad-pack"]["description"]
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            5, "oops", {"a": 1},   # truthy non-lists
+            0, False, None, "", {},  # FALSY non-lists: must not fall through to
+                                     # the misleading "at least one template"
+        ],
+    )
+    def test_non_list_templates_raises_validation_error(
+        self, temp_dir, valid_pack_data, bad
+    ):
+        """A non-list provides.templates raises the accurate type error, not a raw
+        'int object is not iterable' TypeError and not the misleading "must provide
+        at least one template" (which a falsy non-list hit while the type check
+        sat behind the emptiness check) — mirrors ExtensionManifest."""
+        valid_pack_data["provides"]["templates"] = bad
+        manifest_path = temp_dir / "preset.yml"
+        manifest_path.write_text(yaml.dump(valid_pack_data), encoding="utf-8")
+        with pytest.raises(PresetValidationError, match="templates.*expected a list"):
+            PresetManifest(manifest_path)
+
+    # NOTE: the empty-list case (a well-typed container with no templates, which
+    # must keep the "must provide at least one template" message after the
+    # type-before-emptiness reordering) is already covered by
+    # test_no_templates_provided below.
+
+    @pytest.mark.parametrize("bad_entry", [None, 5, "oops", ["nested"]])
+    def test_non_mapping_template_entry_raises_validation_error(
+        self, temp_dir, valid_pack_data, bad_entry
+    ):
+        """A non-mapping template entry (null/scalar/list) raises PresetValidationError,
+        not a raw 'argument of type ... is not iterable' TypeError from the
+        `"type" not in tmpl` membership test — mirrors ExtensionManifest."""
+        valid_pack_data["provides"]["templates"] = [bad_entry]
+        manifest_path = temp_dir / "preset.yml"
+        manifest_path.write_text(yaml.dump(valid_pack_data), encoding="utf-8")
+        with pytest.raises(PresetValidationError, match="must be a mapping"):
+            PresetManifest(manifest_path)
+
     def test_missing_schema_version(self, temp_dir, valid_pack_data):
         """Test missing schema_version field."""
         del valid_pack_data["schema_version"]
@@ -249,6 +406,37 @@ class TestPresetManifest:
         with pytest.raises(PresetValidationError, match="Missing requires.speckit_version"):
             PresetManifest(manifest_path)
 
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            1.0,            # unquoted YAML float -- the likeliest authoring slip
+            5,              # unquoted int
+            True,           # YAML `yes`/`true`
+            None,           # `speckit_version:` written but left empty
+            [">=0.1.0"],    # iterable: slips past SpecifierSet() entirely
+            {"min": "0.1"},  # iterable: same
+            "   ",          # blank string must not mean "any version"
+        ],
+    )
+    def test_non_string_speckit_version(self, temp_dir, valid_pack_data, bad):
+        """A non-string requires.speckit_version must be a PresetValidationError.
+
+        It was presence-checked only, so it reached ``SpecifierSet(required)`` in
+        check_compatibility(), which is guarded by ``except InvalidSpecifier``
+        alone. A non-string escapes that guard two ways: scalars raise TypeError
+        from the constructor, and a list/dict is iterable so SpecifierSet accepts
+        it and the failure surfaces later as ``AttributeError: 'str' object has no
+        attribute 'filter'`` from inside .contains().
+        """
+        valid_pack_data["requires"]["speckit_version"] = bad
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        with pytest.raises(
+            PresetValidationError, match="Invalid requires.speckit_version"
+        ):
+            PresetManifest(manifest_path)
+
     def test_no_templates_provided(self, temp_dir, valid_pack_data):
         """Test pack with no templates."""
         valid_pack_data["provides"]["templates"] = []
@@ -296,7 +484,10 @@ class TestPresetManifest:
         manifest = PresetManifest(pack_dir / "preset.yml")
         hash_val = manifest.get_hash()
         assert hash_val.startswith("sha256:")
-        assert len(hash_val) > 10
+        import hashlib
+        content = (pack_dir / "preset.yml").read_bytes()
+        expected = f"sha256:{hashlib.sha256(content).hexdigest()}"
+        assert hash_val == expected
 
     def test_multiple_templates(self, temp_dir, valid_pack_data):
         """Test pack with multiple templates of different types."""
@@ -312,6 +503,41 @@ class TestPresetManifest:
         manifest = PresetManifest(manifest_path)
         assert len(manifest.templates) == 4
 
+    def test_duplicate_template_name_and_type_raises_validation_error(
+        self, temp_dir, valid_pack_data
+    ):
+        """A later entry with the same (name, type) pair must be rejected.
+
+        ``PresetResolver._manifest_declared_template`` returns the FIRST
+        'provides.templates' entry matching a given (name, type) pair, so a
+        later duplicate would be silently unreachable while still being
+        counted by ``PresetManifest.templates`` -- mirroring the sibling bug
+        fixed for ``ExtensionManifest``'s provides.templates/scripts (#4016).
+        """
+        valid_pack_data["provides"]["templates"] = [
+            {"type": "command", "name": "specify", "file": "commands/specify-v1.md"},
+            {"type": "command", "name": "specify", "file": "commands/specify-v2.md"},
+        ]
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        with pytest.raises(PresetValidationError, match="Duplicate template name"):
+            PresetManifest(manifest_path)
+
+    def test_same_name_different_type_templates_allowed(
+        self, temp_dir, valid_pack_data
+    ):
+        """The same name may recur across different template types."""
+        valid_pack_data["provides"]["templates"] = [
+            {"type": "template", "name": "specify", "file": "templates/specify.md"},
+            {"type": "command", "name": "specify", "file": "commands/specify.md"},
+        ]
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        manifest = PresetManifest(manifest_path)
+        assert len(manifest.templates) == 2
+
 
 # ===== PresetRegistry Tests =====
 
@@ -326,6 +552,27 @@ class TestPresetRegistry:
         registry = PresetRegistry(packs_dir)
         assert registry.list() == {}
         assert not registry.is_installed("test-pack")
+
+    def test_load_starts_fresh_for_non_utf8_registry(self, temp_dir):
+        """A registry file with undecodable bytes must start fresh, not raise.
+
+        ``_load()`` already treats malformed JSON as "corrupted registry,
+        start fresh", but a registry whose *bytes* cannot be decoded as UTF-8
+        raised a raw ``UnicodeDecodeError`` from the same boundary — the same
+        corruption class reaching a different exception type.
+        """
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        (packs_dir / PresetRegistry.REGISTRY_FILE).write_bytes(
+            b"\xff\xfe not utf-8 \xc3\x28"
+        )
+
+        registry = PresetRegistry(packs_dir)
+
+        assert registry.data == {
+            "schema_version": PresetRegistry.SCHEMA_VERSION,
+            "presets": {},
+        }
 
     def test_add_and_get(self, temp_dir):
         """Test adding and retrieving a pack."""
@@ -629,6 +876,27 @@ class TestPresetManager:
         assert manifest.id == "test-pack"
         assert manager.registry.is_installed("test-pack")
 
+    def test_install_from_zip_forwards_force(
+        self, project_dir, pack_dir, temp_dir
+    ):
+        """The compatibility wrapper must retain forced reinstall behavior."""
+        zip_path = temp_dir / "test-pack.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            for file_path in pack_dir.rglob("*"):
+                if file_path.is_file():
+                    zf.write(file_path, file_path.relative_to(pack_dir))
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+        manifest = manager.install_from_zip(
+            zip_path,
+            "0.1.5",
+            force=True,
+        )
+
+        assert manifest.id == "test-pack"
+        assert manager.registry.is_installed("test-pack")
+
     def test_install_from_zip_nested(self, project_dir, pack_dir, temp_dir):
         """Test installing from ZIP with nested directory."""
         zip_path = temp_dir / "test-pack.zip"
@@ -651,6 +919,67 @@ class TestPresetManager:
         manager = PresetManager(project_dir)
         with pytest.raises(PresetValidationError, match="No preset.yml found"):
             manager.install_from_zip(zip_path, "0.1.5")
+
+    def test_install_from_zip_rejects_symlink_entry(
+        self, project_dir, pack_dir, temp_dir
+    ):
+        """Preset ZIPs delegate to the shared symlink-safe extractor."""
+        import stat
+
+        zip_path = temp_dir / "symlink-preset.zip"
+        link = zipfile.ZipInfo("templates/escape")
+        link.create_system = 3
+        link.external_attr = (stat.S_IFLNK | 0o777) << 16
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            for file_path in pack_dir.rglob("*"):
+                if file_path.is_file():
+                    zf.write(file_path, file_path.relative_to(pack_dir))
+            zf.writestr(link, "../../outside")
+
+        manager = PresetManager(project_dir)
+        with pytest.raises(PresetValidationError, match="Unsafe symlink"):
+            manager.install_from_zip(zip_path, "0.1.5")
+
+        assert not manager.registry.is_installed("test-pack")
+
+    @pytest.mark.parametrize("suffix", [".tar.gz", ".tgz"])
+    @pytest.mark.parametrize("nested", [False, True])
+    def test_install_from_tar_archive(
+        self, project_dir, pack_dir, temp_dir, suffix, nested
+    ):
+        """Tar archives install with the same flat/nested behavior as ZIP."""
+        archive_path = temp_dir / f"test-pack{suffix}"
+        with tarfile.open(archive_path, "w:gz") as archive:
+            for file_path in pack_dir.rglob("*"):
+                if file_path.is_file():
+                    relative = file_path.relative_to(pack_dir)
+                    arcname = Path("test-pack-v1") / relative if nested else relative
+                    archive.add(file_path, arcname=arcname)
+
+        manager = PresetManager(project_dir)
+        manifest = manager.install_from_archive(archive_path, "0.1.5")
+
+        assert manifest.id == "test-pack"
+        assert manager.registry.is_installed("test-pack")
+
+    def test_install_from_tar_rejects_symlink_entry(
+        self, project_dir, pack_dir, temp_dir
+    ):
+        archive_path = temp_dir / "symlink-preset.tar.gz"
+        with tarfile.open(archive_path, "w:gz") as archive:
+            for file_path in pack_dir.rglob("*"):
+                if file_path.is_file():
+                    archive.add(file_path, arcname=file_path.relative_to(pack_dir))
+            link = tarfile.TarInfo("templates/escape")
+            link.type = tarfile.SYMTYPE
+            link.linkname = "../../outside"
+            archive.addfile(link)
+
+        manager = PresetManager(project_dir)
+        with pytest.raises(PresetValidationError, match="Unsafe symlink"):
+            manager.install_from_archive(archive_path, "0.1.5")
+
+        assert not manager.registry.is_installed("test-pack")
 
     def test_remove(self, project_dir, pack_dir):
         """Test removing a preset."""
@@ -708,11 +1037,40 @@ class TestPresetManager:
         manifest = PresetManifest(pack_dir / "preset.yml")
         assert manager.check_compatibility(manifest, "0.1.5") is True
 
+    def test_check_compatibility_prerelease(self, pack_dir, temp_dir):
+        """Test compatibility check allows prereleases and fails on boundary."""
+        manager = PresetManager(temp_dir)
+        manifest = PresetManifest(pack_dir / "preset.yml")
+        # manifest requires >=0.1.0
+        assert manager.check_compatibility(manifest, "0.8.8.dev0") is True
+        with pytest.raises(PresetCompatibilityError, match="Preset requires spec-kit"):
+            manager.check_compatibility(manifest, "0.1.0.dev0")
+
     def test_check_compatibility_invalid(self, pack_dir, temp_dir):
         """Test compatibility check with invalid specifier."""
         manager = PresetManager(temp_dir)
         manifest = PresetManifest(pack_dir / "preset.yml")
         manifest.data["requires"]["speckit_version"] = "not-a-specifier"
+        with pytest.raises(PresetCompatibilityError, match="Invalid version specifier"):
+            manager.check_compatibility(manifest, "0.1.5")
+
+    @pytest.mark.parametrize(
+        "bad",
+        [1.0, 5, True, None, [">=0.1.0"], {"min": "0.1"}],
+    )
+    def test_check_compatibility_non_string_specifier(self, pack_dir, temp_dir, bad):
+        """check_compatibility() must report a non-string as a compatibility error.
+
+        Defense in depth for the validator check: this method is public and the
+        specifier is read back out of mutable manifest data, and ``except
+        InvalidSpecifier`` does not cover a non-string. Without the guard, scalars
+        raise a bare TypeError and iterables construct fine only to break inside
+        .contains() -- neither is a PresetCompatibilityError, so both bypass the
+        CLI's "Compatibility Error" handler and exit 1 with a raw traceback.
+        """
+        manager = PresetManager(temp_dir)
+        manifest = PresetManifest(pack_dir / "preset.yml")
+        manifest.data["requires"]["speckit_version"] = bad
         with pytest.raises(PresetCompatibilityError, match="Invalid version specifier"):
             manager.check_compatibility(manifest, "0.1.5")
 
@@ -815,6 +1173,40 @@ class TestPresetResolver:
         result = resolver.resolve("nonexistent-template")
         assert result is None
 
+    def test_resolver_ignores_traversing_registry_ids(self, project_dir):
+        """Registry IDs cannot escape preset or extension install roots."""
+        for registry_dir, registry_key, outside_name in (
+            ("presets", "presets", "outside-preset"),
+            ("extensions", "extensions", "outside-extension"),
+        ):
+            outside = project_dir.parent / outside_name
+            (outside / "templates").mkdir(parents=True)
+            (outside / "templates" / "spec-template.md").write_text(
+                f"# Sensitive {registry_key}\n",
+                encoding="utf-8",
+            )
+            installed = project_dir / ".specify" / registry_dir
+            installed.mkdir(parents=True, exist_ok=True)
+            (installed / ".registry").write_text(
+                json.dumps(
+                    {
+                        registry_key: {
+                            f"../../../{outside_name}": {
+                                "enabled": True,
+                                "priority": 1,
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+        content = PresetResolver(project_dir).resolve_content("spec-template")
+
+        assert content is not None
+        assert "Core Spec Template" in content
+        assert "Sensitive" not in content
+
     def test_resolve_higher_priority_pack_wins(self, project_dir, temp_dir, valid_pack_data):
         """Test that a pack with lower priority number wins over higher number."""
         manager = PresetManager(project_dir)
@@ -872,6 +1264,186 @@ class TestPresetResolver:
         result = resolver.resolve("spec-template")
         assert result is not None
         assert "Custom Spec Template" in result.read_text()
+
+    def _install_pack_with_manifest_file(self, project_dir, *, extra_file=False):
+        """Create a pack whose manifest declares a NON-convention file: path.
+
+        Returns the pack dir under the project. The declared file lives at
+        custom/spec.md (not the convention templates/spec-template.md).
+        """
+        presets_dir = project_dir / ".specify" / "presets"
+        pack_dir = presets_dir / "mypack"
+        (pack_dir / "custom").mkdir(parents=True)
+        (pack_dir / "custom" / "spec.md").write_text(
+            "# Manifest-declared Spec\n", encoding="utf-8"
+        )
+        if extra_file:
+            # An undeclared convention-path file the manifest points away from.
+            (pack_dir / "templates").mkdir()
+            (pack_dir / "templates" / "spec-template.md").write_text(
+                "# Stray Convention Spec\n", encoding="utf-8"
+            )
+        manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "mypack",
+                "name": "My Pack",
+                "version": "1.0.0",
+                "description": "declares a non-convention file path",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": "spec-template",
+                        "file": "custom/spec.md",
+                        "strategy": "replace",
+                    }
+                ]
+            },
+        }
+        with open(pack_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest, f)
+        PresetRegistry(presets_dir).add(
+            "mypack", {"version": "1.0.0", "priority": 10}
+        )
+        return pack_dir
+
+    def test_resolve_uses_manifest_declared_file_path(self, project_dir):
+        """resolve() must honor a manifest-declared non-convention file: path.
+
+        Previously the tier-2 loop was convention-only, so it returned the
+        core template and resolve_with_source() misattributed source='core',
+        diverging from collect_all_layers()/resolve_content().
+        """
+        pack_dir = self._install_pack_with_manifest_file(project_dir)
+        resolver = PresetResolver(project_dir)
+
+        result = resolver.resolve("spec-template")
+        assert result == pack_dir / "custom" / "spec.md"
+        assert "Manifest-declared Spec" in result.read_text()
+
+        sourced = resolver.resolve_with_source("spec-template")
+        assert sourced is not None
+        assert "mypack" in sourced["source"]
+        # resolve() must agree with collect_all_layers()'s top layer.
+        layers = resolver.collect_all_layers("spec-template")
+        assert Path(layers[0]["path"]) == pack_dir / "custom" / "spec.md"
+
+    def test_resolve_manifest_file_wins_over_undeclared_convention_file(
+        self, project_dir
+    ):
+        """A stray convention-path file must not shadow the manifest's file:."""
+        pack_dir = self._install_pack_with_manifest_file(
+            project_dir, extra_file=True
+        )
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("spec-template")
+        assert result == pack_dir / "custom" / "spec.md"
+        assert "Manifest-declared Spec" in result.read_text()
+
+    def test_resolve_skips_convention_when_manifest_file_missing(self, project_dir):
+        """When the manifest declares a file: that does not exist, resolve()
+        must NOT fall back to a convention file in the same pack (that would
+        mask a typo) — it skips the pack and resolves core instead."""
+        presets_dir = project_dir / ".specify" / "presets"
+        pack_dir = presets_dir / "mypack"
+        # Manifest declares custom/spec.md (MISSING); a convention file exists
+        # in the pack and must NOT be used.
+        (pack_dir / "templates").mkdir(parents=True)
+        (pack_dir / "templates" / "spec-template.md").write_text(
+            "# Stray Convention Spec\n", encoding="utf-8"
+        )
+        manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "mypack",
+                "name": "My Pack",
+                "version": "1.0.0",
+                "description": "declares a missing file path",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": "spec-template",
+                        "file": "custom/spec.md",
+                        "strategy": "replace",
+                    }
+                ]
+            },
+        }
+        with open(pack_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest, f)
+        PresetRegistry(presets_dir).add(
+            "mypack", {"version": "1.0.0", "priority": 10}
+        )
+
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("spec-template")
+        assert result is not None
+        content = result.read_text()
+        assert "Stray Convention Spec" not in content  # pack convention skipped
+        assert "Core Spec Template" in content  # fell through to core
+
+    def test_resolve_skips_convention_when_manifest_file_is_directory(
+        self, project_dir
+    ):
+        """When the manifest's file: path resolves to a DIRECTORY (not a regular
+        file), resolve()/collect_all_layers() must treat it as missing — exists()
+        would accept it and downstream read_text() on a directory would crash.
+        The pack is skipped (no convention fallback), so core wins."""
+        presets_dir = project_dir / ".specify" / "presets"
+        pack_dir = presets_dir / "mypack"
+        # Declared file: custom/spec.md is created as a DIRECTORY.
+        (pack_dir / "custom" / "spec.md").mkdir(parents=True)
+        # A convention file also exists and must NOT be used.
+        (pack_dir / "templates").mkdir(parents=True)
+        (pack_dir / "templates" / "spec-template.md").write_text(
+            "# Stray Convention Spec\n", encoding="utf-8"
+        )
+        manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "mypack",
+                "name": "My Pack",
+                "version": "1.0.0",
+                "description": "declares a file: that is actually a directory",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": "spec-template",
+                        "file": "custom/spec.md",
+                        "strategy": "replace",
+                    }
+                ]
+            },
+        }
+        with open(pack_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest, f)
+        PresetRegistry(presets_dir).add(
+            "mypack", {"version": "1.0.0", "priority": 10}
+        )
+
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("spec-template")
+        assert result is not None
+        assert result.is_file()  # never a directory
+        content = result.read_text()
+        assert "Stray Convention Spec" not in content  # pack convention skipped
+        assert "Core Spec Template" in content  # fell through to core
+        # collect_all_layers() must agree: the directory is not a layer.
+        layers = resolver.collect_all_layers("spec-template")
+        assert all(Path(layer["path"]).is_file() for layer in layers)
+        assert all(
+            Path(layer["path"]) != pack_dir / "custom" / "spec.md"
+            for layer in layers
+        )
 
     def test_resolve_override_takes_priority_over_pack(self, project_dir, pack_dir):
         """Test that overrides take priority over installed packs."""
@@ -946,6 +1518,65 @@ class TestPresetResolver:
         resolver = PresetResolver(project_dir)
         result = resolver.resolve("unique-disabled-template")
         assert result is None, "Disabled extension should not be picked up as unregistered"
+
+    @pytest.mark.parametrize(
+        "registry_bytes",
+        [b"{ not valid json", b'{"extensions": []}', b"[]"],
+        ids=["invalid_json", "non_mapping_extensions", "non_mapping_root"],
+    )
+    def test_resolve_fails_closed_on_corrupt_extension_registry(
+        self, project_dir, registry_bytes
+    ):
+        """A corrupt extension registry must fail closed rather than let the
+        directory scan admit every on-disk extension as enabled."""
+        extensions_dir = project_dir / ".specify" / "extensions"
+        ext_templates_dir = extensions_dir / "sneaky-ext" / "templates"
+        ext_templates_dir.mkdir(parents=True)
+        (ext_templates_dir / "custom-template.md").write_text(
+            "# Should not be served\n"
+        )
+        (extensions_dir / ".registry").write_bytes(registry_bytes)
+
+        resolver = PresetResolver(project_dir)
+        with pytest.raises(PresetValidationError, match="Invalid extension registry"):
+            resolver._get_all_extensions_by_priority()
+        with pytest.raises(PresetValidationError, match="Invalid extension registry"):
+            resolver.resolve("custom-template")
+
+    def test_resolve_fails_closed_when_registry_is_directory(self, project_dir):
+        """A directory at the registry path must fail closed, not be treated as
+        an absent registry that enables every on-disk extension."""
+        extensions_dir = project_dir / ".specify" / "extensions"
+        ext_templates_dir = extensions_dir / "sneaky-ext" / "templates"
+        ext_templates_dir.mkdir(parents=True)
+        (ext_templates_dir / "custom-template.md").write_text(
+            "# Should not be served\n"
+        )
+        (extensions_dir / ".registry").mkdir()
+
+        resolver = PresetResolver(project_dir)
+        with pytest.raises(PresetValidationError, match="Invalid extension registry"):
+            resolver.resolve("custom-template")
+
+    def test_resolve_fails_closed_when_registry_is_broken_symlink(self, project_dir):
+        """A dangling ``.registry`` symlink must fail closed. ``Path.exists()``
+        follows symlinks and would mistake it for an absent registry, reopening
+        the fail-open directory scan."""
+        extensions_dir = project_dir / ".specify" / "extensions"
+        ext_templates_dir = extensions_dir / "sneaky-ext" / "templates"
+        ext_templates_dir.mkdir(parents=True)
+        (ext_templates_dir / "custom-template.md").write_text(
+            "# Should not be served\n"
+        )
+        (extensions_dir / ".registry").symlink_to(
+            extensions_dir / "does-not-exist"
+        )
+
+        registry = ExtensionRegistry(extensions_dir)
+        assert registry.is_corrupt()
+        resolver = PresetResolver(project_dir)
+        with pytest.raises(PresetValidationError, match="Invalid extension registry"):
+            resolver.resolve("custom-template")
 
     def test_resolve_pack_over_extension(self, project_dir, pack_dir, temp_dir, valid_pack_data):
         """Test that pack templates take priority over extension templates."""
@@ -1032,6 +1663,32 @@ class TestPresetResolver:
         resolver = PresetResolver(project_dir)
         result = resolver.resolve("hidden-template")
         assert result is None
+
+    def test_collect_all_layers_finds_bundled_core_without_specify_commands(
+        self, project_dir
+    ):
+        """Tier-5 fallback locates the bundled core command when
+        .specify/templates/commands/ has no matching file.
+
+        Regression test for #3086: a stale ``.parent`` chain made the
+        source-checkout fallback resolve to ``src/templates/...`` (which does
+        not exist), so ``wrap`` presets found no base layer. The fallback must
+        resolve against the real repo-root ``templates/commands`` tree.
+        """
+        # project_dir's commands dir is empty, so tier-4 cannot satisfy this.
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("speckit.implement", "command")
+        assert layers, "expected a bundled core base layer to be found"
+        assert layers[-1]["source"] == "core (bundled)"
+        assert layers[-1]["path"].parts[-2:] == ("commands", "implement.md")
+
+    def test_resolve_command_falls_back_to_bundled_core(self, project_dir):
+        """resolve() tier-5 returns the bundled core command when
+        .specify/templates/commands/ lacks it (regression for #3086)."""
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("speckit.implement", "command")
+        assert result is not None
+        assert result.parts[-2:] == ("commands", "implement.md")
 
 
 class TestResolveCore:
@@ -1396,6 +2053,39 @@ class TestPresetCatalog:
         catalog._validate_catalog_url("http://localhost:8080/catalog.json")
         catalog._validate_catalog_url("http://127.0.0.1:8080/catalog.json")
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://:8080",                # port only, no host
+            "https://:8080/catalog.json",   # port only, with path
+            "https://:0",                   # port only, no host
+            "https://user@",                # userinfo only, no host
+            "https://user:pass@",           # userinfo only, no host
+        ],
+    )
+    def test_validate_catalog_url_hostless_rejected(self, project_dir, url):
+        """Reject host-less URLs whose netloc is truthy but hostname is None (#3209).
+
+        ``urlparse('https://:8080').netloc`` is ``':8080'`` (truthy) but its
+        ``hostname`` is ``None``, so a netloc-based check would accept a URL
+        with no actual host, contradicting the "valid URL with a host" error.
+        """
+        catalog = PresetCatalog(project_dir)
+        with pytest.raises(PresetValidationError, match="valid URL with a host"):
+            catalog._validate_catalog_url(url)
+
+    def test_validate_catalog_url_malformed_rejected(self, project_dir):
+        """A malformed URL raises PresetValidationError, not a raw ValueError.
+
+        ``urlparse('https://[::1').hostname`` raises ``ValueError: Invalid IPv6
+        URL`` (unterminated bracket). Without wrapping, that leaks past callers'
+        ``except PresetValidationError`` guards and crashes the CLI. Mirrors the
+        shared ``CatalogStackBase`` (#3435) and ``IntegrationCatalog`` behaviour.
+        """
+        catalog = PresetCatalog(project_dir)
+        with pytest.raises(PresetValidationError, match="malformed"):
+            catalog._validate_catalog_url("https://[::1")
+
     def test_env_var_catalog_url(self, project_dir, monkeypatch):
         """Test catalog URL from environment variable."""
         monkeypatch.setenv("SPECKIT_PRESET_CATALOG_URL", "https://custom.example.com/catalog.json")
@@ -1490,7 +2180,7 @@ class TestPresetCatalog:
 
         catalog_data = {"schema_version": "1.0", "presets": {}}
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(catalog_data).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(catalog_data).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://raw.githubusercontent.com/org/repo/main/presets/catalog.json"
@@ -1515,6 +2205,103 @@ class TestPresetCatalog:
             catalog._fetch_single_catalog(entry, force_refresh=True)
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
+
+    def test_fetch_single_catalog_revalidates_redirected_url(self, project_dir):
+        """An HTTPS catalog URL that redirects to http:// must be rejected AFTER
+        the redirect. _open_url follows redirects (auth stripped on downgrade),
+        so without re-validating response.geturl() the http payload would still
+        be fetched and trusted — and it supplies each preset's download_url +
+        sha256, defeating verify_archive_sha256. Parity with the
+        integrations/workflows catalog fetchers."""
+        catalog = PresetCatalog(project_dir)
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return json.dumps({"schema_version": "1.0", "presets": {}}).encode()
+
+            def geturl(self):
+                return "http://evil.test/catalog.json"  # downgraded via redirect
+
+        catalog._open_url = lambda url, timeout=None, redirect_validator=None: _Resp()
+
+        entry = PresetCatalogEntry(
+            url="https://good.example/catalog.json",
+            name="c",
+            priority=1,
+            install_allowed=True,
+        )
+        with pytest.raises(PresetValidationError, match="HTTPS"):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+
+    def test_fetch_single_catalog_validates_every_redirect_hop(self, project_dir):
+        """A redirect_validator is passed to _open_url and rejects a non-HTTPS
+        INTERMEDIATE hop — closing the https -> http -> attacker-https chain that
+        a terminal-URL-only check would miss."""
+        catalog = PresetCatalog(project_dir)
+        captured = {}
+
+        def fake_open(url, timeout=None, redirect_validator=None):
+            captured["rv"] = redirect_validator
+            # Simulate the hop urllib validates before following the redirect.
+            redirect_validator("https://good.example/catalog.json", "http://evil.test/hop")
+            raise AssertionError("redirect_validator should have raised")
+
+        catalog._open_url = fake_open
+        entry = PresetCatalogEntry(
+            url="https://good.example/catalog.json",
+            name="c",
+            priority=1,
+            install_allowed=True,
+        )
+        with pytest.raises(PresetValidationError, match="HTTPS"):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+        assert captured["rv"] is not None
+
+    def test_fetch_catalog_legacy_revalidates_redirected_url(self, project_dir):
+        """The legacy single-catalog fetch_catalog() path also rejects an
+        HTTPS -> http redirected payload (final geturl() check), matching
+        _fetch_single_catalog — it previously parsed the body with no check."""
+        catalog = PresetCatalog(project_dir)
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return json.dumps({"schema_version": "1.0", "presets": {}}).encode()
+
+            def geturl(self):
+                return "http://evil.test/catalog.json"
+
+        catalog._open_url = lambda url, timeout=None, redirect_validator=None: _Resp()
+        with pytest.raises(PresetError, match="HTTPS"):
+            catalog.fetch_catalog(force_refresh=True)
+
+    def test_fetch_catalog_legacy_validates_every_redirect_hop(self, project_dir):
+        """The legacy fetch_catalog() path also validates every INTERMEDIATE hop
+        (not just the terminal URL): it must supply a redirect_validator that
+        rejects an insecure hop, so an https -> http -> https chain is caught."""
+        catalog = PresetCatalog(project_dir)
+        captured = {}
+
+        def fake_open(url, timeout=None, redirect_validator=None):
+            captured["rv"] = redirect_validator
+            redirect_validator(url, "http://evil.test/hop")
+            raise AssertionError("redirect_validator should have raised")
+
+        catalog._open_url = fake_open
+        with pytest.raises(PresetError, match="HTTPS"):
+            catalog.fetch_catalog(force_refresh=True)
+        assert captured["rv"] is not None
 
     @pytest.mark.parametrize(
         "payload",
@@ -1546,9 +2333,12 @@ class TestPresetCatalog:
         catalog = PresetCatalog(project_dir)
 
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        # A real urllib response reports the final URL (== request URL with no
+        # redirect); the fetcher re-validates it after redirects.
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         entry = PresetCatalogEntry(
             url="https://example.com/catalog.json",
@@ -1615,9 +2405,10 @@ class TestPresetCatalog:
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = catalog.DEFAULT_CATALOG_URL
 
         entry = PresetCatalogEntry(
             url=catalog.DEFAULT_CATALOG_URL,
@@ -1662,9 +2453,10 @@ class TestPresetCatalog:
 
         catalog = PresetCatalog(project_dir)
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         with patch.object(catalog, "_open_url", return_value=mock_response):
             with pytest.raises(PresetError, match="Invalid preset catalog format"):
@@ -1703,9 +2495,10 @@ class TestPresetCatalog:
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         with patch.object(catalog, "_open_url", return_value=mock_response):
             result = catalog.fetch_catalog(force_refresh=False)
@@ -1741,9 +2534,10 @@ class TestPresetCatalog:
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         with patch.object(catalog, "_open_url", return_value=mock_response):
             result = catalog.fetch_catalog(force_refresh=False)
@@ -1811,9 +2605,10 @@ class TestPresetCatalog:
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode("utf-8")
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode("utf-8")).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         # Record every ``write_text`` call's encoding kwarg so the
         # assertion observes the production writer's argument directly.
@@ -1859,10 +2654,13 @@ class TestPresetCatalog:
             "schema_version": "1.0",
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
+        def make_response():
+            mock_response = MagicMock()
+            mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            mock_response.geturl.return_value = catalog.DEFAULT_CATALOG_URL
+            return mock_response
 
         # Simulate an unwritable cache dir: every write_text under the
         # cache directory raises PermissionError (an OSError subclass).
@@ -1875,7 +2673,7 @@ class TestPresetCatalog:
 
         monkeypatch.setattr(_PathCls, "write_text", failing_write_text)
 
-        with patch.object(catalog, "_open_url", return_value=mock_response):
+        with patch.object(catalog, "_open_url", side_effect=lambda *a, **kw: make_response()):
             # Legacy single-catalog path.
             assert catalog.fetch_catalog(force_refresh=True) == valid
 
@@ -1912,9 +2710,10 @@ class TestPresetCatalog:
             },
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         entry = PresetCatalogEntry(
             url="https://example.com/catalog.json",
@@ -1946,7 +2745,7 @@ class TestPresetCatalog:
         zip_bytes = zip_buf.getvalue()
 
         release_response = MagicMock()
-        release_response.read.return_value = json.dumps(
+        release_response.read.side_effect = io.BytesIO(json.dumps(
             {
                 "assets": [
                     {
@@ -1955,12 +2754,12 @@ class TestPresetCatalog:
                     }
                 ]
             }
-        ).encode()
+        ).encode()).read
         release_response.__enter__ = lambda s: s
         release_response.__exit__ = MagicMock(return_value=False)
 
         asset_response = MagicMock()
-        asset_response.read.return_value = zip_bytes
+        asset_response.read.side_effect = io.BytesIO(zip_bytes).read
         asset_response.__enter__ = lambda s: s
         asset_response.__exit__ = MagicMock(return_value=False)
 
@@ -1993,6 +2792,216 @@ class TestPresetCatalog:
         assert captured[1].get_header("Authorization") == "Bearer ghp_testtoken"
         assert captured[1].get_header("Accept") == "application/octet-stream"
 
+    def _pack_zip_and_response(self):
+        """Build a minimal preset ZIP and a context-manager mock response."""
+        from unittest.mock import MagicMock
+        import io
+
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", "id: test-pack\nname: Test\nversion: 1.0.0\n")
+        zip_bytes = zip_buf.getvalue()
+
+        resp = MagicMock()
+        resp.read.side_effect = io.BytesIO(zip_bytes).read
+        # Configure the context-manager protocol explicitly so `with resp`
+        # yields `resp` itself, independent of how the protocol is invoked.
+        resp.__enter__.return_value = resp
+        resp.__exit__.return_value = False
+        return zip_bytes, resp
+
+    def test_fetch_single_catalog_rejects_oversized_body_without_cache(
+        self, project_dir, monkeypatch
+    ):
+        """Catalog bounds are enforced at the preset call site."""
+        import specify_cli.presets as preset_module
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        entry = PresetCatalogEntry(
+            url="https://example.com/catalog.json",
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+        body = b'{"schema_version":"1.0","presets":{}}'
+        response = MagicMock()
+        response.read.side_effect = io.BytesIO(body).read
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+        response.geturl.return_value = entry.url
+        monkeypatch.setattr(
+            preset_module,
+            "MAX_JSON_CATALOG_BYTES",
+            len(body) - 1,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=response):
+            with pytest.raises(PresetError, match="exceeds maximum size"):
+                catalog._fetch_single_catalog(entry, force_refresh=True)
+
+        assert not catalog.cache_dir.exists() or not any(catalog.cache_dir.iterdir())
+
+    def test_download_pack_rejects_oversized_body_without_output(
+        self, project_dir, monkeypatch
+    ):
+        """Package bounds fail before checksum verification or disk writes."""
+        import specify_cli.presets as preset_module
+        from unittest.mock import patch
+        from specify_cli._download_security import (
+            read_response_limited as real_read_response_limited,
+        )
+
+        catalog = PresetCatalog(project_dir)
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "_install_allowed": True,
+        }
+        response = MagicMock()
+        response.read.side_effect = io.BytesIO(b"12345").read
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+
+        def read_with_tiny_limit(stream, **kwargs):
+            kwargs.pop("max_bytes", None)
+            return real_read_response_limited(stream, max_bytes=4, **kwargs)
+
+        monkeypatch.setattr(
+            preset_module,
+            "read_response_limited",
+            read_with_tiny_limit,
+        )
+        with patch.object(preset_module, "verify_archive_sha256") as verify, \
+             patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=response):
+            with pytest.raises(PresetError, match="exceeds maximum size"):
+                catalog.download_pack("test-pack", target_dir=project_dir)
+
+        verify.assert_not_called()
+        assert not (project_dir / "test-pack-1.0.0.zip").exists()
+
+    def test_download_pack_rejects_unsafe_output_filename(self, project_dir):
+        """Catalog-controlled IDs cannot escape the requested target directory."""
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        outside_stem = project_dir.parent / "outside-preset"
+        pack_id = str(outside_stem)
+        pack_info = {
+            "id": pack_id,
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url") as open_url:
+            with pytest.raises(PresetError, match="filename"):
+                catalog.download_pack(pack_id, target_dir=project_dir)
+
+        open_url.assert_not_called()
+        assert not Path(f"{outside_stem}-1.0.0.zip").exists()
+
+    def test_download_pack_accepts_matching_sha256(self, project_dir):
+        """A catalog ``sha256`` that matches the preset archive is accepted."""
+        import hashlib
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        zip_bytes, resp = self._pack_zip_and_response()
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "sha256": hashlib.sha256(zip_bytes).hexdigest(),
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=resp):
+            zip_path = catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert zip_path.read_bytes() == zip_bytes
+
+    def test_download_pack_rejects_sha256_mismatch(self, project_dir):
+        """A catalog ``sha256`` that does not match the archive aborts install."""
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        _zip_bytes, resp = self._pack_zip_and_response()
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "sha256": "0" * 64,  # deliberately wrong
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=resp):
+            with pytest.raises(PresetError, match="[Ii]ntegrity"):
+                catalog.download_pack("test-pack", target_dir=project_dir)
+
+    def test_download_pack_malformed_url_raises_preset_error(self, project_dir):
+        """A catalog ``download_url`` with a malformed authority (e.g. an
+        unterminated IPv6 bracket) surfaces a clean ``PresetError`` rather than
+        leaking a raw ``ValueError`` from ``urlparse``/``.hostname`` past the
+        command handler (which only catches ``PresetError``). Mirrors the
+        extensions coverage.
+        """
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        for bad_url in (
+            "https://[::1",
+            "https://[not-an-ip]/x",
+            "https://example.com:65536/x",
+            "https:///x",
+            123,
+        ):
+            pack_info = {
+                "id": "test-pack",
+                "name": "Test Pack",
+                "version": "1.0.0",
+                "download_url": bad_url,
+                "_install_allowed": True,
+            }
+            with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+                 patch.object(catalog, "_open_url") as open_url:
+                with pytest.raises(PresetError, match="malformed"):
+                    catalog.download_pack("test-pack", target_dir=project_dir)
+                open_url.assert_not_called()
+
+    def test_download_pack_without_sha256_skips_verification(self, project_dir):
+        """A catalog entry with no ``sha256`` keeps working: verification is
+        opt-in, so the backwards-compatible path (``pack_info.get("sha256")``
+        is ``None``) must download without aborting — mirrors the extensions
+        coverage so the helper never silently becomes mandatory for presets.
+        """
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        zip_bytes, resp = self._pack_zip_and_response()
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=resp):
+            zip_path = catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert zip_path.read_bytes() == zip_bytes
+
     def test_download_pack_accepts_direct_github_rest_asset_url(self, project_dir, monkeypatch):
         """download_pack can use a GitHub REST release asset URL directly."""
         from unittest.mock import patch, MagicMock
@@ -2008,7 +3017,7 @@ class TestPresetCatalog:
         zip_bytes = zip_buf.getvalue()
 
         asset_response = MagicMock()
-        asset_response.read.return_value = zip_bytes
+        asset_response.read.side_effect = io.BytesIO(zip_bytes).read
         asset_response.__enter__ = lambda s: s
         asset_response.__exit__ = MagicMock(return_value=False)
 
@@ -2037,6 +3046,39 @@ class TestPresetCatalog:
         assert captured[0].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
         assert captured[0].get_header("Authorization") == "Bearer ghp_testtoken"
         assert captured[0].get_header("Accept") == "application/octet-stream"
+
+    @pytest.mark.parametrize("suffix", [".tar.gz", ".tgz"])
+    def test_download_pack_preserves_tar_archive_format(
+        self, project_dir, suffix
+    ):
+        from unittest.mock import patch, MagicMock
+
+        archive_buffer = io.BytesIO()
+        with tarfile.open(fileobj=archive_buffer, mode="w:gz") as archive:
+            content = b"preset:\n  id: test-pack\n"
+            member = tarfile.TarInfo("preset.yml")
+            member.size = len(content)
+            archive.addfile(member, io.BytesIO(content))
+        archive_bytes = archive_buffer.getvalue()
+        response = MagicMock()
+        response.read.side_effect = io.BytesIO(archive_bytes).read
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+        catalog = PresetCatalog(project_dir)
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": f"https://example.com/test-pack{suffix}",
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=response):
+            archive_path = catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert archive_path.name == "test-pack-1.0.0.tar.gz"
+        assert archive_path.read_bytes() == archive_bytes
 
 
 # ===== Integration Tests =====
@@ -2173,6 +3215,134 @@ class TestPresetCatalogMultiCatalog:
         assert active[1].name == "community"
         assert active[1].priority == 2
         assert active[1].install_allowed is False
+
+    def test_catalog_list_escapes_rich_markup(self, project_dir):
+        """User-editable catalog name/url/description must not be parsed as Rich markup."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        entry = PresetCatalogEntry(
+            url="https://example.com/[cat].json",
+            name="Bracket [Catalog]",
+            priority=1,
+            install_allowed=True,
+            description="desc [with] brackets",
+        )
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(PresetCatalog, "get_active_catalogs", return_value=[entry]):
+            result = runner.invoke(app, ["preset", "catalog", "list"])
+        assert result.exit_code == 0, result.output
+        assert "Bracket [Catalog]" in result.output
+        assert "https://example.com/[cat].json" in result.output
+        assert "desc [with] brackets" in result.output
+
+    def test_catalog_add_escapes_rich_markup(self, project_dir):
+        """`preset catalog add` must not parse the name/url as Rich markup.
+
+        An unbalanced closing tag raised MarkupError *after* the entry was
+        already written to preset-catalogs.yml, so the user saw a traceback
+        and no confirmation for a catalog that had in fact been added.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        name = "[/red]my-catalog"
+        url = "https://example.com/[bold]c.json"
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app, ["preset", "catalog", "add", url, "--name", name]
+            )
+        assert result.exit_code == 0, result.output
+        # Rendered verbatim, not swallowed as markup.
+        assert name in result.output
+        assert url in result.output
+        # Only rendering is escaped: the raw values still round-trip to disk.
+        config = yaml.safe_load(
+            (project_dir / ".specify" / "preset-catalogs.yml").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert config["catalogs"][0]["name"] == name
+        assert config["catalogs"][0]["url"] == url
+
+    def test_catalog_remove_escapes_rich_markup(self, project_dir):
+        """`preset catalog remove` must not parse the name as Rich markup."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        name = "[/red]my-catalog"
+        (project_dir / ".specify" / "preset-catalogs.yml").write_text(
+            yaml.dump({
+                "catalogs": [
+                    {
+                        "name": name,
+                        "url": "https://example.com/c.json",
+                        "priority": 1,
+                        "install_allowed": False,
+                    }
+                ]
+            }),
+            encoding="utf-8",
+        )
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "catalog", "remove", name])
+        assert result.exit_code == 0, result.output
+        assert name in result.output
+
+    def test_catalog_remove_escapes_markup_in_not_found_error(self, project_dir):
+        """The not-found error path renders the name too."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        (project_dir / ".specify" / "preset-catalogs.yml").write_text(
+            yaml.dump({"catalogs": []}), encoding="utf-8"
+        )
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app, ["preset", "catalog", "remove", "[/red]absent"]
+            )
+        assert result.exit_code == 1
+        assert "[/red]absent" in result.output
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            [
+                "preset",
+                "catalog",
+                "add",
+                "https://example.com/catalog.json",
+                "--name",
+                "example",
+            ],
+            ["preset", "catalog", "remove", "example"],
+        ],
+    )
+    def test_catalog_mutation_rejects_non_mapping_config_root(
+        self, project_dir, args
+    ):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        config_path = project_dir / ".specify" / "preset-catalogs.yml"
+        original = "[]\n"
+        config_path.write_text(original, encoding="utf-8")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(app, args)
+
+        assert result.exit_code == 1
+        assert "expected a mapping" in result.output
+        assert config_path.read_text(encoding="utf-8") == original
 
     def test_env_var_overrides_catalogs(self, project_dir, monkeypatch):
         """Test that SPECKIT_PRESET_CATALOG_URL env var overrides defaults."""
@@ -2337,6 +3507,24 @@ class TestPresetCatalogMultiCatalog:
         with pytest.raises(PresetValidationError, match="Invalid priority|expected integer"):
             catalog._load_catalog_config(config_path)
 
+    def test_load_catalog_config_rejects_infinite_priority(self, project_dir):
+        """A ``priority: .inf`` yields a clean validation error, not an uncaught
+        OverflowError from int(float('inf'))."""
+        config_path = project_dir / ".specify" / "preset-catalogs.yml"
+        config_path.write_text(yaml.dump({
+            "catalogs": [
+                {
+                    "name": "inf-priority",
+                    "url": "https://example.com/catalog.json",
+                    "priority": float("inf"),
+                }
+            ]
+        }))
+
+        catalog = PresetCatalog(project_dir)
+        with pytest.raises(PresetValidationError, match="Invalid priority|expected integer"):
+            catalog._load_catalog_config(config_path)
+
     def test_load_catalog_config_install_allowed_string(self, project_dir):
         """Test that install_allowed accepts string values."""
         config_path = project_dir / ".specify" / "preset-catalogs.yml"
@@ -2429,6 +3617,9 @@ class TestPresetCatalogMultiCatalog:
 
 
 SELF_TEST_PRESET_DIR = Path(__file__).parent.parent / "presets" / "self-test"
+CONSTITUTION_SYNC_PRESET_DIR = (
+    Path(__file__).parent.parent / "presets" / "constitution-sync"
+)
 SELF_TEST_WRAP_WARNING = (
     r"Cannot compose command 'speckit\.wrap-test': no base layer\. "
     r"Stale command files may remain\."
@@ -2455,6 +3646,45 @@ def install_self_test_preset(manager: PresetManager, speckit_version: str = "0.1
         return manager.install_from_directory(SELF_TEST_PRESET_DIR, speckit_version)
 
 
+def install_constitution_sync_preset(manager: PresetManager) -> PresetManifest:
+    """Enable guarded install-time constitution materialization."""
+    return manager.install_from_directory(CONSTITUTION_SYNC_PRESET_DIR, "0.15.0")
+
+
+def _make_convention_constitution_preset(temp_dir: Path) -> Path:
+    """Create a preset whose constitution is found by convention, not its manifest."""
+    preset_dir = temp_dir / "convention-constitution"
+    (preset_dir / "templates").mkdir(parents=True)
+    (preset_dir / "templates" / "constitution-template.md").write_text(
+        "# Convention Constitution\n"
+    )
+    (preset_dir / "templates" / "spec-template.md").write_text("# Spec\n")
+    (preset_dir / "preset.yml").write_text(
+        yaml.dump(
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "convention-constitution",
+                    "name": "Convention Constitution",
+                    "version": "1.0.0",
+                    "description": "Convention-based constitution for testing",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "templates": [
+                        {
+                            "type": "template",
+                            "name": "spec-template",
+                            "file": "templates/spec-template.md",
+                        }
+                    ]
+                },
+            }
+        )
+    )
+    return preset_dir
+
+
 class TestSelfTestPreset:
     """Tests using the self-test preset that ships with the repo.
 
@@ -2478,7 +3708,7 @@ class TestSelfTestPreset:
         assert manifest.id == "self-test"
         assert manifest.name == "Self-Test Preset"
         assert manifest.version == "1.0.0"
-        assert len(manifest.templates) == 8  # 6 templates + 2 commands
+        assert len(manifest.templates) == 7  # 5 templates + 2 commands
 
     def test_self_test_provides_all_core_templates(self):
         """Verify the self-test preset provides an override for every core template."""
@@ -2553,6 +3783,7 @@ class TestSelfTestPreset:
             (templates_dir / f"{name}.md").write_text(f"# Core {name}\n")
 
         manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
         install_self_test_preset(manager)
         manager.remove("self-test")
 
@@ -2561,6 +3792,25 @@ class TestSelfTestPreset:
             result = resolver.resolve_with_source(name)
             assert result is not None
             assert result["source"] == "core"
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Core constitution-template\n"
+
+    def test_self_test_removal_preserves_edited_constitution(self, project_dir):
+        """Removing a preset does not overwrite an edited generated constitution."""
+        templates_dir = project_dir / ".specify" / "templates"
+        (templates_dir / "constitution-template.md").write_text("# Core Constitution\n")
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        install_self_test_preset(manager)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        edited = memory.read_text() + "\n## Authored amendment\n"
+        memory.write_text(edited)
+
+        manager.remove("self-test")
+
+        assert memory.read_text() == edited
 
     def test_self_test_not_in_catalog(self):
         """Verify the self-test preset is NOT in the catalog (it's local-only)."""
@@ -2636,8 +3886,458 @@ class TestSelfTestPreset:
         metadata = manager.registry.get("self-test")
         assert metadata["registered_commands"] == {}
 
-    def test_extension_command_skipped_when_extension_missing(self, project_dir, temp_dir):
-        """Test that extension command overrides are skipped if the extension isn't installed."""
+    def test_self_test_does_not_seed_constitution_without_sync(self, project_dir):
+        """Installing a preset does not materialize its constitution by default."""
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert not memory.exists()
+
+    def test_self_test_preserves_generated_constitution_without_sync(self, project_dir):
+        """Preset install and removal preserve generated content without the opt-in."""
+        resolver = PresetResolver(project_dir)
+        bundled_core = resolver._find_bundled_core(
+            "constitution-template", "template", ".md"
+        )
+        assert bundled_core is not None
+        core = bundled_core.read_bytes()
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        memory.write_bytes(core)
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+        manager.remove("self-test")
+
+        assert memory.read_bytes() == core
+
+    def test_self_test_seeds_constitution_with_sync(self, project_dir):
+        """constitution-sync preserves the previous install-time seeding behavior."""
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        install_self_test_preset(manager)
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert "preset:self-test" in memory.read_text()
+        assert "[PROJECT_NAME]" not in memory.read_text()
+
+    @pytest.mark.parametrize(
+        "provenance_content",
+        [
+            '{"sha256": "does-not-match", "source": "old-preset"}\n',
+            "{not valid json",
+        ],
+        ids=["hash-mismatch", "malformed"],
+    )
+    def test_self_test_preserves_core_content_with_existing_invalid_provenance(
+        self, project_dir, provenance_content
+    ):
+        """A present invalid sidecar disables legacy core-template migration."""
+        resolver = PresetResolver(project_dir)
+        bundled_core = resolver._find_bundled_core(
+            "constitution-template", "template", ".md"
+        )
+        assert bundled_core is not None
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        memory.write_bytes(bundled_core.read_bytes())
+        (memory.parent / ".constitution-template.json").write_text(
+            provenance_content
+        )
+        original = memory.read_bytes()
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        install_self_test_preset(manager)
+
+        assert memory.read_bytes() == original
+
+    def test_self_test_preserves_mutable_project_core_copy(self, project_dir):
+        """A project template copy does not establish generated provenance."""
+        authored = "# Acme Organization Constitution\n\nOrganization policy.\n"
+        project_template = (
+            project_dir / ".specify" / "templates" / "constitution-template.md"
+        )
+        project_template.write_text(authored)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        memory.write_text(authored)
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        install_self_test_preset(manager)
+
+        assert memory.read_text() == authored
+        assert not (memory.parent / ".constitution-template.json").exists()
+
+    def test_core_prefixed_preset_does_not_establish_generated_provenance(
+        self, project_dir, temp_dir
+    ):
+        """A preset ID beginning with core is not an immutable core source."""
+        authored = "# Acme Organization Constitution\n\nOrganization policy.\n"
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        memory.write_text(authored)
+
+        preset_dir = temp_dir / "core-company"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(authored)
+        (preset_dir / "preset.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "core-company",
+                        "name": "Core Company",
+                        "version": "1.0.0",
+                        "description": "Company constitution preset",
+                        "author": "Test Author",
+                        "repository": "https://github.com/test/core-company",
+                        "license": "MIT",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "description": "Company constitution",
+                                "replaces": "constitution-template",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        assert memory.read_text() == authored
+        assert not (memory.parent / ".constitution-template.json").exists()
+
+    def test_self_test_preserves_authored_constitution_with_placeholder(
+        self, project_dir
+    ):
+        """A placeholder mention does not establish generated provenance."""
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        authored = "# Acme Constitution\n\nGuidance for [PROJECT_NAME].\n"
+        memory.write_text(authored)
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        install_self_test_preset(manager)
+
+        assert memory.read_text() == authored
+
+    def test_self_test_preserves_authored_constitution(self, project_dir):
+        """An authored (placeholder-free) constitution is never overwritten."""
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        authored = "# Acme Constitution\n\n### I. Ship It\nAuthored by a human.\n"
+        memory.write_text(authored)
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        install_self_test_preset(manager)
+
+        assert memory.read_text() == authored, "authored constitution was overwritten"
+
+    def test_self_test_override_resolves_constitution_template(self, project_dir):
+        """The preset override of constitution-template resolves to the preset file."""
+        templates_dir = project_dir / ".specify" / "templates"
+        (templates_dir / "constitution-template.md").write_text("# Core constitution\n")
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("constitution-template", "template")
+        assert result is not None
+        assert "preset:self-test" in result.read_text()
+
+    def test_constitution_seed_composes_wrap_strategy(self, project_dir, temp_dir):
+        """Seeding memory composes wrap constitution-template layers."""
+        templates_dir = project_dir / ".specify" / "templates"
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        (templates_dir / "constitution-template.md").write_text(
+            "# Core Constitution\n\n## Core Principle\n"
+        )
+
+        preset_dir = temp_dir / "constitution-wrap"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(
+            "# Wrapper Constitution\n\n{CORE_TEMPLATE}\n\n## Wrapper Footer\n"
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "constitution-wrap",
+                        "name": "Constitution Wrap",
+                        "version": "1.0.0",
+                        "description": "Wrap constitution template for testing",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "strategy": "wrap",
+                                "description": "Wrapped constitution template",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        content = memory.read_text()
+        assert "{CORE_TEMPLATE}" not in content
+        assert "# Wrapper Constitution" in content
+        assert "## Core Principle" in content
+
+    def test_constitution_follows_priority_when_winning_preset_removed(
+        self, project_dir, temp_dir
+    ):
+        """An unchanged generated constitution follows priority and fallback layers."""
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        install_self_test_preset(manager)
+
+        preset_dir = temp_dir / "higher-priority"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(
+            "# Higher Priority Constitution\n"
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "higher-priority",
+                        "name": "Higher Priority",
+                        "version": "1.0.0",
+                        "description": "Higher-priority constitution",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "strategy": "replace",
+                                "description": "Higher-priority constitution",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+
+        manager.install_from_directory(preset_dir, "0.1.5", priority=1)
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Higher Priority Constitution\n"
+
+        manager.remove("higher-priority")
+
+        assert "preset:self-test" in memory.read_text()
+
+    def test_convention_constitution_removal_restores_remaining_layer(
+        self, project_dir, temp_dir
+    ):
+        """Removing a convention layer rematerializes the remaining resolver layer."""
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        install_self_test_preset(manager)
+        manager.install_from_directory(
+            _make_convention_constitution_preset(temp_dir), "0.1.5", priority=1
+        )
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Convention Constitution\n"
+
+        manager.remove("convention-constitution")
+
+        assert "preset:self-test" in memory.read_text()
+
+    def test_convention_constitution_removal_preserves_edited_content(
+        self, project_dir, temp_dir
+    ):
+        """Removing a convention layer does not overwrite edited generated content."""
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        templates_dir = project_dir / ".specify" / "templates"
+        (templates_dir / "constitution-template.md").write_text("# Core Constitution\n")
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        manager.install_from_directory(
+            _make_convention_constitution_preset(temp_dir), "0.1.5"
+        )
+        ensure_constitution_from_template(project_dir)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        edited = memory.read_text() + "\n## Authored amendment\n"
+        memory.write_text(edited)
+
+        manager.remove("convention-constitution")
+
+        assert memory.read_text() == edited
+
+    def test_custom_constitution_removal_recovers_with_invalid_manifest(
+        self, project_dir, temp_dir
+    ):
+        """Provenance triggers fallback when a custom-path manifest is invalid."""
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        install_self_test_preset(manager)
+
+        preset_dir = temp_dir / "custom-constitution"
+        (preset_dir / "policy").mkdir(parents=True)
+        (preset_dir / "policy" / "charter.md").write_text("# Custom Constitution\n")
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "custom-constitution",
+                        "name": "Custom Constitution",
+                        "version": "1.0.0",
+                        "description": "Custom-path constitution for testing",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "policy/charter.md",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+        manager.install_from_directory(preset_dir, "0.1.5", priority=1)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Custom Constitution\n"
+
+        installed_manifest = (
+            project_dir
+            / ".specify"
+            / "presets"
+            / "custom-constitution"
+            / "preset.yml"
+        )
+        installed_manifest.write_text("invalid: [")
+
+        manager.remove("custom-constitution")
+
+        assert "preset:self-test" in memory.read_text()
+
+    def test_constitution_seed_rejects_symlinked_memory_directory(
+        self, project_dir, temp_dir
+    ):
+        """Preset installation cannot seed through a symlinked memory directory."""
+        outside = temp_dir / "outside"
+        outside.mkdir()
+        try:
+            (project_dir / ".specify" / "memory").symlink_to(
+                outside, target_is_directory=True
+            )
+        except OSError:
+            pytest.skip("symlinks are unavailable")
+
+        manager = PresetManager(project_dir)
+        with pytest.warns(UserWarning, match="symlinked"):
+            install_constitution_sync_preset(manager)
+
+        assert manager.registry.is_installed("constitution-sync")
+        assert not (outside / "constitution.md").exists()
+
+    def test_constitution_seed_rejects_dangling_destination_symlink(
+        self, project_dir, temp_dir
+    ):
+        """Preset installation cannot seed through a dangling destination symlink."""
+        memory = project_dir / ".specify" / "memory"
+        memory.mkdir(parents=True)
+        outside = temp_dir / "outside-constitution.md"
+        try:
+            (memory / "constitution.md").symlink_to(outside)
+        except OSError:
+            pytest.skip("symlinks are unavailable")
+
+        manager = PresetManager(project_dir)
+        with pytest.warns(UserWarning, match="symlinked"):
+            install_constitution_sync_preset(manager)
+
+        assert manager.registry.is_installed("constitution-sync")
+        assert not outside.exists()
+
+    def test_constitution_materialization_error_is_nonfatal(
+        self, project_dir, temp_dir
+    ):
+        """An invalid wrap warns without reporting an uninstalled preset."""
+        preset_dir = temp_dir / "invalid-wrap"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(
+            "# Missing core placeholder\n"
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "invalid-wrap",
+                        "name": "Invalid Wrap",
+                        "version": "1.0.0",
+                        "description": "Invalid wrapping constitution",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "strategy": "wrap",
+                                "description": "Invalid wrap",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        with pytest.warns(UserWarning, match="Failed to seed constitution"):
+            manifest = manager.install_from_directory(preset_dir, "0.1.5")
+
+        assert manifest.id == "invalid-wrap"
+        assert manager.registry.is_installed("invalid-wrap")
+
+    def test_selfcontained_namespaced_command_scaffolds_without_extension(self, project_dir, temp_dir):
+        """A preset shipping a self-contained ``speckit.<ns>.<cmd>`` command
+        scaffolds even when no matching extension is installed.
+
+        The command template ships its own body, so it is self-contained and
+        must render just like a short ``speckit.<cmd>`` command. It is not
+        dropped merely because ``.specify/extensions/fakeext/`` is absent.
+        """
         claude_dir = project_dir / ".claude" / "skills"
         claude_dir.mkdir(parents=True)
 
@@ -2673,11 +4373,13 @@ class TestSelfTestPreset:
         manager = PresetManager(project_dir)
         manager.install_from_directory(preset_dir, "0.1.5")
 
-        # Extension not installed — command should NOT be registered
-        cmd_file = claude_dir / "speckit.fakeext.cmd.md"
-        assert not cmd_file.exists(), "Command registered for missing extension"
+        # Extension not installed, but the preset ships its own command body —
+        # it must scaffold (as a native-skill SKILL.md for claude) and be
+        # tracked in the preset's registered_commands.
+        skill_file = claude_dir / "speckit-fakeext-cmd" / "SKILL.md"
+        assert skill_file.exists(), "Self-contained namespaced command was dropped"
         metadata = manager.registry.get("ext-override")
-        assert metadata["registered_commands"] == {}
+        assert metadata["registered_commands"] != {}
 
     def test_extension_command_registered_when_extension_present(self, project_dir, temp_dir):
         """Test that extension command overrides ARE registered when the extension is installed."""
@@ -2921,6 +4623,77 @@ class TestInitOptions:
         assert is_ai_skills_enabled({"ai_skills": value}) is expected
 
 
+class TestResolveActiveAgentForRegistration:
+    """Tests for the shared #2948 active-agent resolution helper.
+
+    ``load_init_options`` collapses "no file", "corrupted file", and
+    "valid file with no active agent" into the same ``{}``. Extensions and
+    presets both need to tell those apart: no file means "legacy project,
+    fall back to all detected agents"; a corrupted or malformed file means
+    "fail closed, register nothing" so a corrupted init-options.json can't
+    silently reintroduce all-agent registration.
+    """
+
+    def test_missing_file_returns_sentinel(self, project_dir):
+        from specify_cli._init_options import (
+            MISSING_INIT_OPTIONS_FILE,
+            resolve_active_agent_for_registration,
+        )
+
+        assert (
+            resolve_active_agent_for_registration(project_dir)
+            is MISSING_INIT_OPTIONS_FILE
+        )
+
+    def test_valid_active_agent_returns_string(self, project_dir):
+        from specify_cli import save_init_options
+        from specify_cli._init_options import resolve_active_agent_for_registration
+
+        save_init_options(project_dir, {"ai": "claude"})
+
+        assert resolve_active_agent_for_registration(project_dir) == "claude"
+
+    def test_corrupted_json_fails_closed(self, project_dir):
+        """A present-but-unparseable file must not behave like "no file"."""
+        from specify_cli._init_options import resolve_active_agent_for_registration
+
+        opts_file = project_dir / ".specify" / "init-options.json"
+        opts_file.parent.mkdir(parents=True, exist_ok=True)
+        opts_file.write_text("{bad json", encoding="utf-8")
+
+        assert resolve_active_agent_for_registration(project_dir) is None
+
+    @pytest.mark.parametrize("value", [[], {}, "", 0, None, ["claude"]])
+    def test_malformed_ai_value_fails_closed(self, project_dir, value):
+        """A recorded but non-string/empty ``ai`` value fails closed too."""
+        from specify_cli import save_init_options
+        from specify_cli._init_options import resolve_active_agent_for_registration
+
+        save_init_options(project_dir, {"ai": value})
+
+        assert resolve_active_agent_for_registration(project_dir) is None
+
+    def test_dangling_symlink_fails_closed(self, project_dir):
+        """A dangling init-options.json symlink must fail closed, not fall
+        back to "no file" (#2948).
+
+        ``Path.exists()`` follows symlinks and returns False for a broken
+        symlink whose target is missing, so a naive presence check treats a
+        dangling symlink the same as "no file at all" and falls back to
+        legacy all-agent registration. The path is present (just broken),
+        so it must be treated as a corrupted file and fail closed instead.
+        """
+        from specify_cli._init_options import resolve_active_agent_for_registration
+
+        opts_file = project_dir / ".specify" / "init-options.json"
+        opts_file.parent.mkdir(parents=True, exist_ok=True)
+        opts_file.symlink_to(project_dir / ".specify" / "does-not-exist.json")
+
+        assert not opts_file.exists()  # sanity: this is what makes it dangling
+        assert opts_file.is_symlink()
+        assert resolve_active_agent_for_registration(project_dir) is None
+
+
 class TestPresetSkills:
     """Tests for preset skill registration and unregistration.
 
@@ -2973,6 +4746,84 @@ class TestPresetSkills:
             yaml.dump(manifest_data, f)
         return preset_dir
 
+    def _create_multi_command_preset(self, temp_dir, preset_id, command_names):
+        """Install-directory helper for a preset with more than one command.
+
+        Used to prove partial-result handling: a command's own template
+        entry can genuinely be skipped by registration (missing source
+        file, safety-validation rejection) while sibling commands in the
+        same preset still succeed.
+        """
+        preset_dir = temp_dir / preset_id
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        templates = []
+        for command_name in command_names:
+            command_file = f"{command_name}.md"
+            (preset_dir / "commands" / command_file).write_text(
+                f"---\ndescription: {command_name} test command\n---\n\n"
+                f"{command_name} body\n"
+            )
+            templates.append({
+                "type": "command",
+                "name": command_name,
+                "file": f"commands/{command_file}",
+            })
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": preset_id,
+                "name": preset_id,
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": templates},
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+        return preset_dir
+
+    def _create_multi_command_preset_with_aliases(self, temp_dir, preset_id, command_specs):
+        """Install-directory helper for a preset whose commands carry aliases.
+
+        ``command_specs`` is a list of ``(primary_name, [alias, ...])``
+        tuples. Each command gets its own source file (aliases share the
+        same source/content as their primary — CommandRegistrar renders
+        them from the same command file, just under a different output
+        name (#2948)).
+        """
+        preset_dir = temp_dir / preset_id
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        templates = []
+        for primary_name, aliases in command_specs:
+            command_file = f"{primary_name}.md"
+            (preset_dir / "commands" / command_file).write_text(
+                f"---\ndescription: {primary_name} test command\n---\n\n"
+                f"{primary_name} body\n"
+            )
+            templates.append({
+                "type": "command",
+                "name": primary_name,
+                "file": f"commands/{command_file}",
+                "aliases": list(aliases),
+            })
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": preset_id,
+                "name": preset_id,
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": templates},
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+        return preset_dir
+
     def test_skill_overridden_on_preset_install(self, project_dir, temp_dir):
         """When skills mode was used, a preset command override should update the skill."""
         # Simulate skills mode having been used: write init-options + create skill
@@ -2993,9 +4844,244 @@ class TestPresetSkills:
         assert "preset:self-test" in content, "Skill should reference preset source"
         assert "disable-model-invocation: false" in content
 
-        # Verify it was recorded in registry
+        # Verify it was recorded in registry, keyed by the active agent
         metadata = manager.registry.get("self-test")
-        assert "speckit-specify" in metadata.get("registered_skills", [])
+        assert "speckit-specify" in metadata.get("registered_skills", {}).get("claude", [])
+
+    def _install_arg_hint_preset(self, project_dir, temp_dir, ai, skills_dir, description, arg_hint):
+        """Install a preset whose command declares argument-hint; return the SKILL.md path."""
+        self._write_init_options(project_dir, ai=ai)
+        self._create_skill(skills_dir, "speckit-hinttest-cmd")
+        (project_dir / ".specify" / "extensions" / "hinttest").mkdir(parents=True, exist_ok=True)
+
+        preset_dir = temp_dir / f"hint-preset-{ai}"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.hinttest.cmd.md").write_text(
+            "---\n"
+            f'description: "{description}"\n'
+            f'argument-hint: "{arg_hint}"\n'
+            "---\n\n"
+            "Preset command body.\n",
+            encoding="utf-8",
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": f"hint-preset-{ai}",
+                "name": "Hint Preset",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.hinttest.cmd",
+                        "file": "commands/speckit.hinttest.cmd.md",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        return skills_dir / "speckit-hinttest-cmd" / "SKILL.md"
+
+    def test_argument_hint_preserved_for_preset_command(self, project_dir, temp_dir):
+        """argument-hint from a preset command must survive into the SKILL.md.
+
+        Follow-up to #2903/#2916 for the preset skill generator. The
+        description is long enough to fold across lines when serialized,
+        guarding against an in-place string injection that would split the
+        folded scalar into invalid YAML.
+        """
+        long_description = (
+            "Build and maintain a lean, static context/ knowledge folder so "
+            "coding agents load only what is relevant and save tokens"
+        )
+        arg_hint = "<init | update | list | check> [area] [slug] [-- notes]"
+        skills_dir = project_dir / ".claude" / "skills"
+
+        skill_file = self._install_arg_hint_preset(
+            project_dir, temp_dir, "claude", skills_dir, long_description, arg_hint
+        )
+        assert skill_file.exists()
+        parsed = yaml.safe_load(skill_file.read_text(encoding="utf-8").split("---", 2)[1])
+        assert parsed["argument-hint"] == arg_hint
+        assert parsed["description"] == long_description
+
+    def test_argument_hint_not_added_for_non_claude_preset_command(self, project_dir, temp_dir):
+        """Non-Claude skills agents must not receive argument-hint in preset skills."""
+        arg_hint = "<init | update | list | check> [area]"
+        skills_dir = project_dir / ".agents" / "skills"
+
+        skill_file = self._install_arg_hint_preset(
+            project_dir, temp_dir, "codex", skills_dir, "Build context", arg_hint
+        )
+        assert skill_file.exists()
+        parsed = yaml.safe_load(skill_file.read_text(encoding="utf-8").split("---", 2)[1])
+        assert "argument-hint" not in parsed
+
+    def test_wrap_preset_inherits_argument_hint_from_core(self, project_dir, temp_dir):
+        """A wrap-strategy preset that omits argument-hint must inherit it from the core template.
+
+        Regression for issue #3991: the wrap-composition path in _register_skills
+        previously inherited only scripts/agent_scripts from core_frontmatter,
+        silently discarding argument-hint and leaking its value into description.
+        """
+        core_arg_hint = "Describe the feature you want to specify"
+        preset_description = "Wrapped speckit.specify — extra project context added"
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        # Place a core template that declares argument-hint
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\n"
+            "description: Core specify description.\n"
+            f'argument-hint: "{core_arg_hint}"\n'
+            "---\n\n"
+            "Core specify body.\n",
+            encoding="utf-8",
+        )
+
+        # Wrap preset: only declares description (no argument-hint)
+        preset_dir = temp_dir / "wrap-hint-preset"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.specify.md").write_text(
+            "---\n"
+            f'description: "{preset_description}"\n'
+            "strategy: wrap\n"
+            "---\n\n"
+            "{CORE_TEMPLATE}\n",
+            encoding="utf-8",
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "wrap-hint-preset",
+                "name": "Wrap Hint Preset",
+                "version": "1.0.0",
+                "description": "Test wrap hint inheritance",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.specify",
+                        "file": "commands/speckit.specify.md",
+                        "strategy": "wrap",
+                    }
+                ]
+            },
+        }
+        import yaml as _yaml
+        with open(preset_dir / "preset.yml", "w") as f:
+            _yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "1.0.0")
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert skill_file.exists()
+        parsed = yaml.safe_load(skill_file.read_text(encoding="utf-8").split("---", 2)[1])
+        # argument-hint must be inherited from core, not dropped
+        assert parsed.get("argument-hint") == core_arg_hint, (
+            f"argument-hint was not inherited from core; parsed={parsed}"
+        )
+        # description must be exactly the preset's declared value, not concatenated
+        assert parsed["description"] == preset_description, (
+            f"description was corrupted; parsed={parsed}"
+        )
+
+    def test_wrap_preset_inherits_argument_hint_for_unmapped_command(self, project_dir, temp_dir):
+        """Wrap inheritance must carry argument-hint for a command NOT in ARGUMENT_HINTS.
+
+        Regression guard for issue #3991. The companion test above wraps
+        ``speckit.specify``, whose stem is in Claude's ``ARGUMENT_HINTS`` map, so
+        the string-injection fallback in ``post_process_skill_content`` re-adds
+        ``argument-hint`` even when wrap composition drops it — masking the bug.
+        This test wraps an extension-like command (``speckit.myfeature``) that is
+        absent from that map, so the *only* thing that can carry the hint into the
+        SKILL.md is the wrap-composition inheritance fix itself. Without the fix
+        the key is dropped and this test fails.
+        """
+        core_arg_hint = "Custom hint that lives only on the core template"
+        preset_description = "Wrapped speckit.myfeature — extra project context added"
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-myfeature")
+
+        # Place a core template (extension-like command) that declares argument-hint
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "myfeature.md").write_text(
+            "---\n"
+            "description: Core myfeature description.\n"
+            f'argument-hint: "{core_arg_hint}"\n'
+            "---\n\n"
+            "Core myfeature body.\n",
+            encoding="utf-8",
+        )
+
+        # Wrap preset: only declares description (no argument-hint)
+        preset_dir = temp_dir / "wrap-hint-preset-unmapped"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.myfeature.md").write_text(
+            "---\n"
+            f'description: "{preset_description}"\n'
+            "strategy: wrap\n"
+            "---\n\n"
+            "{CORE_TEMPLATE}\n",
+            encoding="utf-8",
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "wrap-hint-preset-unmapped",
+                "name": "Wrap Hint Preset Unmapped",
+                "version": "1.0.0",
+                "description": "Test wrap hint inheritance for an unmapped command",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.myfeature",
+                        "file": "commands/speckit.myfeature.md",
+                        "strategy": "wrap",
+                    }
+                ]
+            },
+        }
+        import yaml as _yaml
+        with open(preset_dir / "preset.yml", "w") as f:
+            _yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "1.0.0")
+
+        skill_file = skills_dir / "speckit-myfeature" / "SKILL.md"
+        assert skill_file.exists()
+        parsed = yaml.safe_load(skill_file.read_text(encoding="utf-8").split("---", 2)[1])
+        # argument-hint must be inherited from core, not dropped
+        assert parsed.get("argument-hint") == core_arg_hint, (
+            f"argument-hint was not inherited from core; parsed={parsed}"
+        )
+        # description must be exactly the preset's declared value, not concatenated
+        assert parsed["description"] == preset_description, (
+            f"description was corrupted; parsed={parsed}"
+        )
 
     def test_register_skills_resolves_command_refs(self, project_dir, temp_dir):
         """Preset skill overrides must resolve __SPECKIT_COMMAND_*__ tokens (issue #2717).
@@ -3052,6 +5138,35 @@ class TestPresetSkills:
         content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
         assert "__SPECKIT_COMMAND_" not in content, "raw command token leaked on restore"
         assert "/speckit-plan" in content
+
+    def test_restore_skill_preserves_dollar_command_refs(self, project_dir, temp_dir):
+        """Dollar-style core refs remain native when a preset skill is removed."""
+        self._write_init_options(project_dir, ai="zcode")
+        skills_dir = project_dir / ".zcode" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        raw_core = (
+            "---\ndescription: Core specify\n---\n\n"
+            "Then run `__SPECKIT_COMMAND_PLAN__`.\n"
+        )
+        (core_cmds / "specify.md").write_text(raw_core)
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "dollar-cmdref-restore",
+            "speckit.specify",
+            "Override specify",
+            "Override body\n",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        manager.remove("dollar-cmdref-restore")
+
+        content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
+        assert "$speckit-plan" in content
+        assert "/speckit-plan" not in content
 
     def test_reconcile_override_skill_resolves_command_refs(self, project_dir, temp_dir):
         """Reconcile's project-override restore must resolve command tokens (issue #2717).
@@ -3334,6 +5449,103 @@ class TestPresetSkills:
         assert "templates/commands/specify.md" in content, "Should reference core template"
         assert "disable-model-invocation: false" in content
 
+    def test_skill_restored_on_preset_remove_without_project_core_templates(self, project_dir):
+        """Removing a preset must restore core skills even when the project
+        has no ``.specify/templates/commands`` directory of its own — which
+        is the normal case, since ``specify init`` never populates it. The
+        real core commands live in the bundled core_pack/repo-root templates
+        tree, and restoration must fall back there instead of deleting the
+        skill outright (#3928).
+        """
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        # The project_dir fixture's commands dir is empty, matching a real
+        # project — specify init never populates project-local overrides
+        # for unmodified core commands.
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        assert core_cmds.exists() and not any(core_cmds.iterdir())
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:self-test" in skill_file.read_text(encoding="utf-8")
+
+        manager.remove("self-test")
+
+        assert skill_file.exists(), "Core skill must be restored, not deleted"
+        content = skill_file.read_text(encoding="utf-8")
+        assert "preset:self-test" not in content
+        assert "templates/commands/specify.md" in content
+        assert "Create or update the feature specification" in content
+
+    def test_extension_wins_over_bundled_core_on_preset_remove(
+        self, project_dir, monkeypatch
+    ):
+        """When an installed extension owns the same skill name as a core
+        command, removing a preset that overrode that skill must restore it
+        from the extension, not silently from the bundled core template.
+        Extensions are resolved ahead of bundled core elsewhere, and the
+        bundled-core fallback added for #3928 must not replace that
+        higher-priority layer.
+
+        The extension-command namespace rules (``speckit.<ext>.<command>``)
+        make a genuine end-to-end name collision with a core command
+        cumbersome to construct through real manifests, so this stubs
+        ``_build_extension_skill_restore_index`` to exercise the priority
+        ordering in ``_unregister_skills_in_dir`` directly -- the code path
+        under test doesn't care how the index entry was produced, only that
+        it wins over the bundled-core fallback when present.
+        """
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        # No project-local core template override — the normal case, and
+        # the one that makes the bundled-core fallback kick in at all.
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        assert core_cmds.exists() and not any(core_cmds.iterdir())
+
+        extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
+        (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        ext_specify_file = extension_dir / "commands" / "specify.md"
+        ext_specify_file.write_text(
+            "---\ndescription: Extension specify command\n---\n\n"
+            "extension:fakeext specify body\n"
+        )
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:self-test" in skill_file.read_text(encoding="utf-8")
+
+        fake_restore_index = {
+            "speckit-specify": {
+                "command_name": "speckit.fakeext.specify",
+                "source_file": ext_specify_file,
+                "source": "extension:fakeext",
+                "extension_id": "fakeext",
+                "extension_dir": extension_dir,
+            }
+        }
+        monkeypatch.setattr(
+            manager,
+            "_build_extension_skill_restore_index",
+            lambda: fake_restore_index,
+        )
+
+        manager.remove("self-test")
+
+        assert skill_file.exists()
+        content = skill_file.read_text(encoding="utf-8")
+        assert "preset:self-test" not in content
+        assert "source: extension:fakeext" in content
+        assert "extension:fakeext specify body" in content
+        assert "templates/commands/specify.md" not in content
+
     def test_skill_restored_on_remove_resolves_script_placeholders(self, project_dir):
         """Core restore should resolve {SCRIPT}/{ARGS} placeholders like other skill paths."""
         self._write_init_options(project_dir, ai="claude", ai_skills=True, script="sh")
@@ -3374,18 +5586,17 @@ class TestPresetSkills:
 
         assert (skills_dir / "speckit-specify").is_file()
         metadata = manager.registry.get("self-test")
-        assert "speckit-specify" not in metadata.get("registered_skills", [])
+        assert "speckit-specify" not in metadata.get("registered_skills", {}).get("qwen", [])
 
-    def test_no_skills_registered_when_no_skill_dir_exists(self, project_dir, temp_dir):
-        """Skills should not be created when no existing skill dir is found."""
-        self._write_init_options(project_dir, ai="claude")
-        # Don't create skills dir — simulate skills mode never created them
+    def test_no_skills_registered_when_skills_mode_disabled(self, project_dir, temp_dir):
+        """Skills should not be created when skills mode is disabled."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=False)
 
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
 
         metadata = manager.registry.get("self-test")
-        assert metadata.get("registered_skills", []) == []
+        assert metadata.get("registered_skills", {}) == {}
 
     def test_extension_skill_override_matches_hyphenated_multisegment_name(self, project_dir, temp_dir):
         """Preset overrides for speckit.<ext>.<cmd> should target speckit-<ext>-<cmd> skills."""
@@ -3433,7 +5644,7 @@ class TestPresetSkills:
         assert "# Speckit Fakeext Cmd Skill" in content
 
         metadata = manager.registry.get("ext-skill-override")
-        assert "speckit-fakeext-cmd" in metadata.get("registered_skills", [])
+        assert "speckit-fakeext-cmd" in metadata.get("registered_skills", {}).get("codex", [])
 
     def test_extension_skill_restored_on_preset_remove(self, project_dir, temp_dir):
         """Preset removal should restore an extension-backed skill instead of deleting it."""
@@ -3443,6 +5654,8 @@ class TestPresetSkills:
 
         extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
         (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control" / "commander.md").write_text("# Commander\n")
         (extension_dir / "commands" / "cmd.md").write_text(
             "---\n"
             "description: Extension fakeext cmd\n"
@@ -3451,6 +5664,7 @@ class TestPresetSkills:
             "---\n\n"
             "extension:fakeext\n"
             "Run {SCRIPT}\n"
+            "Read agents/control/commander.md for context.\n"
         )
         extension_manifest = {
             "schema_version": "1.0",
@@ -3516,7 +5730,91 @@ class TestPresetSkills:
         assert "source: extension:fakeext" in content
         assert "extension:fakeext" in content
         assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
+        # Extension-relative subdir references must resolve to their
+        # installed location on restore too (#2101), not just on first
+        # registration.
+        assert ".specify/extensions/fakeext/agents/control/commander.md" in content
+        assert "Read agents/control" not in content
         assert "# Fakeext Cmd Skill" in content
+
+    def test_skill_composed_over_extension_base_rewrites_subdir_paths(
+        self, project_dir, temp_dir
+    ):
+        """When a preset composes (append) over an extension-provided base
+        command, the resulting skill (read from the .composed output) must
+        still resolve the extension's own subdir references (#2101), not
+        just when the extension wins outright (replace)."""
+        self._write_init_options(project_dir, ai="codex")
+        skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(skills_dir, "speckit-fakeext-cmd", body="original extension skill")
+
+        extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
+        (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control" / "commander.md").write_text("# Commander\n")
+        (extension_dir / "commands" / "cmd.md").write_text(
+            "---\ndescription: Extension fakeext cmd\n---\n\n"
+            "Read agents/control/commander.md for context.\n"
+        )
+        extension_manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "fakeext",
+                "name": "Fake Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/cmd.md",
+                        "description": "Fake extension command",
+                    }
+                ]
+            },
+        }
+        with open(extension_dir / "extension.yml", "w") as f:
+            yaml.dump(extension_manifest, f)
+
+        preset_dir = temp_dir / "ext-base-append-skill"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.fakeext.cmd.md").write_text(
+            "---\ndescription: Preset overlay\n---\n\n## Extra\n"
+        )
+        preset_manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "ext-base-append-skill",
+                "name": "Ext Base Append Skill",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/speckit.fakeext.cmd.md",
+                        "strategy": "append",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(preset_manifest, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-fakeext-cmd" / "SKILL.md"
+        content = skill_file.read_text()
+        assert ".specify/extensions/fakeext/agents/control/commander.md" in content
+        assert "Read agents/control" not in content
+        assert "## Extra" in content
 
     def test_preset_remove_skips_skill_dir_without_skill_file(self, project_dir, temp_dir):
         """Preset removal should not delete arbitrary directories missing SKILL.md."""
@@ -3575,12 +5873,16 @@ class TestPresetSkills:
         assert note_file.read_text(encoding="utf-8") == "user content"
 
     def test_kimi_legacy_dotted_skill_override_still_applies(self, project_dir, temp_dir):
-        """Preset overrides should still target legacy dotted Kimi skill directories."""
+        """Preset overrides should still target legacy dotted-named skill dirs.
+
+        This exercises legacy *naming* (``speckit.specify``) under the current
+        ``.kimi-code/`` base — distinct from the legacy ``.kimi/`` *location*.
+        """
         self._write_init_options(project_dir, ai="kimi")
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         self._create_skill(skills_dir, "speckit.specify", body="untouched")
 
-        (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".kimi-code" / "commands").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
@@ -3592,15 +5894,106 @@ class TestPresetSkills:
         assert "name: speckit.specify" in content
 
         metadata = manager.registry.get("self-test")
-        assert "speckit.specify" in metadata.get("registered_skills", [])
+        assert "speckit.specify" in metadata.get("registered_skills", {}).get("kimi", [])
+
+    def test_kimi_legacy_dotted_skill_reconciles_priority_winner(
+        self, project_dir, temp_dir
+    ):
+        """Reconciliation must carry forward recorded legacy skill names."""
+        self._write_init_options(project_dir, ai="kimi")
+        skills_dir = project_dir / ".kimi-code" / "skills"
+        self._create_skill(skills_dir, "speckit.specify", body="untouched")
+        (project_dir / ".kimi-code" / "commands").mkdir(
+            parents=True, exist_ok=True
+        )
+
+        higher_dir = self._create_command_preset(
+            temp_dir,
+            "higher-kimi-preset",
+            "speckit.specify",
+            "Higher preset",
+            "Higher body",
+        )
+        lower_dir = self._create_command_preset(
+            temp_dir,
+            "lower-kimi-preset",
+            "speckit.specify",
+            "Lower preset",
+            "Lower body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(higher_dir, "0.1.5", priority=10)
+        manager.install_from_directory(lower_dir, "0.1.5", priority=20)
+
+        skill_file = skills_dir / "speckit.specify" / "SKILL.md"
+        for preset_id in ("higher-kimi-preset", "lower-kimi-preset"):
+            manager.registry.update(
+                preset_id,
+                {"registered_skills": {"kimi": ["speckit.specify"]}},
+            )
+        skill_file.write_text(
+            "---\nname: speckit.specify\n---\n\nLower body\n",
+            encoding="utf-8",
+        )
+        manager._reconcile_skills(["speckit.specify"])
+
+        assert "Higher body" in skill_file.read_text(encoding="utf-8"), (
+            "reconciliation must replace lower-priority raw content in a "
+            "recorded legacy dotted skill directory"
+        )
+
+    def test_kimi_legacy_dotted_skill_receives_project_override(
+        self, project_dir, temp_dir
+    ):
+        """Project overrides must update the recorded legacy path in place."""
+        self._write_init_options(project_dir, ai="kimi")
+        skills_dir = project_dir / ".kimi-code" / "skills"
+        self._create_skill(skills_dir, "speckit.specify", body="untouched")
+        (project_dir / ".kimi-code" / "commands").mkdir(
+            parents=True, exist_ok=True
+        )
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "kimi-override-preset",
+            "speckit.specify",
+            "Preset",
+            "Preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        manager.registry.update(
+            "kimi-override-preset",
+            {"registered_skills": {"kimi": ["speckit.specify"]}},
+        )
+        modern_skill_dir = skills_dir / "speckit-specify"
+        if modern_skill_dir.exists():
+            shutil.rmtree(modern_skill_dir)
+
+        overrides_dir = (
+            project_dir / ".specify" / "templates" / "overrides"
+        )
+        overrides_dir.mkdir(parents=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Project override\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+
+        manager._reconcile_skills(["speckit.specify"])
+
+        legacy_file = skills_dir / "speckit.specify" / "SKILL.md"
+        assert "Override body" in legacy_file.read_text(encoding="utf-8")
+        assert not modern_skill_dir.exists(), (
+            "legacy-only ownership must not create an untracked modern path"
+        )
 
     def test_kimi_skill_updated_even_when_ai_skills_disabled(self, project_dir, temp_dir):
         """Kimi presets should still propagate command overrides to existing skills."""
         self._write_init_options(project_dir, ai="kimi", ai_skills=False)
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
 
-        (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".kimi-code" / "commands").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
@@ -3612,12 +6005,12 @@ class TestPresetSkills:
         assert "name: speckit-specify" in content
 
         metadata = manager.registry.get("self-test")
-        assert "speckit-specify" in metadata.get("registered_skills", [])
+        assert "speckit-specify" in metadata.get("registered_skills", {}).get("kimi", [])
 
     def test_kimi_new_skill_created_even_when_ai_skills_disabled(self, project_dir, temp_dir):
         """Kimi native skills should still receive brand-new preset commands."""
         self._write_init_options(project_dir, ai="kimi", ai_skills=False)
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         skills_dir.mkdir(parents=True, exist_ok=True)
 
         preset_dir = temp_dir / "kimi-new-skill"
@@ -3661,14 +6054,14 @@ class TestPresetSkills:
         assert "name: speckit-research" in content
 
         metadata = manager.registry.get("kimi-new-skill")
-        assert "speckit-research" in metadata.get("registered_skills", [])
+        assert "speckit-research" in metadata.get("registered_skills", {}).get("kimi", [])
 
     def test_kimi_preset_skill_override_resolves_script_placeholders(self, project_dir, temp_dir):
         """Kimi preset skill overrides should resolve placeholders and rewrite project paths."""
         self._write_init_options(project_dir, ai="kimi", ai_skills=False, script="sh")
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
-        (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".kimi-code" / "commands").mkdir(parents=True, exist_ok=True)
 
         preset_dir = temp_dir / "kimi-placeholder-override"
         preset_dir.mkdir()
@@ -3787,6 +6180,4009 @@ class TestPresetSkills:
         skill_content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
         assert "untouched" in skill_content
 
+    def test_preset_add_corrupted_init_options_fails_closed(self, project_dir, temp_dir):
+        """Corrupted (but present) init-options.json must not back-fill every
+        detected agent for preset command registration.
+
+        Before the shared ``resolve_active_agent_for_registration`` fix,
+        ``load_init_options`` returning ``{}`` for a corrupted file was
+        indistinguishable from "no file at all", so ``_register_commands``
+        treated it like a legacy pre-init-options project and registered
+        the preset's command override for every detected agent (#2948).
+        """
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text("{not valid json", encoding="utf-8")
+
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "corrupt-init-preset", "speckit.specify",
+            "Corrupt init test", "preset body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        metadata = manager.registry.get("corrupt-init-preset")
+        assert metadata.get("registered_commands") == {}, (
+            "a corrupted init-options.json must fail closed, not "
+            "back-fill every detected agent (#2948)"
+        )
+        assert not list(gemini_dir.glob("*specify*")), (
+            "no command file should be written for any agent when "
+            "init-options.json is corrupted"
+        )
+
+    def test_reconciliation_restricted_to_active_agent(self, project_dir, temp_dir):
+        """Reconciliation after install/remove must also respect the
+        single-active rule, not just the initial registration.
+
+        ``_reconcile_composed_commands`` (invoked after
+        ``install_from_directory``/``remove``) resolves composition winners
+        via ``register_commands_for_non_skill_agents``, a separate code
+        path from ``_register_commands``'s initial registration. Before the
+        fix it ignored the active-agent restriction entirely and wrote the
+        winning content for every detected non-skill agent, leaving
+        untracked orphaned artifacts in inactive integrations (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        # A non-replace (append) strategy command forces reconciliation to
+        # run register_commands_for_non_skill_agents for every non-skill
+        # agent directory it detects.
+        preset_dir = temp_dir / "reconcile-active-only"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.specify.md").write_text(
+            "---\ndescription: Appended\nstrategy: append\n---\n\nAppended body\n",
+            encoding="utf-8",
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "reconcile-active-only",
+                "name": "Reconcile Active Only",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [{
+                    "type": "command",
+                    "name": "speckit.specify",
+                    "file": "commands/speckit.specify.md",
+                    "strategy": "append",
+                }]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        assert not list(gemini_dir.glob("*specify*")), (
+            "reconciliation must not write command files for a detected "
+            "but inactive non-skill agent (#2948)"
+        )
+
+    def test_use_rescaffold_reconciles_project_override(self, project_dir, temp_dir):
+        """``integration use``/``switch`` rescaffolding must reconcile the
+        full priority stack, not just write each preset's own content.
+
+        Project overrides are the highest-priority layer, above every
+        preset. ``register_enabled_presets_for_agent`` (invoked by
+        ``integration use``/``switch``) calls ``_register_commands`` for
+        each enabled preset directly, the same as ``install_from_directory``
+        — but unlike install/remove, it never followed up with
+        ``_reconcile_composed_commands``. Before the fix, rescaffolding a
+        newly activated agent could leave the preset's raw content in
+        place instead of resolving the real winner (the project override)
+        from the full stack (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        overrides_dir = project_dir / ".specify" / "templates" / "overrides"
+        overrides_dir.mkdir(parents=True, exist_ok=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Override specify\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "use-reconcile-preset", "speckit.specify",
+            "Preset specify", "Preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        # Simulate `integration use gemini`: switch the active agent and
+        # rescaffold enabled presets for it, mirroring what the CLI does.
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        manager.register_enabled_presets_for_agent("gemini")
+
+        cmd_file = gemini_dir / "speckit.specify.toml"
+        assert cmd_file.exists(), "sanity: gemini should get a command file at all"
+        content = cmd_file.read_text()
+        assert "Override body" in content, (
+            "the project override must still win after rescaffold "
+            "reconciliation, not the preset's raw content (#2948)"
+        )
+        assert "Preset body" not in content
+
+    def test_hermes_rescaffold_reconciles_global_skill_output(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        home = temp_dir / "home"
+        home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: home)
+        (home / ".hermes" / "skills").mkdir(parents=True)
+        self._write_init_options(project_dir, ai="hermes", ai_skills=True)
+        (project_dir / ".hermes" / "skills").mkdir(parents=True)
+
+        overrides_dir = project_dir / ".specify" / "templates" / "overrides"
+        overrides_dir.mkdir(parents=True, exist_ok=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Override specify\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "hermes-reconcile-preset", "speckit.specify",
+            "Preset specify", "Preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        manager.register_enabled_presets_for_agent("hermes")
+
+        skill_file = (
+            home / ".hermes" / "skills" / "speckit-specify" / "SKILL.md"
+        )
+        assert skill_file.exists()
+        content = skill_file.read_text(encoding="utf-8")
+        assert "Override body" in content
+        assert "Preset body" not in content
+        assert not list(
+            (project_dir / ".hermes" / "skills").glob("speckit-*/SKILL.md")
+        )
+
+        (overrides_dir / "speckit.specify.md").unlink()
+        assert manager.remove("hermes-reconcile-preset") is True
+        if skill_file.exists():
+            restored = skill_file.read_text(encoding="utf-8")
+            assert "Override body" not in restored
+            assert "Preset body" not in restored
+
+    def test_rescaffold_persists_commands_before_fallible_skills_phase(
+        self, project_dir, temp_dir
+    ):
+        """A failure in the skills phase must not lose track of command
+        files the commands phase already wrote to disk.
+
+        ``register_enabled_presets_for_agent`` computes both
+        ``registered_commands`` and ``registered_skills`` and persists them
+        together in a single ``registry.update()`` call after both phases
+        run. If ``_register_skills`` raises, the whole per-preset ``try``
+        block is caught and ``registry.update()`` is never reached — even
+        though ``_register_commands`` already wrote a real command file to
+        disk. That file becomes untracked and preset removal can no longer
+        clean it up. ``install_from_directory`` avoids this by persisting
+        ``registered_commands`` immediately after the commands phase,
+        before starting the independently fallible skills phase; rescaffold
+        must do the same (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "rescaffold-persist-preset", "speckit.specify",
+            "Rescaffold persist test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        # Switch to gemini (a plain command-file agent, so _register_commands
+        # writes a real file) and make the *skills* phase blow up.
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        gemini_commands_dir = project_dir / ".gemini" / "commands"
+        gemini_commands_dir.mkdir(parents=True)
+
+        from unittest.mock import patch
+
+        with patch.object(
+            PresetManager, "_register_skills",
+            side_effect=RuntimeError("simulated skills failure"),
+        ):
+            manager.register_enabled_presets_for_agent("gemini")
+
+        cmd_file = gemini_commands_dir / "speckit.specify.toml"
+        assert cmd_file.exists(), (
+            "sanity: the commands phase must have written the file before "
+            "the skills phase raised"
+        )
+
+        metadata = manager.registry.get("rescaffold-persist-preset")
+        assert metadata["registered_commands"].get("gemini"), (
+            "registered_commands must be persisted immediately after the "
+            "commands phase, not only after the (fallible) skills phase "
+            "also succeeds — otherwise the file written above is untracked "
+            "and preset removal can't clean it up (#2948)"
+        )
+
+    def test_rescaffold_reconciles_override_even_when_skills_phase_fails(
+        self, project_dir, temp_dir
+    ):
+        """A project override must still win after rescaffold even if the
+        independently-fallible skills phase raises for that preset.
+
+        ``register_enabled_presets_for_agent`` only records a preset's
+        command names into ``affected_cmd_names`` — the set later passed to
+        ``_reconcile_composed_commands``/``_reconcile_skills`` — in the
+        ``for tmpl in manifest.templates`` loop that runs *after*
+        ``_register_skills`` inside the per-preset ``try`` block. If
+        ``_register_skills`` raises, the per-preset ``except`` catches it
+        and ``continue``s before that loop ever runs, so this preset's
+        command names never make it into ``affected_cmd_names`` even though
+        ``_register_commands`` already wrote its raw content to disk. The
+        final reconciliation call is skipped for this preset entirely,
+        leaving the raw preset content in place instead of the project
+        override that should win (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        overrides_dir = project_dir / ".specify" / "templates" / "overrides"
+        overrides_dir.mkdir(parents=True, exist_ok=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Override specify\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "reconcile-despite-skills-failure", "speckit.specify",
+            "Preset specify", "Preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        # Simulate `integration use gemini` with the skills phase failing
+        # for this preset (e.g. a symlink/permission error unrelated to the
+        # commands phase, which already succeeded).
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+
+        from unittest.mock import patch
+
+        with patch.object(
+            PresetManager, "_register_skills",
+            side_effect=RuntimeError("simulated skills failure"),
+        ):
+            manager.register_enabled_presets_for_agent("gemini")
+
+        cmd_file = gemini_dir / "speckit.specify.toml"
+        assert cmd_file.exists(), "sanity: gemini should get a command file at all"
+        content = cmd_file.read_text()
+        assert "Override body" in content, (
+            "the project override must still win after rescaffold, even "
+            "though this preset's skills phase raised — a fallible skills "
+            "phase must not skip reconciliation for command writes that "
+            "already succeeded (#2948)"
+        )
+        assert "Preset body" not in content
+
+    def test_rescaffold_reconciles_partial_command_write_after_failure(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """A command written before _register_commands raises must still be
+        included in final priority-stack reconciliation."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        overrides_dir = project_dir / ".specify" / "templates" / "overrides"
+        overrides_dir.mkdir(parents=True, exist_ok=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Override specify\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "partial-command-failure-preset",
+            "speckit.specify",
+            "Preset specify",
+            "Preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+        cmd_file = gemini_dir / "speckit.specify.toml"
+
+        def partial_register(manifest, pack_dir):
+            cmd_file.write_text("Partially written preset body\n", encoding="utf-8")
+            raise RuntimeError("simulated partial command failure")
+
+        monkeypatch.setattr(manager, "_register_commands", partial_register)
+        manager.register_enabled_presets_for_agent("gemini")
+
+        content = cmd_file.read_text(encoding="utf-8")
+        assert "Override body" in content
+        assert "Partially written preset body" not in content
+
+    def test_copilot_skills_mode_skips_command_registration(self, project_dir, temp_dir):
+        """``integration use copilot`` with skills mode enabled must only
+        write the SKILL.md mirror, not also copilot's static command file.
+
+        Copilot is command-backed (``extension: ".agent.md"``), but when
+        ``ai_skills`` is enabled its preset overrides are meant to render
+        exclusively as skills via ``_register_skills``. Before the fix,
+        ``_register_commands`` had no ``ai_skills`` guard (unlike the
+        extensions path), so both a stale ``.agent.md`` command file and
+        the ``SKILL.md`` mirror were written for the same override (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+        skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "copilot-skills-preset", "speckit.specify",
+            "Copilot skills test", "preset body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        assert not list(copilot_commands_dir.glob("*specify*")), (
+            "command-mode and skills-mode artifacts are mutually exclusive: "
+            "no .agent.md command file should be written when copilot is "
+            "running in skills mode (#2948)"
+        )
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:copilot-skills-preset" in skill_file.read_text()
+
+    def test_rescaffold_toggle_command_to_skills_removes_stale_command_file(
+        self, project_dir, temp_dir
+    ):
+        """Toggling the *same* agent from command mode to skills mode must
+        remove the stale command-mode artifact, not just add the new one.
+
+        Copilot stays the active agent throughout (``integration upgrade
+        copilot`` after flipping ``ai_skills``, not a switch to a different
+        agent). Before the fix, ``_register_commands``'s ``ai_skills`` guard
+        made rescaffold a no-op for the commands phase once skills mode was
+        on, leaving the previously written ``.agent.md`` file and its
+        ``registered_commands`` entry behind even though ``_register_skills``
+        went on to also write the ``SKILL.md`` mirror — violating the
+        command/skill mutual-exclusion invariant this PR otherwise enforces
+        (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "toggle-cmd-to-skill-preset", "speckit.specify",
+            "Toggle test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        cmd_file = copilot_commands_dir / "speckit.specify.agent.md"
+        assert cmd_file.exists(), (
+            "sanity: command mode should have written copilot's command file"
+        )
+        metadata = manager.registry.get("toggle-cmd-to-skill-preset")
+        assert metadata["registered_commands"].get("copilot"), (
+            "sanity: the command-mode write should be tracked for copilot"
+        )
+
+        # Flip ai_skills on for the *same* active agent and rescaffold, as
+        # `integration upgrade copilot` would after the mode toggle.
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert not cmd_file.exists(), (
+            "the stale command-mode file must be removed once copilot has "
+            "toggled to skills mode for the same agent (#2948)"
+        )
+        metadata = manager.registry.get("toggle-cmd-to-skill-preset")
+        assert not metadata["registered_commands"].get("copilot"), (
+            "registered_commands must stop tracking copilot once its "
+            "artifact has been unregistered, or removal will try to clean "
+            "up a file that no longer exists (#2948)"
+        )
+        skill_file = project_dir / ".github" / "skills" / "speckit-specify" / "SKILL.md"
+        assert "preset:toggle-cmd-to-skill-preset" in skill_file.read_text(), (
+            "sanity: the new skills-mode artifact should still be written"
+        )
+
+    def test_rescaffold_scaffolds_selfcontained_namespaced_commands(
+        self, project_dir, temp_dir
+    ):
+        """A self-contained ``speckit.<ns>.<cmd>`` preset command scaffolds and
+        survives rescaffold, even when no matching extension is installed.
+
+        The preset ships the command body itself, so it is materialized just
+        like a short ``speckit.<cmd>`` command — both at install and through a
+        later reconciliation/rescaffold pass. It is not dropped by the
+        ``speckit.<ns>.<cmd>`` name shape (#4076).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        commands_dir = project_dir / ".github" / "agents"
+        commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "ext-scoped-preset", "speckit.git.feature",
+            "Ext override", "ext body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        ext_cmd = commands_dir / "speckit.git.feature.agent.md"
+        assert ext_cmd.exists(), (
+            "sanity: install must scaffold a self-contained namespaced command "
+            "even when its like-named extension isn't installed"
+        )
+
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert ext_cmd.exists(), (
+            "rescaffold must keep the self-contained namespaced command"
+        )
+        metadata = manager.registry.get("ext-scoped-preset")
+        assert (metadata.get("registered_commands") or {}).get("copilot")
+
+    def test_rescaffold_scaffolds_selfcontained_namespaced_skills(
+        self, project_dir, temp_dir
+    ):
+        """A self-contained ``speckit.<ns>.<cmd>`` preset command renders its
+        skill even when no matching extension is installed."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        skills_dir = project_dir / ".github" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "ext-scoped-skill-preset",
+            "speckit.git.feature",
+            "Ext override",
+            "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_name = "speckit-git-feature"
+        skill_file = skills_dir / skill_name / "SKILL.md"
+        assert skill_file.exists(), (
+            "install must render a self-contained namespaced command's skill "
+            "even when its like-named extension isn't installed"
+        )
+
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert skill_file.exists(), (
+            "rescaffold must keep the self-contained namespaced command's skill"
+        )
+
+    def test_uncomposable_wrap_command_skips_skill_in_skills_mode(
+        self, project_dir, temp_dir
+    ):
+        """A wrap command with no base layer must not materialize a broken
+        skill in skills mode.
+
+        When ``_register_commands`` skips an uncomposable wrap command (no
+        base to compose onto — e.g. the command it wraps comes from an
+        uninstalled extension), ``_register_skills`` must skip it too. Before
+        this fix, skills mode fell back to the raw preset body and wrote a
+        SKILL.md containing a literal ``{CORE_TEMPLATE}`` placeholder.
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        skills_dir = project_dir / ".github" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        preset_dir = temp_dir / "uncomposable-wrap"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        # speckit.git.feature has no core command template and no installed
+        # extension, so there is no base layer to wrap.
+        (preset_dir / "commands" / "speckit.git.feature.md").write_text(
+            "---\ndescription: Wrap\nstrategy: wrap\n---\n\n"
+            "wrap start\n{CORE_TEMPLATE}\nwrap end\n"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "uncomposable-wrap",
+                "name": "uncomposable-wrap",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.git.feature",
+                        "file": "commands/speckit.git.feature.md",
+                        "strategy": "wrap",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        with pytest.warns(UserWarning, match="no base command layer"):
+            manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-git-feature" / "SKILL.md"
+        assert not skill_file.exists(), (
+            "an uncomposable wrap command must not be rendered as a skill"
+        )
+        # Belt-and-suspenders: no artifact anywhere may leak the raw placeholder.
+        leaked = [
+            p for p in skills_dir.rglob("*")
+            if p.is_file() and "{CORE_TEMPLATE}" in p.read_text(encoding="utf-8")
+        ]
+        assert not leaked, f"literal {{CORE_TEMPLATE}} leaked into {leaked}"
+
+    def test_same_mode_partial_command_rescaffold_keeps_skipped_tracking(
+        self, project_dir, temp_dir
+    ):
+        """A partial command refresh must keep still-live skipped artifacts tracked."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        commands_dir = project_dir / ".github" / "agents"
+        commands_dir.mkdir(parents=True)
+        preset_dir = self._create_multi_command_preset(
+            temp_dir,
+            "same-mode-partial-command-preset",
+            ["speckit.specify", "speckit.plan"],
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        installed_dir = manager.presets_dir / "same-mode-partial-command-preset"
+        (installed_dir / "commands" / "speckit.plan.md").unlink()
+        manager.register_enabled_presets_for_agent("copilot")
+
+        metadata = manager.registry.get("same-mode-partial-command-preset")
+        assert set(metadata["registered_commands"]["copilot"]) == {
+            "speckit.specify",
+            "speckit.plan",
+        }
+        assert (commands_dir / "speckit.plan.agent.md").exists()
+
+    def test_same_mode_partial_skill_rescaffold_keeps_skipped_tracking(
+        self, project_dir, temp_dir
+    ):
+        """A partial skill refresh must keep still-live skipped artifacts tracked."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+        self._create_skill(skills_dir, "speckit-plan")
+        preset_dir = self._create_multi_command_preset(
+            temp_dir,
+            "same-mode-partial-skill-preset",
+            ["speckit.specify", "speckit.plan"],
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        installed_dir = manager.presets_dir / "same-mode-partial-skill-preset"
+        (installed_dir / "commands" / "speckit.plan.md").unlink()
+        manager.register_enabled_presets_for_agent("copilot")
+
+        metadata = manager.registry.get("same-mode-partial-skill-preset")
+        assert set(metadata["registered_skills"]["copilot"]) == {
+            "speckit-specify",
+            "speckit-plan",
+        }
+
+    def test_toggle_command_to_skills_preserves_old_command_on_skills_failure(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """A command->skills toggle must not destroy the old command
+        artifact before the new skill registration has actually succeeded.
+
+        Before the fix, the stale command-mode file/tracking was
+        unregistered unconditionally as soon as ``_register_commands``'s
+        ``ai_skills`` guard made the commands phase a no-op — regardless
+        of whether the subsequent, independently-fallible
+        ``_register_skills()`` call actually succeeded. If skills raises
+        (e.g. a transient I/O error), the per-preset exception handler
+        just logs and continues, leaving neither the old command file
+        nor a new skill file — the preset's command override vanishes
+        entirely from copilot until the next successful rescaffold
+        (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "toggle-failure-preset", "speckit.specify",
+            "Toggle failure test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        cmd_file = copilot_commands_dir / "speckit.specify.agent.md"
+        assert cmd_file.exists(), (
+            "sanity: command mode should have written copilot's command file"
+        )
+        metadata = manager.registry.get("toggle-failure-preset")
+        assert metadata["registered_commands"].get("copilot"), (
+            "sanity: the command-mode write should be tracked for copilot"
+        )
+
+        # Flip ai_skills on for the *same* active agent and rescaffold, as
+        # `integration upgrade copilot` would, but with skills registration
+        # injected to fail.
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+
+        def _raise_register_skills(*args, **kwargs):
+            raise OSError("simulated skills-phase failure")
+
+        monkeypatch.setattr(manager, "_register_skills", _raise_register_skills)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert cmd_file.exists(), (
+            "the old command-mode artifact must survive when the "
+            "replacement skills registration fails — deleting it before "
+            "the new artifact is confirmed leaves neither in place (#2948)"
+        )
+        metadata = manager.registry.get("toggle-failure-preset")
+        assert metadata["registered_commands"].get("copilot"), (
+            "registered_commands must keep tracking copilot's still-live "
+            "command file when the skills replacement failed, or a later "
+            "removal/rescaffold will believe there is nothing to clean up "
+            "even though the file is still on disk (#2948)"
+        )
+
+    def test_toggle_command_to_skills_empty_result_preserves_old_command(
+        self, project_dir, temp_dir
+    ):
+        """A non-raising but empty skills result must not delete the old command.
+
+        Before the fix, the stale command-mode artifact was retired as
+        soon as ``_register_skills()`` completed without raising —
+        regardless of whether it actually wrote anything for this agent.
+        Deleting the preset's own command source file (simulating a
+        missing/corrupted override) makes ``_register_skills`` return
+        ``{}`` for copilot without raising at all, which must leave the
+        old command file and its tracking untouched (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "toggle-empty-result-preset", "speckit.specify",
+            "Toggle empty-result test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        cmd_file = copilot_commands_dir / "speckit.specify.agent.md"
+        assert cmd_file.exists(), (
+            "sanity: command mode should have written copilot's command file"
+        )
+
+        # Remove the *installed* copy of the preset's source file (not the
+        # original temp source) so _register_skills can find nothing to
+        # render — a real "missing source" case, not an exception — leaving
+        # registered_skills empty for copilot.
+        (manager.presets_dir / "toggle-empty-result-preset" / "commands" / "speckit.specify.md").unlink()
+
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert cmd_file.exists(), (
+            "an empty (non-raising) skills registration result must not "
+            "cause the old command-mode artifact to be deleted (#2948)"
+        )
+        metadata = manager.registry.get("toggle-empty-result-preset")
+        assert metadata["registered_commands"].get("copilot"), (
+            "registered_commands must keep tracking copilot's still-live "
+            "command file when nothing was actually replaced (#2948)"
+        )
+        skill_file = project_dir / ".github" / "skills" / "speckit-specify" / "SKILL.md"
+        assert not skill_file.exists(), (
+            "sanity: no skill should have been written when the source "
+            "was missing"
+        )
+
+    def test_toggle_command_to_skills_partial_result_only_removes_replaced_command(
+        self, project_dir, temp_dir
+    ):
+        """Only the command whose skill replacement actually landed is retired.
+
+        A two-command preset where one command's source file goes missing
+        right before the toggle: ``_register_skills`` genuinely returns a
+        partial result (one name present, one silently skipped) without
+        raising. The command whose skill was written must be retired; the
+        other must keep both its old command file and its registry
+        tracking, since no replacement for it actually landed (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_multi_command_preset(
+            temp_dir, "toggle-partial-result-preset",
+            ["speckit.specify", "speckit.plan"],
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        specify_cmd_file = copilot_commands_dir / "speckit.specify.agent.md"
+        plan_cmd_file = copilot_commands_dir / "speckit.plan.agent.md"
+        assert specify_cmd_file.exists() and plan_cmd_file.exists(), (
+            "sanity: command mode should have written both command files"
+        )
+        metadata = manager.registry.get("toggle-partial-result-preset")
+        assert set(metadata["registered_commands"].get("copilot", [])) == {
+            "speckit.specify", "speckit.plan",
+        }, "sanity: both commands should be tracked for copilot"
+
+        # Remove only the plan command's *installed* source so its skill
+        # replacement is silently skipped (missing source), while
+        # specify's succeeds — a genuine partial result, not an injected
+        # exception.
+        (manager.presets_dir / "toggle-partial-result-preset" / "commands" / "speckit.plan.md").unlink()
+
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert not specify_cmd_file.exists(), (
+            "the specify command's old artifact must be retired since its "
+            "skill replacement actually landed (#2948)"
+        )
+        assert plan_cmd_file.exists(), (
+            "the plan command's old artifact must survive since its skill "
+            "replacement never landed (missing source) (#2948)"
+        )
+        metadata = manager.registry.get("toggle-partial-result-preset")
+        tracked_commands = metadata["registered_commands"].get("copilot", [])
+        assert "speckit.specify" not in tracked_commands, (
+            "specify must stop being tracked as a command once its "
+            "artifact has been unregistered (#2948)"
+        )
+        assert "speckit.plan" in tracked_commands, (
+            "plan must keep being tracked as a command since its old "
+            "artifact is still on disk (#2948)"
+        )
+        specify_skill_file = (
+            project_dir / ".github" / "skills" / "speckit-specify" / "SKILL.md"
+        )
+        assert "preset:toggle-partial-result-preset" in specify_skill_file.read_text(), (
+            "sanity: specify's new skill artifact should exist"
+        )
+        plan_skill_file = project_dir / ".github" / "skills" / "speckit-plan"
+        assert not plan_skill_file.exists(), (
+            "sanity: no skill should have been written for plan since its "
+            "source was missing"
+        )
+
+    def test_remove_after_partial_command_to_skills_toggle_keeps_skills_mode_agent_command_free(
+        self, project_dir, temp_dir
+    ):
+        """Removal must not recreate a command file for a skills-mode agent.
+
+        A partially failed command→skills toggle leaves the active agent's
+        stale ``registered_commands`` entry behind. Removing that preset
+        records the agent in ``extra_agents`` for post-removal
+        reconciliation, and ``register_commands_for_non_skill_agents``
+        admits every ``extra_agents`` member even when the active-only
+        ``only_agent`` guard excludes the agent — so the surviving
+        lower-priority preset's command file was recreated for an agent
+        now running in skills mode (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        lower_dir = self._create_command_preset(
+            temp_dir, "stale-toggle-lower-preset", "speckit.plan",
+            "Lower preset", "Lower body",
+        )
+        higher_dir = self._create_command_preset(
+            temp_dir, "stale-toggle-higher-preset", "speckit.plan",
+            "Higher preset", "Higher body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(lower_dir, "0.1.5", priority=20)
+        manager.install_from_directory(higher_dir, "0.1.5", priority=10)
+
+        command_file = copilot_commands_dir / "speckit.plan.agent.md"
+        assert "Higher body" in command_file.read_text(encoding="utf-8"), (
+            "sanity: command mode should have written the winning preset"
+        )
+
+        # Break the higher preset's installed source so its skill
+        # replacement is silently skipped during the toggle — a genuine
+        # partial command→skills toggle that leaves the stale
+        # registered_commands entry for copilot behind.
+        (manager.presets_dir / "stale-toggle-higher-preset" / "commands" / "speckit.plan.md").unlink()
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        metadata = manager.registry.get("stale-toggle-higher-preset")
+        assert "speckit.plan" in metadata["registered_commands"].get("copilot", []), (
+            "sanity: the partial toggle must leave the stale command "
+            "tracking behind"
+        )
+
+        manager.remove("stale-toggle-higher-preset")
+
+        assert not command_file.exists(), (
+            "removing the preset while copilot runs in skills mode must "
+            "not recreate its command file from the surviving lower "
+            "preset via the stale extra_agents entry (#2948)"
+        )
+
+    def test_remove_after_partial_skills_to_command_toggle_deletes_stale_skill(
+        self, project_dir, temp_dir
+    ):
+        """Removal must delete, not restore, a command-mode agent's stale skill.
+
+        The inverse partial toggle: a skills→command conversion that could
+        not replace one command leaves that skill tracked in
+        ``registered_skills``. Removing the preset while the agent is now
+        in command mode sent it through ``_unregister_skills()``, which
+        restored a core/extension ``SKILL.md``, and ``extra_skills_dirs``
+        then let ``_reconcile_skills`` reapply the surviving lower preset —
+        leaving the active command-mode agent with a skill artifact it
+        must not have (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        lower_dir = self._create_command_preset(
+            temp_dir, "inverse-toggle-lower-preset", "speckit.plan",
+            "Lower preset", "Lower body",
+        )
+        higher_dir = self._create_command_preset(
+            temp_dir, "inverse-toggle-higher-preset", "speckit.plan",
+            "Higher preset", "Higher body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(lower_dir, "0.1.5", priority=20)
+        manager.install_from_directory(higher_dir, "0.1.5", priority=10)
+
+        skill_dir = project_dir / ".github" / "skills" / "speckit-plan"
+        assert (skill_dir / "SKILL.md").exists(), (
+            "sanity: skills mode should have written the skill"
+        )
+
+        # Break the higher preset's installed source so its command
+        # replacement never lands during the skills→command toggle,
+        # leaving the skill tracked for copilot.
+        (manager.presets_dir / "inverse-toggle-higher-preset" / "commands" / "speckit.plan.md").unlink()
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        metadata = manager.registry.get("inverse-toggle-higher-preset")
+        registered_skills = metadata.get("registered_skills") or {}
+        assert registered_skills.get("copilot"), (
+            "sanity: the partial toggle must leave the stale skill "
+            "tracking behind"
+        )
+        assert (skill_dir / "SKILL.md").exists(), (
+            "sanity: the stale skill artifact must survive the partial toggle"
+        )
+
+        manager.remove("inverse-toggle-higher-preset")
+
+        assert not skill_dir.exists(), (
+            "removing the preset while copilot runs in command mode must "
+            "delete the stale preset-owned skill instead of restoring core "
+            "content or reapplying the surviving lower preset (#2948)"
+        )
+
+    def test_lower_priority_skill_does_not_remove_failed_winner_command(
+        self, project_dir, temp_dir
+    ):
+        """Only a successfully rendered winning layer may retire a command."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        commands_dir = project_dir / ".github" / "agents"
+        commands_dir.mkdir(parents=True)
+
+        lower_dir = self._create_command_preset(
+            temp_dir,
+            "lower-toggle-preset",
+            "speckit.specify",
+            "Lower preset",
+            "Lower body",
+        )
+        higher_dir = self._create_command_preset(
+            temp_dir,
+            "higher-toggle-preset",
+            "speckit.specify",
+            "Higher preset",
+            "Higher body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(lower_dir, "0.1.5", priority=20)
+        manager.install_from_directory(higher_dir, "0.1.5", priority=10)
+
+        command_file = commands_dir / "speckit.specify.agent.md"
+        assert "Higher body" in command_file.read_text(encoding="utf-8")
+
+        higher_source = (
+            manager.presets_dir
+            / "higher-toggle-preset"
+            / "commands"
+            / "speckit.specify.md"
+        )
+        higher_source.unlink()
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert command_file.exists(), (
+            "a lower-priority skill replacement must not remove the existing "
+            "higher-priority command when the winning layer did not render"
+        )
+        assert "Higher body" in command_file.read_text(encoding="utf-8")
+
+        higher_source.write_text(
+            "---\ndescription: Higher preset\n---\n\nHigher body\n",
+            encoding="utf-8",
+        )
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert not command_file.exists(), (
+            "the old command should be retired after the winning skill "
+            "layer renders successfully"
+        )
+        for preset_id in ("lower-toggle-preset", "higher-toggle-preset"):
+            metadata = manager.registry.get(preset_id)
+            assert not metadata["registered_commands"].get("copilot"), (
+                "all layers sharing the retired command output must drop "
+                "their stale command tracking"
+            )
+
+    def test_successful_winner_without_stale_tracking_retires_lower_command(
+        self, project_dir, temp_dir
+    ):
+        """Winner success is independent of whether that layer tracked a command."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        commands_dir = project_dir / ".github" / "agents"
+        commands_dir.mkdir(parents=True)
+
+        lower_dir = self._create_command_preset(
+            temp_dir,
+            "lower-command-preset",
+            "speckit.specify",
+            "Lower preset",
+            "Lower body",
+        )
+        higher_dir = self._create_command_preset(
+            temp_dir,
+            "higher-skill-preset",
+            "speckit.specify",
+            "Higher preset",
+            "Higher body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(lower_dir, "0.1.5", priority=20)
+
+        command_file = commands_dir / "speckit.specify.agent.md"
+        assert command_file.exists()
+
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.install_from_directory(higher_dir, "0.1.5", priority=10)
+        higher_metadata = manager.registry.get("higher-skill-preset")
+        assert not higher_metadata["registered_commands"].get("copilot")
+
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert not command_file.exists(), (
+            "a successfully rendered winning skill must retire a lower "
+            "layer's stale command even when the winner never tracked one"
+        )
+        lower_metadata = manager.registry.get("lower-command-preset")
+        assert not lower_metadata["registered_commands"].get("copilot")
+
+    def test_lower_priority_command_does_not_remove_failed_winner_skill(
+        self, project_dir, temp_dir
+    ):
+        """Only a successfully rendered winning command may retire a skill."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        commands_dir = project_dir / ".github" / "agents"
+        commands_dir.mkdir(parents=True)
+
+        lower_dir = self._create_command_preset(
+            temp_dir,
+            "lower-skill-preset",
+            "speckit.specify",
+            "Lower preset",
+            "Lower body",
+        )
+        higher_dir = self._create_command_preset(
+            temp_dir,
+            "higher-command-preset",
+            "speckit.specify",
+            "Higher preset",
+            "Higher body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(lower_dir, "0.1.5", priority=20)
+        manager.install_from_directory(higher_dir, "0.1.5", priority=10)
+
+        skill_file = (
+            project_dir
+            / ".github"
+            / "skills"
+            / "speckit-specify"
+            / "SKILL.md"
+        )
+        assert "Higher body" in skill_file.read_text(encoding="utf-8")
+
+        higher_source = (
+            manager.presets_dir
+            / "higher-command-preset"
+            / "commands"
+            / "speckit.specify.md"
+        )
+        higher_source.unlink()
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert skill_file.exists(), (
+            "a lower-priority command replacement must not remove the "
+            "existing higher-priority skill when the winner did not render"
+        )
+        assert "Higher body" in skill_file.read_text(encoding="utf-8")
+
+        higher_source.write_text(
+            "---\ndescription: Higher preset\n---\n\nHigher body\n",
+            encoding="utf-8",
+        )
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert not skill_file.exists(), (
+            "the old skill should be retired after the winning command "
+            "layer renders successfully"
+        )
+        for preset_id in ("lower-skill-preset", "higher-command-preset"):
+            metadata = manager.registry.get(preset_id)
+            assert not metadata["registered_skills"].get("copilot"), (
+                "all layers sharing the retired skill output must drop "
+                "their stale skill tracking"
+            )
+
+    def test_project_override_command_retires_stale_preset_skill(
+        self, project_dir, temp_dir
+    ):
+        """A reconciled project override can replace a stale preset skill."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        commands_dir = project_dir / ".github" / "agents"
+        commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "override-toggle-preset",
+            "speckit.specify",
+            "Preset",
+            "Preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = (
+            project_dir
+            / ".github"
+            / "skills"
+            / "speckit-specify"
+            / "SKILL.md"
+        )
+        assert skill_file.exists()
+
+        overrides_dir = (
+            project_dir / ".specify" / "templates" / "overrides"
+        )
+        overrides_dir.mkdir(parents=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Project override\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+        (
+            manager.presets_dir
+            / "override-toggle-preset"
+            / "commands"
+            / "speckit.specify.md"
+        ).unlink()
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+
+        manager.register_enabled_presets_for_agent("copilot")
+
+        command_file = commands_dir / "speckit.specify.agent.md"
+        assert "Override body" in command_file.read_text(encoding="utf-8")
+        assert not skill_file.exists(), (
+            "the stale preset skill must be retired once the project "
+            "override command is successfully reconciled"
+        )
+        metadata = manager.registry.get("override-toggle-preset")
+        assert not metadata["registered_skills"].get("copilot")
+
+    def test_project_override_command_retires_reconciled_override_skill(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        commands_dir = project_dir / ".github" / "agents"
+        commands_dir.mkdir(parents=True)
+        skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "reconciled-override-toggle-preset",
+            "speckit.specify",
+            "Preset",
+            "Preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        overrides_dir = (
+            project_dir / ".specify" / "templates" / "overrides"
+        )
+        overrides_dir.mkdir(parents=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Project override\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+        (
+            manager.presets_dir
+            / "reconciled-override-toggle-preset"
+            / "commands"
+            / "speckit.specify.md"
+        ).unlink()
+
+        manager.register_enabled_presets_for_agent("copilot")
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert "override:speckit.specify" in skill_file.read_text(
+            encoding="utf-8"
+        )
+
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert "Override body" in (
+            commands_dir / "speckit.specify.agent.md"
+        ).read_text(encoding="utf-8")
+        assert not skill_file.exists()
+        metadata = manager.registry.get(
+            "reconciled-override-toggle-preset"
+        )
+        assert not metadata["registered_skills"].get("copilot")
+
+    def test_project_override_skill_retires_stale_preset_command(
+        self, project_dir, temp_dir
+    ):
+        """A reconciled override skill may retire a stale preset command."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        commands_dir = project_dir / ".github" / "agents"
+        commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "override-skill-toggle-preset",
+            "speckit.specify",
+            "Preset",
+            "Preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        command_file = commands_dir / "speckit.specify.agent.md"
+        assert command_file.exists()
+        skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+        manager.registry.update(
+            "override-skill-toggle-preset",
+            {"registered_skills": {"copilot": ["speckit-specify"]}},
+        )
+
+        overrides_dir = (
+            project_dir / ".specify" / "templates" / "overrides"
+        )
+        overrides_dir.mkdir(parents=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Project override\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+        (
+            manager.presets_dir
+            / "override-skill-toggle-preset"
+            / "commands"
+            / "speckit.specify.md"
+        ).unlink()
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+
+        manager.register_enabled_presets_for_agent("copilot")
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert "Override body" in skill_file.read_text(encoding="utf-8")
+        assert not command_file.exists(), (
+            "the stale preset command must be retired after the project "
+            "override skill is successfully reconciled"
+        )
+        metadata = manager.registry.get("override-skill-toggle-preset")
+        assert not metadata["registered_commands"].get("copilot")
+
+    def test_partial_skill_registration_is_persisted_before_later_failure(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """A successful earlier skill write remains tracked if a later read fails."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        commands_dir = project_dir / ".github" / "agents"
+        commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_multi_command_preset(
+            temp_dir,
+            "partial-skill-failure-preset",
+            ["speckit.specify", "speckit.plan"],
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+
+        original_read_text = Path.read_text
+
+        def fail_plan_source(path, *args, **kwargs):
+            if (
+                path.name == "speckit.plan.md"
+                and path.parent.name == "commands"
+                and "partial-skill-failure-preset" in path.parts
+            ):
+                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid")
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", fail_plan_source)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        metadata = manager.registry.get("partial-skill-failure-preset")
+        assert "speckit-specify" in metadata["registered_skills"].get(
+            "copilot", []
+        ), (
+            "the first successful write must be persisted before the later "
+            "template failure aborts the registration call"
+        )
+        monkeypatch.setattr(Path, "read_text", original_read_text)
+        assert manager.remove("partial-skill-failure-preset") is True
+        remaining_skill = (
+            project_dir
+            / ".github"
+            / "skills"
+            / "speckit-specify"
+            / "SKILL.md"
+        )
+        assert (
+            not remaining_skill.exists()
+            or "preset:partial-skill-failure-preset"
+            not in remaining_skill.read_text(encoding="utf-8")
+        ), "persisted partial ownership must remain removable"
+
+    def test_remove_cleans_native_skill_missing_from_partial_skill_map(
+        self, project_dir, temp_dir
+    ):
+        """Command cleanup must cover native skills absent from a partial map."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "partial-agent-skill-map-preset",
+            "speckit.partial-native",
+            "Partial native skill",
+            "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        metadata = manager.registry.get("partial-agent-skill-map-preset")
+        assert metadata["registered_skills"].get("claude")
+
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        (project_dir / ".agents" / "skills").mkdir(parents=True)
+
+        from unittest.mock import patch
+
+        with patch.object(
+            PresetManager,
+            "_register_skills",
+            side_effect=RuntimeError("simulated skills phase failure"),
+        ):
+            manager.register_enabled_presets_for_agent("codex")
+
+        codex_skill = (
+            project_dir
+            / ".agents"
+            / "skills"
+            / "speckit-partial-native"
+            / "SKILL.md"
+        )
+        assert codex_skill.exists()
+        metadata = manager.registry.get("partial-agent-skill-map-preset")
+        assert "speckit.partial-native" in metadata[
+            "registered_commands"
+        ].get("codex", [])
+        assert not metadata["registered_skills"].get("codex")
+
+        assert manager.remove("partial-agent-skill-map-preset") is True
+        assert not codex_skill.exists(), (
+            "native skill written by the commands phase must not be orphaned "
+            "when another agent makes registered_skills globally non-empty"
+        )
+
+    def test_partial_skill_install_failure_rolls_back_persisted_writes(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """Install rollback must reload partial skill ownership before removal."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        (project_dir / ".github" / "agents").mkdir(parents=True)
+        preset_dir = self._create_multi_command_preset(
+            temp_dir,
+            "partial-install-failure-preset",
+            ["speckit.specify", "speckit.plan"],
+        )
+        manager = PresetManager(project_dir)
+        original_read_text = Path.read_text
+
+        def fail_plan_source(path, *args, **kwargs):
+            if (
+                path.name == "speckit.plan.md"
+                and path.parent.name == "commands"
+                and "partial-install-failure-preset" in path.parts
+            ):
+                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid")
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", fail_plan_source)
+        with pytest.raises(UnicodeDecodeError):
+            manager.install_from_directory(preset_dir, "0.1.5")
+
+        assert not manager.registry.is_installed(
+            "partial-install-failure-preset"
+        )
+        skill_file = (
+            project_dir
+            / ".github"
+            / "skills"
+            / "speckit-specify"
+            / "SKILL.md"
+        )
+        assert (
+            not skill_file.exists()
+            or "preset:partial-install-failure-preset"
+            not in original_read_text(skill_file, encoding="utf-8")
+        ), "rollback must not orphan a skill written before the later failure"
+
+    def test_toggle_skills_to_command_empty_result_preserves_old_skill(
+        self, project_dir, temp_dir
+    ):
+        """A non-raising but empty command result must not delete the old skill.
+
+        Mirror image of the empty-result command->skills case: deleting the
+        preset's own source file makes ``_register_commands`` return ``{}``
+        for copilot without raising, which must leave the old SKILL.md and
+        its tracking untouched (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+        skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "toggle-skill-empty-result-preset", "speckit.specify",
+            "Toggle empty-result test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:toggle-skill-empty-result-preset" in skill_file.read_text(), (
+            "sanity: skills mode should have written the SKILL.md mirror"
+        )
+
+        # Remove the preset's own *installed* source file so
+        # _register_commands can find nothing to render — a real "missing
+        # source" case, not an exception — leaving registered_commands
+        # empty for copilot.
+        (manager.presets_dir / "toggle-skill-empty-result-preset" / "commands" / "speckit.specify.md").unlink()
+
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert "preset:toggle-skill-empty-result-preset" in skill_file.read_text(), (
+            "an empty (non-raising) command registration result must not "
+            "cause the old skills-mode artifact to be deleted/reverted "
+            "(#2948)"
+        )
+        metadata = manager.registry.get("toggle-skill-empty-result-preset")
+        assert "speckit-specify" in metadata["registered_skills"].get("copilot", []), (
+            "registered_skills must keep tracking copilot's still-live "
+            "skill file when nothing was actually replaced (#2948)"
+        )
+        # Note: a command file may still exist here — general command
+        # reconciliation independently restores the next-best (e.g. core)
+        # layer for the *command name*, regardless of this preset's own
+        # missing source. That's an orthogonal, existing behaviour; the
+        # invariant under test is specifically that the *skill* mirror and
+        # its tracking survive the empty registration result.
+
+    def test_toggle_skills_to_command_partial_result_only_removes_replaced_skill(
+        self, project_dir, temp_dir
+    ):
+        """Only the skill whose command replacement actually landed is retired.
+
+        Mirror image of the partial-result command->skills case: a
+        two-command preset where one command's source file goes missing
+        right before the toggle, so ``_register_commands`` genuinely
+        returns a partial result. The skill whose command was written
+        must be retired; the other must keep both its old SKILL.md and
+        its registry tracking, since no replacement for it landed (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+        skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+        self._create_skill(skills_dir, "speckit-plan")
+
+        # A core template lets the retired skill restore to core content
+        # instead of being removed entirely (it has nothing else to fall
+        # back to), matching _unregister_skills's behaviour elsewhere.
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        preset_dir = self._create_multi_command_preset(
+            temp_dir, "toggle-skill-partial-result-preset",
+            ["speckit.specify", "speckit.plan"],
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        specify_skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        plan_skill_file = skills_dir / "speckit-plan" / "SKILL.md"
+        assert "preset:toggle-skill-partial-result-preset" in specify_skill_file.read_text()
+        assert "preset:toggle-skill-partial-result-preset" in plan_skill_file.read_text()
+        metadata = manager.registry.get("toggle-skill-partial-result-preset")
+        assert set(metadata["registered_skills"].get("copilot", [])) == {
+            "speckit-specify", "speckit-plan",
+        }, "sanity: both skills should be tracked for copilot"
+
+        # Remove only the plan command's *installed* source so its command
+        # replacement is silently skipped (missing source), while
+        # specify's succeeds.
+        (manager.presets_dir / "toggle-skill-partial-result-preset" / "commands" / "speckit.plan.md").unlink()
+
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert "preset:toggle-skill-partial-result-preset" not in specify_skill_file.read_text(), (
+            "the specify skill's old artifact must be retired/reverted "
+            "since its command replacement actually landed (#2948)"
+        )
+        assert "preset:toggle-skill-partial-result-preset" in plan_skill_file.read_text(), (
+            "the plan skill's old artifact must survive since its command "
+            "replacement never landed (missing source) (#2948)"
+        )
+        metadata = manager.registry.get("toggle-skill-partial-result-preset")
+        tracked_skills = metadata["registered_skills"].get("copilot", [])
+        assert "speckit-specify" not in tracked_skills, (
+            "specify must stop being tracked as a skill once its artifact "
+            "has been unregistered/reverted (#2948)"
+        )
+        assert "speckit-plan" in tracked_skills, (
+            "plan must keep being tracked as a skill since its old "
+            "artifact is still on disk (#2948)"
+        )
+        assert (copilot_commands_dir / "speckit.specify.agent.md").exists(), (
+            "sanity: specify's new command artifact should exist"
+        )
+
+    def test_toggle_command_to_skills_retires_alias_group_when_primary_skill_lands(
+        self, project_dir, temp_dir
+    ):
+        """A command's aliases must be retired together with its primary
+        once the primary's skill replacement lands.
+
+        ``CommandRegistrar.register_commands()`` tracks and returns
+        primary + alias names flattened together, but ``_register_skills()``
+        only ever renders/returns the *primary* command name's skill. The
+        alias's own name run through ``_skill_names_for_command()`` never
+        matches anything real, so without grouping by primary, the alias
+        command artifact and its tracking entry would survive forever even
+        after mutual exclusion is otherwise enforced for the primary (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_multi_command_preset_with_aliases(
+            temp_dir, "alias-group-success-preset",
+            [("speckit.specify", ["speckit.spec"])],
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        primary_cmd_file = copilot_commands_dir / "speckit.specify.agent.md"
+        alias_cmd_file = copilot_commands_dir / "speckit.spec.agent.md"
+        assert primary_cmd_file.exists() and alias_cmd_file.exists(), (
+            "sanity: command mode should have written both the primary "
+            "and alias command files"
+        )
+        metadata = manager.registry.get("alias-group-success-preset")
+        assert set(metadata["registered_commands"].get("copilot", [])) == {
+            "speckit.specify", "speckit.spec",
+        }, "sanity: both primary and alias should be tracked for copilot"
+
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert not primary_cmd_file.exists(), (
+            "the primary's old command artifact must be retired once its "
+            "skill replacement lands (#2948)"
+        )
+        assert not alias_cmd_file.exists(), (
+            "the alias's old command artifact must be retired together "
+            "with its primary once the primary's skill replacement lands "
+            "(#2948)"
+        )
+        metadata = manager.registry.get("alias-group-success-preset")
+        registered_commands = metadata.get("registered_commands", {})
+        assert not registered_commands.get("copilot"), (
+            "neither the primary nor the alias should remain tracked as "
+            "commands once both artifacts are retired (#2948)"
+        )
+        skill_file = project_dir / ".github" / "skills" / "speckit-specify" / "SKILL.md"
+        assert skill_file.exists(), "sanity: the primary's skill should have been written"
+
+    def test_toggle_command_to_skills_keeps_alias_group_when_primary_skill_missing(
+        self, project_dir, temp_dir
+    ):
+        """A command's aliases must survive together with its primary when
+        the primary's skill replacement never lands.
+
+        Mirror image of the group-retirement case: deleting the preset's
+        own installed command source makes ``_register_skills`` genuinely
+        return nothing for ``speckit.specify``, so neither the primary nor
+        its alias have a real replacement — both old command artifacts and
+        their tracking must survive (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_multi_command_preset_with_aliases(
+            temp_dir, "alias-group-failure-preset",
+            [("speckit.specify", ["speckit.spec"])],
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        primary_cmd_file = copilot_commands_dir / "speckit.specify.agent.md"
+        alias_cmd_file = copilot_commands_dir / "speckit.spec.agent.md"
+        assert primary_cmd_file.exists() and alias_cmd_file.exists(), (
+            "sanity: command mode should have written both the primary "
+            "and alias command files"
+        )
+
+        # Remove the installed source so _register_skills can find nothing
+        # to render for the primary — a real "missing source" case.
+        (manager.presets_dir / "alias-group-failure-preset" / "commands" / "speckit.specify.md").unlink()
+
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert primary_cmd_file.exists(), (
+            "the primary's old command artifact must survive since its "
+            "skill replacement never landed (#2948)"
+        )
+        assert alias_cmd_file.exists(), (
+            "the alias's old command artifact must survive together with "
+            "its primary since neither has a real replacement (#2948)"
+        )
+        metadata = manager.registry.get("alias-group-failure-preset")
+        assert set(metadata["registered_commands"].get("copilot", [])) == {
+            "speckit.specify", "speckit.spec",
+        }, (
+            "both the primary and alias must keep being tracked since "
+            "nothing was actually replaced (#2948)"
+        )
+        skill_file = project_dir / ".github" / "skills" / "speckit-specify" / "SKILL.md"
+        assert not skill_file.exists(), (
+            "sanity: no skill should have been written when the source "
+            "was missing"
+        )
+
+    def test_toggle_command_to_skills_partial_multi_group_only_retires_successful_group(
+        self, project_dir, temp_dir
+    ):
+        """With two independent alias groups, only the group whose primary
+        skill actually lands is retired; the other survives intact.
+
+        A preset with two commands (``speckit.specify`` with alias
+        ``speckit.spec``, and ``speckit.plan`` with alias
+        ``speckit.plan-alt``) where only ``speckit.plan``'s installed
+        source goes missing: ``speckit.specify``'s group (primary + alias)
+        must be fully retired, while ``speckit.plan``'s entire group
+        (primary + alias) must survive together, since grouping is
+        per-primary, not per-individual-name (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_multi_command_preset_with_aliases(
+            temp_dir, "alias-group-partial-preset",
+            [
+                ("speckit.specify", ["speckit.spec"]),
+                ("speckit.plan", ["speckit.plan-alt"]),
+            ],
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        specify_cmd = copilot_commands_dir / "speckit.specify.agent.md"
+        spec_alias_cmd = copilot_commands_dir / "speckit.spec.agent.md"
+        plan_cmd = copilot_commands_dir / "speckit.plan.agent.md"
+        plan_alias_cmd = copilot_commands_dir / "speckit.plan-alt.agent.md"
+        assert all(
+            f.exists() for f in (specify_cmd, spec_alias_cmd, plan_cmd, plan_alias_cmd)
+        ), "sanity: command mode should have written all four command files"
+
+        # Remove only plan's installed source so its group's skill
+        # replacement is silently skipped, while specify's group succeeds.
+        (manager.presets_dir / "alias-group-partial-preset" / "commands" / "speckit.plan.md").unlink()
+
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert not specify_cmd.exists() and not spec_alias_cmd.exists(), (
+            "specify's whole group (primary + alias) must be retired "
+            "since its skill replacement landed (#2948)"
+        )
+        assert plan_cmd.exists() and plan_alias_cmd.exists(), (
+            "plan's whole group (primary + alias) must survive together "
+            "since its skill replacement never landed (#2948)"
+        )
+        metadata = manager.registry.get("alias-group-partial-preset")
+        tracked_commands = set(metadata["registered_commands"].get("copilot", []))
+        assert tracked_commands == {"speckit.plan", "speckit.plan-alt"}, (
+            "only plan's group should remain tracked as commands; "
+            "specify's group must be fully untracked (#2948)"
+        )
+
+    def test_rescaffold_toggle_skills_to_command_removes_stale_skill_file(
+        self, project_dir, temp_dir
+    ):
+        """Toggling the *same* agent from skills mode to command mode must
+        remove the stale skills-mode artifact, not just add the new one.
+
+        Mirror image of the command-to-skills toggle: once ``ai_skills`` is
+        turned off for copilot (still the active agent), ``_get_skills_dir``
+        stops resolving a skills directory for it, so ``_register_skills``
+        becomes a no-op — but the ``SKILL.md`` written while skills mode was
+        on, and its ``registered_skills`` entry, were left behind even
+        though ``_register_commands`` went on to (re)write the ``.agent.md``
+        command file, again breaking mutual exclusion (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+        skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        # A core template lets the stale skill restore to core content
+        # (instead of being removed entirely, since it has nothing to fall
+        # back to), matching how `_unregister_skills` behaves elsewhere.
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "toggle-skill-to-cmd-preset", "speckit.specify",
+            "Toggle test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:toggle-skill-to-cmd-preset" in skill_file.read_text(), (
+            "sanity: skills mode should have written the SKILL.md mirror"
+        )
+        metadata = manager.registry.get("toggle-skill-to-cmd-preset")
+        assert metadata["registered_skills"].get("copilot"), (
+            "sanity: the skills-mode write should be tracked for copilot"
+        )
+
+        # Flip ai_skills off for the *same* active agent and rescaffold, as
+        # `integration upgrade copilot` would after the mode toggle.
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        restored_content = skill_file.read_text()
+        assert "preset:toggle-skill-to-cmd-preset" not in restored_content, (
+            "the stale skills-mode artifact must be reverted once copilot "
+            "has toggled to command mode for the same agent (#2948)"
+        )
+        assert "Core specify body" in restored_content, (
+            "sanity: the skill should fall back to core content, not just "
+            "lose the preset's override"
+        )
+        metadata = manager.registry.get("toggle-skill-to-cmd-preset")
+        assert not metadata["registered_skills"].get("copilot"), (
+            "registered_skills must stop tracking copilot once its "
+            "artifact has been unregistered/restored (#2948)"
+        )
+        cmd_file = copilot_commands_dir / "speckit.specify.agent.md"
+        assert cmd_file.exists(), (
+            "sanity: the new command-mode artifact should still be written"
+        )
+        assert "preset body" in cmd_file.read_text()
+
+    def test_skill_switch_then_remove_restores_every_skill_agent_dir(
+        self, project_dir, temp_dir
+    ):
+        """Switching between two skill-mode agents before removing a preset
+        must restore both agents' directories, not just the currently
+        active one.
+
+        ``registered_skills`` records exactly which agent directories the
+        preset wrote to (``{agent_name: [skill_name, ...]}``); switching to
+        codex and re-registering adds a "codex" entry alongside the
+        original "claude" entry, so removal restores both. Before the
+        provenance fix, ``_unregister_skills`` only restored the currently
+        active agent's skills directory; a preset used first under Claude
+        and later switched to Codex would have its Claude override left
+        behind permanently on removal (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        # Native skill agents only materialize a *brand-new* preset skill
+        # when their skills directory already exists (mirrors every other
+        # skill test in this class); pre-create both agents' directories so
+        # install and the later switch both find an existing skill to
+        # overwrite via _register_commands/_register_skills.
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_skills_dir, "speckit-specify")
+        codex_skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(codex_skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "multi-skill-agent-preset", "speckit.specify",
+            "Multi skill agent test", "preset body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        claude_skill = claude_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:multi-skill-agent-preset" in claude_skill.read_text()
+
+        # Switch the active agent to codex (a different skill-mode agent)
+        # and re-register enabled presets for it, mirroring what
+        # `integration use codex` does.
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+
+        codex_skill = codex_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:multi-skill-agent-preset" in codex_skill.read_text(), (
+            "sanity: switching to codex should rescaffold the preset there"
+        )
+        assert "preset:multi-skill-agent-preset" in claude_skill.read_text(), (
+            "sanity: the previous agent's registration is preserved on switch"
+        )
+
+        metadata = manager.registry.get("multi-skill-agent-preset")
+        registered_skills = metadata.get("registered_skills", {})
+        assert set(registered_skills) == {"claude", "codex"}, (
+            "registered_skills must record both agent directories this "
+            "preset actually wrote to (#2948)"
+        )
+
+        assert manager.remove("multi-skill-agent-preset") is True
+
+        for skill_file, label in ((claude_skill, "claude"), (codex_skill, "codex")):
+            assert skill_file.exists(), f"{label} skill file should still exist after removal"
+            content = skill_file.read_text()
+            assert "preset:multi-skill-agent-preset" not in content, (
+                f"{label}'s preset override must be restored on removal, "
+                "not orphaned permanently (#2948)"
+            )
+            assert "Core specify body" in content
+
+    def test_native_skill_activation_recreates_deleted_skills_root(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_skills_dir, "speckit-specify")
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "native-root-recovery-preset",
+            "speckit.specify",
+            "Native root recovery",
+            "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        codex_skills_dir = project_dir / ".agents" / "skills"
+        assert not codex_skills_dir.exists()
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+
+        skill_file = codex_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:native-root-recovery-preset" in skill_file.read_text()
+        metadata = manager.registry.get("native-root-recovery-preset")
+        assert "speckit.specify" in metadata["registered_commands"]["codex"]
+
+    def test_rescaffold_migrates_legacy_flat_list_registered_skills(
+        self, project_dir, temp_dir
+    ):
+        """Rescaffolding a preset with a legacy flat-list ``registered_skills``
+        entry must persist the migrated per-agent dict even when the
+        rescaffolded skill names are unchanged from before.
+
+        ``_normalize_registered_skills`` converts a legacy flat ``List[str]``
+        (predating per-agent provenance) into ``{agent_name: [...]}`` in
+        memory, but the persistence check compared only the *normalized*
+        ``merged_skills`` against the *normalized* ``existing_skills`` —
+        both derived from the same raw legacy list. When the freshly
+        registered names are identical to what the legacy list already
+        held (the common case: nothing about the preset or skill actually
+        changed), that comparison is a no-op and ``registry.update()`` is
+        skipped, leaving the *raw* on-disk value as the un-migrated flat
+        list. A later switch to a different skill-mode agent and removal
+        then follows the legacy best-effort restore path (only the
+        currently active agent's directory) instead of the per-agent
+        provenance path, orphaning the first agent's override (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_skills_dir, "speckit-specify")
+        codex_skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(codex_skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "legacy-skills-preset", "speckit.specify",
+            "Legacy skills test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        # Simulate a registry entry written by a pre-#2948 spec-kit version:
+        # registered_skills stored as a flat list with no per-agent
+        # provenance, rather than the dict shape install_from_directory
+        # writes today.
+        manager.registry.update(
+            "legacy-skills-preset", {"registered_skills": ["speckit-specify"]},
+        )
+        metadata = manager.registry.get("legacy-skills-preset")
+        assert isinstance(metadata["registered_skills"], list), (
+            "sanity: the injected legacy format is a flat list"
+        )
+
+        # Rescaffold for the *same* active agent (claude) with no actual
+        # change to the registered skill names, mirroring `integration
+        # upgrade claude` re-running registration for the active
+        # integration.
+        manager.register_enabled_presets_for_agent("claude")
+
+        metadata = manager.registry.get("legacy-skills-preset")
+        registered_skills = metadata.get("registered_skills")
+        assert isinstance(registered_skills, dict), (
+            "rescaffold must migrate a legacy flat-list registered_skills "
+            "entry to the per-agent dict format even when the "
+            "rescaffolded names are unchanged, or the raw registry stays "
+            "un-migrated and later removal loses per-agent provenance "
+            "(#2948)"
+        )
+        assert registered_skills.get("claude") == ["speckit-specify"]
+
+        # Switch to a different skill-mode agent and rescaffold again —
+        # with the dict format now in place, both directories should be
+        # tracked and therefore restorable on removal.
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+
+        metadata = manager.registry.get("legacy-skills-preset")
+        assert set(metadata.get("registered_skills", {})) == {"claude", "codex"}, (
+            "the migrated dict must keep recording every agent directory "
+            "the preset actually wrote to, exactly like a preset that was "
+            "always in dict format (#2948)"
+        )
+
+        assert manager.remove("legacy-skills-preset") is True
+
+        claude_skill = claude_skills_dir / "speckit-specify" / "SKILL.md"
+        codex_skill = codex_skills_dir / "speckit-specify" / "SKILL.md"
+        for skill_file, label in ((claude_skill, "claude"), (codex_skill, "codex")):
+            assert skill_file.exists(), f"{label} skill file should still exist after removal"
+            content = skill_file.read_text()
+            assert "preset:legacy-skills-preset" not in content, (
+                f"{label}'s preset override must be restored on removal, "
+                "not orphaned because the registry stayed in legacy "
+                "flat-list format (#2948)"
+            )
+            assert "Core specify body" in content
+
+    def test_rescaffold_legacy_flat_list_direct_switch_preserves_original_agent(
+        self, project_dir, temp_dir
+    ):
+        """A legacy flat-list ``registered_skills`` entry must not be
+        misattributed to the wrong agent when the *first* post-upgrade
+        operation is a direct switch to a different skill-mode agent.
+
+        Blindly attributing every legacy flat-list name to ``agent_name`` —
+        the agent currently being (re)activated — loses the actual writer
+        whenever that first operation is ``integration use codex`` (or
+        ``switch``) run directly against a legacy Claude override, without
+        an intervening same-agent rescaffold for Claude first. The
+        migrated dict then only records ``{"codex": [...]}``, so a later
+        ``remove()`` restores Codex but permanently orphans the Claude
+        override that was never in the registry to begin with (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_skills_dir, "speckit-specify")
+        codex_skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(codex_skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "legacy-direct-switch-preset", "speckit.specify",
+            "Legacy direct switch test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        # install_from_directory wrote the preset's override to Claude's
+        # skill directory (the active agent at install time) — sanity-check
+        # that the marker is actually there before simulating the legacy
+        # registry format.
+        claude_skill = claude_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:legacy-direct-switch-preset" in claude_skill.read_text(), (
+            "sanity: install should have written the override under claude"
+        )
+
+        # Simulate a pre-#2948 registry: a flat list with no per-agent
+        # provenance, even though the file on disk was actually written
+        # under claude's directory.
+        manager.registry.update(
+            "legacy-direct-switch-preset",
+            {"registered_skills": ["speckit-specify"]},
+        )
+
+        # Directly switch to codex — no intervening rescaffold for claude —
+        # mirroring `integration use codex` / `switch codex` run right after
+        # upgrading spec-kit versions.
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+
+        metadata = manager.registry.get("legacy-direct-switch-preset")
+        registered_skills = metadata.get("registered_skills")
+        assert isinstance(registered_skills, dict)
+        assert set(registered_skills) == {"claude", "codex"}, (
+            "migrating a legacy flat-list entry on a direct switch must "
+            "infer the actual writer (claude) from the existing on-disk "
+            "SKILL.md provenance, not attribute every name to whichever "
+            "agent happens to be activated first after the upgrade "
+            "(#2948)"
+        )
+
+        assert manager.remove("legacy-direct-switch-preset") is True
+
+        codex_skill = codex_skills_dir / "speckit-specify" / "SKILL.md"
+        for skill_file, label in ((claude_skill, "claude"), (codex_skill, "codex")):
+            assert skill_file.exists(), f"{label} skill file should still exist after removal"
+            content = skill_file.read_text()
+            assert "preset:legacy-direct-switch-preset" not in content, (
+                f"{label}'s preset override must be restored on removal, "
+                "not permanently orphaned by a misattributed legacy "
+                "migration (#2948)"
+            )
+            assert "Core specify body" in content
+
+    def test_rescaffold_legacy_flat_list_infers_command_backed_skills_owner(
+        self, project_dir, temp_dir
+    ):
+        """Legacy provenance inference must also probe command-backed agents
+        that were running in skills mode, not only agents whose command
+        registrar config is statically ``/SKILL.md``-only.
+
+        Copilot is command-backed (``extension: ".agent.md"``), but with
+        ``ai_skills`` enabled its preset overrides render as ``SKILL.md``
+        files under ``.github/skills`` exactly like a native skill-only
+        agent (claude, codex, ...). Before the fix,
+        ``_infer_legacy_skill_provenance`` only probed agents whose
+        registrar config has a static ``extension == "/SKILL.md"``, so a
+        real preset-owned ``.github/skills/.../SKILL.md`` written while
+        Copilot was the active, skills-mode agent was never found — the
+        legacy flat list was misattributed entirely to whichever agent the
+        first post-upgrade switch happened to activate, permanently
+        orphaning Copilot's override on later removal (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        copilot_skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(copilot_skills_dir, "speckit-specify")
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "legacy-copilot-skills-preset", "speckit.specify",
+            "Legacy copilot skills test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        copilot_skill = copilot_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:legacy-copilot-skills-preset" in copilot_skill.read_text(), (
+            "sanity: install should have written the override under "
+            "copilot's skills directory while copilot was active in "
+            "skills mode"
+        )
+        # Sanity: no command-mode artifact was written either — copilot's
+        # command file and skills file are mutually exclusive.
+        assert not list((project_dir / ".github" / "agents").glob("*specify*")), (
+            "sanity: copilot in skills mode must not also write a command "
+            "file that could be falsely attributed instead"
+        )
+
+        # Simulate a pre-#2948 registry: a flat list with no per-agent
+        # provenance, even though the file on disk was actually written
+        # under copilot's skills directory.
+        manager.registry.update(
+            "legacy-copilot-skills-preset",
+            {"registered_skills": ["speckit-specify"]},
+        )
+
+        # Directly switch to claude — no intervening rescaffold for
+        # copilot — mirroring `integration use claude` run right after
+        # upgrading spec-kit versions.
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        manager.register_enabled_presets_for_agent("claude")
+
+        metadata = manager.registry.get("legacy-copilot-skills-preset")
+        registered_skills = metadata.get("registered_skills")
+        assert isinstance(registered_skills, dict)
+        assert set(registered_skills) == {"copilot", "claude"}, (
+            "migrating a legacy flat-list entry on a direct switch must "
+            "infer the actual writer (copilot, running in skills mode) "
+            "even though copilot's registrar config is command-backed, "
+            "not just agents with a static /SKILL.md extension (#2948)"
+        )
+
+        assert manager.remove("legacy-copilot-skills-preset") is True
+
+        claude_skill = claude_skills_dir / "speckit-specify" / "SKILL.md"
+        for skill_file, label in ((copilot_skill, "copilot"), (claude_skill, "claude")):
+            assert skill_file.exists(), f"{label} skill file should still exist after removal"
+            content = skill_file.read_text()
+            assert "preset:legacy-copilot-skills-preset" not in content, (
+                f"{label}'s preset override must be restored on removal, "
+                "not permanently orphaned by a legacy migration that "
+                "failed to probe command-backed skills-mode agents (#2948)"
+            )
+            assert "Core specify body" in content
+
+    def test_infer_legacy_skill_provenance_does_not_falsely_attribute_command_mode_copilot(
+        self, project_dir, temp_dir
+    ):
+        """Broadening provenance inference to command-backed agents must not
+        falsely attribute ownership to an agent's directory that has no
+        preset-owned marker.
+
+        Copilot stays in plain command mode throughout (no skills ever
+        rendered there), so ``.github/skills`` never receives this
+        preset's ``SKILL.md``. Probing copilot's skills directory anyway
+        (now that inference isn't restricted to static ``/SKILL.md``
+        agents) must find nothing there and must not invent a false
+        ``"copilot"`` entry (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_skills_dir, "speckit-specify")
+        # Copilot has never been active; its command directory holds an
+        # unrelated file so the directory exists, but no skills directory
+        # or SKILL.md was ever written for it.
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "no-false-attribution-preset", "speckit.specify",
+            "No false attribution test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        manager.registry.update(
+            "no-false-attribution-preset",
+            {"registered_skills": ["speckit-specify"]},
+        )
+
+        # Rescaffold again for the same agent (claude) with unchanged
+        # names, triggering the legacy migration path.
+        manager.register_enabled_presets_for_agent("claude")
+
+        metadata = manager.registry.get("no-false-attribution-preset")
+        registered_skills = metadata.get("registered_skills")
+        assert isinstance(registered_skills, dict)
+        assert set(registered_skills) == {"claude"}, (
+            "copilot must not appear in the migrated registry when it has "
+            "never actually rendered this preset's skill — probing its "
+            "directory for a marker match must not create a false "
+            "attribution (#2948)"
+        )
+        assert not (project_dir / ".github" / "skills").exists(), (
+            "no .github/skills directory should have been created as a "
+            "side effect of probing for provenance (#2948)"
+        )
+
+    def test_infer_legacy_skill_provenance_skips_invalid_utf8(
+        self, project_dir
+    ):
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skill_dir = (
+            project_dir / ".claude" / "skills" / "speckit-specify"
+        )
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_bytes(b"\xff")
+
+        manager = PresetManager(project_dir)
+
+        assert manager._infer_legacy_skill_provenance(
+            ["speckit-specify"], "some-pack", "claude"
+        ) == {"claude": ["speckit-specify"]}
+
+    def test_infer_legacy_skill_provenance_excludes_home_outputs(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        home = temp_dir / "home"
+        monkeypatch.setattr(Path, "home", lambda: home)
+        skill_dir = home / ".hermes" / "skills" / "speckit-specify"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "metadata:\n"
+            "  source: preset:some-pack\n"
+            "---\n\n"
+            "Other project\n",
+            encoding="utf-8",
+        )
+
+        manager = PresetManager(project_dir)
+        inferred = manager._infer_legacy_skill_provenance(
+            ["speckit-specify"], "some-pack", "claude"
+        )
+
+        assert inferred == {"claude": ["speckit-specify"]}
+        assert skill_dir.exists()
+
+    def test_remove_infers_legacy_flat_list_provenance_without_prior_rescaffold(
+        self, project_dir, temp_dir
+    ):
+        """``preset remove`` on a legacy flat-list registry must restore
+        every previously active agent's directory, not just the currently
+        active one, even when it is the *very first* post-upgrade
+        operation (no intervening ``use``/``upgrade``/rescaffold).
+
+        Pre-#2948 registries recorded a flat ``registered_skills`` list
+        because presets were rendered for every detected skill-mode agent
+        at once, not just the active one. Migrating that legacy format to
+        the per-agent dict form previously only happened as a side effect
+        of ``register_enabled_presets_for_agent`` (i.e. a rescaffold or
+        ``integration use``/``switch``). If the user's first action after
+        upgrading is instead directly running ``preset remove``, the
+        legacy branch of ``_unregister_skills`` restored only the
+        currently active agent's directory (via ``_get_skills_dir()``),
+        permanently leaving this preset's override in every other,
+        previously active agent's directory (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_skills_dir, "speckit-specify")
+        codex_skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(codex_skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "remove-legacy-no-rescaffold-preset", "speckit.specify",
+            "Remove legacy no rescaffold test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        claude_skill = claude_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:remove-legacy-no-rescaffold-preset" in claude_skill.read_text(), (
+            "sanity: install should have written the override under "
+            "claude's skill directory"
+        )
+        # Simulate the pre-#2948 "register for every detected agent"
+        # install behaviour by also placing the marker under codex's
+        # directory directly (mirroring the old, non-active-only
+        # rendering that predates this PR).
+        codex_skill = codex_skills_dir / "speckit-specify" / "SKILL.md"
+        codex_skill.write_text(claude_skill.read_text(), encoding="utf-8")
+
+        # Simulate a pre-#2948 registry: a flat list with no per-agent
+        # provenance, even though both directories actually hold this
+        # preset's marker on disk.
+        manager.registry.update(
+            "remove-legacy-no-rescaffold-preset",
+            {"registered_skills": ["speckit-specify"]},
+        )
+
+        # No intervening use/upgrade/rescaffold: remove() is the very
+        # first operation run after the legacy registry was written.
+        assert manager.remove("remove-legacy-no-rescaffold-preset") is True
+
+        for skill_file, label in ((claude_skill, "claude"), (codex_skill, "codex")):
+            assert skill_file.exists(), f"{label} skill file should still exist after removal"
+            content = skill_file.read_text()
+            assert "preset:remove-legacy-no-rescaffold-preset" not in content, (
+                f"{label}'s preset override must be restored on removal "
+                "even with no prior rescaffold to migrate the legacy "
+                "flat-list format first — remove() must infer real "
+                "per-agent ownership from on-disk provenance itself "
+                "(#2948)"
+            )
+            assert "Core specify body" in content
+
+    def test_symlinked_skills_dir_rejected_on_removal(self, project_dir, temp_dir):
+        """Removal must validate a recorded skill directory before touching it.
+
+        If an agent's skills directory is replaced with a symlink escaping
+        the project root between install and removal, restoration must
+        refuse to write/rmtree through it rather than trusting the
+        recorded agent name blindly. The unsafe directory is skipped
+        best-effort; removal still succeeds and doesn't crash (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "symlink-guard-preset", "speckit.specify",
+            "Symlink guard test", "preset body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        metadata = manager.registry.get("symlink-guard-preset")
+        assert "speckit-specify" in metadata.get("registered_skills", {}).get("claude", [])
+
+        # Simulate the claude skills directory being replaced with a symlink
+        # that escapes the project root, containing an external
+        # "speckit-specify" directory that must not be touched.
+        outside_target = temp_dir / "outside-claude-skills"
+        outside_skill_dir = outside_target / "speckit-specify"
+        outside_skill_dir.mkdir(parents=True)
+        sentinel = outside_skill_dir / "SKILL.md"
+        sentinel.write_text("do-not-touch")
+        shutil.rmtree(claude_skills_dir)
+        claude_skills_dir.symlink_to(outside_target, target_is_directory=True)
+
+        assert manager.remove("symlink-guard-preset") is True
+
+        assert sentinel.read_text() == "do-not-touch", (
+            "removal must not follow a symlinked skills directory outside "
+            "the project root (#2948)"
+        )
+        assert outside_skill_dir.is_dir(), (
+            "the external directory must not be rmtree'd through a "
+            "symlinked skills path"
+        )
+        assert claude_skills_dir.is_symlink(), (
+            "the symlink itself should be left alone, not rmtree'd through"
+        )
+
+    def test_preset_removal_does_not_touch_other_presets_skill_dir(
+        self, project_dir, temp_dir
+    ):
+        """Removing a preset must only touch directories it actually wrote to.
+
+        Preset A is installed while Claude is active and preset B is
+        installed while Codex is active; both override the same command
+        name, so both materialize a ``speckit-specify`` skill, but in
+        *different* agent directories. Before the provenance fix, removing
+        B enumerated every existing skill-mode directory (including
+        Claude's) and restored/overwrote anything named ``speckit-specify``
+        found there, corrupting A's override even though B never touched
+        Claude's directory (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_skills_dir, "speckit-specify")
+
+        preset_a_dir = self._create_command_preset(
+            temp_dir, "preset-a", "speckit.specify", "Preset A", "preset A body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_a_dir, "0.1.5")
+
+        claude_skill_file = claude_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:preset-a" in claude_skill_file.read_text()
+
+        # Switch to codex and install a second preset overriding the same
+        # command; codex's skills directory is entirely separate.
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        codex_skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(codex_skills_dir, "speckit-specify")
+
+        preset_b_dir = self._create_command_preset(
+            temp_dir, "preset-b", "speckit.specify", "Preset B", "preset B body",
+        )
+        manager.install_from_directory(preset_b_dir, "0.1.5")
+
+        metadata_b = manager.registry.get("preset-b")
+        assert "claude" not in metadata_b.get("registered_skills", {}), (
+            "preset B never wrote to claude's skills directory and must "
+            "not record it as touched"
+        )
+
+        assert manager.remove("preset-b") is True
+
+        assert "preset:preset-a" in claude_skill_file.read_text(), (
+            "removing preset B must not disturb preset A's Claude override (#2948)"
+        )
+
+    def test_remove_does_not_recreate_empty_skill_dir(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-orphan")
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "orphan-skill-preset",
+            "speckit.orphan",
+            "Orphan",
+            "Preset-only body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_dir = skills_dir / "speckit-orphan"
+        assert skill_dir.exists()
+        assert manager.remove("orphan-skill-preset") is True
+        assert not skill_dir.exists()
+
+    def test_remove_preserves_non_owned_skill_during_reconciliation(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        lower_dir = self._create_command_preset(
+            temp_dir,
+            "non-owned-lower-preset",
+            "speckit.specify",
+            "Lower",
+            "Lower preset body",
+        )
+        higher_dir = self._create_command_preset(
+            temp_dir,
+            "non-owned-higher-preset",
+            "speckit.specify",
+            "Higher",
+            "Higher preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(lower_dir, "0.1.5", priority=10)
+        manager.install_from_directory(higher_dir, "0.1.5", priority=1)
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        skill_file.write_text(
+            "---\nname: speckit-specify\n---\n\nUser-owned body\n",
+            encoding="utf-8",
+        )
+
+        assert manager.remove("non-owned-higher-preset") is True
+        assert skill_file.read_text(encoding="utf-8") == (
+            "---\nname: speckit-specify\n---\n\nUser-owned body\n"
+        )
+
+    def test_shared_skills_dir_restored_once_using_active_agent(
+        self, project_dir, temp_dir
+    ):
+        """Removal must restore a physical skills directory shared by
+        multiple agents exactly once, using the active agent's renderer.
+
+        Codex and Antigravity (agy) both resolve their skills directory to
+        ``.agents/skills``. Registering a preset under codex, switching to
+        agy, then switching back to codex records provenance for *both*
+        agent keys even though they share one physical directory. Before
+        the fix, ``_unregister_skills`` restored once per recorded agent
+        key rather than once per unique directory, so the directory was
+        written twice on removal with whichever agent was iterated *last*
+        silently winning — regardless of which agent is actually active
+        (#2948).
+        """
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        shared_skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(shared_skills_dir, "speckit-specify")
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "shared-dir-preset", "speckit.specify",
+            "Shared dir test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        # Switch to agy (shares .agents/skills with codex) and back to
+        # codex, mirroring `integration use agy` then `integration use
+        # codex`. Both agent keys end up recorded in registered_skills even
+        # though they refer to the same physical directory.
+        self._write_init_options(project_dir, ai="agy", ai_skills=True)
+        manager.register_enabled_presets_for_agent("agy")
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+
+        metadata = manager.registry.get("shared-dir-preset")
+        registered_skills = metadata.get("registered_skills", {})
+        assert set(registered_skills) == {"codex", "agy"}, (
+            "both agent keys must be recorded even though they share one "
+            "physical directory (#2948)"
+        )
+
+        from unittest.mock import patch
+
+        # Exercise `_unregister_skills` directly (the method this fix
+        # changed) rather than the full `remove()` flow, which separately
+        # triggers post-removal reconciliation that may also touch the
+        # active agent's directory — an unrelated call this test isn't
+        # targeting.
+        with patch.object(
+            manager,
+            "_unregister_skills_in_dir",
+            wraps=manager._unregister_skills_in_dir,
+        ) as spy:
+            manager._unregister_skills(registered_skills, preset_dir)
+
+        assert spy.call_count == 1, (
+            "a physical directory shared by multiple recorded agents must "
+            "be restored exactly once, not once per agent key (#2948)"
+        )
+        (_names, called_dir, called_agent), _kwargs = spy.call_args
+        assert called_dir == shared_skills_dir
+        assert called_agent == "codex", (
+            "the currently active agent must be used as the renderer when "
+            "it shares the restored directory, not whichever agent was "
+            "recorded last (#2948)"
+        )
+
+        skill_file = shared_skills_dir / "speckit-specify" / "SKILL.md"
+        content = skill_file.read_text()
+        assert "preset:shared-dir-preset" not in content
+        assert "Core specify body" in content
+
+    def test_remove_higher_priority_skills_only_preset_restores_lower_preset(
+        self, project_dir, temp_dir
+    ):
+        """Removing a skills-mode preset must reconcile against the surviving
+        stack, not fall back to core/extension content.
+
+        Copilot in skills mode never populates ``registered_commands`` for
+        its overrides (``_register_commands``'s ``ai_skills`` guard skips
+        command-file registration entirely), so with two presets overriding
+        the same command, the removed preset's command name was never added
+        to ``removed_cmd_names`` and reconciliation was skipped outright.
+        ``_unregister_skills`` then restored straight to core/extension
+        content instead of resolving the lower-priority preset that should
+        now win (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+
+        preset_a_dir = self._create_command_preset(
+            temp_dir, "skills-preset-a", "speckit.specify",
+            "Preset A", "preset A body",
+        )
+        preset_b_dir = self._create_command_preset(
+            temp_dir, "skills-preset-b", "speckit.specify",
+            "Preset B", "preset B body",
+        )
+
+        manager = PresetManager(project_dir)
+        # Lower priority number = higher precedence.
+        manager.install_from_directory(preset_a_dir, "0.1.5", priority=5)
+        manager.install_from_directory(preset_b_dir, "0.1.5", priority=10)
+
+        skills_dir = project_dir / ".github" / "skills"
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:skills-preset-a" in skill_file.read_text(), (
+            "sanity: the higher-precedence preset should win initially"
+        )
+
+        assert manager.remove("skills-preset-a") is True
+
+        content = skill_file.read_text()
+        assert "preset:skills-preset-b" in content, (
+            "removing the higher-precedence skills-mode preset must "
+            "restore the surviving lower-precedence preset's override, "
+            "not fall back to core/extension content (#2948)"
+        )
+        assert "preset:skills-preset-a" not in content
+
+    def test_composed_none_unregister_respects_active_agent(
+        self, project_dir, temp_dir
+    ):
+        """Unregistering a stale composed command must only touch the
+        active agent's directory, not every configured non-skill agent.
+
+        When a wrap preset's base layer is removed, ``resolve_content`` can
+        no longer find a replace layer to compose onto and returns
+        ``None``, triggering the "composed is None" branch of
+        ``_reconcile_composed_commands``. Before the fix, that
+        unregistration mapping covered every configured non-skill agent
+        regardless of ``only_agent``, deleting historical artifacts from
+        integrations that were never active for this preset (#2948).
+        """
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        gemini_commands_dir = project_dir / ".gemini" / "commands"
+        gemini_commands_dir.mkdir(parents=True)
+
+        # A made-up command name with no bundled/core equivalent, so the
+        # *only* base layer is the "compose-base" preset installed below —
+        # once it's removed, no base remains for the wrap preset to compose
+        # onto.
+        cmd_name = "speckit.fake-compose-test"
+        base_dir = self._create_command_preset(
+            temp_dir, "compose-base", cmd_name, "Base", "base body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(base_dir, "0.1.5", priority=10)
+
+        wrap_dir = temp_dir / "compose-wrap"
+        wrap_dir.mkdir()
+        (wrap_dir / "commands").mkdir()
+        (wrap_dir / "commands" / f"{cmd_name}.md").write_text(
+            "---\ndescription: Wrap\nstrategy: wrap\n---\n\n"
+            "wrap start\n{CORE_TEMPLATE}\nwrap end\n"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "compose-wrap",
+                "name": "compose-wrap",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": cmd_name,
+                        "file": f"commands/{cmd_name}.md",
+                        "strategy": "wrap",
+                    }
+                ]
+            },
+        }
+        with open(wrap_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+        manager.install_from_directory(wrap_dir, "0.1.5", priority=5)
+
+        cmd_file = gemini_commands_dir / f"{cmd_name}.toml"
+        assert cmd_file.exists(), (
+            "sanity: the composed command should register for the active agent"
+        )
+
+        # Simulate a pre-existing artifact for an inactive agent, predating
+        # this preset entirely — active-only unregistration must never
+        # touch it.
+        opencode_dir = project_dir / ".opencode" / "commands"
+        opencode_dir.mkdir(parents=True, exist_ok=True)
+        opencode_stale_file = opencode_dir / f"{cmd_name}.md"
+        opencode_stale_file.write_text("stale opencode content\n")
+
+        assert manager.remove("compose-base") is True
+
+        assert not cmd_file.exists(), (
+            "sanity: the active agent's now-uncomposable command file must "
+            "be unregistered"
+        )
+        assert opencode_stale_file.read_text() == "stale opencode content\n", (
+            "unregistering a stale composed command must not touch an "
+            "inactive agent's directory (#2948)"
+        )
+
+    def test_remove_reconciles_command_for_every_historical_agent(
+        self, project_dir, temp_dir
+    ):
+        """Removing a preset must reconcile every historical agent its
+        ``registered_commands`` actually targeted, not only the currently
+        active one.
+
+        Preset B (lower precedence, survives) is installed while gemini is
+        active, then preset A (higher precedence) overrides the same
+        command while gemini is still active. Switching the active
+        integration to opencode and rescaffolding re-registers both
+        presets under opencode too, so preset A's ``registered_commands``
+        now spans two agents: gemini (now inactive) and opencode (active).
+        Removing A deletes its command file from *both* directories via
+        ``_unregister_commands``, but active-only reconciliation used to
+        recreate the surviving preset B's content only for the active
+        agent (opencode), leaving gemini's directory with a stale/missing
+        file (#2948).
+        """
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        preset_b_dir = self._create_command_preset(
+            temp_dir, "hist-preset-b", "speckit.specify",
+            "Preset B", "preset B body",
+        )
+        preset_a_dir = self._create_command_preset(
+            temp_dir, "hist-preset-a", "speckit.specify",
+            "Preset A", "preset A body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_b_dir, "0.1.5", priority=10)
+        manager.install_from_directory(preset_a_dir, "0.1.5", priority=1)
+
+        gemini_cmd_files = list(gemini_dir.glob("*specify*"))
+        assert gemini_cmd_files, "sanity: gemini should have the command file"
+        assert "preset A body" in gemini_cmd_files[0].read_text(), (
+            "sanity: preset A (higher precedence) should win initially"
+        )
+
+        # Switch the active integration to opencode and rescaffold, mirroring
+        # `integration use opencode`. This merges opencode into both
+        # presets' registered_commands alongside the pre-existing gemini
+        # entry recorded while gemini was active.
+        self._write_init_options(project_dir, ai="opencode", ai_skills=False)
+        opencode_dir = project_dir / ".opencode" / "commands"
+        opencode_dir.mkdir(parents=True, exist_ok=True)
+        manager.register_enabled_presets_for_agent("opencode")
+
+        metadata_a = manager.registry.get("hist-preset-a")
+        assert set(metadata_a.get("registered_commands", {})) == {"gemini", "opencode"}, (
+            "sanity: preset A's registered_commands must span both the "
+            "historical (gemini) and currently active (opencode) agents"
+        )
+
+        assert manager.remove("hist-preset-a") is True
+
+        gemini_cmd_files = list(gemini_dir.glob("*specify*"))
+        opencode_cmd_files = list(opencode_dir.glob("*specify*"))
+        assert gemini_cmd_files, "gemini's command file must still exist after removal"
+        assert opencode_cmd_files, "opencode's command file must still exist after removal"
+        assert "preset B body" in gemini_cmd_files[0].read_text(), (
+            "removing the higher-precedence preset must restore the "
+            "surviving preset's content in the historical (inactive) "
+            "agent's directory too, not only the active agent's (#2948)"
+        )
+        assert "preset B body" in opencode_cmd_files[0].read_text(), (
+            "the surviving preset's content must also be restored for the "
+            "currently active agent"
+        )
+
+    def test_remove_reconciliation_tracks_new_historical_agent_for_survivor(
+        self, project_dir, temp_dir
+    ):
+        """Historical-agent reconciliation writes must be recorded in the
+        surviving preset's own ``registered_commands``, not just written
+        to disk and forgotten.
+
+        Preset A is installed while gemini is active, then survives to be
+        active under opencode too (so A's ``registered_commands`` spans
+        both gemini and opencode). Preset B is installed *only* while
+        opencode is active — B's ``registered_commands`` is
+        ``{"opencode": [...]}`` and never mentions gemini. Removing A
+        triggers reconciliation that writes B's content into gemini's
+        directory (an agent B never wrote to before) via ``extra_agents``,
+        but if that write isn't merged back into B's own
+        ``registered_commands``, B's registry entry still only says
+        ``{"opencode": [...]}`` even though B's content now lives in
+        gemini's directory too. A later ``remove('b')`` then only cleans
+        up opencode, leaving the gemini file — reconciled there entirely
+        by side effect of removing A — as a permanent orphan with no
+        preset tracking it (#2948).
+        """
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        preset_a_dir = self._create_command_preset(
+            temp_dir, "orphan-preset-a", "speckit.specify",
+            "Preset A", "preset A body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_a_dir, "0.1.5", priority=1)
+
+        self._write_init_options(project_dir, ai="opencode", ai_skills=False)
+        opencode_dir = project_dir / ".opencode" / "commands"
+        opencode_dir.mkdir(parents=True, exist_ok=True)
+        manager.register_enabled_presets_for_agent("opencode")
+
+        metadata_a = manager.registry.get("orphan-preset-a")
+        assert set(metadata_a.get("registered_commands", {})) == {"gemini", "opencode"}, (
+            "sanity: preset A must be tracked under both agents"
+        )
+
+        # Preset B is installed only now, while opencode is the sole
+        # active agent — it never writes to or tracks gemini.
+        preset_b_dir = self._create_command_preset(
+            temp_dir, "orphan-preset-b", "speckit.specify",
+            "Preset B", "preset B body",
+        )
+        manager.install_from_directory(preset_b_dir, "0.1.5", priority=10)
+
+        metadata_b = manager.registry.get("orphan-preset-b")
+        assert set(metadata_b.get("registered_commands", {})) == {"opencode"}, (
+            "sanity: preset B must only be tracked for opencode before "
+            "preset A is removed"
+        )
+
+        assert manager.remove("orphan-preset-a") is True
+
+        # B is now written into gemini's directory as a side effect of
+        # reconciling A's removal, via the historical-agent extra_agents
+        # pass.
+        gemini_cmd_files = list(gemini_dir.glob("*specify*"))
+        assert gemini_cmd_files, "sanity: gemini's directory must have B's restored content"
+        assert "preset B body" in gemini_cmd_files[0].read_text(encoding="utf-8")
+
+        metadata_b = manager.registry.get("orphan-preset-b")
+        assert set(metadata_b.get("registered_commands", {})) == {"gemini", "opencode"}, (
+            "preset B's own registered_commands must be updated to "
+            "include gemini once reconciliation actually writes content "
+            "there on its behalf — otherwise B's registry entry silently "
+            "lies about which directories it owns (#2948)"
+        )
+
+        assert manager.remove("orphan-preset-b") is True
+
+        # No preset is installed any more, so gemini's file must have been
+        # reconciled down to the core bundled template (or removed
+        # entirely) — but it must NOT still contain B's stale content,
+        # which would mean B's write there was never tracked for cleanup.
+        remaining_gemini_files = list(gemini_dir.glob("*specify*"))
+        for f in remaining_gemini_files:
+            assert "preset B body" not in f.read_text(encoding="utf-8"), (
+                "removing preset B must clean up gemini's directory too, "
+                "since B's registered_commands was updated to include it "
+                "— otherwise B's stale content is orphaned there forever "
+                "with no preset left to track or clean it up (#2948)"
+            )
+
+    def test_extension_reconciliation_tracks_new_historical_agent(
+        self, project_dir
+    ):
+        from specify_cli.extensions import ExtensionRegistry
+
+        self._write_init_options(project_dir, ai="opencode", ai_skills=False)
+        (project_dir / ".opencode" / "commands").mkdir(parents=True)
+        (project_dir / ".gemini" / "commands").mkdir(parents=True)
+
+        ext_dir = project_dir / ".specify" / "extensions" / "tracked-ext"
+        (ext_dir / "commands").mkdir(parents=True)
+        (ext_dir / "commands" / "tracked.md").write_text(
+            "---\ndescription: tracked\n---\n\nExtension body\n",
+            encoding="utf-8",
+        )
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: tracked-ext\n  name: Tracked\n  version: 1.0.0\n"
+            "  description: test\n  author: test\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n"
+            "  commands:\n"
+            "    - name: speckit.tracked\n"
+            "      file: commands/tracked.md\n"
+            "      description: Tracked command\n",
+            encoding="utf-8",
+        )
+        ExtensionRegistry(ext_dir.parent).add(
+            "tracked-ext",
+            {
+                "version": "1.0.0",
+                "source": "dev",
+                "enabled": True,
+                "registered_commands": {
+                    "opencode": ["speckit.tracked-ext.tracked"]
+                },
+            },
+        )
+
+        manager = PresetManager(project_dir)
+        manager._reconcile_composed_commands(
+            ["speckit.tracked-ext.tracked"], extra_agents={"gemini"}
+        )
+
+        assert list((project_dir / ".gemini" / "commands").glob("*tracked*"))
+        metadata = ExtensionRegistry(ext_dir.parent).get("tracked-ext")
+        assert set(metadata["registered_commands"]) == {"gemini", "opencode"}
+
+    def test_remove_reconciles_skill_for_every_historical_agent(
+        self, project_dir, temp_dir
+    ):
+        """Removing a preset must reconcile every historical skills
+        directory its ``registered_skills`` actually targeted, not only
+        the currently active one.
+
+        Preset B (survives) is installed while claude is active, then
+        preset A (higher precedence) overrides the same command while
+        claude is still active. Switching to codex and rescaffolding
+        records codex too, so preset A's ``registered_skills`` spans both
+        claude (now inactive) and codex (active) directories. Removing A
+        restores both directories to core/extension via
+        ``_unregister_skills``, but ``_reconcile_skills`` used to only
+        resolve/apply the surviving winner for the currently active
+        skills directory, leaving claude's directory reverted to
+        core/extension content instead of preset B's override (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = project_dir / ".claude" / "skills"
+
+        # A core template fallback is required so unregistering the
+        # top-priority preset's SKILL.md restores core content rather than
+        # deleting the skill directory outright when no preset remains to
+        # apply on top of it (mirrors the pre-existing skills-reconciliation
+        # fixtures elsewhere in this file).
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        preset_b_dir = self._create_command_preset(
+            temp_dir, "hist-skill-preset-b", "speckit.specify",
+            "Preset B", "preset B body",
+        )
+        preset_a_dir = self._create_command_preset(
+            temp_dir, "hist-skill-preset-a", "speckit.specify",
+            "Preset A", "preset A body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_b_dir, "0.1.5", priority=10)
+        manager.install_from_directory(preset_a_dir, "0.1.5", priority=1)
+
+        claude_skill_file = claude_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:hist-skill-preset-a" in claude_skill_file.read_text(), (
+            "sanity: preset A (higher precedence) should win initially"
+        )
+
+        # Switch the active integration to codex (a distinct skills
+        # directory) and rescaffold, mirroring `integration use codex`.
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        codex_skills_dir = project_dir / ".agents" / "skills"
+        manager.register_enabled_presets_for_agent("codex")
+
+        metadata_a = manager.registry.get("hist-skill-preset-a")
+        assert set(metadata_a.get("registered_skills", {})) == {"claude", "codex"}, (
+            "sanity: preset A's registered_skills must span both the "
+            "historical (claude) and currently active (codex) agents"
+        )
+
+        assert manager.remove("hist-skill-preset-a") is True
+
+        codex_skill_file = codex_skills_dir / "speckit-specify" / "SKILL.md"
+        assert claude_skill_file.exists(), "claude's skill file must still exist after removal"
+        assert codex_skill_file.exists(), "codex's skill file must still exist after removal"
+        assert "preset:hist-skill-preset-b" in claude_skill_file.read_text(), (
+            "removing the higher-precedence preset must restore the "
+            "surviving preset's override in the historical (inactive) "
+            "agent's directory too, not only the active agent's (#2948)"
+        )
+        assert "preset:hist-skill-preset-b" in codex_skill_file.read_text(), (
+            "the surviving preset's override must also be restored for "
+            "the currently active agent"
+        )
+
+    def test_skill_reconciliation_preserves_per_directory_names(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_dir, "speckit-alpha")
+        alpha_dir = self._create_command_preset(
+            temp_dir, "partial-alpha", "speckit.alpha",
+            "Alpha", "alpha body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(alpha_dir, "0.1.5")
+
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        codex_dir = project_dir / ".agents" / "skills"
+        self._create_skill(codex_dir, "speckit-beta")
+        beta_dir = self._create_command_preset(
+            temp_dir, "partial-beta", "speckit.beta",
+            "Beta", "beta body",
+        )
+        manager.install_from_directory(beta_dir, "0.1.5")
+
+        affected = manager._unregister_skills(
+            {
+                "claude": ["speckit-alpha"],
+                "codex": ["speckit-beta"],
+            },
+            manager.presets_dir / "partial-alpha",
+        )
+        manager._reconcile_skills(
+            ["speckit.alpha", "speckit.beta"],
+            extra_skills_dirs=affected,
+        )
+
+        assert (claude_dir / "speckit-alpha" / "SKILL.md").exists()
+        assert (codex_dir / "speckit-beta" / "SKILL.md").exists()
+        assert not (claude_dir / "speckit-beta").exists()
+        assert not (codex_dir / "speckit-alpha").exists()
+
+    def test_skill_reconciliation_rejects_unsafe_managed_names(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify\n---\n\nCore body\n",
+            encoding="utf-8",
+        )
+        absolute_escape = temp_dir / "absolute-escape"
+        traversal_escape = project_dir / ".claude" / "traversal-escape"
+
+        manager = PresetManager(project_dir)
+        manager._reconcile_skills(
+            ["speckit.specify"],
+            extra_skills_dirs={
+                skills_dir: (
+                    "claude",
+                    [str(absolute_escape), "../traversal-escape"],
+                )
+            },
+        )
+
+        assert not absolute_escape.exists()
+        assert not traversal_escape.exists()
+
+    def test_remove_reconciliation_tracks_new_historical_skill_agent_for_survivor(
+        self, project_dir, temp_dir
+    ):
+        """Historical-agent skill reconciliation writes must be recorded in
+        the surviving preset's own ``registered_skills``, mirroring
+        ``test_remove_reconciliation_tracks_new_historical_agent_for_survivor``
+        for the command side.
+
+        Preset A is installed while claude is active, then survives to be
+        active under codex too (so A's ``registered_skills`` spans both
+        claude and codex). Preset B is installed *only* while codex is
+        active — B's ``registered_skills`` is ``{"codex": [...]}`` and
+        never mentions claude. Removing A triggers reconciliation that
+        renders B's SKILL.md into claude's directory (an agent B never
+        wrote to before) via ``extra_skills_dirs``, but if that write
+        isn't merged back into B's own ``registered_skills``, a later
+        ``remove('b')`` only cleans up codex, leaving claude's SKILL.md —
+        rendered there entirely by side effect of removing A — untracked
+        by any preset (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        # Pre-create the skill so _register_commands/_register_skills find
+        # an existing skill to overwrite (mirrors every other skill test
+        # in this class — native skill agents only overwrite already
+        # existing skill directories, they don't materialize brand-new
+        # ones outside of active-agent creation).
+        self._create_skill(claude_skills_dir, "speckit-specify")
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        preset_a_dir = self._create_command_preset(
+            temp_dir, "orphan-skill-preset-a", "speckit.specify",
+            "Preset A", "preset A body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_a_dir, "0.1.5", priority=1)
+
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        codex_skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(codex_skills_dir, "speckit-specify")
+        manager.register_enabled_presets_for_agent("codex")
+
+        metadata_a = manager.registry.get("orphan-skill-preset-a")
+        assert set(metadata_a.get("registered_skills", {})) == {"claude", "codex"}, (
+            "sanity: preset A must be tracked under both agents"
+        )
+
+        # Preset B is installed only now, while codex is the sole active
+        # agent — it never writes to or tracks claude.
+        preset_b_dir = self._create_command_preset(
+            temp_dir, "orphan-skill-preset-b", "speckit.specify",
+            "Preset B", "preset B body",
+        )
+        manager.install_from_directory(preset_b_dir, "0.1.5", priority=10)
+
+        metadata_b = manager.registry.get("orphan-skill-preset-b")
+        assert set(metadata_b.get("registered_skills", {})) == {"codex"}, (
+            "sanity: preset B must only be tracked for codex before "
+            "preset A is removed"
+        )
+
+        assert manager.remove("orphan-skill-preset-a") is True
+
+        claude_skill_file = claude_skills_dir / "speckit-specify" / "SKILL.md"
+        assert claude_skill_file.exists(), (
+            "sanity: claude's skill file must have been restored by "
+            "reconciliation"
+        )
+        assert "preset:orphan-skill-preset-b" in claude_skill_file.read_text(), (
+            "sanity: claude's SKILL.md must reflect preset B's content "
+            "after preset A is removed"
+        )
+
+        metadata_b = manager.registry.get("orphan-skill-preset-b")
+        assert set(metadata_b.get("registered_skills", {})) == {"claude", "codex"}, (
+            "preset B's own registered_skills must be updated to include "
+            "claude once reconciliation actually renders content there "
+            "on its behalf — otherwise B's registry entry silently lies "
+            "about which directories it owns (#2948)"
+        )
+
+        assert manager.remove("orphan-skill-preset-b") is True
+
+        # No preset is installed any more, so claude's SKILL.md must have
+        # been reconciled down to the core bundled template (or removed
+        # entirely) — but it must NOT still contain B's stale content,
+        # which would mean B's write there was never tracked for cleanup.
+        if claude_skill_file.exists():
+            assert "preset:orphan-skill-preset-b" not in claude_skill_file.read_text(), (
+                "removing preset B must clean up claude's directory too, "
+                "since B's registered_skills was updated to include it — "
+                "otherwise B's stale content is orphaned there forever "
+                "with no preset left to track or clean it up (#2948)"
+            )
+
+    def test_symlinked_skill_subdir_rejected_on_restore(self, project_dir, temp_dir):
+        """Restore must validate each per-skill subdirectory, not just its parent.
+
+        ``_safe_skills_dir_for_agent`` only validates the parent skills
+        directory (e.g. ``.claude/skills``); a symlink planted one level
+        deeper at the individual skill's own subdirectory (e.g.
+        ``.claude/skills/speckit-specify``) has a perfectly safe parent and
+        would otherwise slip past that check, since ``is_dir()`` follows
+        symlinks. Restoration must refuse to write/rmtree through it (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        claude_skills_dir.mkdir(parents=True)
+
+        outside_target = temp_dir / "outside-skill-subdir"
+        outside_target.mkdir()
+        sentinel = outside_target / "SKILL.md"
+        sentinel.write_text("do-not-touch")
+        (claude_skills_dir / "speckit-specify").symlink_to(
+            outside_target, target_is_directory=True
+        )
+
+        manager = PresetManager(project_dir)
+        manager._unregister_skills_in_dir(
+            ["speckit-specify"], claude_skills_dir, "claude"
+        )
+
+        assert sentinel.read_text() == "do-not-touch", (
+            "restoration must not follow a symlinked skill subdirectory "
+            "to write/delete outside the project (#2948)"
+        )
+        assert (claude_skills_dir / "speckit-specify").is_symlink(), (
+            "the symlink itself should be left alone, not rmtree'd through"
+        )
+
+    def test_symlinked_skill_subdir_rejected_on_write(self, project_dir, temp_dir):
+        """Registration must validate each per-skill subdirectory before writing.
+
+        A symlink planted at an individual skill's own subdirectory (safe
+        parent, unsafe leaf) would otherwise pass the existing
+        ``skill_subdir.exists() and not skill_subdir.is_dir()`` guard
+        (``is_dir()`` follows symlinks) and have ``SKILL.md`` written
+        through it to an arbitrary location (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+        skills_dir = project_dir / ".github" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        outside_target = temp_dir / "outside-skill-write-target"
+        outside_target.mkdir()
+        (skills_dir / "speckit-specify").symlink_to(
+            outside_target, target_is_directory=True
+        )
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "symlink-write-preset", "speckit.specify",
+            "Symlink write test", "preset body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        assert not (outside_target / "SKILL.md").exists(), (
+            "registration must not follow a symlinked skill subdirectory "
+            "to write outside the project (#2948)"
+        )
+        assert (skills_dir / "speckit-specify").is_symlink(), (
+            "the symlink itself should be left alone"
+        )
+
+    def test_symlinked_skill_file_rejected_on_write(self, project_dir, temp_dir):
+        """Registration must not follow a symlinked SKILL.md destination."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        (project_dir / ".github" / "agents").mkdir(parents=True)
+        skill_dir = (
+            project_dir / ".github" / "skills" / "speckit-specify"
+        )
+        skill_dir.mkdir(parents=True)
+        outside_file = temp_dir / "outside-registration.md"
+        outside_file.write_text("do-not-touch", encoding="utf-8")
+        (skill_dir / "SKILL.md").symlink_to(outside_file)
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "symlink-file-write-preset",
+            "speckit.specify",
+            "Symlink file write",
+            "preset body",
+        )
+        manager = PresetManager(project_dir)
+        with pytest.raises(ValueError):
+            manager.install_from_directory(preset_dir, "0.1.5")
+
+        assert outside_file.read_text(encoding="utf-8") == "do-not-touch"
+        assert (skill_dir / "SKILL.md").is_symlink()
+
+    def test_symlinked_skill_file_rejected_on_restore(
+        self, project_dir, temp_dir
+    ):
+        """Restoration must not follow a symlinked SKILL.md destination."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        core_commands = project_dir / ".specify" / "templates" / "commands"
+        (core_commands / "specify.md").write_text(
+            "---\ndescription: Core specify\n---\n\nCore body\n",
+            encoding="utf-8",
+        )
+        skill_dir = (
+            project_dir / ".claude" / "skills" / "speckit-specify"
+        )
+        skill_dir.mkdir(parents=True)
+        outside_file = temp_dir / "outside-restoration.md"
+        outside_file.write_text("do-not-touch", encoding="utf-8")
+        (skill_dir / "SKILL.md").symlink_to(outside_file)
+
+        manager = PresetManager(project_dir)
+        with pytest.raises(ValueError):
+            manager._unregister_skills_in_dir(
+                ["speckit-specify"], skill_dir.parent, "claude"
+            )
+
+        assert outside_file.read_text(encoding="utf-8") == "do-not-touch"
+        assert (skill_dir / "SKILL.md").is_symlink()
+
+    def test_symlinked_skill_file_rejected_on_override_reconcile(
+        self, project_dir, temp_dir
+    ):
+        """Project-override reconciliation must not follow SKILL.md symlinks."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        skill_dir = (
+            project_dir / ".github" / "skills" / "speckit-specify"
+        )
+        skill_dir.mkdir(parents=True)
+        outside_file = temp_dir / "outside-reconciliation.md"
+        outside_file.write_text("do-not-touch", encoding="utf-8")
+        (skill_dir / "SKILL.md").symlink_to(outside_file)
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "symlink-override-preset",
+            "speckit.specify",
+            "Preset",
+            "Preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.registry.add(
+            "symlink-override-preset",
+            {
+                "version": "1.0.0",
+                "source": "local",
+                "enabled": True,
+                "priority": 10,
+                "registered_commands": {},
+                "registered_skills": {
+                    "copilot": ["speckit-specify"]
+                },
+            },
+        )
+        installed_dir = (
+            manager.presets_dir / "symlink-override-preset"
+        )
+        shutil.copytree(preset_dir, installed_dir)
+        overrides_dir = (
+            project_dir / ".specify" / "templates" / "overrides"
+        )
+        overrides_dir.mkdir(parents=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Override\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+
+        manager._reconcile_skills(["speckit.specify"])
+
+        assert outside_file.read_text(encoding="utf-8") == "do-not-touch"
+        assert (skill_dir / "SKILL.md").is_symlink()
+
+    def test_is_safe_registry_skill_name_rejects_unsafe_values(self, project_dir):
+        """Unit-test the centralized registry skill-name boundary guard.
+
+        ``registered_skills`` entries are persisted registry data, not
+        manifest-derived, so every preset cleanup/provenance loop that
+        joins one onto a directory must first reject: non-strings, empty
+        strings, absolute paths, multi-component paths (containing ``/``),
+        and the literal traversal components ``"."``/``".."`` — the last
+        of which is *not* caught by a naive ``is_absolute() or
+        len(parts) != 1`` check alone, since ``Path("..").parts`` is a
+        single-element tuple (#2948).
+        """
+        manager = PresetManager(project_dir)
+        is_safe = manager._is_safe_registry_skill_name
+
+        assert is_safe("speckit-specify") is True
+        assert is_safe("") is False
+        assert is_safe(None) is False
+        assert is_safe(123) is False
+        assert is_safe(["speckit-specify"]) is False
+        assert is_safe(".") is False
+        assert is_safe("..") is False
+        assert is_safe("/etc/passwd") is False
+        assert is_safe(str(project_dir / "important-data")) is False
+        assert is_safe("foo/bar") is False
+        assert is_safe("foo/..") is False
+        assert is_safe("../foo") is False
+
+    def test_unregister_skills_rejects_unknown_agent_provenance(
+        self, project_dir
+    ):
+        """Unknown registry agent keys must not fall back to shared skills."""
+        shared_skills_dir = project_dir / ".agents" / "skills"
+        skill_dir = self._create_skill(
+            shared_skills_dir, "speckit-specify", "user-owned content"
+        )
+        core_commands = project_dir / ".specify" / "templates" / "commands"
+        (core_commands / "specify.md").write_text(
+            "---\ndescription: Core specify\n---\n\nCore body\n",
+            encoding="utf-8",
+        )
+
+        manager = PresetManager(project_dir)
+        manager._unregister_skills(
+            {"unknown": ["speckit-specify"]}, project_dir
+        )
+
+        assert (skill_dir / "SKILL.md").read_text(encoding="utf-8") == (
+            "---\nname: speckit-specify\n---\n\nuser-owned content\n"
+        )
+
+    def test_unregister_legacy_fallback_skips_non_owned_skill(
+        self, project_dir
+    ):
+        """Legacy fallback provenance must not overwrite a user-owned skill."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = project_dir / ".claude" / "skills"
+        skill_dir = self._create_skill(
+            skills_dir, "speckit-specify", "user-owned content"
+        )
+        core_commands = project_dir / ".specify" / "templates" / "commands"
+        (core_commands / "specify.md").write_text(
+            "---\ndescription: Core specify\n---\n\nCore body\n",
+            encoding="utf-8",
+        )
+
+        manager = PresetManager(project_dir)
+        manager._unregister_skills(
+            ["speckit-specify"], "removed-preset"
+        )
+
+        assert (skill_dir / "SKILL.md").read_text(encoding="utf-8") == (
+            "---\nname: speckit-specify\n---\n\nuser-owned content\n"
+        )
+
+    def test_unregister_skills_in_dir_unreadable_core_template_skips(
+        self, project_dir
+    ):
+        """An undecodable core template must not crash `preset remove`.
+
+        Every other failure in the restore loop — an unsafe registry name,
+        a missing skill subdirectory, a foreign owner — skips the skill
+        with ``continue``. The core-template read was outside that
+        boundary, so one non-UTF-8 project-owned override in
+        ``.specify/templates/commands/`` raised a raw ``UnicodeDecodeError``
+        straight out of ``PresetManager.remove()``, which has no handler
+        for it. Sibling reads of the very same directory are already
+        guarded (``_substitute_core_template``, the provenance reads in
+        ``_infer_legacy_skill_provenance``).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = project_dir / ".claude" / "skills"
+        skill_dir = self._create_skill(
+            skills_dir, "speckit-specify", "installed content"
+        )
+        core_commands = project_dir / ".specify" / "templates" / "commands"
+        core_commands.mkdir(parents=True, exist_ok=True)
+        (core_commands / "specify.md").write_bytes(
+            b"---\ndescription: \xff\xfe not utf-8\n---\n\nCore body\n"
+        )
+
+        manager = PresetManager(project_dir)
+        with pytest.warns(UserWarning, match="speckit-specify"):
+            mutated = manager._unregister_skills_in_dir(
+                ["speckit-specify"], skills_dir, "claude"
+            )
+
+        assert mutated == [], (
+            "a skill whose restore source could not be read was not "
+            "restored, so it must not be reported as mutated"
+        )
+        assert (skill_dir / "SKILL.md").read_text(encoding="utf-8") == (
+            "---\nname: speckit-specify\n---\n\ninstalled content\n"
+        ), (
+            "an unreadable core template must leave the skill untouched — "
+            "falling through to the rmtree branch would delete it exactly "
+            "when its replacement cannot be generated"
+        )
+
+    def test_unregister_skills_in_dir_unreadable_core_template_oserror_skips(
+        self, project_dir, monkeypatch
+    ):
+        """The same boundary must cover ``OSError`` (e.g. permission denied).
+
+        Mocked rather than chmod-based so the case also holds under
+        privileged CI, where permission bits are not enforced.
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = project_dir / ".claude" / "skills"
+        skill_dir = self._create_skill(
+            skills_dir, "speckit-specify", "installed content"
+        )
+        core_commands = project_dir / ".specify" / "templates" / "commands"
+        core_commands.mkdir(parents=True, exist_ok=True)
+        core_template = core_commands / "specify.md"
+        core_template.write_text(
+            "---\ndescription: Core specify\n---\n\nCore body\n",
+            encoding="utf-8",
+        )
+
+        original_read_text = Path.read_text
+
+        def failing_read_text(self_path, *args, **kwargs):
+            if self_path == core_template:
+                raise PermissionError(13, "Permission denied")
+            return original_read_text(self_path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", failing_read_text)
+
+        manager = PresetManager(project_dir)
+        with pytest.warns(UserWarning, match="speckit-specify"):
+            mutated = manager._unregister_skills_in_dir(
+                ["speckit-specify"], skills_dir, "claude"
+            )
+
+        monkeypatch.undo()
+
+        assert mutated == []
+        assert (skill_dir / "SKILL.md").read_text(encoding="utf-8") == (
+            "---\nname: speckit-specify\n---\n\ninstalled content\n"
+        )
+
+    def test_unregister_skills_in_dir_unreadable_extension_source_skips(
+        self, project_dir
+    ):
+        """The extension-restore arm needs the same boundary as the core arm.
+
+        The two restore reads are independent branches — a skill backed by an
+        installed extension never reaches the core-template read — so this
+        half of the guard can regress on its own. An undecodable extension
+        command file must warn, leave the skill byte-for-byte intact, and stay
+        out of ``mutated_names``.
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = project_dir / ".claude" / "skills"
+        skill_dir = self._create_skill(
+            skills_dir, "speckit-fakeext-cmd", "installed content"
+        )
+
+        extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
+        (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "commands" / "cmd.md").write_bytes(
+            b"---\ndescription: \xff\xfe not utf-8\n---\n\nExtension body\n"
+        )
+        extension_manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "fakeext",
+                "name": "Fake Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/cmd.md",
+                        "description": "Fake extension command",
+                    }
+                ]
+            },
+        }
+        with open(extension_dir / "extension.yml", "w") as f:
+            yaml.dump(extension_manifest, f)
+
+        manager = PresetManager(project_dir)
+        with pytest.warns(UserWarning, match="speckit-fakeext-cmd"):
+            mutated = manager._unregister_skills_in_dir(
+                ["speckit-fakeext-cmd"], skills_dir, "claude"
+            )
+
+        assert mutated == [], (
+            "a skill whose extension restore source could not be read was "
+            "not restored, so it must not be reported as mutated"
+        )
+        assert (skill_dir / "SKILL.md").read_text(encoding="utf-8") == (
+            "---\nname: speckit-fakeext-cmd\n---\n\ninstalled content\n"
+        ), (
+            "an unreadable extension source must leave the skill untouched — "
+            "falling through to the rmtree branch would delete it exactly "
+            "when its replacement cannot be generated"
+        )
+
+    def test_unregister_skills_in_dir_rejects_absolute_registry_name(
+        self, project_dir
+    ):
+        """A corrupted ``registered_skills`` entry with an absolute path must not escape.
+
+        ``Path`` join with an absolute right-hand operand discards the
+        left side entirely (``skills_dir / "/abs/path"`` == ``"/abs/path"``),
+        so an absolute in-project path stored in the registry would bypass
+        ``skills_dir`` altogether if not rejected before the join (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        claude_skills_dir.mkdir(parents=True)
+
+        precious_dir = project_dir / "important-data"
+        precious_dir.mkdir()
+        precious_file = precious_dir / "SKILL.md"
+        precious_file.write_text("precious-absolute-target-marker")
+
+        manager = PresetManager(project_dir)
+        manager._unregister_skills_in_dir(
+            [str(precious_dir)], claude_skills_dir, "claude"
+        )
+
+        assert precious_dir.is_dir(), (
+            "an absolute registry entry must not let cleanup escape "
+            "skills_dir to an unrelated project directory (#2948)"
+        )
+        assert precious_file.read_text() == "precious-absolute-target-marker"
+
+    def test_infer_legacy_skill_provenance_rejects_absolute_registry_name(
+        self, project_dir
+    ):
+        """Legacy provenance inference must reject an absolute registry name.
+
+        ``_infer_legacy_skill_provenance`` receives its ``skill_names``
+        directly from a legacy flat-list ``registered_skills`` value —
+        registry data, not manifest-derived — and joins each name onto a
+        candidate agent's resolved skills directory the same way
+        ``_unregister_skills_in_dir`` does. An absolute in-project name
+        discards the candidate directory entirely (Python's ``/`` operator
+        drops the left side for an absolute right side), so it can read
+        an unrelated project directory's ``SKILL.md`` and, if its
+        frontmatter happens to carry a matching preset source marker,
+        falsely attribute an unrelated directory as this preset's own
+        skill override under whichever agent is being probed (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        claude_skills_dir.mkdir(parents=True)
+
+        precious_dir = project_dir / "important-data"
+        precious_dir.mkdir()
+        (precious_dir / "SKILL.md").write_text(
+            "---\n"
+            "metadata:\n"
+            "  source: preset:some-pack\n"
+            "---\n\n"
+            "# Unrelated directory, not a real preset skill\n"
+        )
+
+        manager = PresetManager(project_dir)
+        inferred = manager._infer_legacy_skill_provenance(
+            [str(precious_dir)], "some-pack", "claude"
+        )
+
+        for names in inferred.values():
+            assert str(precious_dir) not in names, (
+                "an absolute registry entry must not be falsely attributed "
+                "as preset-owned provenance by probing outside the "
+                "intended skills subtree (#2948)"
+            )
+
+    def test_copilot_skills_registration_restored_after_process_restart(
+        self, project_dir, temp_dir
+    ):
+        """Copilot skills-mode registrations must restore even when the
+        transient ``_skills_mode`` integration attribute has been reset,
+        simulating a fresh CLI process.
+
+        ``_skills_mode`` is set during ``setup()`` and is never persisted;
+        after switching the active agent and running ``preset remove`` in
+        a brand-new process, a naive "is this integration currently in
+        skills mode" check would be False even though Copilot's
+        ``.github/skills`` directory holds a live override this preset
+        wrote. Restoration must rely on the persisted per-agent provenance
+        recorded at write time, not on runtime integration state (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+        copilot_skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(copilot_skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "copilot-fresh-process-preset", "speckit.specify",
+            "Copilot fresh process test", "preset body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = copilot_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:copilot-fresh-process-preset" in skill_file.read_text()
+
+        metadata = manager.registry.get("copilot-fresh-process-preset")
+        assert "copilot" in metadata.get("registered_skills", {})
+
+        # Switch the active agent away from copilot, then simulate a fresh
+        # CLI process (a brand-new PresetManager, so any transient
+        # `_skills_mode` state set during a prior setup() call is gone)
+        # removing the preset.
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        fresh_manager = PresetManager(project_dir)
+
+        assert fresh_manager.remove("copilot-fresh-process-preset") is True
+
+        assert "preset:copilot-fresh-process-preset" not in skill_file.read_text(), (
+            "removal must restore copilot's .github/skills override even "
+            "when copilot's transient skills-mode state isn't set in this "
+            "process (#2948)"
+        )
+        assert "Core specify body" in skill_file.read_text()
+
+    def test_unregister_agent_artifacts_scoped_to_target_agent_only(
+        self, project_dir, temp_dir
+    ):
+        """``unregister_agent_artifacts`` must remove only the target
+        agent's own tracked command/skill artifacts.
+
+        Used by ``integration switch`` when deactivating the previous
+        integration for a not-yet-installed target (#2948): without this,
+        a preset's command override -- including a custom preset command --
+        and skill mirror rendered for the old agent remain orphaned once a
+        different integration becomes active. Another agent's own
+        registrations (files and registry tracking) must survive
+        untouched, and no priority-stack reconciliation should run as a
+        side effect.
+        """
+        self._write_init_options(project_dir, ai="auggie", ai_skills=False)
+        # Registration only writes to an agent's directory once it's
+        # "detected" on disk (mirroring a real `integration install`
+        # having already created it), so pre-create both agents'
+        # directories before installing the preset.
+        (project_dir / ".augment" / "commands").mkdir(parents=True)
+        (project_dir / ".opencode" / "commands").mkdir(parents=True)
+        preset_dir = self._create_command_preset(
+            temp_dir, "switch-cleanup-preset", "speckit.specify",
+            "Custom preset command", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        auggie_cmd = project_dir / ".augment" / "commands" / "speckit.specify.md"
+        assert auggie_cmd.exists(), "sanity: preset command registered for auggie"
+
+        # Simulate a later `integration use opencode` rescaffold that also
+        # registered the preset for opencode, while auggie's own
+        # registration (from before the switch) is still present in the
+        # registry.
+        self._write_init_options(project_dir, ai="opencode", ai_skills=False)
+        manager.register_enabled_presets_for_agent("opencode")
+
+        opencode_cmd = project_dir / ".opencode" / "commands" / "speckit.specify.md"
+        assert opencode_cmd.exists(), "sanity: preset command registered for opencode"
+
+        metadata = manager.registry.get("switch-cleanup-preset")
+        registered_commands = metadata.get("registered_commands", {})
+        assert "auggie" in registered_commands and "opencode" in registered_commands
+
+        manager.unregister_agent_artifacts("auggie")
+
+        assert not auggie_cmd.exists(), (
+            "auggie's own preset command must be removed when switching "
+            "away from auggie to a not-yet-installed integration (#2948)"
+        )
+        assert opencode_cmd.exists(), (
+            "opencode's preset command must survive unregistering auggie's "
+            "artifacts -- cleanup must stay scoped to the target agent"
+        )
+
+        metadata = manager.registry.get("switch-cleanup-preset")
+        registered_commands = metadata.get("registered_commands", {})
+        assert "auggie" not in registered_commands, (
+            "auggie's tracking must be dropped after unregistering its artifacts"
+        )
+        assert "opencode" in registered_commands, (
+            "opencode's tracking must be preserved untouched"
+        )
+
+    def test_unregister_agent_artifacts_deletes_marker_owned_skill(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify\n---\n\nCore body\n",
+            encoding="utf-8",
+        )
+        skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "deactivated-skill-preset",
+            "speckit.specify",
+            "Deactivation cleanup",
+            "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_dir = skills_dir / "speckit-specify"
+        assert "preset:deactivated-skill-preset" in (
+            skill_dir / "SKILL.md"
+        ).read_text()
+
+        manager.unregister_agent_artifacts("copilot")
+
+        assert not skill_dir.exists()
+
+    def test_unregister_agent_artifacts_deletes_reconciled_override_skill(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "deactivated-override-preset",
+            "speckit.specify",
+            "Deactivation override cleanup",
+            "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        overrides_dir = (
+            project_dir / ".specify" / "templates" / "overrides"
+        )
+        overrides_dir.mkdir(parents=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Project override\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+        (
+            manager.presets_dir
+            / "deactivated-override-preset"
+            / "commands"
+            / "speckit.specify.md"
+        ).unlink()
+        manager.register_enabled_presets_for_agent("copilot")
+
+        skill_dir = skills_dir / "speckit-specify"
+        assert "override:speckit.specify" in (
+            skill_dir / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        manager.unregister_agent_artifacts("copilot")
+
+        assert not skill_dir.exists()
+        metadata = manager.registry.get("deactivated-override-preset")
+        assert "copilot" not in metadata.get("registered_skills", {})
+
+    def test_unregister_native_agent_persists_skills_metadata_pop(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="agy", ai_skills=True)
+        (project_dir / ".agents" / "skills").mkdir(parents=True)
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "native-metadata-cleanup-preset",
+            "speckit.shared-cleanup",
+            "Shared cleanup",
+            "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        metadata = manager.registry.get("native-metadata-cleanup-preset")
+        assert "agy" in metadata.get("registered_commands", {})
+        manager.registry.update(
+            "native-metadata-cleanup-preset",
+            {"registered_skills": {"agy": ["speckit-shared-cleanup"]}},
+        )
+
+        manager.unregister_agent_artifacts("agy")
+
+        metadata = manager.registry.get("native-metadata-cleanup-preset")
+        assert "agy" not in metadata.get("registered_commands", {})
+        assert "agy" not in metadata.get("registered_skills", {})
+
+    def test_unregister_native_agent_preserves_shared_output_owner(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="agy", ai_skills=True)
+        (project_dir / ".agents" / "skills").mkdir(parents=True)
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "shared-native-output-preset",
+            "speckit.shared-owner",
+            "Shared owner",
+            "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        skill_file = (
+            project_dir
+            / ".agents"
+            / "skills"
+            / "speckit-shared-owner"
+            / "SKILL.md"
+        )
+        assert skill_file.exists()
+        metadata = manager.registry.get("shared-native-output-preset")
+        registered_commands = metadata.get("registered_commands", {})
+        assert "agy" in registered_commands and "codex" in registered_commands
+
+        manager.unregister_agent_artifacts("agy")
+
+        assert skill_file.exists(), (
+            "shared SKILL.md must survive while codex still owns the same "
+            "physical output"
+        )
+        metadata = manager.registry.get("shared-native-output-preset")
+        registered_commands = metadata.get("registered_commands", {})
+        assert "agy" not in registered_commands
+        assert "codex" in registered_commands
+
+    def test_unregister_agent_artifacts_migrates_legacy_skill_list_scoped(
+        self, project_dir, temp_dir
+    ):
+        """Unregistering an agent's artifacts from a legacy flat-list
+        ``registered_skills`` entry must infer real per-agent ownership
+        before removing anything, so only the target agent's own share is
+        cleaned up and any other agent's still-live mirror survives,
+        rather than either guessing every name belongs to the target agent
+        or dropping all tracking wholesale (#2948).
+
+        Uses Copilot (command-backed, rendering skills via ``ai_skills``)
+        as the agent being switched away from, and Claude (a native
+        SKILL.md agent) as the separate, still-live owner — mirroring the
+        established legacy-provenance test pattern used elsewhere for
+        this exact registry shape.
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        copilot_skills_dir = project_dir / ".github" / "skills"
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(copilot_skills_dir, "speckit-specify")
+        self._create_skill(claude_skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "switch-legacy-skill-preset", "speckit.specify",
+            "Legacy skill switch test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        copilot_skill = copilot_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:switch-legacy-skill-preset" in copilot_skill.read_text(), (
+            "sanity: install wrote the override under copilot"
+        )
+
+        # A separate activation under claude (before provenance tracking
+        # existed) also left a live, marker-verified mirror there.
+        claude_skill = claude_skills_dir / "speckit-specify" / "SKILL.md"
+        claude_skill.write_text(
+            "---\nname: speckit-specify\nmetadata:\n  source: preset:switch-legacy-skill-preset\n"
+            "---\n\npreset body\n",
+            encoding="utf-8",
+        )
+
+        # Simulate a pre-#2948 registry: a flat list with no per-agent
+        # provenance for either writer.
+        manager.registry.update(
+            "switch-legacy-skill-preset",
+            {"registered_skills": ["speckit-specify"]},
+        )
+
+        manager.unregister_agent_artifacts("copilot")
+
+        assert not copilot_skill.parent.exists(), (
+            "copilot's marker-owned preset skill must be deleted when "
+            "switching away from copilot"
+        )
+
+        assert "preset:switch-legacy-skill-preset" in claude_skill.read_text(), (
+            "claude's own, separately-written mirror must survive "
+            "unregistering copilot's artifacts -- legacy-list inference "
+            "must not misattribute or drop claude's real ownership (#2948)"
+        )
+
+        metadata = manager.registry.get("switch-legacy-skill-preset")
+        registered_skills = metadata.get("registered_skills")
+        assert isinstance(registered_skills, dict), (
+            "legacy flat-list value must migrate to per-agent form"
+        )
+        assert "copilot" not in registered_skills
+        assert "claude" in registered_skills and "speckit-specify" in registered_skills["claude"], (
+            "claude's real ownership must be preserved in the migrated tracking"
+        )
+
+    def test_short_and_namespaced_commands_scaffold_consistently(
+        self, project_dir, temp_dir
+    ):
+        """A preset's ``speckit.<cmd>`` and ``speckit.<ns>.<cmd>`` commands must
+        scaffold identically in command mode, with no installed extension.
+
+        Regression: the 3-part (``speckit.<ns>.<cmd>``) form was silently
+        dropped by a name-shape guard whenever ``.specify/extensions/<ns>/``
+        was absent, even though the preset ships the command body itself. The
+        2-part form always scaffolded. Both are self-contained and must behave
+        the same (#4076).
+        """
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        gemini_commands_dir = project_dir / ".gemini" / "commands"
+        gemini_commands_dir.mkdir(parents=True)
+
+        short_preset = self._create_command_preset(
+            temp_dir, "short-cmd", "speckit.newcmd", "Short", "short body",
+        )
+        ns_preset = self._create_command_preset(
+            temp_dir, "ns-cmd", "speckit.fakeext.newcmd", "Namespaced", "ns body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(short_preset, "0.1.5")
+        manager.install_from_directory(ns_preset, "0.1.5")
+
+        short_file = gemini_commands_dir / "speckit.newcmd.toml"
+        ns_file = gemini_commands_dir / "speckit.fakeext.newcmd.toml"
+        assert short_file.exists(), "2-part command should scaffold"
+        assert ns_file.exists(), (
+            "3-part namespaced command must scaffold too, even without the "
+            "matching extension installed"
+        )
+        assert manager.registry.get("short-cmd")["registered_commands"] != {}
+        assert manager.registry.get("ns-cmd")["registered_commands"] != {}
+
 
 class TestPresetSetPriority:
     """Test preset set-priority CLI command."""
@@ -3817,6 +10213,32 @@ class TestPresetSetPriority:
         manager2 = PresetManager(project_dir)
         assert manager2.registry.get("test-pack")["priority"] == 5
 
+    def test_set_priority_reconciles_generated_constitution(
+        self, project_dir, temp_dir
+    ):
+        """Changing priority rematerializes an unchanged generated constitution."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        install_self_test_preset(manager)
+        manager.install_from_directory(
+            _make_convention_constitution_preset(temp_dir), "0.1.5", priority=20
+        )
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert "preset:self-test" in memory.read_text()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app,
+                ["preset", "set-priority", "convention-constitution", "1"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert memory.read_text() == "# Convention Constitution\n"
+
     def test_set_priority_same_value_no_change(self, project_dir, pack_dir):
         """Test set-priority with same value shows already set message."""
         from typer.testing import CliRunner
@@ -3835,6 +10257,40 @@ class TestPresetSetPriority:
         assert result.exit_code == 0, result.output
         plain = strip_ansi(result.output)
         assert "already has priority 5" in plain
+
+    def test_set_priority_repairs_corrupted_bool(self, project_dir, pack_dir):
+        """A corrupted boolean priority must be repaired, not skipped.
+
+        ``isinstance(True, int)`` is True and ``True == 1`` in Python, so a
+        stored ``True`` priority would short-circuit the ``already has
+        priority 1`` skip path and never get rewritten to a real int —
+        contradicting the comment that promises corrupted values are
+        repaired. The guard must exclude bools (like normalize_priority).
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5", priority=5)
+        # Inject a corrupted boolean priority (True == 1).
+        manager.registry.update("test-pack", {"priority": True})
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "set-priority", "test-pack", "1"])
+
+        assert result.exit_code == 0, result.output
+        plain = strip_ansi(result.output)
+        # The corrupted bool must be repaired, not reported as already-set.
+        assert "already has priority" not in plain
+        assert "priority changed" in plain
+
+        # The stored value is now a real int, not a bool.
+        reloaded = PresetManager(project_dir).registry.get("test-pack")
+        assert reloaded["priority"] == 1
+        assert not isinstance(reloaded["priority"], bool)
 
     def test_set_priority_invalid_value(self, project_dir, pack_dir):
         """Test set-priority rejects invalid priority values."""
@@ -4003,6 +10459,62 @@ class TestPresetEnableDisable:
         manager2 = PresetManager(project_dir)
         assert manager2.registry.get("test-pack")["enabled"] is True
 
+    def test_enable_disable_reconciles_generated_constitution(
+        self, project_dir, temp_dir
+    ):
+        """Enable and disable rematerialize the winning constitution layer."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        install_self_test_preset(manager)
+        manager.install_from_directory(
+            _make_convention_constitution_preset(temp_dir), "0.1.5", priority=1
+        )
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Convention Constitution\n"
+        runner = CliRunner()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            disabled = runner.invoke(
+                app, ["preset", "disable", "convention-constitution"]
+            )
+
+        assert disabled.exit_code == 0, disabled.output
+        assert "preset:self-test" in memory.read_text()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            enabled = runner.invoke(
+                app, ["preset", "enable", "convention-constitution"]
+            )
+
+        assert enabled.exit_code == 0, enabled.output
+        assert memory.read_text() == "# Convention Constitution\n"
+
+    def test_stack_changes_do_not_create_missing_constitution(
+        self, project_dir, pack_dir
+    ):
+        """Stack changes for non-providers do not seed a missing constitution."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        runner = CliRunner()
+
+        for args in (
+            ["preset", "set-priority", "test-pack", "5"],
+            ["preset", "disable", "test-pack"],
+            ["preset", "enable", "test-pack"],
+        ):
+            with patch.object(Path, "cwd", return_value=project_dir):
+                result = runner.invoke(app, args)
+            assert result.exit_code == 0, result.output
+            assert not memory.exists()
+
     def test_disable_already_disabled(self, project_dir, pack_dir):
         """Test disable on already disabled preset shows warning."""
         from typer.testing import CliRunner
@@ -4139,6 +10651,9 @@ class TestPresetEnableDisable:
 
 
 LEAN_PRESET_DIR = Path(__file__).parent.parent / "presets" / "lean"
+CORE_CONSTITUTION_COMMAND = (
+    Path(__file__).parent.parent / "templates" / "commands" / "constitution.md"
+)
 
 LEAN_COMMAND_NAMES = [
     "speckit.specify",
@@ -4147,6 +10662,54 @@ LEAN_COMMAND_NAMES = [
     "speckit.implement",
     "speckit.constitution",
 ]
+
+
+@pytest.mark.parametrize(
+    "command_path",
+    [
+        CORE_CONSTITUTION_COMMAND,
+        LEAN_PRESET_DIR / "commands" / "speckit.constitution.md",
+    ],
+    ids=["core", "lean"],
+)
+def test_constitution_commands_guard_against_non_governance_work(command_path):
+    """Constitution commands defer non-governance work instead of executing it."""
+    content = command_path.read_text()
+    lower_content = content.lower()
+    normalized_content = " ".join(lower_content.split())
+
+    assert "## Scope Guard" in content
+    assert "**MUST NOT**" in content
+    assert "Classify every part" in content
+    assert "application source files" in content
+    assert "non-governance intent" in content
+    assert "`Next Actions`" in content
+    assert "__SPECKIT_COMMAND_SPECIFY__" in content
+    assert "omit" in lower_content
+    assert "do not invoke it" in normalized_content or "without invoking it" in normalized_content
+
+
+def test_core_constitution_command_resolves_template_at_runtime():
+    """The core command must consume the composed scaffold on every invocation."""
+    content = CORE_CONSTITUTION_COMMAND.read_text()
+
+    assert "resolve-template.sh constitution-template --json" in content
+    assert "resolve-template.ps1 constitution-template -Json" in content
+    assert "resolve_template.py constitution-template --json" in content
+    assert "parse `TEMPLATE_CONTENT` as the active template" in content
+    assert "do not continue with only one contributing" in content
+    assert "Do not write back to any versioned template layer" in content
+
+
+def test_core_checklist_command_resolves_template_at_runtime():
+    """The checklist command must consume the composed scaffold."""
+    content = (CORE_CONSTITUTION_COMMAND.parent / "checklist.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "--template checklist-template" in content
+    assert "TEMPLATE_CONTENT" in content
+    assert "Use TEMPLATE_CONTENT as the structural template" in content
 
 
 class TestLeanPreset:
@@ -4262,7 +10825,7 @@ class TestBundledPresetLocator:
     def test_preset_add_from_url_rejects_insecure_redirect(self, project_dir, monkeypatch):
         """URL installs reject redirects from HTTPS to non-loopback HTTP."""
         import typer
-        from specify_cli import preset_add
+        from specify_cli.presets._commands import preset_add
 
         class FakeResponse(io.BytesIO):
             def __enter__(self):
@@ -4314,10 +10877,159 @@ class TestBundledPresetLocator:
         assert "got https://" not in output
         open_url.assert_not_called()
 
+    def test_preset_add_from_malformed_ipv6_url_exits_cleanly(self, project_dir):
+        """A malformed IPv6 URL must produce a clean error, not a ValueError traceback."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.authentication.http.open_url") as open_url:
+            result = runner.invoke(
+                app,
+                ["preset", "add", "--from", "https://[::1/preset.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        output = strip_ansi(result.output)
+        assert "Invalid URL" in output
+        open_url.assert_not_called()
+
+    def test_preset_add_from_bracketed_non_ip_url_exits_cleanly(self, project_dir):
+        """A bracketed-but-invalid IPv6 host in --from must exit cleanly.
+
+        "https://[not-an-ip]/preset.zip" is a malformed authority that raises
+        ValueError during URL validation; the try/except guard around parsing
+        and the .hostname read must turn that into a clean "Invalid URL" message.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.authentication.http.open_url") as open_url:
+            result = runner.invoke(
+                app,
+                ["preset", "add", "--from", "https://[not-an-ip]/preset.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        output = strip_ansi(result.output)
+        assert "Invalid URL" in output
+        open_url.assert_not_called()
+
+    def test_preset_add_from_url_out_of_range_port_exits_cleanly(self, project_dir):
+        """An out-of-range port raises ValueError lazily on .port access.
+
+        The up-front guard reads ``_parsed.port`` (urllib validates the port
+        range/syntax there) inside its try/except, so "https://example.com:99999/
+        preset.zip" must produce a clean "Invalid URL" message rather than
+        leaking a raw ValueError traceback past the CLI.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.authentication.http.open_url") as open_url:
+            result = runner.invoke(
+                app,
+                ["preset", "add", "--from", "https://example.com:99999/preset.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Invalid URL" in strip_ansi(result.output)
+        open_url.assert_not_called()
+
+    def test_preset_add_bracketed_host_download_url_exits_cleanly(self, project_dir):
+        """A catalog download_url with a bracketed non-IP host must render cleanly.
+
+        ``download_pack`` raises ``PresetError`` whose message embeds the raw URL
+        (e.g. ``https://[not-an-ip]/x``). The ``preset_add`` handler must escape
+        that message before printing so Rich does not interpret ``[not-an-ip]``
+        as a markup tag and crash while rendering the error.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        bad_url = "https://[not-an-ip]/x"
+        catalog_data = {
+            "test-pack": {
+                "name": "Test Pack",
+                "version": "1.0.0",
+                "download_url": bad_url,
+            }
+        }
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(PresetCatalog, "_get_merged_packs", return_value=catalog_data):
+            result = runner.invoke(
+                app,
+                ["preset", "add", "test-pack"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        output = strip_ansi(result.output)
+        assert "Error:" in output
+        # The malformed URL surfaces verbatim rather than crashing the renderer.
+        assert bad_url in output
+
+    @pytest.mark.parametrize(
+        ("exc_type", "label"),
+        [
+            (PresetCompatibilityError, "Compatibility Error"),
+            (PresetValidationError, "Validation Error"),
+            (PresetError, "Error"),
+        ],
+    )
+    def test_preset_add_exception_handlers_escape_markup(self, project_dir, exc_type, label):
+        """Preset install exceptions can include catalog-controlled values.
+
+        The message must be escaped so Rich does not treat bracketed content as
+        markup and raise while rendering the error.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        dev_dir = project_dir / "dev-pack"
+        dev_dir.mkdir()
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(
+                 PresetManager,
+                 "install_from_directory",
+                 side_effect=exc_type("bad [red]preset[/red]"),
+             ):
+            result = runner.invoke(
+                app,
+                ["preset", "add", "--dev", str(dev_dir)],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert f"{label}:" in result.output
+        assert "bad [red]preset[/red]" in result.output
+
     def test_preset_add_from_url_redirect_error_describes_disallowed_url(self, project_dir, monkeypatch, capsys):
         """Redirect rejection message covers hostless HTTPS, not only non-HTTPS URLs."""
         import typer
-        from specify_cli import preset_add
+        from specify_cli.presets._commands import preset_add
 
         class FakeResponse(io.BytesIO):
             def __enter__(self):
@@ -4345,9 +11057,9 @@ class TestBundledPresetLocator:
         assert "redirected to a disallowed URL" in output
         assert "must use HTTPS with a hostname" in output
 
-    def test_preset_add_from_url_streams_download_to_zip(self, project_dir, monkeypatch):
-        """URL installs stream response bytes to disk before installing the ZIP."""
-        from specify_cli import preset_add
+    def test_preset_add_from_url_reads_in_bounded_chunks(self, project_dir, monkeypatch):
+        """URL installs read the response in bounded chunks."""
+        from specify_cli.presets._commands import preset_add
 
         class FakeResponse(io.BytesIO):
             def __init__(self, data):
@@ -4368,7 +11080,7 @@ class TestBundledPresetLocator:
                 self.read_sizes.append(size)
                 return super().read(size)
 
-        response = FakeResponse(b"zip-bytes")
+        response = FakeResponse(b"PK\x05\x06" + b"\x00" * 18)
         installed = {}
 
         def fake_install_from_zip(self, zip_path, speckit_version, priority=10):
@@ -4389,10 +11101,69 @@ class TestBundledPresetLocator:
 
         assert response.read_sizes
         assert installed == {
-            "zip_bytes": b"zip-bytes",
+            "zip_bytes": b"PK\x05\x06" + b"\x00" * 18,
             "speckit_version": "0.6.0",
             "priority": 7,
         }
+
+    def test_preset_add_from_url_rejects_oversized_download(
+        self, project_dir, monkeypatch, capsys
+    ):
+        """An oversized direct download fails before preset installation."""
+        import typer
+        from specify_cli._download_security import (
+            read_response_limited as real_read_response_limited,
+        )
+        from specify_cli.presets import _commands as preset_commands
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def geturl(self):
+                return "https://example.com/preset.zip"
+
+        def read_with_tiny_limit(response, **kwargs):
+            kwargs.pop("max_bytes", None)
+            return real_read_response_limited(response, max_bytes=4, **kwargs)
+
+        installed = False
+
+        def fake_install_from_zip(*_args, **_kwargs):
+            nonlocal installed
+            installed = True
+
+        monkeypatch.setattr(
+            preset_commands,
+            "read_response_limited",
+            read_with_tiny_limit,
+        )
+        monkeypatch.setattr(
+            "specify_cli._require_specify_project",
+            lambda: project_dir,
+        )
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.6.0")
+        monkeypatch.setattr(
+            "specify_cli.authentication.http.open_url",
+            lambda *_args, **_kwargs: FakeResponse(b"12345"),
+        )
+        monkeypatch.setattr(PresetManager, "install_from_zip", fake_install_from_zip)
+
+        with pytest.raises(typer.Exit) as exc_info:
+            preset_commands.preset_add(
+                preset_id=None,
+                from_url="https://example.com/preset.zip",
+                dev=None,
+                priority=10,
+            )
+
+        assert exc_info.value.exit_code == 1
+        output = " ".join(strip_ansi(capsys.readouterr().out).split())
+        assert "exceeds maximum size of 4 bytes" in output
+        assert installed is False
 
     def test_bundled_preset_in_catalog(self):
         """Verify the lean preset is listed in catalog.json with bundled marker."""
@@ -4470,26 +11241,13 @@ class TestPresetAddFromUrlResolution:
 
         captured_urls = []
 
-        class FakeResponse:
-            def __init__(self, data):
-                self._data = data
-
-            def read(self):
-                return self._data
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
         def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
             captured_urls.append((url, extra_headers))
             if "releases/tags/" in url:
-                return FakeResponse(json.dumps({
+                return io.BytesIO(json.dumps({
                     "assets": [{"name": "preset.zip", "url": "https://api.github.com/repos/org/repo/releases/assets/42"}]
                 }).encode())
-            return FakeResponse(zip_bytes)
+            return io.BytesIO(zip_bytes)
 
         runner = CliRunner()
         with patch.object(Path, "cwd", return_value=project_dir), \
@@ -4528,22 +11286,9 @@ class TestPresetAddFromUrlResolution:
 
         captured_urls = []
 
-        class FakeResponse:
-            def __init__(self, data):
-                self._data = data
-
-            def read(self):
-                return self._data
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
         def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
             captured_urls.append((url, extra_headers))
-            return FakeResponse(zip_bytes)
+            return io.BytesIO(zip_bytes)
 
         runner = CliRunner()
         with patch.object(Path, "cwd", return_value=project_dir), \
@@ -4559,6 +11304,56 @@ class TestPresetAddFromUrlResolution:
         assert len(captured_urls) == 1
         assert captured_urls[0][0] == "https://api.github.com/repos/org/repo/releases/assets/42"
         assert captured_urls[0][1] == {"Accept": "application/octet-stream"}
+
+    def test_preset_add_from_ghes_release_url_resolves_via_api_v3(self, project_dir, monkeypatch):
+        """'preset add --from <ghes-release-url>' resolves via GHES /api/v3 endpoint."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        from specify_cli.authentication import http as _auth_http
+        from specify_cli.authentication.config import AuthConfigEntry
+
+        monkeypatch.setattr(_auth_http, "_config_override", [
+            AuthConfigEntry(hosts=("ghes.example",), provider="github", auth="bearer", token="t"),
+        ])
+
+        manifest_content = yaml.dump({
+            "schema_version": "1.0",
+            "preset": {"id": "my-preset", "name": "My Preset", "version": "1.0.0", "description": "Test preset", "author": "Test", "license": "MIT"},
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
+        })
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", manifest_content)
+        zip_bytes = zip_buf.getvalue()
+
+        captured_urls = []
+
+        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+            captured_urls.append((url, extra_headers))
+            if "releases/tags/" in url:
+                return io.BytesIO(json.dumps({
+                    "assets": [{"name": "preset.zip", "url": "https://ghes.example/api/v3/repos/org/repo/releases/assets/42"}]
+                }).encode())
+            return io.BytesIO(zip_bytes)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.get_speckit_version", return_value="1.0.0"), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+            result = runner.invoke(app, [
+                "preset", "add",
+                "--from", "https://ghes.example/org/repo/releases/download/v1.0/preset.zip",
+            ])
+
+        assert result.exit_code == 0, result.output
+        # The tag-lookup call must use the GHES /api/v3 endpoint
+        assert any("ghes.example/api/v3/repos/org/repo/releases/tags/v1.0" in url for url, _ in captured_urls)
+        # The asset download call must carry Accept: application/octet-stream
+        asset_calls = [(url, h) for url, h in captured_urls if "releases/assets/" in url]
+        assert len(asset_calls) >= 1
+        assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
 
 
 class TestWrapStrategy:
@@ -4611,6 +11406,35 @@ class TestWrapStrategy:
         result, core_fm = _substitute_core_template(body, "nonexistent", project_dir, registrar)
         assert result == body
         assert "{CORE_TEMPLATE}" in result
+        assert core_fm == {}
+
+    def test_substitute_core_template_unreadable_core_treated_as_missing(
+        self, project_dir
+    ):
+        """An undecodable core template must not crash substitution.
+
+        The wrap-strategy callers (``CommandRegistrar.register_pack`` and
+        ``_register_commands``) skip an unreadable preset source with a
+        warning, but the core template read inside
+        ``_substitute_core_template`` had no boundary, so one corrupted
+        project-owned override in ``.specify/templates/commands/`` crashed
+        the whole registration with a raw ``UnicodeDecodeError``. An
+        unreadable core is treated like a missing one.
+        """
+        from specify_cli.presets import _substitute_core_template
+        from specify_cli.agents import CommandRegistrar
+
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_bytes(b"\xff\xfe not utf-8")
+
+        registrar = CommandRegistrar()
+        body = "Pre.\n\n{CORE_TEMPLATE}\n\nPost.\n"
+        with pytest.warns(UserWarning, match="Ignoring core template"):
+            result, core_fm = _substitute_core_template(
+                body, "specify", project_dir, registrar
+            )
+        assert result == body
         assert core_fm == {}
 
     def test_register_commands_substitutes_core_template_for_wrap_strategy(self, project_dir):
@@ -5043,6 +11867,181 @@ class TestWrapStrategy:
         assert "# Selftest Core" in result
         assert "{CORE_TEMPLATE}" not in result
 
+    def test_extension_template_resolves_via_manifest_when_filename_differs(self, project_dir):
+        """provides.templates entries resolve via extension.yml when the file
+        doesn't sit at the conventional path.
+
+        Regression coverage for #4010: manifest-declared templates/scripts
+        must actually be consulted by the resolver, not just accepted by
+        manifest validation.
+        """
+        ext_dir = project_dir / ".specify" / "extensions" / "reportext"
+        tmpl_dir = ext_dir / "templates" / "nested"
+        tmpl_dir.mkdir(parents=True, exist_ok=True)
+
+        # File lives at a path convention-based lookup (templates/<name>.md)
+        # would never find.
+        (tmpl_dir / "actual.md").write_text("# Report Scaffold\n")
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: reportext\n  name: Report Ext\n  version: 1.0.0\n"
+            "  description: test\n  author: test\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n"
+            "  templates:\n"
+            "    - name: report-scaffold\n"
+            "      file: templates/nested/actual.md\n"
+            "      description: Report scaffold\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("report-scaffold", "template")
+        assert layers, "expected the manifest-declared template to resolve"
+        assert layers[0]["path"] == tmpl_dir / "actual.md"
+        assert layers[0]["strategy"] == "replace"
+
+    def test_extension_script_resolves_via_manifest_when_filename_differs(self, project_dir):
+        """provides.scripts entries resolve via extension.yml when the file
+        doesn't sit at the conventional path."""
+        ext_dir = project_dir / ".specify" / "extensions" / "collectext"
+        script_dir = ext_dir / "scripts" / "bash"
+        script_dir.mkdir(parents=True, exist_ok=True)
+
+        # File is under scripts/bash/, not directly under scripts/, so
+        # convention-based lookup (scripts/<name>.sh) would never find it.
+        (script_dir / "collect.sh").write_text("#!/usr/bin/env bash\necho collect\n")
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: collectext\n  name: Collect Ext\n  version: 1.0.0\n"
+            "  description: test\n  author: test\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n"
+            "  scripts:\n"
+            "    - name: myext-collect\n"
+            "      file: scripts/bash/collect.sh\n"
+            "      description: Data-collection helper\n"
+            "      runtimes: [bash]\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("myext-collect", "script")
+        assert layers, "expected the manifest-declared script to resolve"
+        assert layers[0]["path"] == script_dir / "collect.sh"
+        assert layers[0]["strategy"] == "replace"
+
+    def test_extension_template_convention_lookup_unaffected_when_undeclared(self, project_dir):
+        """An extension template with no manifest entry still resolves via
+        the pre-existing filename convention (no regression)."""
+        ext_dir = project_dir / ".specify" / "extensions" / "conventionext"
+        tmpl_dir = ext_dir / "templates"
+        tmpl_dir.mkdir(parents=True, exist_ok=True)
+        (tmpl_dir / "legacy-template.md").write_text("# Legacy Template\n")
+        # No extension.yml at all -- purely convention-based, unregistered extension.
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("legacy-template", "template")
+        assert layers, "expected convention-based lookup to still find the template"
+        assert layers[0]["path"] == tmpl_dir / "legacy-template.md"
+
+    def test_extension_manifest_wins_over_stale_conventional_file(self, project_dir):
+        """A declared entry is authoritative even when a stale file also sits at
+        the conventional path (templates/<name>.md) — the manifest must win,
+        not the convention lookup, per #4010's acceptance criteria."""
+        ext_dir = project_dir / ".specify" / "extensions" / "bothpathsext"
+        (ext_dir / "templates").mkdir(parents=True, exist_ok=True)
+        (ext_dir / "custom").mkdir(parents=True, exist_ok=True)
+
+        # Stale file at the conventional path -- must NOT win.
+        (ext_dir / "templates" / "report-scaffold.md").write_text("# Stale\n")
+        # Declared file at a non-conventional path -- must win.
+        (ext_dir / "custom" / "bar.md").write_text("# Actual\n")
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: bothpathsext\n  name: Both Paths Ext\n  version: 1.0.0\n"
+            "  description: test\n  author: test\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n"
+            "  templates:\n"
+            "    - name: report-scaffold\n"
+            "      file: custom/bar.md\n"
+            "      description: Report scaffold\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+
+        layers = resolver.collect_all_layers("report-scaffold", "template")
+        assert layers, "expected the manifest-declared template to resolve"
+        assert layers[0]["path"] == ext_dir / "custom" / "bar.md"
+
+        resolved = resolver.resolve("report-scaffold", "template")
+        assert resolved == ext_dir / "custom" / "bar.md"
+
+        with_source = resolver.resolve_with_source("report-scaffold", "template")
+        assert with_source["path"] == str(ext_dir / "custom" / "bar.md")
+
+    def test_extension_manifest_declared_but_missing_file_does_not_fall_back(self, project_dir):
+        """A declared entry whose file is missing is authoritative -- the
+        resolver must not silently mask the typo by falling back to a
+        conventional file that happens to also exist."""
+        ext_dir = project_dir / ".specify" / "extensions" / "missingfileext"
+        (ext_dir / "scripts").mkdir(parents=True, exist_ok=True)
+
+        # A conventional file exists, but the manifest declares a different,
+        # non-existent file for the same name.
+        (ext_dir / "scripts" / "myext-collect.sh").write_text("#!/usr/bin/env bash\necho legacy\n")
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: missingfileext\n  name: Missing File Ext\n  version: 1.0.0\n"
+            "  description: test\n  author: test\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n"
+            "  scripts:\n"
+            "    - name: myext-collect\n"
+            "      file: scripts/does-not-exist.sh\n"
+            "      description: Data-collection helper\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+
+        assert resolver.collect_all_layers("myext-collect", "script") == []
+        assert resolver.resolve("myext-collect", "script") is None
+
+    def test_extension_script_resolve_and_resolve_with_source_parity(self, project_dir):
+        """resolve() and resolve_with_source() must find a manifest-declared
+        script at a non-conventional path, matching collect_all_layers()."""
+        ext_dir = project_dir / ".specify" / "extensions" / "collectext2"
+        script_dir = ext_dir / "scripts" / "bash"
+        script_dir.mkdir(parents=True, exist_ok=True)
+
+        (script_dir / "collect.sh").write_text("#!/usr/bin/env bash\necho collect\n")
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: collectext2\n  name: Collect Ext 2\n  version: 1.0.0\n"
+            "  description: test\n  author: test\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n"
+            "  scripts:\n"
+            "    - name: myext-collect2\n"
+            "      file: scripts/bash/collect.sh\n"
+            "      description: Data-collection helper\n"
+            "      runtimes: [bash]\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+
+        resolved = resolver.resolve("myext-collect2", "script")
+        assert resolved == script_dir / "collect.sh"
+
+        with_source = resolver.resolve_with_source("myext-collect2", "script")
+        assert with_source is not None
+        assert with_source["path"] == str(script_dir / "collect.sh")
+        assert with_source["source"] == "extension:collectext2 (unregistered)"
+
 
 # ===== _replay_wraps_for_command Tests =====
 
@@ -5247,6 +12246,113 @@ class TestResolveContent:
         resolver = PresetResolver(project_dir)
         content = resolver.resolve_content("nonexistent")
         assert content is None
+
+    def test_resolve_content_unreadable_winning_layer_returns_none(self, project_dir):
+        """An undecodable winning layer must yield None, not a raw traceback.
+
+        ``collect_all_layers`` deliberately keeps a non-UTF-8 legacy command
+        layer (with its ``replace`` default) so unrelated commands still
+        resolve. ``resolve_content`` then read that same file without a
+        boundary, so the tolerated layer crashed with ``UnicodeDecodeError``
+        at composition time — reachable from ``specify preset add`` via
+        ``_register_commands``. The documented contract is "Composed content
+        string, or None if not found".
+        """
+        presets_dir = project_dir / ".specify" / "presets"
+        command_path = (
+            presets_dir / "legacy-pack" / "commands" / "speckit.legacy.md"
+        )
+        command_path.parent.mkdir(parents=True)
+        command_path.write_bytes(b"\xff\xfe")
+        PresetRegistry(presets_dir).add(
+            "legacy-pack", {"version": "1.0.0", "priority": 10}
+        )
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("speckit.legacy", "command")
+        assert content is None
+
+    def test_resolve_content_unreadable_base_under_composing_layer(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """An undecodable base beneath a valid composing layer yields None.
+
+        Covers the base-read guard: the winning layer composes (append), so
+        resolution reads the base layer beneath it — here the core template,
+        corrupted to non-UTF-8 — and must return None instead of crashing.
+        """
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "append-pack", "name": "Append"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "append",
+            }]
+        }
+        pack_dir = temp_dir / "append-pack"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "templates").mkdir()
+        (pack_dir / "templates" / "spec-template.md").write_text("## Appended Section\n")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        core_spec = project_dir / ".specify" / "templates" / "spec-template.md"
+        core_spec.write_bytes(b"\xff\xfe")
+
+        resolver = PresetResolver(project_dir)
+        assert resolver.resolve_content("spec-template") is None
+
+    def test_resolve_content_unreadable_composing_layer(
+        self, project_dir, temp_dir, valid_pack_data, monkeypatch
+    ):
+        """An unreadable composing layer over a valid base yields None.
+
+        Covers the composition-loop read and the ``OSError`` half of the
+        boundary: the base (core template) reads fine, but the append layer
+        raises a mocked ``PermissionError`` — mocked so the case also holds
+        under privileged CI where permission bits are not enforced.
+        """
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "append-pack", "name": "Append"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "append",
+            }]
+        }
+        pack_dir = temp_dir / "append-pack"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "templates").mkdir()
+        (pack_dir / "templates" / "spec-template.md").write_text("## Appended Section\n")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        layer_path = (
+            project_dir / ".specify" / "presets" / "append-pack"
+            / "templates" / "spec-template.md"
+        )
+        assert layer_path.is_file()
+        original_read_text = Path.read_text
+
+        def failing_read_text(self_path, *args, **kwargs):
+            if self_path == layer_path:
+                raise PermissionError(13, "Permission denied")
+            return original_read_text(self_path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", failing_read_text)
+
+        resolver = PresetResolver(project_dir)
+        assert resolver.resolve_content("spec-template") is None
 
     def test_resolve_content_replace_strategy(self, project_dir, temp_dir, valid_pack_data):
         """Test resolve_content with default replace strategy."""
@@ -5630,9 +12736,107 @@ class TestResolveContent:
         content = resolver.resolve_content("spec-template")
         assert content == "# Replaced content\n"
 
+    @pytest.mark.parametrize("strategy", ["append", "prepend", "wrap"])
+    def test_resolve_content_rewrites_extension_base_subdir_paths(
+        self, project_dir, temp_dir, strategy
+    ):
+        """Composing over an extension-provided base command must resolve the
+        extension's own subdir references (agents/, knowledge-base/) to their
+        installed location (#2101), not just when the extension wins outright.
+        """
+        extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
+        (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control" / "commander.md").write_text("# Commander\n")
+        (extension_dir / "commands" / "cmd.md").write_text(
+            "---\ndescription: Extension fakeext cmd\n---\n\n"
+            "Read agents/control/commander.md for context.\n"
+        )
+        extension_manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "fakeext",
+                "name": "Fake Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/cmd.md",
+                        "description": "Fake extension command",
+                    }
+                ]
+            },
+        }
+        with open(extension_dir / "extension.yml", "w") as f:
+            yaml.dump(extension_manifest, f)
+
+        preset_dir = temp_dir / f"ext-base-{strategy}"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        overlay_body = (
+            "{CORE_TEMPLATE}\n## Extra\n" if strategy == "wrap" else "## Extra\n"
+        )
+        (preset_dir / "commands" / "speckit.fakeext.cmd.md").write_text(
+            f"---\ndescription: Preset overlay\n---\n\n{overlay_body}"
+        )
+        preset_manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": f"ext-base-{strategy}",
+                "name": "Ext Base",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/speckit.fakeext.cmd.md",
+                        "strategy": strategy,
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(preset_manifest, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("speckit.fakeext.cmd", "command")
+        assert content is not None
+        assert ".specify/extensions/fakeext/agents/control/commander.md" in content
+        assert "Read agents/control" not in content
+        assert "## Extra" in content
+
 
 class TestCollectAllLayers:
     """Test PresetResolver.collect_all_layers() method."""
+
+    def test_non_utf8_legacy_command_keeps_replace_strategy(self, project_dir):
+        presets_dir = project_dir / ".specify" / "presets"
+        command_path = (
+            presets_dir / "legacy-pack" / "commands" / "speckit.legacy.md"
+        )
+        command_path.parent.mkdir(parents=True)
+        command_path.write_bytes(b"\xff\xfe")
+        PresetRegistry(presets_dir).add(
+            "legacy-pack", {"version": "1.0.0", "priority": 10}
+        )
+
+        layers = PresetResolver(project_dir).collect_all_layers(
+            "speckit.legacy", "command"
+        )
+
+        assert layers[0]["path"] == command_path
+        assert layers[0]["strategy"] == "replace"
 
     def test_single_core_layer(self, project_dir):
         """Test collecting layers with only core template."""
@@ -5709,6 +12913,172 @@ class TestCollectAllLayers:
 
 class TestRemoveReconciliation:
     """Test that removing a preset re-registers the next layer's command."""
+
+    def test_remove_restores_extension_command_subdir_paths_for_non_skill_agent(
+        self, project_dir, temp_dir
+    ):
+        """When a preset override of an extension command is removed, the
+        reconciled non-skill-agent command file should have the extension's
+        own subdir references rewritten to their installed location (#2101),
+        not left as bare, unresolvable paths."""
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
+        (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control" / "commander.md").write_text("# Commander\n")
+        (extension_dir / "commands" / "cmd.md").write_text(
+            "---\ndescription: Extension fakeext cmd\n---\n\n"
+            "Read agents/control/commander.md for context.\n"
+        )
+        extension_manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "fakeext",
+                "name": "Fake Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/cmd.md",
+                        "description": "Fake extension command",
+                    }
+                ]
+            },
+        }
+        with open(extension_dir / "extension.yml", "w") as f:
+            yaml.dump(extension_manifest, f)
+
+        manager = PresetManager(project_dir)
+
+        preset_dir = temp_dir / "ext-cmd-override"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.fakeext.cmd.md").write_text(
+            "---\ndescription: Override fakeext cmd\n---\n\npreset override content\n"
+        )
+        preset_manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "ext-cmd-override",
+                "name": "Ext Cmd Override",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/speckit.fakeext.cmd.md",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(preset_manifest, f)
+
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        cmd_files = list(gemini_dir.glob("*fakeext*"))
+        assert cmd_files, "Command file should exist in gemini dir"
+        assert "preset override content" in cmd_files[0].read_text()
+
+        manager.remove("ext-cmd-override")
+
+        cmd_files = list(gemini_dir.glob("*fakeext*"))
+        assert cmd_files, "Command file should still exist after removal"
+        content = cmd_files[0].read_text()
+        assert "preset override content" not in content
+        assert ".specify/extensions/fakeext/agents/control/commander.md" in content
+        assert "Read agents/control" not in content
+
+    def test_install_composes_extension_command_and_rewrites_subdir_paths_for_non_skill_agent(
+        self, project_dir, temp_dir
+    ):
+        """When a preset overlays (append) an extension-provided base command,
+        the initial composed non-skill-agent command file must have the
+        extension's own subdir references rewritten to their installed
+        location (#2101), matching the live repro: extension body
+        'Read agents/control/commander.md', preset appends to
+        speckit.fakeext.cmd, generated Gemini content retains the bare path."""
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
+        (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control" / "commander.md").write_text("# Commander\n")
+        (extension_dir / "commands" / "cmd.md").write_text(
+            "---\ndescription: Extension fakeext cmd\n---\n\n"
+            "Read agents/control/commander.md for context.\n"
+        )
+        extension_manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "fakeext",
+                "name": "Fake Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/cmd.md",
+                        "description": "Fake extension command",
+                    }
+                ]
+            },
+        }
+        with open(extension_dir / "extension.yml", "w") as f:
+            yaml.dump(extension_manifest, f)
+
+        preset_dir = temp_dir / "ext-cmd-append"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.fakeext.cmd.md").write_text(
+            "---\ndescription: Append fakeext cmd\n---\n\n## Extra\n"
+        )
+        preset_manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "ext-cmd-append",
+                "name": "Ext Cmd Append",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/speckit.fakeext.cmd.md",
+                        "strategy": "append",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(preset_manifest, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        cmd_files = list(gemini_dir.glob("*fakeext*"))
+        assert cmd_files, "Command file should exist in gemini dir"
+        content = cmd_files[0].read_text()
+        assert ".specify/extensions/fakeext/agents/control/commander.md" in content
+        assert "Read agents/control" not in content
+        assert "## Extra" in content
 
     def test_remove_restores_lower_priority_command(
         self, project_dir, temp_dir, valid_pack_data
@@ -5829,3 +13199,798 @@ def _create_pack(temp_dir, valid_pack_data, pack_id, content,
         (subdir / f"{template_name}.md").write_text(content)
 
     return pack_dir
+
+
+def test_preset_wrapper_resolves_ghes_asset_when_host_configured(tmp_path, monkeypatch):
+    """End-to-end wiring for presets: auth.json github host → GHES asset resolution."""
+    from specify_cli.authentication import http as _auth_http
+    from specify_cli.authentication.config import AuthConfigEntry
+    from specify_cli.presets import PresetCatalog
+
+    monkeypatch.setattr(_auth_http, "_config_override", [
+        AuthConfigEntry(hosts=("ghes.example",), provider="github",
+                        auth="bearer", token="t"),
+    ])
+    catalog = PresetCatalog(tmp_path)
+
+    captured = []
+
+    @contextmanager
+    def fake_open(url, timeout=None, extra_headers=None):
+        captured.append(url)
+        resp = MagicMock()
+        resp.read.side_effect = io.BytesIO(json.dumps({
+            "assets": [{"name": "pack.zip",
+                        "url": "https://ghes.example/api/v3/repos/o/r/releases/assets/9"}]
+        }).encode()).read
+        yield resp
+
+    monkeypatch.setattr(catalog, "_open_url", fake_open)
+
+    resolved = catalog._resolve_github_release_asset_api_url(
+        "https://ghes.example/o/r/releases/download/v2/pack.zip"
+    )
+    assert resolved == "https://ghes.example/api/v3/repos/o/r/releases/assets/9"
+    assert captured == ["https://ghes.example/api/v3/repos/o/r/releases/tags/v2"]
+
+
+# ===== ensure_constitution_from_template resolver-awareness =====
+
+
+class TestEnsureConstitutionResolverAware:
+    """`ensure_constitution_from_template` must resolve through PresetResolver.
+
+    Init materializes the live constitution once, while later /constitution
+    runs resolve on demand. These tests pin the regression from issue #3272:
+    a preset-provided ``constitution-template`` must win during the init seed,
+    while the core template is used when no preset overrides it.
+    """
+
+    def _core_constitution(self, project_dir):
+        templates_dir = project_dir / ".specify" / "templates"
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        (templates_dir / "constitution-template.md").write_text(
+            "# [PROJECT_NAME] Constitution\n\n### [PRINCIPLE_1_NAME]\n"
+        )
+
+    def _wrap_constitution_preset(self, temp_dir):
+        preset_dir = temp_dir / "ensure-wrap-preset"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(
+            "# Ensure Wrapper\n\n{CORE_TEMPLATE}\n\n## Tail\n"
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "ensure-wrap",
+                        "name": "Ensure Wrap",
+                        "version": "1.0.0",
+                        "description": "Wrap strategy for ensure() coverage",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "strategy": "wrap",
+                                "description": "Wrapped constitution",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+        return preset_dir
+
+    def test_seeds_from_core_when_no_preset(self, project_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        ensure_constitution_from_template(project_dir)
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.exists()
+        assert "[PROJECT_NAME]" in memory.read_text()
+        assert (memory.parent / ".constitution-template.json").exists()
+
+    def test_seeds_from_preset_when_installed(self, project_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert not memory.exists()
+
+        ensure_constitution_from_template(project_dir)
+
+        assert memory.exists()
+        content = memory.read_text()
+        assert "preset:self-test" in content
+        assert "[PROJECT_NAME]" not in content
+
+    def test_preserves_existing_memory(self, project_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        authored = "# Acme Constitution\nAuthored.\n"
+        memory.write_text(authored)
+
+        ensure_constitution_from_template(project_dir)
+
+        assert memory.read_text() == authored
+
+    def test_preserves_edited_generated_memory(self, project_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        ensure_constitution_from_template(project_dir)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        authored = memory.read_text() + "\nAuthored amendment.\n"
+        memory.write_text(authored)
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        assert memory.read_text() == authored
+
+    def test_composes_wrap_strategy_when_ensuring(self, project_dir, temp_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(self._wrap_constitution_preset(temp_dir), "0.1.5")
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert not memory.exists()
+        ensure_constitution_from_template(project_dir)
+
+        content = memory.read_text()
+        assert "{CORE_TEMPLATE}" not in content
+        assert "# Ensure Wrapper" in content
+        assert "[PROJECT_NAME]" in content
+
+
+class TestPresetTagsNonString:
+    """Non-string catalog tags must not crash preset display commands.
+
+    Catalog payloads are user-editable YAML/JSON, so a `tags:` list can contain
+    numbers or other non-strings. The display path joins them; a raw
+    ``", ".join(...)`` blows up with ``TypeError: sequence item 0: expected str``.
+    Sibling command surfaces (extensions/integrations/workflows) already guard
+    this with ``str(t) for t in ...`` — presets must match.
+    """
+
+    def _seed_catalog(self, project_dir, tags, extra=None):
+        catalog = PresetCatalog(project_dir)
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        pack = {
+            "name": "Numeric Tags",
+            "description": "Preset with non-string tags",
+            "version": "1.0.0",
+            "tags": tags,
+        }
+        if extra:
+            pack.update(extra)
+        catalog_data = {
+            "schema_version": "1.0",
+            "presets": {
+                "numeric-tags": pack,
+            },
+        }
+        catalog.cache_file.write_text(json.dumps(catalog_data))
+        catalog.cache_metadata_file.write_text(json.dumps({
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+        }))
+        return catalog
+
+    def test_search_renders_non_string_tags(self, project_dir):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        catalog = self._seed_catalog(project_dir, [1, 2])
+        default_only = [PresetCatalogEntry(
+            url=catalog.DEFAULT_CATALOG_URL, name="default", priority=1, install_allowed=True
+        )]
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+                patch.object(PresetCatalog, "get_active_catalogs", return_value=default_only):
+            result = CliRunner().invoke(app, ["preset", "search", "Numeric"])
+
+        assert result.exit_code == 0, result.output
+        plain = strip_ansi(result.output)
+        assert "Tags: 1, 2" in plain
+
+    def test_info_renders_non_string_tags(self, project_dir):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        catalog = self._seed_catalog(project_dir, [1, 2])
+        default_only = [PresetCatalogEntry(
+            url=catalog.DEFAULT_CATALOG_URL, name="default", priority=1, install_allowed=True
+        )]
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+                patch.object(PresetCatalog, "get_active_catalogs", return_value=default_only):
+            result = CliRunner().invoke(app, ["preset", "info", "numeric-tags"])
+
+        assert result.exit_code == 0, result.output
+        plain = strip_ansi(result.output)
+        assert "Tags:        1, 2" in plain
+
+    def _default_only(self, catalog):
+        return [PresetCatalogEntry(
+            url=catalog.DEFAULT_CATALOG_URL, name="default", priority=1, install_allowed=True
+        )]
+
+    def test_search_by_author_tolerates_non_string_author(self, project_dir):
+        """``--author`` must not crash on a numeric catalog ``author``.
+
+        ``PresetCatalog.search`` called ``.lower()`` straight on the raw value,
+        raising ``AttributeError: 'int' object has no attribute 'lower'``. The
+        sibling extension/integration catalogs coerce with ``str(...)`` first.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        catalog = self._seed_catalog(project_dir, ["ci"], extra={"author": 789})
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+                patch.object(PresetCatalog, "get_active_catalogs",
+                             return_value=self._default_only(catalog)):
+            result = CliRunner().invoke(app, ["preset", "search", "--author", "789"])
+
+        assert result.exit_code == 0, result.output
+        assert "Numeric Tags" in strip_ansi(result.output)
+
+    def test_search_query_tolerates_non_string_name_and_description(self, project_dir):
+        """A query search must not crash on numeric ``name``/``description``.
+
+        The searchable-text join passed the raw values through, raising
+        ``TypeError: sequence item 0: expected str instance, int found``.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        catalog = self._seed_catalog(
+            project_dir, ["ci"], extra={"name": 123, "description": 456}
+        )
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+                patch.object(PresetCatalog, "get_active_catalogs",
+                             return_value=self._default_only(catalog)):
+            result = CliRunner().invoke(app, ["preset", "search", "123"])
+
+        assert result.exit_code == 0, result.output
+        assert "numeric-tags" in strip_ansi(result.output)
+
+    def test_search_tolerates_non_list_tags(self, project_dir):
+        """A scalar ``tags:`` value must not crash the tag filter or display.
+
+        ``tags: 5`` is truthy but not iterable, so both the ``--tag`` filter and
+        the result-display join raised ``TypeError: 'int' object is not
+        iterable``. Siblings guard with ``isinstance(raw_tags, list)``.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        catalog = self._seed_catalog(project_dir, 5)
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+                patch.object(PresetCatalog, "get_active_catalogs",
+                             return_value=self._default_only(catalog)):
+            filtered = CliRunner().invoke(app, ["preset", "search", "--tag", "ci"])
+            displayed = CliRunner().invoke(app, ["preset", "search", "Numeric"])
+
+        assert filtered.exit_code == 0, filtered.output
+        assert "No presets found" in strip_ansi(filtered.output)
+
+        assert displayed.exit_code == 0, displayed.output
+        plain = strip_ansi(displayed.output)
+        assert "Numeric Tags" in plain
+        assert "Tags:" not in plain
+
+    def test_info_tolerates_non_list_tags(self, project_dir):
+        """``preset info`` must not crash rendering a scalar ``tags:`` value."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        catalog = self._seed_catalog(project_dir, 5)
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+                patch.object(PresetCatalog, "get_active_catalogs",
+                             return_value=self._default_only(catalog)):
+            result = CliRunner().invoke(app, ["preset", "info", "numeric-tags"])
+
+        assert result.exit_code == 0, result.output
+        plain = strip_ansi(result.output)
+        assert "numeric-tags" in plain
+        assert "Tags:" not in plain
+
+    def test_search_escapes_rich_markup_in_tags(self, project_dir):
+        """Bracketed tag text must survive Rich markup parsing.
+
+        ``preset search`` printed tags unescaped, so a tag like ``[bold]`` was
+        swallowed as a style tag. ``preset list`` already escaped this.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        catalog = self._seed_catalog(project_dir, ["[bold]ci"])
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+                patch.object(PresetCatalog, "get_active_catalogs",
+                             return_value=self._default_only(catalog)):
+            result = CliRunner().invoke(app, ["preset", "search", "Numeric"])
+
+        assert result.exit_code == 0, result.output
+        assert "[bold]ci" in strip_ansi(result.output)
+
+
+class TestPresetCatalogRichMarkup:
+    """Catalog metadata must render as literal text in Rich output."""
+
+    MARKUP_PRESET = {
+        "id": "[red]markup-id[/red]",
+        "name": "[green]Markup Name[/green]",
+        "version": "[blue]1.0.0[/blue]",
+        "description": "[yellow]Markup Description[/yellow]",
+        "author": "[magenta]Markup Author[/magenta]",
+        "tags": ["[italic]markup-tag[/italic]"],
+        "repository": "[bold]Markup Repository[/bold]",
+        "license": "[cyan]Markup License[/cyan]",
+    }
+
+    def test_search_escapes_catalog_markup(self, project_dir):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        with patch.object(Path, "cwd", return_value=project_dir), patch.object(
+            PresetCatalog,
+            "search",
+            return_value=[self.MARKUP_PRESET],
+        ):
+            result = CliRunner().invoke(app, ["preset", "search"])
+
+        assert result.exit_code == 0, result.output
+        output = " ".join(strip_ansi(result.output).split())
+        for value in (
+            self.MARKUP_PRESET["id"],
+            self.MARKUP_PRESET["name"],
+            self.MARKUP_PRESET["version"],
+            self.MARKUP_PRESET["description"],
+        ):
+            assert value in output
+
+    def test_info_escapes_catalog_markup(self, project_dir):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        with patch.object(Path, "cwd", return_value=project_dir), patch.object(
+            PresetCatalog,
+            "get_pack_info",
+            return_value=self.MARKUP_PRESET,
+        ):
+            result = CliRunner().invoke(
+                app,
+                ["preset", "info", self.MARKUP_PRESET["id"]],
+            )
+
+        assert result.exit_code == 0, result.output
+        output = " ".join(strip_ansi(result.output).split())
+        for field in (
+            "id",
+            "name",
+            "version",
+            "description",
+            "author",
+            "repository",
+            "license",
+        ):
+            value = self.MARKUP_PRESET[field]
+            assert value in output
+        # Tags are joined into a single line, so assert on the rendered join.
+        assert ", ".join(self.MARKUP_PRESET["tags"]) in output
+
+
+class TestInstalledPresetRichMarkup:
+    """Locally installed preset metadata must render as literal text.
+
+    ``preset.yml`` is user-editable, so its fields can contain ``[...]``.
+    ``TestPresetCatalogRichMarkup`` covers the catalog branch of these
+    commands; the installed-preset branch of ``preset list``/``preset info``
+    and all of ``preset resolve`` were left unescaped, so a field like
+    ``Does [stuff] nicely`` silently rendered as ``Does  nicely`` and an
+    unbalanced tag such as ``[/red]`` raised ``rich.errors.MarkupError``,
+    aborting the command with a traceback.
+    """
+
+    MARKUP_FIELDS = {
+        "name": "[green]Markup Name[/green]",
+        "version": "1.0.0",
+        "description": "[yellow]Markup Description[/yellow]",
+        "author": "[magenta]Markup Author[/magenta]",
+        "repository": "[bold]Markup Repository[/bold]",
+        "license": "[cyan]Markup License[/cyan]",
+    }
+
+    def _install(self, temp_dir, project_dir, preset_overrides=None, strategy=None,
+                 pack_id="markup-pack", priority=10, tmpl_description=None):
+        """Install a preset from a directory built with the given manifest fields."""
+        from specify_cli.presets import PresetManager
+
+        src = temp_dir / f"src-{pack_id}"
+        (src / "templates").mkdir(parents=True)
+        (src / "templates" / "spec-template.md").write_text("# tmpl\n")
+
+        preset_section = {
+            "id": pack_id,
+            "name": pack_id,
+            "version": "1.0.0",
+            "description": "plain description",
+        }
+        preset_section.update(preset_overrides or {})
+        tmpl = {
+            "type": "template",
+            "name": "spec-template",
+            "file": "templates/spec-template.md",
+        }
+        if tmpl_description is not None:
+            tmpl["description"] = tmpl_description
+        if strategy:
+            tmpl["strategy"] = strategy
+        (src / "preset.yml").write_text(yaml.dump({
+            "schema_version": "1.0",
+            "preset": preset_section,
+            "requires": {"speckit_version": ">=0.0.1"},
+            "provides": {"templates": [tmpl]},
+            "tags": ["[italic]markup-tag[/italic]"],
+        }))
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(src, "9.9.9", priority)
+        return manager
+
+    def _invoke(self, project_dir, args):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            return CliRunner().invoke(app, args)
+
+    def test_list_and_info_escape_installed_markup(self, temp_dir, project_dir):
+        """Every ``preset.yml`` field must survive verbatim in list/info output."""
+        self._install(temp_dir, project_dir, preset_overrides=self.MARKUP_FIELDS)
+
+        for args in (["preset", "list"], ["preset", "info", "markup-pack"]):
+            result = self._invoke(project_dir, args)
+            assert result.exit_code == 0, result.output
+            output = " ".join(strip_ansi(result.output).split())
+            # `preset list` does not render repository/license.
+            fields = ("name", "description") if args[1] == "list" else self.MARKUP_FIELDS
+            for field in fields:
+                assert self.MARKUP_FIELDS[field] in output, (field, args, output)
+            assert "[italic]markup-tag[/italic]" in output, (args, output)
+
+    def test_info_does_not_swallow_template_description(self, temp_dir, project_dir):
+        """The per-template line in ``preset info`` must escape the template description.
+
+        ``name``/``type`` are format-restricted by manifest validation, but
+        ``description`` is free-form, so it is the field that can carry markup.
+        """
+        self._install(
+            temp_dir,
+            project_dir,
+            tmpl_description="Template [desc] here",
+        )
+        result = self._invoke(project_dir, ["preset", "info", "markup-pack"])
+        assert result.exit_code == 0, result.output
+        output = " ".join(strip_ansi(result.output).split())
+        assert "spec-template (template): Template [desc] here" in output, output
+
+    def test_unbalanced_markup_does_not_crash_list_or_info(self, temp_dir, project_dir):
+        """An unbalanced tag must not raise MarkupError and abort the command."""
+        self._install(
+            temp_dir,
+            project_dir,
+            preset_overrides={"description": "Broken [/red] tag"},
+        )
+
+        for args in (["preset", "list"], ["preset", "info", "markup-pack"]):
+            result = self._invoke(project_dir, args)
+            assert result.exit_code == 0, (args, result.output, result.exception)
+            assert "Broken [/red] tag" in strip_ansi(result.output)
+
+    def test_resolve_rejects_invalid_template_name(self, project_dir):
+        """``preset resolve`` rejects names before joining them into paths."""
+        result = self._invoke(project_dir, ["preset", "resolve", "no[/red]such"])
+        assert result.exit_code == 1, (result.output, result.exception)
+        assert "invalid template name" in strip_ansi(result.output)
+
+    def test_resolve_rejects_path_traversal(self, project_dir):
+        """The resolver rejects traversal before joining names into paths."""
+        result = self._invoke(
+            project_dir,
+            ["preset", "resolve", "../../../README"],
+        )
+
+        assert result.exit_code == 1
+        assert "invalid template name" in strip_ansi(result.output)
+
+    def test_resolve_accepts_dotted_command_name(self, project_dir):
+        """Documented dotted command identifiers use command resolution."""
+        result = self._invoke(
+            project_dir,
+            ["preset", "resolve", "speckit.constitution"],
+        )
+
+        assert result.exit_code == 0, (result.output, result.exception)
+        assert "constitution.md" in "".join(strip_ansi(result.output).split())
+
+    def test_resolve_rejects_empty_command_segments(self, project_dir):
+        """Dotted command identifiers cannot contain empty path-like segments."""
+        result = self._invoke(
+            project_dir,
+            ["preset", "resolve", "speckit..constitution"],
+        )
+
+        assert result.exit_code == 1
+        assert "invalid template name" in strip_ansi(result.output)
+
+    def test_resolve_escapes_layer_path_and_source(self, project_dir):
+        """The top-layer path/source lines must render markup literally.
+
+        A preset can be installed from any directory, so the resolved path can
+        contain ``[...]``; the layer source carries the pack id and version.
+        """
+        from unittest.mock import patch
+        from specify_cli.presets import PresetResolver
+
+        # A closing tag cannot live inside a path segment: `Path` treats its
+        # `/` as a separator on POSIX and rewrites it to `\` on Windows. The
+        # opening tag covers the swallowing case for the path; the unbalanced
+        # closing tag rides on `source`, which is a plain string.
+        layer = {
+            "path": Path("/tmp/[red]dir/spec-template.md"),
+            "source": "pack [/red] v1.0.0",
+            "strategy": "replace",
+        }
+        with patch.object(PresetResolver, "collect_all_layers", return_value=[layer]):
+            result = self._invoke(project_dir, ["preset", "resolve", "spec-template"])
+
+        assert result.exit_code == 0, (result.output, result.exception)
+        output = " ".join(strip_ansi(result.output).split())
+        assert "[red]dir" in output, output
+        assert "pack [/red] v1.0.0" in output, output
+
+    def test_resolve_escapes_fallback_path_and_source(self, project_dir):
+        """The no-layer fallback branch must escape ``resolve_with_source`` output."""
+        from unittest.mock import patch
+        from specify_cli.presets import PresetResolver
+
+        with patch.object(
+            PresetResolver, "collect_all_layers", return_value=[]
+        ), patch.object(
+            PresetResolver,
+            "resolve_with_source",
+            return_value={
+                "path": "/tmp/[blue]fallback[/blue]/spec-template.md",
+                "source": "fallback [/red] source",
+            },
+        ):
+            result = self._invoke(project_dir, ["preset", "resolve", "spec-template"])
+
+        assert result.exit_code == 0, (result.output, result.exception)
+        output = " ".join(strip_ansi(result.output).split())
+        assert "[blue]fallback[/blue]" in output, output
+        assert "fallback [/red] source" in output, output
+
+    def test_resolve_escapes_composition_error(self, project_dir):
+        """A composition exception message must not be parsed as markup."""
+        from unittest.mock import patch
+        from specify_cli.presets import PresetResolver
+
+        layers = [
+            {
+                "path": Path("/tmp/top/spec-template.md"),
+                "source": "top-pack v1.0.0",
+                "strategy": "append",
+            },
+            {
+                "path": Path("/tmp/base/spec-template.md"),
+                "source": "base-pack v1.0.0",
+                "strategy": "append",
+            },
+        ]
+        with patch.object(
+            PresetResolver, "collect_all_layers", return_value=layers
+        ), patch.object(
+            PresetResolver,
+            "resolve_content",
+            side_effect=RuntimeError("compose failed: [/red] bad layer"),
+        ):
+            result = self._invoke(project_dir, ["preset", "resolve", "spec-template"])
+
+        assert result.exit_code == 0, (result.output, result.exception)
+        output = " ".join(strip_ansi(result.output).split())
+        assert "compose failed: [/red] bad layer" in output, output
+
+    def test_resolve_renders_composition_strategy_labels(self, temp_dir, project_dir):
+        """The composition chain's ``[<strategy>]`` label must not be eaten as a tag."""
+        self._install(temp_dir, project_dir, strategy="replace",
+                      pack_id="base-pack", priority=20)
+        self._install(temp_dir, project_dir, strategy="append",
+                      pack_id="app-pack", priority=5)
+
+        result = self._invoke(project_dir, ["preset", "resolve", "spec-template"])
+        assert result.exit_code == 0, (result.output, result.exception)
+        output = strip_ansi(result.output)
+        assert "Composition chain" in output, output
+        assert "[base]" in output, output
+        assert "[append]" in output, output
+
+
+class TestPresetListOrdering:
+    """``preset list`` must print presets in actual resolution/precedence order.
+
+    Regression coverage for #4086: the printed order was registry/insertion
+    order, so a preset with a *higher* priority number (lower precedence) could
+    appear before one with a lower number, misleading users about which preset
+    wins. Output must be sorted by (priority, id) to match
+    ``PresetRegistry.list_by_priority()``.
+    """
+
+    def _install(self, temp_dir, project_dir, pack_id, priority):
+        from specify_cli.presets import PresetManager
+
+        src = temp_dir / f"src-{pack_id}"
+        (src / "templates").mkdir(parents=True)
+        (src / "templates" / "spec-template.md").write_text("# tmpl\n")
+        (src / "preset.yml").write_text(yaml.dump({
+            "schema_version": "1.0",
+            "preset": {
+                "id": pack_id,
+                "name": pack_id,
+                "version": "1.0.0",
+                "description": "plain description",
+            },
+            "requires": {"speckit_version": ">=0.0.1"},
+            "provides": {"templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+            }]},
+        }))
+        PresetManager(project_dir).install_from_directory(src, "9.9.9", priority)
+
+    def _invoke(self, project_dir, args):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            return CliRunner().invoke(app, args)
+
+    def test_list_sorted_by_priority(self, temp_dir, project_dir):
+        """Lower priority number is listed first regardless of install order."""
+        # Install in an order that does NOT match precedence.
+        self._install(temp_dir, project_dir, "copilot-sub-agents", priority=100)
+        self._install(temp_dir, project_dir, "lean", priority=10)
+
+        result = self._invoke(project_dir, ["preset", "list"])
+        assert result.exit_code == 0, result.output
+        output = strip_ansi(result.output)
+        # `lean` (priority 10) must appear before `copilot-sub-agents` (100).
+        assert output.index("(lean)") < output.index("(copilot-sub-agents)"), output
+        assert "resolution order" in output, output
+        assert "Ties are broken by preset id" in output, output
+
+    def test_list_ties_broken_by_id(self, temp_dir, project_dir):
+        """Equal priority ties are broken alphabetically by preset id."""
+        self._install(temp_dir, project_dir, "zebra", priority=10)
+        self._install(temp_dir, project_dir, "alpha", priority=10)
+
+        result = self._invoke(project_dir, ["preset", "list"])
+        assert result.exit_code == 0, result.output
+        output = strip_ansi(result.output)
+        assert output.index("(alpha)") < output.index("(zebra)"), output
+
+
+class TestConstitutionSyncPreset:
+    """The bundled opt-in ``constitution-sync`` preset re-adds materialization.
+
+    Follow-up to #3790: core ``/constitution`` no longer propagates guidance
+    into templates. Issue #3950 also gates install-time constitution seeding on
+    this preset. Its command override remains a ``wrap`` of core so it stays
+    forward-compatible with core changes.
+    """
+
+    PRESET_DIR = Path(__file__).parent.parent / "presets" / "constitution-sync"
+
+    def test_manifest_provides_wrap_of_constitution(self):
+        manifest = yaml.safe_load((self.PRESET_DIR / "preset.yml").read_text())
+        assert manifest["preset"]["id"] == "constitution-sync"
+        entries = manifest["provides"]["templates"]
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["type"] == "command"
+        assert entry["name"] == "speckit.constitution"
+        assert entry["strategy"] == "wrap"
+        # Must target the post-#3790 baseline so propagation is not double-applied.
+        assert manifest["requires"]["speckit_version"] == ">=0.14.4"
+
+    def test_wrapper_uses_core_template_and_propagates(self):
+        text = (self.PRESET_DIR / "commands" / "speckit.constitution.md").read_text()
+
+        # Parse the Markdown frontmatter as YAML rather than substring-matching,
+        # so `strategy: wrap` is asserted structurally (not as text that could
+        # appear in the body) and {CORE_TEMPLATE} is asserted in the body only.
+        assert text.startswith("---\n")
+        _, frontmatter_block, body = text.split("---", 2)
+        frontmatter = yaml.safe_load(frontmatter_block)
+        assert frontmatter["strategy"] == "wrap"
+
+        assert "{CORE_TEMPLATE}" in body
+        assert "strategy: wrap" not in body  # only in frontmatter
+        # The three governed scaffolds the old checklist propagated into.
+        assert "plan-template.md" in body
+        assert "spec-template.md" in body
+        assert "tasks-template.md" in body
+        # Must not mutate versioned preset/extension artifacts.
+        assert "Do not edit versioned preset- or extension-provided template or command files" in body
+
+    def test_catalog_lists_bundled_preset(self):
+        manifest = yaml.safe_load((self.PRESET_DIR / "preset.yml").read_text())
+        catalog = json.loads((self.PRESET_DIR.parent / "catalog.json").read_text())
+        entry = catalog["presets"]["constitution-sync"]
+        assert entry["bundled"] is True
+        assert entry["version"] == manifest["preset"]["version"]
+        assert entry["provides"]["commands"] == 1
+        assert entry["provides"]["templates"] == 0
+
+    def test_wrap_composes_over_core_constitution(self, project_dir):
+        """Installing the preset yields a wrap layer atop the bundled core."""
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(self.PRESET_DIR, "0.15.0")
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("speckit.constitution", "command")
+        assert len(layers) >= 2, "expected preset wrap layer plus a core base"
+        assert layers[0]["strategy"] == "wrap"
+        assert any("constitution-sync" in str(layer["path"]) for layer in layers)
+        assert layers[-1]["source"] == "core (bundled)"
+
+    def test_resolved_content_embeds_core_and_sync_pass(self, project_dir):
+        """resolve_content substitutes {CORE_TEMPLATE} so the effective command
+        contains both the bundled core body and the propagation pass."""
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(self.PRESET_DIR, "0.15.0")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("speckit.constitution", "command")
+        assert content is not None
+        # {CORE_TEMPLATE} must be replaced, not left literal.
+        assert "{CORE_TEMPLATE}" not in content
+        # Core body is present (distinctive core-only heading).
+        assert "## Scope Guard" in content
+        # The wrapper's propagation pass is present and supersedes the guard.
+        assert "## Constitution Template Sync" in content
+        assert "supersedes the \"Scope Guard\" above" in content
+        assert "plan-template.md" in content

@@ -18,7 +18,7 @@ from specify_cli._version import (
     _verify_upgrade,
 )
 from tests.conftest import strip_ansi
-from tests.http_helpers import mock_urlopen_response
+from tests.http_helpers import mock_urlopen_response, route_opener_open_through_urlopen
 
 __all__ = (
     "SENTINEL_GH_TOKEN",
@@ -31,6 +31,7 @@ __all__ = (
     "_verify_upgrade",
     "mock_urlopen_response",
     "requires_posix",
+    "route_opener_open_through_urlopen",
     "runner",
     "strip_ansi",
 )

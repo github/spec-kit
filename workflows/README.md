@@ -78,7 +78,7 @@ specify workflow run speckit \
 
 ## Step Types
 
-Workflows support 10 built-in step types:
+Workflows support 11 built-in step types:
 
 ### Command Steps (default)
 
@@ -111,7 +111,43 @@ Run a shell command and capture output:
 ```yaml
 - id: run-tests
   type: shell
-  run: "cd {{ inputs.project_dir }} && npm test"
+  run: "npm test"       # runs from the project root; no interpolation needed
+  timeout: 1800   # Optional: max seconds before the command is killed (default 300)
+```
+
+> ⚠️ **Constrain interpolated values in `run` fields.** A `run` field is executed
+> by the system shell, and `{{ ... }}` expressions are substituted as raw text
+> with no automatic quoting or escaping. An `inputs.*` value or prior-step output
+> (including AI-generated `prompt` output) is parsed as shell syntax and can
+> change the command that runs. The only reliable control is to restrict such a
+> value at the source with an `enum`/allowlist, or to keep values you cannot
+> constrain out of `run` entirely. Quoting a substitution helps a trusted value
+> survive word-splitting but is **not** a security boundary — there is no
+> shell-escaping filter, and a value containing the matching quote can still
+> break out. See
+> [Interpolation and shell safety](../docs/reference/workflows.md#interpolation-and-shell-safety).
+
+`timeout` is the maximum time in seconds the command may run before it is
+killed and the step fails; it must be a positive number and defaults to
+`300` (five minutes) when omitted. Raise it for long-running gates such as
+full builds, linter aggregators, or integration-test targets.
+
+### Init Steps
+
+Bootstrap a project the same way `specify init` does — scaffolding
+templates, scripts, shared infrastructure, and the selected coding agent
+integration. Runs non-interactively (defaults to `--ignore-agent-tools`)
+and resolves the integration from the step config or the workflow default:
+
+```yaml
+- id: bootstrap
+  type: init
+  here: true                 # or: project: my-project
+  integration: copilot       # Optional: defaults to workflow integration
+  integration_options: "--skills"  # Optional: extra options for the integration
+  script: sh                 # Optional: sh or ps
+  force: true                # Optional: required when target directory already exists
+  preset: healthcare-compliance   # Optional preset ID
 ```
 
 ### Gate Steps
@@ -314,7 +350,7 @@ condition: "{{ steps.run-tests.output.exit_code != 0 }}"
 message: "{{ status | default('pending') }}"
 ```
 
-Supported filters: `default`, `join`, `contains`, `map`.
+Supported filters: `default`, `join`, `contains`, `map`, `from_json`.
 
 ### Runtime Context
 
@@ -324,6 +360,7 @@ current run:
 | Variable | Description |
 |----------|-------------|
 | `context.run_id` | The current workflow run id (the same value Spec Kit prints as `Run ID:` at the end of `workflow run`). Auto-generated runs are 8-character hex from `uuid4`; operator-supplied ids may be any alphanumeric string with hyphens or underscores. Empty string outside a run context. |
+| `context.workflow_dir` | The resolved absolute path to the directory containing the workflow source file. For file-loaded workflows this is the parent directory of the YAML file; for installed-by-ID workflows it is the absolute path to the installation directory (e.g. `<project>/.specify/workflows/<id>/`); for string-loaded workflows it is an empty string. On resume the original source directory is preserved from the first execution. |
 
 ```yaml
 # Stamp telemetry events with the run id for cross-system join.
@@ -341,6 +378,11 @@ current run:
   command: speckit.specify
   input:
     args: "{{ context.run_id }}"
+
+# Reference a sibling file shipped alongside the workflow definition.
+- id: apply-config
+  type: shell
+  run: 'cp "{{ context.workflow_dir }}/defaults.yml" ./config.yml'
 ```
 
 ## Input Types
@@ -421,6 +463,7 @@ specify workflow catalog remove <index>
 | Variable | Description |
 |----------|-------------|
 | `SPECKIT_WORKFLOW_CATALOG_URL` | Override the catalog URL (replaces all defaults) |
+| `SPECKIT_WORKFLOW_DIR` | Set automatically for shell steps; contains the resolved absolute path to the workflow source directory (same value as `{{ context.workflow_dir }}`). Not set when the workflow has no source path (string-loaded workflows). |
 
 ## Configuration Files
 

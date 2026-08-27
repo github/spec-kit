@@ -8,4 +8,3 @@ class TestTabnineIntegration(TomlIntegrationTests):
     FOLDER = ".tabnine/agent/"
     COMMANDS_SUBDIR = "commands"
     REGISTRAR_DIR = ".tabnine/agent/commands"
-    CONTEXT_FILE = "TABNINE.md"

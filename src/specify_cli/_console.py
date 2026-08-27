@@ -7,6 +7,8 @@ layer, not out of it, to avoid circular imports.
 """
 from __future__ import annotations
 
+import logging
+import sys
 from collections.abc import Callable
 
 import readchar
@@ -20,6 +22,8 @@ from rich.text import Text
 from rich.tree import Tree
 from typer.core import TyperGroup
 
+logger = logging.getLogger(__name__)
+
 BANNER = """
 ███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗
 ██╔════╝██╔══██╗██╔════╝██╔════╝██║██╔════╝╚██╗ ██╔╝
@@ -32,6 +36,10 @@ BANNER = """
 TAGLINE = "GitHub Spec Kit - Spec-Driven Development Toolkit"
 
 console = Console(highlight=False)
+
+# Stderr-bound console for error/diagnostic output, so human-facing messages
+# never contaminate stdout (which carries machine-readable ``--json`` payloads).
+err_console = Console(stderr=True, highlight=False)
 
 class StepTracker:
     """Track and render hierarchical steps without emojis, similar to Claude Code tree output.
@@ -80,7 +88,7 @@ class StepTracker:
             try:
                 self._refresh_cb()
             except Exception:
-                pass
+                logger.debug("Progress tracker refresh failed", exc_info=True)
 
     def render(self):
         tree = Tree(f"[cyan]{self.title}[/cyan]", guide_style="grey50")
@@ -143,6 +151,8 @@ def select_with_arrows(
     options: dict[str, str],
     prompt_text: str = "Select an option",
     default_key: str | None = None,
+    *,
+    flag_hint: str | None = None,
 ) -> str:
     """
     Interactive selection using arrow keys with Rich Live display.
@@ -151,12 +161,29 @@ def select_with_arrows(
         options: Dict with keys as option keys and values as descriptions
         prompt_text: Text to show above the options
         default_key: Default option key to start with
+        flag_hint: CLI flag the caller can pass instead of answering this prompt.
+            Included in the error when stdin is not a TTY so the hang is replaced
+            by an actionable message.
 
     Returns:
         Selected option key
     """
     if not options:
         raise ValueError("select_with_arrows() requires at least one option.")
+
+    # readchar.readkey() blocks forever when stdin is not a TTY. Fail immediately
+    # instead of hanging CI jobs and agent harnesses with no keyboard.
+    if not sys.stdin.isatty():
+        console.print(
+            "[red]Error:[/red] Interactive selection requires a terminal "
+            "(stdin is not a TTY). Waiting for arrow keys would hang indefinitely."
+        )
+        if flag_hint:
+            console.print(
+                f"Re-run with [bold]{flag_hint}[/bold] to supply this choice "
+                "non-interactively."
+            )
+        raise typer.Exit(1)
 
     option_keys = list(options.keys())
     if default_key and default_key in option_keys:
@@ -192,7 +219,8 @@ def select_with_arrows(
 
     def run_selection_loop():
         nonlocal selected_key, selected_index
-        with Live(create_selection_panel(), console=console, transient=True, auto_refresh=False) as live:
+        _transient = sys.platform != "win32"
+        with Live(create_selection_panel(), console=console, transient=_transient, auto_refresh=False) as live:
             while True:
                 try:
                     key = get_key()

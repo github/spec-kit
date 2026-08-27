@@ -1,6 +1,5 @@
 """Tests for ClaudeIntegration."""
 
-import codecs
 import json
 import os
 from pathlib import Path
@@ -10,7 +9,7 @@ import yaml
 
 from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
 from specify_cli.integrations.base import IntegrationBase, SkillsIntegration
-from specify_cli.integrations.claude import ARGUMENT_HINTS
+from specify_cli.integrations.claude import ARGUMENT_HINTS, FORK_CONTEXT_COMMANDS
 from specify_cli.integrations.manifest import IntegrationManifest
 
 
@@ -33,10 +32,6 @@ class TestClaudeIntegration:
         assert integration.registrar_config["format"] == "markdown"
         assert integration.registrar_config["args"] == "$ARGUMENTS"
         assert integration.registrar_config["extension"] == "/SKILL.md"
-
-    def test_context_file(self):
-        integration = get_integration("claude")
-        assert integration.context_file == "CLAUDE.md"
 
     def test_setup_creates_skill_files(self, tmp_path):
         integration = get_integration("claude")
@@ -66,57 +61,40 @@ class TestClaudeIntegration:
         assert parsed["disable-model-invocation"] is False
         assert parsed["metadata"]["source"] == "templates/commands/plan.md"
 
-    def test_setup_upserts_context_section(self, tmp_path):
+    def test_render_skill_unicode(self):
+        """Test rendering a skill preserves non-ASCII characters."""
+        integration = get_integration("claude")
+        rendered = integration._render_skill(
+            "constitution",
+            {"description": "Prüfe Konformität der Implementierung"},
+            "Body",
+        )
+        assert "Prüfe Konformität" in rendered
+
+    def test_setup_does_not_write_context_section(self, tmp_path):
+        """The CLI no longer manages the agent context file — that is owned by
+        the opt-in agent-context extension. Setup must not create or touch it."""
         integration = get_integration("claude")
         manifest = IntegrationManifest("claude", tmp_path)
         integration.setup(tmp_path, manifest, script_type="sh")
 
-        ctx_path = tmp_path / integration.context_file
-        assert ctx_path.exists()
-        content = ctx_path.read_text(encoding="utf-8")
-        assert "<!-- SPECKIT START -->" in content
-        assert "<!-- SPECKIT END -->" in content
-        assert "read the current plan" in content
+        for path in tmp_path.rglob("*"):
+            if path.is_file():
+                text = path.read_text(encoding="utf-8", errors="ignore")
+                assert "<!-- SPECKIT START -->" not in text
 
-    def test_upsert_context_section_strips_bom(self, tmp_path):
-        """Existing context file with UTF-8 BOM must be cleaned up on upsert."""
+    def test_teardown_does_not_touch_existing_context_file(self, tmp_path):
+        """A user-authored context file is left intact on teardown."""
         integration = get_integration("claude")
-        ctx_path = tmp_path / integration.context_file
+        ctx_path = tmp_path / "CLAUDE.md"
+        original = "# CLAUDE.md\n\nUser content.\n"
+        ctx_path.write_text(original, encoding="utf-8")
 
-        # Write a file that starts with a UTF-8 BOM (as the old PowerShell script did)
-        bom = codecs.BOM_UTF8
-        ctx_path.write_bytes(bom + b"# CLAUDE.md\n\nSome existing content.\n")
+        manifest = IntegrationManifest("claude", tmp_path)
+        integration.setup(tmp_path, manifest, script_type="sh")
+        integration.teardown(tmp_path, manifest)
 
-        integration.upsert_context_section(tmp_path)
-
-        result = ctx_path.read_bytes()
-        assert not result.startswith(bom), "BOM must be stripped after upsert"
-        content = result.decode("utf-8")
-        assert "<!-- SPECKIT START -->" in content
-        assert "Some existing content." in content
-
-    def test_remove_context_section_strips_bom(self, tmp_path):
-        """remove_context_section must clean BOM from context file on Windows-authored files."""
-        integration = get_integration("claude")
-        ctx_path = tmp_path / integration.context_file
-
-        marker_content = (
-            "# CLAUDE.md\n\n"
-            "<!-- SPECKIT START -->\n"
-            "For additional context about technologies to be used, project structure,\n"
-            "shell commands, and other important information, read the current plan\n"
-            "<!-- SPECKIT END -->\n"
-        )
-        ctx_path.write_bytes(codecs.BOM_UTF8 + marker_content.encode("utf-8"))
-
-        result = integration.remove_context_section(tmp_path)
-
-        assert result is True
-        assert ctx_path.exists(), "File should exist (non-empty content remains)"
-        remaining = ctx_path.read_bytes()
-        assert not remaining.startswith(codecs.BOM_UTF8), "BOM must be stripped after remove"
-        assert b"<!-- SPECKIT" not in remaining
-        assert b"# CLAUDE.md" in remaining
+        assert ctx_path.read_text(encoding="utf-8") == original
 
     def test_integration_flag_creates_skill_files_cli(self, tmp_path):
         from typer.testing import CliRunner
@@ -325,24 +303,36 @@ class TestClaudeIntegration:
         assert "disable-model-invocation: false" in content
 
         metadata = manager.registry.get("claude-skill-command")
-        assert "speckit-research" in metadata.get("registered_skills", [])
+        assert "speckit-research" in metadata.get("registered_skills", {}).get("claude", [])
 
 
 class TestClaudeArgumentHints:
     """Verify that argument-hint frontmatter is injected for Claude skills."""
 
+    def test_converge_has_no_argument_hint(self):
+        """Converge should not advertise unsupported feature-name arguments."""
+        assert "converge" not in ARGUMENT_HINTS
+
     def test_all_skills_have_hints(self, tmp_path):
-        """Every generated SKILL.md must contain an argument-hint line."""
+        """Every skill with a configured hint must contain an argument-hint line."""
         i = get_integration("claude")
         m = IntegrationManifest("claude", tmp_path)
         created = i.setup(tmp_path, m, script_type="sh")
         skill_files = [f for f in created if f.name == "SKILL.md"]
         assert len(skill_files) > 0
         for f in skill_files:
+            stem = f.parent.name
+            if stem.startswith("speckit-"):
+                stem = stem[len("speckit-"):]
             content = f.read_text(encoding="utf-8")
-            assert "argument-hint:" in content, (
-                f"{f.parent.name}/SKILL.md is missing argument-hint frontmatter"
-            )
+            if stem in ARGUMENT_HINTS:
+                assert "argument-hint:" in content, (
+                    f"{f.parent.name}/SKILL.md is missing argument-hint frontmatter"
+                )
+            else:
+                assert "argument-hint:" not in content, (
+                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
+                )
 
     def test_hints_match_expected_values(self, tmp_path):
         """Each skill's argument-hint must match the expected text."""
@@ -356,13 +346,15 @@ class TestClaudeArgumentHints:
             if stem.startswith("speckit-"):
                 stem = stem[len("speckit-"):]
             expected_hint = ARGUMENT_HINTS.get(stem)
-            assert expected_hint is not None, (
-                f"No expected hint defined for skill '{stem}'"
-            )
             content = f.read_text(encoding="utf-8")
-            assert f'argument-hint: "{expected_hint}"' in content, (
-                f"{f.parent.name}/SKILL.md: expected hint '{expected_hint}' not found"
-            )
+            if expected_hint is None:
+                assert "argument-hint:" not in content, (
+                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
+                )
+            else:
+                assert f'argument-hint: "{expected_hint}"' in content, (
+                    f"{f.parent.name}/SKILL.md: expected hint '{expected_hint}' not found"
+                )
 
     def test_hint_is_inside_frontmatter(self, tmp_path):
         """argument-hint must appear between the --- delimiters, not in the body."""
@@ -376,12 +368,20 @@ class TestClaudeArgumentHints:
             assert len(parts) >= 3, f"No frontmatter in {f.parent.name}/SKILL.md"
             frontmatter = parts[1]
             body = parts[2]
-            assert "argument-hint:" in frontmatter, (
-                f"{f.parent.name}/SKILL.md: argument-hint not in frontmatter section"
-            )
-            assert "argument-hint:" not in body, (
-                f"{f.parent.name}/SKILL.md: argument-hint leaked into body"
-            )
+            stem = f.parent.name
+            if stem.startswith("speckit-"):
+                stem = stem[len("speckit-"):]
+            if stem in ARGUMENT_HINTS:
+                assert "argument-hint:" in frontmatter, (
+                    f"{f.parent.name}/SKILL.md: argument-hint not in frontmatter section"
+                )
+                assert "argument-hint:" not in body, (
+                    f"{f.parent.name}/SKILL.md: argument-hint leaked into body"
+                )
+            else:
+                assert "argument-hint:" not in content, (
+                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
+                )
 
     def test_hint_appears_after_description(self, tmp_path):
         """argument-hint must immediately follow the description line."""
@@ -392,6 +392,14 @@ class TestClaudeArgumentHints:
         for f in skill_files:
             content = f.read_text(encoding="utf-8")
             lines = content.splitlines()
+            stem = f.parent.name
+            if stem.startswith("speckit-"):
+                stem = stem[len("speckit-"):]
+            if stem not in ARGUMENT_HINTS:
+                assert "argument-hint:" not in content, (
+                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
+                )
+                continue
             found_description = False
             for idx, line in enumerate(lines):
                 if line.startswith("description:"):
@@ -442,6 +450,93 @@ class TestClaudeArgumentHints:
         lines = result.splitlines()
         hint_count = sum(1 for ln in lines if ln.startswith("argument-hint:"))
         assert hint_count == 1
+
+    def test_inject_argument_hint_survives_folded_description(self):
+        """A long description folded across lines must not corrupt the YAML (#4044).
+
+        A description long enough for the YAML dumper to fold it into a
+        multi-line plain scalar previously had ``argument-hint:`` spliced
+        into the *middle* of that scalar, producing invalid YAML.
+        """
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        frontmatter = {
+            "name": "speckit-specify",
+            "description": (
+                "Create or update the feature specification from a natural "
+                "language feature description. Also accepts an issue URL "
+                "resolved via gh CLI (demo customization)."
+            ),
+            "compatibility": "Requires spec-kit project structure with .specify/ directory",
+        }
+        frontmatter_text = yaml.safe_dump(
+            frontmatter, sort_keys=False, allow_unicode=True
+        ).strip()
+        content = f"---\n{frontmatter_text}\n---\n\nBody text\n"
+        assert "\n  " in content, "fixture description must actually fold across lines"
+
+        result = ClaudeIntegration.inject_argument_hint(content, "Describe the feature")
+
+        parsed = yaml.safe_load(result.split("---")[1])
+        assert parsed["argument-hint"] == "Describe the feature"
+        assert parsed["description"] == frontmatter["description"]
+
+    def test_inject_argument_hint_survives_quoted_folded_description(self):
+        """A folded description forced into quotes must not absorb the hint (#4044)."""
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        frontmatter = {
+            "name": "speckit-specify",
+            "description": (
+                "Create or update the feature specification from a natural "
+                "language feature description. Also accepts a GitHub "
+                "issue/PR URL or #N reference resolved via gh CLI (demo)."
+            ),
+            "compatibility": "Requires spec-kit project structure with .specify/ directory",
+        }
+        frontmatter_text = yaml.safe_dump(
+            frontmatter, sort_keys=False, allow_unicode=True
+        ).strip()
+        content = f"---\n{frontmatter_text}\n---\n\nBody text\n"
+        assert "\n  " in content, "fixture description must actually fold across lines"
+
+        result = ClaudeIntegration.inject_argument_hint(content, "Describe the feature")
+
+        parsed = yaml.safe_load(result.split("---")[1])
+        assert parsed["argument-hint"] == "Describe the feature"
+        assert parsed["description"] == frontmatter["description"]
+
+    def test_inject_argument_hint_survives_multi_paragraph_description(self):
+        """A description with an embedded blank line must not absorb the hint.
+
+        PyYAML serializes an embedded ``\\n\\n`` inside a quoted scalar as
+        unindented blank lines, not indented ones, so a fix that only skips
+        indented continuation lines still fails on this case.
+        """
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        frontmatter = {
+            "name": "speckit-specify",
+            "description": (
+                "First paragraph of a fairly long description that will "
+                "need to wrap across multiple lines when dumped by PyYAML."
+                "\n\n"
+                "Second paragraph continues the description after a blank "
+                "line separator to force embedded newlines in the scalar."
+            ),
+            "compatibility": "Requires spec-kit project structure with .specify/ directory",
+        }
+        frontmatter_text = yaml.safe_dump(
+            frontmatter, sort_keys=False, allow_unicode=True
+        ).strip()
+        content = f"---\n{frontmatter_text}\n---\n\nBody text\n"
+        assert "\n\n" in frontmatter_text, "fixture must produce a blank continuation line"
+
+        result = ClaudeIntegration.inject_argument_hint(content, "Describe the feature")
+
+        parsed = yaml.safe_load(result.split("---")[1])
+        assert parsed["argument-hint"] == "Describe the feature"
+        assert parsed["description"] == frontmatter["description"]
 
 
 class TestClaudeDisableModelInvocation:
@@ -494,6 +589,89 @@ class TestClaudeDisableModelInvocation:
             return  # agy not registered in this build
         content = "---\nname: test\n---\nBody"
         assert agy.post_process_skill_content(content) == content
+
+
+class TestClaudeForkContext:
+    """Verify context: fork is injected only for commands listed in FORK_CONTEXT_COMMANDS."""
+
+    def test_no_commands_fork_by_default(self):
+        """FORK_CONTEXT_COMMANDS is empty: no command opts into context: fork.
+
+        ``analyze`` was removed (#3185) because its verbose report defeated the
+        purpose of forking and compounded context overhead across repeated runs.
+        """
+        assert FORK_CONTEXT_COMMANDS == {}
+
+    def test_analyze_skill_does_not_fork(self, tmp_path):
+        """speckit-analyze must run in the main session, not a forked subagent (#3185)."""
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        i.setup(tmp_path, m, script_type="sh")
+        analyze_skill = tmp_path / ".claude/skills/speckit-analyze/SKILL.md"
+        assert analyze_skill.exists()
+        content = analyze_skill.read_text(encoding="utf-8")
+        parts = content.split("---", 2)
+        parsed = yaml.safe_load(parts[1])
+        assert "context" not in parsed
+        assert "agent" not in parsed
+
+    def test_no_skills_fork(self, tmp_path):
+        """Skills not in FORK_CONTEXT_COMMANDS must not get context: fork."""
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        created = i.setup(tmp_path, m, script_type="sh")
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        for f in skill_files:
+            stem = f.parent.name
+            if stem.startswith("speckit-"):
+                stem = stem[len("speckit-"):]
+            if stem in FORK_CONTEXT_COMMANDS:
+                continue
+            content = f.read_text(encoding="utf-8")
+            parts = content.split("---", 2)
+            parsed = yaml.safe_load(parts[1])
+            assert "context" not in parsed, (
+                f"{f.parent.name}: must not have context frontmatter"
+            )
+            assert "agent" not in parsed, (
+                f"{f.parent.name}: must not have agent frontmatter"
+            )
+
+    def test_post_process_no_fork_for_skills(self):
+        """With FORK_CONTEXT_COMMANDS empty, post_process must not add context/agent."""
+        i = get_integration("claude")
+        for name in ("speckit-analyze", "speckit-plan"):
+            content = f'---\nname: "{name}"\ndescription: "x"\n---\n\nBody\n'
+            result = i.post_process_skill_content(content)
+            parsed = yaml.safe_load(result.split("---", 2)[1])
+            assert "context" not in parsed
+            assert "agent" not in parsed
+
+    def test_fork_mechanism_injects_when_configured(self, monkeypatch):
+        """The injection mechanism still works for any command added to
+        FORK_CONTEXT_COMMANDS, even though none ships enabled by default."""
+        import specify_cli.integrations.claude as claude_mod
+
+        monkeypatch.setitem(
+            claude_mod.FORK_CONTEXT_COMMANDS,
+            "analyze",
+            {"context": "fork", "agent": "general-purpose"},
+        )
+        i = get_integration("claude")
+        content = '---\nname: "speckit-analyze"\ndescription: "x"\n---\n\nBody\n'
+        result = i.post_process_skill_content(content)
+        parts = result.split("---", 2)
+        parsed = yaml.safe_load(parts[1])
+        assert parsed.get("context") == "fork"
+        assert parsed.get("agent") == "general-purpose"
+        # Flags must land in the frontmatter, not the body.
+        assert "context: fork" in parts[1]
+        assert "context: fork" not in parts[2]
+        # Re-running must not duplicate the injected keys.
+        twice = i.post_process_skill_content(result)
+        assert result == twice
+        assert twice.count("context: fork") == 1
+        assert twice.count("agent: general-purpose") == 1
 
 
 class TestClaudeHookCommandNote:

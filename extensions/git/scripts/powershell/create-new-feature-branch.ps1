@@ -34,7 +34,21 @@ if ($Help) {
     Write-Host "Environment variables:"
     Write-Host "  GIT_BRANCH_NAME     Use this exact branch name, bypassing all prefix/suffix generation"
     Write-Host ""
+    Write-Host "Configuration:"
+    Write-Host "  branch_template     Optional git-config.yml template with {author}, {app}, {number}, {slug}"
+    Write-Host "  branch_prefix       Optional shorthand namespace expanded before {number}-{slug}"
+    Write-Host ""
     exit 0
+}
+
+# -Number is [long], so PowerShell binds "-5" as -5 rather than rejecting it
+# the way the bash/Python twins do (`^[0-9]+$`). A negative value would format
+# via '{0:000}' to e.g. "-005" and produce a branch name starting with "-",
+# which git refuses (refs cannot begin with a dash). Reject it here, before the
+# description check, matching the bash twin's parse-time validation order.
+if ($Number -lt 0) {
+    Write-Error 'Error: --number must be a non-negative integer'
+    exit 1
 }
 
 if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
@@ -67,11 +81,23 @@ function Get-HighestNumberFromSpecs {
 }
 
 function Get-HighestNumberFromNames {
-    param([string[]]$Names)
+    param(
+        [string[]]$Names,
+        [string]$ScopePrefix = ''
+    )
 
     [long]$highest = 0
     foreach ($name in $Names) {
-        if ($name -match '^(\d{3,})-' -and $name -notmatch '^\d{8}-\d{6}-') {
+        if ($ScopePrefix -and -not $name.StartsWith($ScopePrefix, [System.StringComparison]::Ordinal)) {
+            continue
+        }
+        if ($ScopePrefix) {
+            $name = $name.Substring($ScopePrefix.Length)
+        }
+        $name = ($name -split '/')[-1]
+        $hasTimestampPrefix = $name -match '^\d{8}-\d{6}-'
+        $hasMalformedTimestamp = ($name -match '^\d{7}-\d{6}-') -or ($name -match '^(?:\d{7}|\d{8})-\d{6}$')
+        if ($name -match '^(\d{3,})-' -and -not $hasTimestampPrefix -and -not $hasMalformedTimestamp) {
             [long]$num = 0
             if ([long]::TryParse($matches[1], [ref]$num) -and $num -gt $highest) {
                 $highest = $num
@@ -82,15 +108,15 @@ function Get-HighestNumberFromNames {
 }
 
 function Get-HighestNumberFromBranches {
-    param()
+    param([string]$ScopePrefix = '')
 
     try {
         $branches = git branch -a 2>$null
         if ($LASTEXITCODE -eq 0 -and $branches) {
             $cleanNames = $branches | ForEach-Object {
-                $_.Trim() -replace '^\*?\s+', '' -replace '^remotes/[^/]+/', ''
+                $_.Trim() -replace '^[+*]?\s+', '' -replace '^remotes/[^/]+/', ''
             }
-            return Get-HighestNumberFromNames -Names $cleanNames
+            return Get-HighestNumberFromNames -Names $cleanNames -ScopePrefix $ScopePrefix
         }
     } catch {
         Write-Verbose "Could not check Git branches: $_"
@@ -99,6 +125,8 @@ function Get-HighestNumberFromBranches {
 }
 
 function Get-HighestNumberFromRemoteRefs {
+    param([string]$ScopePrefix = '')
+
     [long]$highest = 0
     try {
         $remotes = git remote 2>$null
@@ -111,7 +139,7 @@ function Get-HighestNumberFromRemoteRefs {
                     $refNames = $refs | ForEach-Object {
                         if ($_ -match 'refs/heads/(.+)$') { $matches[1] }
                     } | Where-Object { $_ }
-                    $remoteHighest = Get-HighestNumberFromNames -Names $refNames
+                    $remoteHighest = Get-HighestNumberFromNames -Names $refNames -ScopePrefix $ScopePrefix
                     if ($remoteHighest -gt $highest) { $highest = $remoteHighest }
                 }
             }
@@ -125,18 +153,19 @@ function Get-HighestNumberFromRemoteRefs {
 function Get-NextBranchNumber {
     param(
         [string]$SpecsDir,
-        [switch]$SkipFetch
+        [switch]$SkipFetch,
+        [string]$ScopePrefix = ''
     )
 
     if ($SkipFetch) {
-        $highestBranch = Get-HighestNumberFromBranches
-        $highestRemote = Get-HighestNumberFromRemoteRefs
+        $highestBranch = Get-HighestNumberFromBranches -ScopePrefix $ScopePrefix
+        $highestRemote = Get-HighestNumberFromRemoteRefs -ScopePrefix $ScopePrefix
         $highestBranch = [Math]::Max($highestBranch, $highestRemote)
     } else {
         try {
             git fetch --all --prune 2>$null | Out-Null
         } catch { }
-        $highestBranch = Get-HighestNumberFromBranches
+        $highestBranch = Get-HighestNumberFromBranches -ScopePrefix $ScopePrefix
     }
 
     $highestSpec = Get-HighestNumberFromSpecs -SpecsDir $SpecsDir
@@ -197,7 +226,16 @@ if (-not $commonLoaded) {
     throw "Unable to locate common script file. Please ensure the Specify core scripts are installed."
 }
 
-# Resolve repository root
+# SPECIFY_INIT_DIR is resolved (and validated) by the core resolver. If only the
+# minimal git-common.ps1 was loaded, or an older core common.ps1 without the
+# resolver was loaded, refuse rather than silently falling back to the wrong root.
+if ($env:SPECIFY_INIT_DIR -and -not (Get-Command Resolve-SpecifyInitDir -CommandType Function -ErrorAction SilentlyContinue)) {
+    throw "SPECIFY_INIT_DIR requires updated Spec Kit core scripts (common.ps1 with Resolve-SpecifyInitDir), which were not found."
+}
+
+# Resolve repository root. When the core scripts are present, Get-RepoRoot
+# honors SPECIFY_INIT_DIR (the explicit project override for non-interactive /
+# CI use) and hard-fails on an invalid value with no silent fallback.
 if (Get-Command Get-RepoRoot -ErrorAction SilentlyContinue) {
     $repoRoot = Get-RepoRoot
 } elseif ($projectRoot) {
@@ -223,6 +261,145 @@ if (Get-Command Test-HasGit -ErrorAction SilentlyContinue) {
 Set-Location $repoRoot
 
 $specsDir = Join-Path $repoRoot 'specs'
+$configFile = Join-Path $repoRoot ".specify/extensions/git/git-config.yml"
+
+function Read-GitConfigValue {
+    param([string]$Key)
+
+    if (-not (Test-Path -LiteralPath $configFile -PathType Leaf)) { return '' }
+    $escapedKey = [regex]::Escape($Key)
+    foreach ($line in Get-Content -LiteralPath $configFile) {
+        if ($line -match "^\s*$escapedKey\s*:\s*(.*)$") {
+            $val = ($matches[1] -replace '\s+#.*$', '').Trim()
+            $val = $val -replace '^["'']', '' -replace '["'']$', ''
+            return $val
+        }
+    }
+    return ''
+}
+
+function ConvertTo-BranchToken {
+    param(
+        [string]$Value,
+        [string]$Fallback
+    )
+
+    $cleaned = ConvertTo-CleanBranchName -Name $Value
+    if ($cleaned) { return $cleaned }
+    return $Fallback
+}
+
+function Get-GitAuthorToken {
+    $author = ''
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        try { $author = (git config user.name 2>$null | Out-String).Trim() } catch {}
+        if (-not $author) {
+            try {
+                $email = (git config user.email 2>$null | Out-String).Trim()
+                if ($email) { $author = ($email -split '@')[0] }
+            } catch {}
+        }
+    }
+    if (-not $author) { $author = if ($env:USER) { $env:USER } elseif ($env:USERNAME) { $env:USERNAME } else { 'unknown' } }
+    return ConvertTo-BranchToken -Value $author -Fallback 'unknown'
+}
+
+function Get-AppToken {
+    return ConvertTo-BranchToken -Value (Split-Path $repoRoot -Leaf) -Fallback 'app'
+}
+
+function Resolve-BranchTemplate {
+    $template = Read-GitConfigValue -Key 'branch_template'
+    if ($template) { return $template }
+
+    $prefix = Read-GitConfigValue -Key 'branch_prefix'
+    if (-not $prefix) { return '' }
+    if ($prefix.EndsWith('/')) { return "${prefix}{number}-{slug}" }
+    return "$prefix/{number}-{slug}"
+}
+
+function Expand-BranchTemplate {
+    param(
+        [string]$Template,
+        [string]$FeatureNum,
+        [string]$BranchSuffix
+    )
+
+    $rendered = $Template.Replace('{author}', $authorToken)
+    $rendered = $rendered.Replace('{app}', $appToken)
+    $rendered = $rendered.Replace('{number}', $FeatureNum)
+    $rendered = $rendered.Replace('{slug}', $BranchSuffix)
+    return $rendered
+}
+
+function Assert-BranchTemplateValid {
+    param([string]$Template)
+
+    if ($Template -and -not $Template.Contains('{number}')) {
+        throw "branch_template must include the {number} token so generated branches remain valid feature branches."
+    }
+    if ($Template) {
+        $numberIndex = $Template.IndexOf('{number}', [System.StringComparison]::Ordinal)
+        $slugIndex = $Template.IndexOf('{slug}', [System.StringComparison]::Ordinal)
+        if ($slugIndex -ge 0 -and $slugIndex -lt $numberIndex) {
+            throw "branch_template must not place {slug} before {number}; use {slug} only in the final feature segment."
+        }
+        $featureSegment = ($Template -split '/')[-1]
+        if (-not $featureSegment.StartsWith('{number}-', [System.StringComparison]::Ordinal)) {
+            throw "branch_template must put {number}- at the start of the final path segment so generated branches remain valid feature branches."
+        }
+    }
+}
+
+function New-BranchName {
+    param(
+        [string]$FeatureNum,
+        [string]$BranchSuffix
+    )
+
+    if ($branchTemplate) {
+        return Expand-BranchTemplate -Template $branchTemplate -FeatureNum $FeatureNum -BranchSuffix $BranchSuffix
+    }
+    return "$FeatureNum-$BranchSuffix"
+}
+
+function Get-BranchScopePrefix {
+    param(
+        [string]$Template,
+        [string]$BranchSuffix
+    )
+
+    if (-not $Template) { return '' }
+    $numberIndex = $Template.IndexOf('{number}', [System.StringComparison]::Ordinal)
+    $slugIndex = $Template.IndexOf('{slug}', [System.StringComparison]::Ordinal)
+    $indexes = @($numberIndex, $slugIndex) | Where-Object { $_ -ge 0 } | Sort-Object
+    if (-not $indexes) { return '' }
+    $prefix = $Template.Substring(0, $indexes[0])
+    return Expand-BranchTemplate -Template $prefix -FeatureNum '' -BranchSuffix $BranchSuffix
+}
+
+function Get-FeatureNumberFromBranchName {
+    param([string]$BranchName)
+
+    $featureSegment = ($BranchName -split '/')[-1]
+    if ($featureSegment -match '^(\d{8}-\d{6})-') {
+        return $matches[1]
+    }
+    if ($featureSegment -match '^(\d+)-') {
+        return $matches[1]
+    }
+    return $BranchName
+}
+
+function Get-Utf8ByteCount {
+    param([string]$Value)
+    return [System.Text.Encoding]::UTF8.GetByteCount($Value)
+}
+
+$authorToken = Get-GitAuthorToken
+$appToken = Get-AppToken
+$branchTemplate = Resolve-BranchTemplate
+Assert-BranchTemplateValid -Template $branchTemplate
 
 function Get-BranchName {
     param([string]$Description)
@@ -243,7 +420,11 @@ function Get-BranchName {
         if ($stopWords -contains $word) { continue }
         if ($word.Length -ge 3) {
             $meaningfulWords += $word
-        } elseif ($Description -match "\b$($word.ToUpper())\b") {
+        } elseif ($Description -cmatch "\b$($word.ToUpper())\b") {
+            # Case-sensitive (-cmatch) to mirror the bash twin's case-sensitive
+            # whole-word acronym match: keep a short word only when its UPPERCASE
+            # form appears in the original (an acronym). -match is case-insensitive
+            # and would keep every short word.
             $meaningfulWords += $word
         }
     }
@@ -263,19 +444,11 @@ function Get-BranchName {
 if ($env:GIT_BRANCH_NAME) {
     $branchName = $env:GIT_BRANCH_NAME
     # Check 244-byte limit (UTF-8) for override names
-    $branchNameUtf8ByteCount = [System.Text.Encoding]::UTF8.GetByteCount($branchName)
+    $branchNameUtf8ByteCount = Get-Utf8ByteCount -Value $branchName
     if ($branchNameUtf8ByteCount -gt 244) {
         throw "GIT_BRANCH_NAME must be 244 bytes or fewer in UTF-8. Provided value is $branchNameUtf8ByteCount bytes; please supply a shorter override branch name."
     }
-    # Extract FEATURE_NUM from the branch name if it starts with a numeric prefix
-    # Check timestamp pattern first (YYYYMMDD-HHMMSS-) since it also matches the simpler ^\d+ pattern
-    if ($branchName -match '^(\d{8}-\d{6})-') {
-        $featureNum = $matches[1]
-    } elseif ($branchName -match '^(\d+)-') {
-        $featureNum = $matches[1]
-    } else {
-        $featureNum = $branchName
-    }
+    $featureNum = Get-FeatureNumberFromBranchName -BranchName $branchName
 } else {
     if ($ShortName) {
         $branchSuffix = ConvertTo-CleanBranchName -Name $ShortName
@@ -283,46 +456,54 @@ if ($env:GIT_BRANCH_NAME) {
         $branchSuffix = Get-BranchName -Description $featureDesc
     }
 
-    if ($Timestamp -and $Number -ne 0) {
+    # Warn if -Number and -Timestamp are both specified. Use ContainsKey (not
+    # `-ne 0`) so an explicit `-Number 0` is also detected, matching the bash twin's
+    # `[ -n "$BRANCH_NUMBER" ]` check.
+    if ($Timestamp -and $PSBoundParameters.ContainsKey('Number')) {
         Write-Warning "[specify] Warning: -Number is ignored when -Timestamp is used"
         $Number = 0
     }
 
     if ($Timestamp) {
         $featureNum = Get-Date -Format 'yyyyMMdd-HHmmss'
-        $branchName = "$featureNum-$branchSuffix"
+        $branchName = New-BranchName -FeatureNum $featureNum -BranchSuffix $branchSuffix
     } else {
-        if ($Number -eq 0) {
+        $branchScopePrefix = Get-BranchScopePrefix -Template $branchTemplate -BranchSuffix $branchSuffix
+        # Auto-detect the next number only when -Number was not supplied; an
+        # explicit value (including 0) is honored, matching the bash twin's
+        # `[ -z "$BRANCH_NUMBER" ]` check.
+        if (-not $PSBoundParameters.ContainsKey('Number')) {
             if ($DryRun -and $hasGit) {
-                $Number = Get-NextBranchNumber -SpecsDir $specsDir -SkipFetch
+                $Number = Get-NextBranchNumber -SpecsDir $specsDir -SkipFetch -ScopePrefix $branchScopePrefix
             } elseif ($DryRun) {
                 $Number = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
             } elseif ($hasGit) {
-                $Number = Get-NextBranchNumber -SpecsDir $specsDir
+                $Number = Get-NextBranchNumber -SpecsDir $specsDir -ScopePrefix $branchScopePrefix
             } else {
                 $Number = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
             }
         }
 
         $featureNum = ('{0:000}' -f $Number)
-        $branchName = "$featureNum-$branchSuffix"
+        $branchName = New-BranchName -FeatureNum $featureNum -BranchSuffix $branchSuffix
     }
 }
 
 $maxBranchLength = 244
-if ($branchName.Length -gt $maxBranchLength) {
-    $prefixLength = $featureNum.Length + 1
-    $maxSuffixLength = $maxBranchLength - $prefixLength
-
-    $truncatedSuffix = $branchSuffix.Substring(0, [Math]::Min($branchSuffix.Length, $maxSuffixLength))
-    $truncatedSuffix = $truncatedSuffix -replace '-$', ''
-
+if ((Get-Utf8ByteCount -Value $branchName) -gt $maxBranchLength) {
     $originalBranchName = $branchName
-    $branchName = "$featureNum-$truncatedSuffix"
+    $truncatedSuffix = $branchSuffix
+    while ((Get-Utf8ByteCount -Value $branchName) -gt $maxBranchLength -and $truncatedSuffix.Length -gt 0) {
+        $truncatedSuffix = $truncatedSuffix.Substring(0, $truncatedSuffix.Length - 1) -replace '-$', ''
+        $branchName = New-BranchName -FeatureNum $featureNum -BranchSuffix $truncatedSuffix
+    }
+    if ((Get-Utf8ByteCount -Value $branchName) -gt $maxBranchLength) {
+        throw "Branch template prefix exceeds GitHub's 244-byte branch name limit."
+    }
 
     Write-Warning "[specify] Branch name exceeded GitHub's 244-byte limit"
-    Write-Warning "[specify] Original: $originalBranchName ($($originalBranchName.Length) bytes)"
-    Write-Warning "[specify] Truncated to: $branchName ($($branchName.Length) bytes)"
+    Write-Warning "[specify] Original: $originalBranchName ($(Get-Utf8ByteCount -Value $originalBranchName) bytes)"
+    Write-Warning "[specify] Truncated to: $branchName ($(Get-Utf8ByteCount -Value $branchName) bytes)"
 }
 
 if (-not $DryRun) {
@@ -384,12 +565,20 @@ if (-not $DryRun) {
     $env:SPECIFY_FEATURE = $branchName
 }
 
+# Build the PowerShell-idiomatic persist hint, mirroring the core
+# create-new-feature.ps1 twin (and the bash/python twins of this script), which
+# all emit "# To persist in your shell: ...".
+$quotedBranchName = "'" + $branchName.Replace("'", "''") + "'"
+$featureAssignment = '$env:SPECIFY_FEATURE = ' + $quotedBranchName
+
 if ($Json) {
     $obj = [PSCustomObject]@{
         BRANCH_NAME = $branchName
         FEATURE_NUM = $featureNum
-        HAS_GIT = $hasGit
     }
+    # $hasGit is computed for branch-creation logic only; it is intentionally not
+    # emitted so this output contract matches the bash twin: BRANCH_NAME and
+    # FEATURE_NUM, plus DRY_RUN (added just below) on dry runs.
     if ($DryRun) {
         $obj | Add-Member -NotePropertyName 'DRY_RUN' -NotePropertyValue $true
     }
@@ -397,8 +586,7 @@ if ($Json) {
 } else {
     Write-Output "BRANCH_NAME: $branchName"
     Write-Output "FEATURE_NUM: $featureNum"
-    Write-Output "HAS_GIT: $hasGit"
     if (-not $DryRun) {
-        Write-Output "SPECIFY_FEATURE environment variable set to: $branchName"
+        Write-Output "# To persist in your shell: $featureAssignment"
     }
 }

@@ -18,13 +18,13 @@ from ..manifest import IntegrationManifest
 
 def format_forge_command_name(cmd_name: str) -> str:
     """Convert command name to Forge-compatible hyphenated format.
-    
+
     Forge requires command names to use hyphens instead of dots for
     compatibility with ZSH and other shells. This function converts
     dot-notation command names to hyphenated format.
-    
+
     The function is idempotent: already-formatted names are returned unchanged.
-    
+
     Examples:
         >>> format_forge_command_name("plan")
         'speckit-plan'
@@ -38,26 +38,26 @@ def format_forge_command_name(cmd_name: str) -> str:
         'speckit-my-extension-example'
         >>> format_forge_command_name("speckit.jira.sync-status")
         'speckit-jira-sync-status'
-    
+
     Args:
-        cmd_name: Command name in dot notation (speckit.foo.bar), 
+        cmd_name: Command name in dot notation (speckit.foo.bar),
                   hyphenated format (speckit-foo-bar), or plain name (foo)
-    
+
     Returns:
         Hyphenated command name with 'speckit-' prefix
     """
     # Already in hyphenated format - return as-is (idempotent)
     if cmd_name.startswith("speckit-"):
         return cmd_name
-    
+
     # Strip 'speckit.' prefix if present
     short_name = cmd_name
     if short_name.startswith("speckit."):
         short_name = short_name[len("speckit."):]
-    
+
     # Replace all dots with hyphens
     short_name = short_name.replace(".", "-")
-    
+
     # Return with 'speckit-' prefix
     return f"speckit-{short_name}"
 
@@ -89,8 +89,19 @@ class ForgeIntegration(MarkdownIntegration):
         "format_name": format_forge_command_name,  # Custom name formatter
         "invoke_separator": "-",
     }
-    context_file = "AGENTS.md"
     invoke_separator = "-"
+
+    def build_command_invocation(self, command_name: str, args: str = "") -> str:
+        """Forge installs hyphenated slash-commands (``/speckit-<name>``), so the
+        dispatch invocation must match. The inherited MarkdownIntegration default
+        builds the dotted ``/speckit.<name>``, which references a command Forge
+        never registered. Reuse the same hyphenation as the installed frontmatter
+        ``name`` (see ``format_forge_command_name``), mirroring the skills agents.
+        """
+        invocation = "/" + format_forge_command_name(command_name)
+        if args:
+            invocation = f"{invocation} {args}"
+        return invocation
 
     def setup(
         self,
@@ -134,8 +145,8 @@ class ForgeIntegration(MarkdownIntegration):
             # Process template with standard MarkdownIntegration logic
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=self.context_file or "",
                 invoke_separator=self.invoke_separator,
+                project_root=project_root,
             )
 
             # FORGE-SPECIFIC: Ensure any remaining $ARGUMENTS placeholders are
@@ -151,8 +162,6 @@ class ForgeIntegration(MarkdownIntegration):
             )
             created.append(dst_file)
 
-        # Upsert managed context section into the agent context file
-        self.upsert_context_section(project_root)
 
         return created
 

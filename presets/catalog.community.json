@@ -1,52 +1,52 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-05T00:00:00Z",
+  "updated_at": "2026-08-26T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
       "name": "A11Y Governance",
       "id": "a11y-governance",
-      "version": "0.3.0",
-      "description": "Adds accessibility, bilingual DE/EN delivery, CEFR-B2 readability, inclusive-content governance, and didactic inline-code-comment review to Spec Kit.",
+      "version": "0.4.3",
+      "description": "Adds WCAG 2.2 AA, accessible status output, bilingual CEFR-B2 delivery, inclusive-content and didactic-comment governance, and provider-neutral model routing.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-a11y-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-a11y-governance/archive/refs/tags/v0.3.0.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-a11y-governance/archive/refs/tags/v0.4.3.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-a11y-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-a11y-governance/blob/main/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-a11y-governance/blob/v0.4.3/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
       },
       "provides": {
-        "templates": 10,
+        "templates": 11,
         "commands": 3
       },
       "tags": [
         "a11y",
         "accessibility",
-        "bilingual",
         "wcag",
-        "inclusion"
+        "inclusion",
+        "model-routing"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-06-05T00:00:00Z"
+      "updated_at": "2026-08-12T00:00:00Z"
     },
     "agent-parity-governance": {
       "name": "Agent Parity Governance",
       "id": "agent-parity-governance",
-      "version": "0.2.0",
-      "description": "Keeps shared AI-agent guidance aligned and adds agent-neutral Spec Kit model-routing guidance across declared agent instruction surfaces.",
+      "version": "0.4.2",
+      "description": "Adds shared-guidance parity, fleet-completion evidence, secret-free runner metadata, audit-ready Spec Kit evidence, and agent-neutral model routing across declared AI-agent surfaces.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-agent-parity-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-agent-parity-governance/archive/refs/tags/v0.2.0.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-agent-parity-governance/archive/refs/tags/v0.4.2.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-agent-parity-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-agent-parity-governance/blob/main/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-agent-parity-governance/blob/v0.4.2/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
       },
       "provides": {
-        "templates": 9,
+        "templates": 7,
         "commands": 3
       },
       "tags": [
@@ -59,13 +59,13 @@
         "multi-agent"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-05-31T00:00:00Z"
+      "updated_at": "2026-08-13T00:00:00Z"
     },
     "aide-in-place": {
       "name": "AIDE In-Place Migration",
       "id": "aide-in-place",
       "version": "1.0.0",
-      "description": "Adapts the AIDE workflow for in-place technology migrations (X → Y pattern). Overrides vision, roadmap, progress, and work item commands with migration-specific guidance.",
+      "description": "Adapts the AIDE workflow for in-place technology migrations (X \u2192 Y pattern). Overrides vision, roadmap, progress, and work item commands with migration-specific guidance.",
       "author": "mnriem",
       "repository": "https://github.com/mnriem/spec-kit-presets",
       "download_url": "https://github.com/mnriem/spec-kit-presets/releases/download/aide-in-place-v1.0.0/aide-in-place.zip",
@@ -92,30 +92,59 @@
     "architecture-governance": {
       "name": "Architecture Governance",
       "id": "architecture-governance",
-      "version": "0.2.0",
-      "description": "Adds secure architecture governance, threat modeling, STRIDE/CAPEC, Zero Trust, S-ADRs, and OWASP SAMM to Spec Kit.",
+      "version": "0.5.2",
+      "description": "Adds secure architecture, STRIDE/CAPEC threat modeling, arc42/S-ADR guidance, Zero Trust, SAMM, BSI cloud assurance, audit evidence, and provider-neutral model routing.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-architecture-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-architecture-governance/archive/refs/tags/v0.2.0.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-architecture-governance/archive/refs/tags/v0.5.2.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-architecture-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-architecture-governance/blob/main/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-architecture-governance/blob/v0.5.2/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
       },
       "provides": {
-        "templates": 11,
+        "templates": 14,
         "commands": 3
       },
       "tags": [
         "architecture",
         "governance",
         "threat-modeling",
-        "stride",
-        "zero-trust"
+        "cloud",
+        "model-routing"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-04-27T00:00:00Z"
+      "updated_at": "2026-08-11T00:00:00Z"
+    },
+    "autonomous-run-governance": {
+      "name": "Autonomous Run Governance",
+      "id": "autonomous-run-governance",
+      "version": "0.4.1",
+      "description": "Adds permission-bounded autonomous delivery with validated delivery sets, semantic phase completion, and lifecycle-bound exact-head evidence.",
+      "author": "Thorsten Hindermann",
+      "repository": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance/archive/refs/tags/v0.4.1.zip",
+      "homepage": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance/blob/v0.4.1/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.3"
+      },
+      "provides": {
+        "templates": 15,
+        "commands": 5,
+        "scripts": 11
+      },
+      "tags": [
+        "autonomous",
+        "governance",
+        "evidence",
+        "permissions",
+        "sdd"
+      ],
+      "created_at": "2026-07-13T00:00:00Z",
+      "updated_at": "2026-08-19T00:00:00Z"
     },
     "canon-core": {
       "name": "Canon Core",
@@ -168,33 +197,115 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z"
     },
-    "cross-platform-governance": {
-      "name": "Cross-Platform Governance",
-      "id": "cross-platform-governance",
-      "version": "0.1.0",
-      "description": "Adds Bash and PowerShell parity, dry-run/WhatIf parity, man-page expectations, and Verb-Noun Cmdlet discipline.",
-      "author": "Thorsten Hindermann",
-      "repository": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance/archive/refs/tags/v0.1.0.zip",
-      "homepage": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance/blob/main/README.md",
+    "closed-vocabulary": {
+      "name": "Closed Vocabulary Check",
+      "id": "closed-vocabulary",
+      "version": "1.0.1",
+      "description": "Adds a pass to /speckit.analyze that flags closed sets of values enumerated more than once with different members, and reports its own coverage.",
+      "author": "Diego Gabriel Impieri",
+      "repository": "https://github.com/yunusdim/spec-kit-preset-closed-vocabulary",
+      "download_url": "https://github.com/yunusdim/spec-kit-preset-closed-vocabulary/archive/refs/tags/v1.0.1.zip",
+      "homepage": "https://github.com/yunusdim/spec-kit-preset-closed-vocabulary",
+      "documentation": "https://github.com/yunusdim/spec-kit-preset-closed-vocabulary/blob/main/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
       },
       "provides": {
-        "templates": 8,
+        "templates": 0,
+        "commands": 1
+      },
+      "tags": [
+        "analysis",
+        "consistency",
+        "vocabulary",
+        "verification"
+      ],
+      "created_at": "2026-08-19T00:00:00Z",
+      "updated_at": "2026-08-19T00:00:00Z"
+    },
+    "codebase-memory-context": {
+      "name": "Verified Codebase Context",
+      "id": "codebase-memory-context",
+      "version": "1.0.1",
+      "description": "Generates evidence-qualified repository context with codebase-memory-mcp and applies it across planning, tasks, analysis, and implementation.",
+      "author": "Xu Yin (philo-x)",
+      "repository": "https://github.com/philo-x/spec-kit-preset-codebase-memory-context",
+      "download_url": "https://github.com/philo-x/spec-kit-preset-codebase-memory-context/archive/refs/tags/v1.0.1.zip",
+      "homepage": "https://github.com/philo-x/spec-kit-preset-codebase-memory-context",
+      "documentation": "https://github.com/philo-x/spec-kit-preset-codebase-memory-context/blob/v1.0.1/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=1.0.1"
+      },
+      "provides": {
+        "templates": 1,
+        "commands": 5
+      },
+      "tags": [
+        "code-intelligence",
+        "codebase-memory",
+        "architecture",
+        "workflow"
+      ],
+      "created_at": "2026-08-26T00:00:00Z",
+      "updated_at": "2026-08-26T00:00:00Z"
+    },
+    "command-density": {
+      "name": "Command Density",
+      "id": "command-density",
+      "version": "1.0.0",
+      "description": "Compacts the nine core Spec Kit command prompts while preserving scripts, handoffs, placeholders, hook output blocks, and rule structure.",
+      "author": "Maksim Kudriavtsev",
+      "repository": "https://github.com/Xopoko/spec-kit-preset-command-density",
+      "download_url": "https://github.com/Xopoko/spec-kit-preset-command-density/archive/refs/tags/v1.0.0.zip",
+      "homepage": "https://github.com/Xopoko/spec-kit-preset-command-density",
+      "documentation": "https://github.com/Xopoko/spec-kit-preset-command-density/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.10.3"
+      },
+      "provides": {
+        "templates": 0,
+        "commands": 9
+      },
+      "tags": [
+        "commands",
+        "tokens",
+        "compact",
+        "workflow",
+        "prompt-density"
+      ],
+      "created_at": "2026-06-16T00:00:00Z",
+      "updated_at": "2026-06-16T00:00:00Z"
+    },
+    "cross-platform-governance": {
+      "name": "Cross-Platform Governance",
+      "id": "cross-platform-governance",
+      "version": "0.2.2",
+      "description": "Adds Bash/PowerShell parity, read-only checks, path and native-override review, Unix man pages, bilingual PowerShell help, and provider-neutral model routing.",
+      "author": "Thorsten Hindermann",
+      "repository": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance/archive/refs/tags/v0.2.2.zip",
+      "homepage": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance/blob/v0.2.2/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "templates": 9,
         "commands": 3
       },
       "tags": [
         "cross-platform",
+        "governance",
         "bash",
         "powershell",
-        "man-page",
-        "cmdlet"
+        "model-routing"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-04-27T00:00:00Z"
+      "updated_at": "2026-08-12T00:00:00Z"
     },
     "explicit-task-dependencies": {
       "name": "Explicit Task Dependencies",
@@ -261,11 +372,11 @@
     "game-narrative-writing": {
       "name": "Game Narrative Writing",
       "id": "game-narrative-writing",
-      "version": "1.0.0",
-      "description": "Spec-Driven Development for interactive game-narrative pre-production in video games. Authors write in a portable generic format, Twine/Sugarcube (.twee) or Ink (.ink). Covers choice-IF, visual novels, and branching dialogue. Supports Tier 1 mechanic hooks (flag, counter, inventory, timer, trust, currency, npc_state, ending_condition), multi-ending design, series carry-over variable registry, and NPC-focused character architecture.",
+      "version": "1.1.0",
+      "description": "Preset for game narrative design and interactive storytelling. It adapts the Spec-Driven Development workflow for game narratives: features become story mechanics, specs become narrative briefs, plans become story maps, and tasks become dialogue and scene-writing tasks. Supports branching narratives, player agency systems, state machines, and interactive dialogue trees.",
       "author": "Andreas Daumann",
       "repository": "https://github.com/adaumann/speckit-preset-game-narrative-writing",
-      "download_url": "https://github.com/adaumann/speckit-preset-game-narrative-writing/archive/refs/tags/v1.0.0.zip",
+      "download_url": "https://github.com/adaumann/speckit-preset-game-narrative-writing/releases/download/v1.1.0/v1.1.0-import.zip",
       "homepage": "https://github.com/adaumann/speckit-preset-game-narrative-writing",
       "documentation": "https://github.com/adaumann/speckit-preset-game-narrative-writing/blob/main/game-narrative-writing/README.md",
       "license": "MIT",
@@ -273,44 +384,155 @@
         "speckit_version": ">=0.5.0"
       },
       "provides": {
-        "templates": 22,
-        "commands": 36,
-        "scripts": 2
+        "templates": 37,
+        "commands": 34,
+        "scripts": 5
       },
       "tags": [
-        "game-writing",
         "interactive-fiction",
-        "twine",
-        "ink",
-        "renpy",
-        "point-and-click",
-        "branching-narrative",
-        "choice-if",
-        "visual-novel",
-        "mechanic-hooks",
         "game-narrative",
-        "export",
-        "series"
+        "branching",
+        "twine",
+        "ink"
       ],
       "created_at": "2026-05-05T08:00:00Z",
-      "updated_at": "2026-05-05T08:00:00Z"
+      "updated_at": "2026-06-22T00:00:00Z"
+    },
+    "intake-authoring-governance": {
+      "name": "Intake Authoring Governance",
+      "id": "intake-authoring-governance",
+      "version": "0.3.1",
+      "description": "Governs traceable intake CRUD, language-aware requirements collections, bounded public HTTPS sources, and explicitly approved single or series authoring.",
+      "author": "Thorsten Hindermann",
+      "repository": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/archive/refs/tags/v0.3.1.zip",
+      "homepage": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/blob/v0.3.1/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.3"
+      },
+      "provides": {
+        "templates": 13,
+        "commands": 5,
+        "scripts": 7
+      },
+      "tags": [
+        "intake",
+        "authoring",
+        "governance",
+        "requirements",
+        "migration"
+      ],
+      "created_at": "2026-07-22T00:00:00Z",
+      "updated_at": "2026-08-14T00:00:00Z"
+    },
+    "intake-review-governance": {
+      "name": "Intake Review Governance",
+      "id": "intake-review-governance",
+      "version": "0.2.1",
+      "description": "Reviews single, series, campaign, and language-aware requirements collections before Spec Kit execution.",
+      "author": "Thorsten Hindermann",
+      "repository": "https://github.com/hindermath/spec-kit-preset-intake-review-governance",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/archive/refs/tags/v0.2.1.zip",
+      "homepage": "https://github.com/hindermath/spec-kit-preset-intake-review-governance",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/blob/v0.2.1/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.3"
+      },
+      "provides": {
+        "templates": 9,
+        "commands": 3,
+        "scripts": 5
+      },
+      "tags": [
+        "intake",
+        "review",
+        "governance",
+        "requirements",
+        "quality-gate"
+      ],
+      "created_at": "2026-07-21T00:00:00Z",
+      "updated_at": "2026-08-17T00:00:00Z"
+    },
+    "intake-sequencing-governance": {
+      "name": "Intake Sequencing Governance",
+      "id": "intake-sequencing-governance",
+      "version": "0.2.3",
+      "description": "Manages language-aware intake-series order, typed dependencies, lifecycle, and authority-neutral next-candidate selection.",
+      "author": "Thorsten Hindermann",
+      "repository": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/archive/refs/tags/v0.2.3.zip",
+      "homepage": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/blob/v0.2.3/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.3"
+      },
+      "provides": {
+        "templates": 12,
+        "commands": 6,
+        "scripts": 8
+      },
+      "tags": [
+        "intake",
+        "sequencing",
+        "governance",
+        "dag",
+        "model-routing"
+      ],
+      "created_at": "2026-07-27T00:00:00Z",
+      "updated_at": "2026-08-20T00:00:00Z"
+    },
+    "inventory-alignment": {
+      "name": "Inventory Alignment",
+      "id": "inventory-alignment",
+      "version": "0.1.0",
+      "description": "Classifies each requirement against a read-only inventory of live IDs before writing, so reworded requirements are updated instead of duplicated.",
+      "author": "Yash Chindam",
+      "repository": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment",
+      "download_url": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/releases/download/v0.1.0/inventory-alignment.zip",
+      "sha256": "8ea62813aeb88d85001f54d91d8eceb011f5fb872bc764d5ea83e8e7ab92a2c1",
+      "homepage": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment",
+      "documentation": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/blob/main/inventory-alignment/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.9.0",
+        "extensions": [
+          "speckit-inventory"
+        ]
+      },
+      "provides": {
+        "templates": 1,
+        "commands": 2
+      },
+      "tags": [
+        "inventory",
+        "alignment",
+        "requirements",
+        "traceability",
+        "workflow"
+      ],
+      "created_at": "2026-08-20T00:00:00Z",
+      "updated_at": "2026-08-20T00:00:00Z"
     },
     "isaqb-architecture-governance": {
       "name": "iSAQB Architecture Governance",
       "id": "isaqb-architecture-governance",
-      "version": "0.1.0",
-      "description": "Adds general iSAQB/CPSA-F and arc42 architecture governance, including views, quality scenarios, ADRs, risks, and technical debt.",
+      "version": "0.2.2",
+      "description": "Adds iSAQB/CPSA-F and arc42 architecture governance, architecture views, quality scenarios, ADRs, risks, technical-debt evidence, and provider-neutral model routing.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/archive/refs/tags/v0.1.0.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/archive/refs/tags/v0.2.2.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/blob/main/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/blob/v0.2.2/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
       },
       "provides": {
-        "templates": 13,
+        "templates": 14,
         "commands": 3
       },
       "tags": [
@@ -318,10 +540,10 @@
         "governance",
         "isaqb",
         "arc42",
-        "adr"
+        "model-routing"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-04-27T00:00:00Z"
+      "updated_at": "2026-08-11T00:00:00Z"
     },
     "jira": {
       "name": "Jira Issue Tracking",
@@ -381,6 +603,35 @@
       "created_at": "2026-05-08T00:00:00Z",
       "updated_at": "2026-05-08T00:00:00Z"
     },
+    "model-routing-governance": {
+      "name": "Model Routing Governance",
+      "id": "model-routing-governance",
+      "version": "0.1.4",
+      "description": "Maps provider-neutral Spec Kit roles to validated harness-local runner profiles without storing model availability, credentials, or machine-specific selections in Git.",
+      "author": "Thorsten Hindermann",
+      "repository": "https://github.com/hindermath/spec-kit-preset-model-routing-governance",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-model-routing-governance/archive/refs/tags/v0.1.4.zip",
+      "homepage": "https://github.com/hindermath/spec-kit-preset-model-routing-governance",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-model-routing-governance/blob/v0.1.4/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.3"
+      },
+      "provides": {
+        "templates": 4,
+        "commands": 2,
+        "scripts": 2
+      },
+      "tags": [
+        "model-routing",
+        "agents",
+        "governance",
+        "provider-neutral",
+        "cross-platform"
+      ],
+      "created_at": "2026-08-10T00:00:00Z",
+      "updated_at": "2026-08-10T00:00:00Z"
+    },
     "multi-repo-branching": {
       "name": "Multi-Repo Branching",
       "id": "multi-repo-branching",
@@ -407,6 +658,35 @@
       ],
       "created_at": "2026-04-09T00:00:00Z",
       "updated_at": "2026-04-09T00:00:00Z"
+    },
+    "parallel-autonomous-run-governance": {
+      "name": "Parallel Autonomous Run Governance",
+      "id": "parallel-autonomous-run-governance",
+      "version": "0.2.6",
+      "description": "Coordinates isolated autonomous campaigns and optionally gates worker scheduling on a current campaign intake review.",
+      "author": "Thorsten Hindermann",
+      "repository": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance/archive/refs/tags/v0.2.6.zip",
+      "homepage": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance/blob/v0.2.6/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.3"
+      },
+      "provides": {
+        "templates": 10,
+        "commands": 5,
+        "scripts": 2
+      },
+      "tags": [
+        "parallel",
+        "autonomous",
+        "governance",
+        "orchestration",
+        "model-routing"
+      ],
+      "created_at": "2026-07-22T00:00:00Z",
+      "updated_at": "2026-08-24T00:00:00Z"
     },
     "pirate": {
       "name": "Pirate Speak (Full)",
@@ -437,7 +717,7 @@
       "name": "Screenwriting",
       "id": "screenwriting",
       "version": "1.0.0",
-      "description": "Spec-Driven Development for screenwriting/scriptwriting/tutorials: feature films, television (pilot, episode, limited series), and stage plays. Adapts the Spec Kit workflow to screenplay craft — slug lines, action lines, act breaks, beat sheets, and industry-standard pitch documents replace prose fiction conventions. Supports three-act, Save the Cat, TV pilot, network episode, cable/streaming episode, and stage-play structural frameworks.",
+      "description": "Spec-Driven Development for screenwriting/scriptwriting/tutorials: feature films, television (pilot, episode, limited series), and stage plays. Adapts the Spec Kit workflow to screenplay craft \u2014 slug lines, action lines, act breaks, beat sheets, and industry-standard pitch documents replace prose fiction conventions. Supports three-act, Save the Cat, TV pilot, network episode, cable/streaming episode, and stage-play structural frameworks.",
       "author": "Andreas Daumann",
       "repository": "https://github.com/adaumann/speckit-preset-screenwriting",
       "download_url": "https://github.com/adaumann/speckit-preset-screenwriting/archive/refs/tags/v1.0.0.zip",
@@ -474,53 +754,63 @@
     "security-governance": {
       "name": "Security Governance",
       "id": "security-governance",
-      "version": "0.4.0",
-      "description": "Adds memory-safe-language preference, language-specific secure coding profiles, ASVS verification, SBOM/AI-SBOM supply-chain transparency, and EU Cyber Resilience Act awareness.",
+      "version": "0.6.2",
+      "description": "Adds memory-safe-language and secure-coding governance, exact-head security evidence, ASVS, supply-chain transparency, EU regulatory screening, and provider-neutral model routing.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-security-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-security-governance/archive/refs/tags/v0.4.0.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-security-governance/archive/refs/tags/v0.6.2.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-security-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-security-governance/blob/main/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-security-governance/blob/v0.6.2/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
       },
       "provides": {
-        "templates": 12,
+        "templates": 15,
         "commands": 3
       },
       "tags": [
         "security",
         "governance",
-        "msl",
-        "ssdf",
-        "asvs",
-        "supply-chain",
-        "sbom",
-        "ai-sbom",
-        "vex",
-        "slsa",
-        "cwe-top-25",
         "secure-coding",
-        "rust",
-        "go",
-        "swift",
-        "java",
-        "kotlin",
-        "python",
-        "typescript",
-        "g7",
-        "bsi",
-        "cra"
+        "supply-chain",
+        "model-routing"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-05-26T00:00:00Z"
+      "updated_at": "2026-08-10T00:00:00Z"
+    },
+    "sicario-core": {
+      "name": "SicarioSpec Core",
+      "id": "sicario-core",
+      "version": "0.5.1",
+      "description": "Baseline secure-by-default Spec Kit governance profile.",
+      "author": "SicarioSpec Contributors",
+      "repository": "https://github.com/dfirs1car1o/sicario-spec",
+      "download_url": "https://github.com/dfirs1car1o/sicario-spec/releases/download/v0.5.1/sicario-core-0.5.1.zip",
+      "homepage": "https://github.com/dfirs1car1o/sicario-spec",
+      "documentation": "https://github.com/dfirs1car1o/sicario-spec/blob/main/presets/sicario-core/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "templates": 5,
+        "commands": 0
+      },
+      "tags": [
+        "governance",
+        "security-ops",
+        "secure-by-default",
+        "evidence"
+      ],
+      "created_at": "2026-06-22T00:00:00Z",
+      "updated_at": "2026-06-25T00:00:00Z"
     },
     "spec2cloud": {
       "name": "Spec2Cloud",
       "id": "spec2cloud",
       "version": "1.1.0",
-      "description": "Spec-driven workflow tuned for shipping to Azure: spec → plan → tasks → implement → deploy.",
+      "description": "Spec-driven workflow tuned for shipping to Azure: spec \u2192 plan \u2192 tasks \u2192 implement \u2192 deploy.",
       "author": "Azure Samples",
       "repository": "https://github.com/Azure-Samples/Spec2Cloud",
       "download_url": "https://github.com/Azure-Samples/Spec2Cloud/releases/download/spec-kit-spec2cloud-v1.1.0/preset.zip",
@@ -542,6 +832,61 @@
       ],
       "created_at": "2026-04-30T00:00:00Z",
       "updated_at": "2026-04-30T00:00:00Z"
+    },
+    "specassay": {
+      "name": "SpecAssay",
+      "id": "specassay",
+      "version": "0.4.12",
+      "description": "Appends durable-ID, Carries, and SpecAssay vocabulary onto Spec Kit spec, tasks, and constitution templates.",
+      "author": "Rik Dryfoos",
+      "repository": "https://github.com/rdryfoos/specassay",
+      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.4.12/specassay-preset-0.4.12.zip",
+      "homepage": "https://github.com/rdryfoos/specassay",
+      "documentation": "https://github.com/rdryfoos/specassay/blob/main/presets/specassay/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.14.0"
+      },
+      "provides": {
+        "templates": 3,
+        "commands": 0
+      },
+      "tags": [
+        "traceability",
+        "durable-ids",
+        "governance",
+        "sdd"
+      ],
+      "created_at": "2026-08-14T00:00:00Z",
+      "updated_at": "2026-08-21T00:00:00Z"
+    },
+    "test-first-governance": {
+      "name": "Test-First Governance",
+      "id": "test-first-governance",
+      "version": "1.3.0",
+      "description": "Governs TDD with coverage-complete BDD/ATDD Gherkin scenarios, explicit suite ownership, professional test reports, traceability, and risk-based quality gates.",
+      "author": "Zolt\u00e1n Katona, PhD",
+      "repository": "https://github.com/ka-zo/spec-kit-preset-test-first-governance",
+      "download_url": "https://github.com/ka-zo/spec-kit-preset-test-first-governance/archive/refs/tags/1.3.0.zip",
+      "homepage": "https://github.com/ka-zo/spec-kit-preset-test-first-governance",
+      "documentation": "https://github.com/ka-zo/spec-kit-preset-test-first-governance/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.12.11"
+      },
+      "provides": {
+        "templates": 10,
+        "commands": 8
+      },
+      "tags": [
+        "tdd",
+        "bdd",
+        "atdd",
+        "quality-gates",
+        "traceability"
+      ],
+      "created_at": "2026-07-13T00:00:00Z",
+      "updated_at": "2026-07-13T00:00:00Z"
     },
     "toc-navigation": {
       "name": "Table of Contents Navigation",
@@ -595,11 +940,11 @@
     "workflow-preset": {
       "name": "Workflow Preset",
       "id": "workflow-preset",
-      "version": "1.3.2",
-      "description": "Behavior-first specification, design artifacts, and agent-native handoff orchestration.",
+      "version": "1.3.11",
+      "description": "Behavior-first specification, design artifacts, and agent-native handoff orchestration",
       "author": "bigsmartben",
       "repository": "https://github.com/bigsmartben/spec-kit-workflow-preset",
-      "download_url": "https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.2/spec-kit-workflow-preset-v1.3.2.zip",
+      "download_url": "https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.11/spec-kit-workflow-preset-v1.3.11.zip",
       "homepage": "https://github.com/bigsmartben/spec-kit-workflow-preset",
       "documentation": "https://github.com/bigsmartben/spec-kit-workflow-preset/blob/main/README.md",
       "license": "MIT",
@@ -618,7 +963,7 @@
         "handoff"
       ],
       "created_at": "2026-05-27T00:00:00Z",
-      "updated_at": "2026-06-03T00:00:00Z"
+      "updated_at": "2026-06-30T00:00:00Z"
     }
   }
 }
