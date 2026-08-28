@@ -44,41 +44,6 @@
       "created_at": "2026-08-03T00:00:00Z",
       "updated_at": "2026-08-03T00:00:00Z"
     },
-    "aide": {
-      "name": "AI-Driven Engineering (AIDE)",
-      "id": "aide",
-      "description": "A structured 7-step workflow for building new projects from scratch with AI assistants — from vision through implementation.",
-      "author": "mnriem",
-      "version": "1.0.0",
-      "download_url": "https://github.com/mnriem/spec-kit-extensions/releases/download/aide-v1.0.0/aide.zip",
-      "repository": "https://github.com/mnriem/spec-kit-extensions",
-      "homepage": "https://github.com/mnriem/spec-kit-extensions",
-      "documentation": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/README.md",
-      "changelog": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/CHANGELOG.md",
-      "license": "MIT",
-      "category": "process",
-      "effect": "read-write",
-      "requires": {
-        "speckit_version": ">=0.2.0"
-      },
-      "provides": {
-        "commands": 7,
-        "hooks": 0
-      },
-      "tags": [
-        "workflow",
-        "project-management",
-        "ai-driven",
-        "new-project",
-        "planning",
-        "experimental"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-03-18T00:00:00Z",
-      "updated_at": "2026-03-18T00:00:00Z"
-    },
     "agent-assign": {
       "name": "Agent Assign",
       "id": "agent-assign",
@@ -271,6 +236,41 @@
       "stars": 0,
       "created_at": "2026-08-27T00:00:00Z",
       "updated_at": "2026-08-27T00:00:00Z"
+    },
+    "aide": {
+      "name": "AI-Driven Engineering (AIDE)",
+      "id": "aide",
+      "description": "A structured 7-step workflow for building new projects from scratch with AI assistants — from vision through implementation.",
+      "author": "mnriem",
+      "version": "1.0.0",
+      "download_url": "https://github.com/mnriem/spec-kit-extensions/releases/download/aide-v1.0.0/aide.zip",
+      "repository": "https://github.com/mnriem/spec-kit-extensions",
+      "homepage": "https://github.com/mnriem/spec-kit-extensions",
+      "documentation": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/README.md",
+      "changelog": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 7,
+        "hooks": 0
+      },
+      "tags": [
+        "workflow",
+        "project-management",
+        "ai-driven",
+        "new-project",
+        "planning",
+        "experimental"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-18T00:00:00Z",
+      "updated_at": "2026-03-18T00:00:00Z"
     },
     "analytics": {
       "name": "Analytics",
