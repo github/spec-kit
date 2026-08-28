@@ -677,7 +677,16 @@ def _resolve_event_command_argv(
         # subprocess.run(shell=False); invoke via `pwsh -File` (PowerShell 7+),
         # falling back to `powershell -File` (Windows PowerShell) when pwsh is
         # absent (S6). The default Windows script type would otherwise fail.
-        launcher = shutil.which("pwsh") or shutil.which("powershell") or "pwsh"
+        # When NEITHER is on PATH, degrade to "no argv" like every other
+        # failure branch in this resolver (and its documented stdlib mirror,
+        # the generated dispatcher's `_resolve_argv`) — a bare "pwsh" here
+        # would make subprocess.run() raise FileNotFoundError, surfacing as a
+        # confusing "[Errno 2] No such file or directory: 'pwsh'" instead of
+        # the clean "No script found for event command" the caller reports
+        # for a genuinely missing script.
+        launcher = shutil.which("pwsh") or shutil.which("powershell")
+        if not launcher:
+            return None
         return [launcher, "-File", str(script_abs), *rest_args]
 
     # sh: the script is chmod'd executable during install on POSIX. On Windows
