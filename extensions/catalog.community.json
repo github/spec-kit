@@ -44,6 +44,41 @@
       "created_at": "2026-08-03T00:00:00Z",
       "updated_at": "2026-08-03T00:00:00Z"
     },
+    "aide": {
+      "name": "AI-Driven Engineering (AIDE)",
+      "id": "aide",
+      "description": "A structured 7-step workflow for building new projects from scratch with AI assistants — from vision through implementation.",
+      "author": "mnriem",
+      "version": "1.0.0",
+      "download_url": "https://github.com/mnriem/spec-kit-extensions/releases/download/aide-v1.0.0/aide.zip",
+      "repository": "https://github.com/mnriem/spec-kit-extensions",
+      "homepage": "https://github.com/mnriem/spec-kit-extensions",
+      "documentation": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/README.md",
+      "changelog": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 7,
+        "hooks": 0
+      },
+      "tags": [
+        "workflow",
+        "project-management",
+        "ai-driven",
+        "new-project",
+        "planning",
+        "experimental"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-18T00:00:00Z",
+      "updated_at": "2026-03-18T00:00:00Z"
+    },
     "agent-assign": {
       "name": "Agent Assign",
       "id": "agent-assign",
@@ -236,41 +271,6 @@
       "stars": 0,
       "created_at": "2026-08-27T00:00:00Z",
       "updated_at": "2026-08-27T00:00:00Z"
-    },
-    "aide": {
-      "name": "AI-Driven Engineering (AIDE)",
-      "id": "aide",
-      "description": "A structured 7-step workflow for building new projects from scratch with AI assistants — from vision through implementation.",
-      "author": "mnriem",
-      "version": "1.0.0",
-      "download_url": "https://github.com/mnriem/spec-kit-extensions/releases/download/aide-v1.0.0/aide.zip",
-      "repository": "https://github.com/mnriem/spec-kit-extensions",
-      "homepage": "https://github.com/mnriem/spec-kit-extensions",
-      "documentation": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/README.md",
-      "changelog": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/CHANGELOG.md",
-      "license": "MIT",
-      "category": "process",
-      "effect": "read-write",
-      "requires": {
-        "speckit_version": ">=0.2.0"
-      },
-      "provides": {
-        "commands": 7,
-        "hooks": 0
-      },
-      "tags": [
-        "workflow",
-        "project-management",
-        "ai-driven",
-        "new-project",
-        "planning",
-        "experimental"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-03-18T00:00:00Z",
-      "updated_at": "2026-03-18T00:00:00Z"
     },
     "analytics": {
       "name": "Analytics",
@@ -1076,37 +1076,6 @@
       "created_at": "2026-07-06T00:00:00Z",
       "updated_at": "2026-08-04T00:00:00Z"
     },
-    "checkpoint": {
-      "name": "Checkpoint Extension",
-      "id": "checkpoint",
-      "description": "An extension to commit the changes made during the middle of the implementation, so you don't end up with just one very large commit at the end.",
-      "author": "aaronrsun",
-      "version": "1.0.0",
-      "download_url": "https://github.com/aaronrsun/spec-kit-checkpoint/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/aaronrsun/spec-kit-checkpoint",
-      "homepage": "https://github.com/aaronrsun/spec-kit-checkpoint",
-      "documentation": "https://github.com/aaronrsun/spec-kit-checkpoint/blob/main/README.md",
-      "changelog": "https://github.com/aaronrsun/spec-kit-checkpoint/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "category": "code",
-      "effect": "read-write",
-      "requires": {
-        "speckit_version": ">=0.1.0"
-      },
-      "provides": {
-        "commands": 1,
-        "hooks": 0
-      },
-      "tags": [
-        "checkpoint",
-        "commit"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-03-22T00:00:00Z",
-      "updated_at": "2026-03-22T00:00:00Z"
-    },
     "ci-guard": {
       "name": "CI Guard",
       "id": "ci-guard",
@@ -1141,6 +1110,37 @@
       "stars": 0,
       "created_at": "2026-04-10T17:00:00Z",
       "updated_at": "2026-04-10T17:00:00Z"
+    },
+    "checkpoint": {
+      "name": "Checkpoint Extension",
+      "id": "checkpoint",
+      "description": "An extension to commit the changes made during the middle of the implementation, so you don't end up with just one very large commit at the end.",
+      "author": "aaronrsun",
+      "version": "1.0.0",
+      "download_url": "https://github.com/aaronrsun/spec-kit-checkpoint/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/aaronrsun/spec-kit-checkpoint",
+      "homepage": "https://github.com/aaronrsun/spec-kit-checkpoint",
+      "documentation": "https://github.com/aaronrsun/spec-kit-checkpoint/blob/main/README.md",
+      "changelog": "https://github.com/aaronrsun/spec-kit-checkpoint/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "code",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "checkpoint",
+        "commit"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-22T00:00:00Z",
+      "updated_at": "2026-03-22T00:00:00Z"
     },
     "cleanup": {
       "name": "Cleanup Extension",
@@ -1281,6 +1281,38 @@
       "created_at": "2026-03-19T12:08:20Z",
       "updated_at": "2026-04-03T12:35:01Z"
     },
+    "critique": {
+      "name": "Spec Critique Extension",
+      "id": "critique",
+      "description": "Dual-lens critical review of spec and plan from product strategy and engineering risk perspectives.",
+      "author": "arunt14",
+      "version": "1.0.0",
+      "download_url": "https://github.com/arunt14/spec-kit-critique/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/arunt14/spec-kit-critique",
+      "homepage": "https://github.com/arunt14/spec-kit-critique",
+      "documentation": "https://github.com/arunt14/spec-kit-critique/blob/main/README.md",
+      "changelog": "https://github.com/arunt14/spec-kit-critique/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-only",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "docs",
+        "review",
+        "planning"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-01T00:00:00Z",
+      "updated_at": "2026-04-01T00:00:00Z"
+    },
     "confluence": {
       "name": "Confluence Extension",
       "id": "confluence",
@@ -1413,38 +1445,6 @@
       "stars": 0,
       "created_at": "2026-05-03T00:00:00Z",
       "updated_at": "2026-05-05T00:00:00Z"
-    },
-    "critique": {
-      "name": "Spec Critique Extension",
-      "id": "critique",
-      "description": "Dual-lens critical review of spec and plan from product strategy and engineering risk perspectives.",
-      "author": "arunt14",
-      "version": "1.0.0",
-      "download_url": "https://github.com/arunt14/spec-kit-critique/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/arunt14/spec-kit-critique",
-      "homepage": "https://github.com/arunt14/spec-kit-critique",
-      "documentation": "https://github.com/arunt14/spec-kit-critique/blob/main/README.md",
-      "changelog": "https://github.com/arunt14/spec-kit-critique/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "category": "docs",
-      "effect": "read-only",
-      "requires": {
-        "speckit_version": ">=0.1.0"
-      },
-      "provides": {
-        "commands": 1,
-        "hooks": 1
-      },
-      "tags": [
-        "docs",
-        "review",
-        "planning"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-04-01T00:00:00Z",
-      "updated_at": "2026-04-01T00:00:00Z"
     },
     "data-model-diagram": {
       "name": "Data Model Diagram",
@@ -2568,7 +2568,7 @@
     "linear": {
       "name": "Linear Integration",
       "id": "linear",
-      "description": "Mirror spec-kit feature directories into Linear (filesystem \u2192 Linear, reconcile-based, unidirectional).",
+      "description": "Mirror spec-kit feature directories into Linear (filesystem → Linear, reconcile-based, unidirectional).",
       "author": "Ash Brener",
       "version": "0.7.0",
       "download_url": "https://github.com/ashbrener/spec-kit-linear-sync/archive/refs/tags/v0.7.0.zip",
@@ -2716,7 +2716,7 @@
     "maqa": {
       "name": "MAQA — Multi-Agent & Quality Assurance",
       "id": "maqa",
-      "description": "Coordinator \u2192 feature \u2192 QA agent workflow with parallel worktree-based implementation. Language-agnostic. Auto-detects installed board plugins (Trello, Linear, GitHub Projects, Jira, Azure DevOps). Optional CI gate.",
+      "description": "Coordinator → feature → QA agent workflow with parallel worktree-based implementation. Language-agnostic. Auto-detects installed board plugins (Trello, Linear, GitHub Projects, Jira, Azure DevOps). Optional CI gate.",
       "author": "GenieRobot",
       "version": "0.1.6",
       "download_url": "https://github.com/GenieRobot/spec-kit-maqa-ext/releases/download/maqa-v0.1.6/maqa.zip",
@@ -2730,14 +2730,8 @@
       "requires": {
         "speckit_version": ">=0.3.0",
         "tools": [
-          {
-            "name": "git",
-            "required": true
-          },
-          {
-            "name": "python3",
-            "required": true
-          }
+          { "name": "git", "required": true },
+          { "name": "python3", "required": true }
         ]
       },
       "provides": {
@@ -3728,7 +3722,7 @@
     "product-forge": {
       "name": "Product Forge",
       "id": "product-forge",
-      "description": "Full product-lifecycle orchestrator for Spec Kit: research \u2192 product-spec \u2192 plan \u2192 tasks \u2192 implement \u2192 verify \u2192 test \u2192 release-readiness, across express/lite/standard/v-model modes with human-in-the-loop gates.",
+      "description": "Full product-lifecycle orchestrator for Spec Kit: research → product-spec → plan → tasks → implement → verify → test → release-readiness, across express/lite/standard/v-model modes with human-in-the-loop gates.",
       "author": "Valentin Yakovlev",
       "version": "1.7.0",
       "download_url": "https://github.com/VaiYav/speckit-product-forge/archive/refs/tags/v1.7.0.zip",
@@ -4278,7 +4272,7 @@
       "name": "Spec Kit Schedule — CP-SAT Agent Orchestrator",
       "id": "schedule",
       "description": "Optimal multi-agent task scheduling via CP-SAT solver with DAG precedence, hallucination-aware caps, file-conflict avoidance, stochastic durations, replanning, and interactive HTML output",
-      "author": "Julio C\u00e9sar Franco Ardila",
+      "author": "Julio César Franco Ardila",
       "version": "0.6.2",
       "download_url": "https://github.com/jfranc38/spec-kit-schedule/archive/refs/tags/v0.6.2.zip",
       "repository": "https://github.com/jfranc38/spec-kit-schedule",
@@ -4360,16 +4354,8 @@
       "requires": {
         "speckit_version": ">=0.1.0",
         "tools": [
-          {
-            "name": "git",
-            "version": ">=2.0.0",
-            "required": true
-          },
-          {
-            "name": "node",
-            "version": ">=22.0.0",
-            "required": false
-          }
+          { "name": "git", "version": ">=2.0.0", "required": true },
+          { "name": "node", "version": ">=22.0.0", "required": false }
         ]
       },
       "provides": {
@@ -4537,7 +4523,7 @@
     "spec2cloud": {
       "name": "Spec2Cloud",
       "id": "spec2cloud",
-      "description": "Spec-driven workflow tuned for shipping to Azure: spec \u2192 plan \u2192 tasks \u2192 implement \u2192 deploy.",
+      "description": "Spec-driven workflow tuned for shipping to Azure: spec → plan → tasks → implement → deploy.",
       "author": "Azure Samples",
       "version": "1.1.0",
       "download_url": "https://github.com/Azure-Samples/Spec2Cloud/releases/download/spec-kit-spec2cloud-v1.1.0/extension.zip",
@@ -4617,7 +4603,7 @@
       "name": "SpecJudge — right-size the model before you implement",
       "id": "specjudge",
       "description": "Recommends the model that fits your tasks, citing the spec fragment behind every level.",
-      "author": "Joaqu\u00edn Ruiz",
+      "author": "Joaquín Ruiz",
       "version": "0.5.4",
       "download_url": "https://github.com/JoaquinRuiz/SpecJudge/releases/download/v0.5.4/spec-kit-specjudge.zip",
       "repository": "https://github.com/JoaquinRuiz/SpecJudge",
@@ -5252,40 +5238,6 @@
       "created_at": "2026-07-21T00:00:00Z",
       "updated_at": "2026-07-21T00:00:00Z"
     },
-    "threatmodel": {
-      "name": "OWASP LLM Threat Model",
-      "id": "threatmodel",
-      "description": "OWASP Top 10 for LLM Applications 2025 threat analysis on agent artifacts",
-      "author": "NaviaSamal",
-      "version": "1.0.0",
-      "download_url": "https://github.com/NaviaSamal/spec-kit-threatmodel/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/NaviaSamal/spec-kit-threatmodel",
-      "homepage": "https://github.com/NaviaSamal/spec-kit-threatmodel",
-      "documentation": "https://github.com/NaviaSamal/spec-kit-threatmodel/blob/main/README.md",
-      "changelog": "https://github.com/NaviaSamal/spec-kit-threatmodel/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "category": "code",
-      "effect": "read-only",
-      "requires": {
-        "speckit_version": ">=0.6.0"
-      },
-      "provides": {
-        "commands": 1,
-        "hooks": 1
-      },
-      "tags": [
-        "security",
-        "owasp",
-        "threat-model",
-        "llm",
-        "analysis"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-04-25T00:00:00Z",
-      "updated_at": "2026-04-25T00:00:00Z"
-    },
     "time-machine": {
       "name": "Time Machine",
       "id": "time-machine",
@@ -5358,6 +5310,40 @@
       "stars": 0,
       "created_at": "2026-04-10T00:00:00Z",
       "updated_at": "2026-04-10T00:00:00Z"
+    },
+    "threatmodel": {
+      "name": "OWASP LLM Threat Model",
+      "id": "threatmodel",
+      "description": "OWASP Top 10 for LLM Applications 2025 threat analysis on agent artifacts",
+      "author": "NaviaSamal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/NaviaSamal/spec-kit-threatmodel/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/NaviaSamal/spec-kit-threatmodel",
+      "homepage": "https://github.com/NaviaSamal/spec-kit-threatmodel",
+      "documentation": "https://github.com/NaviaSamal/spec-kit-threatmodel/blob/main/README.md",
+      "changelog": "https://github.com/NaviaSamal/spec-kit-threatmodel/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "code",
+      "effect": "read-only",
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "security",
+        "owasp",
+        "threat-model",
+        "llm",
+        "analysis"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-25T00:00:00Z",
+      "updated_at": "2026-04-25T00:00:00Z"
     },
     "tldr": {
       "name": "Spec Kit TLDR",
@@ -5535,7 +5521,7 @@
     "trace": {
       "name": "Spec Trace",
       "id": "trace",
-      "description": "Build a requirement \u2192 test traceability matrix from spec.md and the test suite — surface untested requirements and orphan tests",
+      "description": "Build a requirement → test traceability matrix from spec.md and the test suite — surface untested requirements and orphan tests",
       "author": "Quratulain-bilal",
       "version": "1.0.0",
       "download_url": "https://github.com/Quratulain-bilal/spec-kit-trace/archive/refs/tags/v1.0.0.zip",
