@@ -63,7 +63,7 @@
         "tools": [
           { "name": "python", "version": ">=3.10", "required": true },
           { "name": "node", "version": ">=18", "required": true },
-          { "name": "postgresql", "required": true }
+          { "name": "postgresql", "version": ">=12", "required": true }
         ]
       },
       "provides": {
