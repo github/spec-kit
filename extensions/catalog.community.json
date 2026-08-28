@@ -202,7 +202,7 @@
       "effect": "read-write",
       "requires": {
         "speckit_version": ">=0.1.0",
-"tools": [
+        "tools": [
           {
             "name": "python",
             "version": ">=3.10",
