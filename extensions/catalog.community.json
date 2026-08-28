@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-25T15:08:04Z",
+  "updated_at": "2026-08-28T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -3589,6 +3589,40 @@
       "stars": 0,
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-03-18T00:00:00Z"
+    },
+    "prespec": {
+      "name": "Pre-Spec Cards",
+      "id": "prespec",
+      "description": "Card-based pre-spec thinking: paste an idea, get your card plus the paths you'd miss, then play each through — story, snags, trade-offs, difficulty vs payoff — before /speckit.specify.",
+      "author": "bendlikeabamboo",
+      "version": "0.3.0",
+      "download_url": "https://github.com/bendlikeabamboo/pre-spec/archive/refs/tags/v0.3.0.zip",
+      "repository": "https://github.com/bendlikeabamboo/pre-spec",
+      "homepage": "https://github.com/bendlikeabamboo/pre-spec",
+      "documentation": "https://github.com/bendlikeabamboo/pre-spec#readme",
+      "changelog": "https://github.com/bendlikeabamboo/pre-spec/releases",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "discovery",
+        "ideation",
+        "decision-cards",
+        "product",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-28T00:00:00Z",
+      "updated_at": "2026-08-28T00:00:00Z"
     },
     "preview": {
       "name": "Spec Kit Preview",
