@@ -248,6 +248,42 @@ def test_python_json_output_matches_bash(prereq_repo: Path, args: tuple[str, ...
 
 
 @requires_bash
+def test_python_require_spec_matches_bash(prereq_repo: Path) -> None:
+    feat = prereq_repo / "specs" / "001-my-feature"
+    feat.mkdir(parents=True)
+    (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
+    (feat / "tasks.md").write_text("# tasks\n", encoding="utf-8")
+    _write_feature_json(prereq_repo)
+
+    # spec.md is missing, and without the flag that stays the caller's problem
+    bash_without = _run(_bash_cmd(prereq_repo, "--json", "--require-tasks"), prereq_repo)
+    py_without = _run(_py_cmd(prereq_repo, "--json", "--require-tasks"), prereq_repo)
+    assert py_without.returncode == bash_without.returncode == 0
+
+    # with the flag both variants fail the same way and name the same command
+    bash_missing = _run(
+        _bash_cmd(prereq_repo, "--json", "--require-spec", "--require-tasks"), prereq_repo
+    )
+    py_missing = _run(
+        _py_cmd(prereq_repo, "--json", "--require-spec", "--require-tasks"), prereq_repo
+    )
+    assert py_missing.returncode == bash_missing.returncode == 1
+    assert py_missing.stderr == bash_missing.stderr
+    assert "spec.md not found" in bash_missing.stderr
+
+    # and once the spec exists the flag is satisfied
+    (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
+    bash_present = _run(
+        _bash_cmd(prereq_repo, "--json", "--require-spec", "--require-tasks"), prereq_repo
+    )
+    py_present = _run(
+        _py_cmd(prereq_repo, "--json", "--require-spec", "--require-tasks"), prereq_repo
+    )
+    assert py_present.returncode == bash_present.returncode == 0
+    assert _json_stdout(py_present) == _json_stdout(bash_present)
+
+
+@requires_bash
 def test_python_text_output_matches_bash(prereq_repo: Path) -> None:
     feat = prereq_repo / "specs" / "001-my-feature"
     feat.mkdir(parents=True)
