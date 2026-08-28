@@ -215,6 +215,7 @@
           },
           {
             "name": "postgresql",
+            "version": ">=12",
             "required": true
           }
         ]
