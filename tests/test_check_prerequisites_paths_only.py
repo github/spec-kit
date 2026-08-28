@@ -38,7 +38,7 @@ def _write_feature_json(
     repo: Path, feature_directory: str = "specs/001-my-feature"
 ) -> None:
     (repo / ".specify" / "feature.json").write_text(
-        json.dumps({"feature_directory": feature_directory}),
+        json.dumps({"feature_directory": feature_directory}, ensure_ascii=False),
         encoding="utf-8",
     )
 
