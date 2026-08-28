@@ -345,7 +345,7 @@ class TestLoadAuthConfig:
 class TestFindEntriesForUrl:
     def test_exact_match(self):
         entry = _github_entry()
-        result = find_entries_for_url("https://github.com/org/repo", [entry])
+        result = find_entries_for_url("https://github.com:443/org/repo", [entry])
         assert result == [entry]
 
     def test_wildcard_match(self):
@@ -409,10 +409,12 @@ class TestFindEntriesForUrl:
         [
             "https://[::1",                 # unterminated ipv6 bracket
             "https://[not-an-ip]/file",     # bracketed non-ip host
+            "https://github.com:notaport/x", # non-numeric port
+            "https://github.com:99999/x",   # out-of-range port
         ],
     )
     def test_malformed_url_returns_empty(self, url):
-        # A malformed authority makes urlparse/hostname raise ValueError.
+        # A malformed authority makes urlparse, hostname, or port raise ValueError.
         # Since no entry can match such a URL, this must return no matches
         # (like a host-less URL) rather than leaking a raw ValueError out of
         # the shared HTTP client.
