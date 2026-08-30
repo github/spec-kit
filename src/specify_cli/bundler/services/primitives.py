@@ -337,7 +337,16 @@ class _WorkflowKindManager:
         with _chdir(self._root):
             _delegate_command(
                 "install", f"workflow '{component.id}'",
-                lambda: workflow_add(component.id),
+                # Pass the options explicitly. Called in-process rather than
+                # through Typer, an omitted ``typer.Option`` parameter keeps its
+                # ``OptionInfo`` sentinel as the value -- which is TRUTHY and is
+                # not ``None`` -- so ``workflow_add``'s ``if dev:`` took the
+                # local-path branch for every catalog install and failed with
+                # "--dev source must be a workflow YAML file ...". It is the only
+                # one of the four delegated commands that declares options;
+                # workflow_remove / workflow_step_add / workflow_step_remove take
+                # a bare ``typer.Argument`` and are safe as written.
+                lambda: workflow_add(component.id, dev=False, from_url=None),
             )
 
     def refresh(self, component: ComponentRef) -> None:
