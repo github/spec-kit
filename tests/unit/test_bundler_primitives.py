@@ -232,6 +232,45 @@ def test_bundled_extension_install_scaffolds_config(tmp_path: Path, monkeypatch)
     assert scaffolded.read_text(encoding="utf-8") == "setting: default\n"
 
 
+def test_catalog_extension_install_scaffolds_config(tmp_path: Path, monkeypatch):
+    """A catalog-resolved (downloaded ZIP) extension install must also
+    scaffold its provides.config templates, matching the bundled-directory
+    coverage above. Exercises the reported reproduction, which installed an
+    extension resolved from the catalog rather than one shipped with Spec Kit."""
+    import zipfile
+
+    import specify_cli._assets as assets
+    from specify_cli.extensions import ExtensionCatalog
+
+    project = tmp_path / "project"
+    ext_source = tmp_path / "ext-source"
+    _write_extension_with_config(ext_source)
+
+    zip_path = tmp_path / "my-ext.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        for f in ext_source.rglob("*"):
+            if f.is_file():
+                zf.write(f, f.relative_to(ext_source))
+
+    # No bundled asset located: forces the catalog/ZIP branch (install_from_zip).
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: None)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "get_extension_info",
+        lambda self, eid: {"id": eid, "_install_allowed": True},
+    )
+    monkeypatch.setattr(
+        ExtensionCatalog, "download_extension", lambda self, eid: zip_path
+    )
+
+    manager = primitive_manager("extensions", project, allow_network=True)
+    manager.install(ComponentRef(kind="extensions", id="my-ext"))
+
+    scaffolded = project / ".specify" / "extensions" / "my-ext" / "my-ext-config.yml"
+    assert scaffolded.exists()
+    assert scaffolded.read_text(encoding="utf-8") == "setting: default\n"
+
+
 def test_bundled_preset_pin_mismatch_refuses(tmp_path: Path, monkeypatch):
     import specify_cli._assets as assets
     from specify_cli.presets import PresetManager
