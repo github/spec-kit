@@ -1,5 +1,7 @@
 """Kiro CLI integration."""
 
+import shutil
+
 from ..base import MarkdownIntegration
 
 
@@ -34,3 +36,13 @@ class KiroCliIntegration(MarkdownIntegration):
         "args": _KIRO_ARG_FALLBACK,
         "extension": ".md",
     }
+
+    def is_cli_available(self) -> bool:
+        """Kiro currently supports both executable names.
+
+        Prefer ``kiro-cli`` (via the base-class detection, which also honors
+        the ``SPECKIT_INTEGRATION_KIRO_CLI_EXECUTABLE`` override) and accept
+        the legacy ``kiro`` binary as a compatibility fallback
+        (see issue #2558).
+        """
+        return super().is_cli_available() or shutil.which("kiro") is not None

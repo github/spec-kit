@@ -1023,7 +1023,7 @@ class TestCommandStep:
             "command": "speckit.specify",
             "input": {"args": "{{ inputs.name }}"},
         }
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+        with patch("specify_cli.integrations.base.shutil.which", return_value=None):
             result = step.execute(config, ctx)
         assert result.status == StepStatus.FAILED
         assert result.output["command"] == "speckit.specify"
@@ -1052,7 +1052,7 @@ class TestCommandStep:
         mock_result.stdout = ""
         mock_result.stderr = ""
 
-        with patch("specify_cli.workflows.steps.command.shutil.which",
+        with patch("specify_cli.integrations.base.shutil.which",
                     lambda name: "/usr/bin/acli" if name == "acli" else None), \
              patch("subprocess.run", return_value=mock_result):
             result = step.execute(config, ctx)
@@ -1156,7 +1156,7 @@ class TestCommandStep:
         # resolvable integration + installed CLI so, absent the guard, dispatch
         # would actually be attempted and the crash would fire.
         ctx = StepContext(default_integration="claude")
-        with patch("specify_cli.workflows.steps.command.shutil.which",
+        with patch("specify_cli.integrations.base.shutil.which",
                    return_value="/usr/bin/claude"):
             for bad in (None, ["a", "b"], 5, {"x": 1}):
                 result = step.execute(
@@ -1227,7 +1227,7 @@ class TestCommandStep:
             "integration": "gemini",
             "input": {},
         }
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+        with patch("specify_cli.integrations.base.shutil.which", return_value=None):
             result = step.execute(config, ctx)
         assert result.output["integration"] == "gemini"
 
@@ -1259,7 +1259,7 @@ class TestCommandStep:
             "model": "opus-4",
             "input": {},
         }
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+        with patch("specify_cli.integrations.base.shutil.which", return_value=None):
             result = step.execute(config, ctx)
         assert result.output["model"] == "opus-4"
 
@@ -1276,7 +1276,7 @@ class TestCommandStep:
             "options": {"thinking-budget": 32768},
             "input": {},
         }
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+        with patch("specify_cli.integrations.base.shutil.which", return_value=None):
             result = step.execute(config, ctx)
         assert result.output["options"]["max-tokens"] == 8000
         assert result.output["options"]["thinking-budget"] == 32768
@@ -1298,11 +1298,50 @@ class TestCommandStep:
             "command": "speckit.specify",
             "input": {"args": "{{ inputs.name }}"},
         }
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+        with patch("specify_cli.integrations.base.shutil.which", return_value=None):
             result = step.execute(config, ctx)
         assert result.status == StepStatus.FAILED
         assert result.output["dispatched"] is False
         assert result.error is not None
+
+    def test_dispatch_honors_claude_non_path_local_install(self, tmp_path):
+        """Preflight must go through ``is_cli_available()`` so a Claude
+        install at ``~/.claude/local/claude`` (not on ``PATH``, see #2558)
+        is still detected — a bare ``shutil.which("claude")`` check would
+        miss it and the step would wrongly report the CLI as absent."""
+        from unittest.mock import MagicMock, patch
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        fake_claude_local = tmp_path / "claude"
+        fake_claude_local.touch()
+        fake_missing = tmp_path / "nonexistent" / "claude"
+
+        step = CommandStep()
+        ctx = StepContext(
+            inputs={"name": "login"},
+            default_integration="claude",
+            project_root=str(tmp_path),
+        )
+        config = {
+            "id": "test",
+            "command": "speckit.specify",
+            "input": {"args": "{{ inputs.name }}"},
+        }
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = '{"result": "done"}'
+        mock_result.stderr = ""
+
+        with patch("specify_cli._utils.CLAUDE_LOCAL_PATH", fake_claude_local), \
+             patch("specify_cli._utils.CLAUDE_NPM_LOCAL_PATH", fake_missing), \
+             patch("specify_cli.integrations.base.shutil.which", return_value=None), \
+             patch("subprocess.run", return_value=mock_result):
+            result = step.execute(config, ctx)
+
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["dispatched"] is True
 
     def test_dispatch_with_mock_cli(self, tmp_path, monkeypatch):
         """When the CLI is installed, dispatch invokes the command by name."""
@@ -1327,8 +1366,7 @@ class TestCommandStep:
         mock_result.stdout = '{"result": "done"}'
         mock_result.stderr = ""
 
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value="/usr/local/bin/claude"), \
-             patch("specify_cli.integrations.base.shutil.which", return_value="/usr/local/bin/claude"), \
+        with patch("specify_cli.integrations.base.shutil.which", return_value="/usr/local/bin/claude"), \
              patch("subprocess.run", return_value=mock_result) as mock_run:
             result = step.execute(config, ctx)
 
@@ -1344,8 +1382,8 @@ class TestCommandStep:
         # Claude is a SkillsIntegration so uses /speckit-specify
         assert "/speckit-specify login" in call_args[0][0][2]
 
-    def test_dispatch_uses_executable_override_for_fallback_preflight(self, tmp_path, monkeypatch):
-        """Command preflight falls back to build_exec_args() argv[0]."""
+    def test_dispatch_uses_executable_override_via_is_cli_available(self, tmp_path, monkeypatch):
+        """Command preflight honors the executable override via ``is_cli_available()``."""
         from unittest.mock import MagicMock, patch
         from specify_cli.workflows.steps.command import CommandStep
         from specify_cli.workflows.base import StepContext, StepStatus
@@ -1374,13 +1412,16 @@ class TestCommandStep:
         mock_result.stdout = '{"result": "done"}'
         mock_result.stderr = ""
 
-        with patch("specify_cli.workflows.steps.command.shutil.which", side_effect=fake_which), \
+        with patch("specify_cli.integrations.base.shutil.which", side_effect=fake_which), \
              patch("subprocess.run", return_value=mock_result) as mock_run:
             result = step.execute(config, ctx)
 
         assert result.status == StepStatus.COMPLETED
         assert result.output["dispatched"] is True
-        assert seen_which[:2] == ["claude", "/opt/claude"]
+        # is_cli_available() resolves the override via cli_executable, so the
+        # preflight looks up "/opt/claude" and never the bare integration key.
+        assert "/opt/claude" in seen_which
+        assert "claude" not in seen_which
         call_args = mock_run.call_args
         assert call_args[0][0][0] == "/opt/claude"
         assert "/speckit-specify login" in call_args[0][0][2]
@@ -1408,8 +1449,7 @@ class TestCommandStep:
         mock_result.stdout = ""
         mock_result.stderr = "API error"
 
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value="/usr/local/bin/claude"), \
-             patch("specify_cli.integrations.base.shutil.which", return_value="/usr/local/bin/claude"), \
+        with patch("specify_cli.integrations.base.shutil.which", return_value="/usr/local/bin/claude"), \
              patch("subprocess.run", return_value=mock_result):
             result = step.execute(config, ctx)
 
@@ -1436,7 +1476,7 @@ class TestPromptStep:
             "type": "prompt",
             "prompt": "Review {{ inputs.file }} for security issues",
         }
-        with patch("specify_cli.workflows.steps.prompt.shutil.which", return_value=None):
+        with patch("specify_cli.integrations.base.shutil.which", return_value=None):
             result = step.execute(config, ctx)
         assert result.status == StepStatus.FAILED
         assert result.output["prompt"] == "Review auth.py for security issues"
@@ -1470,7 +1510,7 @@ class TestPromptStep:
             "prompt": "Summarize the codebase",
             "integration": "gemini",
         }
-        with patch("specify_cli.workflows.steps.prompt.shutil.which", return_value=None):
+        with patch("specify_cli.integrations.base.shutil.which", return_value=None):
             result = step.execute(config, ctx)
         assert result.output["integration"] == "gemini"
 
@@ -1487,7 +1527,7 @@ class TestPromptStep:
             "prompt": "hello",
             "model": "opus-4",
         }
-        with patch("specify_cli.workflows.steps.prompt.shutil.which", return_value=None):
+        with patch("specify_cli.integrations.base.shutil.which", return_value=None):
             result = step.execute(config, ctx)
         assert result.output["model"] == "opus-4"
 
@@ -1513,7 +1553,7 @@ class TestPromptStep:
         mock_result.stdout = ""
         mock_result.stderr = ""
 
-        with patch("specify_cli.workflows.steps.prompt.shutil.which",
+        with patch("specify_cli.integrations.base.shutil.which",
                     lambda name: "/usr/bin/acli" if name == "acli" else None), \
              patch("subprocess.run", return_value=mock_result):
             result = step.execute(config, ctx)
@@ -1578,7 +1618,7 @@ class TestPromptStep:
         mock_result.stdout = "Here is the explanation"
         mock_result.stderr = ""
 
-        with patch("specify_cli.workflows.steps.prompt.shutil.which", return_value="/usr/local/bin/claude"), \
+        with patch("specify_cli.integrations.base.shutil.which", return_value="/usr/local/bin/claude"), \
              patch("subprocess.run", return_value=mock_result):
             result = step.execute(config, ctx)
 
@@ -1586,8 +1626,46 @@ class TestPromptStep:
         assert result.output["dispatched"] is True
         assert result.output["exit_code"] == 0
 
-    def test_dispatch_uses_executable_override_for_fallback_preflight(self, tmp_path, monkeypatch):
-        """Prompt preflight falls back to build_exec_args() argv[0]."""
+    def test_dispatch_honors_claude_non_path_local_install(self, tmp_path):
+        """Preflight must go through ``is_cli_available()`` so a Claude
+        install at ``~/.claude/local/claude`` (not on ``PATH``, see #2558)
+        is still detected — a bare ``shutil.which("claude")`` check would
+        miss it and the step would wrongly report the CLI as absent."""
+        from unittest.mock import MagicMock, patch
+        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        fake_claude_local = tmp_path / "claude"
+        fake_claude_local.touch()
+        fake_missing = tmp_path / "nonexistent" / "claude"
+
+        step = PromptStep()
+        ctx = StepContext(
+            default_integration="claude",
+            project_root=str(tmp_path),
+        )
+        config = {
+            "id": "ask",
+            "type": "prompt",
+            "prompt": "Explain this code",
+        }
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Here is the explanation"
+        mock_result.stderr = ""
+
+        with patch("specify_cli._utils.CLAUDE_LOCAL_PATH", fake_claude_local), \
+             patch("specify_cli._utils.CLAUDE_NPM_LOCAL_PATH", fake_missing), \
+             patch("specify_cli.integrations.base.shutil.which", return_value=None), \
+             patch("subprocess.run", return_value=mock_result):
+            result = step.execute(config, ctx)
+
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["dispatched"] is True
+
+    def test_dispatch_uses_executable_override_via_is_cli_available(self, tmp_path, monkeypatch):
+        """Prompt preflight honors the executable override via ``is_cli_available()``."""
         from unittest.mock import MagicMock, patch
         from specify_cli.workflows.steps.prompt import PromptStep
         from specify_cli.workflows.base import StepContext, StepStatus
@@ -1615,13 +1693,16 @@ class TestPromptStep:
         mock_result.stdout = "Here is the explanation"
         mock_result.stderr = ""
 
-        with patch("specify_cli.workflows.steps.prompt.shutil.which", side_effect=fake_which), \
+        with patch("specify_cli.integrations.base.shutil.which", side_effect=fake_which), \
              patch("subprocess.run", return_value=mock_result) as mock_run:
             result = step.execute(config, ctx)
 
         assert result.status == StepStatus.COMPLETED
         assert result.output["dispatched"] is True
-        assert seen_which[:2] == ["claude", "/opt/claude"]
+        # is_cli_available() resolves the override via cli_executable, so the
+        # preflight looks up "/opt/claude" and never the bare integration key.
+        assert "/opt/claude" in seen_which
+        assert "claude" not in seen_which
         call_args = mock_run.call_args
         assert call_args[0][0][0] == "/opt/claude"
         assert call_args[0][0][2] == "Explain this code"
@@ -5409,7 +5490,7 @@ steps:
 """
         definition = WorkflowDefinition.from_string(yaml_str)
         engine = WorkflowEngine(project_dir)
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+        with patch("specify_cli.integrations.base.shutil.which", return_value=None):
             state = engine.execute(definition, {"name": "login"})
 
         assert state.status == RunStatus.FAILED
@@ -6467,7 +6548,7 @@ steps:
 """)
         engine = WorkflowEngine(project_dir)
         with patch(
-            "specify_cli.workflows.steps.command.shutil.which",
+            "specify_cli.integrations.base.shutil.which",
             return_value=None,
         ):
             state = engine.execute(definition, run_id="cafef00d")
