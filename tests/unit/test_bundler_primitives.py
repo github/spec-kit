@@ -372,6 +372,11 @@ def test_step_refresh_restores_registry_entry_when_reinstall_fails(
                         "name": "My Step",
                         "version": "1.0.0",
                         "type_key": "my-step",
+                        # Distinctive past timestamps: a rollback must put the
+                        # entry back verbatim, and ``StepRegistry.add()`` would
+                        # silently replace both of these with ``now``.
+                        "installed_at": "2020-01-01T00:00:00+00:00",
+                        "updated_at": "2020-02-02T00:00:00+00:00",
                     }
                 },
             }
@@ -379,6 +384,7 @@ def test_step_refresh_restores_registry_entry_when_reinstall_fails(
         encoding="utf-8",
     )
 
+    seeded = StepRegistry(tmp_path).get("my-step")
     assert StepRegistry(tmp_path).is_installed("my-step")
 
     # Removal succeeds (real code path); only the re-install fails, which is
@@ -393,6 +399,10 @@ def test_step_refresh_restores_registry_entry_when_reinstall_fails(
         manager.refresh(_component("steps", "my-step"))
 
     # Read the registry fresh from disk — the point of the fix.
-    assert StepRegistry(tmp_path).is_installed("my-step"), (
+    restored = StepRegistry(tmp_path)
+    assert restored.is_installed("my-step"), (
         steps_dir / StepRegistry.REGISTRY_FILE
     ).read_text(encoding="utf-8")
+    # A rollback must be a rollback: the entry comes back byte-for-byte, not
+    # re-registered with fresh ``installed_at`` / ``updated_at`` stamps.
+    assert restored.get("my-step") == seeded

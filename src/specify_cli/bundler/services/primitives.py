@@ -442,7 +442,16 @@ class _StepKindManager:
 
                 current = StepRegistry(self._root)
                 if metadata is not None and not current.is_installed(component.id):
-                    current.add(component.id, metadata)
+                    # Restore the saved entry verbatim rather than via ``add()``,
+                    # which would rewrite the metadata it is meant to roll back:
+                    # this registry is freshly constructed *after*
+                    # ``self.remove()`` deleted the entry, so ``add()`` sees no
+                    # existing record and stamps ``installed_at`` with
+                    # ``datetime.now()`` (it also overwrites ``updated_at``
+                    # unconditionally). ``workflow_step_remove`` bypasses
+                    # ``add()`` for exactly this reason.
+                    current.data["steps"][component.id] = metadata
+                    current.save()
                 raise
         finally:
             shutil.rmtree(backup_dir.parent, ignore_errors=True)
