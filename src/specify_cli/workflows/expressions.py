@@ -412,8 +412,14 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
     # Use ``_find_top_level``, the same scanner the operator splitting uses: it
     # skips commas inside quotes AND inside nested brackets, so a single
     # argument that happens to contain a comma still works -- ``join(", ")``,
-    # ``default("a, b")``, and the list/dict literals the evaluator supports
-    # (``default([1, 2])``, ``default({"a": 1, "b": 2})``).
+    # ``default("a, b")``, and the list literals the evaluator supports
+    # (``default([1, 2])``).
+    #
+    # List literals are the only container form ``_evaluate_simple_expression``
+    # implements; a mapping such as ``{"a": 1}`` has no branch there and falls
+    # through to dot-path resolution, which yields ``None``. The scanner does
+    # skip commas inside braces too, so nothing here changes if that ever gains
+    # support -- but do not read this comment as a promise that it exists.
     if filter_match and _find_top_level(filter_match.group(2), ",") != -1:
         filter_match = None
     if filter_match:
