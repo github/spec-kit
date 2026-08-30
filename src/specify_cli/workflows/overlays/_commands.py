@@ -213,17 +213,28 @@ def workflow_overlay_add(
         # permanently -- the commit renames the victim to a ``.bak`` and the
         # success path then discards that backup -- while reporting success.
         if target_path.is_file():
-            occupant, _ = _read_overlay(target_path)
+            # Fail closed: refuse unless the occupant is provably this same
+            # overlay. Reaching here means ``_find_overlay_file`` did not match
+            # this path, and it skips exactly the files whose identity cannot be
+            # established -- unreadable, malformed, non-mapping, or missing a
+            # usable ``id``. Letting those through would destroy the user's file
+            # just as permanently as overwriting a valid one, only without even
+            # being able to name what was lost.
+            occupant, read_errors = _read_overlay(target_path)
             occupant_id = occupant.get("id") if isinstance(occupant, dict) else None
-            if (
-                isinstance(occupant_id, str)
-                and occupant_id
-                and occupant_id != overlay.id
-            ):
+            if not (isinstance(occupant_id, str) and occupant_id == overlay.id):
+                if isinstance(occupant_id, str) and occupant_id:
+                    detail = f"already holds overlay {_escape_markup(repr(occupant_id))}"
+                elif read_errors:
+                    detail = (
+                        "could not be parsed as an overlay "
+                        f"({_escape_markup('; '.join(read_errors))})"
+                    )
+                else:
+                    detail = "is not a readable overlay manifest (no usable 'id')"
                 err_console.print(
-                    f"[red]Error:[/red] {_escape_markup(str(target_path))} already "
-                    f"holds overlay {_escape_markup(repr(occupant_id))}. Rename or "
-                    f"remove it before adding overlay "
+                    f"[red]Error:[/red] {_escape_markup(str(target_path))} {detail}. "
+                    f"Rename or remove it before adding overlay "
                     f"{_escape_markup(repr(overlay.id))}."
                 )
                 return None

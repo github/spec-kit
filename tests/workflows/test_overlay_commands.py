@@ -972,6 +972,42 @@ class TestOverlayAddDoesNotClobber:
         assert updated["id"] == "lint"
         assert updated["priority"] == 10
 
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "id: [1, 2\n  bad: yaml:\n",
+            "- just\n- a\n- sequence\n",
+            "just a scalar\n",
+            "extends: wf\npriority: 3\n",
+            "id: 5\nextends: wf\npriority: 3\n",
+        ],
+        ids=["malformed", "sequence", "scalar", "missing_id", "non_string_id"],
+    )
+    def test_add_fails_closed_when_the_occupant_cannot_be_identified(
+        self, project_dir, monkeypatch, raw
+    ):
+        """An unidentifiable occupant must be refused, not silently destroyed.
+
+        `_find_overlay_file` matches on the manifest `id` and skips exactly the
+        files whose identity cannot be established — unreadable, malformed,
+        non-mapping, or missing a usable `id`. Those therefore fall through to
+        the filename-derived target, so a guard that only refuses a *different
+        valid* id would still let `_commit_workflow_file` discard the user's
+        file. It is destroyed just as permanently as a valid overlay, only
+        without even being able to name what was lost.
+        """
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        ov_dir, incoming = self._setup(project_dir, occupant_id=None)
+        occupant = ov_dir / "lint.yml"
+        occupant.write_text(raw, encoding="utf-8")
+
+        result = runner.invoke(app, ["workflow", "overlay", "add", str(incoming)])
+
+        assert result.exit_code == 1, result.output
+        # Byte-for-byte survival, and no backup left behind.
+        assert occupant.read_text(encoding="utf-8") == raw
+        assert [p.name for p in ov_dir.iterdir() if "bak" in p.name] == []
+
     def test_add_creates_the_file_when_absent(self, project_dir, monkeypatch):
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
         ov_dir, incoming = self._setup(project_dir, occupant_id=None)
