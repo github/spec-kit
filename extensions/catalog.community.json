@@ -2444,6 +2444,7 @@
       "author": "Fyloss",
       "version": "0.24.0",
       "download_url": "https://github.com/Fyloss/spec-kit-jira-mirror/releases/download/v0.24.0/spec-kit-jira-mirror-0.24.0.zip",
+      "sha256": "c3fe2f81fc3f47010cf92cdb8c49b612416b4c6aedf91beb579eba871fe1df16"
       "repository": "https://github.com/Fyloss/spec-kit-jira-mirror",
       "homepage": "https://github.com/Fyloss/spec-kit-jira-mirror",
       "documentation": "https://github.com/Fyloss/spec-kit-jira-mirror/tree/main/docs",
