@@ -4299,11 +4299,13 @@ class PresetCatalog:
         if not config_path.exists():
             return None
         try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         except (yaml.YAMLError, OSError, UnicodeError) as e:
             raise PresetValidationError(
                 f"Failed to read catalog config {config_path}: {e}"
             )
+        if data is None:
+            return None
         if not isinstance(data, dict):
             raise PresetValidationError(
                 f"Invalid catalog config {config_path}: expected a mapping at root, got {type(data).__name__}"
