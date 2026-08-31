@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-28T21:15:58Z",
+  "updated_at": "2026-08-31T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -1783,19 +1783,19 @@
     "figma": {
       "name": "Spec Kit Figma",
       "id": "figma",
-      "description": "Agent-agnostic SpecKit extension that grounds spec, plan & task generation in Figma design context — REST + optional MCP, single/mono/multi-repo, macOS/Linux/Windows.",
+      "description": "Grounds SpecKit spec/plan/tasks in Figma design context via REST or MCP, on macOS/Linux/Windows.",
       "author": "Fyloss",
-      "version": "1.6.0",
-      "download_url": "https://github.com/Fyloss/spec-kit-figma/archive/refs/tags/v1.6.0.zip",
+      "version": "3.1.1",
+      "download_url": "https://github.com/Fyloss/spec-kit-figma/archive/refs/tags/v3.1.1.zip",
       "repository": "https://github.com/Fyloss/spec-kit-figma",
       "homepage": "https://github.com/Fyloss/spec-kit-figma",
-      "documentation": "https://github.com/Fyloss/spec-kit-figma/blob/main/docs/INSTALL.md",
+      "documentation": "https://github.com/Fyloss/spec-kit-figma/blob/main/docs/",
       "changelog": "https://github.com/Fyloss/spec-kit-figma/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "integration",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0",
+        "speckit_version": ">=0.11.2",
         "tools": [
           {
             "name": "git",
@@ -1820,8 +1820,8 @@
         ]
       },
       "provides": {
-        "commands": 5,
-        "hooks": 6
+        "commands": 7,
+        "hooks": 11
       },
       "tags": [
         "figma",
@@ -1834,7 +1834,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-08T00:00:00Z",
-      "updated_at": "2026-07-08T00:00:00Z"
+      "updated_at": "2026-08-31T00:00:00Z"
     },
     "figma-starter": {
       "name": "Figma Starter",
