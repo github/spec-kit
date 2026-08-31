@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-28T21:15:58Z",
+  "updated_at": "2026-08-31T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -2436,6 +2436,45 @@
       "stars": 0,
       "created_at": "2026-03-05T00:00:00Z",
       "updated_at": "2026-03-05T00:00:00Z"
+    },
+    "jira-mirror": {
+      "name": "Jira Mirror",
+      "id": "jira-mirror",
+      "description": "Spec Kit ↔ Jira bridge for team-managed and company-managed projects: configurable workflows & hierarchies (Scrum/SAFe), multi-project, idempotent and fail-closed. macOS/Linux/Windows.",
+      "author": "Fyloss",
+      "version": "0.24.0",
+      "download_url": "https://github.com/Fyloss/spec-kit-jira-mirror/releases/download/v0.24.0/spec-kit-jira-mirror-0.24.0.zip",
+      "repository": "https://github.com/Fyloss/spec-kit-jira-mirror",
+      "homepage": "https://github.com/Fyloss/spec-kit-jira-mirror",
+      "documentation": "https://github.com/Fyloss/spec-kit-jira-mirror/tree/main/docs",
+      "changelog": "https://github.com/Fyloss/spec-kit-jira-mirror/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.13.0",
+        "tools": [
+          { "name": "bash", "version": ">=4", "required": true },
+          { "name": "pwsh", "version": ">=7", "required": false },
+          { "name": "curl", "required": true },
+          { "name": "jq", "required": true },
+          { "name": "git", "required": true }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 7
+      },
+      "tags": [
+        "jira",
+        "integration",
+        "sync"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-31T00:00:00Z",
+      "updated_at": "2026-08-31T00:00:00Z"
     },
     "jira-sync": {
       "name": "Jira Integration (Sync Engine)",
