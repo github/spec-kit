@@ -2454,10 +2454,10 @@
       "requires": {
         "speckit_version": ">=0.13.0",
         "tools": [
-          { "name": "bash", "version": ">=4", "required": true },
+          { "name": "bash", "version": ">=4", "required": false },
           { "name": "pwsh", "version": ">=7", "required": false },
-          { "name": "curl", "required": true },
-          { "name": "jq", "required": true },
+          { "name": "curl", "required": false },
+          { "name": "jq", "required": false },
           { "name": "git", "required": true }
         ]
       },
