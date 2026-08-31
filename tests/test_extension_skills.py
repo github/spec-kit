@@ -1166,6 +1166,72 @@ class TestExtensionSkillRegistration:
         assert "__SPECKIT_COMMAND_PLAN__" not in content
         assert expected_invocation in content
 
+    @pytest.mark.parametrize(
+        ("ai", "expected_invocation"),
+        [
+            ("claude", "/speckit-agent-context-update"),
+            ("copilot", "/speckit-agent-context-update"),
+            ("codex", "$speckit-agent-context-update"),
+            ("kimi", "/skill:speckit-agent-context-update"),
+            ("zcode", "$speckit-agent-context-update"),
+            ("bob", "/speckit-agent-context-update"),
+        ],
+    )
+    def test_skill_registration_resolves_hyphenated_command_ref_tokens(
+        self, project_dir, temp_dir, ai, expected_invocation
+    ):
+        """Auto-registered skills should resolve command ref tokens whose
+        target command name contains a hyphen (e.g. speckit.agent-context.update).
+
+        This exercises ``_register_extension_skills``'s own token resolver,
+        which is a separate code path from the shared ``resolve_command_refs``
+        used by ``CommandRegistrar.register_commands_for_agent`` — both needed
+        their character class widened independently to support hyphens.
+        """
+        _create_init_options(project_dir, ai=ai, ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai=ai)
+
+        ext_dir = temp_dir / "hyphen-command-ref-ext"
+        ext_dir.mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "hyphen-command-ref-ext",
+                "name": "Hyphen Command Ref Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.hyphen-command-ref-ext.run",
+                        "file": "commands/run.md",
+                        "description": "Run command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.safe_dump(manifest_data, f)
+
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Run command\n"
+            "---\n\n"
+            "Use __SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__ before proceeding.\n"
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        content = (
+            skills_dir / "speckit-hyphen-command-ref-ext-run" / "SKILL.md"
+        ).read_text()
+        assert "__SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__" not in content
+        assert expected_invocation in content
+
     def test_skill_registration_does_not_rewrite_literal_speckit_text(
         self, project_dir, temp_dir
     ):
