@@ -32,6 +32,28 @@ def _repo_root() -> Path:
     return Path(__file__).parent.parent.parent
 
 
+def _locate_shared_asset_dir(subdir: str) -> Path | None:
+    """Return an asset directory from the wheel bundle or source checkout.
+
+    ``subdir`` is ``"commands"``, ``"templates"``, or ``"scripts"``.
+    Checks ``core_pack/<subdir>/`` first. In a source checkout, commands live
+    under ``templates/commands/`` and the other asset families use ``<subdir>/``.
+    """
+    package_dir = Path(__file__).resolve().parent
+    source_dir = (
+        _repo_root() / "templates" / "commands"
+        if subdir == "commands"
+        else _repo_root() / subdir
+    )
+    for candidate in [
+        package_dir / "core_pack" / subdir,
+        source_dir,
+    ]:
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
 def _locate_bundled_extension(extension_id: str) -> Path | None:
     """Return the path to a bundled extension, or None.
 

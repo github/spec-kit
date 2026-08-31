@@ -1173,6 +1173,33 @@ class TestPresetResolver:
         result = resolver.resolve("nonexistent-template")
         assert result is None
 
+    def test_core_fallback_uses_shared_asset_resolver(self, project_dir, monkeypatch):
+        """resolve() tier 5 and collect_all_layers() must agree on "core".
+
+        Regression test: the tier-5 branch used to read ``core_pack/<family>/``
+        directly, so a wheel bundle missing ``scripts/`` made ``resolve()``
+        return nothing while ``collect_all_layers()`` fell back to the source
+        checkout via ``_locate_shared_asset_dir``.
+        """
+        import specify_cli._assets as assets
+
+        core_pack = project_dir.parent / "core_pack"
+        (core_pack / "commands").mkdir(parents=True)  # bundle exists, no scripts/
+        repo_root = project_dir.parent / "repo"
+        (repo_root / "scripts" / "bash").mkdir(parents=True)
+        script = repo_root / "scripts" / "bash" / "core-only.sh"
+        script.write_text("#!/bin/sh\n", encoding="utf-8")
+
+        monkeypatch.setattr(
+            assets, "__file__", str(project_dir.parent / "_assets.py")
+        )
+        monkeypatch.setattr(assets, "_repo_root", lambda: repo_root)
+
+        resolver = PresetResolver(project_dir)
+        assert resolver.resolve("core-only", "script") == script
+        layers = resolver.collect_all_layers("core-only", "script")
+        assert [layer["path"] for layer in layers] == [script]
+
     def test_resolver_ignores_traversing_registry_ids(self, project_dir):
         """Registry IDs cannot escape preset or extension install roots."""
         for registry_dir, registry_key, outside_name in (
@@ -1679,7 +1706,8 @@ class TestPresetResolver:
         resolver = PresetResolver(project_dir)
         layers = resolver.collect_all_layers("speckit.implement", "command")
         assert layers, "expected a bundled core base layer to be found"
-        assert layers[-1]["source"] == "core (bundled)"
+        assert layers[-1]["source"] == "core"
+        assert "lookupId" not in layers[-1]
         assert layers[-1]["path"].parts[-2:] == ("commands", "implement.md")
 
     def test_resolve_command_falls_back_to_bundled_core(self, project_dir):
@@ -11964,6 +11992,17 @@ class TestWrapStrategy:
         assert layers, "expected convention-based lookup to still find the template"
         assert layers[0]["path"] == tmpl_dir / "legacy-template.md"
 
+    @pytest.mark.parametrize("pack_kind", ["preset", "extension"])
+    def test_root_readme_is_not_resolved_as_template(self, project_dir, pack_kind):
+        pack_dir = project_dir / ".specify" / f"{pack_kind}s" / "legacy"
+        pack_dir.mkdir(parents=True)
+        (pack_dir / "README.md").write_text("packaging notes\n")
+
+        resolver = PresetResolver(project_dir)
+
+        assert resolver.resolve("README", "template") is None
+        assert resolver.collect_all_layers("README", "template") == []
+
     def test_extension_manifest_wins_over_stale_conventional_file(self, project_dir):
         """A declared entry is authoritative even when a stale file also sits at
         the conventional path (templates/<name>.md) — the manifest must win,
@@ -12863,6 +12902,7 @@ class TestCollectAllLayers:
         layers = resolver.collect_all_layers("spec-template")
         assert len(layers) == 1
         assert layers[0]["source"] == "core"
+        assert "lookupId" not in layers[0]
         assert layers[0]["strategy"] == "replace"
 
     def test_layers_include_presets(self, project_dir, temp_dir, valid_pack_data):
@@ -12928,6 +12968,89 @@ class TestCollectAllLayers:
         assert layers[0]["strategy"] == "append"
         # Core layer should be replace
         assert layers[1]["strategy"] == "replace"
+
+
+class TestCoreScriptRuntimeVariants:
+    """Core scripts resolve through whichever runtime variant is installed."""
+
+    @staticmethod
+    def _write_core_script(project_dir, runtime, filename, body):
+        script_dir = project_dir / ".specify" / "templates" / "scripts" / runtime
+        script_dir.mkdir(parents=True, exist_ok=True)
+        path = script_dir / filename
+        path.write_text(body)
+        return path
+
+    def test_resolve_finds_powershell_only_core_script(self, project_dir):
+        """Only the .ps1 variant exists — resolve() must still find it."""
+        path = self._write_core_script(
+            project_dir, "powershell", "ps-only-helper.ps1", "Write-Output 'ps'\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+        assert resolver.resolve("ps-only-helper", "script") == path
+
+    def test_collect_all_layers_finds_powershell_only_core_script(self, project_dir):
+        """Only the .ps1 variant exists — collect_all_layers() must find it."""
+        path = self._write_core_script(
+            project_dir, "powershell", "ps-only-helper.ps1", "Write-Output 'ps'\n"
+        )
+
+        layers = PresetResolver(project_dir).collect_all_layers(
+            "ps-only-helper", "script"
+        )
+        assert len(layers) == 1
+        assert layers[0]["path"] == path
+        assert layers[0]["source"] == "core"
+
+    def test_resolve_finds_python_only_core_script(self, project_dir):
+        """Only the underscored .py variant exists — the hyphenated logical
+        name must still resolve."""
+        path = self._write_core_script(
+            project_dir, "python", "py_only_helper.py", "print('py')\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+        assert resolver.resolve("py-only-helper", "script") == path
+
+    def test_collect_all_layers_finds_python_only_core_script(self, project_dir):
+        """Only the underscored .py variant exists — collect_all_layers() must
+        map the hyphenated logical name onto it."""
+        path = self._write_core_script(
+            project_dir, "python", "py_only_helper.py", "print('py')\n"
+        )
+
+        layers = PresetResolver(project_dir).collect_all_layers(
+            "py-only-helper", "script"
+        )
+        assert len(layers) == 1
+        assert layers[0]["path"] == path
+        assert layers[0]["source"] == "core"
+
+    def test_resolve_finds_legacy_flat_core_script(self, project_dir):
+        """The legacy flat .specify/templates/scripts/<name>.sh layout still
+        resolves."""
+        scripts_dir = project_dir / ".specify" / "templates" / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        path = scripts_dir / "flat-helper.sh"
+        path.write_text("echo 'flat'\n")
+
+        resolver = PresetResolver(project_dir)
+        assert resolver.resolve("flat-helper", "script") == path
+
+    def test_collect_all_layers_finds_legacy_flat_core_script(self, project_dir):
+        """collect_all_layers() also honours the legacy flat layout."""
+        scripts_dir = project_dir / ".specify" / "templates" / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        path = scripts_dir / "flat-helper.sh"
+        path.write_text("echo 'flat'\n")
+
+        layers = PresetResolver(project_dir).collect_all_layers(
+            "flat-helper", "script"
+        )
+        assert len(layers) == 1
+        assert layers[0]["path"] == path
+        assert layers[0]["source"] == "core"
 
 
 class TestRemoveReconciliation:
@@ -13314,7 +13437,10 @@ class TestEnsureConstitutionResolverAware:
         memory = project_dir / ".specify" / "memory" / "constitution.md"
         assert memory.exists()
         assert "[PROJECT_NAME]" in memory.read_text()
-        assert (memory.parent / ".constitution-template.json").exists()
+        provenance = json.loads(
+            (memory.parent / ".constitution-template.json").read_text()
+        )
+        assert provenance["source"] == "core"
 
     def test_seeds_from_preset_when_installed(self, project_dir):
         from specify_cli.commands.init import ensure_constitution_from_template
@@ -13761,7 +13887,9 @@ class TestInstalledPresetRichMarkup:
         )
 
         assert result.exit_code == 0, (result.output, result.exception)
-        assert "constitution.md" in "".join(strip_ansi(result.output).split())
+        output = " ".join(strip_ansi(result.output).split())
+        assert "constitution.md" in output
+        assert "top layer from: core" in output
 
     def test_resolve_rejects_empty_command_segments(self, project_dir):
         """Dotted command identifiers cannot contain empty path-like segments."""
@@ -13994,7 +14122,7 @@ class TestConstitutionSyncPreset:
         assert len(layers) >= 2, "expected preset wrap layer plus a core base"
         assert layers[0]["strategy"] == "wrap"
         assert any("constitution-sync" in str(layer["path"]) for layer in layers)
-        assert layers[-1]["source"] == "core (bundled)"
+        assert layers[-1]["source"] == "core"
 
     def test_resolved_content_embeds_core_and_sync_pass(self, project_dir):
         """resolve_content substitutes {CORE_TEMPLATE} so the effective command

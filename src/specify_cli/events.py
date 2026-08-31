@@ -551,17 +551,12 @@ def _find_command_template(command_name: str, project_root: Path) -> tuple[Path 
     #    templates/commands). The previous bespoke inspect.getfile() math
     #    pointed at core_pack/templates/commands, which never exists in a
     #    wheel build (force-include maps templates/commands -> core_pack/commands).
-    from ._assets import _locate_core_pack, _repo_root
-    core_pack = _locate_core_pack()
-    candidate_dirs = [
-        core_pack / "commands" if core_pack is not None else None,
-        _repo_root() / "templates" / "commands",
-    ]
+    from ._assets import _locate_shared_asset_dir
+
+    commands_dir = _locate_shared_asset_dir("commands")
     stem = command_name.replace("speckit.", "").replace("spec.", "")
-    for candidate_dir in candidate_dirs:
-        if candidate_dir is None or not candidate_dir.is_dir():
-            continue
-        candidate = candidate_dir / f"{stem}.md"
+    if commands_dir is not None:
+        candidate = commands_dir / f"{stem}.md"
         if candidate.exists():
             return candidate, None
 

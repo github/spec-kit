@@ -205,6 +205,27 @@ specify preset add team-workflow --priority 10
 
 For any file that both provide, `compliance` wins (priority 5 < 10). For files only one provides, that one is used. For files neither provides, the core default is used.
 
+## Contribution Identifiers
+
+Every command, template, and script contributed by a preset or extension is addressable at read time by a deterministic opaque identifier of the form:
+
+```text
+{layer}:{sourceId}:{kind}:{name}
+```
+
+- `layer` is one of `preset` or `extension`.
+- `sourceId` is the preset pack id for `preset`, or the extension id for `extension`.
+- `kind` is one of `command`, `template`, or `script`.
+- `name` is the entry's declared `name` field.
+
+Identifiers are computed on demand from author-declared manifest content and are never persisted to `.specify/` or any cache. Copying a preset to another machine (or touching its files) does not change the identifiers it produces.
+
+`PresetResolver.collect_all_layers()` returns layer dicts that include a `lookupId` field for preset, extension, and project-override layers. For manifest-declared preset and extension layers, the `lookupId`'s `sourceId` component is the manifest's validated `id:` field, so it joins directly to the `id` used by `PresetManifest.iter_contributions()` / `ExtensionManifest.iter_contributions()` even when the installed directory was renamed. That join is guaranteed by the implementation, so consumers can key off `lookupId` directly rather than re-deriving the contribution id. Convention-only layers (undeclared in any manifest) have no manifest id to consult, so their `lookupId`'s `sourceId` falls back to the resolver's registry key or on-disk directory name instead; those layers have no manifest contribution to join to. Built-in fallback layers omit `lookupId`. Use `layer_kind_from_lookup_id` to classify lookup IDs rather than parsing the string yourself. Project-local overrides in `.specify/templates/overrides/` are a resolver-only concept — they carry a synthetic `project:_:{kind}:{name}` `lookupId` that intentionally does not match any manifest contribution.
+
+The `id` field (shape `kind:name`) is the stable round-trip key for every artifact and is accepted as input by `specify artifact info`. The `lookupId` field carries manifest-backed layer provenance and is present only for artifacts contributed by presets, extensions, or project overrides. Built-in-tier artifacts have no `lookupId`; use `id` to round-trip them. For example, given a stack row for a built-in artifact with only `id` populated, the round-trip is `specify artifact info command:speckit.plan --json`, which resolves the same artifact as `specify artifact info speckit.plan --json`.
+
+For the full grammar, including the hook name-component convention and last-write-wins deduplication used by extensions, see the [Extension API Reference — Contribution Identifiers](../../extensions/EXTENSION-API-REFERENCE.md#contribution-identifiers) section.
+
 ## FAQ
 
 ### Can I use multiple presets at the same time?

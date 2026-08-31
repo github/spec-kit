@@ -27,7 +27,13 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
-from .._assets import _locate_core_pack, _repo_root
+from .._assets import _locate_shared_asset_dir
+from .._identifier import (
+    IdentifierComponentError,
+    derive_hook_id,
+    derive_named_id,
+    validate_component,
+)
 from .._download_security import (
     archive_format_from_name,
     archive_suffix,
@@ -82,29 +88,19 @@ def _load_core_command_names() -> frozenset[str]:
     the source checkout when running from the repository. If neither is
     available, use the baked-in fallback set so validation still works.
 
-    Path resolution is delegated to the canonical ``_assets`` resolvers
-    (``_locate_core_pack`` / ``_repo_root``) — the same ones the presets and
-    bundle loaders use — rather than bespoke ``Path(__file__)`` arithmetic.
-    Hand-counted ``.parent`` chains silently broke discovery once already: the
-    #3014 move of this module from ``specify_cli/extensions.py`` to
-    ``specify_cli/extensions/__init__.py`` pushed the file one directory deeper
-    without updating the counts, so both candidates resolved to non-existent
-    paths and every call fell through to the fallback (#3274). The shared
-    resolvers are anchored to the package root, so discovery survives future
-    module moves.
+    Path resolution is delegated to :func:`_locate_shared_asset_dir` — the same
+    resolver ``PresetResolver._find_bundled_core`` and the artifact command's
+    core-baseline enumeration use — rather than bespoke ``Path(__file__)``
+    arithmetic. Hand-counted ``.parent`` chains silently broke discovery once
+    already: the #3014 move of this module from ``specify_cli/extensions.py``
+    to ``specify_cli/extensions/__init__.py`` pushed the file one directory
+    deeper without updating the counts, so both candidates resolved to
+    non-existent paths and every call fell through to the fallback (#3274).
+    The shared resolver is anchored to the package root, so discovery
+    survives future module moves.
     """
-    core_pack = _locate_core_pack()
-    candidate_dirs = [
-        # Wheel install: force-include maps templates/commands → core_pack/commands.
-        core_pack / "commands" if core_pack is not None else None,
-        # Source checkout / editable install: repo-root templates/commands.
-        _repo_root() / "templates" / "commands",
-    ]
-
-    for commands_dir in candidate_dirs:
-        if commands_dir is None or not commands_dir.is_dir():
-            continue
-
+    commands_dir = _locate_shared_asset_dir("commands")
+    if commands_dir is not None:
         command_names = {
             command_file.stem
             for command_file in commands_dir.iterdir()
@@ -415,6 +411,10 @@ class ExtensionManifest:
                     raise ValidationError(
                         f"Invalid hook '{hook_name}': list must contain at least one entry"
                     )
+                try:
+                    validate_component(hook_name, f"hook event name '{hook_name}'")
+                except IdentifierComponentError as exc:
+                    raise ValidationError(str(exc)) from exc
                 for entry in coerce_hook_entries(hook_config):
                     if not isinstance(entry, dict):
                         raise ValidationError(
@@ -425,6 +425,13 @@ class ExtensionManifest:
                         raise ValidationError(
                             f"Hook '{hook_name}' missing required 'command' field"
                         )
+                    try:
+                        validate_component(
+                            entry["command"],
+                            f"hook '{hook_name}' command",
+                        )
+                    except IdentifierComponentError as exc:
+                        raise ValidationError(str(exc)) from exc
                     if "priority" in entry:
                         priority = entry["priority"]
                         if not isinstance(priority, int) or isinstance(priority, bool):
@@ -523,14 +530,11 @@ class ExtensionManifest:
                 command_ref = entry.get("command")
                 if not isinstance(command_ref, str):
                     continue
-                # Step 1: apply any rename from the auto-correction pass.
-                after_rename = rename_map.get(command_ref, command_ref)
-                # Step 2: lift alias-form '{ext_id}.cmd' to canonical 'speckit.{ext_id}.cmd'.
-                parts = after_rename.split(".")
-                if len(parts) == 2 and parts[0] == ext["id"]:
-                    final_ref = f"speckit.{ext['id']}.{parts[1]}"
-                else:
-                    final_ref = after_rename
+                final_ref = self._canonicalize_command_ref(
+                    command_ref,
+                    ext["id"],
+                    rename_map,
+                )
                 if final_ref != command_ref:
                     entry["command"] = final_ref
                     self.warnings.append(
@@ -552,12 +556,11 @@ class ExtensionManifest:
                 command_ref = event_config.get("command")
                 if not isinstance(command_ref, str):
                     continue
-                after_rename = rename_map.get(command_ref, command_ref)
-                parts = after_rename.split(".")
-                if len(parts) == 2 and parts[0] == ext["id"]:
-                    final_ref = f"speckit.{ext['id']}.{parts[1]}"
-                else:
-                    final_ref = after_rename
+                final_ref = self._canonicalize_command_ref(
+                    command_ref,
+                    ext["id"],
+                    rename_map,
+                )
                 if final_ref != command_ref:
                     event_config["command"] = final_ref
                     self.warnings.append(
@@ -565,6 +568,18 @@ class ExtensionManifest:
                         f"updated to canonical form '{final_ref}'. "
                         f"The extension author should update the manifest."
                     )
+
+    @staticmethod
+    def _canonicalize_command_ref(
+        command_ref: str,
+        ext_id: str,
+        rename_map: Dict[str, str],
+    ) -> str:
+        after_rename = rename_map.get(command_ref, command_ref)
+        parts = after_rename.split(".")
+        if len(parts) == 2 and parts[0] == ext_id:
+            return f"speckit.{ext_id}.{parts[1]}"
+        return after_rename
 
     @staticmethod
     def _validate_provided_artifacts(entries: List[Any], section: str, singular: str) -> None:
@@ -725,6 +740,102 @@ class ExtensionManifest:
         """Get hook definitions."""
         return self.data.get("hooks", {})
 
+    def iter_contributions(self) -> List[Dict[str, Any]]:
+        """Return an enriched, ordered list of every contribution this manifest declares.
+
+        Each dict is a shallow copy of the underlying manifest entry with four
+        derived keys added: ``layer`` (always ``"extension"``), ``sourceId``
+        (this manifest's ``id``), ``kind`` (``"command"`` / ``"template"`` /
+        ``"script"`` / ``"hook"``), and ``id`` (the deterministic identifier).
+        Hook entries also carry a synthesized ``name`` field of the form
+        ``"{eventName}:{command}"`` alongside the original ``eventName`` /
+        ``command`` values, so consumers can locate a hook by its identifier's
+        name component without re-splitting the string.
+
+        The underlying ``self.data`` mapping is never mutated — the enriched
+        dicts are constructed fresh on every call so callers can safely rely on
+        the identifiers reflecting the current in-memory manifest state.
+        """
+        source_id = self.id
+        contributions: List[Dict[str, Any]] = []
+
+        for cmd in self.commands:
+            enriched = dict(cmd)
+            name = cmd.get("name", "")
+            enriched.update(
+                layer="extension",
+                sourceId=source_id,
+                kind="command",
+                id=derive_named_id("extension", source_id, "command", name),
+            )
+            contributions.append(enriched)
+
+        for tmpl in self.templates:
+            enriched = dict(tmpl)
+            name = tmpl.get("name", "")
+            enriched.update(
+                layer="extension",
+                sourceId=source_id,
+                kind="template",
+                id=derive_named_id("extension", source_id, "template", name),
+            )
+            contributions.append(enriched)
+
+        for scr in self.scripts:
+            enriched = dict(scr)
+            name = scr.get("name", "")
+            enriched.update(
+                layer="extension",
+                sourceId=source_id,
+                kind="script",
+                id=derive_named_id("extension", source_id, "script", name),
+            )
+            contributions.append(enriched)
+
+        for event_name, hook_config in (self.hooks or {}).items():
+            deduped: Dict[str, dict] = {}
+            for entry in coerce_hook_entries(hook_config):
+                if not isinstance(entry, dict):
+                    continue
+                command_value = entry.get("command", "")
+                if command_value in deduped:
+                    del deduped[command_value]
+                normalized = dict(entry)
+                # Overwrite (not setdefault) so an author-supplied
+                # ``eventName`` cannot contradict the containing hook key —
+                # otherwise an entry under ``before_plan`` carrying
+                # ``eventName: after_plan`` would be emitted with metadata
+                # that disagrees with its ``name`` and ``id`` (both of which
+                # derive from the hook key below).
+                normalized["eventName"] = event_name
+                deduped[command_value] = normalized
+
+            for command_value, entry in deduped.items():
+                enriched = dict(entry)
+                enriched.update(
+                    layer="extension",
+                    sourceId=source_id,
+                    kind="hook",
+                    name=f"{event_name}:{command_value}",
+                    id=derive_hook_id(
+                        "extension", source_id, event_name, command_value
+                    ),
+                )
+                contributions.append(enriched)
+
+        return contributions
+
+    def contribution_id(self, kind: str, name: str) -> Optional[str]:
+        """Return the computed identifier for a single contribution, if declared.
+
+        ``name`` is the declared name for command/template/script kinds, or the
+        ``"{eventName}:{command}"`` compound for hook kinds.
+        """
+        for entry in self.iter_contributions():
+            if entry["kind"] == kind and entry.get("name") == name:
+                return entry["id"]
+        return None
+
     def get_hash(self) -> str:
         """Calculate SHA256 hash of manifest file."""
         h = hashlib.sha256()
@@ -809,7 +920,7 @@ class ExtensionRegistry:
             return True
         if not isinstance(data, dict):
             return True
-        if "extensions" in data and not isinstance(data["extensions"], dict):
+        if "extensions" not in data or not isinstance(data["extensions"], dict):
             return True
         return False
 

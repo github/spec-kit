@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from .._assets import _locate_shared_asset_dir
 from .._invocation_style import get_invocation_prefix, is_dollar_skills_agent
 from .._toml_string import escape_toml_basic as _escape_toml_basic
 from .._toml_string import has_illegal_toml_control as _has_illegal_toml_control
@@ -435,16 +436,7 @@ class IntegrationBase(ABC):
         ``templates/commands/`` (source checkout).  Returns ``None``
         if neither exists.
         """
-        import inspect
-
-        pkg_dir = Path(inspect.getfile(IntegrationBase)).resolve().parent.parent
-        for candidate in [
-            pkg_dir / "core_pack" / "commands",
-            pkg_dir.parent.parent / "templates" / "commands",
-        ]:
-            if candidate.is_dir():
-                return candidate
-        return None
+        return _locate_shared_asset_dir("commands")
 
     def shared_templates_dir(self) -> Path | None:
         """Return path to the shared page templates directory.
@@ -452,16 +444,7 @@ class IntegrationBase(ABC):
         Contains ``vscode-settings.json``, ``spec-template.md``, etc.
         Checks ``core_pack/templates/`` then ``templates/``.
         """
-        import inspect
-
-        pkg_dir = Path(inspect.getfile(IntegrationBase)).resolve().parent.parent
-        for candidate in [
-            pkg_dir / "core_pack" / "templates",
-            pkg_dir.parent.parent / "templates",
-        ]:
-            if candidate.is_dir():
-                return candidate
-        return None
+        return _locate_shared_asset_dir("templates")
 
     def list_command_templates(self) -> list[Path]:
         """Return ordered list of command template files from the shared directory."""

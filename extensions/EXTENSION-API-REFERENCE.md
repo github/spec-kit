@@ -10,6 +10,8 @@ Technical reference for Spec Kit extension system APIs and manifest schema.
 4. [Configuration Schema](#configuration-schema)
 5. [Hook System](#hook-system)
 6. [CLI Commands](#cli-commands)
+7. [Contribution Identifiers](#contribution-identifiers)
+8. [File System Layout](#file-system-layout)
 
 ---
 
@@ -858,6 +860,67 @@ satisfied = version_satisfies("1.2.3", ">=1.0.0,<2.0.0")  # bool
 ```
 
 ---
+
+## Contribution Identifiers
+
+Every command, template, script, and hook contributed by an extension or preset is addressable at read time by a deterministic opaque identifier. Resolved artifact-stack layers carry a matching `lookupId` field when they have provenance. Manifest-declared preset and extension layers use the manifest's validated `id:` for `lookupId`'s `sourceId` component, so their `lookupId` joins directly to the matching `iter_contributions()` entry even after the installed directory is renamed; convention-only contributions have no manifest `id:` to consult and fall back to the on-disk directory / registry key instead (see [Determinism guarantees](#determinism-guarantees) below). Identifiers are **computed on demand from author-declared manifest content** and are **never persisted** to `.specify/` or to any cache file.
+
+### Grammar
+
+Named contributions (commands, templates, scripts) follow:
+
+```text
+{layer}:{sourceId}:{kind}:{name}
+```
+
+- `layer` is one of `preset` or `extension`.
+- `sourceId` is the preset pack id for `preset`, or the extension id for `extension`.
+- `kind` is one of `command`, `template`, or `script`.
+- `name` is the contribution's declared `name` field.
+
+Hook contributions use a compound name-component built from the event and command:
+
+```text
+{layer}:{sourceId}:hook:{eventName}:{command}
+```
+
+Within a single event list, repeated `command` values collapse last-write-wins and
+move to the end, so each surviving `(eventName, command)` pair has the same
+identifier form above with no suffix.
+
+### Reserved character
+
+`:` is reserved as the identifier component separator. It cannot appear inside any of `layer`, `sourceId`, `kind`, `name`, `eventName`, or `command`. Extension ids, command names, template names, and script names are already constrained by their existing regex patterns (`^[a-z0-9-]+$` and friends), which forbid `:`. Hook event names (mapping keys) and hook `command` values are additionally validated to reject `:` at manifest load.
+
+### Project-local overrides
+
+Project-local overrides in `.specify/templates/overrides/` are a resolver-only concept — they have no backing manifest and cannot appear in `iter_contributions()`. Layers of that kind carry a synthetic `lookupId` of the form `project:_:{kind}:{name}` so consumers that reverse-lookup the id always see "not found", which is the intended behaviour: overrides are addressable at the stack level, not as first-class contributions.
+
+### Python API
+
+`ExtensionManifest.iter_contributions()` yields dicts of the form `{layer, sourceId, kind, name, id, ...author-declared fields}`; each entry's `id` is the computed identifier. `ExtensionManifest.contribution_id(kind, name)` returns the id for a single lookup, or `None` if no contribution matches. `PresetManifest` exposes the same two methods.
+
+`PresetResolver.collect_all_layers()` returns layer dicts that include a `lookupId` field for project overrides, preset contributions, and extension contributions. Manifest-declared preset and extension layers use the manifest's validated `id:` as the `lookupId` source id, so it matches the id `iter_contributions()` yields for that same contribution. Convention-only layers (no manifest entry declares the contribution) have no manifest id to consult, so their `lookupId` falls back to the resolver's registry key or on-disk directory name. Built-in fallback layers omit `lookupId`.
+
+### Round-trip via the public `id`
+
+The `id` field (shape `kind:name`) is the stable round-trip key for every artifact and is accepted as input by `specify artifact info`. The `lookupId` field carries manifest-backed layer provenance and is present only for artifacts contributed by presets, extensions, or project overrides. Built-in-tier artifacts have no `lookupId`; use `id` to round-trip them.
+
+For example, given a `specify artifact list --json` / `specify artifact info` stack row for a built-in artifact — which has only `id` populated (`layer`, `sourceId`, and `lookupId` are `null`) — the round-trip is:
+
+```bash
+specify artifact info command:speckit.plan --json
+```
+
+This resolves the same artifact as `specify artifact info speckit.plan --json`, because `id` (not `lookupId`) is the source-agnostic identifier every artifact carries.
+
+### Determinism guarantees
+
+Manifest contribution identifier derivation reads only the in-memory declared manifest content. No filesystem paths, no `os.environ`, no timestamps, and no file-content hashes contribute to those manifest ids. Copying an extension or preset to a different machine (or touching its files) does not change the identifiers it produces. Manifest-declared resolver `lookupId` values share this stability — renaming the installed directory of a preset or extension that declares an `id:` does not change its `lookupId`. Only convention-only contributions (undeclared in any manifest) derive their `lookupId` from the on-disk directory name or registry key, so renaming that directory does change their `lookupId`.
+
+### Opacity guidance
+
+Identifiers are stable, but treat them as **opaque strings** in stored data (registries, cache files, external tooling). Do not parse them by string-splitting on `:` — hook ids contain a compound `{eventName}:{command}` component and future grammar extensions may otherwise catch you out. If you only need to classify a stack entry's layer, use `layer_kind_from_lookup_id`; `derive_named_id` and `derive_hook_id` construct new identifiers rather than parsing existing ones.
 
 ## File System Layout
 
