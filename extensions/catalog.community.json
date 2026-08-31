@@ -1789,7 +1789,7 @@
       "download_url": "https://github.com/Fyloss/spec-kit-figma/archive/refs/tags/v3.1.1.zip",
       "repository": "https://github.com/Fyloss/spec-kit-figma",
       "homepage": "https://github.com/Fyloss/spec-kit-figma",
-      "documentation": "https://github.com/Fyloss/spec-kit-figma/blob/main/docs/",
+      "documentation": "https://github.com/Fyloss/spec-kit-figma/blob/main/docs/INSTALL.md",
       "changelog": "https://github.com/Fyloss/spec-kit-figma/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "integration",
