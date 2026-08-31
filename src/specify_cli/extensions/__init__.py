@@ -5247,6 +5247,43 @@ class HookExecutor:
             key=lambda h: normalize_priority(h.get("priority"), DEFAULT_HOOK_PRIORITY),
         )
 
+    def is_hook_registered(
+        self,
+        event_name: str,
+        extension_id: str,
+        command: str,
+    ) -> bool:
+        """Return whether a declared hook is currently registered to run.
+
+        A hook contribution is "registered" when the project's
+        ``.specify/extensions.yml`` binding array for ``event_name`` contains
+        an entry that (a) names the owning contributor via ``extension`` and
+        (b) is not explicitly disabled (``enabled: false``). The entry's
+        ``command`` must either match the declared target ``command`` or be
+        missing/empty — matching the runtime's own execution decision (see
+        :meth:`enable_hooks` / :meth:`disable_hooks`, which do not
+        distinguish per-command entries).
+
+        A structurally invalid ``.specify/extensions.yml`` is normalized to
+        an empty ``hooks`` map by :meth:`get_project_config` — this method
+        never raises for a malformed registry; it simply returns ``False``.
+        """
+        config = self.get_project_config()
+        bindings = config.get("hooks", {}).get(event_name, [])
+        if not isinstance(bindings, list):
+            return False
+        for entry in bindings:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("extension") != extension_id:
+                continue
+            if entry.get("enabled", True) is False:
+                continue
+            binding_command = entry.get("command")
+            if not binding_command or binding_command == command:
+                return True
+        return False
+
     def should_execute_hook(self, hook: Dict[str, Any]) -> bool:
         """Determine if a hook should be executed based on its condition.
 

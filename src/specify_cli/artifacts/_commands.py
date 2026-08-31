@@ -35,7 +35,7 @@ from ..presets import PresetError
 
 artifact_app = typer.Typer(
     name="artifact",
-    help="Introspect commands, templates, and scripts SpecKit exposes.",
+    help="Introspect commands, templates, scripts, and hooks SpecKit exposes.",
     no_args_is_help=True,
 )
 
@@ -100,7 +100,7 @@ def artifact_list(
         help="Emit the inventory as a JSON array on stdout.",
     ),
 ) -> None:
-    """List every command, template, and script SpecKit exposes."""
+    """List every command, template, script, and hook SpecKit exposes."""
     _require_json_flag(json_flag)
     try:
         root = _resolve_project_root()
@@ -128,7 +128,7 @@ def artifact_info(
     kind: Optional[str] = typer.Option(
         None,
         "--kind",
-        help="Narrow the lookup to one artifact family (command/template/script).",
+        help="Narrow the lookup to one artifact family (command/template/script/hook).",
     ),
 ) -> None:
     """Show one artifact and its full composition stack."""
@@ -136,9 +136,9 @@ def artifact_info(
 
     resolved_kind: Optional[ArtifactKind] = None
     if kind is not None:
-        if kind not in ("command", "template", "script"):
+        if kind not in ("command", "template", "script", "hook"):
             print(
-                f"invalid --kind {kind!r}: expected one of command, template, script",
+                f"invalid --kind {kind!r}: expected one of command, template, script, hook",
                 file=sys.stderr,
             )
             raise typer.Exit(code=2)

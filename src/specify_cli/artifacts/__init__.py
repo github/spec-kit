@@ -22,6 +22,7 @@ from .._assets import _locate_shared_asset_dir
 from .._identifier import (
     PROJECT_OVERRIDE_LAYER,
     IdentifierComponentError,
+    derive_hook_id,
     derive_public_id,
     is_dotted_command_name,
     layer_kind_from_lookup_id,
@@ -33,9 +34,16 @@ from .._script_variants import canonical_script_name
 # Public data classes
 # ---------------------------------------------------------------------------
 
-ArtifactKind = Literal["command", "template", "script"]
+ArtifactKind = Literal["command", "template", "script", "hook"]
 LayerName = Literal["project", "preset", "extension"]
 Strategy = Literal["replace", "wrap", "prepend", "append"]
+
+# Kinds whose logical name fits the ``(kind, name)`` candidate tuple grammar
+# used by ``_iter_pack_candidates``. Hooks use ``{event}:{command}`` as their
+# logical name — the embedded ``:`` breaks that grammar — so they flow
+# through a separate iterator/stack builder pipeline. See
+# ``_iter_hook_contributions`` and ``_build_hook_stack``.
+_NAMED_ARTIFACT_KINDS: frozenset[str] = frozenset({"command", "template", "script"})
 
 
 @dataclass(frozen=True)
@@ -95,6 +103,80 @@ class StackLayer:
             "manifestPath": self.manifestPath,
             "lookupId": self.lookupId,
             "sourcePath": self.sourcePath,
+        }
+
+
+@dataclass(frozen=True)
+class HookArtifact:
+    """One row in the flat inventory for a hook contribution.
+
+    A hook row is keyed by the ``(eventName, targetCommand)`` pair. The
+    top-level ``optional`` and ``priority`` scalars reflect the contributor
+    marked ``active: true`` on the composition stack — the priority-sorted
+    winner the runtime will actually execute. ``registered`` reflects the
+    project's ``.specify/extensions.yml`` binding state, matching the
+    runtime's own execution decision.
+    """
+
+    id: str
+    name: str
+    kind: Literal["hook"]
+    description: str
+    eventName: str
+    targetCommand: str
+    optional: bool
+    priority: int
+    registered: bool
+
+    def to_json_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "kind": self.kind,
+            "description": self.description,
+            "eventName": self.eventName,
+            "targetCommand": self.targetCommand,
+            "optional": self.optional,
+            "priority": self.priority,
+            "registered": self.registered,
+        }
+
+
+@dataclass(frozen=True)
+class HookStackEntry:
+    """One entry inside the ``stack`` array on a hook row.
+
+    Hook stack entries mirror the shape of :class:`StackLayer` for the fields
+    common to every artifact kind (``id``, ``layer``, ``sourceId``,
+    ``strategy``, ``active``, ``lookupId``) and add ``priority`` and
+    ``optional`` — the two per-contributor scalars that vary across the stack
+    and drive the runtime's active-winner selection. ``strategy`` is fixed
+    to ``"replace"`` because the runtime does not implement a composable hook
+    strategy vocabulary; the field is present for shape parity with the other
+    kinds. Hooks are always attributed to a manifest-declared contributor
+    (``preset`` or ``extension``), so ``layer``, ``sourceId``, and ``lookupId``
+    are never ``None``.
+    """
+
+    id: str
+    layer: LayerName
+    sourceId: str
+    strategy: Literal["replace"]
+    active: bool
+    lookupId: str
+    priority: int
+    optional: bool
+
+    def to_json_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "layer": self.layer,
+            "sourceId": self.sourceId,
+            "strategy": self.strategy,
+            "active": self.active,
+            "lookupId": self.lookupId,
+            "priority": self.priority,
+            "optional": self.optional,
         }
 
 
@@ -508,6 +590,138 @@ def _preset_display_name(pack_dir: Path, pack_id: str) -> str:
         return pack_id
 
 
+def _iter_hook_contributions(
+    project_root: Path,
+) -> Iterable[tuple[int, dict[str, Any]]]:
+    """Yield ``(insertion_index, contribution)`` pairs for every declared hook.
+
+    Walks every installed extension (and, forward-compatibly, every installed
+    preset — though :class:`PresetManifest` today does not emit ``kind:"hook"``
+    entries) in the same order used by
+    :meth:`PresetResolver.iter_extensions_by_priority` /
+    :meth:`PresetResolver.iter_presets_by_priority`, and yields each
+    ``ExtensionManifest.iter_contributions()`` entry whose ``kind`` is
+    ``"hook"``. The insertion index is a running counter across the whole
+    walk; two contributors that share the same explicit ``priority`` on the
+    same ``(event, command)`` pair are ordered by this index — matching the
+    runtime's stable-sort tiebreak (see
+    ``HookExecutor.get_hooks_for_event``).
+
+    Contributions with missing/empty ``eventName`` or ``command`` fields are
+    silently skipped — the manifest validator has already surfaced those.
+    """
+    from ..extensions import ExtensionManager, ExtensionManifest, ValidationError
+    from ..presets import PresetManager, PresetResolver  # lazy: avoids circular import
+
+    try:
+        resolver = PresetResolver(project_root)
+    except OSError:
+        return
+
+    counter = 0
+
+    # Presets are walked first for forward compatibility with a future
+    # ``PresetManifest.iter_contributions()`` that emits hooks. Today none
+    # do, so this loop yields nothing — but the ordering ensures that if a
+    # preset ever declares a hook it participates in the same insertion-index
+    # tiebreak as extensions.
+    preset_manager = PresetManager(project_root)
+    for pack_id, _metadata in resolver.iter_presets_by_priority():
+        manifest = preset_manager.get_pack(pack_id)
+        if manifest is None:
+            continue
+        for contribution in manifest.iter_contributions():
+            if contribution.get("kind") != "hook":
+                continue
+            if not contribution.get("eventName") or not contribution.get("command"):
+                continue
+            counter += 1
+            yield counter, contribution
+
+    ext_manager = ExtensionManager(project_root)
+    for _priority, ext_id, metadata in resolver.iter_extensions_by_priority():
+        ext_dir = resolver.extensions_dir / ext_id
+        if metadata is not None:
+            manifest = ext_manager.get_extension(ext_id)
+        else:
+            manifest_path = ext_dir / "extension.yml"
+            manifest = None
+            if manifest_path.is_file():
+                try:
+                    manifest = ExtensionManifest(manifest_path)
+                except (ValidationError, OSError, TypeError, AttributeError):
+                    manifest = None
+        if manifest is None:
+            continue
+        for contribution in manifest.iter_contributions():
+            if contribution.get("kind") != "hook":
+                continue
+            if not contribution.get("eventName") or not contribution.get("command"):
+                continue
+            counter += 1
+            yield counter, contribution
+
+
+def _hook_logical_name(event_name: str, command: str) -> str:
+    """Return the ``{event}:{command}`` logical name used for hook rows."""
+    return f"{event_name}:{command}"
+
+
+def _hook_public_id(event_name: str, command: str) -> str:
+    """Return the shorthand ``hook:{event}:{command}`` public identifier."""
+    return f"hook:{event_name}:{command}"
+
+
+def _build_hook_stack(
+    grouped: list[tuple[int, dict[str, Any]]],
+) -> list[HookStackEntry]:
+    """Build the composition stack for a single ``(event, command)`` group.
+
+    ``grouped`` is the subset of ``_iter_hook_contributions`` output that
+    shares one ``(eventName, command)`` pair, in original insertion order.
+    Contributors are re-sorted by ``(priority, insertion_index)`` — Python's
+    stable sort combined with the ascending secondary key preserves the same
+    "priority ascending, ties break by insertion order" behavior the runtime
+    uses (see ``HookExecutor.get_hooks_for_event``). The first entry after
+    the sort is marked ``active: true``.
+    """
+    from ..extensions import DEFAULT_HOOK_PRIORITY, normalize_priority
+
+    def _sort_key(item: tuple[int, dict[str, Any]]) -> tuple[int, int]:
+        idx, contribution = item
+        priority = normalize_priority(
+            contribution.get("priority"), DEFAULT_HOOK_PRIORITY
+        )
+        return (priority, idx)
+
+    ordered = sorted(grouped, key=_sort_key)
+    entries: list[HookStackEntry] = []
+    for position, (_idx, contribution) in enumerate(ordered):
+        layer = contribution.get("layer", "extension")
+        source_id = contribution.get("sourceId", "")
+        lookup_id = contribution.get("id", "")
+        priority = normalize_priority(
+            contribution.get("priority"), DEFAULT_HOOK_PRIORITY
+        )
+        optional = bool(contribution.get("optional", True))
+        entries.append(
+            HookStackEntry(
+                id=_hook_public_id(
+                    str(contribution.get("eventName", "")),
+                    str(contribution.get("command", "")),
+                ),
+                layer=layer,  # type: ignore[arg-type]
+                sourceId=str(source_id),
+                strategy="replace",
+                active=(position == 0),
+                lookupId=str(lookup_id),
+                priority=priority,
+                optional=optional,
+            )
+        )
+    return entries
+
+
 def _build_stack(
     project_root: Path,
     kind: ArtifactKind,
@@ -699,19 +913,43 @@ def _resolve_kind_hint(name: str, kind: ArtifactKind | None) -> tuple[str, Artif
     Returns ``(bare_name, resolved_kind)``. When ``name`` uses the ``kind:name``
     grammar and ``kind`` is also set explicitly, the two must agree — a
     mismatch is treated as an unknown artifact.
+
+    Hook shorthand is ``hook:{eventName}:{command}``; the "bare name" after
+    the leading ``hook:`` still contains the ``event:command`` colon and is
+    the logical row name used by :class:`HookArtifact`. That name is
+    intentionally exempt from :func:`validate_component` — the colon-free
+    grammar the other three kinds enforce does not apply to hooks (see
+    :func:`_validate_artifact_name`).
     """
     if ":" in name:
         prefix, _, bare = name.partition(":")
-        if prefix in ("command", "template", "script"):
+        if prefix in _NAMED_ARTIFACT_KINDS:
             resolved: ArtifactKind = prefix  # type: ignore[assignment]
             if kind is not None and kind != resolved:
                 raise ArtifactNotFoundError(name)
             return bare, resolved
+        if prefix == "hook":
+            if kind is not None and kind != "hook":
+                raise ArtifactNotFoundError(name)
+            return bare, "hook"
     return name, kind
 
 
 def _validate_artifact_name(name: str, kind: ArtifactKind) -> str:
-    """Validate the structural identifier component constraints for ``name``."""
+    """Validate the structural identifier component constraints for ``name``.
+
+    Hook logical names are ``{eventName}:{command}`` — the embedded ``:`` is
+    intentional and part of the round-trip key, so
+    :func:`validate_component` is bypassed for hook kind. Empty hook names
+    still raise :class:`ArtifactNotFoundError`.
+    """
+    if kind == "hook":
+        if not isinstance(name, str) or not name or ":" not in name:
+            raise ArtifactNotFoundError(name)
+        event, _, command = name.partition(":")
+        if not event or not command:
+            raise ArtifactNotFoundError(name)
+        return name
     try:
         return validate_component(name, f"{kind} name")
     except IdentifierComponentError as exc:
@@ -757,7 +995,14 @@ class ArtifactCatalog:
         return artifacts
 
     def list_artifacts_with_stack(self) -> list[dict[str, Any]]:
-        """Return list rows enriched with each artifact's full composition stack."""
+        """Return list rows enriched with each artifact's full composition stack.
+
+        Ordered so all command/template/script rows appear first (sorted by
+        the existing ``kind`` order and then by name), followed by hook rows
+        sorted primarily by ``eventName`` alphabetical and secondarily by the
+        winner's ``priority`` — matching the runtime's execution order for
+        hooks that share an event (see FR-016).
+        """
         artifacts, layers_cache = self._collect_inventory()
         rows: list[dict[str, Any]] = []
         for artifact in artifacts:
@@ -769,6 +1014,15 @@ class ArtifactCatalog:
             )
             row = artifact.to_json_dict()
             row["stack"] = [layer.to_json_dict() for layer in stack]
+            rows.append(row)
+
+        # Validate project + registries once. The hook pipeline reuses the
+        # same failure envelopes as the command/template/script pipeline.
+        hook_rows, hook_stack_cache = self._collect_hook_inventory()
+        for hook in hook_rows:
+            stack_entries = hook_stack_cache.get((hook.eventName, hook.targetCommand), [])
+            row = hook.to_json_dict()
+            row["stack"] = [entry.to_json_dict() for entry in stack_entries]
             rows.append(row)
         return rows
 
@@ -783,13 +1037,18 @@ class ArtifactCatalog:
         Argument resolution:
 
         * ``name`` accepts the ``kind:name`` grammar as shorthand; when both
-          the shorthand and ``kind`` are supplied they must agree.
+          the shorthand and ``kind`` are supplied they must agree. Hook
+          shorthand is ``hook:{eventName}:{command}`` — the embedded
+          ``event:command`` colon is part of the hook logical name.
         * When neither the shorthand nor ``kind`` narrows the search and
           more than one kind matches ``name``, raises
           :class:`AmbiguousArtifactError`.
         * When no artifact matches, raises :class:`ArtifactNotFoundError`.
         """
         bare, resolved_kind = _resolve_kind_hint(name, kind)
+
+        if resolved_kind == "hook":
+            return self._get_hook_info(bare, original_argument=name)
 
         # Project and registry validation happens once, inside
         # ``_collect_inventory`` below — the same chokepoint ``list_artifacts``
@@ -802,11 +1061,21 @@ class ArtifactCatalog:
                 for artifact in inventory
                 if artifact.name == bare
             ]
+            # Also probe the hook inventory so a bare name that unambiguously
+            # matches only a hook logical name (``event:command``) still
+            # resolves — and so a name that matches BOTH a named kind and a
+            # hook surfaces the ambiguity envelope.
+            hook_rows, _hook_stack_cache = self._collect_hook_inventory()
+            hook_match = any(row.name == bare for row in hook_rows)
+            if hook_match:
+                matches.append(("hook", bare))
             if not matches:
                 raise ArtifactNotFoundError(name)
-            if len(matches) > 1:
+            if len({m[0] for m in matches}) > 1:
                 raise AmbiguousArtifactError(bare, [k for k, _ in matches])
             resolved_kind = matches[0][0]
+            if resolved_kind == "hook":
+                return self._get_hook_info(bare, original_argument=name)
 
         validated_name = _validate_artifact_name(bare, resolved_kind)
         artifact = next(
@@ -835,6 +1104,27 @@ class ArtifactCatalog:
             "description": artifact.description,
             "stack": [layer.to_json_dict() for layer in stack],
         }
+
+    def _get_hook_info(self, bare_name: str, original_argument: str) -> dict[str, Any]:
+        """Return the full JSON-ready dict for a hook artifact info lookup.
+
+        ``bare_name`` is the logical hook name (``{eventName}:{command}``)
+        after any ``hook:`` prefix has been stripped by
+        :func:`_resolve_kind_hint`. ``original_argument`` is preserved so the
+        error message on an unknown hook mirrors what the caller passed in.
+        """
+        _validate_artifact_name(bare_name, "hook")
+        event_name, _, command = bare_name.partition(":")
+        hook_rows, stack_cache = self._collect_hook_inventory()
+        for row in hook_rows:
+            if row.eventName == event_name and row.targetCommand == command:
+                stack_entries = stack_cache.get((event_name, command), [])
+                if not stack_entries:  # pragma: no cover — invariant
+                    raise ArtifactNotFoundError(original_argument)
+                payload = row.to_json_dict()
+                payload["stack"] = [entry.to_json_dict() for entry in stack_entries]
+                return payload
+        raise ArtifactNotFoundError(original_argument)
 
     # -------------------------------------------------------------- internals
     def _collect_inventory(
@@ -899,6 +1189,105 @@ class ArtifactCatalog:
 
         kind_order = {"command": 0, "template": 1, "script": 2}
         return sorted(artifacts, key=lambda a: (kind_order[a.kind], a.name)), layers_cache
+
+    def _collect_hook_inventory(
+        self,
+    ) -> tuple[
+        list[HookArtifact],
+        dict[tuple[str, str], list[HookStackEntry]],
+    ]:
+        """Return the hook inventory plus the per-pair composition stacks.
+
+        The list is sorted primarily by ``eventName`` alphabetical and
+        secondarily by the winner's ``priority`` — matching FR-016. Ties
+        between winners at the same event and priority preserve first-yield
+        insertion order via a stable sort.
+
+        The second return value maps each ``(eventName, targetCommand)`` pair
+        to its full :class:`HookStackEntry` list so callers do not need to
+        rebuild the stack for a subsequent info lookup.
+
+        Registry validation raises :class:`ArtifactResolutionError` if the
+        extension registry is corrupt; a structurally-invalid
+        ``.specify/extensions.yml`` is normalized to an empty bindings map
+        by :meth:`HookExecutor.get_project_config` and produces
+        ``registered: false`` for every declared hook without raising.
+        """
+        _validate_project(self.project_root)
+        _validate_extension_registry(self.project_root)
+        _validate_preset_registry(self.project_root)
+
+        from ..extensions import DEFAULT_HOOK_PRIORITY, HookExecutor, normalize_priority
+
+        grouped: dict[tuple[str, str], list[tuple[int, dict[str, Any]]]] = {}
+        for idx, contribution in _iter_hook_contributions(self.project_root):
+            event_name = str(contribution.get("eventName", ""))
+            command = str(contribution.get("command", ""))
+            grouped.setdefault((event_name, command), []).append((idx, contribution))
+
+        hook_executor = HookExecutor(self.project_root)
+
+        rows: list[HookArtifact] = []
+        stack_cache: dict[tuple[str, str], list[HookStackEntry]] = {}
+
+        for (event_name, command), contributions in grouped.items():
+            stack_entries = _build_hook_stack(contributions)
+            stack_cache[(event_name, command)] = stack_entries
+            if not stack_entries:  # pragma: no cover — invariant
+                continue
+
+            # The description precedence follows the same "highest-priority
+            # non-empty" rule the other kinds use (FR-015): walk contributors
+            # in stack order (already priority-sorted) and take the first
+            # non-empty description.
+            description = ""
+            ordered_contributions = [
+                contribution
+                for _idx, contribution in sorted(
+                    contributions,
+                    key=lambda item: (
+                        normalize_priority(
+                            item[1].get("priority"), DEFAULT_HOOK_PRIORITY
+                        ),
+                        item[0],
+                    ),
+                )
+            ]
+            for contribution in ordered_contributions:
+                candidate = contribution.get("description", "")
+                if isinstance(candidate, str) and candidate:
+                    description = candidate
+                    break
+
+            # Top-level ``optional`` / ``priority`` mirror the active winner
+            # (FR-017); ``registered`` is true when ANY contributor in the
+            # stack has a matching, non-disabled binding entry (Q1 answer B).
+            winner = stack_entries[0]
+            registered = any(
+                hook_executor.is_hook_registered(
+                    event_name=event_name,
+                    extension_id=entry.sourceId,
+                    command=command,
+                )
+                for entry in stack_entries
+            )
+
+            rows.append(
+                HookArtifact(
+                    id=_hook_public_id(event_name, command),
+                    name=_hook_logical_name(event_name, command),
+                    kind="hook",
+                    description=description,
+                    eventName=event_name,
+                    targetCommand=command,
+                    optional=winner.optional,
+                    priority=winner.priority,
+                    registered=registered,
+                )
+            )
+
+        rows.sort(key=lambda row: (row.eventName, row.priority))
+        return rows, stack_cache
 
     def _iter_candidate_artifacts(
         self,
@@ -966,13 +1355,20 @@ class ArtifactCatalog:
         manifest: Any,
         pack_dir: Path,
     ) -> Iterable[tuple[ArtifactKind, str]]:
-        """Yield manifest-declared and convention-based candidate names."""
+        """Yield manifest-declared and convention-based candidate names.
+
+        Hook contributions are intentionally not yielded here: their logical
+        name (``{event}:{command}``) contains a ``:`` that would break the
+        ``(kind, name)`` candidate tuple grammar shared with the resolver.
+        Hooks are surfaced through the parallel :func:`_iter_hook_contributions`
+        pipeline instead — see :meth:`ArtifactCatalog._collect_hook_inventory`.
+        """
         if manifest is not None:
             for contribution in manifest.iter_contributions():
                 kind = contribution.get("kind")
                 name = contribution.get("name")
                 if (
-                    kind in ("command", "template", "script")
+                    kind in _NAMED_ARTIFACT_KINDS
                     and isinstance(name, str)
                     and name
                     and ":" not in name
@@ -1231,6 +1627,8 @@ __all__ = [
     "ArtifactKind",
     "ArtifactNotFoundError",
     "ArtifactResolutionError",
+    "HookArtifact",
+    "HookStackEntry",
     "LayerName",
     "NotASpecKitProjectError",
     "StackLayer",
