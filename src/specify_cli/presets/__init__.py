@@ -63,6 +63,20 @@ def _content_sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+def _is_comparable_version(value: str) -> bool:
+    """Return whether a recorded version can be evaluated against a specifier.
+
+    ``version_satisfies()`` answers "does not satisfy" for an unparseable
+    version, which is indistinguishable from a genuine mismatch. Callers that
+    need to tell those apart check here first.
+    """
+    try:
+        pkg_version.Version(value)
+    except pkg_version.InvalidVersion:
+        return False
+    return True
+
+
 def _constitution_is_generated(
     project_root: Path,
     memory_constitution: Path,
@@ -971,9 +985,14 @@ class PresetManager:
         Returns:
             One entry per unsatisfied dependency, each with ``id``, the
             requested ``version`` specifier (``None`` when unconstrained), the
-            ``installed`` version (``None`` when absent), and a ``reason`` of
-            ``"missing"``, ``"disabled"``, or ``"version"``. Optional
-            dependencies (``required: false``) are never reported.
+            ``installed`` version (``None`` when absent or unusable), and a
+            ``reason`` of ``"missing"``, ``"stale"``, ``"disabled"``, or
+            ``"version"``. Optional dependencies (``required: false``) are
+            never reported.
+
+            A registry version that cannot be parsed is treated as
+            uncomparable, not as a mismatch: the extension is installed and
+            usable, and only its recorded version is unreadable.
         """
         # Defense in depth, mirroring check_compatibility(): this method is
         # public and also reachable with a hand-built manifest object that
@@ -989,7 +1008,8 @@ class PresetManager:
         if not declared:
             return []
 
-        registry = ExtensionRegistry(self.project_root / ".specify" / "extensions")
+        extensions_dir = self.project_root / ".specify" / "extensions"
+        registry = ExtensionRegistry(extensions_dir)
         unmet: List[Dict[str, Any]] = []
 
         for dep in declared:
@@ -1002,6 +1022,17 @@ class PresetManager:
             installed_version = (
                 installed_version if isinstance(installed_version, str) else None
             )
+
+            # A registry entry is not proof the extension can contribute. If
+            # its directory is gone, PresetResolver skips it outright (both
+            # template lookup and layer collection guard on ``is_dir()``), so
+            # the preset is as inert as if it were never installed -- but the
+            # surviving entry would otherwise read as satisfied.
+            if not (extensions_dir / dep["id"]).is_dir():
+                unmet.append(
+                    {**dep, "installed": installed_version, "reason": "stale"}
+                )
+                continue
 
             # A disabled extension is registered but contributes nothing:
             # resolution skips it (see _collect_extension_layers), so the
@@ -1018,10 +1049,13 @@ class PresetManager:
             if not constraint:
                 continue
 
-            if installed_version is None:
-                # A registry entry without a usable version cannot be compared.
-                # Treat it as satisfied rather than inventing a failure, since
-                # the extension is demonstrably installed and enabled.
+            # A version that cannot be compared is not a mismatch. Absent or
+            # non-string is one way to be unusable; an unparseable string such
+            # as "unknown" is another, and version_satisfies() cannot tell them
+            # apart -- it catches InvalidVersion and returns False, which would
+            # report a mismatch against a version nobody can evaluate. Check
+            # parseability up front so only real comparisons reach the warning.
+            if installed_version is None or not _is_comparable_version(installed_version):
                 continue
             if not version_satisfies(installed_version, constraint):
                 unmet.append(

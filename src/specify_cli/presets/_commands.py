@@ -66,6 +66,12 @@ def _warn_unmet_extension_dependencies(manager, manifest) -> None:
         if reason == "missing":
             console.print(f"    [yellow]{extension_id}[/yellow] is not installed")
             remedy = f"specify extension add {extension_id}"
+        elif reason == "stale":
+            console.print(
+                f"    [yellow]{extension_id}[/yellow] is registered but its "
+                "files are missing"
+            )
+            remedy = f"specify extension add {extension_id} --force"
         elif reason == "disabled":
             console.print(f"    [yellow]{extension_id}[/yellow] is installed but disabled")
             remedy = f"specify extension enable {extension_id}"

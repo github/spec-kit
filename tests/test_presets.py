@@ -1187,10 +1187,19 @@ class TestPresetExtensionDependencies:
     """Test find_unmet_extension_dependencies (issue #4231)."""
 
     @staticmethod
-    def _install_extension(project_dir, extension_id, version, enabled=True):
-        """Register an installed extension the way the extension installer does."""
+    def _install_extension(
+        project_dir, extension_id, version, enabled=True, with_files=True
+    ):
+        """Register an installed extension the way the extension installer does.
+
+        ``with_files=False`` leaves the registry entry without its directory,
+        reproducing the stale state left behind when the files are deleted out
+        from under the registry.
+        """
         extensions_dir = project_dir / ".specify" / "extensions"
         extensions_dir.mkdir(parents=True, exist_ok=True)
+        if with_files:
+            (extensions_dir / extension_id).mkdir(parents=True, exist_ok=True)
         registry_path = extensions_dir / ".registry"
         data = {"schema_version": "1.0", "extensions": {}}
         if registry_path.exists():
@@ -1306,15 +1315,21 @@ class TestPresetExtensionDependencies:
             manifest
         ) == []
 
-    def test_registry_entry_without_version_is_not_a_failure(
-        self, project_dir, temp_dir, valid_pack_data
+    @pytest.mark.parametrize("bad_version", [None, 5, "unknown", "", "latest"])
+    def test_uncomparable_registry_version_is_not_a_mismatch(
+        self, project_dir, temp_dir, valid_pack_data, bad_version
     ):
-        """An unusable registry version cannot be compared, so it is not invented
-        into a mismatch -- the extension is demonstrably installed."""
+        """A version that cannot be evaluated must not be reported as a mismatch.
+
+        ``version_satisfies()`` returns False for an unparseable version, which
+        is indistinguishable from a genuine mismatch -- so a string like
+        "unknown" would otherwise be reported as failing a constraint nobody
+        can actually evaluate it against.
+        """
         self._install_extension(project_dir, "speckit-inventory", "0.1.0")
         registry_path = project_dir / ".specify" / "extensions" / ".registry"
         data = json.loads(registry_path.read_text(encoding="utf-8"))
-        data["extensions"]["speckit-inventory"]["version"] = None
+        data["extensions"]["speckit-inventory"]["version"] = bad_version
         registry_path.write_text(json.dumps(data), encoding="utf-8")
 
         manifest = self._manifest(
@@ -1325,6 +1340,62 @@ class TestPresetExtensionDependencies:
         assert PresetManager(project_dir).find_unmet_extension_dependencies(
             manifest
         ) == []
+
+    def test_stale_registry_entry_is_reported(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A registry entry whose extension directory is gone counts as unmet.
+
+        PresetResolver guards on ``ext_dir.is_dir()`` in both template lookup
+        and layer collection, so a stale entry contributes nothing -- but the
+        surviving registry entry would otherwise read as satisfied.
+        """
+        self._install_extension(
+            project_dir, "speckit-inventory", "0.1.0", with_files=False
+        )
+        manifest = self._manifest(temp_dir, valid_pack_data, ["speckit-inventory"])
+
+        unmet = PresetManager(project_dir).find_unmet_extension_dependencies(manifest)
+
+        assert len(unmet) == 1
+        assert unmet[0]["reason"] == "stale"
+        assert unmet[0]["installed"] == "0.1.0"
+
+    def test_stale_is_reported_ahead_of_disabled_and_version(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """Restoring the files is the prerequisite, so it is reported first."""
+        self._install_extension(
+            project_dir, "speckit-inventory", "0.1.0",
+            enabled=False, with_files=False,
+        )
+        manifest = self._manifest(
+            temp_dir, valid_pack_data,
+            [{"id": "speckit-inventory", "version": ">=9.0.0"}],
+        )
+
+        unmet = PresetManager(project_dir).find_unmet_extension_dependencies(manifest)
+
+        assert [dep["reason"] for dep in unmet] == ["stale"]
+
+    def test_stale_warning_suggests_a_forced_reinstall(self):
+        """The stale remedy must restore the files, not re-add a registered id."""
+        manager = MagicMock()
+        manager.find_unmet_extension_dependencies.return_value = [
+            {
+                "id": "speckit-inventory",
+                "reason": "stale",
+                "installed": "0.1.0",
+                "version": None,
+            }
+        ]
+
+        with console.capture() as capture:
+            _warn_unmet_extension_dependencies(manager, MagicMock())
+
+        output = strip_ansi(capture.get())
+        assert "its files are missing" in output
+        assert "specify extension add speckit-inventory --force" in output
 
     def test_disabled_dependency_is_reported(
         self, project_dir, temp_dir, valid_pack_data
