@@ -73,7 +73,7 @@ specify workflow run ./my-workflow.yml --input spec="Build a user authentication
 ```bash
 specify workflow run speckit \
   --input spec="Build a user authentication system with OAuth support" \
-  --input scope="backend-only"
+  --input integration="claude"
 ```
 
 ## Step Types
