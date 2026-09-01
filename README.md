@@ -326,10 +326,12 @@ Spec-Driven Development is a structured process that emphasizes:
 
 Yes — we dogfood Spec Kit while developing Spec Kit, especially for substantial
 features and changes to the development workflow. Contributors are asked to test
-relevant changes through the Spec-Driven Development commands, and the
-[feature assessment workflow](./.github/workflows/feature-assess.md) installs the
-CLI from the current checkout and runs Spec Kit's `assess` extension against
-feature requests.
+relevant changes through the Spec-Driven Development commands. The
+[feature assessment workflow](./.github/workflows/feature-assess.md) is currently
+the automated dogfooding path: its setup uses the CLI from the current checkout
+to initialize Copilot and install the `assess` extension, after which Copilot
+follows the generated assessment skills against feature requests. The other
+agentic workflows currently operate independently of the Specify CLI.
 
 This does not mean every change goes through the full workflow. Small fixes can
 use the normal issue, pull request, review, and test process. Most generated
