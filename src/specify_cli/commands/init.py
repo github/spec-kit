@@ -7,6 +7,7 @@ import json
 import os
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -56,8 +57,17 @@ def _ext_spec_is_url(ext_spec: str) -> bool:
         return False
 
 
+def _file_fingerprint(path: Path) -> str:
+    """Return a digest of *path* contents and permission bits."""
+    digest = hashlib.sha256()
+    digest.update(path.read_bytes())
+    digest.update(b"\0mode=")
+    digest.update(format(stat.S_IMODE(path.stat().st_mode), "o").encode())
+    return digest.hexdigest()
+
+
 def _snapshot_files(root: Path) -> dict[str, str]:
-    """Return SHA-256 digests for regular files below *root*."""
+    """Return fingerprints for regular files below *root*."""
     if not root.exists():
         return {}
 
@@ -65,20 +75,26 @@ def _snapshot_files(root: Path) -> dict[str, str]:
     for path in root.rglob("*"):
         if not path.is_file() or path.is_symlink():
             continue
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        files[path.relative_to(root).as_posix()] = digest
+        files[path.relative_to(root).as_posix()] = _file_fingerprint(path)
     return files
 
 
 def _snapshot_matching_files(root: Path, relative_paths: set[str]) -> dict[str, str]:
-    """Return digests for selected regular files below *root*."""
+    """Return fingerprints for selected regular files below *root*."""
     files: dict[str, str] = {}
     for relative_path in relative_paths:
         path = root / relative_path
         if not path.is_file() or path.is_symlink():
             continue
-        files[relative_path] = hashlib.sha256(path.read_bytes()).hexdigest()
+        files[relative_path] = _file_fingerprint(path)
     return files
+
+
+def _resolve_preview_child_extension(spec: str) -> str:
+    """Expand home-relative extension specs against the parent home."""
+    if spec.startswith("~"):
+        return str(Path(spec).expanduser().resolve())
+    return spec
 
 
 def _preview_subprocess_env(staged_home: Path) -> dict[str, str]:
@@ -95,6 +111,8 @@ def _preview_subprocess_env(staged_home: Path) -> dict[str, str]:
             "XDG_STATE_HOME": str(staged_home / ".local" / "state"),
             "APPDATA": str(staged_home / "AppData" / "Roaming"),
             "LOCALAPPDATA": str(staged_home / "AppData" / "Local"),
+            "PYTHONIOENCODING": "utf-8",
+            "PYTHONUTF8": "1",
         }
     )
     home_drive, home_path = os.path.splitdrive(home)
@@ -433,40 +451,125 @@ def _emit_dry_run_preview(payload: dict[str, Any], *, json_output: bool) -> None
         console.print(f"{record['action']:<10} {record['path']} [dim]({source})[/dim]")
 
 
-def _remap_in_project_symlinks(project_root: Path, staged_root: Path) -> None:
-    """Retarget staged absolute symlinks that originally pointed inside *project_root*.
+def _strip_windows_extended_prefix(text: str) -> str:
+    """Strip the ``\\\\?\\`` / ``//?/`` prefix Windows adds to long paths."""
+    if text.startswith("\\\\?\\"):
+        text = text[4:]
+        if text[:4].upper() == "UNC\\":
+            return "\\\\" + text[4:]
+        return text
+    if text.startswith("//?/"):
+        text = text[4:]
+        if text[:4].upper() == "UNC/":
+            return "//" + text[4:]
+        return text
+    return text
 
-    ``copytree(..., symlinks=True)`` preserves absolute targets, so an in-tree
-    link keeps pointing at the live project. Remap those to the corresponding
-    staged path. Links that resolve outside *project_root* are left unchanged
-    so the initializer's containment check still rejects them.
-    """
-    project_root = project_root.resolve()
-    staged_root = staged_root.resolve()
-    for dirpath, dirnames, filenames in os.walk(staged_root, followlinks=False):
+
+def _normalize_fs_path(path: Path) -> Path:
+    """Resolve *path* and drop Windows extended prefixes so containment works."""
+    text = _strip_windows_extended_prefix(os.fsdecode(os.fspath(path)))
+    path = Path(text)
+    try:
+        path = path.resolve()
+    except (OSError, RuntimeError):
+        pass
+    text = _strip_windows_extended_prefix(os.fsdecode(os.fspath(path)))
+    if os.name == "nt":
+        text = os.path.normcase(text)
+    return Path(text)
+
+
+def _is_within_root(path: Path, root: Path) -> bool:
+    path_text = os.fspath(_normalize_fs_path(path))
+    root_text = os.fspath(_normalize_fs_path(root))
+    try:
+        common = os.path.commonpath((path_text, root_text))
+    except ValueError:
+        return False
+    if os.name == "nt":
+        return os.path.normcase(common) == os.path.normcase(root_text)
+    return common == root_text
+
+
+def _symlink_target(path: Path) -> Path | None:
+    raw = _strip_windows_extended_prefix(os.fsdecode(os.readlink(path)))
+    raw_target = Path(raw)
+    if not raw_target.is_absolute():
+        raw_target = path.parent / raw_target
+    return _normalize_fs_path(raw_target)
+
+
+def _iter_symlinks(root: Path) -> list[Path]:
+    found: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         for name in (*dirnames, *filenames):
-            path = Path(dirpath) / name
-            if not path.is_symlink():
+            candidate = Path(dirpath) / name
+            if candidate.is_symlink():
+                found.append(candidate)
+    return found
+
+
+def _remap_symlink_to_staged(
+    path: Path, project_root: Path, staged_root: Path
+) -> None:
+    target = _symlink_target(path)
+    if target is None:
+        _materialize_symlink(path)
+        return
+    try:
+        relative = os.path.relpath(os.fspath(target), os.fspath(project_root))
+    except ValueError:
+        _materialize_symlink(path)
+        return
+    relative_path = Path(relative)
+    if relative_path.is_absolute() or ".." in relative_path.parts:
+        _materialize_symlink(path)
+        return
+    remapped = staged_root / relative_path
+    was_dir = path.is_dir()
+    path.unlink()
+    path.symlink_to(remapped, target_is_directory=was_dir)
+
+
+def _materialize_symlink(path: Path) -> None:
+    """Replace a live external symlink with an empty directory placeholder.
+
+    Nested targets are not copied, which avoids following a link to ``/`` or
+    ``$HOME``. ``mkdir`` and file writes then stay inside staging.
+    """
+    path.unlink()
+    path.mkdir()
+
+
+def _remap_in_project_symlinks(project_root: Path, staged_root: Path) -> None:
+    """Keep staged symlinks from pointing at the live project or external paths.
+
+    In-project absolute links are retargeted at the staged copy. Links that
+    resolve outside the project are replaced with placeholders so the child
+    initializer cannot write through them.
+    """
+    project_root = _normalize_fs_path(project_root)
+    staged_root = _normalize_fs_path(staged_root)
+    for _ in range(32):
+        changed = False
+        for path in _iter_symlinks(staged_root):
+            resolved = _symlink_target(path)
+            if resolved is not None and _is_within_root(resolved, staged_root):
                 continue
-            raw_target = Path(os.fsdecode(os.readlink(path)))
-            if not raw_target.is_absolute():
+            if resolved is not None and _is_within_root(resolved, project_root):
+                _remap_symlink_to_staged(path, project_root, staged_root)
+                changed = True
                 continue
-            try:
-                resolved_target = raw_target.resolve()
-            except (OSError, RuntimeError):
-                resolved_target = raw_target
-            try:
-                relative = resolved_target.relative_to(project_root)
-            except ValueError:
-                continue
-            remapped = staged_root / relative
-            was_dir = path.is_dir()
-            path.unlink()
-            path.symlink_to(remapped, target_is_directory=was_dir)
+            _materialize_symlink(path)
+            changed = True
+        if not changed:
+            return
+    raise RuntimeError("staged symlink isolation did not converge")
 
 
 def _stage_project_copy(project_path: Path, staged_root: Path) -> None:
-    """Copy *project_path* into staging and remap in-project absolute symlinks."""
+    """Copy *project_path* into staging and isolate live symlinks."""
     shutil.copytree(project_path, staged_root, symlinks=True)
     _remap_in_project_symlinks(project_path.resolve(), staged_root.resolve())
 
@@ -527,7 +630,9 @@ def _preview_init(
         if preset:
             command.extend(["--preset", preset])
         for extension in staged_extensions:
-            command.extend(["--extension", extension])
+            command.extend(
+                ["--extension", _resolve_preview_child_extension(extension)]
+            )
         if trust_extension_urls:
             command.append("--trust-extension-urls")
 
@@ -539,11 +644,13 @@ def _preview_init(
             cwd=Path.cwd(),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             env=env,
         )
         if result.returncode:
-            details = (result.stderr or result.stdout).strip().replace("\n", " ")
+            details = (result.stderr or result.stdout or "").strip().replace("\n", " ")
             raise RuntimeError(f"staged initialization failed: {details[:240]}")
 
         registry_sources = _preview_registry_sources(staged_root)

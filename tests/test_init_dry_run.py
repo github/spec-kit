@@ -11,10 +11,13 @@ import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
+from specify_cli._assets import _locate_bundled_extension
 from specify_cli.commands.init import (
-    _remap_in_project_symlinks,
+    _is_within_root,
+    _normalize_fs_path,
     _snapshot_files,
     _stage_project_copy,
+    _strip_windows_extended_prefix,
 )
 
 _PROVENANCE_CATEGORIES = {"core", "integration", "preset", "workflow", "extension"}
@@ -22,6 +25,46 @@ _PROVENANCE_CATEGORIES = {"core", "integration", "preset", "workflow", "extensio
 
 def _action_for(payload: dict, path: str) -> dict:
     return next(action for action in payload["actions"] if action["path"] == path)
+
+
+def _assert_same_path(left: Path | str, right: Path | str) -> None:
+    left_path = Path(left)
+    right_path = Path(right)
+    if left_path.exists() and right_path.exists():
+        assert os.path.samefile(left_path, right_path)
+        return
+    assert _normalize_fs_path(left_path) == _normalize_fs_path(right_path)
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (r"\\?\C:\Users\runner\proj", r"C:\Users\runner\proj"),
+        ("//?/C:/Users/runner/proj", "C:/Users/runner/proj"),
+        (r"\\?\UNC\server\share\dir", r"\\server\share\dir"),
+        ("//?/UNC/server/share/dir", "//server/share/dir"),
+        ("/tmp/proj", "/tmp/proj"),
+        (r"C:\Users\runner\proj", r"C:\Users\runner\proj"),
+    ],
+)
+def test_strip_windows_extended_prefix(raw: str, expected: str) -> None:
+    assert _strip_windows_extended_prefix(raw) == expected
+
+
+def test_is_within_root_for_nested_real_paths(tmp_path: Path) -> None:
+    nested = tmp_path / "store"
+    nested.mkdir()
+    assert _is_within_root(nested, tmp_path)
+    assert _is_within_root(tmp_path, tmp_path)
+    assert not _is_within_root(tmp_path.parent, tmp_path)
+
+
+def test_is_within_root_does_not_match_prefix_sibling(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    sibling = tmp_path / "proj-evil"
+    project.mkdir()
+    sibling.mkdir()
+    assert not _is_within_root(sibling, project)
 
 
 def test_dry_run_reports_new_project_files_without_creating_target(tmp_path: Path) -> None:
@@ -540,6 +583,42 @@ def test_dry_run_isolates_and_reports_hermes_home_writes(
     assert not target.exists()
 
 
+def test_dry_run_does_not_write_through_external_hermes_symlink(
+    tmp_path: Path,
+) -> None:
+    external = tmp_path / "external-hermes"
+    external.mkdir()
+    target = tmp_path / "hermes-external-link"
+    target.mkdir()
+    try:
+        (target / ".hermes").symlink_to(external.resolve())
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--force",
+            "--dry-run",
+            "--json",
+            "--integration",
+            "hermes",
+            "--script",
+            "sh",
+            "--ignore-agent-tools",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    json.loads(result.output)
+    assert list(external.iterdir()) == []
+    assert (target / ".hermes").is_symlink()
+    assert (target / ".hermes").resolve() == external.resolve()
+
+
 def test_dry_run_remaps_in_project_absolute_symlinks(tmp_path: Path) -> None:
     target = tmp_path / "symlink-preview"
     real_commands = target / "kilo-store" / "commands"
@@ -593,16 +672,17 @@ def test_remap_in_project_absolute_symlinks_points_at_staged_copy(
     _stage_project_copy(project, staged)
 
     remapped = Path(os.readlink(staged / "link"))
-    assert remapped == (staged / "store").resolve()
+    _assert_same_path(remapped, staged / "store")
     assert (staged / "link" / "file.txt").read_text(encoding="utf-8") == "ok\n"
-    assert Path(os.readlink(link)) == store.resolve()
+    _assert_same_path(Path(os.readlink(link)), store)
 
 
-def test_remap_leaves_external_absolute_symlinks(tmp_path: Path) -> None:
+def test_stage_copy_quarantines_external_absolute_symlinks(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     project.mkdir()
     outside = tmp_path / "outside"
     outside.mkdir()
+    (outside / "keep.txt").write_text("keep\n", encoding="utf-8")
     link = project / "escape"
     try:
         link.symlink_to(outside.resolve())
@@ -610,13 +690,19 @@ def test_remap_leaves_external_absolute_symlinks(tmp_path: Path) -> None:
         pytest.skip("symlinks are not available")
 
     staged = tmp_path / "staged"
-    shutil.copytree(project, staged, symlinks=True)
-    _remap_in_project_symlinks(project.resolve(), staged.resolve())
+    _stage_project_copy(project, staged)
 
-    assert Path(os.readlink(staged / "escape")) == outside.resolve()
+    staged_escape = staged / "escape"
+    assert not staged_escape.is_symlink()
+    (staged_escape / "skills").mkdir()
+    assert not (outside / "skills").exists()
+    assert (outside / "keep.txt").read_text(encoding="utf-8") == "keep\n"
+    _assert_same_path(Path(os.readlink(link)), outside)
 
 
-def test_dry_run_rejects_external_absolute_command_symlink(tmp_path: Path) -> None:
+def test_dry_run_does_not_write_through_external_command_symlink(
+    tmp_path: Path,
+) -> None:
     target = tmp_path / "escape-preview"
     outside = tmp_path / "outside-commands"
     outside.mkdir()
@@ -627,19 +713,114 @@ def test_dry_run_rejects_external_absolute_command_symlink(tmp_path: Path) -> No
     except (OSError, NotImplementedError):
         pytest.skip("symlinks are not available")
 
-    with pytest.raises(RuntimeError, match="staged initialization failed"):
-        CliRunner().invoke(
-            app,
-            [
-                "init",
-                str(target),
-                "--force",
-                "--dry-run",
-                "--json",
-                "--integration",
-                "kilocode",
-                "--script",
-                "sh",
-            ],
-            catch_exceptions=False,
-        )
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--force",
+            "--dry-run",
+            "--json",
+            "--integration",
+            "kilocode",
+            "--script",
+            "sh",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["actions"]
+    assert list(outside.iterdir()) == []
+    assert (kilo_dir / "commands").resolve() == outside.resolve()
+
+
+def test_snapshot_fingerprint_includes_permission_bits(tmp_path: Path) -> None:
+    script = tmp_path / "script.sh"
+    script.write_text("#!/bin/sh\necho ok\n", encoding="utf-8")
+    script.chmod(0o644)
+    mode_before = script.stat().st_mode & 0o777
+    before = _snapshot_files(tmp_path)
+    script.chmod(0o755)
+    mode_after = script.stat().st_mode & 0o777
+    after = _snapshot_files(tmp_path)
+    if mode_before == mode_after:
+        pytest.skip("filesystem does not distinguish permission bits")
+    assert before != after
+
+
+@pytest.mark.skipif(os.name == "nt", reason="ensure_executable_scripts is a no-op on Windows")
+def test_dry_run_reports_overwrite_when_shebang_script_lacks_execute_bit(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "chmod-preview"
+    arguments = [
+        "init",
+        str(target),
+        "--force",
+        "--integration",
+        "copilot",
+        "--script",
+        "sh",
+        "--ignore-agent-tools",
+    ]
+    created = CliRunner().invoke(app, arguments, catch_exceptions=False)
+    assert created.exit_code == 0, created.output
+    scripts = [
+        path
+        for path in (target / ".specify" / "scripts").rglob("*.sh")
+        if path.is_file() and path.read_bytes().startswith(b"#!")
+    ]
+    assert scripts
+    script = scripts[0]
+    script.chmod(script.stat().st_mode & ~0o111)
+    assert not (script.stat().st_mode & 0o111)
+
+    preview = CliRunner().invoke(
+        app, [*arguments, "--dry-run", "--json"], catch_exceptions=False
+    )
+    assert preview.exit_code == 0, preview.output
+    relative = script.relative_to(target).as_posix()
+    action = _action_for(json.loads(preview.output), relative)
+    assert action["action"] == "overwrite"
+    assert not (script.stat().st_mode & 0o111)
+
+
+def test_dry_run_resolves_home_relative_local_extension(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundled = _locate_bundled_extension("git")
+    assert bundled is not None
+    home = tmp_path / "home"
+    extension = home / "exts" / "git"
+    shutil.copytree(bundled, extension)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+
+    target = tmp_path / "tilde-extension-preview"
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--dry-run",
+            "--json",
+            "--integration",
+            "copilot",
+            "--script",
+            "sh",
+            "--extension",
+            "~/exts/git",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    extension_action = _action_for(
+        payload, ".specify/extensions/git/extension.yml"
+    )
+    assert extension_action["provenance"] == "extension"
+    assert extension_action["source_id"] == "git"
+    assert not target.exists()
