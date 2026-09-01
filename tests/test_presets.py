@@ -577,6 +577,12 @@ provides:
             ([{"id": "x", "version": "  "}], r"Invalid requires\.extensions\[0\]\.version"),
             ([{"id": "x", "version": "nonsense"}], r"Invalid requires\.extensions\[0\]\.version"),
             ([{"id": "x", "required": "yes"}], r"Invalid requires\.extensions\[0\]\.required"),
+            # `$` also matches before a trailing newline, so an anchored
+            # re.match would admit these while the resolver's fullmatch-based
+            # safe-id check rejects them.
+            (["demo-ext\n"], r"Invalid requires\.extensions\[0\]\.id"),
+            ([{"id": "demo-ext\n"}], r"Invalid requires\.extensions\[0\]\.id"),
+            (["demo\next"], r"Invalid requires\.extensions\[0\]\.id"),
         ],
     )
     def test_requires_extensions_rejects_malformed(
@@ -1397,7 +1403,9 @@ class TestPresetExtensionDependencies:
 
         unmet = PresetManager(project_dir).find_unmet_extension_dependencies(manifest)
 
-        assert [dep["reason"] for dep in unmet] == ["missing"]
+        # Reported as corrupt rather than missing: the id is still registered,
+        # so a plain `extension add` would be refused as already installed.
+        assert [dep["reason"] for dep in unmet] == ["corrupt"]
 
     def test_missing_and_stale_warnings_mention_discovery_only_catalogs(self):
         """`extension add <id>` is rejected for discovery-only entries, so say so."""
@@ -1472,6 +1480,125 @@ class TestPresetExtensionDependencies:
         unmet = PresetManager(project_dir).find_unmet_extension_dependencies(manifest)
 
         assert [dep["reason"] for dep in unmet] == ["missing"]
+
+    def test_corrupted_entry_gets_a_forced_reinstall_remedy(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A corrupted entry is not simply absent: `add <id>` would be refused.
+
+        ``get()`` returns None for it, but ``is_installed()`` still counts the
+        key, so a plain add reports "already installed". It needs --force.
+        """
+        extensions_dir = project_dir / ".specify" / "extensions"
+        extensions_dir.mkdir(parents=True)
+        (extensions_dir / ".registry").write_text(
+            json.dumps(
+                {"schema_version": "1.0", "extensions": {"speckit-inventory": "bad"}}
+            ),
+            encoding="utf-8",
+        )
+        manifest = self._manifest(temp_dir, valid_pack_data, ["speckit-inventory"])
+
+        unmet = PresetManager(project_dir).find_unmet_extension_dependencies(manifest)
+
+        assert [dep["reason"] for dep in unmet] == ["corrupt"]
+
+    def test_corrupt_warning_suggests_forced_reinstall(self):
+        """The corrupt remedy must use --force, since the id is still registered."""
+        manager = MagicMock()
+        manager.find_unmet_extension_dependencies.return_value = [
+            {"id": "speckit-inventory", "reason": "corrupt",
+             "installed": None, "version": None}
+        ]
+
+        with console.capture() as capture:
+            _warn_unmet_extension_dependencies(manager, MagicMock())
+
+        output = strip_ansi(capture.get())
+        assert "unreadable registry entry" in output
+        assert "specify extension add speckit-inventory --force" in output
+
+    def test_unreadable_registry_does_not_raise(
+        self, project_dir, temp_dir, valid_pack_data, monkeypatch
+    ):
+        """An OSError from the registry must not crash an already-completed install.
+
+        ``_load()`` lets OSError through, and ``preset_add`` only handles
+        preset-domain errors, so raising here would turn a finished install
+        into a traceback over what is only a warning.
+        """
+        manifest = self._manifest(temp_dir, valid_pack_data, ["speckit-inventory"])
+
+        import specify_cli.presets as presets_mod
+
+        def _boom(*args, **kwargs):
+            raise PermissionError("registry unreadable")
+
+        monkeypatch.setattr(presets_mod, "ExtensionRegistry", _boom)
+
+        assert PresetManager(project_dir).find_unmet_extension_dependencies(
+            manifest
+        ) == []
+
+    def test_version_only_footer_does_not_claim_the_feature_is_inert(self):
+        """A version mismatch still invokes the extension, so wording differs."""
+        manager = MagicMock()
+        manager.find_unmet_extension_dependencies.return_value = [
+            {"id": "speckit-inventory", "reason": "version",
+             "installed": "0.1.0", "version": ">=9.0.0"}
+        ]
+
+        with console.capture() as capture:
+            _warn_unmet_extension_dependencies(manager, MagicMock())
+
+        output = " ".join(strip_ansi(capture.get()).split())
+        assert "may not behave as the preset expects" in output
+        assert "does nothing" not in output
+        assert "safe to use" not in output
+
+    def test_unavailable_footer_states_the_feature_is_inert(self):
+        """An unavailable extension genuinely contributes nothing."""
+        manager = MagicMock()
+        manager.find_unmet_extension_dependencies.return_value = [
+            {"id": "speckit-inventory", "reason": "missing",
+             "installed": None, "version": None}
+        ]
+
+        with console.capture() as capture:
+            _warn_unmet_extension_dependencies(manager, MagicMock())
+
+        output = " ".join(strip_ansi(capture.get()).split())
+        assert "does nothing" in output
+        assert "may not behave as the preset expects" not in output
+
+    def test_exact_duplicate_declarations_warn_once(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """Naming the same dependency twice must not print the warning twice."""
+        manifest = self._manifest(
+            temp_dir, valid_pack_data, ["speckit-inventory", "speckit-inventory"]
+        )
+
+        unmet = PresetManager(project_dir).find_unmet_extension_dependencies(manifest)
+
+        assert [dep["id"] for dep in unmet] == ["speckit-inventory"]
+
+    def test_same_id_with_different_constraints_is_checked_twice(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """Distinct constraints on one id both have to hold, so both are checked."""
+        self._install_extension(project_dir, "speckit-inventory", "1.0.0")
+        manifest = self._manifest(
+            temp_dir, valid_pack_data,
+            [
+                {"id": "speckit-inventory", "version": ">=9.0.0"},
+                {"id": "speckit-inventory", "version": "<0.5"},
+            ],
+        )
+
+        unmet = PresetManager(project_dir).find_unmet_extension_dependencies(manifest)
+
+        assert [dep["version"] for dep in unmet] == [">=9.0.0", "<0.5"]
 
     def test_stale_registry_entry_is_reported(
         self, project_dir, temp_dir, valid_pack_data

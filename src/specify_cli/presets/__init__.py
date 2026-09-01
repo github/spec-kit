@@ -591,10 +591,15 @@ class PresetManifest:
                     f"got {type(extension_id).__name__}"
                 )
             # Same id shape the extension loader enforces, so a dependency can
-            # never name something that could not be installed in the first place.
-            if not re.match(r'^[a-z0-9-]+$', extension_id):
+            # never name something that could not be installed in the first
+            # place. fullmatch rather than match with an anchored pattern: `$`
+            # also matches before a trailing newline, so "demo-ext\n" would
+            # otherwise validate here while PresetResolver._is_safe_registry_id
+            # (which uses fullmatch) rejects it, and the newline would land in
+            # a suggested command.
+            if not re.fullmatch(r'[a-z0-9-]+', extension_id):
                 raise PresetValidationError(
-                    f"Invalid {label}.id '{extension_id}': "
+                    f"Invalid {label}.id {extension_id!r}: "
                     "must be lowercase alphanumeric with hyphens only"
                 )
 
@@ -986,9 +991,12 @@ class PresetManager:
             One entry per unsatisfied dependency, each with ``id``, the
             requested ``version`` specifier (``None`` when unconstrained), the
             ``installed`` version (``None`` when absent or unusable), and a
-            ``reason`` of ``"missing"``, ``"stale"``, ``"disabled"``, or
-            ``"version"``. Optional dependencies (``required: false``) are
-            never reported.
+            ``reason`` of ``"missing"``, ``"corrupt"``, ``"stale"``,
+            ``"disabled"``, or ``"version"``. Optional dependencies
+            (``required: false``) are never reported.
+
+            An unreadable registry yields no results rather than raising, since
+            this runs after the install has already succeeded.
 
             A registry version that cannot be parsed is treated as
             uncomparable, not as a mismatch: the extension is installed and
@@ -1003,15 +1011,36 @@ class PresetManager:
         if not isinstance(candidates, list):
             return []
 
-        declared = [
-            dep for dep in candidates
-            if isinstance(dep, dict) and dep.get("required", True)
-        ]
+        # Collapse exact repeats so a manifest naming the same dependency twice
+        # warns once. Two entries for one id with *different* constraints are
+        # kept, since both genuinely have to hold.
+        declared: List[Dict[str, Any]] = []
+        seen: Set[tuple] = set()
+        for dep in candidates:
+            if not isinstance(dep, dict) or not dep.get("required", True):
+                continue
+            key = (dep.get("id"), dep.get("version"))
+            if key in seen:
+                continue
+            seen.add(key)
+            declared.append(dep)
         if not declared:
             return []
 
         extensions_dir = self.project_root / ".specify" / "extensions"
-        registry = ExtensionRegistry(extensions_dir)
+        try:
+            registry = ExtensionRegistry(extensions_dir)
+            registered_ids = registry.keys()
+            registry_corrupt = registry.is_corrupt()
+        except OSError:
+            # Both reads can raise: _load() recovers from malformed content but
+            # deliberately lets OSError through, and is_corrupt() re-reads the
+            # file. This check runs *after* the install has completed, and
+            # preset_add only handles preset-domain errors, so letting that
+            # escape would turn a finished install into a traceback over a
+            # warning. An unreadable registry simply cannot be inspected.
+            return []
+
         unmet: List[Dict[str, Any]] = []
 
         for dep in declared:
@@ -1025,15 +1054,19 @@ class PresetManager:
                 # path fail closed and contribute nothing.
                 #
                 # get() returns None for a corrupted (non-dict) entry as well as
-                # an absent one, and keys() deliberately retains corrupted ids so
-                # resolution does *not* re-admit their directories as
-                # unregistered. Requiring absence from keys() keeps this fallback
-                # from reviving exactly what resolution excludes.
+                # an absent one, but keys() retains corrupted ids -- both so
+                # resolution does not re-admit their directories as
+                # unregistered, and because is_installed() still counts them, so
+                # a plain `extension add` would be refused as already installed.
+                # That is a different state from absent, and needs a different
+                # remedy.
+                if dep["id"] in registered_ids:
+                    unmet.append({**dep, "installed": None, "reason": "corrupt"})
+                    continue
                 if (
-                    dep["id"] not in registry.keys()
-                    and (extensions_dir / dep["id"]).is_dir()
+                    (extensions_dir / dep["id"]).is_dir()
                     and PresetResolver._is_safe_registry_id(dep["id"])
-                    and not registry.is_corrupt()
+                    and not registry_corrupt
                 ):
                     # Unregistered means no recorded version, so a constraint
                     # cannot be evaluated -- uncomparable, not unsatisfied.

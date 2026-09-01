@@ -74,6 +74,13 @@ def _warn_unmet_extension_dependencies(manager, manifest) -> None:
         if reason == "missing":
             console.print(f"    [yellow]{extension_id}[/yellow] is not installed")
             remedy = f"specify extension add {command_id}"
+        elif reason == "corrupt":
+            console.print(
+                f"    [yellow]{extension_id}[/yellow] has an unreadable "
+                "registry entry"
+            )
+            # is_installed() still counts the key, so a plain add is refused.
+            remedy = f"specify extension add {command_id} --force"
         elif reason == "stale":
             console.print(
                 f"    [yellow]{extension_id}[/yellow] is registered but its "
@@ -95,11 +102,26 @@ def _warn_unmet_extension_dependencies(manager, manifest) -> None:
             )
         console.print(f"      Fix with: {remedy}")
     console.print()
-    console.print(
-        "[dim]The preset is installed and safe to use; the parts that rely on "
-        "these extensions will do nothing until this is resolved.[/dim]"
-    )
-    if any(dep["reason"] in ("missing", "stale") for dep in unmet):
+    # The consequence differs by reason and must not be overstated. An
+    # unavailable extension contributes nothing, so those features are simply
+    # inert. A version mismatch is the opposite: the extension is installed and
+    # enabled, so the preset does invoke it -- the combination is just untested
+    # against the declared constraint, which is not the same as "safe".
+    console.print("[dim]The preset is installed.[/dim]")
+    if any(
+        dep["reason"] in ("missing", "corrupt", "stale", "disabled")
+        for dep in unmet
+    ):
+        console.print(
+            "[dim]Anything relying on an unavailable extension does nothing "
+            "until that is resolved.[/dim]"
+        )
+    if any(dep["reason"] == "version" for dep in unmet):
+        console.print(
+            "[dim]Where only a version constraint is unmet the extension is "
+            "still used, so it may not behave as the preset expects.[/dim]"
+        )
+    if any(dep["reason"] in ("missing", "corrupt", "stale") for dep in unmet):
         # `extension add <id>` resolves through the catalogs, and the default
         # community catalog is discovery-only, so installing by id alone is
         # rejected for anything listed only there. Say so once rather than
