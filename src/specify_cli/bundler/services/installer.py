@@ -256,5 +256,5 @@ def _rollback(
         try:
             installer.remove(project_root, component)
         except Exception:  # noqa: BLE001 - best-effort rollback
-            logger.debug("rollback failed for %s: %s", component, exc_info=True)
+            logger.debug("rollback failed for %s", component, exc_info=True)
             continue
