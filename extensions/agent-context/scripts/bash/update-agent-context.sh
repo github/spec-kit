@@ -345,6 +345,7 @@ PY
 fi
 
 # Build the managed section
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP_SECTION="$(mktemp)"
 trap 'rm -f "$TMP_SECTION"' EXIT
 {
@@ -353,6 +354,13 @@ trap 'rm -f "$TMP_SECTION"' EXIT
   echo "shell commands, and other important information, read the current plan"
   if [[ -n "$PLAN_PATH" ]]; then
     echo "at $PLAN_PATH"
+  fi
+  # Always-on instruction blocks contributed by enabled presets (#4200).
+  # Delegated to the python twin's --emit-preset-blocks so all three twins emit
+  # byte-identical block text from a single implementation.
+  _PRESET_BLOCKS="$("$_python" "$_SCRIPT_DIR/../python/update_agent_context.py" --emit-preset-blocks --marker-start "$MARKER_START" --marker-end "$MARKER_END" 2>/dev/null || true)"
+  if [[ -n "$_PRESET_BLOCKS" ]]; then
+    printf '%s\n' "$_PRESET_BLOCKS"
   fi
   echo "$MARKER_END"
 } > "$TMP_SECTION"

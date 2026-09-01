@@ -414,6 +414,25 @@ def _upsert_section(
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     project_root = os.getcwd()
+
+    # --emit-preset-blocks: print only the composed preset instruction sub-block
+    # lines and exit. Used by the bash/PowerShell twins so all three produce
+    # identical output from this single implementation. Does not require the
+    # agent-context config (the twin already validated it before calling).
+    if "--emit-preset-blocks" in args:
+        def _opt(name: str, default: str) -> str:
+            if name in args:
+                i = args.index(name)
+                if i + 1 < len(args):
+                    return args[i + 1]
+            return default
+        marker_start = _opt("--marker-start", DEFAULT_START)
+        marker_end = _opt("--marker-end", DEFAULT_END)
+        block_lines = _render_preset_block_lines(project_root, marker_start, marker_end)
+        if block_lines:
+            sys.stdout.buffer.write("\n".join(block_lines).encode("utf-8"))
+        return 0
+
     ext_config = (
         f"{project_root}/.specify/extensions/agent-context/agent-context-config.yml"
     )

@@ -76,6 +76,9 @@ provides:
       file: "templates/spec-template.md"
       description: "Custom spec template"
       replaces: "spec-template"
+  instructions:                     # Optional: always-on rule blocks composed
+    - file: "instructions/best-practices.md"   # by the opt-in agent-context extension
+      description: "Always-on engineering rules"
 
 tags:                              # 2-5 relevant tags
   - "category"
