@@ -1,0 +1,45 @@
+{
+  "schema_version": "1.0",
+  "evaluator": {
+    "id": "<evaluator-id>",
+    "version": "0.1.0",
+    "name": "<Human-Readable Evaluator Name>",
+    "url": "<optional-documentation-url>"
+  },
+  "phase": "after_specify",
+  "outcome": "pass",
+  "summary": "<One-paragraph summary of the evaluation result>",
+  "findings": [
+    {
+      "id": "<EVAL-001>",
+      "severity": "medium",
+      "kind": "unsupported_claim",
+      "subject": "<artifact-reference>",
+      "description": "<Human-readable description>",
+      "evidence_refs": [
+        {
+          "ref": "<file-or-url>",
+          "kind": "observed",
+          "description": "<what the evidence shows>"
+        }
+      ],
+      "provenance_refs": ["<artifact>#<element>"],
+      "uncertainty": "low",
+      "recommended_action": "gather_evidence",
+      "rationale": "<Brief rationale>"
+    }
+  ],
+  "next_action": {
+    "kind": "pass",
+    "target_phase": null,
+    "message": "<Human-readable next-action message>"
+  },
+  "metadata": {
+    "timestamp": "<ISO-8601>",
+    "duration_ms": 0,
+    "artifacts_evaluated": ["<artifact-path>"],
+    "model": null,
+    "deterministic": true
+  },
+  "state": {}
+}

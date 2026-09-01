@@ -1,0 +1,318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spec-kit.dev/schemas/evaluator-result.schema.json",
+  "title": "Evaluator Result",
+  "description": "Standard evaluator result contract for evidence, provenance, uncertainty, and recovery. Provider-neutral protocol for extensions that evaluate artifact quality between Spec-Driven Development phases.",
+  "type": "object",
+  "required": ["schema_version", "evaluator", "phase", "outcome", "findings"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Version of the evaluator result schema",
+      "examples": ["1.0"]
+    },
+    "evaluator": {
+      "type": "object",
+      "required": ["id", "version"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique evaluator identifier (e.g., extension id)",
+          "examples": ["epistemic", "security-scan", "schema-validate"]
+        },
+        "version": {
+          "type": "string",
+          "description": "Semantic version of the evaluator",
+          "examples": ["0.1.0"]
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable evaluator name"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Evaluator homepage or documentation URL"
+        }
+      },
+      "additionalProperties": false
+    },
+    "phase": {
+      "type": "string",
+      "description": "Lifecycle phase when the evaluator ran",
+      "enum": [
+        "after_specify",
+        "after_plan",
+        "after_tasks",
+        "after_implement",
+        "after_analyze",
+        "after_checklist",
+        "after_clarify",
+        "after_constitution",
+        "after_converge",
+        "after_taskstoissues"
+      ]
+    },
+    "outcome": {
+      "type": "string",
+      "description": "Aggregate evaluator outcome",
+      "enum": ["pass", "warn", "iterate", "clarify", "gather_evidence", "block"]
+    },
+    "summary": {
+      "type": "string",
+      "description": "One-paragraph human-readable summary of the evaluation",
+      "maxLength": 500
+    },
+    "findings": {
+      "type": "array",
+      "description": "Individual findings from the evaluation",
+      "minItems": 0,
+      "items": {
+        "type": "object",
+        "required": ["id", "severity", "kind", "subject"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique finding identifier within this result",
+            "examples": ["EPI-001", "SEC-042", "SCH-007"]
+          },
+          "severity": {
+            "type": "string",
+            "description": "Finding severity",
+            "enum": ["critical", "high", "medium", "low", "info"]
+          },
+          "kind": {
+            "type": "string",
+            "description": "Classification of the finding",
+            "enum": [
+              "unsupported_claim",
+              "contradiction",
+              "missing_evidence",
+              "ambiguous_requirement",
+              "unverified_assertion",
+              "provenance_gap",
+              "schema_violation",
+              "policy_violation",
+              "security_concern",
+              "coverage_gap",
+              "traceability_gap",
+              "risk_unaddressed",
+              "assumption_unvalidated",
+              "other"
+            ]
+          },
+          "subject": {
+            "type": "string",
+            "description": "Identifier of the artifact element the finding relates to (e.g., REQ-014, T-003, §3.2)",
+            "examples": ["REQ-014", "T-003", "spec.md#authentication"]
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable description of the finding",
+            "maxLength": 500
+          },
+          "evidence_refs": {
+            "type": "array",
+            "description": "References to observed evidence supporting or contradicting the finding",
+            "items": {
+              "type": "object",
+              "required": ["ref", "kind"],
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "description": "Reference to the evidence (file path, URL, artifact identifier)"
+                },
+                "kind": {
+                  "type": "string",
+                  "description": "Nature of the evidence",
+                  "enum": ["observed", "inferred", "asserted", "contradicted", "unsupported"]
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Brief description of what the evidence shows"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "provenance_refs": {
+            "type": "array",
+            "description": "References to source artifacts the finding relates to",
+            "items": {
+              "type": "string"
+            },
+            "examples": [["spec.md#REQ-014", "plan.md#data-model"]]
+          },
+          "uncertainty": {
+            "type": "string",
+            "description": "Level of uncertainty about the finding",
+            "enum": ["none", "low", "medium", "high", "insufficient_evidence"]
+          },
+          "recommended_action": {
+            "type": "string",
+            "description": "Recommended action for this specific finding",
+            "enum": [
+              "none",
+              "gather_evidence",
+              "clarify",
+              "revise",
+              "iterate",
+              "escalate",
+              "accept_risk",
+              "block"
+            ]
+          },
+          "rationale": {
+            "type": "string",
+            "description": "Brief rationale for the finding and recommendation",
+            "maxLength": 500
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "next_action": {
+      "type": "object",
+      "description": "Recommended next action for the workflow",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "Type of next action",
+          "enum": ["pass", "warn", "iterate", "clarify", "gather_evidence", "block"]
+        },
+        "target_phase": {
+          "type": "string",
+          "description": "Target phase to iterate back to (for iterate actions)",
+          "enum": [
+            "specify",
+            "plan",
+            "tasks",
+            "implement",
+            "analyze",
+            "checklist",
+            "clarify",
+            "constitution",
+            "converge"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable message about the next action",
+          "maxLength": 500
+        }
+      },
+      "additionalProperties": false
+    },
+    "model_routing": {
+      "type": "object",
+      "description": "Model routing recommendation for the next SDD phase. Enables the portfolio approach: budget for routine work, standard for review, premium for critical decisions.",
+      "properties": {
+        "recommended_tier": {
+          "type": "string",
+          "enum": ["budget", "standard", "premium", "portfolio"],
+          "description": "Recommended model tier for the next phase"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why this tier is recommended (e.g., 'low risk, budget sufficient' or 'critical security finding, escalate to premium')",
+          "maxLength": 300
+        },
+        "escalation_triggers": {
+          "type": "array",
+          "description": "Conditions that would trigger escalation to a higher tier",
+          "items": {
+            "type": "object",
+            "required": ["condition", "escalate_to"],
+            "properties": {
+              "condition": {
+                "type": "string",
+                "description": "Condition that triggers escalation"
+              },
+              "escalate_to": {
+                "type": "string",
+                "enum": ["standard", "premium"]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "estimated_tokens": {
+          "type": "integer",
+          "description": "Estimated tokens for the next phase at this tier",
+          "minimum": 0
+        },
+        "estimated_cost_usd": {
+          "type": "number",
+          "description": "Estimated USD cost for the next phase at this tier",
+          "minimum": 0
+        },
+        "tier_breakdown": {
+          "type": "object",
+          "description": "Cost/token comparison across all tiers for the next phase",
+          "properties": {
+            "budget": {
+              "type": "object",
+              "properties": {
+                "estimated_tokens": {"type": "integer"},
+                "estimated_cost_usd": {"type": "number"}
+              }
+            },
+            "standard": {
+              "type": "object",
+              "properties": {
+                "estimated_tokens": {"type": "integer"},
+                "estimated_cost_usd": {"type": "number"}
+              }
+            },
+            "premium": {
+              "type": "object",
+              "properties": {
+                "estimated_tokens": {"type": "integer"},
+                "estimated_cost_usd": {"type": "number"}
+              }
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Additional metadata about the evaluation run",
+      "properties": {
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of the evaluation"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "description": "Evaluation duration in milliseconds"
+        },
+        "artifacts_evaluated": {
+          "type": "array",
+          "description": "List of artifacts that were evaluated",
+          "items": {
+            "type": "string"
+          }
+        },
+        "model": {
+          "type": "string",
+          "description": "AI model used for the evaluation, if applicable"
+        },
+        "deterministic": {
+          "type": "boolean",
+          "description": "Whether the evaluator is deterministic (true) or model-backed (false)"
+        }
+      },
+      "additionalProperties": true
+    },
+    "state": {
+      "type": "object",
+      "description": "Compact state for pause/resume — evaluator-defined opaque object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

@@ -48,6 +48,24 @@
         "qa"
       ]
     },
+    "evaluator": {
+      "name": "Evaluator Contract",
+      "id": "evaluator",
+      "version": "1.0.0",
+      "description": "Standard evaluator result contract for evidence, provenance, uncertainty, and recovery — a provider-neutral protocol for extensions that evaluate artifact quality between phases",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "bundled": true,
+      "tags": [
+        "evaluator",
+        "evidence",
+        "provenance",
+        "quality",
+        "governance",
+        "compliance",
+        "workflow"
+      ]
+    },
     "git": {
       "name": "Git Branching Workflow",
       "id": "git",
