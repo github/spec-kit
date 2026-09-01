@@ -719,3 +719,59 @@ class TestInstallScriptsPython:
         assert sh_file.stat().st_mode & 0o111
         # Negative: a non-script file is not made executable.
         assert not (txt_file.stat().st_mode & 0o111)
+
+
+class TestDispatchStreamingTimeoutRegression:
+    """Regression: streaming subprocess.run() must receive timeout and handle TimeoutExpired."""
+
+    def test_streaming_dispatch_passes_timeout_to_subprocess(self):
+        """Streaming subprocess.run() must receive the timeout parameter."""
+        import subprocess
+        from unittest.mock import patch, Mock
+        from specify_cli.integrations.base import IntegrationBase
+
+        class StubDispatch(IntegrationBase):
+            key = "stub-dispatch"
+            config = {"name": "Stub", "folder": ".stub/", "commands_subdir": "commands", "requires_cli": True}
+            registrar_config = {"dir": ".stub/commands", "format": "markdown", "args": "$ARGUMENTS", "extension": ".md"}
+
+            def build_exec_args(self, prompt, *, model=None, output_json=True):
+                return ["echo", "test"]
+
+        integration = StubDispatch()
+
+        with patch("specify_cli.integrations.base.subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=0)
+            result = integration.dispatch_command("plan", timeout=120, stream=True)
+
+            mock_run.assert_called_once()
+            call_kwargs = mock_run.call_args[1]
+            assert call_kwargs.get("timeout") == 120, (
+                f"Expected timeout=120 but got {call_kwargs.get('timeout')}"
+            )
+
+    def test_streaming_dispatch_converts_timeout_expired_to_exit_124(self):
+        """subprocess.TimeoutExpired in streaming must return exit code 124."""
+        import subprocess
+        from unittest.mock import patch
+        from specify_cli.integrations.base import IntegrationBase
+
+        class StubDispatch(IntegrationBase):
+            key = "stub-dispatch"
+            config = {"name": "Stub", "folder": ".stub/", "commands_subdir": "commands", "requires_cli": True}
+            registrar_config = {"dir": ".stub/commands", "format": "markdown", "args": "$ARGUMENTS", "extension": ".md"}
+
+            def build_exec_args(self, prompt, *, model=None, output_json=True):
+                return ["echo", "test"]
+
+        integration = StubDispatch()
+
+        with patch("specify_cli.integrations.base.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.TimeoutExpired(cmd="test", timeout=60)
+            result = integration.dispatch_command("plan", stream=True)
+
+            assert result["exit_code"] == 124, (
+                f"Expected exit code 124 for TimeoutExpired but got {result['exit_code']}"
+            )
+            assert result["stdout"] == ""
+            assert result["stderr"] == ""
