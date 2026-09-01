@@ -1414,6 +1414,39 @@ class TestPresetExtensionDependencies:
         assert "discovery-only catalog" in output
         assert "--from <archive-url>" in output
 
+    @pytest.mark.parametrize(
+        "reason, extra",
+        [
+            ("missing", {"installed": None, "version": None}),
+            ("stale", {"installed": "0.1.0", "version": None}),
+            ("disabled", {"installed": "0.1.0", "version": None}),
+            ("version", {"installed": "0.1.0", "version": ">=9.0.0"}),
+        ],
+    )
+    def test_leading_hyphen_id_is_not_emitted_into_a_command(self, reason, extra):
+        """A leading-hyphen id satisfies `^[a-z0-9-]+$` but breaks the command.
+
+        Typer would read it as an option rather than the positional extension
+        argument, so the advertised fix would fail. Every remedy substitutes
+        the placeholder `_command_safe_id` returns. The id here is deliberately
+        not a real flag, so a match cannot be confused with `--force` appearing
+        legitimately in the stale remedy.
+        """
+        manager = MagicMock()
+        manager.find_unmet_extension_dependencies.return_value = [
+            {"id": "--not-a-real-flag", "reason": reason, **extra}
+        ]
+
+        with console.capture() as capture:
+            _warn_unmet_extension_dependencies(manager, MagicMock())
+
+        output = strip_ansi(capture.get())
+        remedy = next(
+            line for line in output.splitlines() if "Fix with:" in line
+        )
+        assert "--not-a-real-flag" not in remedy
+        assert "<extension-id>" in remedy
+
     def test_version_only_warning_omits_the_discovery_only_note(self):
         """The note is about installing by id, which a version mismatch does not do."""
         manager = MagicMock()

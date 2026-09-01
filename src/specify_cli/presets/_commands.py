@@ -49,6 +49,8 @@ def _warn_unmet_extension_dependencies(manager, manifest) -> None:
     missing extension and the command that installs it turns that silence into
     something actionable. See issue #4231.
     """
+    from ..extensions._commands import _command_safe_id
+
     unmet = manager.find_unmet_extension_dependencies(manifest)
     if not unmet:
         return
@@ -57,6 +59,12 @@ def _warn_unmet_extension_dependencies(manager, manifest) -> None:
     console.print("[yellow]![/yellow]  This preset depends on extensions that are not satisfied:")
     for dep in unmet:
         extension_id = _escape_markup(dep["id"])
+        # The displayed id only needs Rich escaping, but a suggested command
+        # has to survive Typer's parser: `^[a-z0-9-]+$` admits a leading
+        # hyphen, so an id like `--force` would render as an option rather
+        # than the positional argument. _command_safe_id substitutes a
+        # placeholder in that case, the same way extension commands do.
+        command_id = _command_safe_id(dep["id"])
         reason = dep["reason"]
         # The remediation has to match the reason. `extension add` refuses an
         # already-installed extension without --force, and `extension update`
@@ -65,16 +73,16 @@ def _warn_unmet_extension_dependencies(manager, manifest) -> None:
         # downgrade, so do not promise that update will satisfy it.
         if reason == "missing":
             console.print(f"    [yellow]{extension_id}[/yellow] is not installed")
-            remedy = f"specify extension add {extension_id}"
+            remedy = f"specify extension add {command_id}"
         elif reason == "stale":
             console.print(
                 f"    [yellow]{extension_id}[/yellow] is registered but its "
                 "files are missing"
             )
-            remedy = f"specify extension add {extension_id} --force"
+            remedy = f"specify extension add {command_id} --force"
         elif reason == "disabled":
             console.print(f"    [yellow]{extension_id}[/yellow] is installed but disabled")
-            remedy = f"specify extension enable {extension_id}"
+            remedy = f"specify extension enable {command_id}"
         else:
             console.print(
                 f"    [yellow]{extension_id}[/yellow] "
@@ -83,7 +91,7 @@ def _warn_unmet_extension_dependencies(manager, manifest) -> None:
             )
             remedy = (
                 "install a release of "
-                f"{extension_id} satisfying {_escape_markup(dep['version'])}"
+                f"{command_id} satisfying {_escape_markup(dep['version'])}"
             )
         console.print(f"      Fix with: {remedy}")
     console.print()
