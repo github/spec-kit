@@ -77,13 +77,17 @@ def test_offline_workflow_allows_bundled(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         assets, "_locate_bundled_workflow", lambda wid: tmp_path / "wf"
     )
-    calls: list[str] = []
-    monkeypatch.setattr(specify_cli, "workflow_add", lambda wid: calls.append(wid))
+    calls: list[tuple] = []
+    monkeypatch.setattr(
+        specify_cli,
+        "workflow_add",
+        lambda wid, dev=object(), from_url=object(): calls.append((wid, dev, from_url)),
+    )
 
     manager = primitive_manager("workflows", tmp_path, allow_network=False)
     manager.install(_component("workflows", "bundled-wf"))
 
-    assert calls == ["bundled-wf"]
+    assert calls == [("bundled-wf", False, None)]
 
 
 def test_assert_pinned_version_matches_passes():

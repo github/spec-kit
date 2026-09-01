@@ -337,7 +337,7 @@ class _WorkflowKindManager:
         with _chdir(self._root):
             _delegate_command(
                 "install", f"workflow '{component.id}'",
-                lambda: workflow_add(component.id),
+                lambda: workflow_add(component.id, dev=False, from_url=None),
             )
 
     def refresh(self, component: ComponentRef) -> None:
