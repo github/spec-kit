@@ -992,7 +992,9 @@ class PresetManager:
 
             A registry version that cannot be parsed is treated as
             uncomparable, not as a mismatch: the extension is installed and
-            usable, and only its recorded version is unreadable.
+            usable, and only its recorded version is unreadable. An extension
+            present on disk but absent from the registry is likewise treated as
+            satisfied, because resolution admits unregistered directories.
         """
         # Defense in depth, mirroring check_compatibility(): this method is
         # public and also reachable with a hand-built manifest object that
@@ -1015,6 +1017,20 @@ class PresetManager:
         for dep in declared:
             metadata = registry.get(dep["id"])
             if metadata is None:
+                # An absent registry entry does not mean the extension is
+                # unusable. _get_all_extensions_by_priority() admits a safe
+                # on-disk directory as an unregistered extension at implicit
+                # priority 10, so it resolves and the preset works -- but only
+                # when the registry is readable, since a corrupt one makes that
+                # path fail closed and contribute nothing.
+                if (
+                    (extensions_dir / dep["id"]).is_dir()
+                    and PresetResolver._is_safe_registry_id(dep["id"])
+                    and not registry.is_corrupt()
+                ):
+                    # Unregistered means no recorded version, so a constraint
+                    # cannot be evaluated -- uncomparable, not unsatisfied.
+                    continue
                 unmet.append({**dep, "installed": None, "reason": "missing"})
                 continue
 

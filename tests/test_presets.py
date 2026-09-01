@@ -1341,6 +1341,53 @@ class TestPresetExtensionDependencies:
             manifest
         ) == []
 
+    def test_unregistered_extension_on_disk_is_satisfied(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A directory with no registry entry still resolves, so it is not missing.
+
+        ``_get_all_extensions_by_priority`` admits safe unregistered
+        directories at implicit priority 10, so the preset works -- warning
+        that the dependency is absent would be a false alarm.
+        """
+        (project_dir / ".specify" / "extensions" / "speckit-inventory").mkdir(
+            parents=True
+        )
+        manifest = self._manifest(temp_dir, valid_pack_data, ["speckit-inventory"])
+
+        assert PresetManager(project_dir).find_unmet_extension_dependencies(
+            manifest
+        ) == []
+
+    def test_unregistered_extension_cannot_be_version_checked(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """No registry entry means no recorded version, so nothing to compare."""
+        (project_dir / ".specify" / "extensions" / "speckit-inventory").mkdir(
+            parents=True
+        )
+        manifest = self._manifest(
+            temp_dir, valid_pack_data,
+            [{"id": "speckit-inventory", "version": ">=9.0.0"}],
+        )
+
+        assert PresetManager(project_dir).find_unmet_extension_dependencies(
+            manifest
+        ) == []
+
+    def test_unregistered_extension_with_corrupt_registry_is_missing(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A corrupt registry makes resolution fail closed, so it is not usable."""
+        extensions_dir = project_dir / ".specify" / "extensions"
+        (extensions_dir / "speckit-inventory").mkdir(parents=True)
+        (extensions_dir / ".registry").write_text("{not valid json", encoding="utf-8")
+        manifest = self._manifest(temp_dir, valid_pack_data, ["speckit-inventory"])
+
+        unmet = PresetManager(project_dir).find_unmet_extension_dependencies(manifest)
+
+        assert [dep["reason"] for dep in unmet] == ["missing"]
+
     def test_stale_registry_entry_is_reported(
         self, project_dir, temp_dir, valid_pack_data
     ):

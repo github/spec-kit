@@ -126,6 +126,7 @@ Notes:
 - A disabled extension counts as unmet, and so does one whose registry entry survives after its files were removed. Resolution skips both, so the preset is just as inert as if the extension were absent.
 - The warning names an exact command for the missing, stale, and disabled cases. For a version mismatch it states the constraint to satisfy rather than naming a command, because `specify extension update` only moves forward to the catalog release and cannot satisfy an upper bound, a pin, or a downgrade.
 - A recorded version that cannot be parsed is treated as uncomparable rather than as a mismatch, so an extension whose registry version reads `unknown` is not reported as failing a constraint it was never evaluated against.
+- An extension present on disk but absent from the registry counts as satisfied. Resolution admits unregistered directories, so the preset works and warning about it would be a false alarm — though with no recorded version, a `version` constraint cannot be checked against it.
 - `required: false` documents an enhancing-but-optional extension and is never warned about.
 - Declare it in `preset.yml`, not only in your catalog entry. The catalog is not consulted for `--dev` and `--from <url>` installs, so the manifest is the only copy present on every install path.
 
