@@ -60,3 +60,6 @@ docs/dev
 .grok/
 .specify/
 specs/
+benchmarks/evaluator/results/
+benchmarks/evaluator/reports/
+benchmarks/reports/
