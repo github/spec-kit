@@ -7383,18 +7383,9 @@ class TestRunState:
     def test_load_rejects_invalid_current_step_index(
         self, project_dir, bad_current_step_index
     ):
-        """A malformed ``current_step_index`` must fail at load(), not resume().
+        """Reject non-integer and negative resume indices at load time.
 
-        ``resume()`` slices ``definition.steps[state.current_step_index :]``
-        with no guard of its own. Every other field this loader restores
-        (``workflow_id``, ``installed_workflow_id``, ``installed_registry_root``,
-        ``inputs``) is shape-checked here and raises the same clean "Invalid
-        run state: ..." ``ValueError`` on a malformed value; ``current_step_index``
-        was the one field silently passed through. A non-int value reaches the
-        slice and raises a raw, unhelpful ``TypeError`` from deep inside
-        ``resume()`` instead. ``True`` is included because ``bool`` is an
-        ``int`` subclass and would otherwise slip past a bare ``isinstance(...,
-        int)`` check.
+        ``bool`` is covered explicitly because it subclasses ``int``.
         """
         from specify_cli.workflows.engine import RunState
 
