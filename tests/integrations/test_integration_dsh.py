@@ -87,6 +87,45 @@ class TestDshInitFlow:
         assert (target / ".dsh" / "skills" / "speckit-plan" / "SKILL.md").exists()
 
 
+class TestDshNextSteps:
+    """CLI output tests for DSH next-steps display."""
+
+    def test_init_next_steps_show_dsh_skill_guidance(self, tmp_path):
+        """init --integration dsh should guide users to .dsh/skills and /speckit-*."""
+        runner = CliRunner()
+        target = tmp_path / "dsh-next-steps"
+        result = runner.invoke(
+            app,
+            [
+                "init",
+                str(target),
+                "--integration",
+                "dsh",
+                "--ignore-agent-tools",
+                "--script",
+                "sh",
+            ],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0, f"init --integration dsh failed: {result.output}"
+        assert "Start DSH" in result.output, (
+            f"Expected DSH start guidance in next steps but got:\n{result.output}"
+        )
+        assert "dsh web" in result.output, (
+            f"Expected the 'dsh web' launch command in next steps but got:\n{result.output}"
+        )
+        assert ".dsh/skills" in result.output, (
+            f"Expected .dsh/skills install path in next steps but got:\n{result.output}"
+        )
+        assert "/speckit-plan" in result.output, (
+            f"Expected /speckit-plan in next steps but got:\n{result.output}"
+        )
+        assert "/speckit.plan" not in result.output, (
+            f"Should not show /speckit.plan for DSH skills mode:\n{result.output}"
+        )
+
+
 class TestDshSkillCompatibility:
     """DSH-specific invariants the generated skills must satisfy.
 
