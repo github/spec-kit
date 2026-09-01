@@ -127,6 +127,8 @@ def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_ve
     # extension/preset/workflow entry point already has (#3435 lineage).
     try:
         parsed = urlparse(ext_spec)
+        _ = parsed.hostname
+        _ = parsed.port
     except ValueError as exc:
         raise ValueError(f"Malformed extension URL: {ext_spec}") from exc
     if parsed.scheme in ("http", "https"):
