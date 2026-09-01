@@ -37,6 +37,7 @@ from .._download_security import (
     safe_extract_archive,
 )
 from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
+from .._utils import relative_extension_path_violation
 from .._init_options import (
     MISSING_INIT_OPTIONS_FILE,
     is_ai_skills_enabled,
@@ -511,6 +512,10 @@ class PresetManifest:
                 raise PresetValidationError(
                     "Invalid provides.instructions: expected a list"
                 )
+            if not instructions:
+                raise PresetValidationError(
+                    "provides.instructions must not be empty"
+                )
             for entry in instructions:
                 if not isinstance(entry, dict):
                     raise PresetValidationError(
@@ -518,22 +523,10 @@ class PresetManifest:
                     )
                 if "file" not in entry:
                     raise PresetValidationError("Instruction entry missing 'file'")
-                file_path = entry["file"]
-                if not isinstance(file_path, str):
+                reason = relative_extension_path_violation(entry["file"])
+                if reason:
                     raise PresetValidationError(
-                        "Invalid instruction file: expected a string, "
-                        f"got {type(file_path).__name__}"
-                    )
-                normalized = os.path.normpath(file_path)
-                if (
-                    file_path.startswith("/")
-                    or "\\" in file_path
-                    or os.path.isabs(normalized)
-                    or normalized.startswith("..")
-                ):
-                    raise PresetValidationError(
-                        f"Invalid instruction file path '{file_path}': "
-                        "must be a relative path within the preset directory"
+                        f"Invalid instruction file {entry['file']!r}: {reason}"
                     )
                 if "description" in entry and not isinstance(entry["description"], str):
                     raise PresetValidationError(

@@ -260,12 +260,25 @@ def _collect_preset_instruction_blocks(
     if not isinstance(reg, dict) or not isinstance(reg.get("presets"), dict):
         return []
 
+    presets_root = presets_dir.resolve()
     blocks: list[tuple[str, str]] = []
     for preset_id in sorted(reg["presets"]):
+        # The registry lives on disk and is untrusted. Reject ids that are not
+        # simple names (no path separators, '..' traversal, or absolute/drive
+        # forms), then confirm the resolved directory stays inside
+        # .specify/presets, so a crafted key or a symlink cannot read a manifest
+        # or payload outside it.
+        if not isinstance(preset_id, str) or not re.match(r"^[a-z0-9][a-z0-9._-]*$", preset_id):
+            continue
+        preset_root = (presets_dir / preset_id).resolve()
+        try:
+            preset_root.relative_to(presets_root)
+        except ValueError:
+            continue
         meta = reg["presets"][preset_id]
         if not isinstance(meta, dict) or not meta.get("enabled", True):
             continue
-        manifest = presets_dir / preset_id / "preset.yml"
+        manifest = preset_root / "preset.yml"
         if not manifest.is_file():
             continue
         try:
@@ -277,7 +290,6 @@ def _collect_preset_instruction_blocks(
         instructions = provides.get("instructions") if isinstance(provides, dict) else None
         if not isinstance(instructions, list):
             continue
-        preset_root = (presets_dir / preset_id).resolve()
         parts: list[str] = []
         for entry in instructions:
             if not isinstance(entry, dict):

@@ -117,8 +117,24 @@ def test_instruction_description_must_be_a_string(tmp_path):
 
 @pytest.mark.parametrize("bad_path", ["/abs/rules.md", "../escape.md", "sub/../../escape.md"])
 def test_instruction_path_traversal_rejected(tmp_path, bad_path):
-    with pytest.raises(PresetValidationError, match="Invalid instruction file path"):
+    with pytest.raises(PresetValidationError, match="Invalid instruction file"):
         PresetManifest(_manifest(tmp_path, f"instructions:\n  - file: {bad_path}\n"))
+
+
+def test_empty_instructions_list_rejected(tmp_path):
+    # An empty instructions list provides nothing; reject like empty templates.
+    with pytest.raises(PresetValidationError, match="must not be empty"):
+        PresetManifest(_manifest(tmp_path, "instructions: []\n"))
+
+
+@pytest.mark.parametrize(
+    "bad_path",
+    ["", "  ", " rules.md ", ".", "sub/", "C:rules.md", "rules\\win.md"],
+    ids=["empty", "whitespace", "surrounding-ws", "dot", "dir-only", "drive-relative", "backslash"],
+)
+def test_instruction_path_non_portable_rejected(tmp_path, bad_path):
+    with pytest.raises(PresetValidationError, match="Invalid instruction file"):
+        PresetManifest(_manifest(tmp_path, f"instructions:\n  - file: '{bad_path}'\n"))
 
 
 # ── agent-context composition ───────────────────────────────────────────────
@@ -271,3 +287,20 @@ def test_no_preset_registry_just_base_section(tmp_path):
     section = _managed(tmp_path)
     assert "<!-- SPECKIT START -->" in section and "<!-- SPECKIT END -->" in section
     assert "PRESET:" not in section
+
+
+def test_unsafe_registry_preset_id_skipped(tmp_path):
+    # The registry is on disk and untrusted: an id with separators/traversal or
+    # an absolute/drive form must be skipped, not resolved and read.
+    _configure_agent_context(tmp_path)
+    _install_preset(tmp_path, "good", RULES_A)
+    reg_path = tmp_path / ".specify" / "presets" / ".registry"
+    reg = json.loads(reg_path.read_text(encoding="utf-8"))
+    reg["presets"]["../../evil"] = {"version": "1.0.0", "enabled": True}
+    reg["presets"]["/abs-evil"] = {"version": "1.0.0", "enabled": True}
+    reg_path.write_text(json.dumps(reg, indent=2), encoding="utf-8")
+    result = _run_update(tmp_path)
+    assert result.returncode == 0
+    section = _managed(tmp_path)
+    assert "PRESET:good" in section
+    assert "evil" not in section
