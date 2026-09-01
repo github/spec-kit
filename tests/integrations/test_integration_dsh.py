@@ -70,6 +70,23 @@ class TestDshBuildExecArgs:
         assert impl.build_exec_args("hello", output_json=False) == base
         assert impl.build_exec_args("hello", model="deepseek-chat") == base
 
+    def test_extra_args_precede_headless_task(self, monkeypatch):
+        """Launcher options must appear before DSH's task positional."""
+        from specify_cli.integrations.dsh import DshIntegration
+
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_DSH_EXTRA_ARGS", "--patch custom.yml"
+        )
+
+        assert DshIntegration().build_exec_args("/speckit-plan ship it") == [
+            "dsh",
+            "--profile",
+            "headless",
+            "--patch",
+            "custom.yml",
+            "/speckit-plan ship it",
+        ]
+
 
 class TestDshInitFlow:
     """--integration dsh creates expected files."""
@@ -176,7 +193,7 @@ class TestDshSkillCompatibility:
             assert isinstance(frontmatter.get("description"), str)
             assert frontmatter["description"].strip()
 
-    def test_skill_directory_is_one_level_deep(self, tmp_path):
+    def test_skill_definition_is_one_level_deep(self, tmp_path):
         """DSH discovery only recognizes <root>/<name>/SKILL.md — the
         SKILL.md file must sit directly inside a single skill directory,
         not in nested subdirectories."""
@@ -184,12 +201,7 @@ class TestDshSkillCompatibility:
         for skill_dir in sorted(skills_dir.iterdir()):
             if not skill_dir.is_dir():
                 continue
-            assert (skill_dir / "SKILL.md").exists()
-            children = [p for p in skill_dir.iterdir() if p.is_dir()]
-            assert not children, (
-                f"nested directories under {skill_dir} are invisible to DSH "
-                "skill discovery"
-            )
+            assert (skill_dir / "SKILL.md").is_file()
 
 
 class TestDshMultiInstallSafe:

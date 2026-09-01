@@ -58,6 +58,7 @@ class DshIntegration(SkillsIntegration):
         an interactive session would. The CLI has no structured-JSON output
         flag, so ``output_json`` and ``model`` are ignored.
         """
-        args = [self._resolve_executable(), "--profile", "headless", prompt]
+        args = [self._resolve_executable(), "--profile", "headless"]
         self._apply_extra_args_env_var(args)
+        args.append(prompt)
         return args
