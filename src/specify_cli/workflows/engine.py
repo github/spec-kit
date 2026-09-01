@@ -1232,6 +1232,14 @@ class WorkflowEngine:
             }
             self._record_result(context, state, step_id, step_data)
 
+            # Propagate model routing: if a step output specifies a model,
+            # use it as the default for subsequent steps. This enables
+            # evaluator-driven model routing (e.g., evaluator recommends
+            # "premium" tier → next phase uses premium model).
+            routed_model = result.output.get("model")
+            if routed_model and isinstance(routed_model, str):
+                context.default_model = routed_model
+
             state.append_log(
                 {
                     "event": "step_completed",

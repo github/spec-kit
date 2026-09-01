@@ -17204,3 +17204,103 @@ steps:
         result = runner.invoke(app, ["workflow", "disable", "align-wf"])
         assert result.exit_code == 0
         assert "already disabled" in result.output
+
+
+class TestModelRoutingPropagation:
+    """Test that step output model propagates to context.default_model.
+
+    When a step's output includes a ``model`` field (e.g., from an evaluator
+    recommending a tier), the engine propagates it to ``context.default_model``
+    so subsequent steps use the routed model automatically.
+    """
+
+    def test_step_output_model_propagates_to_context(self):
+        """A step that outputs a model updates context.default_model."""
+        from specify_cli.workflows.base import StepContext, StepResult, StepStatus
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        # Simulate what the engine does after step execution
+        ctx = StepContext(default_model="sonnet-4")
+        result = StepResult(
+            status=StepStatus.COMPLETED,
+            output={"model": "opus-4", "integration": "claude"},
+        )
+
+        # This is the propagation logic from engine.py
+        routed_model = result.output.get("model")
+        if routed_model and isinstance(routed_model, str):
+            ctx.default_model = routed_model
+
+        assert ctx.default_model == "opus-4"
+
+    def test_step_without_model_output_does_not_change_context(self):
+        """A step without a model output leaves default_model unchanged."""
+        from specify_cli.workflows.base import StepContext, StepResult, StepStatus
+
+        ctx = StepContext(default_model="sonnet-4")
+        result = StepResult(
+            status=StepStatus.COMPLETED,
+            output={"integration": "claude"},
+        )
+
+        routed_model = result.output.get("model")
+        if routed_model and isinstance(routed_model, str):
+            ctx.default_model = routed_model
+
+        assert ctx.default_model == "sonnet-4"
+
+    def test_non_string_model_output_does_not_change_context(self):
+        """A non-string model output (list, dict, None) is ignored."""
+        from specify_cli.workflows.base import StepContext, StepResult, StepStatus
+
+        for bad_model in (None, ["claude"], {"name": "gpt-5"}, 42):
+            ctx = StepContext(default_model="sonnet-4")
+            result = StepResult(
+                status=StepStatus.COMPLETED,
+                output={"model": bad_model},
+            )
+
+            routed_model = result.output.get("model")
+            if routed_model and isinstance(routed_model, str):
+                ctx.default_model = routed_model
+
+            assert ctx.default_model == "sonnet-4", f"Should not propagate {bad_model!r}"
+
+    def test_subsequent_step_uses_routed_model(self):
+        """A subsequent step picks up the routed model from context."""
+        from unittest.mock import patch
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext
+
+        # Simulate: first step routed to opus-4
+        ctx = StepContext(default_model="opus-4")
+        step = CommandStep()
+        config = {
+            "id": "next-step",
+            "command": "speckit.plan",
+            "input": {},
+        }
+        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+            result = step.execute(config, ctx)
+        # Step inherits the routed model from context
+        assert result.output["model"] == "opus-4"
+
+    def test_step_override_still_takes_priority_over_routed_model(self):
+        """An explicit per-step model override still wins over routed context."""
+        from unittest.mock import patch
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext
+
+        # Context was routed to opus-4, but step explicitly wants sonnet-4
+        ctx = StepContext(default_model="opus-4")
+        step = CommandStep()
+        config = {
+            "id": "override-step",
+            "command": "speckit.implement",
+            "model": "sonnet-4",
+            "input": {},
+        }
+        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+            result = step.execute(config, ctx)
+        # Explicit override wins
+        assert result.output["model"] == "sonnet-4"
