@@ -1375,6 +1375,58 @@ class TestPresetExtensionDependencies:
             manifest
         ) == []
 
+    def test_corrupted_registry_entry_with_directory_is_not_satisfied(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A corrupted entry keeps its id registered, so its directory is excluded.
+
+        ``get()`` returns None for a non-dict entry just as it does for an
+        absent one, but ``keys()`` retains the id specifically so resolution
+        does not re-admit the directory as an unregistered extension. The
+        fallback must not revive what resolution excludes.
+        """
+        extensions_dir = project_dir / ".specify" / "extensions"
+        (extensions_dir / "speckit-inventory").mkdir(parents=True)
+        (extensions_dir / ".registry").write_text(
+            json.dumps(
+                {"schema_version": "1.0", "extensions": {"speckit-inventory": "corrupt"}}
+            ),
+            encoding="utf-8",
+        )
+        manifest = self._manifest(temp_dir, valid_pack_data, ["speckit-inventory"])
+
+        unmet = PresetManager(project_dir).find_unmet_extension_dependencies(manifest)
+
+        assert [dep["reason"] for dep in unmet] == ["missing"]
+
+    def test_missing_and_stale_warnings_mention_discovery_only_catalogs(self):
+        """`extension add <id>` is rejected for discovery-only entries, so say so."""
+        manager = MagicMock()
+        manager.find_unmet_extension_dependencies.return_value = [
+            {"id": "speckit-inventory", "reason": "missing",
+             "installed": None, "version": None}
+        ]
+
+        with console.capture() as capture:
+            _warn_unmet_extension_dependencies(manager, MagicMock())
+
+        output = strip_ansi(capture.get())
+        assert "discovery-only catalog" in output
+        assert "--from <archive-url>" in output
+
+    def test_version_only_warning_omits_the_discovery_only_note(self):
+        """The note is about installing by id, which a version mismatch does not do."""
+        manager = MagicMock()
+        manager.find_unmet_extension_dependencies.return_value = [
+            {"id": "speckit-inventory", "reason": "version",
+             "installed": "0.1.0", "version": ">=9.0.0"}
+        ]
+
+        with console.capture() as capture:
+            _warn_unmet_extension_dependencies(manager, MagicMock())
+
+        assert "discovery-only" not in strip_ansi(capture.get())
+
     def test_unregistered_extension_with_corrupt_registry_is_missing(
         self, project_dir, temp_dir, valid_pack_data
     ):

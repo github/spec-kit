@@ -91,6 +91,15 @@ def _warn_unmet_extension_dependencies(manager, manifest) -> None:
         "[dim]The preset is installed and safe to use; the parts that rely on "
         "these extensions will do nothing until this is resolved.[/dim]"
     )
+    if any(dep["reason"] in ("missing", "stale") for dep in unmet):
+        # `extension add <id>` resolves through the catalogs, and the default
+        # community catalog is discovery-only, so installing by id alone is
+        # rejected for anything listed only there. Say so once rather than
+        # per dependency, since determining it would mean a catalog fetch.
+        console.print(
+            "[dim]An extension listed only in a discovery-only catalog cannot be "
+            "installed by id; pass --from <archive-url> with its release archive.[/dim]"
+        )
 
 
 # ===== Preset Commands =====

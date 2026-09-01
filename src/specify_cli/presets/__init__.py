@@ -1023,8 +1023,15 @@ class PresetManager:
                 # priority 10, so it resolves and the preset works -- but only
                 # when the registry is readable, since a corrupt one makes that
                 # path fail closed and contribute nothing.
+                #
+                # get() returns None for a corrupted (non-dict) entry as well as
+                # an absent one, and keys() deliberately retains corrupted ids so
+                # resolution does *not* re-admit their directories as
+                # unregistered. Requiring absence from keys() keeps this fallback
+                # from reviving exactly what resolution excludes.
                 if (
-                    (extensions_dir / dep["id"]).is_dir()
+                    dep["id"] not in registry.keys()
+                    and (extensions_dir / dep["id"]).is_dir()
                     and PresetResolver._is_safe_registry_id(dep["id"])
                     and not registry.is_corrupt()
                 ):
