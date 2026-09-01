@@ -296,15 +296,16 @@ A command body is a *template* that Spec Kit renders once per agent. Different a
 
 Instead use the agent-neutral token `__SPECKIT_COMMAND_<NAME>__`. Spec Kit resolves it to a `/speckit<separator>...` invocation using the active integration's `invoke_separator` (and integrations may post-process that further in skills output).
 
-Encode the command name in upper case, dropping the `speckit.` prefix and turning each dotted segment separator into an underscore:
+Encode the command name in upper case, dropping the `speckit.` prefix and turning each dotted segment separator into an underscore. A hyphen inside a segment is kept as a hyphen:
 
 | Command file | Token |
 | --- | --- |
 | `speckit.plan.md` | `__SPECKIT_COMMAND_PLAN__` |
 | `speckit.bug.fix.md` | `__SPECKIT_COMMAND_BUG_FIX__` |
 | `speckit.git.commit.md` | `__SPECKIT_COMMAND_GIT_COMMIT__` |
+| `speckit.agent-context.update.md` | `__SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__` |
 
-The resolver maps each underscore back to the active agent's separator, so use tokens to reference commands whose name segments are single words. (Command names are dotted segments like `git.commit`; the token scheme rebuilds those dots and does not carry hyphens within a segment.)
+The resolver maps each underscore back to the active agent's separator. An underscore separates segments and a hyphen belongs to the segment it sits in, so `AGENT-CONTEXT_UPDATE` is the two segments `agent-context` and `update` rather than three.
 
 **Example** — a command body that points the user at the next step:
 
