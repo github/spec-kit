@@ -1304,8 +1304,8 @@ class TestPresetExtensionDependencies:
         with console.capture() as capture:
             _warn_unmet_extension_dependencies(manager, MagicMock())
 
-        output = strip_ansi(capture.get())
-        assert "install a release of speckit-inventory satisfying <2" in output
+        output = " ".join(strip_ansi(capture.get()).split())
+        assert "Needs: a release of speckit-inventory satisfying <2" in output
         assert "specify extension update" not in output
 
     def test_optional_dependency_is_never_reported(
@@ -1421,6 +1421,7 @@ class TestPresetExtensionDependencies:
         output = strip_ansi(capture.get())
         assert "discovery-only catalog" in output
         assert "--from <archive-url>" in output
+        assert "Install with: specify extension add speckit-inventory" in output
 
     @pytest.mark.parametrize(
         "reason, extra",
@@ -1448,10 +1449,14 @@ class TestPresetExtensionDependencies:
         with console.capture() as capture:
             _warn_unmet_extension_dependencies(manager, MagicMock())
 
-        output = strip_ansi(capture.get())
-        remedy = next(
-            line for line in output.splitlines() if "Fix with:" in line
+        output = " ".join(strip_ansi(capture.get()).split())
+        # Isolate the remedy: the description line legitimately shows the raw
+        # id, escaped for display; only the copyable command must not carry it.
+        label = next(
+            lbl for lbl in ("Install with:", "Reinstall with:", "Enable with:", "Needs:")
+            if lbl in output
         )
+        remedy = output.split(label, 1)[1].split("The preset is installed.")[0]
         assert "--not-a-real-flag" not in remedy
         assert "<extension-id>" in remedy
 
@@ -1516,7 +1521,7 @@ class TestPresetExtensionDependencies:
 
         output = strip_ansi(capture.get())
         assert "unreadable registry entry" in output
-        assert "specify extension add speckit-inventory --force" in output
+        assert "Reinstall with: specify extension add speckit-inventory --force" in output
 
     def test_unreadable_registry_does_not_raise(
         self, project_dir, temp_dir, valid_pack_data, monkeypatch

@@ -57,7 +57,9 @@ def _warn_unmet_extension_dependencies(manager, manifest) -> None:
 
     console.print()
     console.print("[yellow]![/yellow]  This preset depends on extensions that are not satisfied:")
+    needs_catalog = False
     for dep in unmet:
+        uses_catalog = False
         extension_id = _escape_markup(dep["id"])
         # The displayed id only needs Rich escaping, but a suggested command
         # has to survive Typer's parser: `^[a-z0-9-]+$` admits a leading
@@ -73,34 +75,41 @@ def _warn_unmet_extension_dependencies(manager, manifest) -> None:
         # downgrade, so do not promise that update will satisfy it.
         if reason == "missing":
             console.print(f"    [yellow]{extension_id}[/yellow] is not installed")
-            remedy = f"specify extension add {command_id}"
+            label, remedy = "Install with", f"specify extension add {command_id}"
+            uses_catalog = True
         elif reason == "corrupt":
             console.print(
                 f"    [yellow]{extension_id}[/yellow] has an unreadable "
                 "registry entry"
             )
             # is_installed() still counts the key, so a plain add is refused.
+            label = "Reinstall with"
             remedy = f"specify extension add {command_id} --force"
+            uses_catalog = True
         elif reason == "stale":
             console.print(
                 f"    [yellow]{extension_id}[/yellow] is registered but its "
                 "files are missing"
             )
+            label = "Reinstall with"
             remedy = f"specify extension add {command_id} --force"
+            uses_catalog = True
         elif reason == "disabled":
             console.print(f"    [yellow]{extension_id}[/yellow] is installed but disabled")
-            remedy = f"specify extension enable {command_id}"
+            label, remedy = "Enable with", f"specify extension enable {command_id}"
         else:
             console.print(
                 f"    [yellow]{extension_id}[/yellow] "
                 f"{_escape_markup(dep['installed'])} does not satisfy "
                 f"{_escape_markup(dep['version'])}"
             )
+            label = "Needs"
             remedy = (
-                "install a release of "
-                f"{command_id} satisfying {_escape_markup(dep['version'])}"
+                f"a release of {command_id} satisfying "
+                f"{_escape_markup(dep['version'])}"
             )
-        console.print(f"      Fix with: {remedy}")
+        console.print(f"      {label}: {remedy}")
+        needs_catalog = needs_catalog or uses_catalog
     console.print()
     # The consequence differs by reason and must not be overstated. An
     # unavailable extension contributes nothing, so those features are simply
@@ -121,14 +130,19 @@ def _warn_unmet_extension_dependencies(manager, manifest) -> None:
             "[dim]Where only a version constraint is unmet the extension is "
             "still used, so it may not behave as the preset expects.[/dim]"
         )
-    if any(dep["reason"] in ("missing", "corrupt", "stale") for dep in unmet):
+    if needs_catalog:
         # `extension add <id>` resolves through the catalogs, and the default
-        # community catalog is discovery-only, so installing by id alone is
-        # rejected for anything listed only there. Say so once rather than
-        # per dependency, since determining it would mean a catalog fetch.
+        # community catalog is discovery-only, so installing by id is refused
+        # for anything listed only there -- true of every extension motivating
+        # this feature. Knowing which applies would mean a catalog fetch, and
+        # this runs on an install path that touches no network, so describe
+        # the outcome instead of asserting the command succeeds. The rejection
+        # itself prints the exact --from form, so this is a signpost rather
+        # than a dead end.
         console.print(
-            "[dim]An extension listed only in a discovery-only catalog cannot be "
-            "installed by id; pass --from <archive-url> with its release archive.[/dim]"
+            "[dim]If an extension is listed only in a discovery-only catalog, "
+            "that command is refused and prints the "
+            "--from <archive-url> form to use instead.[/dim]"
         )
 
 
