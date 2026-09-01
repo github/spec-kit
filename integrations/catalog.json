@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-26T00:00:00Z",
+  "updated_at": "2026-08-31T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/integrations/catalog.json",
   "integrations": {
     "alquimia": {
@@ -65,6 +65,15 @@
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli", "skills", "factory"]
+    },
+    "dsh": {
+      "id": "dsh",
+      "name": "DeepSeek Harness",
+      "version": "1.0.0",
+      "description": "DeepSeek Harness (DSH) CLI skills-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "skills"]
     },
     "amp": {
       "id": "amp",

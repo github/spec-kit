@@ -13,7 +13,7 @@ DOLLAR_SKILLS_AGENTS: frozenset[str] = frozenset({"codex", "zcode", "command-cod
 
 # Agents that always render /speckit-<name>, regardless of ai_skills.
 ALWAYS_SLASH_AGENTS: frozenset[str] = frozenset(
-    {"devin", "droid", "grok", "qodercli", "trae", "zed"}
+    {"devin", "droid", "dsh", "grok", "qodercli", "trae", "zed"}
 )
 
 # Agents that render /speckit-<name> only when ai_skills is enabled.

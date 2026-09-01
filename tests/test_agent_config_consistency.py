@@ -26,6 +26,7 @@ ISSUE_TEMPLATE_AGENT_KEYS = [
     "devin",
     "docker-agent",
     "droid",
+    "dsh",
     "firebender",
     "forge",
     "gemini",
