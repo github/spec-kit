@@ -144,7 +144,7 @@ def test_bug_test_workflow_provisions_python_dependencies():
     compiled_text = compiled.read_text(encoding="utf-8")
 
     setup_uv = (
-        "astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0"
+        "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1"
     )
     setup_python = (
         "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0"

@@ -142,6 +142,12 @@ class IntegrationBase(ABC):
     integration that sets this flag.
     """
 
+    legacy_flat_command_dir: str | None = None
+    """Previous flat command directory retired after skill replacements exist."""
+
+    legacy_flat_command_extension: str | None = None
+    """File extension used by commands in ``legacy_flat_command_dir``."""
+
     def post_process_command_content(self, content: str) -> str:
         """Transform command content after format rendering.
 

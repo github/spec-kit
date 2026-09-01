@@ -409,6 +409,7 @@ class PresetManifest:
             raise PresetValidationError(
                 "Preset must provide at least one template"
             )
+        seen_name_types: set[tuple[str, str]] = set()
         for tmpl in templates:
             if not isinstance(tmpl, dict):
                 raise PresetValidationError(
@@ -437,6 +438,20 @@ class PresetManifest:
                     f"Invalid template type '{tmpl['type']}': "
                     f"must be one of {sorted(VALID_PRESET_TEMPLATE_TYPES)}"
                 )
+
+            # PresetResolver._manifest_declared_template returns the first
+            # 'provides.templates' entry matching a given (name, type) pair, so
+            # a later duplicate would be silently unreachable while still being
+            # counted by PresetManifest.templates. Reject at validation time
+            # instead, mirroring the sibling fix for ExtensionManifest's
+            # provides.templates/scripts (#4016).
+            name_type = (tmpl["name"], tmpl["type"])
+            if name_type in seen_name_types:
+                raise PresetValidationError(
+                    f"Duplicate template name '{tmpl['name']}' of type "
+                    f"'{tmpl['type']}' in 'provides.templates'"
+                )
+            seen_name_types.add(name_type)
 
             # Validate file path safety: must be relative, no parent traversal
             file_path = tmpl["file"]
@@ -526,8 +541,11 @@ class PresetManifest:
 
     def get_hash(self) -> str:
         """Calculate SHA256 hash of manifest file."""
+        h = hashlib.sha256()
         with open(self.path, 'rb') as f:
-            return f"sha256:{hashlib.sha256(f.read()).hexdigest()}"
+            for chunk in iter(lambda: f.read(8192), b""):
+                h.update(chunk)
+        return f"sha256:{h.hexdigest()}"
 
 
 class PresetRegistry:
@@ -4178,6 +4196,13 @@ class PresetCatalog:
         try:
             parsed = urlparse(url)
             hostname = parsed.hostname
+            # Accessing ``port`` performs urllib's syntax/range validation;
+            # ``hostname`` alone does not, so a non-numeric or out-of-range
+            # port would otherwise pass validation here and only fail later,
+            # at fetch time, as a raw error this function does not translate
+            # into PresetValidationError. Mirrors specify_cli.catalogs and
+            # bundler/services/adapters.py's copy of this same guard.
+            _ = parsed.port
         except ValueError:
             raise PresetValidationError(f"Catalog URL is malformed: {url}") from None
         is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
@@ -4305,11 +4330,13 @@ class PresetCatalog:
         if not config_path.exists():
             return None
         try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         except (yaml.YAMLError, OSError, UnicodeError) as e:
             raise PresetValidationError(
                 f"Failed to read catalog config {config_path}: {e}"
             )
+        if data is None:
+            return None
         if not isinstance(data, dict):
             raise PresetValidationError(
                 f"Invalid catalog config {config_path}: expected a mapping at root, got {type(data).__name__}"

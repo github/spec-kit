@@ -1,5 +1,7 @@
 <div class="landing-hero">
 
+<img class="landing-hero-logo" src="images/spec-kit-logo.webp" alt="" width="120" height="120">
+
 # GitHub Spec Kit
 
 **Spec-Driven Development or your own process — step by step or as an automated workflow.**
@@ -31,7 +33,7 @@ Define what to build before building it. Rich templates, quality checklists, and
 
 ### Use any coding agent
 
-<span class="pillar-stat">35 integrations</span> — Copilot, Gemini, Codex, Kilo Code, Zed, Claude, Forge, Kiro, and more. Switch freely between agents with a single command. No lock-in.
+<span class="pillar-stat">38 integrations</span> — Copilot, Gemini, Codex, Kilo Code, Zed, Claude, Forge, Kiro, and more. Switch freely between agents with a single command. No lock-in.
 
 Run `specify init` with your agent of choice and Spec Kit sets up the right command files and directory structures automatically. If your agent isn't listed, the `generic` integration is an escape hatch for any tool.
 
@@ -43,7 +45,7 @@ Run `specify init` with your agent of choice and Spec Kit sets up the right comm
 
 ### Make it your own
 
-<span class="pillar-stat">138 community extensions</span> (70+ authors), <span class="pillar-stat">25 presets</span>, and growing. Tune the core process with presets, extend it with extensions, orchestrate it with workflows, and package it all up as bundles you can share — or replace the process entirely. The process itself lives in these building blocks, so you're never locked to SDD, or even to software.
+<span class="pillar-stat">157 community extensions</span> (90+ authors), <span class="pillar-stat">33 presets</span>, and growing. Tune the core process with presets, extend it with extensions, orchestrate it with workflows, and package it all up as bundles you can share — or replace the process entirely. The process itself lives in these building blocks, so you're never locked to SDD, or even to software.
 
 Including entirely different processes:
 
@@ -82,31 +84,31 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
 
 ## Built by the community
 
-**240+ contributors** power the Spec Kit ecosystem — from core integrations to entirely new processes. Anyone can create and publish an extension, preset, or workflow.
+**270+ contributors** power the Spec Kit ecosystem — from core integrations to entirely new processes. Anyone can create and publish an extension, preset, or workflow.
 
 <div class="stats-grid">
   <div class="stat-item">
-    <span class="stat-number">121K+</span>
+    <span class="stat-number">130K+</span>
     <span class="stat-label">GitHub stars</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">240+</span>
+    <span class="stat-number">270+</span>
     <span class="stat-label">Contributors</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">35</span>
+    <span class="stat-number">38</span>
     <span class="stat-label">Integrations</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">138</span>
+    <span class="stat-number">157</span>
     <span class="stat-label">Extensions</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">25</span>
+    <span class="stat-number">33</span>
     <span class="stat-label">Presets</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">6</span>
+    <span class="stat-number">7</span>
     <span class="stat-label">Friends projects</span>
   </div>
 </div>
@@ -124,6 +126,14 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
     <strong>Getting Started</strong>
     <span>Install, configure, and run your first SDD workflow</span>
   </a>
+  <a href="guides/existing-projects.md" class="nav-card">
+    <strong>Existing Projects</strong>
+    <span>Adopt Spec Kit safely in an established codebase</span>
+  </a>
+  <a href="upgrade.md" class="nav-card">
+    <strong>Upgrade</strong>
+    <span>Keep an existing Spec Kit project current across releases</span>
+  </a>
   <a href="reference/overview.md" class="nav-card">
     <strong>Reference</strong>
     <span>Core commands, integrations, extensions, presets, and workflows</span>
@@ -140,6 +150,10 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
     <strong>What is SDD?</strong>
     <span>The philosophy behind Spec-Driven Development</span>
   </a>
+  <a href="history.md" class="nav-card">
+    <strong>History</strong>
+    <span>How Spec Kit grew from its SDD foundation into an extensible process harness</span>
+  </a>
 </div>
 
 ---
@@ -155,4 +169,4 @@ Ready to start? Follow the [Quick Start Guide](quickstart.md).
 
 </div>
 
-<p class="text-end small text-body-secondary">Last updated: July 16, 2026</p>
+<p class="text-end small text-body-secondary">Last updated: August 21, 2026</p>

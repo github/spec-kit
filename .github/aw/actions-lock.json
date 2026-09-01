@@ -25,10 +25,10 @@
       "version": "v7.0.0",
       "sha": "5fda3b95a4ea91299a34e894583c3862153e4b97"
     },
-    "astral-sh/setup-uv@v9.0.0": {
+    "astral-sh/setup-uv@v10.0.1": {
       "repo": "astral-sh/setup-uv",
-      "version": "v9.0.0",
-      "sha": "c771a70e6277c0a99b617c7a806ffedaca235ff9"
+      "version": "v10.0.1",
+      "sha": "20cfd1bf945f4377ade1205e4dbc17946fc9a30d"
     },
     "actions/upload-artifact@v7.0.1": {
       "repo": "actions/upload-artifact",

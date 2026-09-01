@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-19T00:00:00Z",
+  "updated_at": "2026-08-31T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -19,7 +19,13 @@
       "effect": "read-write",
       "requires": {
         "speckit_version": ">=0.13.0,<0.16.0",
-        "tools": [{ "name": "adr", "version": ">=0.3.0", "required": true }]
+        "tools": [
+          {
+            "name": "adr",
+            "version": ">=0.3.0",
+            "required": true
+          }
+        ]
       },
       "provides": {
         "commands": 3,
@@ -180,6 +186,92 @@
       "created_at": "2026-05-04T00:00:00Z",
       "updated_at": "2026-05-04T00:00:00Z"
     },
+    "agentdocx-speckit": {
+      "name": "AgentDocx",
+      "id": "agentdocx-speckit",
+      "description": "Full-stack multi-agent specification pipeline with VS Code extension control, automated Kanban/Jira sync, and React monitoring dashboard.",
+      "author": "Abir Ommezzine and Ahmed Aziz Ammar",
+      "version": "0.0.3",
+      "download_url": "https://github.com/abir-ommezzine/extension-github-spec-kit/archive/refs/tags/v0.0.3.zip",
+      "repository": "https://github.com/abir-ommezzine/extension-github-spec-kit",
+      "homepage": "https://github.com/abir-ommezzine/extension-github-spec-kit",
+      "documentation": "https://github.com/abir-ommezzine/extension-github-spec-kit/blob/main/README.md",
+      "changelog": "",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 0,
+        "hooks": 0
+      },
+      "tags": [
+        "issue-tracking",
+        "jira",
+        "automation",
+        "workflow",
+        "pipeline",
+        "agents"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-18T00:00:00Z",
+      "updated_at": "2026-08-18T00:00:00Z"
+    },
+    "agentdocx-speckitv2": {
+      "name": "AgentDocx SpecKit V2",
+      "id": "agentdocx-speckitv2",
+      "description": "AgentDocx evolved: same pipeline + far more autonomous Ticket Manager (5 CLI, per-project Kanban, bulk sync, auto-switch, Auditor).",
+      "author": "ahmed200346",
+      "version": "0.0.7",
+      "download_url": "https://github.com/ahmed200346/Extension_GithubSpecKit/archive/refs/tags/v0.0.7.zip",
+      "repository": "https://github.com/ahmed200346/Extension_GithubSpecKit",
+      "homepage": "https://github.com/ahmed200346/Extension_GithubSpecKit",
+      "documentation": "https://github.com/ahmed200346/Extension_GithubSpecKit/blob/main/README.md",
+      "changelog": "https://github.com/ahmed200346/Extension_GithubSpecKit/blob/main/agentdocx-speckit/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "python",
+            "version": ">=3.10",
+            "required": true
+          },
+          {
+            "name": "node",
+            "version": ">=18",
+            "required": true
+          },
+          {
+            "name": "postgresql",
+            "version": ">=12",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 0,
+        "hooks": 0
+      },
+      "tags": [
+        "integration",
+        "kanban",
+        "ticket-management",
+        "vscode-extension",
+        "multi-agent"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-28T00:00:00Z",
+      "updated_at": "2026-08-28T00:00:00Z"
+    },
     "analytics": {
       "name": "Analytics",
       "id": "analytics",
@@ -303,8 +395,15 @@
       "requires": {
         "speckit_version": ">=0.1.0",
         "tools": [
-          { "name": "python", "version": ">=3.11", "required": true },
-          { "name": "uv", "required": true }
+          {
+            "name": "python",
+            "version": ">=3.11",
+            "required": true
+          },
+          {
+            "name": "uv",
+            "required": true
+          }
         ]
       },
       "provides": {
@@ -361,47 +460,55 @@
     "architecture-guard": {
       "name": "Architecture Guard",
       "id": "architecture-guard",
-      "description": "Framework-agnostic architecture review extension for validating implementation against governance and architecture constitutions, detecting architectural drift, and generating non-blocking refactor tasks.",
+      "description": "Framework-agnostic architecture governance for Spec Kit workflows, detecting drift, enforcing architectural rules, and generating actionable refactor tasks.",
       "author": "DyanGalih",
-      "version": "1.13.1",
-      "download_url": "https://github.com/DyanGalih/spec-kit-architecture-guard/archive/refs/tags/v1.13.1.zip",
-      "repository": "https://github.com/DyanGalih/spec-kit-architecture-guard",
-      "homepage": "https://github.com/DyanGalih/spec-kit-architecture-guard",
-      "documentation": "https://github.com/DyanGalih/spec-kit-architecture-guard/blob/main/docs/architecture-overview.md",
-      "changelog": "https://github.com/DyanGalih/spec-kit-architecture-guard/releases",
+      "version": "2.3.6",
+      "download_url": "https://github.com/DyanGalih/architecture-guard/archive/refs/tags/v2.3.6.zip",
+      "repository": "https://github.com/DyanGalih/architecture-guard",
+      "homepage": "https://github.com/DyanGalih/architecture-guard",
+      "documentation": "https://github.com/DyanGalih/architecture-guard/blob/main/SPECKIT-INTEGRATION.md",
+      "changelog": "https://github.com/DyanGalih/architecture-guard/blob/main/docs/release-notes.md",
       "license": "MIT",
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "node",
+            "version": ">=18",
+            "required": false
+          },
+          {
+            "name": "npm",
+            "required": false
+          }
+        ]
       },
       "provides": {
-        "commands": 14,
+        "commands": 18,
         "hooks": 3
       },
       "tags": [
         "architecture",
-        "spec-kit",
+        "governance",
         "review",
         "refactor",
-        "workflow",
-        "governance",
-        "guardrails",
-        "hygiene"
+        "workflow"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-05T07:26:00Z",
-      "updated_at": "2026-07-24T00:00:00Z"
+      "updated_at": "2026-08-20T00:00:00Z"
     },
     "archive": {
       "name": "Archive Extension",
       "id": "archive",
       "description": "Archive merged features into main project memory, resolving gaps and conflicts.",
       "author": "Stanislav Deviatov",
-      "version": "1.2.2",
-      "download_url": "https://github.com/stn1slv/spec-kit-archive/archive/refs/tags/v1.2.2.zip",
+      "version": "1.3.0",
+      "download_url": "https://github.com/stn1slv/spec-kit-archive/archive/refs/tags/v1.3.0.zip",
       "repository": "https://github.com/stn1slv/spec-kit-archive",
       "homepage": "https://github.com/stn1slv/spec-kit-archive",
       "documentation": "https://github.com/stn1slv/spec-kit-archive/blob/main/README.md",
@@ -410,7 +517,7 @@
       "category": "docs",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=0.14.0"
       },
       "provides": {
         "commands": 1,
@@ -426,7 +533,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-14T00:00:00Z",
-      "updated_at": "2026-08-11T00:00:00Z"
+      "updated_at": "2026-08-24T00:00:00Z"
     },
     "ascii-diagram": {
       "name": "ASCII Diagram Renderer",
@@ -479,8 +586,15 @@
       "requires": {
         "speckit_version": ">=0.1.0",
         "tools": [
-          { "name": "python", "version": ">=3.11", "required": true },
-          { "name": "uv", "required": true }
+          {
+            "name": "python",
+            "version": ">=3.11",
+            "required": true
+          },
+          {
+            "name": "uv",
+            "required": true
+          }
         ]
       },
       "provides": {
@@ -542,15 +656,15 @@
       "updated_at": "2026-03-03T00:00:00Z"
     },
     "bdd": {
-      "name": "Spec-Kit BDD",
+      "name": "BDD",
       "id": "bdd",
-      "description": "ATDD/BDD extension: convert specs to Gherkin scenarios, scaffold step definitions, and verify acceptance test coverage.",
+      "description": "Convert specs to Gherkin scenarios, scaffold step definitions, and verify acceptance test coverage.",
       "author": "RSginer",
-      "version": "1.0.2",
-      "download_url": "https://github.com/RSginer/spec-kit-bdd/archive/refs/tags/v1.0.2.zip",
+      "version": "1.0.3",
+      "download_url": "https://github.com/RSginer/spec-kit-bdd/archive/refs/tags/v1.0.3.zip",
       "repository": "https://github.com/RSginer/spec-kit-bdd",
-      "homepage": "https://github.com/RSginer/spec-kit-bdd",
-      "documentation": "https://github.com/RSginer/spec-kit-bdd/blob/main/docs/usage.md",
+      "homepage": "https://rsginer.github.io/spec-kit-bdd/",
+      "documentation": "https://rsginer.github.io/spec-kit-bdd/",
       "changelog": "https://github.com/RSginer/spec-kit-bdd/releases",
       "license": "MIT",
       "category": "process",
@@ -599,7 +713,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-15T00:00:00Z",
-      "updated_at": "2026-07-15T00:00:00Z"
+      "updated_at": "2026-08-24T00:00:00Z"
     },
     "blueprint": {
       "name": "Blueprint",
@@ -652,8 +766,14 @@
       "requires": {
         "speckit_version": ">=0.10.0",
         "tools": [
-          { "name": "bash", "required": false },
-          { "name": "git", "required": false }
+          {
+            "name": "bash",
+            "required": false
+          },
+          {
+            "name": "git",
+            "required": false
+          }
         ]
       },
       "provides": {
@@ -932,7 +1052,12 @@
       "effect": "read-write",
       "requires": {
         "speckit_version": ">=0.11.9",
-        "tools": [{ "name": "git", "required": false }]
+        "tools": [
+          {
+            "name": "git",
+            "required": false
+          }
+        ]
       },
       "provides": {
         "commands": 5,
@@ -1087,40 +1212,42 @@
     "companion": {
       "name": "SpecKit Companion",
       "id": "companion",
-      "description": "Live spec-driven progress for SpecKit Companion — lifecycle capture, status, resume, and composable commands you can customize with hooks and recipes.",
+      "description": "Live spec-driven progress for SpecKit Companion — lifecycle capture, status, resume, living specs, and composable commands you can customize with hooks and recipes.",
       "author": "alfredoperez",
-      "version": "0.11.0",
-      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.11.0/companion-0.11.0.zip",
+      "version": "0.20.2",
+      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.20.2/companion-0.20.2.zip",
       "repository": "https://github.com/alfredoperez/speckit-companion",
       "homepage": "https://github.com/alfredoperez/speckit-companion/tree/main/speckit-extension",
       "documentation": "https://github.com/alfredoperez/speckit-companion/blob/main/speckit-extension/README.md",
       "changelog": "https://github.com/alfredoperez/speckit-companion/blob/main/speckit-extension/CHANGELOG.md",
       "license": "MIT",
-      "category": "visibility",
+      "category": "process",
       "effect": "read-write",
       "requires": {
         "speckit_version": ">=0.9.5",
         "tools": [
-          { "name": "python3", "required": false }
+          {
+            "name": "python3",
+            "required": false
+          }
         ]
       },
       "provides": {
-        "commands": 13,
+        "commands": 18,
         "hooks": 4
       },
       "tags": [
         "vscode",
         "progress",
-        "status",
-        "resume",
-        "configurable",
-        "extensible"
+        "living-specs",
+        "drift",
+        "hooks"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-11T00:00:00Z",
-      "updated_at": "2026-06-24T00:00:00Z"
+      "updated_at": "2026-08-20T00:00:00Z"
     },
     "conduct": {
       "name": "Conduct Extension",
@@ -1250,6 +1377,40 @@
       "stars": 0,
       "created_at": "2026-07-13T00:00:00Z",
       "updated_at": "2026-07-13T00:00:00Z"
+    },
+    "cosmosdb": {
+      "name": "Azure Cosmos DB",
+      "id": "cosmosdb",
+      "description": "Best-practice Azure Cosmos DB code generation and review for any AI coding agent",
+      "author": "Theo van Kraay (maintained on behalf of the Azure Cosmos DB team; hosted in the AzureCosmosDB org)",
+      "version": "0.1.0",
+      "download_url": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb",
+      "homepage": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb",
+      "documentation": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb/blob/main/README.md",
+      "changelog": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "code",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 53,
+        "hooks": 2
+      },
+      "tags": [
+        "azure",
+        "cosmosdb",
+        "database",
+        "nosql",
+        "recommend-coding"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-21T00:00:00Z",
+      "updated_at": "2026-08-21T00:00:00Z"
     },
     "cost": {
       "name": "Cost Tracker",
@@ -1622,10 +1783,10 @@
     "figma": {
       "name": "Spec Kit Figma",
       "id": "figma",
-      "description": "Agent-agnostic SpecKit extension that grounds spec, plan & task generation in Figma design context — REST + optional MCP, single/mono/multi-repo, macOS/Linux/Windows.",
+      "description": "Grounds SpecKit spec/plan/tasks in Figma design context via REST or MCP, on macOS/Linux/Windows.",
       "author": "Fyloss",
-      "version": "1.6.0",
-      "download_url": "https://github.com/Fyloss/spec-kit-figma/archive/refs/tags/v1.6.0.zip",
+      "version": "3.1.1",
+      "download_url": "https://github.com/Fyloss/spec-kit-figma/archive/refs/tags/v3.1.1.zip",
       "repository": "https://github.com/Fyloss/spec-kit-figma",
       "homepage": "https://github.com/Fyloss/spec-kit-figma",
       "documentation": "https://github.com/Fyloss/spec-kit-figma/blob/main/docs/INSTALL.md",
@@ -1634,18 +1795,33 @@
       "category": "integration",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0",
+        "speckit_version": ">=0.11.2",
         "tools": [
-          { "name": "git", "required": true },
-          { "name": "bash", "required": false },
-          { "name": "curl", "required": false },
-          { "name": "jq", "required": false },
-          { "name": "pwsh", "required": false }
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "bash",
+            "required": false
+          },
+          {
+            "name": "curl",
+            "required": false
+          },
+          {
+            "name": "jq",
+            "required": false
+          },
+          {
+            "name": "pwsh",
+            "required": false
+          }
         ]
       },
       "provides": {
-        "commands": 5,
-        "hooks": 6
+        "commands": 7,
+        "hooks": 11
       },
       "tags": [
         "figma",
@@ -1658,7 +1834,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-08T00:00:00Z",
-      "updated_at": "2026-07-08T00:00:00Z"
+      "updated_at": "2026-08-31T00:00:00Z"
     },
     "figma-starter": {
       "name": "Figma Starter",
@@ -1677,7 +1853,11 @@
       "requires": {
         "speckit_version": ">=0.1.0",
         "tools": [
-          { "name": "python3", "version": ">=3.8", "required": true }
+          {
+            "name": "python3",
+            "version": ">=3.8",
+            "required": true
+          }
         ]
       },
       "provides": {
@@ -1970,10 +2150,10 @@
     "grill": {
       "name": "SpecKit Grill Me",
       "id": "grill",
-      "description": "Exhaustively resolve specification ambiguities and decisions before planning.",
+      "description": "Exhaustively clarify specifications and optionally sync canonical domain knowledge.",
       "author": "yoshi1220",
-      "version": "1.0.0",
-      "download_url": "https://github.com/yoshi1220/speckit-grill-me/releases/download/v1.0.0/speckit-grill-me-extension-v1.0.0.zip",
+      "version": "1.0.1",
+      "download_url": "https://github.com/yoshi1220/speckit-grill-me/releases/download/v1.0.1/speckit-grill-me-extension-v1.0.1.zip",
       "repository": "https://github.com/yoshi1220/speckit-grill-me",
       "homepage": "https://github.com/yoshi1220/speckit-grill-me/tree/main/spec-kit-extension",
       "documentation": "https://github.com/yoshi1220/speckit-grill-me/blob/main/spec-kit-extension/README.md",
@@ -1983,10 +2163,15 @@
       "effect": "read-write",
       "requires": {
         "speckit_version": ">=0.16.2",
-        "tools": [{ "name": "bash", "required": true }]
+        "tools": [
+          {
+            "name": "bash",
+            "required": true
+          }
+        ]
       },
       "provides": {
-        "commands": 1,
+        "commands": 2,
         "hooks": 0
       },
       "tags": [
@@ -2000,7 +2185,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-11T00:00:00Z",
-      "updated_at": "2026-08-11T00:00:00Z"
+      "updated_at": "2026-08-25T00:00:00Z"
     },
     "harness": {
       "name": "Research Harness",
@@ -2252,6 +2437,46 @@
       "created_at": "2026-03-05T00:00:00Z",
       "updated_at": "2026-03-05T00:00:00Z"
     },
+    "jira-mirror": {
+      "name": "Jira Mirror",
+      "id": "jira-mirror",
+      "description": "Spec Kit ↔ Jira bridge for team-managed and company-managed projects: configurable workflows & hierarchies (Scrum/SAFe), multi-project, idempotent and fail-closed. macOS/Linux/Windows.",
+      "author": "Fyloss",
+      "version": "0.24.0",
+      "download_url": "https://github.com/Fyloss/spec-kit-jira-mirror/releases/download/v0.24.0/spec-kit-jira-mirror-0.24.0.zip",
+      "sha256": "c3fe2f81fc3f47010cf92cdb8c49b612416b4c6aedf91beb579eba871fe1df16",
+      "repository": "https://github.com/Fyloss/spec-kit-jira-mirror",
+      "homepage": "https://github.com/Fyloss/spec-kit-jira-mirror",
+      "documentation": "https://github.com/Fyloss/spec-kit-jira-mirror/tree/main/docs",
+      "changelog": "https://github.com/Fyloss/spec-kit-jira-mirror/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.13.0",
+        "tools": [
+          { "name": "bash", "version": ">=4", "required": false },
+          { "name": "pwsh", "version": ">=7", "required": false },
+          { "name": "curl", "required": false },
+          { "name": "jq", "required": false },
+          { "name": "git", "required": true }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 7
+      },
+      "tags": [
+        "jira",
+        "integration",
+        "sync"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-31T00:00:00Z",
+      "updated_at": "2026-08-31T00:00:00Z"
+    },
     "jira-sync": {
       "name": "Jira Integration (Sync Engine)",
       "id": "jira-sync",
@@ -2269,12 +2494,31 @@
       "requires": {
         "speckit_version": ">=0.1.0",
         "tools": [
-          { "name": "bash", "version": ">=4.4", "required": true },
-          { "name": "git", "required": true },
-          { "name": "curl", "required": true },
-          { "name": "jq", "required": true },
-          { "name": "gitleaks", "required": false },
-          { "name": "trufflehog", "required": false }
+          {
+            "name": "bash",
+            "version": ">=4.4",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "curl",
+            "required": true
+          },
+          {
+            "name": "jq",
+            "required": true
+          },
+          {
+            "name": "gitleaks",
+            "required": false
+          },
+          {
+            "name": "trufflehog",
+            "required": false
+          }
         ]
       },
       "provides": {
@@ -2412,7 +2656,12 @@
       "effect": "read-write",
       "requires": {
         "speckit_version": ">=0.13.0,<1.0.0",
-        "tools": [{ "name": "linear-mcp", "required": true }]
+        "tools": [
+          {
+            "name": "linear-mcp",
+            "required": true
+          }
+        ]
       },
       "provides": {
         "commands": 5,
@@ -2509,8 +2758,8 @@
       "id": "maqa",
       "description": "Coordinator → feature → QA agent workflow with parallel worktree-based implementation. Language-agnostic. Auto-detects installed board plugins (Trello, Linear, GitHub Projects, Jira, Azure DevOps). Optional CI gate.",
       "author": "GenieRobot",
-      "version": "0.1.3",
-      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-ext/releases/download/maqa-v0.1.3/maqa.zip",
+      "version": "0.1.6",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-ext/releases/download/maqa-v0.1.6/maqa.zip",
       "repository": "https://github.com/GenieRobot/spec-kit-maqa-ext",
       "homepage": "https://github.com/GenieRobot/spec-kit-maqa-ext",
       "documentation": "https://github.com/GenieRobot/spec-kit-maqa-ext/blob/main/README.md",
@@ -2519,7 +2768,11 @@
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.3.0"
+        "speckit_version": ">=0.3.0",
+        "tools": [
+          { "name": "git", "required": true },
+          { "name": "python3", "required": true }
+        ]
       },
       "provides": {
         "commands": 4,
@@ -2537,7 +2790,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-26T00:00:00Z",
-      "updated_at": "2026-03-27T00:00:00Z"
+      "updated_at": "2026-08-20T00:00:00Z"
     },
     "maqa-azure-devops": {
       "name": "MAQA Azure DevOps Integration",
@@ -2833,7 +3086,10 @@
       "requires": {
         "speckit_version": ">=0.2.0",
         "tools": [
-          { "name": "memsearch", "required": false }
+          {
+            "name": "memsearch",
+            "required": false
+          }
         ]
       },
       "provides": {
@@ -3425,6 +3681,40 @@
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-03-18T00:00:00Z"
     },
+    "prespec": {
+      "name": "Pre-Spec Cards",
+      "id": "prespec",
+      "description": "Card-based pre-spec thinking: paste an idea, get your card plus the paths you'd miss, then play each through — story, snags, trade-offs, difficulty vs payoff — before /speckit.specify.",
+      "author": "bendlikeabamboo",
+      "version": "0.3.0",
+      "download_url": "https://github.com/bendlikeabamboo/pre-spec/archive/refs/tags/v0.3.0.zip",
+      "repository": "https://github.com/bendlikeabamboo/pre-spec",
+      "homepage": "https://github.com/bendlikeabamboo/pre-spec",
+      "documentation": "https://github.com/bendlikeabamboo/pre-spec#readme",
+      "changelog": "https://github.com/bendlikeabamboo/pre-spec/releases",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "discovery",
+        "ideation",
+        "decision-cards",
+        "product",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-28T00:00:00Z",
+      "updated_at": "2026-08-28T00:00:00Z"
+    },
     "preview": {
       "name": "Spec Kit Preview",
       "id": "preview",
@@ -3661,8 +3951,8 @@
       "id": "reconcile",
       "description": "Reconcile implementation drift by surgically updating the feature's own spec, plan, and tasks.",
       "author": "Stanislav Deviatov",
-      "version": "1.1.0",
-      "download_url": "https://github.com/stn1slv/spec-kit-reconcile/archive/refs/tags/v1.1.0.zip",
+      "version": "1.2.1",
+      "download_url": "https://github.com/stn1slv/spec-kit-reconcile/archive/refs/tags/v1.2.1.zip",
       "repository": "https://github.com/stn1slv/spec-kit-reconcile",
       "homepage": "https://github.com/stn1slv/spec-kit-reconcile",
       "documentation": "https://github.com/stn1slv/spec-kit-reconcile/blob/main/README.md",
@@ -3671,11 +3961,11 @@
       "category": "docs",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=0.16.2"
       },
       "provides": {
         "commands": 1,
-        "hooks": 0
+        "hooks": 2
       },
       "tags": [
         "reconcile",
@@ -3687,7 +3977,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-14T00:00:00Z",
-      "updated_at": "2026-08-10T00:00:00Z"
+      "updated_at": "2026-08-24T00:00:00Z"
     },
     "red-team": {
       "name": "Red Team",
@@ -4125,35 +4415,39 @@
       "name": "Security Review",
       "id": "security-review",
       "description": "Full-project secure-by-design security audits plus staged, branch/PR, plan, task, follow-up, and apply reviews",
-      "author": "Spec-Kit Security Team",
-      "version": "1.5.3",
-      "download_url": "https://github.com/DyanGalih/spec-kit-security-review/archive/refs/tags/v1.5.3.zip",
-      "repository": "https://github.com/DyanGalih/spec-kit-security-review",
-      "homepage": "https://github.com/DyanGalih/spec-kit-security-review",
-      "documentation": "https://github.com/DyanGalih/spec-kit-security-review/blob/main/README.md",
-      "changelog": "https://github.com/DyanGalih/spec-kit-security-review/blob/main/CHANGELOG.md",
+      "author": "DyanGalih",
+      "version": "2.0.0",
+      "download_url": "https://github.com/DyanGalih/security-review/archive/refs/tags/v2.0.0.zip",
+      "repository": "https://github.com/DyanGalih/security-review",
+      "homepage": "https://github.com/DyanGalih/security-review",
+      "documentation": "https://github.com/DyanGalih/security-review/blob/main/docs/usage.md",
+      "changelog": "https://github.com/DyanGalih/security-review/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "code",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          { "name": "git", "version": ">=2.0.0", "required": true },
+          { "name": "node", "version": ">=22.0.0", "required": false }
+        ]
       },
       "provides": {
-        "commands": 9,
+        "commands": 10,
         "hooks": 3
       },
       "tags": [
         "security",
-        "devsecops",
         "audit",
         "owasp",
-        "compliance"
+        "compliance",
+        "governance"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-03T03:24:03Z",
-      "updated_at": "2026-06-08T00:00:00Z"
+      "updated_at": "2026-08-20T00:00:00Z"
     },
     "sf": {
       "name": "SFSpeckit — Salesforce Spec-Driven Development",
@@ -4337,10 +4631,10 @@
     "specassay-check": {
       "name": "SpecAssay Check",
       "id": "specassay-check",
-      "description": "Gate 2 refuses silent gaps and emits a trace-manifest (trace-manifest.json).",
+      "description": "Gate 2 refuses silent gaps and emits a trace-manifest (`trace-manifest.json`).",
       "author": "Rik Dryfoos",
-      "version": "0.3.3",
-      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.3.3/specassay-check-0.3.3.zip",
+      "version": "0.4.12",
+      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.4.12/specassay-check-0.4.12.zip",
       "repository": "https://github.com/rdryfoos/specassay",
       "homepage": "https://www.specassay.com",
       "documentation": "https://github.com/rdryfoos/specassay/blob/main/extensions/specassay-check/README.md",
@@ -4351,12 +4645,19 @@
       "requires": {
         "speckit_version": ">=0.14.0",
         "tools": [
-          { "name": "bash", "required": true },
-          { "name": "python3", "version": ">=3.8", "required": true }
+          {
+            "name": "bash",
+            "required": true
+          },
+          {
+            "name": "python3",
+            "version": ">=3.8",
+            "required": true
+          }
         ]
       },
       "provides": {
-        "commands": 1,
+        "commands": 2,
         "hooks": 1
       },
       "tags": [
@@ -4370,7 +4671,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-13T00:00:00Z",
-      "updated_at": "2026-08-13T00:00:00Z"
+      "updated_at": "2026-08-21T00:00:00Z"
     },
     "specjudge": {
       "name": "SpecJudge — right-size the model before you implement",
@@ -4388,7 +4689,13 @@
       "effect": "read-only",
       "requires": {
         "speckit_version": ">=0.13.0",
-        "tools": [{ "name": "specjudge", "version": ">=0.5.0", "required": true }]
+        "tools": [
+          {
+            "name": "specjudge",
+            "version": ">=0.5.0",
+            "required": true
+          }
+        ]
       },
       "provides": {
         "commands": 1,
@@ -4405,6 +4712,41 @@
       "stars": 0,
       "created_at": "2026-08-12T00:00:00Z",
       "updated_at": "2026-08-12T00:00:00Z"
+    },
+    "speckit-inventory": {
+      "name": "Spec Inventory",
+      "id": "speckit-inventory",
+      "description": "Read-only inventory of live requirement and task IDs, with focused per-task context packs instead of whole-file dumps.",
+      "author": "Yash Chindam",
+      "version": "0.1.0",
+      "download_url": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/releases/download/v0.1.0/speckit-inventory.zip",
+      "sha256": "9ebf004ef6494323f6dccfab2554a04898c9e92bc7f25e0638b5aee916566e7f",
+      "repository": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment",
+      "homepage": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment",
+      "documentation": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/blob/main/speckit-inventory/README.md",
+      "changelog": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/blob/main/speckit-inventory/CHANGELOG.md",
+      "license": "MIT",
+      "category": "visibility",
+      "effect": "read-only",
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 2
+      },
+      "tags": [
+        "inventory",
+        "requirements",
+        "context",
+        "traceability",
+        "alignment"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-20T00:00:00Z",
+      "updated_at": "2026-08-20T00:00:00Z"
     },
     "speckit-superpowers-bridge": {
       "name": "Superpowers Implementation Bridge",
@@ -4778,6 +5120,46 @@
       "created_at": "2026-03-02T00:00:00Z",
       "updated_at": "2026-03-02T00:00:00Z"
     },
+    "taco": {
+      "name": "Taco Review",
+      "id": "taco",
+      "description": "Packages Spec Kit features for human review and syncs edits and comments back.",
+      "author": "Arcadia822",
+      "version": "0.3.1",
+      "download_url": "https://github.com/Arcadia822/taco/archive/refs/tags/v0.3.1.zip",
+      "repository": "https://github.com/Arcadia822/taco",
+      "homepage": "https://github.com/Arcadia822/taco",
+      "documentation": "https://github.com/Arcadia822/taco/blob/main/extensions/taco/README.md",
+      "changelog": "https://github.com/Arcadia822/taco/blob/v0.3.1/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.16.0,<2.0.0",
+        "tools": [
+          {
+            "name": "node",
+            "version": ">=22",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 8
+      },
+      "tags": [
+        "documentation",
+        "review",
+        "spec-kit",
+        "human-in-the-loop"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-25T00:00:00Z",
+      "updated_at": "2026-08-25T00:00:00Z"
+    },
     "tasks-to-project": {
       "name": "Tasks to GitHub Project",
       "id": "tasks-to-project",
@@ -4795,8 +5177,14 @@
       "requires": {
         "speckit_version": ">=0.2.0",
         "tools": [
-          { "name": "gh", "required": true },
-          { "name": "python3", "required": true }
+          {
+            "name": "gh",
+            "required": true
+          },
+          {
+            "name": "python3",
+            "required": true
+          }
         ]
       },
       "provides": {
@@ -5165,11 +5553,27 @@
       "requires": {
         "speckit_version": ">=0.10.0",
         "tools": [
-          { "name": "rtk", "required": false },
-          { "name": "headroom", "required": false },
-          { "name": "token-router", "required": false },
-          { "name": "ollama", "required": false },
-          { "name": "python", "version": ">=3.10", "required": false }
+          {
+            "name": "rtk",
+            "required": false
+          },
+          {
+            "name": "headroom",
+            "required": false
+          },
+          {
+            "name": "token-router",
+            "required": false
+          },
+          {
+            "name": "ollama",
+            "required": false
+          },
+          {
+            "name": "python",
+            "version": ">=3.10",
+            "required": false
+          }
         ]
       },
       "provides": {

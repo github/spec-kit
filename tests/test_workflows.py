@@ -3128,6 +3128,55 @@ class TestIfThenStep:
 class TestSwitchStep:
     """Test the switch step type."""
 
+    def test_execute_matches_case_ignoring_surrounding_whitespace(self):
+        """A shell step's stdout keeps its trailing newline; the case must match.
+
+        `ShellStep` stores `proc.stdout` verbatim, so `run: echo approve`
+        resolves to "approve" plus a newline. Unstripped, that matched no
+        `approve:` case and the switch silently fell through to `default:`
+        while still reporting COMPLETED. There is no `trim` filter, so a
+        workflow author cannot strip it themselves.
+        """
+        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        config = {
+            "id": "route",
+            "expression": "{{ steps.check.output.stdout }}",
+            "cases": {
+                "approve": [{"id": "approved", "type": "command", "command": "echo"}],
+                "reject": [{"id": "rejected", "type": "command", "command": "echo"}],
+            },
+            "default": [{"id": "fallback", "type": "command", "command": "echo"}],
+        }
+        for raw in ("approve\n", "approve\r\n", "  approve  ", "approve"):
+            ctx = StepContext(steps={"check": {"output": {"stdout": raw}}})
+            result = SwitchStep().execute(config, ctx)
+            assert result.status == StepStatus.COMPLETED
+            assert result.output["matched_case"] == "approve", repr(raw)
+            assert [s["id"] for s in result.next_steps] == ["approved"], repr(raw)
+            # The raw value is still reported unchanged.
+            assert result.output["expression_value"] == raw
+
+    def test_execute_still_falls_through_for_a_genuine_mismatch(self):
+        """Stripping must not make unrelated values match."""
+        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.base import StepContext
+
+        config = {
+            "id": "route",
+            "expression": "{{ steps.check.output.stdout }}",
+            "cases": {
+                "approve": [{"id": "approved", "type": "command", "command": "echo"}]
+            },
+            "default": [{"id": "fallback", "type": "command", "command": "echo"}],
+        }
+        ctx = StepContext(steps={"check": {"output": {"stdout": "approve-later\n"}}})
+        result = SwitchStep().execute(config, ctx)
+
+        assert result.output["matched_case"] == "__default__"
+        assert [s["id"] for s in result.next_steps] == ["fallback"]
+
     def test_execute_matches_case(self):
         from specify_cli.workflows.steps.switch import SwitchStep
         from specify_cli.workflows.base import StepContext
@@ -3308,6 +3357,38 @@ class TestSwitchStep:
         step = SwitchStep()
         errors = step.validate({"id": "test", "cases": {}})
         assert any("missing 'expression'" in e for e in errors)
+
+    def test_validate_missing_cases(self):
+        """`cases` is the switch's branch payload and must be required.
+
+        Every other control-flow step requires its own: `if` requires `then`,
+        `fan-out` requires `items` and `step`, `fan-in` a non-empty `wait_for`,
+        `gate` a `message`. Without it, a `case:` typo validated clean and then
+        reported COMPLETED with `matched_case: "__default__"` having dispatched
+        nothing.
+        """
+        from specify_cli.workflows.steps.switch import SwitchStep
+
+        step = SwitchStep()
+
+        # Absent entirely.
+        errors = step.validate({"id": "route", "expression": "{{ inputs.x }}"})
+        assert any("missing 'cases'" in e for e in errors), errors
+
+        # The realistic slip: `case:` instead of `cases:`.
+        errors = step.validate(
+            {"id": "route", "expression": "{{ inputs.x }}", "case": {"a": []}}
+        )
+        assert any("missing 'cases'" in e for e in errors), errors
+
+    def test_validate_accepts_an_empty_cases_mapping(self):
+        """An explicitly declared but empty `cases:` is still a declaration."""
+        from specify_cli.workflows.steps.switch import SwitchStep
+
+        errors = SwitchStep().validate(
+            {"id": "route", "expression": "{{ inputs.x }}", "cases": {}}
+        )
+        assert not any("missing 'cases'" in e for e in errors), errors
 
     def test_validate_invalid_cases_and_default(self):
         from specify_cli.workflows.steps.switch import SwitchStep
