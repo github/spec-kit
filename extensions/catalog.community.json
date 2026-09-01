@@ -5799,7 +5799,7 @@
     "vurnix": {
       "name": "Vurnix Honest Gate",
       "id": "vurnix",
-      "description": "Deterministic three-state honest gate for AI-written code: compile + phantom-import + honest test count in one verdict, executed as code — not as agent self-review. PASS (exit 0) / BLOCK (exit 1) / UNPROVEN (exit 3): a check that cannot run is not a check that passed.",
+      "description": "Deterministic three-state honest gate for AI-written code: compile + phantom-import + honest test count, executed as code — not agent self-review. PASS/BLOCK/UNPROVEN by exit code.",
       "author": "shiersa",
       "version": "0.1.1",
       "download_url": "https://github.com/shiersa/vurnix-spec-kit/releases/download/v0.1.1/vurnix-0.1.1.zip",
@@ -5813,8 +5813,8 @@
       "requires": {
         "speckit_version": ">=0.16.2",
         "tools": [
-          { "name": "python3", "required": true },
-          { "name": "vurnix", "required": true },
+          { "name": "python3", "version": ">=3.10", "required": true },
+          { "name": "vurnix", "version": ">=0.3.0", "required": true },
           { "name": "bash", "required": true }
         ]
       },
