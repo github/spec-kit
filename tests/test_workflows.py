@@ -9117,8 +9117,8 @@ class TestStepCatalog:
     def test_add_catalog_rejects_falsy_non_mapping_config(self, project_dir, body):
         """A FALSY non-mapping top-level config ([], false, 0, '') must raise
         'corrupted (expected a mapping)', not be silently coerced to {} by
-        ``or {}`` — matching the empty-document case above, which correctly
-        treats only a real absence of a document (None) as empty."""
+        ``or {}``; empty and explicit-null documents still parse as None and
+        retain their existing empty-config behavior.
         from specify_cli.workflows.catalog import StepCatalog, StepValidationError
 
         config_path = project_dir / ".specify" / "step-catalogs.yml"
