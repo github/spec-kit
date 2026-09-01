@@ -10,8 +10,7 @@
 # OPTIONS:
 #   -Json               Output in JSON format
 #   -RequireSpec        Require spec.md to exist (for analysis phase)
-#   -RequireSpec        Require spec.md to exist (for analysis phase)
-  -RequireTasks       Require tasks.md to exist (for implementation phase)
+#   -RequireTasks       Require tasks.md to exist (for implementation phase)
 #   -IncludeTasks       Include tasks.md in AVAILABLE_DOCS list
 #   -PathsOnly          Only output path variables (no validation)
 #   -Template NAME      Include composed template content in JSON output
