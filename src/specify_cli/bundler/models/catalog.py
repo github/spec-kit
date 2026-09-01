@@ -106,10 +106,11 @@ class CatalogSource:
 
 
 def _parse_tags(value: Any, entry_id: str) -> tuple[str, ...]:
-    """Coerce a catalog entry's ``tags`` into a tuple of strings.
+    """Parse a catalog entry's ``tags`` into a tuple of strings.
 
     Catalogs are untrusted input: a bare string would otherwise be iterated
-    character-by-character, so reject anything that is not a list/tuple.
+    character-by-character, so reject anything that is not a list/tuple, and
+    reject any non-string member instead of silently coercing it.
     """
     if value is None:
         return ()
@@ -117,7 +118,11 @@ def _parse_tags(value: Any, entry_id: str) -> tuple[str, ...]:
         raise BundlerError(
             f"Catalog entry '{entry_id}': 'tags' must be a list of strings."
         )
-    return tuple(str(t) for t in value)
+    if any(not isinstance(item, str) for item in value):
+        raise BundlerError(
+            f"Catalog entry '{entry_id}': 'tags' must be a list of strings."
+        )
+    return tuple(value)
 
 
 def _parse_verified(value: Any, entry_id: str) -> bool:

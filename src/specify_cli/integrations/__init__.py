@@ -60,6 +60,7 @@ def _register_builtins() -> None:
     from .copilot import CopilotIntegration
     from .cursor_agent import CursorAgentIntegration
     from .devin import DevinIntegration
+    from .docker_agent import DockerAgentIntegration
     from .droid import DroidIntegration
     from .dsh import DshIntegration
     from .firebender import FirebenderIntegration
@@ -101,6 +102,7 @@ def _register_builtins() -> None:
     _register(CopilotIntegration())
     _register(CursorAgentIntegration())
     _register(DevinIntegration())
+    _register(DockerAgentIntegration())
     _register(DroidIntegration())
     _register(DshIntegration())
     _register(FirebenderIntegration())

@@ -107,7 +107,7 @@ def _constitution_provenance_matches_preset(
         return False
     try:
         metadata = json.loads(provenance.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return False
     return (
         isinstance(metadata, dict)
@@ -4165,6 +4165,13 @@ class PresetCatalog:
         try:
             parsed = urlparse(url)
             hostname = parsed.hostname
+            # Accessing ``port`` performs urllib's syntax/range validation;
+            # ``hostname`` alone does not, so a non-numeric or out-of-range
+            # port would otherwise pass validation here and only fail later,
+            # at fetch time, as a raw error this function does not translate
+            # into PresetValidationError. Mirrors specify_cli.catalogs and
+            # bundler/services/adapters.py's copy of this same guard.
+            _ = parsed.port
         except ValueError:
             raise PresetValidationError(f"Catalog URL is malformed: {url}") from None
         is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
@@ -4292,11 +4299,13 @@ class PresetCatalog:
         if not config_path.exists():
             return None
         try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         except (yaml.YAMLError, OSError, UnicodeError) as e:
             raise PresetValidationError(
                 f"Failed to read catalog config {config_path}: {e}"
             )
+        if data is None:
+            return None
         if not isinstance(data, dict):
             raise PresetValidationError(
                 f"Invalid catalog config {config_path}: expected a mapping at root, got {type(data).__name__}"
