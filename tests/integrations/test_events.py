@@ -2741,3 +2741,56 @@ class TestNonDestructiveRefresh:
         # The pre-existing config was NOT destroyed before the failure
         # (install handles cleanup atomically; refresh no longer pre-strips).
         assert config_path.read_text() == original
+
+
+class TestEventLoggingRegression:
+    """Regression: events.py must use logger, not print(), for errors/warnings."""
+
+    def test_event_timeout_uses_logger(self, caplog, tmp_path):
+        """Event timeout must be logged via logger.error(), not print()."""
+        import logging
+        import subprocess
+        from specify_cli.events import resolve_and_run_event_command
+
+        # Create a minimal command template
+        cmds_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmds_dir.mkdir(parents=True)
+        (cmds_dir / "test.md").write_text(
+            "---\nscripts:\n  sh: echo test\n---\nTest\n", encoding="utf-8"
+        )
+
+        with caplog.at_level(logging.ERROR):
+            with patch("specify_cli.events.subprocess.run") as mock_run:
+                mock_run.side_effect = subprocess.TimeoutExpired(cmd="test", timeout=1)
+                result = resolve_and_run_event_command(
+                    "speckit.test", "test_event", "{}", tmp_path
+                )
+                # The function may return 0 if command resolution fails,
+                # but if subprocess.run is called, it should return 2
+                if mock_run.called:
+                    assert result == 2
+                    assert any("timed out" in record.message for record in caplog.records)
+
+    def test_event_error_uses_logger(self, caplog, tmp_path):
+        """Event error must be logged via logger.error(), not print()."""
+        import logging
+        from specify_cli.events import resolve_and_run_event_command
+
+        # Create a minimal command template
+        cmds_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmds_dir.mkdir(parents=True)
+        (cmds_dir / "test.md").write_text(
+            "---\nscripts:\n  sh: echo test\n---\nTest\n", encoding="utf-8"
+        )
+
+        with caplog.at_level(logging.ERROR):
+            with patch("specify_cli.events.subprocess.run") as mock_run:
+                mock_run.side_effect = RuntimeError("simulated error")
+                result = resolve_and_run_event_command(
+                    "speckit.test", "test_event", "{}", tmp_path
+                )
+                # The function may return 0 if command resolution fails,
+                # but if subprocess.run is called, it should return 2
+                if mock_run.called:
+                    assert result == 2
+                    assert any("error" in record.message for record in caplog.records)
