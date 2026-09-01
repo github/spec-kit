@@ -5,10 +5,17 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
 from specify_cli.commands.init import _snapshot_files
+
+_PROVENANCE_CATEGORIES = {"core", "integration", "preset", "workflow", "extension"}
+
+
+def _action_for(payload: dict, path: str) -> dict:
+    return next(action for action in payload["actions"] if action["path"] == path)
 
 
 def test_dry_run_reports_new_project_files_without_creating_target(tmp_path: Path) -> None:
@@ -58,6 +65,12 @@ def test_dry_run_json_is_machine_readable_and_has_no_target_writes(tmp_path: Pat
     assert {action["path"] for action in payload["actions"]} >= {
         ".github/skills/speckit-plan/SKILL.md"
     }
+    plan_action = _action_for(payload, ".github/skills/speckit-plan/SKILL.md")
+    assert plan_action["provenance"] == "integration"
+    assert plan_action["source_id"] == "copilot"
+    assert {
+        action["provenance"] for action in payload["actions"]
+    } <= _PROVENANCE_CATEGORIES
     assert not target.exists()
 
 
@@ -147,10 +160,13 @@ def test_dry_run_leaves_url_extension_unresolved_without_creating_target(
 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
-    assert {
-        (action["action"], action["path"])
-        for action in payload["actions"]
-    } >= {("unresolved", extension_url)}
+    url_action = _action_for(payload, extension_url)
+    assert url_action == {
+        "action": "unresolved",
+        "path": extension_url,
+        "provenance": "extension",
+        "source_id": extension_url,
+    }
     assert not target.exists()
 
 
@@ -210,5 +226,151 @@ def test_dry_run_includes_bundled_extension_artifacts(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
-    assert any(action["provenance"] == "extension" for action in payload["actions"])
+    extension_action = _action_for(
+        payload, ".github/skills/speckit-git-feature/SKILL.md"
+    )
+    assert extension_action["provenance"] == "extension"
+    assert extension_action["source_id"] == "git"
+    assert not target.exists()
+
+
+def test_dry_run_uses_preset_registry_and_skill_marker_for_provenance(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "preset-preview-project"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--dry-run",
+            "--json",
+            "--integration",
+            "copilot",
+            "--script",
+            "sh",
+            "--preset",
+            "self-test",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    preset_action = _action_for(payload, ".github/skills/speckit-specify/SKILL.md")
+    assert preset_action["provenance"] == "preset"
+    assert preset_action["source_id"] == "self-test"
+    assert not target.exists()
+
+
+def test_dry_run_uses_registries_for_command_integration_provenance(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "command-provenance-preview"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--dry-run",
+            "--json",
+            "--integration",
+            "gemini",
+            "--script",
+            "sh",
+            "--ignore-agent-tools",
+            "--preset",
+            "self-test",
+            "--extension",
+            "git",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    preset_action = _action_for(payload, ".gemini/commands/speckit.specify.toml")
+    extension_action = _action_for(payload, ".gemini/commands/speckit.git.feature.toml")
+    assert (preset_action["provenance"], preset_action["source_id"]) == (
+        "preset",
+        "self-test",
+    )
+    assert (extension_action["provenance"], extension_action["source_id"]) == (
+        "extension",
+        "git",
+    )
+    assert not target.exists()
+
+
+def test_dry_run_registry_owns_markerless_copilot_companion_prompt(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "copilot-command-preview"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--dry-run",
+            "--json",
+            "--integration",
+            "copilot",
+            "--integration-options=--commands",
+            "--script",
+            "sh",
+            "--extension",
+            "git",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    prompt_action = _action_for(
+        payload, ".github/prompts/speckit.git.feature.prompt.md"
+    )
+    assert (prompt_action["provenance"], prompt_action["source_id"]) == (
+        "extension",
+        "git",
+    )
+    assert not target.exists()
+
+
+def test_dry_run_isolates_and_reports_hermes_home_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_home = tmp_path / "real-home"
+    existing_skill = real_home / ".hermes" / "skills" / "speckit-plan" / "SKILL.md"
+    existing_skill.parent.mkdir(parents=True)
+    existing_skill.write_text("user-owned content\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(real_home))
+    monkeypatch.setenv("USERPROFILE", str(real_home))
+    target = tmp_path / "hermes-preview-project"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--dry-run",
+            "--json",
+            "--integration",
+            "hermes",
+            "--script",
+            "sh",
+            "--ignore-agent-tools",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert existing_skill.read_text(encoding="utf-8") == "user-owned content\n"
+    payload = json.loads(result.output)
+    hermes_action = _action_for(payload, "~/.hermes/skills/speckit-plan/SKILL.md")
+    assert hermes_action["action"] == "overwrite"
+    assert hermes_action["provenance"] == "integration"
+    assert hermes_action["source_id"] == "hermes"
     assert not target.exists()

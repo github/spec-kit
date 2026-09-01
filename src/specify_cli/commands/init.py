@@ -70,49 +70,258 @@ def _snapshot_files(root: Path) -> dict[str, str]:
     return files
 
 
-def _preview_manifest_provenance(staged_root: Path) -> dict[str, str]:
-    """Map manifest-tracked staged paths to their installation source."""
-    provenance: dict[str, str] = {}
+def _snapshot_matching_files(root: Path, relative_paths: set[str]) -> dict[str, str]:
+    """Return digests for selected regular files below *root*."""
+    files: dict[str, str] = {}
+    for relative_path in relative_paths:
+        path = root / relative_path
+        if not path.is_file() or path.is_symlink():
+            continue
+        files[relative_path] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return files
+
+
+def _preview_subprocess_env(staged_home: Path) -> dict[str, str]:
+    """Return a child environment with user-scoped paths isolated in staging."""
+    env = os.environ.copy()
+    home = str(staged_home)
+    env.update(
+        {
+            "HOME": home,
+            "USERPROFILE": home,
+            "XDG_CACHE_HOME": str(staged_home / ".cache"),
+            "XDG_CONFIG_HOME": str(staged_home / ".config"),
+            "XDG_DATA_HOME": str(staged_home / ".local" / "share"),
+            "XDG_STATE_HOME": str(staged_home / ".local" / "state"),
+            "APPDATA": str(staged_home / "AppData" / "Roaming"),
+            "LOCALAPPDATA": str(staged_home / "AppData" / "Local"),
+        }
+    )
+    home_drive, home_path = os.path.splitdrive(home)
+    if home_drive:
+        env["HOMEDRIVE"] = home_drive
+        env["HOMEPATH"] = home_path
+    else:
+        env.pop("HOMEDRIVE", None)
+        env.pop("HOMEPATH", None)
+    return env
+
+
+PreviewOwnership = tuple[str, str | None]
+
+
+def _preview_manifest_ownership(staged_root: Path) -> dict[str, PreviewOwnership]:
+    """Map manifest-tracked staged paths to provenance category and source ID."""
+    ownership: dict[str, PreviewOwnership] = {}
     manifests = staged_root / ".specify" / "integrations"
     if not manifests.is_dir():
-        return provenance
+        return ownership
 
     for manifest_path in manifests.glob("*.manifest.json"):
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            key = str(manifest.get("key", manifest_path.stem.removesuffix(".manifest")))
-            source = "core" if key == "speckit" else f"integration:{key}"
+            key = str(
+                manifest.get(
+                    "integration",
+                    manifest.get("key", manifest_path.stem.removesuffix(".manifest")),
+                )
+            )
+            source = ("core", key) if key == "speckit" else ("integration", key)
             for relative_path in manifest.get("files", {}):
-                provenance[str(relative_path)] = source
+                ownership[str(relative_path)] = source
         except (OSError, TypeError, ValueError):
             continue
-    return provenance
+    return ownership
 
 
-def _preview_default_provenance(relative_path: str) -> str:
+def _preview_registry_entries(staged_root: Path) -> list[tuple[str, dict[str, Any]]]:
+    """Load valid source entries from staged extension and preset registries."""
+    registries: list[tuple[str, dict[str, Any]]] = []
+    registry_specs = (
+        (
+            "extension",
+            staged_root / ".specify" / "extensions" / ".registry",
+            "extensions",
+        ),
+        ("preset", staged_root / ".specify" / "presets" / ".registry", "presets"),
+    )
+    for category, registry_path, collection_key in registry_specs:
+        try:
+            data = json.loads(registry_path.read_text(encoding="utf-8"))
+            entries = data.get(collection_key, {})
+        except (AttributeError, OSError, TypeError, ValueError):
+            continue
+        if not isinstance(entries, dict):
+            continue
+        registries.append(
+            (
+                category,
+                {
+                    source_id: metadata
+                    for source_id, metadata in entries.items()
+                    if isinstance(source_id, str) and isinstance(metadata, dict)
+                },
+            )
+        )
+    return registries
+
+
+def _preview_registry_sources(staged_root: Path) -> dict[str, set[str]]:
+    """Return source ID to provenance categories from staged registries."""
+    sources: dict[str, set[str]] = {}
+    for category, entries in _preview_registry_entries(staged_root):
+        for source_id in entries:
+            sources.setdefault(source_id, set()).add(category)
+    return sources
+
+
+def _preview_registry_ownership(
+    staged_root: Path,
+) -> tuple[dict[str, PreviewOwnership], dict[str, PreviewOwnership]]:
+    """Map registered command outputs in project and home staging scopes."""
+    from ..agents import CommandRegistrar
+
+    registrar = CommandRegistrar()
+    project_ownership: dict[str, PreviewOwnership] = {}
+    home_ownership: dict[str, PreviewOwnership] = {}
+    for category, entries in _preview_registry_entries(staged_root):
+        for source_id, metadata in entries.items():
+            registered = metadata.get("registered_commands", {})
+            if not isinstance(registered, dict):
+                continue
+            for agent_name, command_names in registered.items():
+                agent_config = registrar.AGENT_CONFIGS.get(agent_name)
+                if not isinstance(agent_config, dict) or not isinstance(
+                    command_names, list
+                ):
+                    continue
+                dir_value = agent_config.get("dir")
+                extension = agent_config.get("extension")
+                if not isinstance(dir_value, str) or not isinstance(extension, str):
+                    continue
+                if dir_value.startswith("~"):
+                    destination = Path(dir_value[1:].lstrip("/"))
+                    scope = home_ownership
+                else:
+                    destination = Path(dir_value)
+                    if destination.is_absolute():
+                        continue
+                    canonical = staged_root / destination
+                    legacy = agent_config.get("legacy_dir")
+                    if (
+                        not canonical.exists()
+                        and isinstance(legacy, str)
+                        and (staged_root / legacy).exists()
+                    ):
+                        destination = Path(legacy)
+                    scope = project_ownership
+                for command_name in command_names:
+                    if not isinstance(command_name, str):
+                        continue
+                    output_name = registrar._compute_output_name(
+                        agent_name, command_name, agent_config
+                    )
+                    relative_path = (
+                        destination / f"{output_name}{extension}"
+                    ).as_posix()
+                    scope[relative_path] = category, source_id
+                    if agent_name == "copilot":
+                        prompt_path = (
+                            Path(".github") / "prompts" / f"{command_name}.prompt.md"
+                        ).as_posix()
+                        project_ownership[prompt_path] = category, source_id
+    return project_ownership, home_ownership
+
+
+def _preview_content_ownership(
+    content: str, registry_sources: dict[str, set[str]]
+) -> PreviewOwnership | None:
+    """Read generated ownership markers, using registries to type bare IDs."""
+    bare_source_id: str | None = None
+    for line in content.splitlines():
+        marker = line.strip()
+        if marker.startswith("source:"):
+            value = marker.removeprefix("source:").strip().strip("\"'")
+            if value.startswith(("preset:", "extension:")):
+                category, source_id = value.split(":", 1)
+                source_id = source_id.split(":", 1)[0]
+                if source_id:
+                    return category, source_id
+        if marker.startswith("<!--") and marker.endswith("-->"):
+            value = marker.removeprefix("<!--").removesuffix("-->").strip()
+            if value.startswith(("preset:", "extension:")):
+                category, source_id = value.split(":", 1)
+                if source_id:
+                    return category, source_id
+            if value.startswith("Source:"):
+                bare_source_id = value.removeprefix("Source:").strip()
+        elif marker.startswith("# Source:"):
+            bare_source_id = marker.removeprefix("# Source:").strip()
+
+    categories = registry_sources.get(bare_source_id or "", set())
+    if len(categories) == 1 and bare_source_id:
+        return next(iter(categories)), bare_source_id
+    if bare_source_id:
+        for category in ("preset", "extension"):
+            if category in categories and f"{category}:{bare_source_id}" in content:
+                return category, bare_source_id
+    return None
+
+
+def _preview_marker_ownership(
+    staged_root: Path, registry_sources: dict[str, set[str]]
+) -> dict[str, PreviewOwnership]:
+    """Map staged generated artifacts using their embedded ownership markers."""
+    ownership: dict[str, PreviewOwnership] = {}
+    for relative_path in _snapshot_files(staged_root):
+        path = staged_root / relative_path
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        source = _preview_content_ownership(content, registry_sources)
+        if source is not None:
+            ownership[relative_path] = source
+    return ownership
+
+
+def _preview_default_ownership(
+    relative_path: str, default: PreviewOwnership
+) -> PreviewOwnership:
     if relative_path.startswith(".specify/workflows/"):
-        return "workflow"
+        remainder = relative_path.removeprefix(".specify/workflows/")
+        workflow_id = remainder.split("/", 1)[0]
+        return "workflow", workflow_id if "/" in remainder else None
     if relative_path.startswith(".specify/extensions/"):
-        return "extension"
+        remainder = relative_path.removeprefix(".specify/extensions/")
+        extension_id = remainder.split("/", 1)[0]
+        return "extension", extension_id if "/" in remainder else None
     if relative_path.startswith(".specify/presets/"):
-        return "preset"
+        remainder = relative_path.removeprefix(".specify/presets/")
+        preset_id = remainder.split("/", 1)[0]
+        return "preset", preset_id if "/" in remainder else None
     if relative_path.startswith(".specify/"):
-        return "core"
-    return "integration"
+        return "core", None
+    return default
 
 
 def _build_preview_actions(
-    initial_files: dict[str, str], staged_root: Path
+    initial_files: dict[str, str],
+    staged_root: Path,
+    *,
+    path_prefix: str = "",
+    ownership: dict[str, PreviewOwnership] | None = None,
+    default_ownership: PreviewOwnership = ("integration", None),
 ) -> list[dict[str, str]]:
     """Classify files produced by a staged initialization."""
     staged_files = _snapshot_files(staged_root)
-    provenance = _preview_manifest_provenance(staged_root)
+    ownership = ownership or {}
     candidates = {
         path
         for path, digest in staged_files.items()
         if initial_files.get(path) != digest
     }
-    candidates.update(path for path in provenance if path in staged_files)
+    candidates.update(path for path in ownership if path in staged_files)
 
     actions: list[dict[str, str]] = []
     for path in sorted(candidates):
@@ -125,13 +334,17 @@ def _build_preview_actions(
             if initial_digest != staged_digest
             else "preserve"
         )
-        actions.append(
-            {
-                "action": action,
-                "path": path,
-                "provenance": provenance.get(path, _preview_default_provenance(path)),
-            }
+        provenance, source_id = ownership.get(
+            path, _preview_default_ownership(path, default_ownership)
         )
+        record = {
+            "action": action,
+            "path": f"{path_prefix}{path}",
+            "provenance": provenance,
+        }
+        if source_id:
+            record["source_id"] = source_id
+        actions.append(record)
     return actions
 
 
@@ -150,10 +363,10 @@ def _emit_dry_run_preview(payload: dict[str, Any], *, json_output: bool) -> None
         return
 
     for record in payload["actions"]:
-        console.print(
-            f"{record['action']:<10} {record['path']} "
-            f"[dim]({record['provenance']})[/dim]"
-        )
+        source = record["provenance"]
+        if record.get("source_id"):
+            source = f"{source}:{record['source_id']}"
+        console.print(f"{record['action']:<10} {record['path']} [dim]({source})[/dim]")
 
 
 def _preview_init(
@@ -181,11 +394,14 @@ def _preview_init(
         return
 
     initial_files = _snapshot_files(project_path)
+    real_home = Path.home()
     url_extensions = [spec for spec in extensions or [] if _ext_spec_is_url(spec)]
     staged_extensions = [spec for spec in extensions or [] if not _ext_spec_is_url(spec)]
 
     with tempfile.TemporaryDirectory(prefix="specify-init-preview-") as tmp_dir:
         staged_root = Path(tmp_dir) / "project"
+        staged_home = Path(tmp_dir) / "home"
+        staged_home.mkdir()
         if project_path.exists():
             shutil.copytree(project_path, staged_root, symlinks=True)
 
@@ -222,19 +438,48 @@ def _preview_init(
             capture_output=True,
             text=True,
             check=False,
+            env=_preview_subprocess_env(staged_home),
         )
         if result.returncode:
             details = (result.stderr or result.stdout).strip().replace("\n", " ")
             raise RuntimeError(f"staged initialization failed: {details[:240]}")
 
-        payload["actions"] = _build_preview_actions(initial_files, staged_root)
+        registry_sources = _preview_registry_sources(staged_root)
+        project_ownership = _preview_manifest_ownership(staged_root)
+        registry_project_ownership, registry_home_ownership = (
+            _preview_registry_ownership(staged_root)
+        )
+        project_ownership.update(registry_project_ownership)
+        project_ownership.update(
+            _preview_marker_ownership(staged_root, registry_sources)
+        )
+        payload["actions"] = _build_preview_actions(
+            initial_files,
+            staged_root,
+            ownership=project_ownership,
+            default_ownership=("integration", selected_integration),
+        )
+        staged_home_files = _snapshot_files(staged_home)
+        initial_home_files = _snapshot_matching_files(real_home, set(staged_home_files))
+        home_ownership = registry_home_ownership
+        home_ownership.update(_preview_marker_ownership(staged_home, registry_sources))
+        payload["actions"].extend(
+            _build_preview_actions(
+                initial_home_files,
+                staged_home,
+                path_prefix="~/",
+                ownership=home_ownership,
+                default_ownership=("integration", selected_integration),
+            )
+        )
 
     for spec in url_extensions:
         payload["actions"].append(
             {
                 "action": "unresolved",
                 "path": spec,
-                "provenance": "extension:url",
+                "provenance": "extension",
+                "source_id": spec,
             }
         )
     payload["actions"].sort(key=lambda action: action["path"])
