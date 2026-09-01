@@ -315,15 +315,13 @@ Once the assessment exists, the next step is `__SPECKIT_COMMAND_BUG_FIX__ slug=<
 
 This renders as `/speckit.bug.fix slug=<slug>` for a slash-based agent, `/speckit-bug-fix slug=<slug>` for a skills-based agent, and so on — the author writes it once and it stays portable. The first-party `bug` and `git` extensions use this token exclusively; see `extensions/bug/commands/` for working examples.
 
-> **Current limitation — skills mode.** Token resolution runs in the
-> command-rendering path (`CommandRegistrar`), so it applies when an extension
-> installs *command files*. It does **not** yet run when an extension is
-> registered as *skills* for a skills-based agent: `_register_extension_skills`
-> resolves placeholders and post-processes content but never calls
-> `resolve_command_refs`, so a `__SPECKIT_COMMAND_<NAME>__` token reaches
-> agents such as Codex, ZCode, and Kimi verbatim in that mode. Until that
-> rendering step lands, prefer the token for command-file extensions and avoid
-> relying on it inside skill bodies destined for skills-based agents.
+> **Skills mode.** Token resolution runs in both paths, so the token is safe to
+> use either way. Command files go through the command-rendering path
+> (`CommandRegistrar`). Skill bodies go through `_resolve_command_ref_tokens` in
+> `_register_extension_skills`, which resolves the same token shape against the
+> active skill style: `$speckit-bug-fix` for a dollar-prefixed agent such as
+> Codex or ZCode, `/speckit-bug-fix` for a slash-prefixed one such as Kimi, and
+> the integration's own invocation otherwise.
 
 ### Script Path Rewriting
 
