@@ -107,6 +107,73 @@ def _preview_subprocess_env(staged_home: Path) -> dict[str, str]:
     return env
 
 
+_INIT_PLAN_ENV = "SPECIFY_INIT_PLAN_PATH"
+
+
+def _record_init_plan_action(
+    action: str,
+    path: str,
+    provenance: str,
+    source_id: str | None = None,
+) -> None:
+    """Append one initializer outcome when a preview plan path is configured."""
+    plan_path = os.environ.get(_INIT_PLAN_ENV)
+    if not plan_path:
+        return
+    record: dict[str, str] = {
+        "action": action,
+        "path": path,
+        "provenance": provenance,
+    }
+    if source_id:
+        record["source_id"] = source_id
+    try:
+        with open(plan_path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+    except OSError as exc:
+        sys.stderr.write(f"specify: failed to record init plan action: {exc}\n")
+
+
+def _merge_recorded_plan_actions(
+    actions: list[dict[str, str]], plan_path: Path
+) -> list[dict[str, str]]:
+    """Fold initializer-recorded skip outcomes into the digest-based preview."""
+    if not plan_path.is_file():
+        return actions
+    try:
+        lines = plan_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return actions
+
+    by_path = {record["path"]: record for record in actions}
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            recorded = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(recorded, dict):
+            continue
+        if recorded.get("action") != "skip" or not isinstance(recorded.get("path"), str):
+            continue
+        path = recorded["path"]
+        existing = by_path.get(path)
+        if existing is not None and existing.get("action") != "preserve":
+            continue
+        merged: dict[str, str] = {
+            "action": "skip",
+            "path": path,
+            "provenance": str(recorded.get("provenance") or "core"),
+        }
+        source_id = recorded.get("source_id")
+        if source_id:
+            merged["source_id"] = str(source_id)
+        by_path[path] = merged
+    return list(by_path.values())
+
+
 PreviewOwnership = tuple[str, str | None]
 
 
@@ -312,6 +379,7 @@ def _build_preview_actions(
     path_prefix: str = "",
     ownership: dict[str, PreviewOwnership] | None = None,
     default_ownership: PreviewOwnership = ("integration", None),
+    directory_conflict: bool = False,
 ) -> list[dict[str, str]]:
     """Classify files produced by a staged initialization."""
     staged_files = _snapshot_files(staged_root)
@@ -327,13 +395,12 @@ def _build_preview_actions(
     for path in sorted(candidates):
         staged_digest = staged_files[path]
         initial_digest = initial_files.get(path)
-        action = (
-            "create"
-            if initial_digest is None
-            else "overwrite"
-            if initial_digest != staged_digest
-            else "preserve"
-        )
+        if initial_digest is None:
+            action = "create"
+        elif initial_digest != staged_digest:
+            action = "conflict" if directory_conflict else "overwrite"
+        else:
+            action = "preserve"
         provenance, source_id = ownership.get(
             path, _preview_default_ownership(path, default_ownership)
         )
@@ -357,16 +424,51 @@ def _emit_dry_run_preview(payload: dict[str, Any], *, json_output: bool) -> None
     console.print("\n[bold cyan]Initialization preview[/bold cyan]")
     if payload["conflict"]:
         console.print(
-            "[yellow]conflict[/yellow]  target directory is non-empty; rerun with --force "
-            "to preview a forced merge"
+            "[yellow]conflict[/yellow]  target directory exists; applying this plan requires --force"
         )
-        return
-
     for record in payload["actions"]:
         source = record["provenance"]
         if record.get("source_id"):
             source = f"{source}:{record['source_id']}"
         console.print(f"{record['action']:<10} {record['path']} [dim]({source})[/dim]")
+
+
+def _remap_in_project_symlinks(project_root: Path, staged_root: Path) -> None:
+    """Retarget staged absolute symlinks that originally pointed inside *project_root*.
+
+    ``copytree(..., symlinks=True)`` preserves absolute targets, so an in-tree
+    link keeps pointing at the live project. Remap those to the corresponding
+    staged path. Links that resolve outside *project_root* are left unchanged
+    so the initializer's containment check still rejects them.
+    """
+    project_root = project_root.resolve()
+    staged_root = staged_root.resolve()
+    for dirpath, dirnames, filenames in os.walk(staged_root, followlinks=False):
+        for name in (*dirnames, *filenames):
+            path = Path(dirpath) / name
+            if not path.is_symlink():
+                continue
+            raw_target = Path(os.fsdecode(os.readlink(path)))
+            if not raw_target.is_absolute():
+                continue
+            try:
+                resolved_target = raw_target.resolve()
+            except (OSError, RuntimeError):
+                resolved_target = raw_target
+            try:
+                relative = resolved_target.relative_to(project_root)
+            except ValueError:
+                continue
+            remapped = staged_root / relative
+            was_dir = path.is_dir()
+            path.unlink()
+            path.symlink_to(remapped, target_is_directory=was_dir)
+
+
+def _stage_project_copy(project_path: Path, staged_root: Path) -> None:
+    """Copy *project_path* into staging and remap in-project absolute symlinks."""
+    shutil.copytree(project_path, staged_root, symlinks=True)
+    _remap_in_project_symlinks(project_path.resolve(), staged_root.resolve())
 
 
 def _preview_init(
@@ -389,9 +491,6 @@ def _preview_init(
         "conflict": directory_conflict,
         "actions": [],
     }
-    if directory_conflict:
-        _emit_dry_run_preview(payload, json_output=json_output)
-        return
 
     initial_files = _snapshot_files(project_path)
     real_home = Path.home()
@@ -403,7 +502,7 @@ def _preview_init(
         staged_home = Path(tmp_dir) / "home"
         staged_home.mkdir()
         if project_path.exists():
-            shutil.copytree(project_path, staged_root, symlinks=True)
+            _stage_project_copy(project_path, staged_root)
 
         # Run the same public CLI path in a child process.  Besides preventing
         # mutations of the target root, this isolates Rich's Live output from
@@ -432,13 +531,16 @@ def _preview_init(
         if trust_extension_urls:
             command.append("--trust-extension-urls")
 
+        plan_path = Path(tmp_dir) / "init-plan.jsonl"
+        env = _preview_subprocess_env(staged_home)
+        env[_INIT_PLAN_ENV] = str(plan_path)
         result = subprocess.run(
             command,
             cwd=Path.cwd(),
             capture_output=True,
             text=True,
             check=False,
-            env=_preview_subprocess_env(staged_home),
+            env=env,
         )
         if result.returncode:
             details = (result.stderr or result.stdout).strip().replace("\n", " ")
@@ -458,6 +560,7 @@ def _preview_init(
             staged_root,
             ownership=project_ownership,
             default_ownership=("integration", selected_integration),
+            directory_conflict=directory_conflict,
         )
         staged_home_files = _snapshot_files(staged_home)
         initial_home_files = _snapshot_matching_files(real_home, set(staged_home_files))
@@ -470,7 +573,11 @@ def _preview_init(
                 path_prefix="~/",
                 ownership=home_ownership,
                 default_ownership=("integration", selected_integration),
+                directory_conflict=directory_conflict,
             )
+        )
+        payload["actions"] = _merge_recorded_plan_actions(
+            payload["actions"], plan_path
         )
 
     for spec in url_extensions:
@@ -575,6 +682,12 @@ def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_ve
     bundled_path = _locate_bundled_extension(ext_spec)
     if bundled_path is not None:
         if manager.registry.is_installed(ext_spec):
+            _record_init_plan_action(
+                "skip",
+                f".specify/extensions/{ext_spec}/extension.yml",
+                "extension",
+                ext_spec,
+            )
             return "already installed"
         manifest = manager.install_from_directory(bundled_path, speckit_version)
         return f"{manifest.name} v{manifest.version} installed"
@@ -592,6 +705,12 @@ def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_ve
         bundled_path = _locate_bundled_extension(resolved_id)
         if bundled_path is not None:
             if manager.registry.is_installed(resolved_id):
+                _record_init_plan_action(
+                    "skip",
+                    f".specify/extensions/{resolved_id}/extension.yml",
+                    "extension",
+                    resolved_id,
+                )
                 return "already installed"
             manifest = manager.install_from_directory(bundled_path, speckit_version)
             return f"{manifest.name} v{manifest.version} installed"
@@ -656,6 +775,11 @@ def ensure_constitution_from_template(
         if tracker:
             tracker.add("constitution", "Constitution setup")
             tracker.skip("constitution", "existing file preserved")
+        _record_init_plan_action(
+            "skip",
+            ".specify/memory/constitution.md",
+            "core",
+        )
         return
 
     try:
@@ -981,10 +1105,11 @@ def register(app: typer.Typer) -> None:
             selected_ai = integration
         elif not _prompts_allowed(non_interactive):
             default_integration = resolve_default_init_integration()
-            console.print(
-                f"[dim]Non-interactive session detected: defaulting to '{default_integration}'. "
-                "Use --integration to choose a different agent.[/dim]"
-            )
+            if not (dry_run and json_output):
+                console.print(
+                    f"[dim]Non-interactive session detected: defaulting to '{default_integration}'. "
+                    "Use --integration to choose a different agent.[/dim]"
+                )
             selected_ai = default_integration
         else:
             ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}
@@ -1244,6 +1369,12 @@ def register(app: typer.Typer) -> None:
                         wf_registry = WorkflowRegistry(project_path)
                         if wf_registry.is_installed("speckit"):
                             tracker.complete("workflow", "already installed")
+                            _record_init_plan_action(
+                                "skip",
+                                ".specify/workflows/speckit/workflow.yml",
+                                "workflow",
+                                "speckit",
+                            )
                         else:
                             import shutil as _shutil
 
