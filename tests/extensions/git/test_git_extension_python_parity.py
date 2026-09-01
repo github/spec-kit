@@ -20,8 +20,10 @@ from tests.conftest import requires_bash
 from tests.parity_helpers import collation_range_locale
 from tests.extensions.git.test_git_extension import (
     _GIT_ENV,
+    HAS_PWSH,
     _init_git,
     _run_bash,
+    _run_pwsh,
     _setup_project,
     _write_config,
 )
@@ -168,6 +170,16 @@ class TestCreateFeatureBranchParity:
             "--json", "--dry-run", description,
         )
         _assert_parity(b, p)
+
+        if not HAS_PWSH:
+            pytest.skip("pwsh not available")
+        ps_proj = _setup_project(tmp_path / "ps" / "proj")
+        ps = _run_pwsh(
+            "create-new-feature-branch.ps1", ps_proj,
+            "-Json", "-DryRun", description,
+        )
+        assert ps.returncode == 0, ps.stderr
+        assert json.loads(ps.stdout) == json.loads(b.stdout)
 
     @pytest.mark.parametrize(
         ("short_name", "expected"),

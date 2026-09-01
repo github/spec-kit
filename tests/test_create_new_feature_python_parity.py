@@ -144,6 +144,26 @@ def test_python_branch_name_generation_matches_bash(
 
 
 @requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_all_variants_keep_acronym_next_to_non_ascii(repo: Path) -> None:
+    """An acronym touching an accented letter survives in all three twins.
+
+    bash probes for acronyms with `grep -qw` under LC_ALL=C, where an accented
+    letter is a non-word byte and therefore a boundary. Python's \\b and .NET's
+    \\b are Unicode-aware and saw "\u00e9DB\u00e9" as a single word, dropping the
+    acronym; all three now spell the boundary out as ASCII.
+    """
+    description = "Fix \u00e9DB\u00e9 sync"
+    bash = run(bash_cmd(repo, SCRIPT, "--json", "--dry-run", description), repo)
+    py = run(py_cmd(repo, SCRIPT, "--json", "--dry-run", description), repo)
+    ps = run(ps_cmd(repo, SCRIPT, "-Json", "-DryRun", description), repo)
+
+    assert bash.returncode == py.returncode == ps.returncode == 0
+    assert json_stdout(py) == json_stdout(bash) == json_stdout(ps)
+    assert json_stdout(ps)["BRANCH_NAME"] == "001-fix-db-sync"
+
+
+@requires_bash
 @pytest.mark.parametrize(
     "args",
     [
