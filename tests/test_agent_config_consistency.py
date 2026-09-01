@@ -439,3 +439,22 @@ class TestAgentConfigConsistency:
     def test_agent_config_includes_rovodev(self):
         """AGENT_CONFIG should include rovodev."""
         assert "rovodev" in AGENT_CONFIG
+
+
+class TestAgentConfigLoggingRegression:
+    """Regression: _agent_config.py must use logger, not print(), for warnings."""
+
+    def test_invalid_integration_uses_logger_not_print(self, caplog):
+        """Invalid integration warning must use logger.warning(), not print()."""
+        import logging
+        import os
+        from unittest.mock import patch
+
+        from specify_cli._agent_config import resolve_default_init_integration
+
+        with caplog.at_level(logging.WARNING):
+            with patch.dict(os.environ, {"SPECKIT_INTEGRATION_DEFAULT": "nonexistent"}):
+                result = resolve_default_init_integration()
+                assert result == "copilot"  # default fallback
+                assert any("nonexistent" in record.message for record in caplog.records)
+                assert any("not a recognized integration" in record.message for record in caplog.records)

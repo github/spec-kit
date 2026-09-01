@@ -1,9 +1,11 @@
 """Agent configuration constants derived from the integration registry."""
 from __future__ import annotations
 
+import logging
 import os
-import sys
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def _build_agent_config() -> dict[str, dict[str, Any]]:
@@ -41,11 +43,14 @@ def resolve_default_init_integration() -> str:
         return DEFAULT_INIT_INTEGRATION
     if override in AGENT_CONFIG:
         return override
-    print(
-        f"Warning: {DEFAULT_INIT_INTEGRATION_ENV_VAR}='{override}' is not a "
-        f"recognized integration; falling back to '{DEFAULT_INIT_INTEGRATION}'. "
-        f"Choose from: {', '.join(sorted(AGENT_CONFIG.keys()))}.",
-        file=sys.stderr,
+    logger.warning(
+        "%s='%s' is not a "
+        "recognized integration; falling back to '%s'. "
+        "Choose from: %s.",
+        DEFAULT_INIT_INTEGRATION_ENV_VAR,
+        override,
+        DEFAULT_INIT_INTEGRATION,
+        ", ".join(sorted(AGENT_CONFIG.keys())),
     )
     return DEFAULT_INIT_INTEGRATION
 
