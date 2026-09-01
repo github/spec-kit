@@ -1465,12 +1465,14 @@ class StepCatalog:
             raise StepValidationError("No step catalog config file found.")
 
         try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         except (yaml.YAMLError, OSError, UnicodeDecodeError) as exc:
             raise StepValidationError(
                 f"Catalog config file is unreadable or malformed: {exc}"
             ) from exc
-        if not isinstance(data, dict):
+        if data is None:
+            data = {}
+        elif not isinstance(data, dict):
             raise StepValidationError(
                 "Catalog config file is corrupted (expected a mapping)."
             )
