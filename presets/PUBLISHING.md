@@ -101,9 +101,9 @@ If your preset overrides commands that call into an extension, declare it in
 `requires.extensions`. Without the extension the preset still installs and the
 overrides fall through to the core workflow, so nothing errors — the feature
 just silently does less than the user expects. Declaring the dependency makes
-`specify preset add` say so, and name the command that fixes it.
+`specify preset add` say so, and spell out how to resolve it.
 
-Use a bare id, or a mapping when you need a version floor or an optional
+Use a bare id, or a mapping when you need a version constraint or an optional
 dependency:
 
 ```yaml
@@ -112,14 +112,19 @@ requires:
   extensions:
     - "companion-extension"              # required, any version
     - id: "other-extension"
-      version: ">=1.2.0"                 # optional PEP 440 specifier
+      version: ">=1.2.0,<2"              # optional PEP 440 specifier
       required: false                    # optional, defaults to true
 ```
+
+`version` accepts any PEP 440 specifier, not just a lower bound — upper bounds
+(`<2`), exact pins (`==1.2.0`), and exclusions (`!=1.3.0`) all work.
 
 Notes:
 
 - The field is optional. A preset that declares nothing behaves exactly as before.
-- A missing or version-unsatisfied dependency produces a **warning, not a failure** — the install still succeeds.
+- A dependency that is missing, disabled, or version-unsatisfied produces a **warning, not a failure** — the install still succeeds.
+- A disabled extension counts as unmet. Resolution skips disabled extensions, so the preset is just as inert as if it were absent.
+- The warning names an exact command for the missing and disabled cases. For a version mismatch it states the constraint to satisfy rather than naming a command, because `specify extension update` only moves forward to the catalog release and cannot satisfy an upper bound, a pin, or a downgrade.
 - `required: false` documents an enhancing-but-optional extension and is never warned about.
 - Declare it in `preset.yml`, not only in your catalog entry. The catalog is not consulted for `--dev` and `--from <url>` installs, so the manifest is the only copy present on every install path.
 
