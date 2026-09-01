@@ -620,6 +620,13 @@ See the [Extension Publishing Guide](EXTENSION-PUBLISHING-GUIDE.md) for detailed
 - **MAJOR**: Breaking changes
 - **MINOR**: New features
 - **PATCH**: Bug fixes
+- **Bump on every content change**: update offers from `specify extension
+  update` are version-driven, so a content change shipped without a
+  version bump is never delivered automatically to already-installed
+  copies. For the bundled extensions in this repository the bump is
+  enforced by CI (`extension-version-guard.yml`): a PR that changes
+  files under `extensions/<id>/` must also bump that extension's
+  `extension.yml` version and keep `extensions/catalog.json` in sync.
 
 ### Security
 

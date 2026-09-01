@@ -1,0 +1,43 @@
+name: Extension Version Guard
+
+permissions:
+  contents: read
+
+# Bundled extensions only reach existing installs through a version bump:
+# `specify extension update` compares the semver in extensions/catalog.json
+# against the installed copy and reports "Up to date" whenever they match.
+# Content changes shipped without a bump go silently stale on every
+# project that already installed the extension (#4345). This guard turns
+# "please remember to bump" into a merge requirement.
+on:
+  pull_request:
+    paths:
+      - "extensions/**"
+
+jobs:
+  version-bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Install check dependencies
+        run: python -m pip install --quiet pyyaml packaging
+
+      # For pull_request events the checkout is the merge of the PR head
+      # into the base tip, so diffing base.sha against HEAD yields exactly
+      # the PR's changes (same fetch pattern as lint.yml).
+      - name: Check bundled extension version bumps
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "+${PR_BASE_SHA}:refs/checks/pr-base"
+          python .github/scripts/check_extension_version_bump.py refs/checks/pr-base
