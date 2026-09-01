@@ -785,6 +785,42 @@ def condition_is_never_evaluated(condition: Any) -> bool:
     return _first_unclosable_block(stripped) == "verbatim"
 
 
+def condition_is_interpolated_to_text(condition: Any) -> bool:
+    """True when *condition* holds ``{{ }}`` blocks but is spliced into text, not evaluated.
+
+    ``evaluate_expression`` takes its typed fast path only when the whole string is
+    exactly one ``{{ ... }}`` block (``_is_single_expression``). Anything else — two
+    blocks, or one block with any text around it — goes to ``_interpolate_expressions``,
+    which substitutes each block into the surrounding string and returns a *string*.
+    ``evaluate_condition`` then coerces that with ``bool()``, so the result is true for
+    every rendering except ``""``, ``"true"`` and ``"false"``::
+
+        {{ inputs.ready }} and {{ inputs.count > 100 }}   ->  "False and False"  ->  True
+        not {{ inputs.ready }}                            ->  "not False"        ->  True
+        {{ inputs.count }} > 100                          ->  "0 > 100"          ->  True
+
+    Each of those reads as a real expression and is always true, which is the same
+    silent-truthiness fault ``condition_is_never_evaluated`` reports one layer out: there
+    the braces are missing, here they are present but do not cover the whole condition.
+    The operators belong *inside* one block, and the validators already tell authors the
+    condition must be "a single complete '{{ }}' block" -- this is the check behind that
+    sentence.
+
+    Deliberately derived from ``_is_single_expression`` rather than restated, so this
+    cannot drift from the fast path it is predicting.
+    """
+    if not isinstance(condition, str):
+        return False
+    stripped = condition.strip()
+    if not stripped or "{{" not in stripped:
+        return False
+    # Leave both of the faults that already have their own message and advice: a block
+    # the substituter cannot close is not an interpolation problem.
+    if condition_is_never_evaluated(condition) or condition_has_malformed_expression_block(condition):
+        return False
+    return not _is_single_expression(stripped)
+
+
 def condition_has_malformed_expression_block(condition: Any) -> bool:
     """True when *condition* holds a ``{{`` block the quote-aware scan cannot close,
     but which ``_interpolate_expressions`` still evaluates through its raw-close
