@@ -10451,7 +10451,9 @@ class TestWorkflowStepAddCLI:
             project_dir / ".specify" / "workflows" / "steps" / "my-step"
         ).exists()
 
-    @pytest.mark.parametrize("step_yml_body", [b"[]", b"false", b"0", b"''"])
+    @pytest.mark.parametrize(
+        "step_yml_body", [b"[]", b"false", b"0", b"''", b"null", b"~", b"NULL"]
+    )
     def test_add_rejects_falsy_non_mapping_step_yml(
         self, project_dir, monkeypatch, step_yml_body
     ):
@@ -10459,7 +10461,10 @@ class TestWorkflowStepAddCLI:
         reported as "step.yml must be a YAML mapping", not silently coerced by
         ``or {}`` into {} and then misreported as the unrelated "missing
         'step.type_key'" error — matching how a TRUTHY non-mapping document
-        (e.g. a bare string) already reports the mapping-shape error."""
+        (e.g. a bare string) already reports the mapping-shape error. An
+        explicit null scalar (null/~/NULL) parses to the same ``None`` as a
+        genuinely empty document, so it must be distinguished (via
+        ``yaml.compose``) and rejected too, rather than defaulting to {}."""
         from typer.testing import CliRunner
         from specify_cli import app
         from specify_cli.workflows.catalog import StepCatalog
