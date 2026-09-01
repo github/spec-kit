@@ -3369,8 +3369,14 @@ def workflow_step_add(
             # explicit null scalar (``null``, ``~``, ``NULL``), so it cannot
             # tell them apart on its own. ``compose`` yields no node only for
             # a genuinely empty document.
-            is_empty_document = _yaml.compose(step_yml_text) is None
+            node = _yaml.compose(step_yml_text)
             meta = _yaml.safe_load(step_yml_text)
+            is_empty_document = node is None or (
+                meta is None
+                and isinstance(node, _yaml.nodes.ScalarNode)
+                and node.value == ""
+                and node.start_mark.index == node.end_mark.index
+            )
         except Exception as exc:
             console.print(f"[red]Error:[/red] Invalid step.yml: {exc}")
             raise typer.Exit(1)
