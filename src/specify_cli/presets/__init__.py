@@ -4165,6 +4165,13 @@ class PresetCatalog:
         try:
             parsed = urlparse(url)
             hostname = parsed.hostname
+            # Accessing ``port`` performs urllib's syntax/range validation;
+            # ``hostname`` alone does not, so a non-numeric or out-of-range
+            # port would otherwise pass validation here and only fail later,
+            # at fetch time, as a raw error this function does not translate
+            # into PresetValidationError. Mirrors specify_cli.catalogs and
+            # bundler/services/adapters.py's copy of this same guard.
+            _ = parsed.port
         except ValueError:
             raise PresetValidationError(f"Catalog URL is malformed: {url}") from None
         is_localhost = hostname in ("localhost", "127.0.0.1", "::1")

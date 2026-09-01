@@ -2086,6 +2086,25 @@ class TestPresetCatalog:
         with pytest.raises(PresetValidationError, match="malformed"):
             catalog._validate_catalog_url("https://[::1")
 
+    def test_validate_catalog_url_out_of_range_port_rejected(self, project_dir):
+        """An out-of-range port raises ValueError lazily on ``.port`` access.
+
+        ``urlparse(...).hostname`` alone does not validate the port, so
+        without a ``_ = parsed.port`` probe inside the try/except, a URL like
+        ``https://example.com:99999/catalog.json`` sails through this
+        validator and only fails later, at fetch time, with a raw
+        untranslated error instead of a clean ``PresetValidationError``. The
+        sibling ``preset add --from <url>`` download-URL guard already
+        catches this shape (see
+        ``test_preset_add_from_url_out_of_range_port_exits_cleanly``); this
+        catalog-source-URL validator had drifted from it and from the
+        original guard in ``specify_cli.catalogs``/
+        ``bundler/services/adapters.py``.
+        """
+        catalog = PresetCatalog(project_dir)
+        with pytest.raises(PresetValidationError, match="malformed"):
+            catalog._validate_catalog_url("https://example.com:99999/catalog.json")
+
     def test_env_var_catalog_url(self, project_dir, monkeypatch):
         """Test catalog URL from environment variable."""
         monkeypatch.setenv("SPECKIT_PRESET_CATALOG_URL", "https://custom.example.com/catalog.json")
@@ -3393,6 +3412,17 @@ class TestPresetCatalogMultiCatalog:
         catalog = PresetCatalog(project_dir)
         result = catalog._load_catalog_config(config_path)
         assert result is None
+
+    @pytest.mark.parametrize("bad", [[], False, 0, ""])
+    def test_load_catalog_config_rejects_falsy_non_mapping_root(
+        self, project_dir, bad
+    ):
+        config_path = project_dir / ".specify" / "preset-catalogs.yml"
+        config_path.write_text(yaml.safe_dump(bad), encoding="utf-8")
+
+        catalog = PresetCatalog(project_dir)
+        with pytest.raises(PresetValidationError, match="expected a mapping"):
+            catalog._load_catalog_config(config_path)
 
     def test_load_catalog_config_invalid_yaml(self, project_dir):
         """Test loading invalid YAML raises error."""
