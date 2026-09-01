@@ -415,10 +415,6 @@ inputs:
     type: string
     default: "copilot"
     prompt: "Integration to use (e.g. claude, copilot, gemini)"
-  scope:
-    type: string
-    default: "full"
-    enum: ["full", "backend-only", "frontend-only"]
 
 steps:
   - id: specify
