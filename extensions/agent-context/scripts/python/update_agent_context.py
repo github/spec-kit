@@ -27,6 +27,12 @@ from pathlib import Path
 DEFAULT_START = "<!-- SPECKIT START -->"
 DEFAULT_END = "<!-- SPECKIT END -->"
 
+# Any SPECKIT marker comment (the outer managed-section markers or the
+# per-preset ``PRESET:<id> START/END`` sub-markers). Instruction payloads that
+# embed one would collide with the find/replace in _upsert_section, so they are
+# rejected.
+_SPECKIT_MARKER_RE = re.compile(r"<!--\s*SPECKIT\b")
+
 
 def _err(message: str) -> None:
     print(message, file=sys.stderr)
@@ -201,7 +207,12 @@ def _resolve_plan_path(project_root: str) -> str:
     return plan_path
 
 
-def _build_section(marker_start: str, marker_end: str, plan_path: str) -> str:
+def _build_section(
+    marker_start: str,
+    marker_end: str,
+    plan_path: str,
+    preset_blocks: list[str] | None = None,
+) -> str:
     lines = [
         marker_start,
         "For additional context about technologies to be used, project structure,",
@@ -209,8 +220,113 @@ def _build_section(marker_start: str, marker_end: str, plan_path: str) -> str:
     ]
     if plan_path:
         lines.append(f"at {plan_path}")
+    # Always-on instruction blocks contributed by explicitly-enabled presets,
+    # each in its own namespaced sub-block so multiple presets coexist and each
+    # can be regenerated or dropped independently on the next update.
+    lines.extend(preset_blocks or [])
     lines.append(marker_end)
     return "\n".join(lines) + "\n"
+
+
+def _collect_preset_instruction_blocks(
+    project_root: str,
+    marker_start: str = DEFAULT_START,
+    marker_end: str = DEFAULT_END,
+) -> list[tuple[str, str]]:
+    """Collect always-on instruction blocks from installed + enabled presets.
+
+    A preset the user explicitly added (``specify preset add``) that declares
+    ``provides.instructions`` gets its rule block composed into the managed
+    section. Reads ``.specify/presets/.registry`` and each preset's
+    ``preset.yml`` directly, with no dependency on the Specify CLI (mirrors this
+    extension's by-design independence). Returns ``(preset_id, content)`` in
+    deterministic id order. Each referenced file must resolve inside its own
+    preset directory; path-unsafe, unreadable, non-UTF-8, or marker-colliding
+    entries are skipped (fail closed). Fails closed on an unreadable registry.
+    """
+    presets_dir = Path(project_root) / ".specify" / "presets"
+    registry = presets_dir / ".registry"
+    if not registry.is_file():
+        return []
+    try:
+        import yaml
+    except ImportError:
+        return []
+    try:
+        with open(registry, "r", encoding="utf-8") as fh:
+            reg = json.load(fh)
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+        return []
+    if not isinstance(reg, dict) or not isinstance(reg.get("presets"), dict):
+        return []
+
+    blocks: list[tuple[str, str]] = []
+    for preset_id in sorted(reg["presets"]):
+        meta = reg["presets"][preset_id]
+        if not isinstance(meta, dict) or not meta.get("enabled", True):
+            continue
+        manifest = presets_dir / preset_id / "preset.yml"
+        if not manifest.is_file():
+            continue
+        try:
+            with open(manifest, "r", encoding="utf-8") as fh:
+                pdata = yaml.safe_load(fh)
+        except Exception:
+            continue
+        provides = pdata.get("provides") if isinstance(pdata, dict) else None
+        instructions = provides.get("instructions") if isinstance(provides, dict) else None
+        if not isinstance(instructions, list):
+            continue
+        preset_root = (presets_dir / preset_id).resolve()
+        parts: list[str] = []
+        for entry in instructions:
+            if not isinstance(entry, dict):
+                continue
+            rel = entry.get("file")
+            if not isinstance(rel, str) or not rel.strip():
+                continue
+            if rel.startswith("/") or "\\" in rel or ".." in rel.split("/"):
+                continue
+            target = (preset_root / rel).resolve()
+            try:
+                target.relative_to(preset_root)
+            except ValueError:
+                continue
+            if not target.is_file():
+                continue
+            try:
+                text = target.read_text(encoding="utf-8").strip()
+            except (OSError, UnicodeDecodeError):
+                continue
+            if marker_start in text or marker_end in text or _SPECKIT_MARKER_RE.search(text):
+                _err(
+                    f"agent-context: skipping instructions from preset '{preset_id}': "
+                    "content contains a managed section marker."
+                )
+                continue
+            parts.append(text)
+        if parts:
+            blocks.append((preset_id, "\n\n".join(parts)))
+    return blocks
+
+
+def _render_preset_block_lines(
+    project_root: str,
+    marker_start: str = DEFAULT_START,
+    marker_end: str = DEFAULT_END,
+) -> list[str]:
+    """Render the namespaced sub-block lines for all enabled presets' instruction
+    blocks, to be embedded inside the managed section.
+    """
+    lines: list[str] = []
+    for preset_id, content in _collect_preset_instruction_blocks(
+        project_root, marker_start, marker_end
+    ):
+        lines.append("")
+        lines.append(f"<!-- SPECKIT PRESET:{preset_id} START -->")
+        lines.append(content)
+        lines.append(f"<!-- SPECKIT PRESET:{preset_id} END -->")
+    return lines
 
 
 def ensure_mdc_frontmatter(content: str) -> str:
@@ -353,7 +469,8 @@ def main(argv: list[str] | None = None) -> int:
     if not plan_path:
         plan_path = _resolve_plan_path(project_root)
 
-    section = _build_section(marker_start, marker_end, plan_path)
+    preset_blocks = _render_preset_block_lines(project_root, marker_start, marker_end)
+    section = _build_section(marker_start, marker_end, plan_path, preset_blocks)
 
     for context_file in context_files:
         ctx_path = os.path.join(project_root, context_file)
