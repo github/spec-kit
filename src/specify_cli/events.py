@@ -1938,7 +1938,10 @@ def _build_opencode_plugin(
             # S3: thread the per-handler timeout (seconds) to runEvent so the
             # execFileSync cap and dispatcher arg match the configuration
             # instead of a fixed 60000ms / 120s.
-            timeout_sec = int(cfg.get("timeout", 60))
+            try:
+                timeout_sec = int(cfg.get("timeout", 60))
+            except (TypeError, ValueError):
+                timeout_sec = 60
             if native.startswith("tool.execute."):
                 if matcher and matcher != "*":
                     tools = [t.strip().strip('"') for t in matcher.split("|")]
