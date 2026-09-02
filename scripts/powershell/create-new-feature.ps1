@@ -162,7 +162,14 @@ function Get-BranchName {
     } else {
         # Fallback to original logic if no meaningful words found
         $result = ConvertTo-CleanBranchName -Name $Description
-        $fallbackWords = ($result -split '-') | Where-Object { $_ } | Select-Object -First 3
+        # @() keeps this an array. ConvertTo-CleanBranchName blanks every
+        # non-[a-z0-9] character, so a description written in a non-Latin script
+        # (or made only of punctuation) leaves nothing for the pipeline to
+        # emit -- it yields $null, and [string]::Join on $null throws
+        # ArgumentNullException. With $ErrorActionPreference = 'Stop' that is
+        # terminating, so the script died with a .NET stack trace and exit 1
+        # where the bash and Python twins both return an empty suffix.
+        $fallbackWords = @(($result -split '-') | Where-Object { $_ } | Select-Object -First 3)
         return [string]::Join('-', $fallbackWords)
     }
 }
