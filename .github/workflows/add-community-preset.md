@@ -64,6 +64,27 @@ If it does not, stop without commenting.
 
 Read issue #${{ github.event.issue.number }}.
 
+### 1a. Detect issue format
+
+The issue **must** be submitted using the GitHub issue form template
+(`Preset Submission`). Before attempting to parse any fields, check whether
+the issue body follows the expected form structure.
+
+**Form-format indicator:** The body must contain a heading `### Preset ID`
+(the first required field in the form template). If this heading is absent, the
+issue was submitted with a free-form body instead of the issue form.
+
+If the issue is **not** in form format:
+1. Add a comment explaining that the issue must be submitted using the
+   `Preset Submission` issue form template. Include a link to the form:
+   `https://github.com/github/spec-kit/issues/new?template=preset_submission.yml`
+2. Add the `validation-failed` label
+3. **Stop — do not proceed further**
+
+If the issue **is** in form format, continue to parse the fields below.
+
+### 1b. Parse form fields
+
 Extract the following fields from the structured issue body (GitHub issue form
 fields):
 
