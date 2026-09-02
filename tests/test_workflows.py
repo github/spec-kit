@@ -9119,6 +9119,7 @@ class TestStepCatalog:
         'corrupted (expected a mapping)', not be silently coerced to {} by
         ``or {}``; empty and explicit-null documents still parse as None and
         retain their existing empty-config behavior.
+        """
         from specify_cli.workflows.catalog import StepCatalog, StepValidationError
 
         config_path = project_dir / ".specify" / "step-catalogs.yml"
