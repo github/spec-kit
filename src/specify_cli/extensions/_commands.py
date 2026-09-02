@@ -28,7 +28,12 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .._console import console
-from .._installed_list_json import emit_json, emit_json_error, installed_list_item
+from .._installed_list_json import (
+    InstalledListJSONCommand,
+    emit_json,
+    emit_json_error,
+    installed_list_item,
+)
 from .._project import resolve_specify_project_root
 from .._assets import get_speckit_version
 from .._download_security import (
@@ -472,7 +477,7 @@ def _resolve_catalog_extension(
         return (None, e)
 
 
-@extension_app.command("list")
+@extension_app.command("list", cls=InstalledListJSONCommand)
 def extension_list(
     available: bool = typer.Option(False, "--available", help="Show available extensions from catalog"),
     all_extensions: bool = typer.Option(False, "--all", help="Show both installed and available"),
@@ -493,7 +498,9 @@ def extension_list(
                     str(extension.get("id", "")),
                 ),
             )
-            emit_json([installed_list_item(ext, include_hooks=True) for ext in installed])
+            emit_json(
+                [installed_list_item(ext, include_hooks=True) for ext in installed]
+            )
             return
         except Exception as error:
             emit_json_error(error)

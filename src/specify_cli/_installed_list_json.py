@@ -9,7 +9,22 @@ from __future__ import annotations
 import json
 from typing import Any, NoReturn
 
+import click
 import typer
+from typer.core import TyperCommand
+
+
+class InstalledListJSONCommand(TyperCommand):
+    """Keep JSON list parse failures on the JSON error contract."""
+
+    def make_context(self, info_name, args, parent=None, **extra):
+        json_output = "--json" in args
+        try:
+            return super().make_context(info_name, args, parent=parent, **extra)
+        except click.UsageError as error:
+            if json_output:
+                emit_json_error(error, exit_code=error.exit_code)
+            raise
 
 
 def _normalized_source(source: Any) -> dict[str, str]:
@@ -56,8 +71,8 @@ def emit_json(value: Any) -> None:
     typer.echo(json.dumps(value, ensure_ascii=False))
 
 
-def emit_json_error(error: Exception) -> NoReturn:
+def emit_json_error(error: Exception, exit_code: int = 1) -> NoReturn:
     """Write the list-command error contract and terminate unsuccessfully."""
     message = str(error).strip() or error.__class__.__name__
     typer.echo(json.dumps({"error": message}, ensure_ascii=False), err=True)
-    raise typer.Exit(code=1)
+    raise typer.Exit(code=exit_code)

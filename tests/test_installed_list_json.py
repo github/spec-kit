@@ -275,6 +275,65 @@ def test_empty_json_lists_are_successful_arrays(tmp_path, monkeypatch):
     assert _json_result(runner.invoke(app, ["extension", "list", "--json"])) == []
 
 
+@pytest.mark.parametrize("command", ["preset", "extension"])
+@pytest.mark.parametrize(
+    "args",
+    [("--json", "--unknown"), ("--unknown", "--json")],
+)
+def test_json_usage_errors_are_stderr_only_and_preserve_exit_code(command, args):
+    result = runner.invoke(app, [command, "list", *args])
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert json.loads(result.stderr) == {"error": "No such option: --unknown"}
+
+
+@pytest.mark.parametrize(
+    ("command", "manager"),
+    [("preset", PresetManager), ("extension", ExtensionManager)],
+)
+def test_json_runtime_errors_are_stderr_only(command, manager, tmp_path, monkeypatch):
+    project = _project(tmp_path)
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(
+        manager, "list_installed", lambda _self: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+
+    result = runner.invoke(app, [command, "list", "--json"])
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert result.stderr == '{"error": "boom"}\n'
+
+
+@pytest.mark.parametrize("command", ["preset", "extension"])
+def test_non_json_usage_errors_keep_human_output(command):
+    result = runner.invoke(app, [command, "list", "--unknown"])
+
+    assert result.exit_code == 2
+    assert "Usage:" in result.output
+    assert "No such option: --unknown" in result.output
+    assert '{"error":' not in result.output
+
+
+@pytest.mark.parametrize("command", ["preset", "extension"])
+def test_json_help_remains_human_help(command):
+    result = runner.invoke(app, [command, "list", "--json", "--help"])
+
+    assert result.exit_code == 0
+    assert "--json" in result.output
+    assert result.stderr == ""
+
+
+@pytest.mark.parametrize("command", ["preset", "extension"])
+def test_jsonish_does_not_enable_json_usage_errors(command):
+    result = runner.invoke(app, [command, "list", "--jsonish"])
+
+    assert result.exit_code == 2
+    assert "No such option: --jsonish" in result.output
+    assert '{"error":' not in result.output
+
+
 def test_preset_list_json_preserves_catalog_source_for_corrupt_records(tmp_path, monkeypatch):
     project = _project(tmp_path)
     source = {"kind": "catalog", "catalog": "speckit-official"}

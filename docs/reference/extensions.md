@@ -68,8 +68,12 @@ for local, legacy, or malformed provenance, or
 `{"kind":"catalog","catalog":"<catalog-name>"}` for a valid catalog source.
 Extension `provides` contains `commands`, `templates`, `scripts`, and `hooks`
 counts. `--available` and `--all` do not broaden JSON output beyond installed
-extensions. For runtime failures after option parsing, `--json` writes
-`{"error":"..."}` to stderr and exits nonzero.
+extensions. On success, `--json` writes exactly one array to stdout and exits
+0. A runtime failure after option parsing writes exactly one
+`{"error":"..."}` object to stderr and exits 1. If parsing raises a usage
+error and the raw `--json` token is present, it writes that JSON error object
+to stderr and preserves the usage exit code (normally 2). Without `--json`,
+including for help, the existing human-readable behavior is unchanged.
 
 ## Extension Info
 

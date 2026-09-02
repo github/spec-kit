@@ -17,7 +17,12 @@ import yaml
 from rich.markup import escape as _escape_markup
 
 from .._console import console
-from .._installed_list_json import emit_json, emit_json_error, installed_list_item
+from .._installed_list_json import (
+    InstalledListJSONCommand,
+    emit_json,
+    emit_json_error,
+    installed_list_item,
+)
 from .._project import resolve_specify_project_root
 from .._download_security import (
     archive_format_from_name,
@@ -151,7 +156,7 @@ def _warn_unmet_extension_dependencies(manager, manifest) -> None:
 # ===== Preset Commands =====
 
 
-@preset_app.command("list")
+@preset_app.command("list", cls=InstalledListJSONCommand)
 def preset_list(
     json_output: bool = typer.Option(False, "--json", help="Output installed presets as JSON"),
 ):
@@ -168,7 +173,9 @@ def preset_list(
                 installed,
                 key=lambda pack: (pack.get("priority", 10), str(pack.get("id", ""))),
             )
-            emit_json([installed_list_item(pack, include_hooks=False) for pack in installed])
+            emit_json(
+                [installed_list_item(pack, include_hooks=False) for pack in installed]
+            )
             return
         except Exception as error:
             emit_json_error(error)
