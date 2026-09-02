@@ -319,9 +319,15 @@ This renders as `/speckit.bug.fix slug=<slug>` for a slash-based agent, `/specki
 > use either way. Command files go through the command-rendering path
 > (`CommandRegistrar`). Skill bodies go through `_resolve_command_ref_tokens` in
 > `_register_extension_skills`, which resolves the same token shape against the
-> active skill style: `$speckit-bug-fix` for a dollar-prefixed agent such as
-> Codex or ZCode, `/speckit-bug-fix` for a slash-prefixed one such as Kimi, and
-> the integration's own invocation otherwise.
+> active skill style, so `__SPECKIT_COMMAND_BUG_FIX__` renders as:
+>
+> | Agent | Rendered |
+> | --- | --- |
+> | Codex, ZCode, Command Code | `$speckit-bug-fix` |
+> | Claude, Copilot, Cursor, Devin, Droid, Grok and the other slash agents | `/speckit-bug-fix` |
+> | Kimi | `/skill:speckit-bug-fix` |
+>
+> Anything else falls through to the integration's own `build_command_invocation`.
 
 ### Script Path Rewriting
 
