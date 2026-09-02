@@ -6340,9 +6340,154 @@ steps:
         # The unprefixed key still holds the latest iteration's result
         # (sibling steps in the loop body and the loop condition read it).
         assert state.step_results["leaf"]["output"]["stdout"] == "tick\n"
-        # Every iteration's grandchild result is separately recoverable.
+        # Every iteration's grandchild result is separately recoverable --
+        # including the FIRST iteration. The first iteration previously ran
+        # through a separate, unnamespaced code path before the loop-specific
+        # namespacing logic was reached, so it had no dedicated entry and was
+        # immediately overwritten by iteration 1's aliasing the moment that
+        # iteration ran.
+        assert "retry-loop:leaf:0" in state.step_results
         assert "retry-loop:leaf:1" in state.step_results
         assert "retry-loop:leaf:2" in state.step_results
+
+    def test_while_loop_sibling_step_sees_immediate_alias(self, tmp_path):
+        """A step nested inside an `if` in a `while` body that references an
+        earlier SIBLING nested in the SAME `if` branch by its bare id must
+        see that sibling's value from the SAME iteration -- not a stale
+        value left over from a previous iteration.
+
+        Aliasing a namespaced descendant back to its bare id previously
+        happened only after the entire renamed subtree (here, the whole
+        `if` step, both its own id and its branch's) finished executing --
+        so a later sibling in the same branch that read the earlier one by
+        its bare id ran before that iteration's alias was ever written, and
+        so saw the previous iteration's aliased value instead.
+        """
+        from specify_cli.workflows.base import (
+            RunStatus,
+            StepBase,
+            StepContext,
+            StepResult,
+            StepStatus,
+        )
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.steps.while_loop import WhileStep
+
+        call_count = {"n": 0}
+
+        class _WriteStep(StepBase):
+            type_key = "write"
+
+            def execute(self, config, context):
+                n = call_count["n"]
+                call_count["n"] += 1
+                return StepResult(
+                    status=StepStatus.COMPLETED, output={"marker": f"value-{n}"}
+                )
+
+        class _ReadStep(StepBase):
+            type_key = "read"
+
+            def execute(self, config, context):
+                seen = context.steps.get("first", {}).get("output", {}).get("marker")
+                return StepResult(status=StepStatus.COMPLETED, output={"seen": seen})
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        context = StepContext()
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        registry = {
+            "while": WhileStep(),
+            "if": IfThenStep(),
+            "write": _WriteStep(),
+            "read": _ReadStep(),
+        }
+        steps = [
+            {
+                "id": "retry-loop",
+                "type": "while",
+                "condition": "true",
+                "max_iterations": 2,
+                "steps": [
+                    {
+                        "id": "guard",
+                        "type": "if",
+                        "condition": "true",
+                        "then": [
+                            {"id": "first", "type": "write"},
+                            {"id": "second", "type": "read"},
+                        ],
+                    },
+                ],
+            },
+        ]
+        engine._execute_steps(steps, context, state, registry)
+
+        assert state.status == RunStatus.RUNNING
+        assert state.step_results["retry-loop:second:0"]["output"]["seen"] == "value-0"
+        assert state.step_results["retry-loop:second:1"]["output"]["seen"] == "value-1"
+
+    def test_fan_out_concurrent_sibling_step_isolated_per_item(self, tmp_path):
+        """A later sibling step in a CONCURRENT fan-out item's template that
+        references an earlier sibling by its bare id must see THIS item's
+        value -- not a stale value, and not a value written by a DIFFERENT,
+        concurrently-running item through the same shared bare-id key.
+
+        A barrier forces every item's first sibling to complete at roughly
+        the same time, maximizing the window for a racy implementation to
+        leak one item's value onto another's read of the shared bare-id key.
+        """
+        import threading
+
+        from specify_cli.workflows.base import (
+            RunStatus,
+            StepBase,
+            StepContext,
+            StepResult,
+            StepStatus,
+        )
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+        from specify_cli.workflows.steps.if_then import IfThenStep
+
+        n = 4
+        barrier = threading.Barrier(n, timeout=5)
+
+        class _WriteStep(StepBase):
+            type_key = "write"
+
+            def execute(self, config, context):
+                barrier.wait()
+                return StepResult(
+                    status=StepStatus.COMPLETED, output={"marker": context.item}
+                )
+
+        class _ReadStep(StepBase):
+            type_key = "read"
+
+            def execute(self, config, context):
+                seen = context.steps.get("first", {}).get("output", {}).get("marker")
+                return StepResult(status=StepStatus.COMPLETED, output={"seen": seen})
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        context = StepContext()
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        registry = {"if": IfThenStep(), "write": _WriteStep(), "read": _ReadStep()}
+        template = {
+            "id": "item",
+            "type": "if",
+            "condition": "true",
+            "then": [
+                {"id": "first", "type": "write"},
+                {"id": "second", "type": "read"},
+            ],
+        }
+        items = list(range(n))
+        engine._run_fan_out(items, template, "fan", context, state, registry, n)
+
+        for i in items:
+            assert state.step_results[f"fan:second:{i}"]["output"]["seen"] == i
 
     def test_fan_out_namespaces_nested_descendant_steps(self, project_dir):
         """A step nested inside a fan-out template's `if`/`switch` branch
