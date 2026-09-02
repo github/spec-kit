@@ -44,6 +44,7 @@
 - [🧩 Making Spec Kit Your Own: Extensions & Presets](#-making-spec-kit-your-own-extensions--presets)
 - [📦 Bundles: Role-Based Setups](#-bundles-role-based-setups)
 - [📚 Core Philosophy](#-core-philosophy)
+- [🪞 Does Spec Kit Use Spec Kit?](#-does-spec-kit-use-spec-kit)
 - [🌟 Development Phases](#-development-phases)
 - [🎯 Experimental Goals](#-experimental-goals)
 - [🔧 Prerequisites](#-prerequisites)
@@ -400,6 +401,26 @@ Spec-Driven Development is a structured process that emphasizes:
 - **Rich specification creation** using guardrails and organizational principles
 - **Multi-step refinement** rather than one-shot code generation from prompts
 - **Heavy reliance** on advanced AI model capabilities for specification interpretation
+
+## 🪞 Does Spec Kit Use Spec Kit?
+
+Yes — we dogfood Spec Kit while developing Spec Kit, especially for substantial
+features and changes to the development workflow. Contributors are asked to test
+relevant changes through the Spec-Driven Development commands. The
+[feature assessment workflow](./.github/workflows/feature-assess.md) is currently
+the automated dogfooding path: its setup uses the CLI from the current checkout
+to initialize Copilot and install the `assess` extension, after which Copilot
+follows the generated assessment skills against feature requests. The other
+agentic workflows currently operate independently of the Specify CLI.
+
+This does not mean every change goes through the full workflow. Small fixes can
+use the normal issue, pull request, review, and test process. Dogfooding
+scaffolding and artifacts under `.github/agents/`, `.github/prompts/`,
+`.github/copilot-instructions.md`, `.grok/`, `.specify/`, and `specs/` are
+intentionally gitignored. The automated assessment workflow is ephemeral and
+neither commits nor pushes its generated Copilot skills, so its output does not
+enter repository history. See the [contributor development
+workflow](./CONTRIBUTING.md#development-workflow) for the validation expectations.
 
 ## 🌟 Development Phases
 

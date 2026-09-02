@@ -267,9 +267,10 @@ class _ExtensionKindManager:
                 component.version,
                 _bundled_manifest_version(bundled / "extension.yml", "extension"),
             )
-            self._manager.install_from_directory(
+            manifest = self._manager.install_from_directory(
                 bundled, speckit_version, priority=priority, force=force
             )
+            self._manager.scaffold_config(manifest.id)
             return
 
         if not self._allow_network:
@@ -297,13 +298,14 @@ class _ExtensionKindManager:
         )
         zip_path = catalog.download_extension(component.id)
         try:
-            self._manager.install_from_zip(
+            manifest = self._manager.install_from_zip(
                 zip_path,
                 speckit_version,
                 priority=priority,
                 force=force,
                 catalog_name=info.get("_catalog_name"),
             )
+            self._manager.scaffold_config(manifest.id)
         finally:
             with contextlib.suppress(Exception):
                 if zip_path.exists():
@@ -345,7 +347,7 @@ class _WorkflowKindManager:
         with _chdir(self._root):
             _delegate_command(
                 "install", f"workflow '{component.id}'",
-                lambda: workflow_add(component.id),
+                lambda: workflow_add(component.id, dev=False, from_url=None),
             )
 
     def refresh(self, component: ComponentRef) -> None:

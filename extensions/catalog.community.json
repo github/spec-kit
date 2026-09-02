@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-31T00:00:00Z",
+  "updated_at": "2026-09-01T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -5795,6 +5795,45 @@
       "stars": 0,
       "created_at": "2026-04-20T00:00:00Z",
       "updated_at": "2026-04-22T21:10:00Z"
+    },
+    "vurnix": {
+      "name": "Vurnix Honest Gate",
+      "id": "vurnix",
+      "description": "Deterministic three-state honest gate for AI-written code: compile + phantom-import + honest test count, executed as code — not agent self-review. PASS/BLOCK/UNPROVEN by exit code.",
+      "author": "shiersa",
+      "version": "0.1.1",
+      "download_url": "https://github.com/shiersa/vurnix-spec-kit/releases/download/v0.1.1/vurnix-0.1.1.zip",
+      "repository": "https://github.com/shiersa/vurnix-spec-kit",
+      "homepage": "https://vurnix.dev",
+      "documentation": "https://github.com/shiersa/vurnix-spec-kit#readme",
+      "changelog": "",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-only",
+      "requires": {
+        "speckit_version": ">=0.16.2",
+        "tools": [
+          { "name": "python3", "version": ">=3.10", "required": true },
+          { "name": "vurnix", "version": ">=0.3.0", "required": true },
+          { "name": "bash", "required": true }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "deterministic",
+        "honest-gate",
+        "test-integrity",
+        "quality",
+        "fail-closed"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-01T00:00:00Z",
+      "updated_at": "2026-09-01T00:00:00Z"
     },
     "whatif": {
       "name": "What-if Analysis",

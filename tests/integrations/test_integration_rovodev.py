@@ -155,6 +155,45 @@ class TestRovodevIntegration:
                 f"{prompt_file} has unexpected wrapper format"
             )
 
+    @pytest.mark.parametrize(
+        "bad_name",
+        [["speckit-plan", "speckit-tasks"], {"a": 1}],
+        ids=["sequence", "mapping"],
+    )
+    def test_prompts_manifest_merge_tolerates_non_scalar_name(
+        self, tmp_path, bad_name
+    ):
+        """An unhashable `name` in a user-edited prompts.yml must not crash setup.
+
+        `_read_prompts_yml` only filters at the entry level, never validating
+        the entry's `name`, so a YAML sequence or mapping there reached a dict
+        membership test and raised a raw `TypeError: unhashable type` out of
+        `setup()` — aborting every `specify init` / `integration install` for
+        rovodev on that project and leaving prompts.yml unwritten.
+        """
+        impl = get_integration(self.KEY)
+        manifest = IntegrationManifest(self.KEY, tmp_path)
+
+        prompts_manifest = tmp_path / ".rovodev" / "prompts.yml"
+        prompts_manifest.parent.mkdir(parents=True, exist_ok=True)
+        prompts_manifest.write_text(
+            yaml.safe_dump(
+                {"prompts": [{"name": bad_name, "content_file": "prompts/x.md"}]}
+            ),
+            encoding="utf-8",
+        )
+
+        impl.setup(tmp_path, manifest, script_type="sh")
+
+        data = yaml.safe_load(prompts_manifest.read_text(encoding="utf-8"))
+        names = [entry.get("name") for entry in data["prompts"]]
+        # The malformed user entry is preserved verbatim...
+        assert bad_name in names, names
+        # ...and the generated entries were still written.
+        assert any(
+            isinstance(n, str) and n.startswith("speckit-") for n in names
+        ), names
+
     def test_prompts_manifest_merge_preserves_user_entries(self, tmp_path):
         impl = get_integration(self.KEY)
         manifest = IntegrationManifest(self.KEY, tmp_path)

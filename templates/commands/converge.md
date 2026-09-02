@@ -1,9 +1,9 @@
 ---
 description: Assess the current codebase against the feature's spec, plan, and tasks, then append any remaining unbuilt work as new tasks to tasks.md so implement can complete it.
 scripts:
-  sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
-  ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
-  py: scripts/python/check_prerequisites.py --json --require-tasks --include-tasks
+  sh: scripts/bash/check-prerequisites.sh --json --require-spec --require-tasks --include-tasks
+  ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireSpec -RequireTasks -IncludeTasks
+  py: scripts/python/check_prerequisites.py --json --require-spec --require-tasks --include-tasks
 ---
 
 ## User Input

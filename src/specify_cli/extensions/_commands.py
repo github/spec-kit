@@ -15,8 +15,11 @@ import shutil
 import stat
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from uuid import uuid4
+
+if TYPE_CHECKING:
+    from packaging.version import Version
 
 import typer
 import yaml
@@ -106,6 +109,58 @@ def _command_safe_id(raw_id: object, placeholder: str = "<extension-id>") -> str
     if VALID_EXTENSION_ARTIFACT_NAME_PATTERN.match(text):
         return text
     return placeholder
+
+
+def _bundled_update_source(ext_id: str) -> tuple[Path, Version] | tuple[None, None]:
+    """Locate the local bundled copy of *ext_id* and its parsed version.
+
+    Bundled extensions have no download URL, so an update can only come
+    from the copy shipped with the running spec-kit release — which may
+    lag the version the catalog on main advertises. Returns
+    ``(path, Version)`` when a valid local copy exists, ``(None, None)``
+    otherwise.
+    """
+    from . import ExtensionManifest, ValidationError
+    from packaging import version as pkg_version
+
+    bundled_dir = _locate_bundled_extension(ext_id)
+    if bundled_dir is None:
+        return None, None
+    try:
+        manifest = ExtensionManifest(bundled_dir / "extension.yml")
+        return bundled_dir, pkg_version.Version(manifest.version)
+    except (ValidationError, pkg_version.InvalidVersion, OSError):
+        return None, None
+
+
+def _archive_extension_directory(source_dir: Path) -> Path:
+    """Package an extension directory as a ZIP archive for the update flow.
+
+    The update pipeline validates and installs archives (bounded
+    extraction, manifest preflight, ID/version checks, backup/rollback),
+    so a locally bundled extension is fed through that identical hardened
+    path rather than growing a second install code path. The caller
+    deletes the archive after the update, the same as a downloaded one.
+    """
+    import zipfile
+
+    fd, tmp_name = tempfile.mkstemp(prefix="speckit-bundled-update-", suffix=".zip")
+    try:
+        with os.fdopen(fd, "wb") as archive_file:
+            with zipfile.ZipFile(archive_file, "w", zipfile.ZIP_DEFLATED) as zf:
+                for path in sorted(source_dir.rglob("*")):
+                    # Never follow symlinks: is_file() follows the target
+                    # and ZipFile.write() reads its bytes, which would turn
+                    # an out-of-tree target into a regular archive member
+                    # before the hardened extractor ever sees it.
+                    if path.is_symlink():
+                        continue
+                    if path.is_file():
+                        zf.write(path, path.relative_to(source_dir).as_posix())
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
+    return Path(tmp_name)
 
 
 def _refresh_events_and_warn(project_root: Path) -> None:
@@ -1110,8 +1165,7 @@ def extension_add(
                                 catalog_name=ext_info.get("_catalog_name"),
                             )
                         finally:
-                            if archive_path.exists():
-                                archive_path.unlink()
+                            archive_path.unlink(missing_ok=True)
 
         console.print("\n[green]✓[/green] Extension installed successfully!")
         console.print(f"\n[bold]{_escape_markup(str(manifest.name))}[/bold] (v{_escape_markup(str(manifest.version))})")
@@ -1643,6 +1697,7 @@ def extension_update(
         console.print("🔄 Checking for updates...\n")
 
         updates_available = []
+        blocked_updates = []
 
         for ext_id in extensions_to_update:
             safe_ext_id = _escape_markup(str(ext_id))
@@ -1679,13 +1734,41 @@ def extension_update(
                 continue
 
             if catalog_version > installed_version:
+                download_url = ext_info.get("download_url")
+                bundled_dir = None
+                available_version = catalog_version
+                if ext_info.get("bundled") and not download_url:
+                    # Bundled extensions cannot be downloaded; the update has
+                    # to come from the copy shipped with the running spec-kit
+                    # release, which may lag the catalog on main (#4345).
+                    bundled_dir, bundled_version = _bundled_update_source(ext_id)
+                    # Block whenever the local copy lags the catalog, not
+                    # just when it lags the installation: installing an
+                    # intermediate version would leave the project behind
+                    # the catalog while reporting success, contrary to the
+                    # documented "upgrade spec-kit first" behavior.
+                    if bundled_dir is None or bundled_version < catalog_version:
+                        local_desc = (
+                            f"only ships v{bundled_version}"
+                            if bundled_dir is not None
+                            else "does not ship a local copy"
+                        )
+                        console.print(
+                            f"⚠  {safe_ext_id}: v{catalog_version} is available, but this "
+                            f"spec-kit release {local_desc} — upgrade spec-kit, then rerun "
+                            f"'specify extension update'"
+                        )
+                        blocked_updates.append(ext_id)
+                        continue
+                    available_version = bundled_version
                 updates_available.append(
                     {
                         "id": ext_id,
                         "name": ext_info.get("name", ext_id),  # Display name for status messages
                         "installed": str(installed_version),
-                        "available": str(catalog_version),
-                        "download_url": ext_info.get("download_url"),
+                        "available": str(available_version),
+                        "download_url": download_url,
+                        "bundled_dir": bundled_dir,
                         "catalog_name": ext_info.get("_catalog_name"),
                     }
                 )
@@ -1693,7 +1776,14 @@ def extension_update(
                 console.print(f"✓ {safe_ext_id}: Up to date (v{installed_version})")
 
         if not updates_available:
-            console.print("\n[green]All extensions are up to date![/green]")
+            if blocked_updates:
+                console.print(
+                    "\n[yellow]Update(s) exist but require a newer spec-kit "
+                    "release — upgrade spec-kit, then rerun "
+                    "'specify extension update'.[/yellow]"
+                )
+            else:
+                console.print("\n[green]All extensions are up to date![/green]")
             raise typer.Exit(0)
 
         # Show available updates
@@ -1990,8 +2080,15 @@ def extension_update(
                         if ext_hooks:
                             backup_hooks[hook_name] = ext_hooks
 
-                # 5. Download new version
-                archive_path = catalog.download_extension(extension_id)
+                # 5. Acquire the new version. Bundled extensions install from
+                # the copy shipped with the running spec-kit release (they
+                # have no download URL); everything else downloads. Both are
+                # packaged as archives so the identical validation,
+                # backup/rollback, and install pipeline below applies.
+                if update.get("bundled_dir") is not None:
+                    archive_path = _archive_extension_directory(update["bundled_dir"])
+                else:
+                    archive_path = catalog.download_extension(extension_id)
                 try:
                     # 6. Validate the archive and extension ID before modifying
                     # the existing installation. The shared extractor applies
@@ -2338,11 +2435,10 @@ def extension_update(
                     # Archive cleanup is housekeeping: never replace an install
                     # error or roll back an already committed update because a
                     # scanner temporarily locks the download on Windows.
-                    if archive_path.exists():
-                        try:
-                            archive_path.unlink()
-                        except OSError as error:
-                            zip_cleanup_error = error
+                    try:
+                        archive_path.unlink(missing_ok=True)
+                    except OSError as error:
+                        zip_cleanup_error = error
 
                 # 10. Clean up backup on success. The update has committed at
                 # this point, so a locked backup file must not trigger rollback

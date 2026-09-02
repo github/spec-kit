@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.0.3] - 2026-09-01
+
+### Changed
+
+- fix(workflows): reject malformed step config on remove (#4095)
+- fix(workflows): reject malformed workflow config on remove (#4096)
+- fix(events): skip unreadable extension manifests (#4089)
+- docs(extensions): fix private catalog FAQ command (#4373)
+- [extension] Add Vurnix Honest Gate extension to community catalog (#4388)
+- fix(presets): fail closed on unreadable provenance (#4092)
+- docs: explain how Spec Kit dogfoods itself (#4381)
+- add --require-spec to check-prerequisites (#4367)
+- fix(ci): harden PyPI release tag handling (#4386)
+- fix(github-http): reject malformed explicit URL ports (#4372)
+- fix: scaffold extension config when installing via bundler (#4285)
+- fix: reject unknown setup-plan arguments (#4371)
+- feat(docker-agent): add Docker Agent integration (#4302)
+- fix(workflows): reject a condition that is spliced into text, not evaluated (#4292)
+- fix(bundler): pass explicit workflow_add options from bundle install (#4284)
+- test(bundle): join across wrap points in the build output-path assertion (#4280)
+- chore(deps): bump the codeql-action group with 2 updates (#4357)
+- [extension] Update Spec Kit Figma extension to v3.1.1 (#4377)
+- fix(presets): reject falsy non-mapping catalog roots (#4088)
+- chore: release 1.0.2, begin 1.0.3.dev0 development (#4379)
+
 ## [1.0.2] - 2026-08-31
 
 ### Changed
