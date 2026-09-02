@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-24T00:00:00Z",
+  "updated_at": "2026-09-02T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -220,6 +220,57 @@
       "stars": 0,
       "created_at": "2026-08-18T00:00:00Z",
       "updated_at": "2026-08-18T00:00:00Z"
+    },
+    "agentdocx-speckitv2": {
+      "name": "AgentDocx SpecKit V2",
+      "id": "agentdocx-speckitv2",
+      "description": "AgentDocx evolved: same pipeline + far more autonomous Ticket Manager (5 CLI, per-project Kanban, bulk sync, auto-switch, Auditor).",
+      "author": "ahmed200346",
+      "version": "0.0.7",
+      "download_url": "https://github.com/ahmed200346/Extension_GithubSpecKit/archive/refs/tags/v0.0.7.zip",
+      "repository": "https://github.com/ahmed200346/Extension_GithubSpecKit",
+      "homepage": "https://github.com/ahmed200346/Extension_GithubSpecKit",
+      "documentation": "https://github.com/ahmed200346/Extension_GithubSpecKit/blob/main/README.md",
+      "changelog": "https://github.com/ahmed200346/Extension_GithubSpecKit/blob/main/agentdocx-speckit/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "python",
+            "version": ">=3.10",
+            "required": true
+          },
+          {
+            "name": "node",
+            "version": ">=18",
+            "required": true
+          },
+          {
+            "name": "postgresql",
+            "version": ">=12",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 0,
+        "hooks": 0
+      },
+      "tags": [
+        "integration",
+        "kanban",
+        "ticket-management",
+        "vscode-extension",
+        "multi-agent"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-28T00:00:00Z",
+      "updated_at": "2026-08-28T00:00:00Z"
     },
     "analytics": {
       "name": "Analytics",
@@ -562,6 +613,44 @@
       "stars": 0,
       "created_at": "2026-08-13T00:00:00Z",
       "updated_at": "2026-08-19T00:00:00Z"
+    },
+    "axi": {
+      "name": "Axi Extension",
+      "id": "axi",
+      "description": "A Spec Kit extension that renders a feature's markdown in a local browser review surface for human annotation, then returns the queued notes to the agent to apply.",
+      "author": "d0whc3r",
+      "version": "1.1.4",
+      "download_url": "https://github.com/d0whc3r/spec-kit-axi/releases/download/v1.1.4/axi-1.1.4.zip",
+      "repository": "https://github.com/d0whc3r/spec-kit-axi",
+      "homepage": "https://d0whc3r.github.io/spec-kit-axi/",
+      "documentation": "https://github.com/d0whc3r/spec-kit-axi/wiki",
+      "changelog": "https://github.com/d0whc3r/spec-kit-axi/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "node",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "axi",
+        "spec-kit",
+        "spec-kit-extension"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-02T00:00:00Z",
+      "updated_at": "2026-09-02T00:00:00Z"
     },
     "azure-devops": {
       "name": "Azure DevOps Integration",
@@ -988,13 +1077,13 @@
     "charter": {
       "name": "Charter",
       "id": "charter",
-      "description": "Compose modular project constitutions from shared fragment registries. Centralize governance rules, select per-project fragments, track upstream changes, and keep multi-project setups consistent.",
+      "description": "Compose project constitutions from shared fragment registries",
       "author": "Fyloss",
-      "version": "0.5.1",
-      "download_url": "https://github.com/Fyloss/spec-kit-charter/archive/refs/tags/v0.5.1.zip",
+      "version": "0.6.1",
+      "download_url": "https://github.com/Fyloss/spec-kit-charter/archive/refs/tags/v0.6.1.zip",
       "repository": "https://github.com/Fyloss/spec-kit-charter",
       "homepage": "https://github.com/Fyloss/spec-kit-charter",
-      "documentation": "https://github.com/Fyloss/spec-kit-charter/tree/master/docs",
+      "documentation": "https://github.com/Fyloss/spec-kit-charter/blob/master/README.md",
       "changelog": "https://github.com/Fyloss/spec-kit-charter/blob/master/CHANGELOG.md",
       "license": "MIT",
       "category": "process",
@@ -1015,15 +1104,15 @@
       "tags": [
         "constitution",
         "governance",
-        "modular",
-        "fragments",
-        "registry"
+        "multi-repo",
+        "composition",
+        "fragments"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-06T00:00:00Z",
-      "updated_at": "2026-08-04T00:00:00Z"
+      "updated_at": "2026-09-02T00:00:00Z"
     },
     "ci-guard": {
       "name": "CI Guard",
@@ -1732,10 +1821,10 @@
     "figma": {
       "name": "Spec Kit Figma",
       "id": "figma",
-      "description": "Agent-agnostic SpecKit extension that grounds spec, plan & task generation in Figma design context — REST + optional MCP, single/mono/multi-repo, macOS/Linux/Windows.",
+      "description": "Grounds SpecKit spec/plan/tasks in Figma design context via REST or MCP, on macOS/Linux/Windows.",
       "author": "Fyloss",
-      "version": "1.6.0",
-      "download_url": "https://github.com/Fyloss/spec-kit-figma/archive/refs/tags/v1.6.0.zip",
+      "version": "3.1.1",
+      "download_url": "https://github.com/Fyloss/spec-kit-figma/archive/refs/tags/v3.1.1.zip",
       "repository": "https://github.com/Fyloss/spec-kit-figma",
       "homepage": "https://github.com/Fyloss/spec-kit-figma",
       "documentation": "https://github.com/Fyloss/spec-kit-figma/blob/main/docs/INSTALL.md",
@@ -1744,7 +1833,7 @@
       "category": "integration",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0",
+        "speckit_version": ">=0.11.2",
         "tools": [
           {
             "name": "git",
@@ -1769,8 +1858,8 @@
         ]
       },
       "provides": {
-        "commands": 5,
-        "hooks": 6
+        "commands": 7,
+        "hooks": 11
       },
       "tags": [
         "figma",
@@ -1783,7 +1872,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-08T00:00:00Z",
-      "updated_at": "2026-07-08T00:00:00Z"
+      "updated_at": "2026-08-31T00:00:00Z"
     },
     "figma-starter": {
       "name": "Figma Starter",
@@ -2099,10 +2188,10 @@
     "grill": {
       "name": "SpecKit Grill Me",
       "id": "grill",
-      "description": "Exhaustively resolve specification ambiguities and decisions before planning.",
+      "description": "Exhaustively clarify specifications and optionally sync canonical domain knowledge.",
       "author": "yoshi1220",
-      "version": "1.0.0",
-      "download_url": "https://github.com/yoshi1220/speckit-grill-me/releases/download/v1.0.0/speckit-grill-me-extension-v1.0.0.zip",
+      "version": "1.0.1",
+      "download_url": "https://github.com/yoshi1220/speckit-grill-me/releases/download/v1.0.1/speckit-grill-me-extension-v1.0.1.zip",
       "repository": "https://github.com/yoshi1220/speckit-grill-me",
       "homepage": "https://github.com/yoshi1220/speckit-grill-me/tree/main/spec-kit-extension",
       "documentation": "https://github.com/yoshi1220/speckit-grill-me/blob/main/spec-kit-extension/README.md",
@@ -2120,7 +2209,7 @@
         ]
       },
       "provides": {
-        "commands": 1,
+        "commands": 2,
         "hooks": 0
       },
       "tags": [
@@ -2134,7 +2223,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-11T00:00:00Z",
-      "updated_at": "2026-08-11T00:00:00Z"
+      "updated_at": "2026-08-25T00:00:00Z"
     },
     "harness": {
       "name": "Research Harness",
@@ -2385,6 +2474,46 @@
       "stars": 0,
       "created_at": "2026-03-05T00:00:00Z",
       "updated_at": "2026-03-05T00:00:00Z"
+    },
+    "jira-mirror": {
+      "name": "Jira Mirror",
+      "id": "jira-mirror",
+      "description": "Spec Kit ↔ Jira bridge for team-managed and company-managed projects: configurable workflows & hierarchies (Scrum/SAFe), multi-project, idempotent and fail-closed. macOS/Linux/Windows.",
+      "author": "Fyloss",
+      "version": "0.24.0",
+      "download_url": "https://github.com/Fyloss/spec-kit-jira-mirror/releases/download/v0.24.0/spec-kit-jira-mirror-0.24.0.zip",
+      "sha256": "c3fe2f81fc3f47010cf92cdb8c49b612416b4c6aedf91beb579eba871fe1df16",
+      "repository": "https://github.com/Fyloss/spec-kit-jira-mirror",
+      "homepage": "https://github.com/Fyloss/spec-kit-jira-mirror",
+      "documentation": "https://github.com/Fyloss/spec-kit-jira-mirror/tree/main/docs",
+      "changelog": "https://github.com/Fyloss/spec-kit-jira-mirror/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.13.0",
+        "tools": [
+          { "name": "bash", "version": ">=4", "required": false },
+          { "name": "pwsh", "version": ">=7", "required": false },
+          { "name": "curl", "required": false },
+          { "name": "jq", "required": false },
+          { "name": "git", "required": true }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 7
+      },
+      "tags": [
+        "jira",
+        "integration",
+        "sync"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-31T00:00:00Z",
+      "updated_at": "2026-08-31T00:00:00Z"
     },
     "jira-sync": {
       "name": "Jira Integration (Sync Engine)",
@@ -3589,6 +3718,40 @@
       "stars": 0,
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-03-18T00:00:00Z"
+    },
+    "prespec": {
+      "name": "Pre-Spec Cards",
+      "id": "prespec",
+      "description": "Card-based pre-spec thinking: paste an idea, get your card plus the paths you'd miss, then play each through — story, snags, trade-offs, difficulty vs payoff — before /speckit.specify.",
+      "author": "bendlikeabamboo",
+      "version": "0.3.0",
+      "download_url": "https://github.com/bendlikeabamboo/pre-spec/archive/refs/tags/v0.3.0.zip",
+      "repository": "https://github.com/bendlikeabamboo/pre-spec",
+      "homepage": "https://github.com/bendlikeabamboo/pre-spec",
+      "documentation": "https://github.com/bendlikeabamboo/pre-spec#readme",
+      "changelog": "https://github.com/bendlikeabamboo/pre-spec/releases",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "discovery",
+        "ideation",
+        "decision-cards",
+        "product",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-28T00:00:00Z",
+      "updated_at": "2026-08-28T00:00:00Z"
     },
     "preview": {
       "name": "Spec Kit Preview",
@@ -4995,6 +5158,46 @@
       "created_at": "2026-03-02T00:00:00Z",
       "updated_at": "2026-03-02T00:00:00Z"
     },
+    "taco": {
+      "name": "Taco Review",
+      "id": "taco",
+      "description": "Packages Spec Kit features for human review and syncs edits and comments back.",
+      "author": "Arcadia822",
+      "version": "0.3.1",
+      "download_url": "https://github.com/Arcadia822/taco/archive/refs/tags/v0.3.1.zip",
+      "repository": "https://github.com/Arcadia822/taco",
+      "homepage": "https://github.com/Arcadia822/taco",
+      "documentation": "https://github.com/Arcadia822/taco/blob/main/extensions/taco/README.md",
+      "changelog": "https://github.com/Arcadia822/taco/blob/v0.3.1/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.16.0,<2.0.0",
+        "tools": [
+          {
+            "name": "node",
+            "version": ">=22",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 8
+      },
+      "tags": [
+        "documentation",
+        "review",
+        "spec-kit",
+        "human-in-the-loop"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-25T00:00:00Z",
+      "updated_at": "2026-08-25T00:00:00Z"
+    },
     "tasks-to-project": {
       "name": "Tasks to GitHub Project",
       "id": "tasks-to-project",
@@ -5630,6 +5833,45 @@
       "stars": 0,
       "created_at": "2026-04-20T00:00:00Z",
       "updated_at": "2026-04-22T21:10:00Z"
+    },
+    "vurnix": {
+      "name": "Vurnix Honest Gate",
+      "id": "vurnix",
+      "description": "Deterministic three-state honest gate for AI-written code: compile + phantom-import + honest test count, executed as code — not agent self-review. PASS/BLOCK/UNPROVEN by exit code.",
+      "author": "shiersa",
+      "version": "0.1.1",
+      "download_url": "https://github.com/shiersa/vurnix-spec-kit/releases/download/v0.1.1/vurnix-0.1.1.zip",
+      "repository": "https://github.com/shiersa/vurnix-spec-kit",
+      "homepage": "https://vurnix.dev",
+      "documentation": "https://github.com/shiersa/vurnix-spec-kit#readme",
+      "changelog": "",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-only",
+      "requires": {
+        "speckit_version": ">=0.16.2",
+        "tools": [
+          { "name": "python3", "version": ">=3.10", "required": true },
+          { "name": "vurnix", "version": ">=0.3.0", "required": true },
+          { "name": "bash", "required": true }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "deterministic",
+        "honest-gate",
+        "test-integrity",
+        "quality",
+        "fail-closed"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-01T00:00:00Z",
+      "updated_at": "2026-09-01T00:00:00Z"
     },
     "whatif": {
       "name": "What-if Analysis",

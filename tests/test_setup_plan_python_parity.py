@@ -132,7 +132,7 @@ def test_python_existing_plan_matches_bash(repo: Path, args: tuple[str, ...]) ->
 
 @requires_bash
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
-def test_all_variants_ignore_extra_arguments(tmp_path: Path) -> None:
+def test_all_variants_reject_unknown_options(tmp_path: Path) -> None:
     repos = [
         _setup_repo(tmp_path, "bash"),
         _setup_repo(tmp_path, "powershell"),
@@ -143,13 +143,15 @@ def test_all_variants_ignore_extra_arguments(tmp_path: Path) -> None:
     ps = run(ps_cmd(repos[1], SCRIPT, "-Json", "--bogus"), repos[1])
     py = run(py_cmd(repos[2], SCRIPT, "--json", "--bogus"), repos[2])
 
-    assert bash.returncode == ps.returncode == py.returncode == 0
-    assert normalize_repo_paths(bash.stdout, repos[0]) == normalize_repo_paths(
-        ps.stdout, repos[1]
-    ) == normalize_repo_paths(py.stdout, repos[2])
-    assert normalize_repo_paths(bash.stderr, repos[0]) == normalize_repo_paths(
-        ps.stderr, repos[1]
-    ) == normalize_repo_paths(py.stderr, repos[2])
+    assert bash.returncode == ps.returncode == py.returncode == 1
+    assert bash.stdout == ps.stdout == py.stdout == ""
+    assert bash.stderr == ps.stderr == py.stderr == (
+        "ERROR: Unknown option '--bogus'\n"
+    )
+    assert all(
+        not (current / "specs" / "001-my-feature" / "plan.md").exists()
+        for current in repos
+    )
 
 
 @requires_bash

@@ -789,9 +789,6 @@ class WorkflowCatalog:
             raise WorkflowValidationError(
                 f"Catalog config file is unreadable or malformed: {exc}"
             ) from exc
-        # Do NOT coerce with ``or {}`` here: that also turns a FALSY non-mapping
-        # (top-level ``[]``, ``false``, ``0``, ``''``) into ``{}`` and silently
-        # swallows it, matching _load_catalog_config's guard above.
         if data is None:
             data = {}
         elif not isinstance(data, dict):
@@ -1404,12 +1401,9 @@ class StepCatalog:
                 raise StepValidationError(
                     f"Catalog config file is unreadable or malformed: {exc}"
                 ) from exc
-            # Do NOT coerce with ``or {}`` here: that also turns a FALSY
-            # non-mapping (top-level ``[]``, ``false``, ``0``, ``''``) into
-            # ``{}`` and silently swallows it.
             if raw is None:
-                raw = {"catalogs": []}
-            if not isinstance(raw, dict):
+                raw = {}
+            elif not isinstance(raw, dict):
                 raise StepValidationError(
                     "Catalog config file is corrupted (expected a mapping)."
                 )
@@ -1478,9 +1472,6 @@ class StepCatalog:
             raise StepValidationError(
                 f"Catalog config file is unreadable or malformed: {exc}"
             ) from exc
-        # Do NOT coerce with ``or {}`` here: that also turns a FALSY non-mapping
-        # (top-level ``[]``, ``false``, ``0``, ``''``) into ``{}`` and silently
-        # swallows it.
         if data is None:
             data = {}
         elif not isinstance(data, dict):
