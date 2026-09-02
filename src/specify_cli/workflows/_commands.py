@@ -1383,7 +1383,7 @@ def workflow_run(
         err.print(f"[red]Error:[/red] Workflow not found: {source}")
         raise typer.Exit(1)
     except ValueError as exc:
-        err.print(f"[red]Error:[/red] Invalid workflow: {exc}")
+        err.print(f"[red]Error:[/red] Invalid workflow: {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     # Validate
@@ -1424,10 +1424,10 @@ def workflow_run(
                 ),
             )
     except ValueError as exc:
-        err.print(f"[red]Error:[/red] {exc}")
+        err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
     except Exception as exc:
-        err.print(f"[red]Workflow failed:[/red] {exc}")
+        err.print(f"[red]Workflow failed:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     if json_output:

@@ -238,6 +238,15 @@ def test_catalog_entry_rejects_string_tags():
         CatalogEntry.from_dict(data)
 
 
+def test_catalog_entry_rejects_non_string_tag_members():
+    from specify_cli.bundler.models.catalog import CatalogEntry
+
+    data = catalog_entry_dict("demo")
+    data["tags"] = ["valid", 1]
+    with pytest.raises(BundlerError, match="'tags' must be a list of strings"):
+        CatalogEntry.from_dict(data)
+
+
 def test_catalog_entry_rejects_non_boolean_verified():
     from specify_cli.bundler.models.catalog import CatalogEntry
 
@@ -298,6 +307,23 @@ def test_catalog_entry_rejects_non_mapping_provides():
     data["provides"] = "extensions"
     with pytest.raises(BundlerError, match="'provides' must be a mapping"):
         CatalogEntry.from_dict(data)
+
+
+def test_load_payload_rejects_unsupported_schema_version():
+    payload = catalog_payload({"demo": catalog_entry_dict("demo")})
+    payload["schema_version"] = "2.0"
+
+    with pytest.raises(BundlerError, match="Unsupported catalog schema version"):
+        load_catalog_payload(payload)
+
+
+def test_load_payload_accepts_matching_or_absent_schema_version():
+    payload = catalog_payload({"demo": catalog_entry_dict("demo")})
+    payload["schema_version"] = "1.5"
+    assert "demo" in load_catalog_payload(payload)
+
+    payload.pop("schema_version")
+    assert "demo" in load_catalog_payload(payload)
 
 
 @pytest.mark.parametrize("field", ["requires", "provides"])
