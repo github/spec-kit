@@ -289,11 +289,39 @@ def test_no_preset_registry_just_base_section(tmp_path):
     assert "PRESET:" not in section
 
 
+def _write_external_preset(root: Path, preset_id: str, payload: str) -> None:
+    """Write a standalone preset (manifest + instruction file) at ``root``."""
+    (root / "instructions").mkdir(parents=True, exist_ok=True)
+    (root / "instructions" / "rules.md").write_text(payload, encoding="utf-8")
+    (root / "preset.yml").write_text(
+        textwrap.dedent(
+            f"""\
+            schema_version: "1.0"
+            preset:
+              id: {preset_id}
+              name: {preset_id}
+              version: "1.0.0"
+              description: d
+            requires:
+              speckit_version: ">=0.6.0"
+            provides:
+              instructions:
+                - file: instructions/rules.md
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_unsafe_registry_preset_id_skipped(tmp_path):
     # The registry is on disk and untrusted: an id with separators/traversal or
-    # an absolute/drive form must be skipped, not resolved and read.
+    # an absolute/drive form must be skipped, not resolved and read. Materialize
+    # a real out-of-root preset at the location the resolved '../../evil' key
+    # would point at (<tmp>/evil) so this test FAILS if the id/containment
+    # guards are removed (collection would otherwise read and compose it).
     _configure_agent_context(tmp_path)
     _install_preset(tmp_path, "good", RULES_A)
+    _write_external_preset(tmp_path / "evil", "evil", "# Pwned\n\nPWNED_TRAVERSAL_PAYLOAD\n")
     reg_path = tmp_path / ".specify" / "presets" / ".registry"
     reg = json.loads(reg_path.read_text(encoding="utf-8"))
     reg["presets"]["../../evil"] = {"version": "1.0.0", "enabled": True}
@@ -303,4 +331,75 @@ def test_unsafe_registry_preset_id_skipped(tmp_path):
     assert result.returncode == 0
     section = _managed(tmp_path)
     assert "PRESET:good" in section
-    assert "evil" not in section
+    assert "PWNED_TRAVERSAL_PAYLOAD" not in section
+
+
+def test_symlinked_preset_dir_escaping_root_skipped(tmp_path):
+    # A preset id can be a valid simple name yet its directory be a symlink that
+    # points outside .specify/presets. The resolved-containment check (not the
+    # id regex) must catch this, so the out-of-root payload is never composed.
+    _configure_agent_context(tmp_path)
+    _install_preset(tmp_path, "good", RULES_A)
+    external = tmp_path / "external_preset"
+    _write_external_preset(external, "linked", "# Pwned\n\nPWNED_SYMLINK_PAYLOAD\n")
+    link = tmp_path / ".specify" / "presets" / "linked"
+    try:
+        link.symlink_to(external, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not permitted on this platform")
+    reg_path = tmp_path / ".specify" / "presets" / ".registry"
+    reg = json.loads(reg_path.read_text(encoding="utf-8"))
+    reg["presets"]["linked"] = {"version": "1.0.0", "enabled": True}
+    reg_path.write_text(json.dumps(reg, indent=2), encoding="utf-8")
+    result = _run_update(tmp_path)
+    assert result.returncode == 0
+    section = _managed(tmp_path)
+    assert "PRESET:good" in section
+    assert "PRESET:linked" not in section
+    assert "PWNED_SYMLINK_PAYLOAD" not in section
+
+
+def _sized_rules(marker: str, nbytes: int) -> str:
+    """A marker-tagged single-line ASCII payload of exactly ``nbytes`` bytes.
+
+    No newline, so the on-disk size is identical on every platform (Windows text
+    mode would otherwise translate ``\\n`` to ``\\r\\n`` and shift the boundary).
+    """
+    head = f"# {marker} "
+    return head + "x" * max(0, nbytes - len(head))
+
+
+def test_instruction_file_at_limit_included(tmp_path):
+    # A file exactly at the per-file cap is kept (the check is strictly greater).
+    _configure_agent_context(tmp_path)
+    _install_preset(tmp_path, "atlimit", _sized_rules("ATLIMIT_PAYLOAD", 32 * 1024))
+    result = _run_update(tmp_path)
+    assert result.returncode == 0
+    assert "PRESET:atlimit" in _managed(tmp_path)
+
+
+def test_oversized_instruction_file_skipped(tmp_path):
+    # A single file over the per-file cap is skipped; other presets still compose.
+    _configure_agent_context(tmp_path)
+    _install_preset(tmp_path, "good", RULES_A)
+    _install_preset(tmp_path, "huge", _sized_rules("HUGE_PAYLOAD", 40 * 1024))
+    result = _run_update(tmp_path)
+    assert result.returncode == 0
+    section = _managed(tmp_path)
+    assert "PRESET:good" in section
+    assert "PRESET:huge" not in section
+
+
+def test_aggregate_instruction_budget_enforced(tmp_path):
+    # Three presets each under the per-file cap; once the running total reaches
+    # the aggregate cap, the remaining preset (in id order) is skipped.
+    _configure_agent_context(tmp_path)
+    _install_preset(tmp_path, "aaa", _sized_rules("AAA_PAYLOAD", 25 * 1024))
+    _install_preset(tmp_path, "bbb", _sized_rules("BBB_PAYLOAD", 25 * 1024))
+    _install_preset(tmp_path, "ccc", _sized_rules("CCC_PAYLOAD", 25 * 1024))
+    result = _run_update(tmp_path)
+    assert result.returncode == 0
+    section = _managed(tmp_path)
+    assert "PRESET:aaa" in section
+    assert "PRESET:bbb" in section
+    assert "PRESET:ccc" not in section

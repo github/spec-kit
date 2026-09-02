@@ -33,6 +33,15 @@ DEFAULT_END = "<!-- SPECKIT END -->"
 # rejected.
 _SPECKIT_MARKER_RE = re.compile(r"<!--\s*SPECKIT\b")
 
+# Deliberately small budget for always-on instruction payloads. The composed
+# managed section is re-sent as agent context on every request, so an oversized
+# preset file (a bundled archive member or an unbounded ``--dev`` source) must
+# not be allowed to bloat it. A single file over the per-file cap is skipped
+# with a warning; once the aggregate cap across all presets is reached, the
+# remaining entries are skipped too.
+_MAX_INSTRUCTION_FILE_BYTES = 32 * 1024
+_MAX_INSTRUCTION_TOTAL_BYTES = 64 * 1024
+
 
 def _err(message: str) -> None:
     print(message, file=sys.stderr)
@@ -241,8 +250,9 @@ def _collect_preset_instruction_blocks(
     ``preset.yml`` directly, with no dependency on the Specify CLI (mirrors this
     extension's by-design independence). Returns ``(preset_id, content)`` in
     deterministic id order. Each referenced file must resolve inside its own
-    preset directory; path-unsafe, unreadable, non-UTF-8, or marker-colliding
-    entries are skipped (fail closed). Fails closed on an unreadable registry.
+    preset directory; path-unsafe, unreadable, non-UTF-8, oversized (per-file or
+    aggregate budget), or marker-colliding entries are skipped (fail closed).
+    Fails closed on an unreadable registry.
     """
     presets_dir = Path(project_root) / ".specify" / "presets"
     registry = presets_dir / ".registry"
@@ -262,6 +272,7 @@ def _collect_preset_instruction_blocks(
 
     presets_root = presets_dir.resolve()
     blocks: list[tuple[str, str]] = []
+    total_bytes = 0
     for preset_id in sorted(reg["presets"]):
         # The registry lives on disk and is untrusted. Reject ids that are not
         # simple names (no path separators, '..' traversal, or absolute/drive
@@ -306,9 +317,30 @@ def _collect_preset_instruction_blocks(
                 continue
             if not target.is_file():
                 continue
+            # Reject an oversized file by its on-disk size before reading it, so
+            # a huge member never gets allocated into memory.
+            try:
+                size = target.stat().st_size
+            except OSError:
+                continue
+            if size > _MAX_INSTRUCTION_FILE_BYTES:
+                _err(
+                    f"agent-context: skipping instructions from preset '{preset_id}': "
+                    f"file '{rel}' is {size} bytes (per-file limit "
+                    f"{_MAX_INSTRUCTION_FILE_BYTES})."
+                )
+                continue
             try:
                 text = target.read_text(encoding="utf-8").strip()
             except (OSError, UnicodeDecodeError):
+                continue
+            entry_bytes = len(text.encode("utf-8"))
+            if total_bytes + entry_bytes > _MAX_INSTRUCTION_TOTAL_BYTES:
+                _err(
+                    f"agent-context: skipping instructions from preset '{preset_id}': "
+                    f"aggregate instruction budget ({_MAX_INSTRUCTION_TOTAL_BYTES} "
+                    "bytes) exceeded."
+                )
                 continue
             if marker_start in text or marker_end in text or _SPECKIT_MARKER_RE.search(text):
                 _err(
@@ -316,6 +348,7 @@ def _collect_preset_instruction_blocks(
                     "content contains a managed section marker."
                 )
                 continue
+            total_bytes += entry_bytes
             parts.append(text)
         if parts:
             blocks.append((preset_id, "\n\n".join(parts)))
