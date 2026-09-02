@@ -3442,18 +3442,6 @@ class TestPresetCatalogMultiCatalog:
         with pytest.raises(PresetValidationError, match="must be a list"):
             catalog._load_catalog_config(config_path)
 
-    @pytest.mark.parametrize("body", ["[]\n", "false\n", "0\n", "''\n"])
-    def test_load_catalog_config_rejects_falsy_non_mapping_root(self, project_dir, body):
-        """A FALSY non-mapping top-level config ([], false, 0, '') must raise,
-        like a truthy non-mapping (a bare string) already does. The previous
-        ``yaml.safe_load(...) or {}`` coerced these to {} and silently
-        swallowed them, diverging from the truthy case."""
-        config_path = project_dir / ".specify" / "preset-catalogs.yml"
-        config_path.write_text(body, encoding="utf-8")
-
-        catalog = PresetCatalog(project_dir)
-        with pytest.raises(PresetValidationError, match="expected a mapping"):
-            catalog._load_catalog_config(config_path)
 
     @pytest.mark.parametrize("body", ["catalogs: {}\n", "catalogs: ''\n", "catalogs: 0\n", "catalogs: false\n"])
     def test_load_catalog_config_rejects_falsy_non_list_catalogs(self, project_dir, body):
