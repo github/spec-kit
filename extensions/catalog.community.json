@@ -1068,8 +1068,7 @@
         "governance",
         "multi-repo",
         "composition",
-        "fragments",
-        "registry"
+        "fragments"
       ],
       "verified": false,
       "downloads": 0,
