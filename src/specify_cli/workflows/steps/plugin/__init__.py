@@ -37,6 +37,15 @@ class PluginStep(StepBase):
     type_key = "plugin"
 
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
+        if context.inside_fan_out:
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Plugin step {config.get('id', '?')!r} is not supported "
+                    "inside fan-out templates because overlays cannot address "
+                    "runtime-multiplied templates."
+                ),
+            )
         return StepResult(
             status=StepStatus.SKIPPED,
             output={"slot": config.get("name")},

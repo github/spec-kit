@@ -110,6 +110,19 @@ def test_plugin_step_skips_without_mutating_the_shared_instance():
     assert vars(step) == before
 
 
+def test_plugin_step_fails_when_executed_inside_fan_out():
+    step = PluginStep()
+
+    result = step.execute(
+        {"id": "slot", "name": "per-item"},
+        StepContext(inside_fan_out=True),
+    )
+
+    assert result.status is StepStatus.FAILED
+    assert "not supported inside fan-out" in result.error
+    assert result.output == {}
+
+
 def test_unfilled_plugin_slot_is_persisted_and_does_not_halt_workflow(project_dir):
     _write_workflow(
         project_dir,
