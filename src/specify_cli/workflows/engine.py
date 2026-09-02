@@ -842,6 +842,18 @@ class RunState:
         installed_workflow_id = state_data.get("installed_workflow_id")
         installed_registry_root = state_data.get("installed_registry_root")
 
+        step_results = state_data.get("step_results", {})
+        if not isinstance(step_results, dict):
+            raise ValueError(
+                "Invalid run state: 'step_results' must be a JSON object"
+            )
+        for step_id, result in step_results.items():
+            if not isinstance(result, dict):
+                raise ValueError(
+                    "Invalid run state: step_results record "
+                    f"{step_id!r} must be a JSON object"
+                )
+
         state = cls(
             run_id=state_data["run_id"],
             workflow_id=workflow_id,
@@ -853,7 +865,7 @@ class RunState:
         state.status = RunStatus(state_data["status"])
         state.current_step_index = state_data.get("current_step_index", 0)
         state.current_step_id = state_data.get("current_step_id")
-        state.step_results = state_data.get("step_results", {})
+        state.step_results = step_results
         state.workflow_dir = state_data.get("workflow_dir")
         state.created_at = state_data.get("created_at", "")
         state.updated_at = state_data.get("updated_at", "")

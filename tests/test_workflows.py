@@ -7407,7 +7407,70 @@ class TestRunState:
         assert loaded.workflow_id == "test-workflow"
         assert loaded.status == RunStatus.RUNNING
         assert loaded.inputs == {"name": "login"}
-        assert "step-one" in loaded.step_results
+        assert loaded.step_results == state.step_results
+
+    @pytest.mark.parametrize("invalid_step_results", [None, [], "invalid", 1, True])
+    def test_load_rejects_non_object_step_results(
+        self, project_dir, invalid_step_results
+    ):
+        """Persisted step results must be a JSON object."""
+        from specify_cli.workflows.engine import RunState
+
+        state = RunState(
+            run_id="invalid-results",
+            workflow_id="test-workflow",
+            project_root=project_dir,
+        )
+        state.save()
+        state_path = state.runs_dir / "state.json"
+        state_data = json.loads(state_path.read_text(encoding="utf-8"))
+        state_data["step_results"] = invalid_step_results
+        state_path.write_text(json.dumps(state_data), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="step_results.*JSON object"):
+            RunState.load("invalid-results", project_dir)
+
+    @pytest.mark.parametrize("invalid_result", [None, [], "invalid", 1, True])
+    def test_load_rejects_non_object_step_result_records(
+        self, project_dir, invalid_result
+    ):
+        """Each persisted step result must be a JSON object."""
+        from specify_cli.workflows.engine import RunState
+
+        state = RunState(
+            run_id="invalid-record",
+            workflow_id="test-workflow",
+            project_root=project_dir,
+        )
+        state.save()
+        state_path = state.runs_dir / "state.json"
+        state_data = json.loads(state_path.read_text(encoding="utf-8"))
+        state_data["step_results"] = {"step-one": invalid_result}
+        state_path.write_text(json.dumps(state_data), encoding="utf-8")
+
+        with pytest.raises(
+            ValueError,
+            match="step_results record 'step-one' must be a JSON object",
+        ):
+            RunState.load("invalid-record", project_dir)
+
+    def test_load_defaults_missing_step_results_for_legacy_state(self, project_dir):
+        """Legacy states without step results load with an empty mapping."""
+        from specify_cli.workflows.engine import RunState
+
+        state = RunState(
+            run_id="legacy-results",
+            workflow_id="test-workflow",
+            project_root=project_dir,
+        )
+        state.save()
+        state_path = state.runs_dir / "state.json"
+        state_data = json.loads(state_path.read_text(encoding="utf-8"))
+        state_data.pop("step_results")
+        state_path.write_text(json.dumps(state_data), encoding="utf-8")
+
+        loaded = RunState.load("legacy-results", project_dir)
+        assert loaded.step_results == {}
 
     def test_load_not_found(self, project_dir):
         from specify_cli.workflows.engine import RunState
