@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 from typing import get_args, get_type_hints
 
+import pytest
 import yaml
 
 from specify_cli import AGENT_CONFIG
@@ -441,3 +442,59 @@ class TestAgentConfigConsistency:
     def test_agent_config_includes_rovodev(self):
         """AGENT_CONFIG should include rovodev."""
         assert "rovodev" in AGENT_CONFIG
+
+    def test_narrow_exception_propagates_unexpected_error(self, monkeypatch, tmp_path):
+        """A non-whitelisted exception (e.g. RuntimeError) from
+        invoke_separator_for_mode() must propagate, not be swallowed."""
+        from unittest.mock import MagicMock
+
+        from specify_cli.agents import CommandRegistrar
+
+        registrar = CommandRegistrar()
+
+        # Stub the integration to raise RuntimeError on invoke_separator_for_mode
+        mock_integ = MagicMock()
+        mock_integ.invoke_separator_for_mode.side_effect = RuntimeError("boom")
+        monkeypatch.setattr(
+            "specify_cli.integrations.get_integration", lambda _name: mock_integ
+        )
+
+        commands = [{"name": "test.cmd", "file": "commands/test.cmd.md"}]
+        source_dir = tmp_path / "src"
+        source_dir.mkdir()
+        (source_dir / "commands").mkdir()
+        (source_dir / "commands" / "test.cmd.md").write_text("# test", encoding="utf-8")
+
+        # RuntimeError is NOT in (ImportError, KeyError, ValueError), so it propagates
+        with pytest.raises(RuntimeError, match="boom"):
+            registrar.register_commands(
+                "claude", commands, "test", source_dir, tmp_path
+            )
+
+    def test_narrow_exception_falls_back_on_expected_error(self, monkeypatch, tmp_path):
+        """Expected errors (ImportError, KeyError, ValueError) from
+        invoke_separator_for_mode() must fall back to the default separator."""
+        from unittest.mock import MagicMock
+
+        from specify_cli.agents import CommandRegistrar
+
+        registrar = CommandRegistrar()
+
+        # Stub the integration to raise KeyError (a whitelisted error)
+        mock_integ = MagicMock()
+        mock_integ.invoke_separator_for_mode.side_effect = KeyError("missing")
+        monkeypatch.setattr(
+            "specify_cli.integrations.get_integration", lambda _name: mock_integ
+        )
+
+        commands = [{"name": "test.cmd", "file": "commands/test.cmd.md"}]
+        source_dir = tmp_path / "src"
+        source_dir.mkdir()
+        (source_dir / "commands").mkdir()
+        (source_dir / "commands" / "test.cmd.md").write_text("# test", encoding="utf-8")
+
+        # KeyError is caught; registration should succeed with default separator
+        registered = registrar.register_commands(
+            "claude", commands, "test", source_dir, tmp_path
+        )
+        assert "test.cmd" in registered
