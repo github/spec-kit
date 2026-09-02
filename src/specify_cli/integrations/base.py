@@ -563,17 +563,14 @@ class IntegrationBase(ABC):
     ) -> Path:
         """Write *content* to *dest*, hash it, and record in *manifest*.
 
-        Creates parent directories as needed.  Writes bytes directly to
-        avoid platform newline translation (CRLF on Windows).  Any
-        ``\r\n`` sequences in *content* are normalised to ``\n`` before
-        writing.  Returns *dest*.
+        Uses the manifest as the single write-and-record entry point, so a
+        generated file cannot be written without its hash being recorded.
+        Any ``\r\n`` sequences in *content* are normalised to ``\n`` before
+        writing. Returns the path written by the manifest.
         """
-        dest.parent.mkdir(parents=True, exist_ok=True)
         normalized = content.replace("\r\n", "\n")
-        dest.write_bytes(normalized.encode("utf-8"))
         rel = dest.resolve().relative_to(project_root.resolve())
-        manifest.record_existing(rel)
-        return dest
+        return manifest.record_file(rel, normalized)
 
     def integration_scripts_dir(self) -> Path | None:
         """Return path to this integration's bundled ``scripts/`` directory.

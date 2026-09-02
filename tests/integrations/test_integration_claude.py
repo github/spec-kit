@@ -41,6 +41,15 @@ class TestClaudeIntegration:
         skill_files = [path for path in created if path.name == "SKILL.md"]
         assert skill_files
 
+        manifest.save()
+        manifest_data = json.loads(manifest.manifest_path.read_text(encoding="utf-8"))
+        recorded_paths = set(manifest_data["files"])
+        expected_paths = {
+            path.relative_to(tmp_path).as_posix() for path in skill_files
+        }
+        assert expected_paths <= recorded_paths
+        assert ".claude/skills/speckit-converge/SKILL.md" in recorded_paths
+
         skills_dir = tmp_path / ".claude" / "skills"
         assert skills_dir.is_dir()
 
