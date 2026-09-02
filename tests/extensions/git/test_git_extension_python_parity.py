@@ -244,6 +244,43 @@ class TestCreateFeatureBranchParity:
         branch = json.loads(b.stdout)["BRANCH_NAME"]
         assert branch.isascii(), branch
 
+        # The run above reaches generate_branch_name. --short-name reaches
+        # clean_branch_name, a separate function carrying its own LC_ALL=C, so
+        # exercise the accented value through both: neither copy can then
+        # regress on its own without a failure here.
+        sn_bash_proj, sn_py_proj = _twin_projects(tmp_path / "short")
+        sb = _run_bash(
+            "create-new-feature-branch.sh", sn_bash_proj,
+            "--json", "--dry-run", "--short-name", description, "desc",
+            env_extra=env_extra,
+        )
+        sp = _run_py(
+            "create-new-feature-branch", sn_py_proj,
+            "--json", "--dry-run", "--short-name", description, "desc",
+            env_extra=env_extra,
+        )
+        _assert_parity(sb, sp)
+        short_branch = json.loads(sb.stdout)["BRANCH_NAME"]
+        assert short_branch.isascii(), short_branch
+
+    @pytest.mark.parametrize("short_name", ["-n", "-e", "-E"], ids=["n", "e", "E"])
+    def test_dash_prefixed_short_name(self, tmp_path: Path, short_name: str):
+        """A short name that looks like an ``echo`` option is still text.
+
+        clean_branch_name piped the raw value through `echo "$name"`, so bash
+        consumed -n/-e/-E as options and emitted nothing, yielding a suffix-less
+        001- where Python yields 001-n. This extension duplicates the
+        implementation, so it needs its own regression case: the core script's
+        test cannot catch a revert to `echo` here.
+        """
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        args = ("--json", "--dry-run", "--short-name", short_name, "desc")
+        b = _run_bash("create-new-feature-branch.sh", bash_proj, *args)
+        p = _run_py("create-new-feature-branch", py_proj, *args)
+        _assert_parity(b, p)
+        expected = f"001-{short_name.lstrip('-').lower()}"
+        assert json.loads(b.stdout)["BRANCH_NAME"] == expected
+
     def test_numbering_from_specs_and_branches(self, tmp_path: Path):
         bash_proj, py_proj = _twin_projects(tmp_path)
         for proj in (bash_proj, py_proj):

@@ -1137,6 +1137,19 @@ def test_bash_branch_name_ignores_locale_collation(
     branch = json_stdout(bash)["BRANCH_NAME"]
     assert isinstance(branch, str) and branch.isascii(), branch
 
+    # The run above reaches generate_branch_name. --short-name reaches
+    # clean_branch_name, a separate function carrying its own LC_ALL=C, so
+    # exercise the accented value through both: neither copy can then regress
+    # on its own without a failure here.
+    short_args = ("--json", "--dry-run", "--short-name", description, "x")
+    bash_short = run(bash_cmd(repo, SCRIPT, *short_args), repo, env)
+    py_short = run(py_cmd(repo, SCRIPT, *short_args), repo, env)
+
+    assert py_short.returncode == bash_short.returncode == 0
+    assert json_stdout(py_short) == json_stdout(bash_short)
+    short_branch = json_stdout(bash_short)["BRANCH_NAME"]
+    assert isinstance(short_branch, str) and short_branch.isascii(), short_branch
+
 
 @requires_bash
 @pytest.mark.parametrize(
