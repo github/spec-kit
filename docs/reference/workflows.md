@@ -18,7 +18,7 @@ Runs a workflow from a catalog ID, URL, or local file path. Inputs declared by t
 Example:
 
 ```bash
-specify workflow run speckit -i spec="Build a kanban board with drag-and-drop task management" -i scope=full
+specify workflow run speckit -i spec="Build a kanban board with drag-and-drop task management"
 ```
 
 With `--json`, a single machine-readable object is printed instead of formatted text (the default output is unchanged when the flag is omitted):
@@ -415,10 +415,6 @@ inputs:
     type: string
     default: "copilot"
     prompt: "Integration to use (e.g. claude, copilot, gemini)"
-  scope:
-    type: string
-    default: "full"
-    enum: ["full", "backend-only", "frontend-only"]
 
 steps:
   - id: specify

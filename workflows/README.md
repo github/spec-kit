@@ -70,11 +70,18 @@ specify workflow run ./my-workflow.yml --input spec="Build a user authentication
 
 ### Multiple Inputs
 
+When a workflow declares more than one input, pass each with a separate
+`--input` flag. For example, a custom workflow that gates steps on a
+`scope` selector:
+
 ```bash
-specify workflow run speckit \
+specify workflow run ./my-workflow.yml \
   --input spec="Build a user authentication system with OAuth support" \
   --input scope="backend-only"
 ```
+
+The bundled `speckit` workflow only declares `spec` (and optional
+`integration`); it does not take a `scope` input.
 
 ## Step Types
 
