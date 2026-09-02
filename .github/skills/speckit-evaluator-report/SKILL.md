@@ -1,1 +1,0 @@
-../../../.specify/extensions/evaluator/.specify-dev/extension-skills/speckit-evaluator-report/SKILL.md
