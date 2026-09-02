@@ -58,7 +58,11 @@ fi
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Collect result files for the phase (exclude previously composed files)
-mapfile -t RESULT_FILES < <(find "$RESULTS_DIR" -maxdepth 1 -name "*-${PHASE}-*.json" ! -name "composed-*" | sort)
+# Portable to bash 3.2+ (macOS): avoid mapfile (bash 4+)
+RESULT_FILES=()
+while IFS= read -r f; do
+    RESULT_FILES+=("$f")
+done < <(find "$RESULTS_DIR" -maxdepth 1 -name "*-${PHASE}-*.json" ! -name "composed-*" | sort)
 
 if [[ ${#RESULT_FILES[@]} -eq 0 ]]; then
     # No results found — produce empty composed result
