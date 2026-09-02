@@ -1,0 +1,1 @@
+../../../.specify/extensions/evaluator/.specify-dev/extension-skills/speckit-evaluator-compose/SKILL.md
