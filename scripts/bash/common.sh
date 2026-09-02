@@ -902,12 +902,18 @@ except Exception as exc:
                     *'{CORE_TEMPLATE}'*) ;;
                     *) echo "Error: wrap strategy missing {CORE_TEMPLATE} placeholder" >&2; return 2 ;;
                 esac
-                while [[ "$layer_content" == *'{CORE_TEMPLATE}'* ]]; do
-                    local before="${layer_content%%\{CORE_TEMPLATE\}*}"
-                    local after="${layer_content#*\{CORE_TEMPLATE\}}"
-                    layer_content="${before}${content}${after}"
+                # Walk the original wrapper only. Inserted core content must not
+                # be rescanned: if it contains a literal {CORE_TEMPLATE}, a
+                # while-loop over the growing string never finishes (and would
+                # disagree with the Python/PowerShell one-shot Replace).
+                local result="" rest="$layer_content"
+                while [[ "$rest" == *'{CORE_TEMPLATE}'* ]]; do
+                    local before="${rest%%\{CORE_TEMPLATE\}*}"
+                    local after="${rest#*\{CORE_TEMPLATE\}}"
+                    result="${result}${before}${content}"
+                    rest="$after"
                 done
-                content="$layer_content"
+                content="${result}${rest}"
                 ;;
             *) echo "Error: unknown strategy '$strat'" >&2; return 2 ;;
         esac

@@ -588,6 +588,78 @@ def test_all_variants_fail_when_wrap_placeholder_is_missing(
 
 
 @requires_bash
+def test_wrap_preserves_literal_core_template_in_base_content(
+    tmp_path: Path,
+) -> None:
+    """Base text that contains {CORE_TEMPLATE} must not re-enter the wrap scan.
+
+    Reproduces github/spec-kit#4385: the Bash resolver used to rewrite
+    ``layer_content`` in place, so inserted tokens kept the loop alive.
+    """
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+
+    presets = repo / ".specify" / "presets"
+    wrap = presets / "a-wrap"
+    base = presets / "b-base"
+    (wrap / "templates").mkdir(parents=True)
+    (base / "templates").mkdir(parents=True)
+
+    (wrap / "templates" / f"{TEMPLATE}.md").write_text(
+        "BEFORE\n{CORE_TEMPLATE}\nAFTER\n",
+        encoding="utf-8",
+    )
+    (wrap / "preset.yml").write_text(
+        "provides:\n"
+        "  templates:\n"
+        "    - type: template\n"
+        f"      name: {TEMPLATE}\n"
+        f"      file: templates/{TEMPLATE}.md\n"
+        "      strategy: wrap\n",
+        encoding="utf-8",
+    )
+    (base / "templates" / f"{TEMPLATE}.md").write_text(
+        "BASE {CORE_TEMPLATE}\n",
+        encoding="utf-8",
+    )
+    (base / "preset.yml").write_text(
+        "provides:\n"
+        "  templates:\n"
+        "    - type: template\n"
+        f"      name: {TEMPLATE}\n"
+        f"      file: templates/{TEMPLATE}.md\n"
+        "      strategy: replace\n",
+        encoding="utf-8",
+    )
+    (presets / ".registry").write_text(
+        json.dumps(
+            {
+                "presets": {
+                    "a-wrap": {"enabled": True, "priority": 1},
+                    "b-base": {"enabled": True, "priority": 2},
+                }
+            },
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    expected = "BEFORE\nBASE {CORE_TEMPLATE}\n\nAFTER\n"
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["TEMPLATE_CONTENT"] == expected for result in results
+    )
+
+
+@requires_bash
 def test_all_variants_fail_when_yaml_parser_is_unavailable(
     tmp_path: Path,
 ) -> None:
