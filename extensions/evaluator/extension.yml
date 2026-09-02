@@ -1,0 +1,87 @@
+schema_version: "1.0"
+
+extension:
+  id: evaluator
+  name: "Evaluator Contract"
+  version: "1.0.0"
+  description: "Standard evaluator result contract for evidence, provenance, uncertainty, and recovery — a provider-neutral protocol for extensions that evaluate artifact quality between phases"
+  category: "process"
+  effect: "read-write"
+  author: ElectroHire
+  repository: https://github.com/electrohire/spec-kit-evaluator
+  license: MIT
+  homepage: https://github.com/electrohire/spec-kit-evaluator
+
+requires:
+  speckit_version: ">=1.0.0"
+
+provides:
+  commands:
+    - name: speckit.evaluator.run
+      file: commands/speckit.evaluator.run.md
+      description: "Run an evaluator against one or more artifacts and produce a versioned machine-readable result"
+    - name: speckit.evaluator.compose
+      file: commands/speckit.evaluator.compose.md
+      description: "Compose multiple evaluator results at a lifecycle point with deterministic precedence"
+    - name: speckit.evaluator.report
+      file: commands/speckit.evaluator.report.md
+      description: "Render evaluator results as a human-readable report, CI annotation, or release gate"
+    - name: speckit.evaluator.route
+      file: commands/speckit.evaluator.route.md
+      description: "Recommend which model tier to use for the next SDD phase based on evaluator findings — enables the portfolio approach"
+
+  templates:
+    - name: evaluator-result-template
+      file: templates/evaluator-result-template.json
+      description: "Template for a single evaluator result"
+
+  scripts:
+    - name: evaluator-compose
+      file: scripts/python/compose_results.py
+      description: "Compose multiple evaluator results with deterministic precedence"
+      runtimes: [python]
+    - name: evaluator-compose-sh
+      file: scripts/bash/compose-results.sh
+      description: "Compose multiple evaluator results (POSIX shell)"
+      runtimes: [bash]
+    - name: evaluator-compose-ps
+      file: scripts/powershell/compose-results.ps1
+      description: "Compose multiple evaluator results (PowerShell)"
+      runtimes: [powershell]
+
+hooks:
+  after_specify:
+    - command: "speckit.evaluator.run"
+      priority: 20
+      optional: true
+      prompt: "Run evaluators against the specification?"
+      description: "Evaluate spec quality, evidence, and provenance after specification"
+  after_plan:
+    - command: "speckit.evaluator.run"
+      priority: 20
+      optional: true
+      prompt: "Run evaluators against the plan?"
+      description: "Evaluate plan assumptions, risks, and coverage after planning"
+  after_tasks:
+    - command: "speckit.evaluator.run"
+      priority: 20
+      optional: true
+      prompt: "Run evaluators against the task breakdown?"
+      description: "Evaluate task completeness and traceability after task generation"
+  after_implement:
+    - command: "speckit.evaluator.run"
+      priority: 20
+      optional: true
+      prompt: "Run evaluators against the implementation?"
+      description: "Evaluate implementation against spec, plan, and tasks"
+
+tags:
+  - "evaluator"
+  - "evidence"
+  - "provenance"
+  - "quality"
+  - "governance"
+  - "compliance"
+  - "workflow"
+  - "model-routing"
+  - "portfolio"
