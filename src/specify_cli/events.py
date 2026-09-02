@@ -280,11 +280,18 @@ def _run_inline(command_name, payload, project_root, timeout, envelope="plain", 
     if not argv:
         return 0
     try:
+        # ``payload`` is decoded above from the binary buffer with an explicit
+        # ``utf-8``. Without ``encoding=`` here, ``text=True`` re-encodes it
+        # for the child's stdin using ``locale.getpreferredencoding()`` — on
+        # Windows that is commonly the ANSI codepage, not UTF-8, so a non-ASCII
+        # payload (e.g. ``é``) would reach the handler as the wrong bytes.
+        # Pin both directions to utf-8 so decode and re-encode agree.
         result = subprocess.run(
             argv,
             input=payload,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=timeout,
             cwd=str(project_root),
         )
@@ -773,11 +780,19 @@ def resolve_and_run_event_command(
         logger.warning("No script found for event command '%s'", command_name)
         return 0
     try:
+        # ``payload`` reaches here already decoded from stdin's binary buffer
+        # with an explicit ``utf-8`` (see event_run/dispatcher main()). Without
+        # ``encoding=`` here, ``text=True`` re-encodes it for the child's
+        # stdin using ``locale.getpreferredencoding()`` — on Windows that is
+        # commonly the ANSI codepage, not UTF-8, so a non-ASCII payload (e.g.
+        # ``é``) would reach the handler as the wrong bytes. Pin both
+        # directions to utf-8 so decode and re-encode agree.
         result = subprocess.run(
             argv,
             input=payload,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=timeout,
             cwd=str(project_root),
         )

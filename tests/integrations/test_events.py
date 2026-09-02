@@ -1614,7 +1614,18 @@ class TestCommandRunner:
 
     def test_dispatcher_underlimit_stdin_still_runs(self, tmp_path):
         """A normal, under-the-cap piped payload must still reach the handler
-        (regression guard against an over-eager cap check)."""
+        byte-for-byte, including non-ASCII content -- verifying the explicit
+        utf-8 decode of stdin and the explicit utf-8 encode of the handler's
+        subprocess input agree end-to-end (regression guard against both an
+        over-eager cap check and a locale-dependent re-encode: without an
+        explicit ``encoding=`` on the inner subprocess.run, ``text=True``
+        falls back to ``locale.getpreferredencoding()`` for the child's
+        stdin, which on Windows is commonly not UTF-8, corrupting non-ASCII
+        payloads even though the dispatcher's own stdin decode is UTF-8).
+
+        Uses a Python handler (unlike the previous POSIX-shell-only version)
+        so this test actually runs on Windows, where that mismatch occurs.
+        """
         import subprocess as _sp
         import sys as _sys
 
@@ -1633,27 +1644,103 @@ class TestCommandRunner:
         cmd_dir.mkdir(parents=True)
         out_file = tmp_path / "payload.out"
         (cmd_dir / "boot.md").write_text(
-            "---\ndescription: \"Boot\"\nscripts:\n  sh: scripts/boot.sh\n---\nBody\n",
+            "---\ndescription: \"Boot\"\nscripts:\n  py: scripts/boot.py\n---\nBody\n",
             encoding="utf-8",
         )
         script_dir = tmp_path / ".specify" / "scripts"
         script_dir.mkdir(parents=True)
-        script = script_dir / "boot.sh"
-        script.write_text(f"#!/bin/sh\ncat > {shlex.quote(str(out_file))}\nexit 0\n", encoding="utf-8")
-        script.chmod(0o755)
+        script = script_dir / "boot.py"
+        # Read the handler's own stdin as raw bytes (not text mode) so this
+        # script's own decoding can't mask a mismatch introduced upstream.
+        script.write_text(
+            "import sys\n"
+            f"open({str(out_file)!r}, 'wb').write(sys.stdin.buffer.read())\n",
+            encoding="utf-8",
+        )
 
-        if platform.system().lower().startswith("win"):
-            return  # sh is POSIX
-
+        payload = '{"key": "café"}'  # non-ASCII exercises the utf-8 round trip
         result = _sp.run(
             [_sys.executable, str(dispatcher), "speckit.boot", "session_start", "60"],
-            input='{"key": "value"}',
+            input=payload,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             cwd=str(tmp_path),
         )
         assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
-        assert out_file.read_text() == '{"key": "value"}'
+        assert out_file.read_bytes() == payload.encode("utf-8")
+
+    def test_dispatcher_inline_fallback_preserves_non_ascii_payload(self, tmp_path):
+        """The self-contained stdlib fallback (``_run_inline`` — used when
+        ``specify_cli`` is not importable, e.g. a one-time ``uvx`` init) must
+        preserve a non-ASCII payload byte-for-byte too, not just the
+        preferred delegated path.
+
+        In a dev environment where ``specify_cli`` IS importable, the
+        dispatcher always delegates to the installed
+        ``resolve_and_run_event_command`` and ``_run_inline`` is never
+        reached, so a bug isolated to ``_run_inline`` alone would not be
+        caught by ``test_dispatcher_underlimit_stdin_still_runs``. This test
+        forces the fallback the same way
+        ``test_dispatcher_ignores_stale_specify_cli_without_confinement``
+        does: a stale shadow package on PYTHONPATH lacking
+        EVENT_SCRIPT_PATH_CONFINEMENT, so the confinement check ImportErrors
+        out of delegation.
+        """
+        import subprocess as _sp
+        import sys as _sys
+
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"session_start": [{"command": "speckit.boot"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        out_file = tmp_path / "payload.out"
+        (cmd_dir / "boot.md").write_text(
+            "---\ndescription: \"Boot\"\nscripts:\n  py: scripts/boot.py\n---\nBody\n",
+            encoding="utf-8",
+        )
+        script_dir = tmp_path / ".specify" / "scripts"
+        script_dir.mkdir(parents=True)
+        script = script_dir / "boot.py"
+        script.write_text(
+            "import sys\n"
+            f"open({str(out_file)!r}, 'wb').write(sys.stdin.buffer.read())\n",
+            encoding="utf-8",
+        )
+
+        fake_dir = tmp_path / "_stale_pkg"
+        pkg = fake_dir / "specify_cli"
+        pkg.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+        (pkg / "events.py").write_text(
+            "def resolve_and_run_event_command(*_a, **_k):\n"
+            "    raise AssertionError('delegated path must not run')\n",
+            encoding="utf-8",
+        )
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(fake_dir)
+
+        payload = '{"key": "café"}'  # non-ASCII exercises the utf-8 round trip
+        result = _sp.run(
+            [_sys.executable, str(dispatcher), "speckit.boot", "session_start", "60"],
+            input=payload,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=env,
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        assert out_file.read_bytes() == payload.encode("utf-8")
 
     def test_dispatcher_threads_per_handler_timeout(self, tmp_path):
         """S4: the generated dispatcher reads an optional 4th timeout arg and
