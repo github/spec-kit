@@ -26,7 +26,7 @@ flowchart LR
     A[intake] --> R[research] --> D[define] --> S[shape] --> C{decide}
     C -->|go| SPEC[/speckit.specify/]
     C -->|kill| X[closed, recorded]
-    C -.->|needs-clarification: revisit the named earlier stage| A
+    C -.->|needs-clarification: refine the named artifact in place| A
 ```
 
 ## Commands
@@ -44,6 +44,27 @@ Stages are meant to run in order but are not rigidly gated:
 - `define` is the minimum viable stage and can run directly on user input (intake/research optional).
 - `shape` requires `problem.md`.
 - `decide` requires `problem.md`; a `go` verdict expects `concept.md` (otherwise it is downgraded to `needs-clarification`).
+
+## Resolving clarifications
+
+The normal process is sequential and each command usually runs **once**:
+
+```text
+intake → research → define → shape → decide
+```
+
+Each stage writes a Markdown artifact under `.specify/assessments/<slug>/`. Those files stay editable. `[NEEDS CLARIFICATION: …]` markers are gaps in the artifact, not a signal to regenerate the whole stage from scratch.
+
+Resolve them by refining the existing file:
+
+1. **Edit the Markdown directly** (fill in the missing metric, owner, constraint, and so on), or
+2. **Ask the agent in free-form chat** to incorporate the missing information into that artifact.
+
+Then ask whether the new information clears the blocker and to update any downstream wording that depended on it. That includes `decision.md`: you can supply the missing facts and ask the agent to revise the scorecard, rationale, verdict, or handoff. That is artifact refinement, not command iteration.
+
+When you add evidence, keep the source and confidence tags the research stage already uses (`ASSUMPTION` vs cited claims). Do not invent citations.
+
+Rerunning an earlier `speckit.assess.*` command is the exception (for example after a wrong slug or a discarded draft), not the default path for answering clarification markers.
 
 ## Slug Conventions
 
