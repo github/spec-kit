@@ -75,6 +75,9 @@ def guard_repo(tmp_path: Path) -> tuple[Path, str]:
     _git(repo, "config", "user.email", "guard-tests@example.com")
     _git(repo, "config", "user.name", "Guard Tests")
     _git(repo, "config", "commit.gpgsign", "false")
+    # git's default; pinned so the non-ASCII regression below exercises the
+    # C-quoting code path even on machines whose global config disables it.
+    _git(repo, "config", "core.quotePath", "true")
 
     _write_extension(repo, "demo", "1.0.0", "echo base")
     _write_extension(repo, "scratch", "1.0.0", "echo base")  # not in catalog
@@ -112,6 +115,34 @@ def test_unbumped_content_change_fails(guard_repo):
     assert result.returncode == 1, result.stdout + result.stderr
     assert "did not increase" in result.stdout
     assert "extensions/demo/extension.yml" in result.stdout
+
+
+def test_unbumped_non_ascii_filename_fails(guard_repo):
+    """With core.quotePath (git's default) `git diff --name-only` C-quotes a
+    path like extensions/demo/café.txt, quotes included, so a line-based
+    parser no longer sees `extensions` as the first component and the
+    change escapes the guard. The NUL-delimited diff must still catch it."""
+    repo, base = guard_repo
+    (repo / "extensions" / "demo" / "café.txt").write_text("new\n", encoding="utf-8")
+    _commit_all(repo, "add non-ascii file without bump")
+
+    result = _run_guard(repo, base)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "did not increase" in result.stdout
+    assert "extensions/demo/extension.yml" in result.stdout
+
+
+def test_no_extension_changes_passes(guard_repo):
+    """The workflow runs on every pull request (a path-filtered required check
+    would block PRs that skip it), so a PR touching nothing under extensions/
+    must pass rather than be reported as a violation."""
+    repo, base = guard_repo
+    (repo / "README.md").write_text("docs only\n", encoding="utf-8")
+    _commit_all(repo, "unrelated change")
+
+    result = _run_guard(repo, base)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "all invariants hold" in result.stdout
 
 
 def test_downgrade_fails(guard_repo):

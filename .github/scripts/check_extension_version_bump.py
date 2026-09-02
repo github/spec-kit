@@ -37,7 +37,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import PurePosixPath
 
 import yaml
 from packaging.version import InvalidVersion, Version
@@ -46,10 +46,29 @@ EXTENSIONS_ROOT = "extensions"
 CATALOG_PATH = f"{EXTENSIONS_ROOT}/catalog.json"
 
 
-def _git(*args: str) -> str:
-    return subprocess.run(
-        ["git", *args], check=True, capture_output=True, text=True
+def _changed_paths(base_ref: str, head_ref: str) -> list[str]:
+    """Paths under extensions/ that differ between *base_ref* and *head_ref*.
+
+    Uses NUL-delimited output (``-z``): without it git C-quotes any path
+    containing non-ASCII or control characters (``"extensions/x/caf\\303\\251"``,
+    quotes included), so the leading component would no longer equal
+    ``extensions`` and that change would silently escape the guard. Paths
+    are decoded with surrogateescape so an undecodable byte can never crash
+    the check; only the ASCII ``extensions/<id>/`` prefix is interpreted.
+    """
+    raw = subprocess.run(
+        [
+            "git", "diff", "--name-only", "-z", "--no-renames",
+            base_ref, head_ref, "--", EXTENSIONS_ROOT,
+        ],
+        check=True,
+        capture_output=True,
     ).stdout
+    return [
+        chunk.decode("utf-8", errors="surrogateescape")
+        for chunk in raw.split(b"\0")
+        if chunk
+    ]
 
 
 def _show(ref: str, path: str) -> str | None:
@@ -87,13 +106,10 @@ def main(argv: list[str]) -> int:
     errors: list[str] = []
 
     # -- Invariant 1: content change requires a version bump ---------------
-    changed = _git(
-        "diff", "--name-only", "--no-renames", base_ref, head_ref, "--", EXTENSIONS_ROOT
-    ).splitlines()
     changed_ids = {
         parts[1]
-        for line in changed
-        if len(parts := Path(line.strip()).parts) >= 3 and parts[0] == EXTENSIONS_ROOT
+        for path in _changed_paths(base_ref, head_ref)
+        if len(parts := PurePosixPath(path).parts) >= 3 and parts[0] == EXTENSIONS_ROOT
     }
 
     for ext_id in sorted(changed_ids):

@@ -9,10 +9,13 @@ permissions:
 # Content changes shipped without a bump go silently stale on every
 # project that already installed the extension (#4345). This guard turns
 # "please remember to bump" into a merge requirement.
+#
+# Deliberately no `paths:` filter: a required status check that is skipped
+# by path filtering stays in "Expected" state and blocks every PR that does
+# not touch extensions/**. The check runs on every pull request instead and
+# the script reports success when nothing under extensions/ changed.
 on:
   pull_request:
-    paths:
-      - "extensions/**"
 
 jobs:
   version-bump:
