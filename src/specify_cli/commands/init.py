@@ -444,6 +444,8 @@ def _emit_dry_run_preview(payload: dict[str, Any], *, json_output: bool) -> None
         console.print(
             "[yellow]conflict[/yellow]  target directory exists; applying this plan requires --force"
         )
+    if payload.get("error"):
+        console.print(f"[red]failed[/red]    {payload['error']}")
     for record in payload["actions"]:
         source = record["provenance"]
         if record.get("source_id"):
@@ -515,16 +517,16 @@ def _remap_symlink_to_staged(
 ) -> None:
     target = _symlink_target(path)
     if target is None:
-        _materialize_symlink(path)
+        _quarantine_symlink(path, staged_root)
         return
     try:
         relative = os.path.relpath(os.fspath(target), os.fspath(project_root))
     except ValueError:
-        _materialize_symlink(path)
+        _quarantine_symlink(path, staged_root)
         return
     relative_path = Path(relative)
     if relative_path.is_absolute() or ".." in relative_path.parts:
-        _materialize_symlink(path)
+        _quarantine_symlink(path, staged_root)
         return
     remapped = staged_root / relative_path
     was_dir = path.is_dir()
@@ -532,36 +534,53 @@ def _remap_symlink_to_staged(
     path.symlink_to(remapped, target_is_directory=was_dir)
 
 
-def _materialize_symlink(path: Path) -> None:
-    """Replace a live external symlink with an empty directory placeholder.
+def _quarantine_root(staged_root: Path) -> Path:
+    return _normalize_fs_path(staged_root.parent / "quarantine")
 
-    Nested targets are not copied, which avoids following a link to ``/`` or
-    ``$HOME``. ``mkdir`` and file writes then stay inside staging.
+
+def _quarantine_symlink(path: Path, staged_root: Path) -> None:
+    """Retarget an external symlink at an isolated dummy outside *staged_root*.
+
+    The dummy stays outside the staged project so ``Path.resolve()`` still
+    escapes, matching real init containment checks, while writes cannot reach
+    the original live target.
     """
+    dummy = _quarantine_root(staged_root) / path.relative_to(staged_root)
+    dummy.parent.mkdir(parents=True, exist_ok=True)
+    was_dir = path.is_dir()
     path.unlink()
-    path.mkdir()
+    if was_dir:
+        dummy.mkdir(parents=True, exist_ok=True)
+    else:
+        dummy.touch()
+    path.symlink_to(dummy, target_is_directory=was_dir)
 
 
 def _remap_in_project_symlinks(project_root: Path, staged_root: Path) -> None:
     """Keep staged symlinks from pointing at the live project or external paths.
 
     In-project absolute links are retargeted at the staged copy. Links that
-    resolve outside the project are replaced with placeholders so the child
-    initializer cannot write through them.
+    resolve outside the project are retargeted at an isolated dummy outside
+    staging so containment checks still fail, without writing through to the
+    live target.
     """
     project_root = _normalize_fs_path(project_root)
     staged_root = _normalize_fs_path(staged_root)
+    quarantine_root = _quarantine_root(staged_root)
     for _ in range(32):
         changed = False
         for path in _iter_symlinks(staged_root):
             resolved = _symlink_target(path)
-            if resolved is not None and _is_within_root(resolved, staged_root):
+            if resolved is not None and (
+                _is_within_root(resolved, staged_root)
+                or _is_within_root(resolved, quarantine_root)
+            ):
                 continue
             if resolved is not None and _is_within_root(resolved, project_root):
                 _remap_symlink_to_staged(path, project_root, staged_root)
                 changed = True
                 continue
-            _materialize_symlink(path)
+            _quarantine_symlink(path, staged_root)
             changed = True
         if not changed:
             return
@@ -572,6 +591,23 @@ def _stage_project_copy(project_path: Path, staged_root: Path) -> None:
     """Copy *project_path* into staging and isolate live symlinks."""
     shutil.copytree(project_path, staged_root, symlinks=True)
     _remap_in_project_symlinks(project_path.resolve(), staged_root.resolve())
+
+
+def _preview_child_failure_message(result: subprocess.CompletedProcess[str]) -> str:
+    """Extract the initializer failure from captured child output."""
+    combined = " ".join(
+        part.strip().replace("\n", " ")
+        for part in (result.stderr, result.stdout)
+        if part
+    )
+    marker = "Initialization failed: "
+    if marker in combined:
+        combined = combined[combined.index(marker) + len(marker) :]
+    elif "escapes project root" in combined:
+        start = combined.find("Integration destination")
+        if start >= 0:
+            combined = combined[start:]
+    return combined[:500]
 
 
 def _preview_init(
@@ -650,54 +686,60 @@ def _preview_init(
             env=env,
         )
         if result.returncode:
-            details = (result.stderr or result.stdout or "").strip().replace("\n", " ")
-            raise RuntimeError(f"staged initialization failed: {details[:240]}")
-
-        registry_sources = _preview_registry_sources(staged_root)
-        project_ownership = _preview_manifest_ownership(staged_root)
-        registry_project_ownership, registry_home_ownership = (
-            _preview_registry_ownership(staged_root)
-        )
-        project_ownership.update(registry_project_ownership)
-        project_ownership.update(
-            _preview_marker_ownership(staged_root, registry_sources)
-        )
-        payload["actions"] = _build_preview_actions(
-            initial_files,
-            staged_root,
-            ownership=project_ownership,
-            default_ownership=("integration", selected_integration),
-            directory_conflict=directory_conflict,
-        )
-        staged_home_files = _snapshot_files(staged_home)
-        initial_home_files = _snapshot_matching_files(real_home, set(staged_home_files))
-        home_ownership = registry_home_ownership
-        home_ownership.update(_preview_marker_ownership(staged_home, registry_sources))
-        payload["actions"].extend(
-            _build_preview_actions(
-                initial_home_files,
-                staged_home,
-                path_prefix="~/",
-                ownership=home_ownership,
+            payload["error"] = _preview_child_failure_message(result)
+        else:
+            registry_sources = _preview_registry_sources(staged_root)
+            project_ownership = _preview_manifest_ownership(staged_root)
+            registry_project_ownership, registry_home_ownership = (
+                _preview_registry_ownership(staged_root)
+            )
+            project_ownership.update(registry_project_ownership)
+            project_ownership.update(
+                _preview_marker_ownership(staged_root, registry_sources)
+            )
+            payload["actions"] = _build_preview_actions(
+                initial_files,
+                staged_root,
+                ownership=project_ownership,
                 default_ownership=("integration", selected_integration),
                 directory_conflict=directory_conflict,
             )
-        )
-        payload["actions"] = _merge_recorded_plan_actions(
-            payload["actions"], plan_path
-        )
+            staged_home_files = _snapshot_files(staged_home)
+            initial_home_files = _snapshot_matching_files(
+                real_home, set(staged_home_files)
+            )
+            home_ownership = registry_home_ownership
+            home_ownership.update(
+                _preview_marker_ownership(staged_home, registry_sources)
+            )
+            payload["actions"].extend(
+                _build_preview_actions(
+                    initial_home_files,
+                    staged_home,
+                    path_prefix="~/",
+                    ownership=home_ownership,
+                    default_ownership=("integration", selected_integration),
+                    directory_conflict=directory_conflict,
+                )
+            )
+            payload["actions"] = _merge_recorded_plan_actions(
+                payload["actions"], plan_path
+            )
 
-    for spec in url_extensions:
-        payload["actions"].append(
-            {
-                "action": "unresolved",
-                "path": spec,
-                "provenance": "extension",
-                "source_id": spec,
-            }
-        )
+    if not payload.get("error"):
+        for spec in url_extensions:
+            payload["actions"].append(
+                {
+                    "action": "unresolved",
+                    "path": spec,
+                    "provenance": "extension",
+                    "source_id": spec,
+                }
+            )
     payload["actions"].sort(key=lambda action: action["path"])
     _emit_dry_run_preview(payload, json_output=json_output)
+    if payload.get("error"):
+        raise typer.Exit(1)
 
 
 def _confirm_extension_url_trust(

@@ -693,7 +693,12 @@ def test_stage_copy_quarantines_external_absolute_symlinks(tmp_path: Path) -> No
     _stage_project_copy(project, staged)
 
     staged_escape = staged / "escape"
-    assert not staged_escape.is_symlink()
+    assert staged_escape.is_symlink()
+    dummy = Path(os.readlink(staged_escape))
+    if not dummy.is_absolute():
+        dummy = staged_escape.parent / dummy
+    assert not _is_within_root(dummy, staged)
+    assert not _is_within_root(dummy, outside)
     (staged_escape / "skills").mkdir()
     assert not (outside / "skills").exists()
     assert (outside / "keep.txt").read_text(encoding="utf-8") == "keep\n"
@@ -729,10 +734,15 @@ def test_dry_run_does_not_write_through_external_command_symlink(
         catch_exceptions=False,
     )
 
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 1, result.output
     payload = json.loads(result.output)
-    assert payload["actions"]
+    assert payload["dry_run"] is True
+    assert "escapes project root" in payload["error"]
+    assert not any(
+        action["path"].startswith(".kilo/commands/") for action in payload["actions"]
+    )
     assert list(outside.iterdir()) == []
+    assert (kilo_dir / "commands").is_symlink()
     assert (kilo_dir / "commands").resolve() == outside.resolve()
 
 
