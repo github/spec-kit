@@ -330,13 +330,13 @@ def _preview_content_ownership(
             if value.startswith(("preset:", "extension:")):
                 category, source_id = value.split(":", 1)
                 source_id = source_id.split(":", 1)[0]
-                if source_id:
+                if category in registry_sources.get(source_id, set()):
                     return category, source_id
         if marker.startswith("<!--") and marker.endswith("-->"):
             value = marker.removeprefix("<!--").removesuffix("-->").strip()
             if value.startswith(("preset:", "extension:")):
                 category, source_id = value.split(":", 1)
-                if source_id:
+                if category in registry_sources.get(source_id, set()):
                     return category, source_id
             if value.startswith("Source:"):
                 bare_source_id = value.removeprefix("Source:").strip()
@@ -599,6 +599,11 @@ def _preview_child_failure_message(result: subprocess.CompletedProcess[str]) -> 
         part.strip().replace("\n", " ")
         for part in (result.stderr, result.stdout)
         if part
+    )
+    combined = " ".join(
+        "".join(
+            " " if "\u2500" <= char <= "\u257f" else char for char in combined
+        ).split()
     )
     marker = "Initialization failed: "
     if marker in combined:

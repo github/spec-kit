@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,8 @@ from specify_cli._assets import _locate_bundled_extension
 from specify_cli.commands.init import (
     _is_within_root,
     _normalize_fs_path,
+    _preview_child_failure_message,
+    _preview_content_ownership,
     _snapshot_files,
     _stage_project_copy,
     _strip_windows_extended_prefix,
@@ -34,6 +37,43 @@ def _assert_same_path(left: Path | str, right: Path | str) -> None:
         assert os.path.samefile(left_path, right_path)
         return
     assert _normalize_fs_path(left_path) == _normalize_fs_path(right_path)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "source: extension:anything\n",
+        "<!-- preset:anything -->\n",
+    ],
+)
+def test_preview_content_ownership_rejects_unregistered_typed_markers(
+    content: str,
+) -> None:
+    assert _preview_content_ownership(content, {"git": {"extension"}}) is None
+
+
+def test_preview_content_ownership_rejects_typed_marker_with_wrong_category() -> None:
+    assert (
+        _preview_content_ownership(
+            "source: extension:self-test\n", {"self-test": {"preset"}}
+        )
+        is None
+    )
+
+
+def test_preview_child_failure_message_ignores_rich_panel_line_wrapping() -> None:
+    result = subprocess.CompletedProcess(
+        args=[],
+        returncode=1,
+        stdout=(
+            "│ Initialization failed: Integration destination │\n"
+            "│ /tmp/quarantine/.kilo/commands escapes project │\n"
+            "│ root /tmp/project │\n"
+        ),
+        stderr="",
+    )
+
+    assert "escapes project root" in _preview_child_failure_message(result)
 
 
 @pytest.mark.parametrize(
