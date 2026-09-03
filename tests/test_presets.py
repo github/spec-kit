@@ -3442,7 +3442,6 @@ class TestPresetCatalogMultiCatalog:
         with pytest.raises(PresetValidationError, match="must be a list"):
             catalog._load_catalog_config(config_path)
 
-
     @pytest.mark.parametrize("body", ["catalogs: {}\n", "catalogs: ''\n", "catalogs: 0\n", "catalogs: false\n"])
     def test_load_catalog_config_rejects_falsy_non_list_catalogs(self, project_dir, body):
         """A FALSY non-list ``catalogs:`` value must raise, like a truthy one
