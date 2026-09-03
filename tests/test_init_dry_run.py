@@ -192,9 +192,9 @@ def test_forced_dry_run_reports_overwrite_without_changing_existing_file(
     tmp_path: Path,
 ) -> None:
     target = tmp_path / "existing-project"
-    command = target / ".github" / "skills" / "speckit-plan" / "SKILL.md"
-    command.parent.mkdir(parents=True)
-    command.write_text("user-owned content\n", encoding="utf-8")
+    shared_template = target / ".specify" / "templates" / "plan-template.md"
+    shared_template.parent.mkdir(parents=True)
+    shared_template.write_text("user-owned content\n", encoding="utf-8")
 
     result = CliRunner().invoke(
         app,
@@ -214,26 +214,28 @@ def test_forced_dry_run_reports_overwrite_without_changing_existing_file(
 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
-    assert {
-        (action["action"], action["path"])
-        for action in payload["actions"]
-    } >= {("overwrite", ".github/skills/speckit-plan/SKILL.md")}
-    assert command.read_text(encoding="utf-8") == "user-owned content\n"
+    assert {(action["action"], action["path"]) for action in payload["actions"]} >= {
+        ("overwrite", ".specify/templates/plan-template.md")
+    }
+    assert shared_template.read_text(encoding="utf-8") == "user-owned content\n"
 
 
-def test_non_forced_dry_run_reports_existing_target_conflict(tmp_path: Path) -> None:
+def test_non_forced_here_dry_run_matches_confirmed_preserve_behavior(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     target = tmp_path / "nonempty-project"
-    command = target / ".github" / "skills" / "speckit-plan" / "SKILL.md"
-    command.parent.mkdir(parents=True)
-    command.write_text("user-owned content\n", encoding="utf-8")
+    shared_template = target / ".specify" / "templates" / "plan-template.md"
+    shared_template.parent.mkdir(parents=True)
+    shared_template.write_text("user-owned content\n", encoding="utf-8")
     existing = target / "keep.txt"
     existing.write_text("keep\n", encoding="utf-8")
+    monkeypatch.chdir(target)
 
     result = CliRunner().invoke(
         app,
         [
             "init",
-            str(target),
+            "--here",
             "--dry-run",
             "--json",
             "--integration",
@@ -248,12 +250,29 @@ def test_non_forced_dry_run_reports_existing_target_conflict(tmp_path: Path) -> 
     payload = json.loads(result.output)
     assert payload["conflict"] is True
     actions = {(action["action"], action["path"]) for action in payload["actions"]}
-    assert ("conflict", ".github/skills/speckit-plan/SKILL.md") in actions
+    assert ("preserve", ".specify/templates/plan-template.md") in actions
     assert ("create", ".github/skills/speckit-specify/SKILL.md") in actions
     assert all(action["action"] != "overwrite" for action in payload["actions"])
     assert all(action["path"] != "keep.txt" for action in payload["actions"])
-    assert command.read_text(encoding="utf-8") == "user-owned content\n"
+    assert shared_template.read_text(encoding="utf-8") == "user-owned content\n"
     assert existing.read_text(encoding="utf-8") == "keep\n"
+
+    actual = CliRunner().invoke(
+        app,
+        [
+            "init",
+            "--here",
+            "--integration",
+            "copilot",
+            "--script",
+            "sh",
+        ],
+        input="y\n",
+        catch_exceptions=False,
+    )
+
+    assert actual.exit_code == 0, actual.output
+    assert shared_template.read_text(encoding="utf-8") == "user-owned content\n"
 
 
 def test_non_forced_dry_run_reports_directory_conflict_without_overlapping_files(
@@ -414,6 +433,95 @@ def test_dry_run_leaves_url_extension_unresolved_without_creating_target(
         "provenance": "extension",
         "source_id": extension_url,
     }
+    assert not target.exists()
+
+
+def test_dry_run_reports_optional_extension_failure(tmp_path: Path) -> None:
+    target = tmp_path / "failed-extension-preview"
+    extension = "nonexistent-xyz-ext"
+
+    json_result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--dry-run",
+            "--json",
+            "--integration",
+            "copilot",
+            "--script",
+            "sh",
+            "--extension",
+            extension,
+        ],
+        catch_exceptions=False,
+    )
+
+    assert json_result.exit_code == 0, json_result.output
+    payload = json.loads(json_result.output)
+    assert payload["failures"] == [
+        {
+            "component": "extension",
+            "source_id": extension,
+            "error": f"Extension '{extension}' not found in bundled extensions or catalog",
+        }
+    ]
+
+    human_result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--dry-run",
+            "--integration",
+            "copilot",
+            "--script",
+            "sh",
+            "--extension",
+            extension,
+        ],
+        catch_exceptions=False,
+    )
+
+    assert human_result.exit_code == 0, human_result.output
+    normalized = " ".join(human_result.output.split())
+    assert f"failed extension:{extension}" in normalized
+    assert (
+        f"Extension '{extension}' not found in bundled extensions or catalog"
+        in normalized
+    )
+    assert not target.exists()
+
+
+def test_dry_run_reports_optional_preset_failure(tmp_path: Path) -> None:
+    target = tmp_path / "failed-preset-preview"
+    preset = "nonexistent-xyz-preset"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--dry-run",
+            "--json",
+            "--integration",
+            "copilot",
+            "--script",
+            "sh",
+            "--preset",
+            preset,
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["failures"] == [
+        {
+            "component": "preset",
+            "source_id": preset,
+            "error": f"Preset '{preset}' not found in catalog",
+        }
+    ]
     assert not target.exists()
 
 

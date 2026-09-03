@@ -126,6 +126,14 @@ def _preview_subprocess_env(staged_home: Path) -> dict[str, str]:
 
 
 _INIT_PLAN_ENV = "SPECIFY_INIT_PLAN_PATH"
+_INIT_STAGING_CONFIRMATION_ENV = "SPECIFY_INIT_STAGING_CONFIRMATION"
+
+
+def _staging_confirmation_is_accepted() -> bool:
+    """Return whether a staged preview child may skip its directory prompt."""
+    return bool(os.environ.get(_INIT_PLAN_ENV)) and (
+        os.environ.get(_INIT_STAGING_CONFIRMATION_ENV) == "1"
+    )
 
 
 def _record_init_plan_action(
@@ -150,6 +158,55 @@ def _record_init_plan_action(
             handle.write(json.dumps(record, sort_keys=True) + "\n")
     except OSError as exc:
         sys.stderr.write(f"specify: failed to record init plan action: {exc}\n")
+
+
+def _record_init_plan_failure(component: str, source_id: str, error: str) -> None:
+    """Append an optional component failure when a preview plan is configured."""
+    plan_path = os.environ.get(_INIT_PLAN_ENV)
+    if not plan_path:
+        return
+    record = {
+        "outcome": "failure",
+        "component": component,
+        "source_id": source_id,
+        "error": error,
+    }
+    try:
+        with open(plan_path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+    except OSError as exc:
+        sys.stderr.write(f"specify: failed to record init plan failure: {exc}\n")
+
+
+def _recorded_plan_failures(plan_path: Path) -> list[dict[str, str]]:
+    """Read structured optional component failures from a staged preview."""
+    if not plan_path.is_file():
+        return []
+    try:
+        lines = plan_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+
+    failures: list[dict[str, str]] = []
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(record, dict) or record.get("outcome") != "failure":
+            continue
+        component = record.get("component")
+        source_id = record.get("source_id")
+        error = record.get("error")
+        if all(isinstance(value, str) for value in (component, source_id, error)):
+            failures.append(
+                {
+                    "component": component,
+                    "source_id": source_id,
+                    "error": error,
+                }
+            )
+    return failures
 
 
 def _merge_recorded_plan_actions(
@@ -446,6 +503,11 @@ def _emit_dry_run_preview(payload: dict[str, Any], *, json_output: bool) -> None
         )
     if payload.get("error"):
         console.print(f"[red]failed[/red]    {payload['error']}")
+    for failure in payload["failures"]:
+        console.print(
+            f"failed     {failure['component']}:{failure['source_id']} "
+            f"{failure['error']}"
+        )
     for record in payload["actions"]:
         source = record["provenance"]
         if record.get("source_id"):
@@ -619,6 +681,7 @@ def _preview_init(
     *,
     project_path: Path,
     directory_conflict: bool,
+    force: bool,
     script_type: str,
     selected_integration: str,
     ignore_agent_tools: bool,
@@ -634,6 +697,7 @@ def _preview_init(
         "target": str(project_path),
         "conflict": directory_conflict,
         "actions": [],
+        "failures": [],
     }
 
     initial_files = _snapshot_files(project_path)
@@ -648,22 +712,24 @@ def _preview_init(
         if project_path.exists():
             _stage_project_copy(project_path, staged_root)
 
-        # Run the same public CLI path in a child process.  Besides preventing
+        # Run the same public CLI path in a child process. Besides preventing
         # mutations of the target root, this isolates Rich's Live output from
-        # the preview's human/JSON output contract.
+        # the preview's human/JSON output contract. The staging-only
+        # confirmation signal avoids a prompt without changing force mode.
         command = [
             sys.executable,
             "-c",
             "from specify_cli import main; main()",
             "init",
             str(staged_root),
-            "--force",
             "--non-interactive",
             "--integration",
             selected_integration,
             "--script",
             script_type,
         ]
+        if force:
+            command.append("--force")
         if ignore_agent_tools:
             command.append("--ignore-agent-tools")
         if integration_options:
@@ -680,6 +746,7 @@ def _preview_init(
         plan_path = Path(tmp_dir) / "init-plan.jsonl"
         env = _preview_subprocess_env(staged_home)
         env[_INIT_PLAN_ENV] = str(plan_path)
+        env[_INIT_STAGING_CONFIRMATION_ENV] = "1"
         result = subprocess.run(
             command,
             cwd=Path.cwd(),
@@ -730,6 +797,7 @@ def _preview_init(
             payload["actions"] = _merge_recorded_plan_actions(
                 payload["actions"], plan_path
             )
+        payload["failures"] = _recorded_plan_failures(plan_path)
 
     if not payload.get("error"):
         for spec in url_extensions:
@@ -1150,6 +1218,7 @@ def register(app: typer.Typer) -> None:
 
         dir_existed_before = False
         directory_conflict = False
+        staging_confirmation_accepted = _staging_confirmation_is_accepted()
         if here:
             project_name = Path.cwd().name
             project_path = Path.cwd()
@@ -1172,14 +1241,14 @@ def register(app: typer.Typer) -> None:
                         console.print(
                             "[cyan]--force supplied: skipping confirmation and proceeding with merge[/cyan]"
                         )
-                elif non_interactive:
+                elif non_interactive and not staging_confirmation_accepted:
                     console.print(
                         "[red]Error:[/red] Current directory is not empty and "
                         "--non-interactive was set. Re-run with "
                         "[bold]--force[/bold] to merge into it."
                     )
                     raise typer.Exit(1)
-                else:
+                elif not staging_confirmation_accepted:
                     # Fold the merge risk into the confirmation prompt rather than
                     # printing it unconditionally first: on the EOF/no-input path
                     # below the command exits without changing anything, so a
@@ -1237,7 +1306,7 @@ def register(app: typer.Typer) -> None:
                         console.print(
                             f"[cyan]--force supplied: merging into existing directory '[cyan]{safe_name}[/cyan]'[/cyan]"
                         )
-                else:
+                elif not staging_confirmation_accepted:
                     error_panel = Panel(
                         f"Directory already exists: '[cyan]{safe_name}[/cyan]'\n"
                         "Please choose a different project name or remove the existing directory.\n"
@@ -1354,6 +1423,7 @@ def register(app: typer.Typer) -> None:
             _preview_init(
                 project_path=project_path,
                 directory_conflict=directory_conflict,
+                force=force,
                 script_type=selected_script,
                 selected_integration=selected_ai,
                 ignore_agent_tools=ignore_agent_tools,
@@ -1597,6 +1667,11 @@ def register(app: typer.Typer) -> None:
                                 preset_catalog = PresetCatalog(project_path)
                                 pack_info = preset_catalog.get_pack_info(preset)
                                 if not pack_info:
+                                    _record_init_plan_failure(
+                                        "preset",
+                                        preset,
+                                        f"Preset '{preset}' not found in catalog",
+                                    )
                                     console.print(
                                         f"[yellow]Warning:[/yellow] Preset '{preset}' not found in catalog. Skipping."
                                     )
@@ -1605,6 +1680,11 @@ def register(app: typer.Typer) -> None:
                                 ):
                                     from ..extensions import REINSTALL_COMMAND
 
+                                    _record_init_plan_failure(
+                                        "preset",
+                                        preset,
+                                        "bundled preset not found in installed package",
+                                    )
                                     console.print(
                                         f"[yellow]Warning:[/yellow] Preset '{preset}' is bundled with spec-kit "
                                         f"but could not be found in the installed package."
@@ -1623,6 +1703,9 @@ def register(app: typer.Typer) -> None:
                                             zip_path, speckit_ver
                                         )
                                     except PresetError as preset_err:
+                                        _record_init_plan_failure(
+                                            "preset", preset, str(preset_err)
+                                        )
                                         _print_cli_warning(
                                             "install",
                                             "preset",
@@ -1637,6 +1720,7 @@ def register(app: typer.Typer) -> None:
                                             except OSError:
                                                 pass
                     except Exception as preset_err:
+                        _record_init_plan_failure("preset", preset, str(preset_err))
                         _print_cli_warning(
                             "install",
                             "preset",
@@ -1672,6 +1756,9 @@ def register(app: typer.Typer) -> None:
                             any_extension_installed = True
                         except Exception as ext_err:
                             sanitized_ext = str(ext_err).replace("\n", " ").strip()
+                            _record_init_plan_failure(
+                                "extension", ext_spec, sanitized_ext
+                            )
                             tracker.error(
                                 f"extension-{i}",
                                 f"failed: {_escape_markup(sanitized_ext[:120])}",
