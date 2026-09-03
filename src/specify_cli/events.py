@@ -296,10 +296,10 @@ def _run_inline(command_name, payload, project_root, timeout, envelope="plain", 
             return result.returncode
         return 0
     except subprocess.TimeoutExpired:
-        print(f"Event {command_name} timed out", file=sys.stderr)
+        logger.error("Event %s timed out", command_name)
         return 2
     except Exception as e:
-        print(f"Event {command_name} error: {e}", file=sys.stderr)
+        logger.error("Event %s error: %s", command_name, e)
         return 2
 
 
@@ -1329,9 +1329,8 @@ def install_integration_events(
         if ev in canonical_to_native:
             filtered[ev] = handlers
         else:
-            print(
-                f"\u26a0\ufe0f  {integration.key} does not support '{ev}' events; skipping",
-                file=sys.stderr,
+            logger.warning(
+                "%s does not support '%s' events; skipping", integration.key, ev,
             )
 
     # #3: an empty resolved map (--events false, or override disabling events)
