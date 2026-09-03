@@ -9,9 +9,15 @@ from __future__ import annotations
 import json
 from typing import Any, NoReturn
 
-import click
 import typer
 from typer.core import TyperCommand
+
+try:
+    from typer._click.exceptions import UsageError as _UsageError
+except ModuleNotFoundError as error:
+    if error.name != "typer._click":
+        raise
+    from click import UsageError as _UsageError
 
 
 class InstalledListJSONCommand(TyperCommand):
@@ -21,7 +27,7 @@ class InstalledListJSONCommand(TyperCommand):
         json_output = "--json" in args
         try:
             return super().make_context(info_name, args, parent=parent, **extra)
-        except click.UsageError as error:
+        except _UsageError as error:
             if json_output:
                 emit_json_error(error, exit_code=error.exit_code)
             raise

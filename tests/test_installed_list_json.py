@@ -11,6 +11,7 @@ from specify_cli import app
 from specify_cli._installed_list_json import _normalized_source
 from specify_cli.extensions import ExtensionManager
 from specify_cli.presets import PresetManager
+from tests.conftest import strip_ansi
 
 
 runner = CliRunner()
@@ -309,29 +310,32 @@ def test_json_runtime_errors_are_stderr_only(command, manager, tmp_path, monkeyp
 @pytest.mark.parametrize("command", ["preset", "extension"])
 def test_non_json_usage_errors_keep_human_output(command):
     result = runner.invoke(app, [command, "list", "--unknown"])
+    output = strip_ansi(result.output)
 
     assert result.exit_code == 2
-    assert "Usage:" in result.output
-    assert "No such option: --unknown" in result.output
-    assert '{"error":' not in result.output
+    assert "Usage:" in output
+    assert "No such option: --unknown" in output
+    assert '{"error":' not in output
 
 
 @pytest.mark.parametrize("command", ["preset", "extension"])
 def test_json_help_remains_human_help(command):
     result = runner.invoke(app, [command, "list", "--json", "--help"])
+    output = strip_ansi(result.output)
 
     assert result.exit_code == 0
-    assert "--json" in result.output
+    assert "--json" in output
     assert result.stderr == ""
 
 
 @pytest.mark.parametrize("command", ["preset", "extension"])
 def test_jsonish_does_not_enable_json_usage_errors(command):
     result = runner.invoke(app, [command, "list", "--jsonish"])
+    output = strip_ansi(result.output)
 
     assert result.exit_code == 2
-    assert "No such option: --jsonish" in result.output
-    assert '{"error":' not in result.output
+    assert "No such option: --jsonish" in output
+    assert '{"error":' not in output
 
 
 def test_preset_list_json_preserves_catalog_source_for_corrupt_records(tmp_path, monkeypatch):
