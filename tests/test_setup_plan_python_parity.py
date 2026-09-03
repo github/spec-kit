@@ -374,3 +374,57 @@ def test_python_json_output_matches_powershell(repo: Path) -> None:
 
     assert py.returncode == ps.returncode == 0
     assert json_stdout(py) == json_stdout(ps)
+
+
+@requires_bash
+@pytest.mark.parametrize("args", [("--json",), ()], ids=["json", "text"])
+def test_all_variants_emit_feature_dir_not_specs_dir(
+    repo: Path, args: tuple[str, ...]
+) -> None:
+    r"""Pin the output key name, not just cross-port agreement.
+
+    The other tests here compare the ports against each other, so all three
+    could regress to ``SPECS_DIR`` together and still pass. This asserts the
+    contract absolutely: the key is ``FEATURE_DIR``, it carries the feature
+    directory rather than the specs root, and the old name is gone.
+    ``SPECS_DIR`` means the specs root in ``create-new-feature.sh``, so
+    re-emitting it here would reintroduce one name for two paths.
+
+    The value is matched by suffix because the ports legitimately differ in
+    path flavour -- under MSYS bash reports ``/tmp/...`` where the Python and
+    PowerShell ports report ``C:\...``. The suffix still separates
+    ``specs/001-my-feature`` from a bare ``specs``, which is the regression
+    this guards.
+    """
+    json_mode = args == ("--json",)
+    suffix = ("specs", "001-my-feature")
+
+    commands = [bash_cmd(repo, SCRIPT, *args), py_cmd(repo, SCRIPT, *args)]
+    if HAS_POWERSHELL:
+        commands.append(ps_cmd(repo, SCRIPT, *(("-Json",) if json_mode else ())))
+
+    for cmd in commands:
+        result = run(cmd, repo)
+        assert result.returncode == 0, result.stderr
+        assert "SPECS_DIR" not in result.stdout
+
+        if json_mode:
+            payload = json_stdout(result)
+            assert isinstance(payload, dict)
+            assert sorted(payload) == [
+                "BRANCH",
+                "FEATURE_DIR",
+                "FEATURE_SPEC",
+                "IMPL_PLAN",
+            ]
+            value = payload["FEATURE_DIR"]
+        else:
+            lines = dict(
+                line.split(": ", 1)
+                for line in result.stdout.splitlines()
+                if ": " in line
+            )
+            assert "FEATURE_DIR" in lines
+            value = lines["FEATURE_DIR"]
+
+        assert tuple(value.replace("\\", "/").rstrip("/").split("/")[-2:]) == suffix
