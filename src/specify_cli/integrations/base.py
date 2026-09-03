@@ -636,11 +636,15 @@ class IntegrationBase(ABC):
         * ``separator="."`` → ``/speckit.plan``, ``/speckit.git.commit``
         * ``separator="-"`` → ``/speckit-plan``, ``/speckit-git-commit``
 
+        A hyphen belongs to the segment it sits in rather than separating
+        segments, so ``__SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__`` resolves to
+        ``/speckit.agent-context.update``.
+
         *prefix* defaults to ``"/"`` but may be ``"$"`` for agents whose
         native skills invocation uses dollar-prefixed chat commands.
         """
         return re.sub(
-            r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_]*)__",
+            r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_-]*)__",
             lambda m: prefix
             + "speckit"
             + separator
