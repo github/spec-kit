@@ -89,9 +89,9 @@ tags:                              # 2-5 relevant tags
 
 - The file must exist inside the preset directory and be valid UTF-8.
 - It must not contain a managed-section marker (`<!-- SPECKIT ... -->`); such payloads are skipped to avoid corrupting the section.
-- Each file must be at or below 32 KiB, and the combined instructions across all enabled presets must fit a 64 KiB aggregate budget; the managed section is re-sent as agent context on every request, so the budget is deliberately small.
+- Each file must be at or below 32 KiB, and the combined instructions across all enabled presets must fit a 64 KiB aggregate budget (which counts the rendered block wrappers and separators, not just the raw payloads); the managed section is re-sent as agent context on every request, so the budget is deliberately small.
 
-Entries that fail any of these are dropped (fail-closed) and logged to stderr; the remaining ones still compose.
+Entries are dropped fail-closed. A missing, unreadable, non-UTF-8, oversized, over-budget, or marker-colliding file is skipped with a warning on stderr, while a path-unsafe file (absolute, parent-traversal, or one that escapes the preset directory) is skipped silently as a security measure. The remaining entries still compose.
 
 **Validation Checklist**:
 

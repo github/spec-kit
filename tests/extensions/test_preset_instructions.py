@@ -17,6 +17,7 @@ core validates metadata only; the opt-in agent-context extension owns the writes
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
@@ -36,6 +37,14 @@ PY_TWIN = (
     / "python"
     / "update_agent_context.py"
 )
+
+
+def _load_twin_module():
+    """Import the agent-context twin so its collector can be called directly."""
+    spec = importlib.util.spec_from_file_location("_uac_twin", PY_TWIN)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 RULES_A = "# Rules A\n\n- Rule a1\n- Rule a2 with an em-dash \u2014 keep it\n"
 RULES_B = "# Rules B\n\n- Rule b1\n"
@@ -403,3 +412,38 @@ def test_aggregate_instruction_budget_enforced(tmp_path):
     assert "PRESET:aaa" in section
     assert "PRESET:bbb" in section
     assert "PRESET:ccc" not in section
+
+
+def test_aggregate_budget_counts_wrapper_and_separators(tmp_path):
+    # A single preset that references one tiny file thousands of times: the raw
+    # payload sum stays under the cap, but the per-entry separators and the block
+    # wrapper push the rendered section over it. The accounting must count that
+    # overhead so the composed section never exceeds the aggregate cap.
+    _configure_agent_context(tmp_path)
+    presets = tmp_path / ".specify" / "presets"
+    pdir = presets / "flood" / "instructions"
+    pdir.mkdir(parents=True)
+    (presets / "flood" / "instructions" / "one.md").write_text("x", encoding="utf-8")
+    n = 25000
+    entries = "\n".join(["    - file: instructions/one.md"] * n)
+    (presets / "flood" / "preset.yml").write_text(
+        'schema_version: "1.0"\n'
+        "preset:\n  id: flood\n  name: flood\n  version: \"1.0.0\"\n  description: d\n"
+        "requires:\n  speckit_version: \">=0.6.0\"\n"
+        "provides:\n  instructions:\n" + entries + "\n",
+        encoding="utf-8",
+    )
+    (presets / ".registry").write_text(
+        json.dumps(
+            {"schema_version": "1.0", "presets": {"flood": {"version": "1.0.0", "enabled": True}}}
+        ),
+        encoding="utf-8",
+    )
+    uac = _load_twin_module()
+    blocks = uac._collect_preset_instruction_blocks(str(tmp_path))
+    assert blocks, "expected the flood preset to compose at least some entries"
+    rendered = "\n\n".join(content for _pid, content in blocks)
+    # The composed payload must stay within the advertised aggregate cap...
+    assert len(rendered.encode("utf-8")) <= uac._MAX_INSTRUCTION_TOTAL_BYTES
+    # ...which means the flood was truncated below its full entry count.
+    assert blocks[0][1].count("x") < n

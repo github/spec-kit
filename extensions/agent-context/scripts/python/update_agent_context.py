@@ -308,6 +308,9 @@ def _collect_preset_instruction_blocks(
             rel = entry.get("file")
             if not isinstance(rel, str) or not rel.strip():
                 continue
+            # Path-unsafe entries (absolute, backslash, parent traversal, or a
+            # target escaping the preset directory) are skipped silently: this is
+            # a security fail-closed decision, so no diagnostic is emitted.
             if rel.startswith("/") or "\\" in rel or ".." in rel.split("/"):
                 continue
             target = (preset_root / rel).resolve()
@@ -316,12 +319,20 @@ def _collect_preset_instruction_blocks(
             except ValueError:
                 continue
             if not target.is_file():
+                _err(
+                    f"agent-context: skipping instructions from preset '{preset_id}': "
+                    f"file '{rel}' not found."
+                )
                 continue
             # Reject an oversized file by its on-disk size before reading it, so
             # a huge member never gets allocated into memory.
             try:
                 size = target.stat().st_size
             except OSError:
+                _err(
+                    f"agent-context: skipping instructions from preset '{preset_id}': "
+                    f"file '{rel}' is not readable."
+                )
                 continue
             if size > _MAX_INSTRUCTION_FILE_BYTES:
                 _err(
@@ -333,13 +344,9 @@ def _collect_preset_instruction_blocks(
             try:
                 text = target.read_text(encoding="utf-8").strip()
             except (OSError, UnicodeDecodeError):
-                continue
-            entry_bytes = len(text.encode("utf-8"))
-            if total_bytes + entry_bytes > _MAX_INSTRUCTION_TOTAL_BYTES:
                 _err(
                     f"agent-context: skipping instructions from preset '{preset_id}': "
-                    f"aggregate instruction budget ({_MAX_INSTRUCTION_TOTAL_BYTES} "
-                    "bytes) exceeded."
+                    f"file '{rel}' is not readable UTF-8 text."
                 )
                 continue
             if marker_start in text or marker_end in text or _SPECKIT_MARKER_RE.search(text):
@@ -348,7 +355,28 @@ def _collect_preset_instruction_blocks(
                     "content contains a managed section marker."
                 )
                 continue
-            total_bytes += entry_bytes
+            # Count the bytes this entry actually adds to the rendered section,
+            # not just its raw payload: the first entry of a preset materializes
+            # the surrounding marker block, and every later entry adds a blank-line
+            # separator. Without this, a flood of tiny entries would slip past the
+            # aggregate cap even though the composed section is far larger.
+            entry_bytes = len(text.encode("utf-8"))
+            if parts:
+                overhead = 2  # the "\n\n" joining this entry to the previous one
+            else:
+                overhead = (
+                    len(f"<!-- SPECKIT PRESET:{preset_id} START -->")
+                    + len(f"<!-- SPECKIT PRESET:{preset_id} END -->")
+                    + 4  # surrounding newlines and the leading blank line
+                )
+            if total_bytes + entry_bytes + overhead > _MAX_INSTRUCTION_TOTAL_BYTES:
+                _err(
+                    f"agent-context: skipping instructions from preset '{preset_id}': "
+                    f"aggregate instruction budget ({_MAX_INSTRUCTION_TOTAL_BYTES} "
+                    "bytes) exceeded."
+                )
+                continue
+            total_bytes += entry_bytes + overhead
             parts.append(text)
         if parts:
             blocks.append((preset_id, "\n\n".join(parts)))
