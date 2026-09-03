@@ -16,6 +16,9 @@ See: https://github.com/deepseek-ai/deepseek-harness
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+from typing import Any
+
 from ..base import SkillsIntegration
 
 
@@ -46,6 +49,8 @@ class DshIntegration(SkillsIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> list[str] | None:
         """Build non-interactive CLI args for DSH.
 

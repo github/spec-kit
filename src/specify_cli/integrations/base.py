@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 from abc import ABC
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -245,6 +246,8 @@ class IntegrationBase(ABC):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> list[str] | None:
         """Build CLI arguments for non-interactive execution.
 
@@ -254,7 +257,37 @@ class IntegrationBase(ABC):
 
         Subclasses for CLI-based integrations should override this.
         """
+        self.validate_runtime_config(integration_args, integration_options)
         return None
+
+    def validate_runtime_config(
+        self,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+    ) -> None:
+        """Validate per-step CLI configuration for this integration.
+
+        Runtime configuration is deliberately separate from :meth:`options`,
+        which describes install-time ``--integration-options`` accepted by
+        ``specify init`` and the integration management commands. Integrations
+        opt in by overriding this hook and translating the validated values in
+        :meth:`build_exec_args` (or a custom :meth:`dispatch_command`).
+
+        The default accepts empty configuration for backward compatibility and
+        rejects non-empty values instead of silently ignoring a misspelled or
+        unsupported runtime option.
+        """
+        if integration_args:
+            raise ValueError(
+                f"Integration {self.key!r} does not support per-step "
+                "'integration_args'."
+            )
+        if integration_options:
+            option_names = ", ".join(sorted(str(key) for key in integration_options))
+            raise ValueError(
+                f"Integration {self.key!r} does not support per-step "
+                f"'integration_options' ({option_names})."
+            )
 
     def _resolve_executable(self) -> str:
         """Return the executable for this integration's CLI tool.
@@ -345,6 +378,8 @@ class IntegrationBase(ABC):
         model: str | None = None,
         timeout: int = 600,
         stream: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Dispatch a Spec Kit command through this integration's CLI.
 
@@ -365,11 +400,16 @@ class IntegrationBase(ABC):
         """
         import subprocess
 
+        self.validate_runtime_config(integration_args, integration_options)
         prompt = self.build_command_invocation(command_name, args)
         # When streaming to the terminal, request text output so the
         # user sees readable output instead of raw JSONL events.
         exec_args = self.build_exec_args(
-            prompt, model=model, output_json=not stream
+            prompt,
+            model=model,
+            output_json=not stream,
+            integration_args=integration_args,
+            integration_options=integration_options,
         )
 
         if exec_args is None:
@@ -1025,6 +1065,8 @@ class MarkdownIntegration(IntegrationBase):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> list[str] | None:
         if not self.config or not self.config.get("requires_cli"):
             return None
@@ -1116,6 +1158,8 @@ class TomlIntegration(IntegrationBase):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> list[str] | None:
         if not self.config or not self.config.get("requires_cli"):
             return None
@@ -1585,6 +1629,8 @@ class SkillsIntegration(IntegrationBase):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> list[str] | None:
         if not self.config or not self.config.get("requires_cli"):
             return None

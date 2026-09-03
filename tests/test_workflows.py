@@ -1098,6 +1098,142 @@ class TestCommandStep:
         assert result.output["integration"] == "claude"
         assert result.output["input"]["args"] == "login"
 
+    def test_per_step_integration_config_is_resolved_and_isolated(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.steps.command import CommandStep
+
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append((args, kwargs))
+            return type("Result", (), {"returncode": 0})()
+
+        monkeypatch.delenv(
+            "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
+        )
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: (
+                "/usr/bin/docker-agent"
+                if name in {"docker-agent", "/usr/bin/docker-agent"}
+                else None
+            ),
+        )
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        step = CommandStep()
+        context = StepContext(
+            inputs={"config": "./review.yaml", "agent": "reviewer"},
+            project_root=str(tmp_path),
+        )
+        first = step.execute(
+            {
+                "id": "review",
+                "command": "speckit.plan",
+                "integration": "docker-agent",
+                "integration_args": ["{{ inputs.config }}"],
+                "integration_options": {
+                    "agent": "{{ inputs.agent }}",
+                    "safety": "balanced",
+                },
+            },
+            context,
+        )
+        second = step.execute(
+            {
+                "id": "implement",
+                "command": "speckit.implement",
+                "integration": "docker-agent",
+                "integration_args": ["./implement.yaml"],
+                "integration_options": {"agent": "implementer"},
+            },
+            context,
+        )
+
+        assert first.status is StepStatus.COMPLETED
+        assert second.status is StepStatus.COMPLETED
+        assert first.output["integration_args"] == ["./review.yaml"]
+        assert first.output["integration_options"] == {
+            "agent": "reviewer",
+            "safety": "balanced",
+        }
+        assert calls[0][0] == [
+            "/usr/bin/docker-agent",
+            "run",
+            "--exec",
+            "./review.yaml",
+            "--agent",
+            "reviewer",
+            "--safety",
+            "balanced",
+            "--",
+            "/speckit-plan",
+        ]
+        assert calls[1][0] == [
+            "/usr/bin/docker-agent",
+            "run",
+            "--exec",
+            "./implement.yaml",
+            "--agent",
+            "implementer",
+            "--",
+            "/speckit-implement",
+        ]
+        assert calls[0][1]["cwd"] == str(tmp_path)
+        assert calls[1][1]["cwd"] == str(tmp_path)
+
+    def test_unsupported_runtime_config_fails_with_actionable_error(self):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.steps.command import CommandStep
+
+        result = CommandStep().execute(
+            {
+                "id": "review",
+                "command": "speckit.plan",
+                "integration": "claude",
+                "integration_options": {"saftey": "balanced"},
+            },
+            StepContext(),
+        )
+
+        assert result.status is StepStatus.FAILED
+        assert result.output["dispatched"] is False
+        assert "does not support per-step 'integration_options'" in (
+            result.error or ""
+        )
+        assert "saftey" in (result.error or "")
+
+    def test_validate_rejects_malformed_runtime_config(self):
+        from specify_cli.workflows.steps.command import CommandStep
+
+        step = CommandStep()
+        errors = step.validate(
+            {
+                "id": "review",
+                "command": "speckit.plan",
+                "integration_args": "./agent.yaml",
+                "integration_options": ["agent", "root"],
+            }
+        )
+
+        assert any("'integration_args' must be a list" in error for error in errors)
+        assert any(
+            "'integration_options' must be a mapping" in error for error in errors
+        )
+
+        errors = step.validate(
+            {
+                "id": "review",
+                "command": "speckit.plan",
+                "integration_args": [42],
+                "integration_options": {1: "root"},
+            }
+        )
+        assert any("'integration_args[0]' must be a string" in error for error in errors)
+        assert any("keys must be strings" in error for error in errors)
+
     def test_try_dispatch_resolves_rovodev_via_acli(self, tmp_path):
         """When acli is installed, rovodev dispatch succeeds via acli."""
         from unittest.mock import patch, MagicMock
@@ -11359,6 +11495,28 @@ steps:
     verdict_input: spec_verdict
 """
 
+    _WF_RUNTIME_CONFIG = """
+schema_version: "1.0"
+workflow:
+  id: "resume-runtime-config-wf"
+  name: "Resume Runtime Config WF"
+  version: "1.0.0"
+inputs:
+  config:
+    type: string
+    default: "./initial-agent.yaml"
+steps:
+  - id: implement
+    type: command
+    command: speckit.implement
+    integration: docker-agent
+    integration_args:
+      - "{{ inputs.config }}"
+    integration_options:
+      agent: root
+      safety: balanced
+"""
+
     def _engine(self, project_dir):
         from specify_cli.workflows.engine import WorkflowEngine
         return WorkflowEngine(project_dir)
@@ -11390,6 +11548,56 @@ steps:
         resumed = engine.resume(state.run_id)
         assert resumed.status == RunStatus.FAILED  # still "exit 1"
         assert resumed.inputs["cmd"] == "exit 1"
+
+    def test_resume_reuses_persisted_integration_config(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import WorkflowDefinition
+
+        calls = []
+        return_codes = iter((1, 0))
+
+        def fake_run(args, **kwargs):
+            calls.append(args)
+            return type("Result", (), {"returncode": next(return_codes)})()
+
+        monkeypatch.delenv(
+            "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
+        )
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: (
+                "/usr/bin/docker-agent"
+                if name in {"docker-agent", "/usr/bin/docker-agent"}
+                else None
+            ),
+        )
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        definition = WorkflowDefinition.from_string(self._WF_RUNTIME_CONFIG)
+        engine = self._engine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status is RunStatus.FAILED
+        assert state.step_results["implement"]["integration_args"] == [
+            "./initial-agent.yaml"
+        ]
+        assert state.step_results["implement"]["integration_options"] == {
+            "agent": "root",
+            "safety": "balanced",
+        }
+
+        resumed = engine.resume(
+            state.run_id, {"config": "./changed-on-resume.yaml"}
+        )
+
+        assert resumed.status is RunStatus.COMPLETED
+        assert resumed.inputs["config"] == "./changed-on-resume.yaml"
+        assert len(calls) == 2
+        assert "./initial-agent.yaml" in calls[0]
+        assert "./initial-agent.yaml" in calls[1]
+        assert "./changed-on-resume.yaml" not in calls[1]
 
     def test_resume_merges_and_coerces_typed_input(self, project_dir):
         import json as _json

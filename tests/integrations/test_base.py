@@ -1,5 +1,6 @@
 """Tests for IntegrationOption, IntegrationBase, MarkdownIntegration, and primitives."""
 
+import inspect
 import shlex
 import sys
 from types import SimpleNamespace
@@ -50,6 +51,23 @@ class TestIntegrationBase:
 
     def test_options_default_empty(self):
         assert StubIntegration.options() == []
+
+    def test_runtime_config_default_accepts_empty_and_rejects_non_empty(self):
+        integration = StubIntegration()
+
+        integration.validate_runtime_config([], {})
+        with pytest.raises(ValueError, match="integration_args"):
+            integration.validate_runtime_config(["./agent.yaml"], {})
+        with pytest.raises(ValueError, match="integration_options.*unknown"):
+            integration.validate_runtime_config([], {"unknown": "value"})
+
+    def test_all_builtin_exec_builders_accept_runtime_config(self):
+        from specify_cli.integrations import INTEGRATION_REGISTRY
+
+        for key, integration in INTEGRATION_REGISTRY.items():
+            parameters = inspect.signature(integration.build_exec_args).parameters
+            assert "integration_args" in parameters, key
+            assert "integration_options" in parameters, key
 
     def test_shared_commands_dir(self):
         i = StubIntegration()

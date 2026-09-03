@@ -100,6 +100,30 @@ Invoke an installed Spec Kit command by name via the integration CLI:
   model: "claude-sonnet-4-20250514"   # Optional: override model
 ```
 
+CLI integrations can expose per-step positional arguments and named runtime
+options. For example, Docker Agent accepts an agent reference plus validated
+`agent`, `model`, and `safety` options:
+
+```yaml
+- id: specify-with-docker-agent
+  command: speckit.specify
+  integration: docker-agent
+  integration_args:
+    - "{{ inputs.agent_config }}"
+  integration_options:
+    agent: root
+    safety: balanced
+  input:
+    args: "{{ inputs.spec }}"
+```
+
+`integration_args` must be an ordered list of strings. Expressions are resolved
+one element at a time. `integration_options` must be a mapping with string keys;
+its values are likewise expression-resolved and validated by the selected
+integration. Non-empty runtime configuration is rejected when an integration
+does not support it. Resolved values are stored in workflow run state and reused
+when the current command step is resumed.
+
 ### Prompt Steps
 
 Send an arbitrary inline prompt to an integration CLI (no command file needed):

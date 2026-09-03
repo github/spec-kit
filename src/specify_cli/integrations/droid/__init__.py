@@ -10,6 +10,9 @@ See: https://docs.factory.ai/cli/configuration/skills
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+from typing import Any
+
 from ..base import SkillsIntegration
 
 
@@ -90,6 +93,8 @@ class DroidIntegration(SkillsIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> list[str] | None:
         """Build CLI arguments for non-interactive ``droid`` execution.
 

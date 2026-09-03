@@ -1,5 +1,8 @@
 """opencode integration."""
 
+from collections.abc import Mapping, Sequence
+from typing import Any
+
 from ..base import MarkdownIntegration
 
 
@@ -43,6 +46,8 @@ class OpencodeIntegration(MarkdownIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> list[str] | None:
         args = [self._resolve_executable(), "run"]
         # Apply operator-injected extra args before the prompt-derived

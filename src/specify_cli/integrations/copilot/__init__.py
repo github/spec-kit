@@ -18,6 +18,8 @@ agents:
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+
 import json
 import os
 import shutil
@@ -305,6 +307,8 @@ class CopilotIntegration(IntegrationBase):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> list[str] | None:
         # GitHub Copilot CLI uses ``copilot -p "prompt"`` for
         # non-interactive mode.  --yolo enables all permissions
@@ -348,6 +352,8 @@ class CopilotIntegration(IntegrationBase):
         model: str | None = None,
         timeout: int = 600,
         stream: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Dispatch via ``--agent speckit.<stem>`` instead of slash-commands.
 
@@ -359,6 +365,8 @@ class CopilotIntegration(IntegrationBase):
         (``/speckit-<stem>``).
         """
         import subprocess
+
+        self.validate_runtime_config(integration_args, integration_options)
 
         stem = command_name
         if stem.startswith("speckit."):

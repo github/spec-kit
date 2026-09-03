@@ -10,6 +10,9 @@ See: https://cli.devin.ai/docs/extensibility/skills/overview
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+from typing import Any
+
 from ..base import IntegrationOption, SkillsIntegration
 
 
@@ -58,6 +61,8 @@ class DevinIntegration(SkillsIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> list[str] | None:
         """Build non-interactive CLI args for Devin for Terminal.
 

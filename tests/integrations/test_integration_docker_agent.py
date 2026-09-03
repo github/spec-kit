@@ -45,6 +45,97 @@ def test_extra_args_are_applied_to_build_exec_args(monkeypatch):
     ]
 
 
+def test_per_step_runtime_config_builds_ordered_argv(monkeypatch):
+    monkeypatch.delenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False)
+    monkeypatch.setattr(
+        "shutil.which",
+        lambda name: "/usr/bin/docker-agent" if name == "docker-agent" else None,
+    )
+
+    args = DockerAgentIntegration().build_exec_args(
+        "prompt",
+        output_json=False,
+        integration_args=["./agent.yaml"],
+        integration_options={
+            "agent": "root",
+            "safety": "balanced",
+            "model": "openai/gpt-5",
+        },
+    )
+
+    assert args == [
+        "docker-agent",
+        "run",
+        "--exec",
+        "./agent.yaml",
+        "--agent",
+        "root",
+        "--safety",
+        "balanced",
+        "--model",
+        "openai/gpt-5",
+        "--",
+        "prompt",
+    ]
+
+
+def test_per_step_args_precede_legacy_extra_flags(monkeypatch):
+    monkeypatch.setenv(
+        "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", "--hide-tool-results"
+    )
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    args = DockerAgentIntegration().build_exec_args(
+        "prompt",
+        output_json=False,
+        integration_args=["./agent.yaml"],
+    )
+
+    assert args == [
+        "docker-agent",
+        "run",
+        "--exec",
+        "./agent.yaml",
+        "--hide-tool-results",
+        "--",
+        "prompt",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [
+        ({"unknown": "value"}, "unknown integration option"),
+        ({"agent": ""}, "must be a non-empty string"),
+        ({"safety": "unsafe"}, "must be one of"),
+    ],
+)
+def test_per_step_runtime_options_are_validated(options, message):
+    with pytest.raises(ValueError, match=message):
+        DockerAgentIntegration().build_exec_args(
+            "prompt",
+            integration_args=["./agent.yaml"],
+            integration_options=options,
+        )
+
+
+def test_per_step_runtime_args_reject_multiple_agent_references():
+    with pytest.raises(ValueError, match="at most one"):
+        DockerAgentIntegration().build_exec_args(
+            "prompt",
+            integration_args=["./first.yaml", "./second.yaml"],
+        )
+
+
+@pytest.mark.parametrize("integration_args", [[""], [42]])
+def test_per_step_runtime_args_reject_malformed_values(integration_args):
+    with pytest.raises(ValueError, match="non-empty strings"):
+        DockerAgentIntegration().build_exec_args(
+            "prompt",
+            integration_args=integration_args,
+        )
+
+
 def test_prompt_is_passed_after_agent_config(monkeypatch):
     monkeypatch.setenv(
         "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", "./agent.yaml"

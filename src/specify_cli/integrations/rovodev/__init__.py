@@ -8,6 +8,7 @@ under ``.rovodev/prompts/`` and a ``prompts.yml`` manifest.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +64,8 @@ class RovodevIntegration(SkillsIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> list[str] | None:
         """Build non-interactive ACLI args for RovoDev.
 

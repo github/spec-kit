@@ -9,6 +9,9 @@ See: https://dev.meta.ai/docs/muse-code
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+from typing import Any
+
 from ..base import IntegrationOption, SkillsIntegration
 
 
@@ -50,6 +53,8 @@ class MuseIntegration(SkillsIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> list[str] | None:
         # Muse Code uses ``muse exec "<prompt>"`` for non-interactive mode.
         # Resolve argv[0] via the shared executable resolver so operators can
