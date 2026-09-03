@@ -114,8 +114,17 @@ def collation_range_locale() -> str | None:
 
 
 def run(
-    cmd: list[str], repo: Path, env: dict[str, str] | None = None
+    cmd: list[str],
+    repo: Path,
+    env: dict[str, str] | None = None,
+    timeout: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
+    """Run a script variant.
+
+    ``timeout`` guards cases whose regression mode is a hang rather than a bad
+    value; without it such a failure would stall the suite instead of failing
+    it. ``subprocess.TimeoutExpired`` propagates so the test reports the hang.
+    """
     return subprocess.run(
         cmd,
         cwd=repo,
@@ -123,6 +132,7 @@ def run(
         text=True,
         check=False,
         env=env if env is not None else clean_env(),
+        timeout=timeout,
     )
 
 

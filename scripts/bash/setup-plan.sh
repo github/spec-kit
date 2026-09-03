@@ -4,7 +4,6 @@ set -e
 
 # Parse command line arguments
 JSON_MODE=false
-ARGS=()
 
 for arg in "$@"; do
     case "$arg" in
@@ -18,7 +17,8 @@ for arg in "$@"; do
             exit 0
             ;;
         *)
-            ARGS+=("$arg")
+            echo "ERROR: Unknown option '$arg'" >&2
+            exit 1
             ;;
     esac
 done

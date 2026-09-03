@@ -41,6 +41,8 @@ src/specify_cli/integrations/
 │   └── __init__.py
 ├── copilot/               # Example: IntegrationBase subclass (custom setup)
 │   └── __init__.py
+├── docker_agent/          # Example: Docker Agent SkillsIntegration subclass
+│   └── __init__.py
 └── ...                    # One subpackage per supported agent
 ```
 
@@ -504,7 +506,7 @@ Disclosure is **continuous**, not a one-time event. A single AI-disclosure parag
 ### Opening pull requests
 
 - Before opening a pull request, check whether the account that will file it already has three open pull requests in this repository.
-- If so, alert the user that additional submissions may receive lower review priority and ask for explicit permission to proceed. Do not assume consent.
+- If so, alert the user that additional submissions may receive lower review priority and ask for explicit permission to proceed. Do not assume consent. If the user is unavailable to provide that permission, including during autonomous or non-interactive operation, do not open the pull request. Preserve the work on a branch and report that confirmation is required.
 
 ### Commits
 

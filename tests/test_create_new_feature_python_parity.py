@@ -1202,3 +1202,56 @@ def test_python_dash_prefixed_short_name_matches_bash(
     assert json_stdout(py) == json_stdout(bash)
     expected = f"001-{short_name.lstrip('-').lower()}"
     assert json_stdout(bash)["BRANCH_NAME"] == expected
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.parametrize(
+    "description",
+    ["!!! ??? ***", "добавить", "添加用户"],
+    ids=["punctuation_only", "cyrillic", "han"],
+)
+def test_powershell_survives_description_with_no_ascii_words(
+    tmp_path: Path, description: str
+):
+    """A description with no [a-z0-9] characters must not crash the PS twin.
+
+    ``ConvertTo-CleanBranchName`` blanks every non-ASCII character, so the
+    fallback pipeline yields nothing and ``[string]::Join`` received ``$null``
+    — an ArgumentNullException, made terminating by
+    ``$ErrorActionPreference = 'Stop'``. The script died with a .NET stack
+    trace and exit 1 where the bash and Python twins both return an empty
+    suffix. This fires for any feature phrased in a non-Latin script.
+    """
+    repo = _setup_repo(tmp_path)
+
+    ps = run(ps_cmd(repo, SCRIPT, "-Json", "-DryRun", description), repo)
+
+    assert ps.returncode == 0, ps.stderr
+    assert "ArgumentNullException" not in ps.stderr
+    assert "Join" not in ps.stderr
+    assert json_stdout(ps)["BRANCH_NAME"] == "001-"
+
+
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_no_ascii_word_description_matches_across_twins(tmp_path: Path):
+    """All three twins agree on the branch name for such a description."""
+    description = "добавить"
+
+    bash_repo = _setup_repo(tmp_path, "b")
+    py_repo = _setup_repo(tmp_path, "p")
+    ps_repo = _setup_repo(tmp_path, "s")
+
+    bash = run(bash_cmd(bash_repo, SCRIPT, "--json", "--dry-run", description), bash_repo)
+    py = run(py_cmd(py_repo, SCRIPT, "--json", "--dry-run", description), py_repo)
+    ps = run(ps_cmd(ps_repo, SCRIPT, "-Json", "-DryRun", description), ps_repo)
+
+    assert bash.returncode == py.returncode == ps.returncode == 0, (
+        bash.stderr, py.stderr, ps.stderr,
+    )
+    names = {
+        json_stdout(bash)["BRANCH_NAME"],
+        json_stdout(py)["BRANCH_NAME"],
+        json_stdout(ps)["BRANCH_NAME"],
+    }
+    assert names == {"001-"}, names

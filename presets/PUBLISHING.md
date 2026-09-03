@@ -68,6 +68,8 @@ preset:
 
 requires:
   speckit_version: ">=0.1.0"      # Required spec-kit version
+  extensions:                      # Optional: extensions this preset needs
+    - "companion-extension"
 
 provides:
   templates:
@@ -92,6 +94,41 @@ tags:                              # 2-5 relevant tags
 - ✅ Template names are lowercase with hyphens only
 - ✅ Command names use dot notation (e.g. `speckit.specify`)
 - ✅ Tags are lowercase and descriptive
+
+#### Declaring extension dependencies
+
+If your preset overrides commands that call into an extension, declare it in
+`requires.extensions`. Without the extension the preset still installs and the
+overrides fall through to the core workflow, so nothing errors — the feature
+just silently does less than the user expects. Declaring the dependency makes
+`specify preset add` say so, and spell out how to resolve it.
+
+Use a bare id, or a mapping when you need a version constraint or an optional
+dependency:
+
+```yaml
+requires:
+  speckit_version: ">=0.9.0"
+  extensions:
+    - "companion-extension"              # required, any version
+    - id: "other-extension"
+      version: ">=1.2.0,<2"              # optional PEP 440 specifier
+      required: false                    # optional, defaults to true
+```
+
+`version` accepts any PEP 440 specifier, not just a lower bound — upper bounds
+(`<2`), exact pins (`==1.2.0`), and exclusions (`!=1.3.0`) all work.
+
+Notes:
+
+- The field is optional. A preset that declares nothing behaves exactly as before.
+- A dependency that is missing, stale, disabled, or version-unsatisfied produces a **warning, not a failure** — the install still succeeds.
+- A disabled extension counts as unmet, and so does one whose registry entry survives after its files were removed. Resolution skips both, so the preset is just as inert as if the extension were absent.
+- The warning names an exact command for the missing, stale, and disabled cases. For a version mismatch it states the constraint to satisfy rather than naming a command, because `specify extension update` only moves forward to the catalog release and cannot satisfy an upper bound, a pin, or a downgrade.
+- A recorded version that cannot be parsed is treated as uncomparable rather than as a mismatch, so an extension whose registry version reads `unknown` is not reported as failing a constraint it was never evaluated against.
+- An extension present on disk but absent from the registry counts as satisfied. Resolution admits unregistered directories, so the preset works and warning about it would be a false alarm — though with no recorded version, a `version` constraint cannot be checked against it.
+- `required: false` documents an enhancing-but-optional extension and is never warned about.
+- Declare it in `preset.yml`, not only in your catalog entry. The catalog is not consulted for `--dev` and `--from <url>` installs, so the manifest is the only copy present on every install path.
 
 ### 3. Test Locally
 

@@ -20,6 +20,7 @@ CONFIG_FILENAME = "bundle-catalogs.yml"
 # reject an unsupported major version so a file written by a newer/incompatible
 # Spec Kit fails fast instead of being parsed under the wrong assumptions.
 CONFIG_SCHEMA_VERSION = "1.0"
+CATALOG_SCHEMA_VERSION = "1.0"
 
 
 class InstallPolicy(str, Enum):
@@ -106,10 +107,11 @@ class CatalogSource:
 
 
 def _parse_tags(value: Any, entry_id: str) -> tuple[str, ...]:
-    """Coerce a catalog entry's ``tags`` into a tuple of strings.
+    """Parse a catalog entry's ``tags`` into a tuple of strings.
 
     Catalogs are untrusted input: a bare string would otherwise be iterated
-    character-by-character, so reject anything that is not a list/tuple.
+    character-by-character, so reject anything that is not a list/tuple, and
+    reject any non-string member instead of silently coercing it.
     """
     if value is None:
         return ()
@@ -117,7 +119,11 @@ def _parse_tags(value: Any, entry_id: str) -> tuple[str, ...]:
         raise BundlerError(
             f"Catalog entry '{entry_id}': 'tags' must be a list of strings."
         )
-    return tuple(str(t) for t in value)
+    if any(not isinstance(item, str) for item in value):
+        raise BundlerError(
+            f"Catalog entry '{entry_id}': 'tags' must be a list of strings."
+        )
+    return tuple(value)
 
 
 def _parse_verified(value: Any, entry_id: str) -> bool:
@@ -215,6 +221,16 @@ def load_catalog_payload(data: Any) -> dict[str, CatalogEntry]:
     """Parse a catalog JSON payload into ``{bundle_id: CatalogEntry}``."""
     if not isinstance(data, dict):
         raise BundlerError("Catalog payload must be a JSON object.")
+    schema_version = data.get("schema_version")
+    if schema_version is not None and (
+        str(schema_version).strip().split(".")[0]
+        != CATALOG_SCHEMA_VERSION.split(".")[0]
+    ):
+        raise BundlerError(
+            f"Unsupported catalog schema version "
+            f"'{str(schema_version).strip()}'; this Spec Kit understands "
+            f"version {CATALOG_SCHEMA_VERSION}."
+        )
     bundles_raw = data.get("bundles")
     if not isinstance(bundles_raw, dict):
         raise BundlerError("Catalog payload is missing a 'bundles' object.")

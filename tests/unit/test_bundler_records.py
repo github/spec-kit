@@ -209,3 +209,73 @@ def test_load_records_accepts_forward_compatible_minor_schema(tmp_path: Path):
     payload = {"schema_version": "1.5", "bundles": []}
     records_path(tmp_path).write_text(json.dumps(payload), encoding="utf-8")
     assert load_records(tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    "field,message",
+    [
+        ("bundle_id", "missing its 'bundle_id'"),
+        ("version", "missing its 'version'"),
+    ],
+)
+def test_load_records_rejects_explicit_null_record_field(
+    tmp_path: Path, field: str, message: str
+):
+    """An explicit JSON ``null`` is how a corrupt record spells an empty field.
+
+    ``str(data.get(field, ""))`` defaults only a *missing* key, so a
+    present-but-null value became the literal text ``"None"`` — non-empty, so
+    it sailed past the required-field checks and the record was accepted as a
+    bundle actually named ``"None"``. Mirrors ``manifest._text``.
+    """
+    (tmp_path / ".specify").mkdir()
+    record = {"bundle_id": "a", "version": "1.0.0", "contributed_components": []}
+    record[field] = None
+    payload = {"schema_version": "1.0", "bundles": [record]}
+    records_path(tmp_path).write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(BundlerError, match=message):
+        load_records(tmp_path)
+
+
+def test_load_records_rejects_explicit_null_component_id(tmp_path: Path):
+    """A null component id became ``"None"`` and entered the refcount.
+
+    ``components_still_needed`` would then report a phantom
+    ``('presets', 'None')`` as protected.
+    """
+    (tmp_path / ".specify").mkdir()
+    payload = {
+        "schema_version": "1.0",
+        "bundles": [
+            {
+                "bundle_id": "a",
+                "version": "1.0.0",
+                "contributed_components": [{"kind": "presets", "id": None}],
+            }
+        ],
+    }
+    records_path(tmp_path).write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(BundlerError, match="missing its 'id'"):
+        load_records(tmp_path)
+
+
+def test_load_records_accepts_explicit_null_installed_at(tmp_path: Path):
+    """``installed_at`` is optional, so a null must become "" — not "None"."""
+    (tmp_path / ".specify").mkdir()
+    payload = {
+        "schema_version": "1.0",
+        "bundles": [
+            {
+                "bundle_id": "a",
+                "version": "1.0.0",
+                "installed_at": None,
+                "contributed_components": [],
+            }
+        ],
+    }
+    records_path(tmp_path).write_text(json.dumps(payload), encoding="utf-8")
+
+    records = load_records(tmp_path)
+    assert records[0].installed_at == ""
