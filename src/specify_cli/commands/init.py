@@ -140,14 +140,25 @@ def _seed_preview_home(staged_home: Path, real_home: Path) -> None:
 
 
 _INIT_PLAN_ENV = "SPECIFY_INIT_PLAN_PATH"
-_INIT_STAGING_CONFIRMATION_ENV = "SPECIFY_INIT_STAGING_CONFIRMATION"
+_PREVIEW_CHILD_ACTIVE = False
+
+
+def _run_staged_preview_child() -> None:
+    """Run the CLI with the existing-directory prompt bypass scoped in-process."""
+    global _PREVIEW_CHILD_ACTIVE
+
+    from specify_cli import main
+
+    _PREVIEW_CHILD_ACTIVE = True
+    try:
+        main()
+    finally:
+        _PREVIEW_CHILD_ACTIVE = False
 
 
 def _staging_confirmation_is_accepted() -> bool:
     """Return whether a staged preview child may skip its directory prompt."""
-    return bool(os.environ.get(_INIT_PLAN_ENV)) and (
-        os.environ.get(_INIT_STAGING_CONFIRMATION_ENV) == "1"
-    )
+    return _PREVIEW_CHILD_ACTIVE and bool(os.environ.get(_INIT_PLAN_ENV))
 
 
 def _record_init_plan_action(
@@ -831,6 +842,7 @@ def _preview_seed_paths(
                 pass
 
     extras = {
+        "bob": (".bob/skills",),
         "copilot": (
             ".github/skills",
             ".github/prompts",
@@ -933,7 +945,10 @@ def _preview_init(
         command = [
             sys.executable,
             "-c",
-            "from specify_cli import main; main()",
+            (
+                "from specify_cli.commands.init import "
+                "_run_staged_preview_child; _run_staged_preview_child()"
+            ),
             "init",
             "--non-interactive",
             "--integration",
@@ -960,7 +975,6 @@ def _preview_init(
         plan_path = Path(tmp_dir) / "init-plan.jsonl"
         env = _preview_subprocess_env(staged_home)
         env[_INIT_PLAN_ENV] = str(plan_path)
-        env[_INIT_STAGING_CONFIRMATION_ENV] = "1"
         result = subprocess.run(
             command,
             cwd=staged_root if here else Path.cwd(),

@@ -64,6 +64,78 @@ def test_preview_seed_paths_include_cross_integration_event_targets() -> None:
     assert Path(".opencode/plugin/speckit-events.ts") in paths
 
 
+def test_preview_seed_paths_include_both_bob_layouts() -> None:
+    paths = _preview_seed_paths("bob", None, "sh")
+
+    assert Path(".bob/commands") in paths
+    assert Path(".bob/skills") in paths
+
+
+def test_dry_run_preserves_bob_skills_mode_when_both_layouts_exist(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "bob-layout-preview"
+    legacy_command = target / ".bob" / "commands" / "speckit.plan.md"
+    legacy_command.parent.mkdir(parents=True)
+    legacy_command.write_text("# stale command\n", encoding="utf-8")
+    managed_skill = target / ".bob" / "skills" / "speckit-plan" / "SKILL.md"
+    managed_skill.parent.mkdir(parents=True)
+    managed_skill.write_text("# managed skill\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--force",
+            "--dry-run",
+            "--json",
+            "--integration",
+            "bob",
+            "--script",
+            "sh",
+            "--ignore-agent-tools",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    action_paths = {action["path"] for action in json.loads(result.output)["actions"]}
+    assert ".bob/skills/speckit-specify/SKILL.md" in action_paths
+    assert ".bob/commands/speckit.specify.md" not in action_paths
+
+
+def test_public_staging_environment_cannot_bypass_directory_guard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "existing-project"
+    target.mkdir()
+    sentinel = target / "keep.txt"
+    sentinel.write_text("keep\n", encoding="utf-8")
+    monkeypatch.setenv("SPECIFY_INIT_PLAN_PATH", str(tmp_path / "forged-plan.jsonl"))
+    monkeypatch.setenv("SPECIFY_INIT_STAGING_CONFIRMATION", "1")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--non-interactive",
+            "--integration",
+            "copilot",
+            "--script",
+            "sh",
+            "--ignore-agent-tools",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 1, result.output
+    assert "Directory already exists" in result.output
+    assert sentinel.read_text(encoding="utf-8") == "keep\n"
+    assert not (target / ".specify").exists()
+
+
 @pytest.mark.parametrize(
     "content",
     [
