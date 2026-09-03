@@ -12,7 +12,7 @@ import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
-from specify_cli._assets import _locate_bundled_extension
+from specify_cli._assets import _locate_bundled_extension, _locate_bundled_preset
 from specify_cli.commands.init import (
     _is_within_root,
     _normalize_fs_path,
@@ -21,6 +21,7 @@ from specify_cli.commands.init import (
     _preview_seed_paths,
     _seed_preview_home,
     _snapshot_files,
+    _snapshot_tree_entries,
     _stage_project_copy,
     _strip_windows_extended_prefix,
 )
@@ -55,6 +56,26 @@ def test_seed_preview_home_copies_auth_config(tmp_path: Path) -> None:
     staged_auth = staged_home / ".specify" / "auth.json"
     assert staged_auth.read_text(encoding="utf-8") == '{"providers": []}\n'
     assert staged_auth.stat().st_mode & 0o777 == auth_config.stat().st_mode & 0o777
+
+
+def test_seed_preview_home_copies_symlinked_read_only_config(tmp_path: Path) -> None:
+    real_home = tmp_path / "real-home"
+    external_auth = tmp_path / "external-auth.json"
+    external_auth.write_text('{"providers": []}\n', encoding="utf-8")
+    auth_config = real_home / ".specify" / "auth.json"
+    auth_config.parent.mkdir(parents=True)
+    try:
+        auth_config.symlink_to(external_auth)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available")
+    staged_home = tmp_path / "staged-home"
+    staged_home.mkdir()
+
+    _seed_preview_home(staged_home, real_home)
+
+    staged_auth = staged_home / ".specify" / "auth.json"
+    assert staged_auth.read_text(encoding="utf-8") == '{"providers": []}\n'
+    assert not staged_auth.is_symlink()
 
 
 def test_preview_seed_paths_include_cross_integration_event_targets() -> None:
@@ -136,6 +157,74 @@ def test_public_staging_environment_cannot_bypass_directory_guard(
     assert not (target / ".specify").exists()
 
 
+def test_dry_run_child_ignores_pythonpath_sitecustomize(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    caller = tmp_path / "untrusted-caller"
+    caller.mkdir()
+    marker = tmp_path / "sitecustomize-executed"
+    (caller / "sitecustomize.py").write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('executed\\n', encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(caller)
+    monkeypatch.setenv("PYTHONPATH", str(caller))
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(tmp_path / "isolated-preview"),
+            "--dry-run",
+            "--json",
+            "--integration",
+            "copilot",
+            "--script",
+            "sh",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    json.loads(result.output)
+    assert not marker.exists()
+
+
+def test_dry_run_child_does_not_import_shadow_package_from_caller_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    caller = tmp_path / "untrusted-caller"
+    shadow_package = caller / "specify_cli"
+    shadow_package.mkdir(parents=True)
+    marker = tmp_path / "shadow-package-executed"
+    (shadow_package / "__init__.py").write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('executed\\n', encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(caller)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(tmp_path / "isolated-shadow-preview"),
+            "--dry-run",
+            "--json",
+            "--integration",
+            "copilot",
+            "--script",
+            "sh",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    json.loads(result.output)
+    assert not marker.exists()
+
+
 @pytest.mark.parametrize(
     "content",
     [
@@ -171,6 +260,15 @@ def test_preview_child_failure_message_ignores_rich_panel_line_wrapping() -> Non
     )
 
     assert "escapes project root" in _preview_child_failure_message(result)
+
+
+def test_snapshot_tree_entries_detects_empty_directory_creation(
+    tmp_path: Path,
+) -> None:
+    before = _snapshot_tree_entries(tmp_path)
+    (tmp_path / "created-empty-directory").mkdir()
+
+    assert _snapshot_tree_entries(tmp_path) != before
 
 
 @pytest.mark.parametrize(
@@ -254,6 +352,11 @@ def test_dry_run_json_is_machine_readable_and_has_no_target_writes(tmp_path: Pat
     plan_action = _action_for(payload, ".github/skills/speckit-plan/SKILL.md")
     assert plan_action["provenance"] == "integration"
     assert plan_action["source_id"] == "copilot"
+    manifest_action = _action_for(
+        payload, ".specify/integrations/copilot.manifest.json"
+    )
+    assert manifest_action["provenance"] == "integration"
+    assert manifest_action["source_id"] == "copilot"
     assert {
         action["provenance"] for action in payload["actions"]
     } <= _PROVENANCE_CATEGORIES
@@ -433,7 +536,7 @@ def test_non_forced_dry_run_human_preview_lists_conflicting_artifacts(
     lines = result.output.splitlines()
     assert any(line.startswith("conflict") and line.endswith("target directory exists; applying this plan requires --force") for line in lines)
     assert any(
-        line.startswith("overwrite  .github/skills/speckit-plan/SKILL.md")
+        line.startswith("conflict   .github/skills/speckit-plan/SKILL.md")
         for line in lines
     )
     assert any(
@@ -498,6 +601,120 @@ def test_dry_run_reports_skip_for_already_installed_bundled_workflow(
     assert extension.read_text(encoding="utf-8") == extension_before
 
 
+def test_dry_run_preserves_preset_constitution_provenance_on_reinit(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "preset-constitution-preview"
+    arguments = [
+        "init",
+        str(target),
+        "--force",
+        "--integration",
+        "copilot",
+        "--script",
+        "sh",
+        "--ignore-agent-tools",
+        "--preset",
+        "self-test",
+    ]
+    created = CliRunner().invoke(app, arguments, catch_exceptions=False)
+    assert created.exit_code == 0, created.output
+
+    preview = CliRunner().invoke(
+        app, [*arguments, "--dry-run", "--json"], catch_exceptions=False
+    )
+
+    assert preview.exit_code == 0, preview.output
+    constitution_action = _action_for(
+        json.loads(preview.output), ".specify/memory/constitution.md"
+    )
+    assert constitution_action["action"] == "skip"
+    assert constitution_action["provenance"] == "preset"
+    assert constitution_action["source_id"] == "self-test"
+
+
+@pytest.mark.parametrize(
+    ("arguments", "error_fragment"),
+    [
+        (["--integration", "copilot", "--script", "sh"], "Must specify"),
+        (["project", "--integration", "unknown-agent"], "Unknown integration"),
+        (
+            ["project", "--integration", "copilot", "--script", "invalid"],
+            "Invalid script type",
+        ),
+        (
+            ["project", "--integration", "generic", "--script", "sh"],
+            "requires --integration-options",
+        ),
+    ],
+)
+def test_dry_run_json_validation_errors_use_single_json_envelope(
+    arguments: list[str], error_fragment: str
+) -> None:
+    result = CliRunner().invoke(
+        app,
+        ["init", *arguments, "--dry-run", "--json", "--ignore-agent-tools"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload["dry_run"] is True
+    assert error_fragment in payload["error"]
+    assert payload["actions"] == []
+
+
+def test_dry_run_json_missing_agent_cli_uses_single_json_envelope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("specify_cli.commands.init.check_tool", lambda _name: False)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(tmp_path / "missing-cli-preview"),
+            "--dry-run",
+            "--json",
+            "--integration",
+            "kimi",
+            "--script",
+            "sh",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert "kimi not found" in payload["error"]
+    assert payload["actions"] == []
+
+
+def test_dry_run_json_file_target_uses_single_json_envelope(tmp_path: Path) -> None:
+    target = tmp_path / "not-a-directory"
+    target.write_text("file\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--dry-run",
+            "--json",
+            "--integration",
+            "copilot",
+            "--script",
+            "sh",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert "exists but is not a directory" in payload["error"]
+    assert payload["actions"] == []
+
+
 def test_dry_run_leaves_url_extension_unresolved_without_creating_target(
     tmp_path: Path,
 ) -> None:
@@ -531,6 +748,31 @@ def test_dry_run_leaves_url_extension_unresolved_without_creating_target(
         "source_id": extension_url,
         "reason": "URL extensions are not fetched during dry-run",
     }
+    assert not target.exists()
+
+
+def test_dry_run_human_preview_escapes_untrusted_action_paths(tmp_path: Path) -> None:
+    target = tmp_path / "markup-safe-preview"
+    extension_url = "https://example.com/extensions/[/].zip"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--dry-run",
+            "--integration",
+            "copilot",
+            "--script",
+            "sh",
+            "--extension",
+            extension_url,
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert extension_url in result.output
     assert not target.exists()
 
 
@@ -829,6 +1071,196 @@ def test_dry_run_isolates_and_reports_hermes_home_writes(
     assert not target.exists()
 
 
+def test_dry_run_rejects_symlinked_hermes_home_skill(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_home = tmp_path / "real-home"
+    external_skill = tmp_path / "external-skill.md"
+    external_skill.write_text("external content\n", encoding="utf-8")
+    skill_file = real_home / ".hermes" / "skills" / "speckit-plan" / "SKILL.md"
+    skill_file.parent.mkdir(parents=True)
+    try:
+        skill_file.symlink_to(external_skill)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available")
+    monkeypatch.setenv("HOME", str(real_home))
+    monkeypatch.setenv("USERPROFILE", str(real_home))
+    target = tmp_path / "hermes-home-link-preview"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--dry-run",
+            "--json",
+            "--integration",
+            "hermes",
+            "--script",
+            "sh",
+            "--ignore-agent-tools",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert "symlinked path component" in payload["error"]
+    assert external_skill.read_text(encoding="utf-8") == "external content\n"
+    assert skill_file.is_symlink()
+    assert not target.exists()
+
+
+@pytest.mark.parametrize("linked_component", ["hermes", "skills"])
+def test_dry_run_reports_json_for_symlinked_hermes_home_parent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    linked_component: str,
+) -> None:
+    real_home = tmp_path / "real-home"
+    external = tmp_path / "external-home-target"
+    external.mkdir()
+    if linked_component == "hermes":
+        real_home.mkdir()
+        link = real_home / ".hermes"
+    else:
+        (real_home / ".hermes").mkdir(parents=True)
+        link = real_home / ".hermes" / "skills"
+    try:
+        link.symlink_to(external, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available")
+    monkeypatch.setenv("HOME", str(real_home))
+    monkeypatch.setenv("USERPROFILE", str(real_home))
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(tmp_path / f"hermes-{linked_component}-link-preview"),
+            "--dry-run",
+            "--json",
+            "--integration",
+            "hermes",
+            "--script",
+            "sh",
+            "--ignore-agent-tools",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 1, result.output
+    assert "symlinked path component" in json.loads(result.output)["error"]
+    assert list(external.iterdir()) == []
+
+
+def test_dry_run_reports_preserve_for_unchanged_hermes_home_skill(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_home = tmp_path / "real-home"
+    real_home.mkdir()
+    monkeypatch.setenv("HOME", str(real_home))
+    monkeypatch.setenv("USERPROFILE", str(real_home))
+    target = tmp_path / "hermes-reinit-preview"
+    arguments = [
+        "init",
+        str(target),
+        "--force",
+        "--integration",
+        "hermes",
+        "--script",
+        "sh",
+        "--ignore-agent-tools",
+    ]
+    created = CliRunner().invoke(app, arguments, catch_exceptions=False)
+    assert created.exit_code == 0, created.output
+
+    preview = CliRunner().invoke(
+        app, [*arguments, "--dry-run", "--json"], catch_exceptions=False
+    )
+
+    assert preview.exit_code == 0, preview.output
+    action = _action_for(
+        json.loads(preview.output), "~/.hermes/skills/speckit-plan/SKILL.md"
+    )
+    assert action["action"] == "preserve"
+    assert action["provenance"] == "integration"
+    assert action["source_id"] == "hermes"
+
+
+def test_dry_run_omits_unmanaged_hermes_home_skill(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_home = tmp_path / "real-home"
+    unmanaged = (
+        real_home / ".hermes" / "skills" / "speckit-obsolete" / "SKILL.md"
+    )
+    unmanaged.parent.mkdir(parents=True)
+    unmanaged.write_text("user-owned\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(real_home))
+    monkeypatch.setenv("USERPROFILE", str(real_home))
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(tmp_path / "hermes-unmanaged-preview"),
+            "--dry-run",
+            "--json",
+            "--integration",
+            "hermes",
+            "--script",
+            "sh",
+            "--ignore-agent-tools",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert all(
+        action["path"] != "~/.hermes/skills/speckit-obsolete/SKILL.md"
+        for action in json.loads(result.output)["actions"]
+    )
+    assert unmanaged.read_text(encoding="utf-8") == "user-owned\n"
+
+
+def test_dry_run_reports_kimi_legacy_removals(tmp_path: Path) -> None:
+    target = tmp_path / "kimi-migration-preview"
+    legacy_skill = target / ".kimi" / "skills" / "speckit-oldcmd" / "SKILL.md"
+    legacy_skill.parent.mkdir(parents=True)
+    legacy_skill.write_text("# Legacy\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--force",
+            "--dry-run",
+            "--json",
+            "--integration",
+            "kimi",
+            "--integration-options=--migrate-legacy",
+            "--script",
+            "sh",
+            "--ignore-agent-tools",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert (
+        _action_for(payload, ".kimi/skills/speckit-oldcmd/SKILL.md")["action"]
+        == "remove"
+    )
+    assert (
+        _action_for(payload, ".kimi-code/skills/speckit-oldcmd/SKILL.md")["action"]
+        == "create"
+    )
+    assert legacy_skill.read_text(encoding="utf-8") == "# Legacy\n"
+
+
 def test_dry_run_does_not_write_through_external_hermes_symlink(
     tmp_path: Path,
 ) -> None:
@@ -858,8 +1290,8 @@ def test_dry_run_does_not_write_through_external_hermes_symlink(
         catch_exceptions=False,
     )
 
-    assert result.exit_code == 0, result.output
-    json.loads(result.output)
+    assert result.exit_code == 1, result.output
+    assert "symlinked path component" in json.loads(result.output)["error"]
     assert list(external.iterdir()) == []
     assert (target / ".hermes").is_symlink()
     assert (target / ".hermes").resolve() == external.resolve()
@@ -1152,3 +1584,38 @@ def test_dry_run_resolves_home_relative_local_extension(
     assert extension_action["provenance"] == "extension"
     assert extension_action["source_id"] == "git"
     assert not target.exists()
+
+
+def test_here_dry_run_resolves_bare_relative_local_preset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundled = _locate_bundled_preset("self-test")
+    assert bundled is not None
+    target = tmp_path / "bare-relative-preset-preview"
+    target.mkdir()
+    shutil.copytree(bundled, target / "local-preset")
+    monkeypatch.chdir(target)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            "--here",
+            "--dry-run",
+            "--json",
+            "--integration",
+            "copilot",
+            "--script",
+            "sh",
+            "--preset",
+            "local-preset",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["failures"] == []
+    preset_action = _action_for(payload, ".github/skills/speckit-specify/SKILL.md")
+    assert preset_action["provenance"] == "preset"
+    assert not (target / ".specify").exists()

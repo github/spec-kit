@@ -10,7 +10,12 @@ All tests that touch ``~/.hermes/`` use ``monkeypatch`` to isolate
 non-destructive to a developer's real Hermes installation.
 """
 
+import json
+import shutil
 from pathlib import Path
+
+import pytest
+import yaml
 
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.manifest import IntegrationManifest
@@ -64,6 +69,48 @@ class TestHermesIntegration(SkillsIntegrationTests):
         # Should be empty (no SKILL.md files)
         children = list(marker.iterdir())
         assert children == [], f"Marker directory should be empty, got: {children}"
+
+    def test_setup_rejects_symlinked_global_skill_file(
+        self, tmp_path, monkeypatch
+    ):
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+        external = tmp_path / "external-skill.md"
+        external.write_text("external\n", encoding="utf-8")
+        skill_file = home / ".hermes" / "skills" / "speckit-plan" / "SKILL.md"
+        skill_file.parent.mkdir(parents=True)
+        try:
+            skill_file.symlink_to(external)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks are not available")
+
+        i = get_integration(self.KEY)
+        m = IntegrationManifest(self.KEY, tmp_path)
+        with pytest.raises(ValueError, match="symlinked path component"):
+            i.setup(tmp_path, m)
+
+        assert external.read_text(encoding="utf-8") == "external\n"
+        assert not (tmp_path / ".hermes").exists()
+
+    def test_setup_rejects_symlinked_project_marker_before_global_writes(
+        self, tmp_path, monkeypatch
+    ):
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+        external = tmp_path / "external-marker"
+        external.mkdir()
+        try:
+            (tmp_path / ".hermes").symlink_to(external, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks are not available")
+
+        i = get_integration(self.KEY)
+        m = IntegrationManifest(self.KEY, tmp_path)
+        with pytest.raises(ValueError, match="symlinked path component"):
+            i.setup(tmp_path, m)
+
+        assert list(external.iterdir()) == []
+        assert not (home / ".hermes").exists()
 
     # -- Override shared tests that assume project-local skills ------------
 
@@ -191,6 +238,486 @@ class TestHermesIntegration(SkillsIntegrationTests):
         assert (foreign_dir / "SKILL.md").exists(), (
             "Foreign skill was removed by teardown"
         )
+
+    def test_teardown_does_not_follow_symlinked_global_skills_directory(
+        self, tmp_path, monkeypatch
+    ):
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+        external = tmp_path / "external-hermes-skills"
+        protected = external / "speckit-userdata" / "keep.txt"
+        protected.parent.mkdir(parents=True)
+        protected.write_text("keep\n", encoding="utf-8")
+        hermes_dir = home / ".hermes"
+        hermes_dir.mkdir()
+        try:
+            (hermes_dir / "skills").symlink_to(
+                external, target_is_directory=True
+            )
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks are not available")
+
+        i = get_integration(self.KEY)
+        m = IntegrationManifest(self.KEY, tmp_path)
+        removed, skipped = i.teardown(tmp_path, m)
+
+        assert removed == []
+        assert home / ".hermes" / "skills" in skipped
+        assert protected.read_text(encoding="utf-8") == "keep\n"
+
+    def test_teardown_does_not_follow_symlinked_project_marker(
+        self, tmp_path, monkeypatch
+    ):
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+        external = tmp_path / "external-marker"
+        external.mkdir()
+        marker_parent = tmp_path / ".hermes"
+        marker_parent.mkdir()
+        try:
+            (marker_parent / "skills").symlink_to(
+                external, target_is_directory=True
+            )
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks are not available")
+
+        i = get_integration(self.KEY)
+        m = IntegrationManifest(self.KEY, tmp_path)
+        removed, skipped = i.teardown(tmp_path, m)
+
+        assert removed == []
+        assert tmp_path / ".hermes" / "skills" in skipped
+        assert external.is_dir()
+
+    def test_extension_registration_rejects_symlinked_global_skill(
+        self, tmp_path, monkeypatch
+    ):
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+        external = tmp_path / "external-extension-skill"
+        external.mkdir()
+        external_skill = external / "SKILL.md"
+        external_skill.write_text("external\n", encoding="utf-8")
+        global_skills = home / ".hermes" / "skills"
+        global_skills.mkdir(parents=True)
+        try:
+            (global_skills / "speckit-git-feature").symlink_to(
+                external, target_is_directory=True
+            )
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks are not available")
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        target = tmp_path / "hermes-extension-link"
+        result = CliRunner().invoke(
+            app,
+            [
+                "init",
+                str(target),
+                "--integration",
+                "hermes",
+                "--script",
+                "sh",
+                "--ignore-agent-tools",
+                "--extension",
+                "git",
+            ],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert external_skill.read_text(encoding="utf-8") == "external\n"
+        assert not (target / ".specify" / "extensions" / "git").exists()
+
+        preview = CliRunner().invoke(
+            app,
+            [
+                "init",
+                str(tmp_path / "hermes-extension-link-preview"),
+                "--dry-run",
+                "--json",
+                "--integration",
+                "hermes",
+                "--script",
+                "sh",
+                "--ignore-agent-tools",
+                "--extension",
+                "git",
+            ],
+            catch_exceptions=False,
+        )
+        assert preview.exit_code == 0, preview.output
+        failures = json.loads(preview.output)["failures"]
+        assert any("symlinked path component" in failure["error"] for failure in failures)
+        assert external_skill.read_text(encoding="utf-8") == "external\n"
+
+    def test_extension_alias_is_preflighted_before_any_install_write(
+        self, tmp_path, monkeypatch
+    ):
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+        external = tmp_path / "external-alias-skill"
+        external.mkdir()
+        external_skill = external / "SKILL.md"
+        external_skill.write_text("external\n", encoding="utf-8")
+        global_skills = home / ".hermes" / "skills"
+        global_skills.mkdir(parents=True)
+        try:
+            (global_skills / "speckit-my-extension-example-short").symlink_to(
+                external, target_is_directory=True
+            )
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks are not available")
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        extension = Path(__file__).parents[2] / "extensions" / "template"
+        target = tmp_path / "hermes-extension-alias-link"
+        result = CliRunner().invoke(
+            app,
+            [
+                "init",
+                str(target),
+                "--integration",
+                "hermes",
+                "--script",
+                "sh",
+                "--ignore-agent-tools",
+                "--extension",
+                str(extension),
+            ],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert external_skill.read_text(encoding="utf-8") == "external\n"
+        assert not (
+            global_skills / "speckit-my-extension-example" / "SKILL.md"
+        ).exists()
+        assert not (
+            target / ".specify" / "extensions" / "my-extension"
+        ).exists()
+
+    def test_legacy_extension_preflight_uses_detected_hermes_target(
+        self, tmp_path, monkeypatch
+    ):
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+        external = tmp_path / "external-legacy-extension"
+        external.mkdir()
+        external_skill = external / "SKILL.md"
+        external_skill.write_text("external\n", encoding="utf-8")
+        global_skills = home / ".hermes" / "skills"
+        global_skills.mkdir(parents=True)
+        try:
+            (global_skills / "speckit-my-extension-example").symlink_to(
+                external, target_is_directory=True
+            )
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks are not available")
+        (tmp_path / ".hermes" / "skills").mkdir(parents=True)
+
+        from specify_cli.extensions import ExtensionManager
+        from specify_cli.integrations.base import IntegrationOutputPathError
+
+        extension = Path(__file__).parents[2] / "extensions" / "template"
+        manager = ExtensionManager(tmp_path)
+        with pytest.raises(IntegrationOutputPathError):
+            manager.install_from_directory(extension, "0.3.0")
+
+        assert external_skill.read_text(encoding="utf-8") == "external\n"
+        assert not (
+            tmp_path / ".specify" / "extensions" / "my-extension"
+        ).exists()
+
+    def test_extension_remove_retains_registry_when_hermes_cleanup_is_unsafe(
+        self, tmp_path, monkeypatch
+    ):
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.extensions import ExtensionManager
+        from specify_cli.integrations.base import IntegrationOutputPathError
+
+        target = tmp_path / "hermes-extension-remove"
+        result = CliRunner().invoke(
+            app,
+            [
+                "init",
+                str(target),
+                "--integration",
+                "hermes",
+                "--script",
+                "sh",
+                "--ignore-agent-tools",
+                "--extension",
+                "git",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0, result.output
+
+        global_skills = home / ".hermes" / "skills"
+        safe_skill = global_skills / "speckit-git-commit" / "SKILL.md"
+        unsafe_dir = global_skills / "speckit-git-feature"
+        assert safe_skill.is_file()
+        shutil.rmtree(unsafe_dir)
+        external = tmp_path / "external-remove-target"
+        external.mkdir()
+        external_skill = external / "SKILL.md"
+        external_skill.write_text("external\n", encoding="utf-8")
+        try:
+            unsafe_dir.symlink_to(external, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks are not available")
+
+        manager = ExtensionManager(target)
+        with pytest.raises(IntegrationOutputPathError):
+            manager.remove("git")
+
+        assert manager.registry.is_installed("git")
+        assert safe_skill.is_file()
+        assert unsafe_dir.is_symlink()
+        assert external_skill.read_text(encoding="utf-8") == "external\n"
+
+        monkeypatch.chdir(target)
+        cli_result = CliRunner().invoke(
+            app,
+            ["extension", "remove", "git", "--force"],
+            catch_exceptions=False,
+        )
+        assert cli_result.exit_code == 1, cli_result.output
+        assert "Cannot safely remove extension" in cli_result.output
+        assert manager.registry.is_installed("git")
+
+    def test_extension_remove_preflights_legacy_hermes_names(
+        self, tmp_path, monkeypatch
+    ):
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.extensions import ExtensionManager
+        from specify_cli.integrations.base import IntegrationOutputPathError
+
+        target = tmp_path / "hermes-legacy-remove"
+        result = CliRunner().invoke(
+            app,
+            [
+                "init",
+                str(target),
+                "--integration",
+                "hermes",
+                "--script",
+                "sh",
+                "--ignore-agent-tools",
+                "--extension",
+                "git",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0, result.output
+
+        global_skills = home / ".hermes" / "skills"
+        modern_skill = global_skills / "speckit-git-feature" / "SKILL.md"
+        assert modern_skill.is_file()
+        external = tmp_path / "external-legacy-remove"
+        external.mkdir()
+        external_skill = external / "SKILL.md"
+        external_skill.write_text("external\n", encoding="utf-8")
+        legacy_dir = global_skills / "speckit.git.feature"
+        try:
+            legacy_dir.symlink_to(external, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks are not available")
+
+        manager = ExtensionManager(target)
+        with pytest.raises(IntegrationOutputPathError):
+            manager.remove("git")
+
+        assert manager.registry.is_installed("git")
+        assert modern_skill.is_file()
+        assert legacy_dir.is_symlink()
+        assert external_skill.read_text(encoding="utf-8") == "external\n"
+
+    def test_preset_remove_retains_registry_when_hermes_cleanup_is_unsafe(
+        self, tmp_path, monkeypatch
+    ):
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+        preset = tmp_path / "remove-preflight"
+        command = preset / "commands" / "remove.md"
+        command.parent.mkdir(parents=True)
+        command.write_text(
+            "---\ndescription: Remove preflight\n---\n\nBody\n",
+            encoding="utf-8",
+        )
+        (preset / "preset.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "remove-preflight",
+                        "name": "Remove Preflight",
+                        "version": "1.0.0",
+                        "description": "Removal safety test",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "command",
+                                "name": "speckit.remove-preflight",
+                                "file": "commands/remove.md",
+                            }
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.integrations.base import IntegrationOutputPathError
+        from specify_cli.presets import PresetManager
+
+        target = tmp_path / "hermes-preset-remove"
+        result = CliRunner().invoke(
+            app,
+            [
+                "init",
+                str(target),
+                "--integration",
+                "hermes",
+                "--script",
+                "sh",
+                "--ignore-agent-tools",
+                "--preset",
+                str(preset),
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0, result.output
+
+        global_skills = home / ".hermes" / "skills"
+        unsafe_dir = global_skills / "speckit-remove-preflight"
+        shutil.rmtree(unsafe_dir)
+        external = tmp_path / "external-preset-remove"
+        external.mkdir()
+        external_skill = external / "SKILL.md"
+        external_skill.write_text("external\n", encoding="utf-8")
+        try:
+            unsafe_dir.symlink_to(external, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks are not available")
+
+        manager = PresetManager(target)
+        with pytest.raises(IntegrationOutputPathError):
+            manager.remove("remove-preflight")
+
+        assert manager.registry.is_installed("remove-preflight")
+        assert unsafe_dir.is_symlink()
+        assert external_skill.read_text(encoding="utf-8") == "external\n"
+
+    def test_preset_alias_is_preflighted_before_any_install_write(
+        self, tmp_path, monkeypatch
+    ):
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+        external = tmp_path / "external-preset-alias"
+        external.mkdir()
+        external_skill = external / "SKILL.md"
+        external_skill.write_text("external\n", encoding="utf-8")
+        global_skills = home / ".hermes" / "skills"
+        global_skills.mkdir(parents=True)
+        try:
+            (global_skills / "speckit-my-preset-alias").symlink_to(
+                external, target_is_directory=True
+            )
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks are not available")
+
+        preset = tmp_path / "alias-preflight"
+        command = preset / "commands" / "primary.md"
+        command.parent.mkdir(parents=True)
+        command.write_text(
+            "---\ndescription: Alias preflight\n---\n\nBody\n",
+            encoding="utf-8",
+        )
+        (preset / "preset.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "alias-preflight",
+                        "name": "Alias Preflight",
+                        "version": "1.0.0",
+                        "description": "Alias safety test",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "command",
+                                "name": "speckit.my-preset-primary",
+                                "file": "commands/primary.md",
+                                "aliases": ["speckit.my-preset-alias"],
+                            }
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        target = tmp_path / "hermes-preset-alias-link"
+        result = CliRunner().invoke(
+            app,
+            [
+                "init",
+                str(target),
+                "--integration",
+                "hermes",
+                "--script",
+                "sh",
+                "--ignore-agent-tools",
+                "--preset",
+                str(preset),
+            ],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Hermes destination" in result.output
+        assert external_skill.read_text(encoding="utf-8") == "external\n"
+        assert not (
+            global_skills / "speckit-my-preset-primary" / "SKILL.md"
+        ).exists()
+        assert not (
+            target / ".specify" / "presets" / "alias-preflight"
+        ).exists()
 
     def test_hook_sections_explain_dotted_command_conversion(self, tmp_path, monkeypatch):
         """Override: Hermes skills live in global ~/.hermes/skills/."""

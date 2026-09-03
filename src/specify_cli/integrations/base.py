@@ -58,6 +58,10 @@ _CORE_COMMAND_TEMPLATE_RANK = {
 }
 
 
+class IntegrationOutputPathError(ValueError):
+    """Raised when an integration output would cross an unsafe path boundary."""
+
+
 def yaml_quote(value: str) -> str:
     """Emit *value* as a double-quoted YAML scalar on a single line.
 
@@ -962,6 +966,9 @@ class IntegrationBase(ABC):
     def supports_events(self) -> bool:
         """Return True if this integration supports agent-native events."""
         return bool(getattr(self, "CANONICAL_TO_NATIVE", None) and getattr(self, "events_config_file", None))
+
+    def validate_output_path(self, path: Path, project_root: Path) -> None:
+        """Validate an integration-owned output before shared writers touch it."""
 
     # Context-injection envelope for hook stdout, keyed by canonical event
     # (with "*" as the fallback). Not every agent injects a hook's plain-text

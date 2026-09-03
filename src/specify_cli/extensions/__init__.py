@@ -1378,6 +1378,11 @@ class ExtensionManager:
             skills_dir = registrar._resolve_agent_dir(
                 selected_ai, agent_config, self.project_root
             )
+        from ..integrations import get_integration
+
+        integration = get_integration(selected_ai)
+        if integration is not None:
+            integration.validate_output_path(skills_dir, self.project_root)
         return _ensure_usable(skills_dir)
 
     @staticmethod
@@ -1625,6 +1630,8 @@ class ExtensionManager:
             # Check if skill already exists before creating the directory
             skill_subdir = skills_dir / skill_name
             skill_file = skill_subdir / "SKILL.md"
+            if integration is not None:
+                integration.validate_output_path(skill_file, self.project_root)
             cache_root = extension_dir / ".specify-dev" / "extension-skills"
             cache_file = cache_root / skill_name / "SKILL.md"
             use_dev_symlink = link_outputs and not agent_config.get("dev_no_symlink")
@@ -2044,6 +2051,26 @@ class ExtensionManager:
 
         return True
 
+    def _validate_active_integration_outputs(
+        self, manifest: ExtensionManifest
+    ) -> None:
+        """Validate active-agent command destinations before installation writes."""
+        from ..agents import CommandRegistrar
+
+        registrar = CommandRegistrar()
+        command_names: list[str] = []
+        for command in manifest.commands:
+            command_name = command.get("name")
+            if isinstance(command_name, str):
+                command_names.append(command_name)
+            aliases = command.get("aliases", [])
+            if isinstance(aliases, list):
+                command_names.extend(alias for alias in aliases if isinstance(alias, str))
+        for agent_name in self._command_registration_targets():
+            registrar.validate_integration_output_paths(
+                agent_name, command_names, self.project_root
+            )
+
     def install_from_directory(
         self,
         source_dir: Path,
@@ -2094,6 +2121,8 @@ class ExtensionManager:
 
         # Reject manifests that would shadow core commands or installed extensions.
         self._validate_install_conflicts(manifest)
+
+        self._validate_active_integration_outputs(manifest)
 
         # Refuse to install an extension from its own install destination — with
         # --force this would delete the source before copying it (issue #2990).
@@ -3183,6 +3212,7 @@ class ExtensionManager:
             return
 
         from .. import load_init_options
+        from ..integrations.base import IntegrationOutputPathError
 
         registrar = CommandRegistrar()
         agent_config = registrar.AGENT_CONFIGS.get(agent_name)
@@ -3459,6 +3489,8 @@ class ExtensionManager:
 
                 if updates:
                     self.registry.update(ext_id, updates)
+            except IntegrationOutputPathError:
+                raise
             except Exception as ext_err:
                 # Best-effort per extension: warn and move on so a single bad
                 # extension cannot silently drop the others. See #2950.

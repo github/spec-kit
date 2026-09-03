@@ -79,15 +79,24 @@ def _snapshot_files(root: Path) -> dict[str, str]:
     return files
 
 
-def _snapshot_matching_files(root: Path, relative_paths: set[str]) -> dict[str, str]:
-    """Return fingerprints for selected regular files below *root*."""
-    files: dict[str, str] = {}
-    for relative_path in relative_paths:
-        path = root / relative_path
-        if not path.is_file() or path.is_symlink():
-            continue
-        files[relative_path] = _file_fingerprint(path)
-    return files
+def _snapshot_tree_entries(root: Path) -> dict[str, str]:
+    """Return a structural snapshot including directories and symlinks."""
+    if not root.exists():
+        return {}
+
+    entries: dict[str, str] = {}
+    for path in root.rglob("*"):
+        relative = path.relative_to(root).as_posix()
+        try:
+            if path.is_symlink():
+                entries[relative] = f"symlink:{os.readlink(path)}"
+            elif path.is_file():
+                entries[relative] = f"file:{_file_fingerprint(path)}"
+            elif path.is_dir():
+                entries[relative] = "directory"
+        except OSError:
+            entries[relative] = "unreadable"
+    return entries
 
 
 def _resolve_preview_child_path(spec: str) -> str:
@@ -95,6 +104,17 @@ def _resolve_preview_child_path(spec: str) -> str:
     if spec.startswith(("~", "./", "../", "/", ".\\", "..\\")):
         return str(Path(spec).expanduser().resolve())
     return spec
+
+
+def _resolve_preview_preset_path(spec: str) -> str:
+    """Resolve a local preset directory before the staged child changes cwd."""
+    try:
+        candidate = Path(spec).expanduser().resolve()
+    except OSError:
+        return _resolve_preview_child_path(spec)
+    if candidate.is_dir() and (candidate / "preset.yml").is_file():
+        return str(candidate)
+    return _resolve_preview_child_path(spec)
 
 
 def _preview_subprocess_env(staged_home: Path) -> dict[str, str]:
@@ -133,10 +153,57 @@ def _seed_preview_home(staged_home: Path, real_home: Path) -> None:
         "preset-catalogs.yml",
     ):
         source = real_home / ".specify" / filename
-        if source.is_file() and not source.is_symlink():
+        if source.is_file():
             destination = staged_home / ".specify" / filename
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
+
+
+def _preview_home_seed_paths(
+    real_home: Path, selected_integration: str
+) -> tuple[set[Path], set[Path]]:
+    """Return home paths to stage and selected-integration paths to own."""
+    from ..agents import CommandRegistrar
+    from ..integrations import get_integration
+
+    integration = get_integration(selected_integration)
+    if integration is None or not integration.registrar_config:
+        return set(), set()
+
+    registrar_config = integration.registrar_config
+    directory = registrar_config.get("dir")
+    extension = registrar_config.get("extension")
+    if (
+        not isinstance(directory, str)
+        or not directory.startswith("~")
+        or not isinstance(extension, str)
+    ):
+        return set(), set()
+
+    destination = Path(directory[1:].lstrip("/\\"))
+    owned_paths: set[Path] = set()
+    for template in integration.list_command_templates():
+        command_name = f"speckit.{template.stem}"
+        output_name = CommandRegistrar._compute_output_name(
+            selected_integration, command_name, registrar_config
+        )
+        owned_paths.add(destination / f"{output_name}{extension}")
+
+    paths = set(owned_paths)
+    real_destination = real_home / destination
+    if real_destination.is_dir() and not real_destination.is_symlink():
+        try:
+            entries = list(real_destination.iterdir())
+        except OSError:
+            entries = []
+        for entry in entries:
+            if not entry.name.startswith(("speckit-", "speckit.")):
+                continue
+            if extension == "/SKILL.md":
+                paths.add(destination / entry.name / "SKILL.md")
+            elif entry.name.endswith(extension):
+                paths.add(destination / entry.name)
+    return paths, owned_paths
 
 
 _INIT_PLAN_ENV = "SPECIFY_INIT_PLAN_PATH"
@@ -169,7 +236,7 @@ def _record_init_plan_action(
 ) -> None:
     """Append one initializer outcome when a preview plan path is configured."""
     plan_path = os.environ.get(_INIT_PLAN_ENV)
-    if not plan_path:
+    if not _PREVIEW_CHILD_ACTIVE or not plan_path:
         return
     record: dict[str, str] = {
         "action": action,
@@ -188,7 +255,7 @@ def _record_init_plan_action(
 def _record_init_plan_failure(component: str, source_id: str, error: str) -> None:
     """Append an optional component failure when a preview plan is configured."""
     plan_path = os.environ.get(_INIT_PLAN_ENV)
-    if not plan_path:
+    if not _PREVIEW_CHILD_ACTIVE or not plan_path:
         return
     record = {
         "outcome": "failure",
@@ -462,6 +529,14 @@ def _preview_marker_ownership(
 def _preview_default_ownership(
     relative_path: str, default: PreviewOwnership
 ) -> PreviewOwnership:
+    if (
+        relative_path.startswith(".specify/integrations/")
+        and relative_path.endswith(".manifest.json")
+    ):
+        integration_id = Path(relative_path).name.removesuffix(".manifest.json")
+        if integration_id == "speckit":
+            return "core", "speckit"
+        return "integration", integration_id
     if relative_path.startswith(".specify/workflows/"):
         remainder = relative_path.removeprefix(".specify/workflows/")
         workflow_id = remainder.split("/", 1)[0]
@@ -477,6 +552,30 @@ def _preview_default_ownership(
     if relative_path.startswith(".specify/"):
         return "core", None
     return default
+
+
+def _constitution_plan_ownership(project_path: Path) -> PreviewOwnership:
+    """Read the materialized constitution's source from its sidecar."""
+    provenance = (
+        project_path / ".specify" / "memory" / ".constitution-template.json"
+    )
+    try:
+        metadata = json.loads(provenance.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError):
+        return "core", None
+    if not isinstance(metadata, dict):
+        return "core", None
+
+    source = metadata.get("source")
+    if not isinstance(source, str):
+        return "core", None
+    if source.startswith("extension:"):
+        source_id = source.removeprefix("extension:").split(" ", 1)[0]
+        return "extension", source_id or None
+    if source in {"core", "core (bundled)", "project override"}:
+        return "core", None
+    source_id = source.split(" v", 1)[0].strip()
+    return ("preset", source_id) if source_id else ("core", None)
 
 
 def _build_preview_actions(
@@ -498,13 +597,16 @@ def _build_preview_actions(
         for path, digest in staged_files.items()
         if initial_files.get(path) != digest
     }
+    candidates.update(path for path in initial_files if path not in staged_files)
     candidates.update(path for path in ownership if path in staged_files)
 
     actions: list[dict[str, str]] = []
     for path in sorted(candidates):
-        staged_digest = staged_files[path]
+        staged_digest = staged_files.get(path)
         initial_digest = initial_files.get(path)
-        if initial_digest is None:
+        if staged_digest is None:
+            action = "remove"
+        elif initial_digest is None:
             action = "create"
         elif initial_digest != staged_digest:
             action = "conflict" if directory_conflict else "overwrite"
@@ -538,17 +640,53 @@ def _emit_dry_run_preview(payload: dict[str, Any], *, json_output: bool) -> None
     elif payload.get("gate") == "confirmation_required":
         console.print("[yellow]confirmation required[/yellow]  target directory is not empty")
     if payload.get("error"):
-        console.print(f"[red]failed[/red]    {payload['error']}")
-    for failure in payload["failures"]:
         console.print(
-            f"failed     {failure['component']}:{failure['source_id']} "
-            f"{failure['error']}"
+            f"[red]failed[/red]    {_escape_markup(str(payload['error']))}"
+        )
+    for failure in payload["failures"]:
+        component = _escape_markup(str(failure["component"]))
+        source_id = _escape_markup(str(failure["source_id"]))
+        error = _escape_markup(str(failure["error"]))
+        console.print(
+            f"failed     {component}:{source_id} {error}"
         )
     for record in payload["actions"]:
-        source = record["provenance"]
+        action = _escape_markup(str(record["action"]))
+        path = _escape_markup(str(record["path"]))
+        source = str(record["provenance"])
         if record.get("source_id"):
             source = f"{source}:{record['source_id']}"
-        console.print(f"{record['action']:<10} {record['path']} [dim]({source})[/dim]")
+        console.print(
+            f"{action:<10} {path} [dim]({_escape_markup(source)})[/dim]"
+        )
+
+
+def _raise_dry_run_json_error(
+    message: str,
+    *,
+    project_name: str | None,
+    here: bool,
+) -> None:
+    """Emit one stable JSON error document for parent-side validation."""
+    if here or project_name == ".":
+        target: str | None = str(Path.cwd())
+    elif project_name:
+        target = str(Path(project_name).resolve())
+    else:
+        target = None
+    _emit_dry_run_preview(
+        {
+            "dry_run": True,
+            "target": target,
+            "conflict": False,
+            "gate": "none",
+            "actions": [],
+            "failures": [],
+            "error": message,
+        },
+        json_output=True,
+    )
+    raise typer.Exit(1)
 
 
 def _strip_windows_extended_prefix(text: str) -> str:
@@ -633,7 +771,9 @@ def _remap_symlink_to_staged(
 
 
 def _quarantine_root(staged_root: Path) -> Path:
-    return _normalize_fs_path(staged_root.parent / "quarantine")
+    return _normalize_fs_path(
+        staged_root.parent / f"{staged_root.name}-quarantine"
+    )
 
 
 def _quarantine_symlink(path: Path, staged_root: Path) -> None:
@@ -705,6 +845,8 @@ def _ignore_special_files(directory: str, names: list[str]) -> set[str]:
 def _copy_staged_path(source: Path, destination: Path) -> None:
     """Copy one selected path without following symlinks."""
     if source.is_symlink():
+        if os.path.lexists(destination):
+            return
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.symlink_to(
             os.readlink(source), target_is_directory=source.is_dir()
@@ -919,12 +1061,17 @@ def _preview_init(
     real_home = Path.home()
     url_extensions = [spec for spec in extensions or [] if _ext_spec_is_url(spec)]
     staged_extensions = [spec for spec in extensions or [] if not _ext_spec_is_url(spec)]
+    home_seed_paths, home_owned_paths = _preview_home_seed_paths(
+        real_home, selected_integration
+    )
 
     with tempfile.TemporaryDirectory(prefix="specify-init-preview-") as tmp_dir:
         staged_root = Path(tmp_dir) / "project"
         staged_home = Path(tmp_dir) / "home"
         staged_home.mkdir()
         _seed_preview_home(staged_home, real_home)
+        if home_seed_paths:
+            _stage_project_copy(real_home, staged_home, home_seed_paths)
         if project_path.exists():
             _stage_project_copy(
                 project_path,
@@ -938,12 +1085,46 @@ def _preview_init(
         else:
             staged_root.mkdir()
 
+        initial_project_files = _snapshot_files(staged_root)
+        initial_home_files = _snapshot_files(staged_home)
+        initial_registry_sources = _preview_registry_sources(staged_root)
+        initial_project_ownership = _preview_manifest_ownership(staged_root)
+        initial_registry_project, initial_registry_home = (
+            _preview_registry_ownership(staged_root)
+        )
+        initial_project_ownership.update(initial_registry_project)
+        initial_project_ownership.update(
+            _preview_marker_ownership(
+                staged_root,
+                initial_registry_sources,
+                set(initial_project_files),
+            )
+        )
+        initial_home_ownership = dict(initial_registry_home)
+        initial_home_ownership.update(
+            _preview_marker_ownership(
+                staged_home,
+                initial_registry_sources,
+                set(initial_home_files),
+            )
+        )
+        for relative_path in home_owned_paths:
+            initial_home_ownership.setdefault(
+                relative_path.as_posix(),
+                ("integration", selected_integration),
+            )
+        quarantine_states = {
+            "project": _snapshot_tree_entries(_quarantine_root(staged_root)),
+            "home": _snapshot_tree_entries(_quarantine_root(staged_home)),
+        }
+
         # Run the same public CLI path in a child process. Besides preventing
         # mutations of the target root, this isolates Rich's Live output from
         # the preview's human/JSON output contract. The staging-only
         # confirmation signal avoids a prompt without changing force mode.
         command = [
             sys.executable,
+            "-I",
             "-c",
             (
                 "from specify_cli.commands.init import "
@@ -966,7 +1147,7 @@ def _preview_init(
         if integration_options:
             command.extend(["--integration-options", integration_options])
         if preset:
-            command.extend(["--preset", _resolve_preview_child_path(preset)])
+            command.extend(["--preset", _resolve_preview_preset_path(preset)])
         for extension in staged_extensions:
             command.extend(["--extension", _resolve_preview_child_path(extension)])
         if trust_extension_urls:
@@ -987,13 +1168,22 @@ def _preview_init(
         )
         if result.returncode:
             payload["error"] = _preview_child_failure_message(result)
+        elif any(
+            _snapshot_tree_entries(
+                _quarantine_root(staged_root if scope == "project" else staged_home)
+            )
+            != before
+            for scope, before in quarantine_states.items()
+        ):
+            payload["error"] = (
+                "staged initialization attempted to write through an external "
+                "symlink"
+            )
         else:
             staged_project_files = _snapshot_files(staged_root)
-            initial_files = _snapshot_matching_files(
-                project_path, set(staged_project_files)
-            )
             registry_sources = _preview_registry_sources(staged_root)
-            project_ownership = _preview_manifest_ownership(staged_root)
+            project_ownership = dict(initial_project_ownership)
+            project_ownership.update(_preview_manifest_ownership(staged_root))
             registry_project_ownership, registry_home_ownership = (
                 _preview_registry_ownership(staged_root)
             )
@@ -1004,18 +1194,16 @@ def _preview_init(
                 )
             )
             payload["actions"] = _build_preview_actions(
-                initial_files,
+                initial_project_files,
                 staged_root,
                 ownership=project_ownership,
                 default_ownership=("integration", selected_integration),
-                directory_conflict=False,
+                directory_conflict=gate == "force_required",
                 staged_files=staged_project_files,
             )
             staged_home_files = _snapshot_files(staged_home)
-            initial_home_files = _snapshot_matching_files(
-                real_home, set(staged_home_files)
-            )
-            home_ownership = registry_home_ownership
+            home_ownership = dict(initial_home_ownership)
+            home_ownership.update(registry_home_ownership)
             home_ownership.update(
                 _preview_marker_ownership(
                     staged_home, registry_sources, set(staged_home_files)
@@ -1236,10 +1424,12 @@ def ensure_constitution_from_template(
         if tracker:
             tracker.add("constitution", "Constitution setup")
             tracker.skip("constitution", "existing file preserved")
+        provenance, source_id = _constitution_plan_ownership(project_path)
         _record_init_plan_action(
             "skip",
             ".specify/memory/constitution.md",
-            "core",
+            provenance,
+            source_id,
         )
         return
 
@@ -1435,6 +1625,11 @@ def register(app: typer.Typer) -> None:
         if integration:
             resolved_integration = get_integration(integration)
             if not resolved_integration:
+                message = f"Unknown integration: '{integration}'"
+                if dry_run and json_output:
+                    _raise_dry_run_json_error(
+                        message, project_name=project_name, here=here
+                    )
                 console.print(
                     f"[red]Error:[/red] Unknown integration: "
                     f"'{_escape_markup(str(integration))}'"
@@ -1448,12 +1643,25 @@ def register(app: typer.Typer) -> None:
             project_name = None
 
         if here and project_name:
+            if dry_run and json_output:
+                _raise_dry_run_json_error(
+                    "Cannot specify both project name and --here flag",
+                    project_name=project_name,
+                    here=here,
+                )
             console.print(
                 "[red]Error:[/red] Cannot specify both project name and --here flag"
             )
             raise typer.Exit(1)
 
         if not here and not project_name:
+            if dry_run and json_output:
+                _raise_dry_run_json_error(
+                    "Must specify either a project name, use '.' for current "
+                    "directory, or use --here flag",
+                    project_name=project_name,
+                    here=here,
+                )
             console.print(
                 "[red]Error:[/red] Must specify either a project name, use '.' for current directory, or use --here flag"
             )
@@ -1530,6 +1738,12 @@ def register(app: typer.Typer) -> None:
             if project_path.exists():
                 safe_name = _escape_markup(str(project_name))
                 if not project_path.is_dir():
+                    if dry_run and json_output:
+                        _raise_dry_run_json_error(
+                            f"'{project_name}' exists but is not a directory",
+                            project_name=project_name,
+                            here=here,
+                        )
                     console.print(
                         f"[red]Error:[/red] '{safe_name}' exists but is not a directory."
                     )
@@ -1564,6 +1778,12 @@ def register(app: typer.Typer) -> None:
 
         if integration:
             if integration not in AGENT_CONFIG:
+                if dry_run and json_output:
+                    _raise_dry_run_json_error(
+                        f"Invalid integration '{integration}'",
+                        project_name=project_name,
+                        here=here,
+                    )
                 console.print(
                     f"[red]Error:[/red] Invalid integration '{_escape_markup(str(integration))}'. Choose from: {', '.join(AGENT_CONFIG.keys())}"
                 )
@@ -1593,6 +1813,13 @@ def register(app: typer.Typer) -> None:
                 raise typer.Exit(1)
 
         if selected_ai == "generic" and not integration_options:
+            if dry_run and json_output:
+                _raise_dry_run_json_error(
+                    "--integration generic requires --integration-options "
+                    "with --commands-dir",
+                    project_name=project_name,
+                    here=here,
+                )
             console.print(
                 "[red]Error:[/red] --integration generic requires --integration-options with --commands-dir"
             )
@@ -1625,6 +1852,13 @@ def register(app: typer.Typer) -> None:
             if agent_config and agent_config["requires_cli"]:
                 install_url = agent_config["install_url"]
                 if not check_tool(selected_ai):
+                    if dry_run and json_output:
+                        _raise_dry_run_json_error(
+                            f"{selected_ai} not found; {agent_config['name']} is "
+                            "required to continue with this project type",
+                            project_name=project_name,
+                            here=here,
+                        )
                     error_panel = Panel(
                         f"[cyan]{selected_ai}[/cyan] not found\n"
                         f"Install from: [cyan]{install_url}[/cyan]\n"
@@ -1640,6 +1874,12 @@ def register(app: typer.Typer) -> None:
 
         if script_type:
             if script_type not in SCRIPT_TYPE_CHOICES:
+                if dry_run and json_output:
+                    _raise_dry_run_json_error(
+                        f"Invalid script type '{script_type}'",
+                        project_name=project_name,
+                        here=here,
+                    )
                 console.print(
                     f"[red]Error:[/red] Invalid script type '{_escape_markup(str(script_type))}'. Choose from: {', '.join(SCRIPT_TYPE_CHOICES.keys())}"
                 )
