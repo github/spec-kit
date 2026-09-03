@@ -490,12 +490,25 @@ if (-not $pyForBlocks) {
 if ($pyForBlocks -and (Test-Path -LiteralPath $pyTwin)) {
     # Windows PowerShell decodes native-command stdout using the console code
     # page; force UTF-8 so non-ASCII rule text (e.g. em-dashes) survives capture.
+    # Keep stderr (the composer's oversized/marker-colliding/skipped warnings) out
+    # of the captured stdout by routing it to a temp file, then surface it, and
+    # abort on a nonzero exit so a composer failure never rewrites the section
+    # with previously composed preset blocks silently dropped.
+    $errFile = [System.IO.Path]::GetTempFileName()
     $prevOutEnc = [Console]::OutputEncoding
     try {
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        $emitted = (& $pyForBlocks $pyTwin --emit-preset-blocks --marker-start $MarkerStart --marker-end $MarkerEnd 2>$null | Out-String)
+        $emitted = (& $pyForBlocks $pyTwin --emit-preset-blocks --marker-start $MarkerStart --marker-end $MarkerEnd 2>$errFile | Out-String)
     } finally {
         [Console]::OutputEncoding = $prevOutEnc
+    }
+    $emitRc = $LASTEXITCODE
+    $errText = if (Test-Path -LiteralPath $errFile) { Get-Content -LiteralPath $errFile -Raw } else { '' }
+    Remove-Item -LiteralPath $errFile -ErrorAction SilentlyContinue
+    if ($errText) { [Console]::Error.Write($errText) }
+    if ($emitRc -ne 0) {
+        [Console]::Error.WriteLine("agent-context: preset instruction composer failed (exit $emitRc); aborting so the managed section is not rewritten with preset blocks dropped.")
+        exit 1
     }
     if ($emitted) {
         $emitted = ($emitted -replace "`r`n", "`n") -replace "`r", "`n"

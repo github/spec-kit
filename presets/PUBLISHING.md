@@ -85,6 +85,14 @@ tags:                              # 2-5 relevant tags
   - "workflow"
 ```
 
+**About `provides.instructions`** (optional): each entry names a Markdown file whose contents the opt-in `agent-context` extension composes into the always-on managed section of the agent context file (for example `.github/copilot-instructions.md`) on the next `agent-context` update. Core validates only the metadata (the entry shape and a portable relative `file` path), so an accepted preset can still contribute nothing at runtime unless every referenced file also satisfies the composer's constraints:
+
+- The file must exist inside the preset directory and be valid UTF-8.
+- It must not contain a managed-section marker (`<!-- SPECKIT ... -->`); such payloads are skipped to avoid corrupting the section.
+- Each file must be at or below 32 KiB, and the combined instructions across all enabled presets must fit a 64 KiB aggregate budget; the managed section is re-sent as agent context on every request, so the budget is deliberately small.
+
+Entries that fail any of these are dropped (fail-closed) and logged to stderr; the remaining ones still compose.
+
 **Validation Checklist**:
 
 - ✅ `id` is lowercase with hyphens only (no underscores, spaces, or special characters)
