@@ -132,6 +132,34 @@ def test_unbumped_non_ascii_filename_fails(guard_repo):
     assert "extensions/demo/extension.yml" in result.stdout
 
 
+def test_merge_commit_first_parent_ignores_base_branch_drift(guard_repo):
+    """The workflow diffs against HEAD^1 of GitHub's pull-request merge commit,
+    not github.event.pull_request.base.sha. The payload SHA is the base tip
+    from when the PR was opened and is never refreshed, while the merge ref
+    is rebuilt against the current base tip; diffing the stale SHA against
+    the fresh merge commit blames base-branch drift on the PR (seen on
+    #4395). The merge commit's first parent is the base it was built on."""
+    repo, stale_base = guard_repo
+    _git(repo, "checkout", "-q", "-b", "pr")
+    (repo / "README.md").write_text("pr change\n", encoding="utf-8")
+    _commit_all(repo, "unrelated PR change")
+
+    # Base branch moves on after the PR branched off: an unbumped extension
+    # change lands there. GitHub then rebuilds refs/pull/N/merge on top of it.
+    _git(repo, "checkout", "-q", "-")
+    _write_extension(repo, "demo", "1.0.0", "echo drifted on base")
+    _commit_all(repo, "unbumped change on base after PR branched")
+    _git(repo, "merge", "-q", "--no-ff", "--no-edit", "pr")
+
+    stale = _run_guard(repo, stale_base)
+    assert stale.returncode == 1, stale.stdout + stale.stderr
+    assert "did not increase" in stale.stdout  # the trap: drift blamed on the PR
+
+    fresh = _run_guard(repo, "HEAD^1")
+    assert fresh.returncode == 0, fresh.stdout + fresh.stderr
+    assert "all invariants hold" in fresh.stdout
+
+
 def test_no_extension_changes_passes(guard_repo):
     """The workflow runs on every pull request (a path-filtered required check
     would block PRs that skip it), so a PR touching nothing under extensions/
