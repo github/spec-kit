@@ -487,7 +487,15 @@ if (-not $pyForBlocks) {
         } catch { }
     }
 }
-if ($pyForBlocks -and (Test-Path -LiteralPath $pyTwin)) {
+if ($pyForBlocks) {
+    if (-not (Test-Path -LiteralPath $pyTwin)) {
+        # Python is available but the sibling composer is gone: a partial or
+        # corrupt install. Treat it as a hard failure (like a nonzero composer
+        # exit) so the managed section is not rewritten with existing preset
+        # blocks silently dropped.
+        [Console]::Error.WriteLine("agent-context: preset instruction composer '$pyTwin' is missing (corrupt or partial install); aborting so the managed section is not rewritten with preset blocks dropped.")
+        exit 1
+    }
     # Windows PowerShell decodes native-command stdout using the console code
     # page; force UTF-8 so non-ASCII rule text (e.g. em-dashes) survives capture.
     # Keep stderr (the composer's oversized/marker-colliding/skipped warnings) out
