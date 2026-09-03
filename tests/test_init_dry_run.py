@@ -336,7 +336,7 @@ def test_non_forced_dry_run_human_preview_lists_conflicting_artifacts(
     lines = result.output.splitlines()
     assert any(line.startswith("conflict") and line.endswith("target directory exists; applying this plan requires --force") for line in lines)
     assert any(
-        line.startswith("conflict   .github/skills/speckit-plan/SKILL.md")
+        line.startswith("overwrite  .github/skills/speckit-plan/SKILL.md")
         for line in lines
     )
     assert any(
@@ -432,6 +432,7 @@ def test_dry_run_leaves_url_extension_unresolved_without_creating_target(
         "path": extension_url,
         "provenance": "extension",
         "source_id": extension_url,
+        "reason": "URL extensions are not fetched during dry-run",
     }
     assert not target.exists()
 

@@ -90,9 +90,9 @@ def _snapshot_matching_files(root: Path, relative_paths: set[str]) -> dict[str, 
     return files
 
 
-def _resolve_preview_child_extension(spec: str) -> str:
-    """Expand home-relative extension specs against the parent home."""
-    if spec.startswith("~"):
+def _resolve_preview_child_path(spec: str) -> str:
+    """Resolve caller-relative local specs before changing the child cwd."""
+    if spec.startswith(("~", "./", "../", "/", ".\\", "..\\")):
         return str(Path(spec).expanduser().resolve())
     return spec
 
@@ -123,6 +123,16 @@ def _preview_subprocess_env(staged_home: Path) -> dict[str, str]:
         env.pop("HOMEDRIVE", None)
         env.pop("HOMEPATH", None)
     return env
+
+
+def _seed_preview_home(staged_home: Path, real_home: Path) -> None:
+    """Copy the read-only catalog settings the initializer resolves from HOME."""
+    for filename in ("extension-catalogs.yml", "preset-catalogs.yml"):
+        source = real_home / ".specify" / filename
+        if source.is_file() and not source.is_symlink():
+            destination = staged_home / ".specify" / filename
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
 
 
 _INIT_PLAN_ENV = "SPECIFY_INIT_PLAN_PATH"
@@ -497,10 +507,12 @@ def _emit_dry_run_preview(payload: dict[str, Any], *, json_output: bool) -> None
         return
 
     console.print("\n[bold cyan]Initialization preview[/bold cyan]")
-    if payload["conflict"]:
+    if payload.get("gate") == "force_required":
         console.print(
             "[yellow]conflict[/yellow]  target directory exists; applying this plan requires --force"
         )
+    elif payload.get("gate") == "confirmation_required":
+        console.print("[yellow]confirmation required[/yellow]  target directory is not empty")
     if payload.get("error"):
         console.print(f"[red]failed[/red]    {payload['error']}")
     for failure in payload["failures"]:
@@ -651,7 +663,18 @@ def _remap_in_project_symlinks(project_root: Path, staged_root: Path) -> None:
 
 def _stage_project_copy(project_path: Path, staged_root: Path) -> None:
     """Copy *project_path* into staging and isolate live symlinks."""
-    shutil.copytree(project_path, staged_root, symlinks=True)
+    def ignore_special_files(directory: str, names: list[str]) -> set[str]:
+        ignored: set[str] = set()
+        for name in names:
+            candidate = Path(directory) / name
+            try:
+                if not candidate.is_symlink() and not candidate.is_file() and not candidate.is_dir():
+                    ignored.add(name)
+            except OSError:
+                ignored.add(name)
+        return ignored
+
+    shutil.copytree(project_path, staged_root, symlinks=True, ignore=ignore_special_files)
     _remap_in_project_symlinks(project_path.resolve(), staged_root.resolve())
 
 
@@ -680,8 +703,9 @@ def _preview_child_failure_message(result: subprocess.CompletedProcess[str]) -> 
 def _preview_init(
     *,
     project_path: Path,
-    directory_conflict: bool,
+    gate: str,
     force: bool,
+    here: bool,
     script_type: str,
     selected_integration: str,
     ignore_agent_tools: bool,
@@ -695,7 +719,8 @@ def _preview_init(
     payload: dict[str, Any] = {
         "dry_run": True,
         "target": str(project_path),
-        "conflict": directory_conflict,
+        "conflict": gate != "none",
+        "gate": gate,
         "actions": [],
         "failures": [],
     }
@@ -709,6 +734,7 @@ def _preview_init(
         staged_root = Path(tmp_dir) / "project"
         staged_home = Path(tmp_dir) / "home"
         staged_home.mkdir()
+        _seed_preview_home(staged_home, real_home)
         if project_path.exists():
             _stage_project_copy(project_path, staged_root)
 
@@ -721,25 +747,25 @@ def _preview_init(
             "-c",
             "from specify_cli import main; main()",
             "init",
-            str(staged_root),
             "--non-interactive",
             "--integration",
             selected_integration,
             "--script",
             script_type,
         ]
-        if force:
+        if here:
+            command.append("--here")
+        else:
+            command.append(str(staged_root))
+        if force or gate == "force_required":
             command.append("--force")
-        if ignore_agent_tools:
-            command.append("--ignore-agent-tools")
+        command.append("--ignore-agent-tools")
         if integration_options:
             command.extend(["--integration-options", integration_options])
         if preset:
-            command.extend(["--preset", preset])
+            command.extend(["--preset", _resolve_preview_child_path(preset)])
         for extension in staged_extensions:
-            command.extend(
-                ["--extension", _resolve_preview_child_extension(extension)]
-            )
+            command.extend(["--extension", _resolve_preview_child_path(extension)])
         if trust_extension_urls:
             command.append("--trust-extension-urls")
 
@@ -749,7 +775,7 @@ def _preview_init(
         env[_INIT_STAGING_CONFIRMATION_ENV] = "1"
         result = subprocess.run(
             command,
-            cwd=Path.cwd(),
+            cwd=staged_root if here else Path.cwd(),
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -774,7 +800,7 @@ def _preview_init(
                 staged_root,
                 ownership=project_ownership,
                 default_ownership=("integration", selected_integration),
-                directory_conflict=directory_conflict,
+                directory_conflict=False,
             )
             staged_home_files = _snapshot_files(staged_home)
             initial_home_files = _snapshot_matching_files(
@@ -791,7 +817,7 @@ def _preview_init(
                     path_prefix="~/",
                     ownership=home_ownership,
                     default_ownership=("integration", selected_integration),
-                    directory_conflict=directory_conflict,
+                    directory_conflict=False,
                 )
             )
             payload["actions"] = _merge_recorded_plan_actions(
@@ -807,6 +833,7 @@ def _preview_init(
                     "path": spec,
                     "provenance": "extension",
                     "source_id": spec,
+                    "reason": "URL extensions are not fetched during dry-run",
                 }
             )
     payload["actions"].sort(key=lambda action: action["path"])
@@ -1012,6 +1039,9 @@ def ensure_constitution_from_template(
             if tracker:
                 tracker.add("constitution", "Constitution setup")
                 tracker.error("constitution", "template not found")
+            _record_init_plan_failure(
+                "constitution", "constitution", "template not found"
+            )
             return
         if tracker:
             tracker.add("constitution", "Constitution setup")
@@ -1029,6 +1059,7 @@ def ensure_constitution_from_template(
             console.print(
                 f"[yellow]Warning: Could not initialize constitution: {e}[/yellow]"
             )
+        _record_init_plan_failure("constitution", "constitution", str(e))
 
 
 def register(app: typer.Typer) -> None:
@@ -1420,10 +1451,18 @@ def register(app: typer.Typer) -> None:
             console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
 
         if dry_run:
+            gate = (
+                "confirmation_required"
+                if here and directory_conflict
+                else "force_required"
+                if directory_conflict
+                else "none"
+            )
             _preview_init(
                 project_path=project_path,
-                directory_conflict=directory_conflict,
+                gate=gate,
                 force=force,
+                here=here,
                 script_type=selected_script,
                 selected_integration=selected_ai,
                 ignore_agent_tools=ignore_agent_tools,
@@ -1627,6 +1666,7 @@ def register(app: typer.Typer) -> None:
                         tracker.skip("workflow", "bundled workflow not found")
                 except Exception as wf_err:
                     sanitized_wf = str(wf_err).replace("\n", " ").strip()
+                    _record_init_plan_failure("workflow", "speckit", sanitized_wf)
                     tracker.error("workflow", f"install failed: {sanitized_wf[:120]}")
 
                 init_opts = {
@@ -1643,7 +1683,10 @@ def register(app: typer.Typer) -> None:
                     init_opts["ai_skills"] = True
                 save_init_options(project_path, init_opts)
 
-                ensure_executable_scripts(project_path, tracker=tracker)
+                for chmod_failure in ensure_executable_scripts(
+                    project_path, tracker=tracker
+                ):
+                    _record_init_plan_failure("chmod", chmod_failure, chmod_failure)
 
                 if preset:
                     try:
