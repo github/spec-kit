@@ -209,4 +209,21 @@ def test_unparseable_version_fails_closed(guard_repo):
 
     result = _run_guard(repo, base)
     assert result.returncode == 1, result.stdout + result.stderr
-    assert "could not compare versions" in result.stdout
+    assert "is not a valid PEP 440 version" in result.stdout
+    assert "extensions/demo/extension.yml" in result.stdout
+
+
+def test_new_extension_with_unparseable_version_fails(guard_repo):
+    """A brand-new extension has no base manifest to compare against, but its
+    version must still parse: ExtensionManifest rejects a version packaging
+    cannot parse and `extension update` skips such catalog entries. Matching
+    strings in manifest and catalog must not let it through."""
+    repo, base = guard_repo
+    _write_extension(repo, "fresh", "not-a-version", "echo new")
+    _write_catalog(repo, {"demo": "1.0.0", "fresh": "not-a-version"})
+    _commit_all(repo, "add new extension with invalid version")
+
+    result = _run_guard(repo, base)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "is not a valid PEP 440 version" in result.stdout
+    assert "extensions/fresh/extension.yml" in result.stdout

@@ -14,7 +14,10 @@ This check enforces two invariants on the extensions listed in
 
 1. Any change to a file under `extensions/<id>/` must increase the
    `version:` in that extension's `extension.yml` (PEP 440 comparison,
-   the same semantics `extension update` uses).
+   the same semantics `extension update` uses), and the resulting
+   version must itself parse as PEP 440 — including for a brand-new
+   extension, since the CLI rejects a manifest whose version it cannot
+   parse.
 2. The `version` in `extensions/catalog.json` must equal the manifest's
    `extension.version` (the catalog is what update checks compare
    against, and the update preflight rejects a manifest whose version
@@ -119,23 +122,43 @@ def main(argv: list[str]) -> int:
         head_manifest = _show(head_ref, manifest_path)
         if head_manifest is None:
             continue  # extension removed in this PR
-        base_manifest = _show(base_ref, manifest_path)
-        if base_manifest is None:
-            continue  # new extension; any initial version is fine
         try:
-            base_version = _manifest_version(base_manifest, f"{base_ref}:{manifest_path}")
             head_version = _manifest_version(head_manifest, f"{head_ref}:{manifest_path}")
         except ValueError as exc:
             errors.append(str(exc))
             continue
 
+        # Parse the head version before the new-extension early return: the
+        # CLI's ExtensionManifest rejects a version packaging cannot parse and
+        # `extension update` skips catalog entries whose version is invalid,
+        # so a new extension shipped with e.g. "not-a-version" in both places
+        # would be uninstallable even though the catalog check below (plain
+        # string equality) passes. Same PEP 440 semantics as the CLI, so
+        # prereleases and other accepted forms are handled identically.
+        try:
+            head_parsed = Version(head_version)
+        except InvalidVersion as exc:
+            errors.append(
+                f"{manifest_path}: extension.version {head_version!r} is not a valid "
+                f"PEP 440 version ({exc}); the CLI rejects this manifest."
+            )
+            continue
+
+        base_manifest = _show(base_ref, manifest_path)
+        if base_manifest is None:
+            continue  # new extension; any valid initial version is fine
+        try:
+            base_version = _manifest_version(base_manifest, f"{base_ref}:{manifest_path}")
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+
         # Compare with the same PEP 440 semantics the extension update and
-        # install code use (packaging.version), so prereleases and other
-        # accepted forms cannot bypass the guard (e.g. 2.0.0 -> 1.0.0rc1 is
-        # a downgrade). Unparseable versions fail closed.
+        # install code use, so prereleases and other accepted forms cannot
+        # bypass the guard (e.g. 2.0.0 -> 1.0.0rc1 is a downgrade). An
+        # unparseable base version fails closed.
         try:
             base_parsed = Version(base_version)
-            head_parsed = Version(head_version)
         except InvalidVersion as exc:
             errors.append(
                 f"{manifest_path}: could not compare versions "
