@@ -21,8 +21,9 @@ def test_data_model_section_requires_verbatim_field_constraints():
     next_section_start = content.index("**From Setup/Infrastructure**")
     section = content[from_data_model_start:next_section_start]
 
-    assert "constraint" in section.lower(), (
+    assert "quote the constraint verbatim in the task description" in section.lower(), (
         "The 'From Data Model' task-organization rules must instruct the "
-        "agent to carry field constraints (max length, nullable, enum, "
-        "validation rules) from data-model.md into task descriptions."
+        "agent to quote field constraints (max length, nullable, enum, "
+        "validation rules) from data-model.md verbatim in task descriptions, "
+        "not merely mention that constraints exist."
     )
