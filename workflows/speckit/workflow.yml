@@ -2,7 +2,7 @@ schema_version: "1.0"
 workflow:
   id: "speckit"
   name: "Full SDD Cycle"
-  version: "1.0.0"
+  version: "1.0.1"
   author: "GitHub"
   description: "Runs specify → plan → tasks → implement with review gates"
 
