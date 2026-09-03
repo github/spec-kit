@@ -139,7 +139,7 @@ _EXPR_PATTERN = re.compile(r"\{\{(.+?)\}\}")
 # against it, and the condition gate below reuses it rather than describing the
 # same shape a second time, so widening what indexing accepts cannot leave the
 # evaluator and the gate disagreeing.
-_INDEXED_SEGMENT = re.compile(r"^([\w-]+)\[(\d+)\]$")
+_INDEXED_SEGMENT = re.compile(r"^([\w-]+)\[(-?\d+)\]$")
 
 _PLAIN_SEGMENT = re.compile(r"^[\w-]+$")
 
@@ -147,12 +147,13 @@ _PLAIN_SEGMENT = re.compile(r"^[\w-]+$")
 def _resolve_dot_path(obj: Any, path: str) -> Any:
     """Resolve a dotted path like ``steps.specify.output.file`` against *obj*.
 
-    Supports dict key access and list indexing (e.g., ``task_list[0]``).
+    Supports dict key access and list indexing, including the negative form
+    Python and Jinja2 both accept (e.g., ``task_list[0]``, ``task_list[-1]``).
     """
     parts = path.split(".")
     current = obj
     for part in parts:
-        # Handle list indexing: name[0]
+        # Handle list indexing: name[0], name[-1]
         idx_match = _INDEXED_SEGMENT.match(part)
         if idx_match:
             key, idx = idx_match.group(1), int(idx_match.group(2))
@@ -160,7 +161,7 @@ def _resolve_dot_path(obj: Any, path: str) -> Any:
                 current = current.get(key)
             else:
                 return None
-            if isinstance(current, list) and 0 <= idx < len(current):
+            if isinstance(current, list) and -len(current) <= idx < len(current):
                 current = current[idx]
             else:
                 return None
