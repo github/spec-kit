@@ -126,8 +126,12 @@ def _preview_subprocess_env(staged_home: Path) -> dict[str, str]:
 
 
 def _seed_preview_home(staged_home: Path, real_home: Path) -> None:
-    """Copy the read-only catalog settings the initializer resolves from HOME."""
-    for filename in ("extension-catalogs.yml", "preset-catalogs.yml"):
+    """Copy the read-only catalog and auth settings resolved from HOME."""
+    for filename in (
+        "auth.json",
+        "extension-catalogs.yml",
+        "preset-catalogs.yml",
+    ):
         source = real_home / ".specify" / filename
         if source.is_file() and not source.is_symlink():
             destination = staged_home / ".specify" / filename
@@ -421,11 +425,18 @@ def _preview_content_ownership(
 
 
 def _preview_marker_ownership(
-    staged_root: Path, registry_sources: dict[str, set[str]]
+    staged_root: Path,
+    registry_sources: dict[str, set[str]],
+    relative_paths: set[str] | None = None,
 ) -> dict[str, PreviewOwnership]:
     """Map staged generated artifacts using their embedded ownership markers."""
     ownership: dict[str, PreviewOwnership] = {}
-    for relative_path in _snapshot_files(staged_root):
+    paths = (
+        relative_paths
+        if relative_paths is not None
+        else set(_snapshot_files(staged_root))
+    )
+    for relative_path in paths:
         path = staged_root / relative_path
         try:
             content = path.read_text(encoding="utf-8")
@@ -465,9 +476,11 @@ def _build_preview_actions(
     ownership: dict[str, PreviewOwnership] | None = None,
     default_ownership: PreviewOwnership = ("integration", None),
     directory_conflict: bool = False,
+    staged_files: dict[str, str] | None = None,
 ) -> list[dict[str, str]]:
     """Classify files produced by a staged initialization."""
-    staged_files = _snapshot_files(staged_root)
+    if staged_files is None:
+        staged_files = _snapshot_files(staged_root)
     ownership = ownership or {}
     candidates = {
         path
@@ -661,21 +674,187 @@ def _remap_in_project_symlinks(project_root: Path, staged_root: Path) -> None:
     raise RuntimeError("staged symlink isolation did not converge")
 
 
-def _stage_project_copy(project_path: Path, staged_root: Path) -> None:
-    """Copy *project_path* into staging and isolate live symlinks."""
-    def ignore_special_files(directory: str, names: list[str]) -> set[str]:
-        ignored: set[str] = set()
-        for name in names:
-            candidate = Path(directory) / name
-            try:
-                if not candidate.is_symlink() and not candidate.is_file() and not candidate.is_dir():
-                    ignored.add(name)
-            except OSError:
+def _ignore_special_files(directory: str, names: list[str]) -> set[str]:
+    """Skip sockets, devices, and other non-file tree entries during staging."""
+    ignored: set[str] = set()
+    for name in names:
+        candidate = Path(directory) / name
+        try:
+            if (
+                not candidate.is_symlink()
+                and not candidate.is_file()
+                and not candidate.is_dir()
+            ):
                 ignored.add(name)
-        return ignored
+        except OSError:
+            ignored.add(name)
+    return ignored
 
-    shutil.copytree(project_path, staged_root, symlinks=True, ignore=ignore_special_files)
+
+def _copy_staged_path(source: Path, destination: Path) -> None:
+    """Copy one selected path without following symlinks."""
+    if source.is_symlink():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.symlink_to(
+            os.readlink(source), target_is_directory=source.is_dir()
+        )
+    elif source.is_dir():
+        shutil.copytree(
+            source,
+            destination,
+            symlinks=True,
+            dirs_exist_ok=True,
+            ignore=_ignore_special_files,
+        )
+    elif source.is_file():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+
+
+def _copy_selected_staged_path(
+    project_path: Path,
+    staged_root: Path,
+    relative_path: Path,
+) -> None:
+    """Copy a selected path while preserving any symlinked parent component."""
+    current = Path()
+    for index, part in enumerate(relative_path.parts):
+        current /= part
+        source = project_path / current
+        destination = staged_root / current
+        if source.is_symlink():
+            _copy_staged_path(source, destination)
+            return
+        if not source.exists():
+            return
+        if index < len(relative_path.parts) - 1 and not source.is_dir():
+            _copy_staged_path(source, destination)
+            return
+    _copy_staged_path(project_path / relative_path, staged_root / relative_path)
+
+
+def _copy_staged_symlink_targets(project_path: Path, staged_root: Path) -> None:
+    """Copy project-local targets reached by selected staged symlinks."""
+    for _ in range(32):
+        copied = False
+        for staged_link in _iter_symlinks(staged_root):
+            relative_link = staged_link.relative_to(staged_root)
+            source_link = project_path / relative_link
+            try:
+                source_target = _symlink_target(source_link)
+            except OSError:
+                continue
+            if source_target is None or not _is_within_root(
+                source_target, project_path
+            ):
+                continue
+            relative_target = source_target.relative_to(
+                _normalize_fs_path(project_path)
+            )
+            staged_target = staged_root / relative_target
+            if os.path.lexists(staged_target):
+                continue
+            _copy_staged_path(project_path / relative_target, staged_target)
+            copied = True
+        if not copied:
+            return
+    raise RuntimeError("staged symlink target copy did not converge")
+
+
+def _stage_project_copy(
+    project_path: Path,
+    staged_root: Path,
+    relative_paths: set[Path] | None = None,
+) -> None:
+    """Copy selected project paths into staging and isolate live symlinks."""
+    if relative_paths is None:
+        shutil.copytree(
+            project_path,
+            staged_root,
+            symlinks=True,
+            ignore=_ignore_special_files,
+        )
+    else:
+        staged_root.mkdir(parents=True, exist_ok=True)
+        selected: list[Path] = []
+        for relative_path in sorted(relative_paths, key=lambda path: len(path.parts)):
+            if relative_path.is_absolute() or ".." in relative_path.parts:
+                continue
+            if any(
+                relative_path == parent or parent in relative_path.parents
+                for parent in selected
+            ):
+                continue
+            selected.append(relative_path)
+            _copy_selected_staged_path(project_path, staged_root, relative_path)
+        _copy_staged_symlink_targets(project_path, staged_root)
     _remap_in_project_symlinks(project_path.resolve(), staged_root.resolve())
+
+
+def _preview_seed_paths(
+    selected_integration: str,
+    integration_options: str | None,
+    script_type: str,
+) -> set[Path]:
+    """Return project paths whose existing state can affect initialization."""
+    from ..integrations import INTEGRATION_REGISTRY, get_integration
+
+    integration = get_integration(selected_integration)
+    paths = {Path(".specify")}
+    if integration is None:
+        return paths
+
+    config = integration.config or {}
+    registrar = integration.registrar_config or {}
+    folder = config.get("folder")
+    commands_subdir = config.get("commands_subdir")
+    values = [
+        registrar.get("dir"),
+        registrar.get("legacy_dir"),
+        registrar.get("detect_dir"),
+        getattr(integration, "legacy_flat_command_dir", None),
+        ".opencode/plugin/speckit-events.ts",
+    ]
+    values.extend(
+        getattr(candidate, "events_config_file", None)
+        for candidate in INTEGRATION_REGISTRY.values()
+    )
+    if isinstance(folder, str) and isinstance(commands_subdir, str):
+        values.append(str(Path(folder) / commands_subdir))
+
+    if selected_integration == "generic" and integration_options:
+        resolver = getattr(integration, "_resolve_commands_dir", None)
+        if callable(resolver):
+            try:
+                values.append(resolver(None, {"raw_options": integration_options}))
+            except (TypeError, ValueError):
+                pass
+
+    extras = {
+        "copilot": (
+            ".github/skills",
+            ".github/prompts",
+            ".vscode/settings.json",
+        ),
+        "kimi": (".kimi/skills",),
+        "rovodev": (".rovodev/prompts", ".rovodev/prompts.yml"),
+    }
+    values.extend(extras.get(selected_integration, ()))
+    if script_type == "py":
+        values.extend((".venv/bin/python", ".venv/Scripts/python.exe"))
+
+    for value in values:
+        if not isinstance(value, str) or value.startswith("~"):
+            continue
+        relative_path = Path(value)
+        if (
+            relative_path == Path(".")
+            or relative_path.is_absolute()
+            or ".." in relative_path.parts
+        ):
+            continue
+        paths.add(relative_path)
+    return paths
 
 
 def _preview_child_failure_message(result: subprocess.CompletedProcess[str]) -> str:
@@ -725,7 +904,6 @@ def _preview_init(
         "failures": [],
     }
 
-    initial_files = _snapshot_files(project_path)
     real_home = Path.home()
     url_extensions = [spec for spec in extensions or [] if _ext_spec_is_url(spec)]
     staged_extensions = [spec for spec in extensions or [] if not _ext_spec_is_url(spec)]
@@ -736,7 +914,17 @@ def _preview_init(
         staged_home.mkdir()
         _seed_preview_home(staged_home, real_home)
         if project_path.exists():
-            _stage_project_copy(project_path, staged_root)
+            _stage_project_copy(
+                project_path,
+                staged_root,
+                _preview_seed_paths(
+                    selected_integration,
+                    integration_options,
+                    script_type,
+                ),
+            )
+        else:
+            staged_root.mkdir()
 
         # Run the same public CLI path in a child process. Besides preventing
         # mutations of the target root, this isolates Rich's Live output from
@@ -786,6 +974,10 @@ def _preview_init(
         if result.returncode:
             payload["error"] = _preview_child_failure_message(result)
         else:
+            staged_project_files = _snapshot_files(staged_root)
+            initial_files = _snapshot_matching_files(
+                project_path, set(staged_project_files)
+            )
             registry_sources = _preview_registry_sources(staged_root)
             project_ownership = _preview_manifest_ownership(staged_root)
             registry_project_ownership, registry_home_ownership = (
@@ -793,7 +985,9 @@ def _preview_init(
             )
             project_ownership.update(registry_project_ownership)
             project_ownership.update(
-                _preview_marker_ownership(staged_root, registry_sources)
+                _preview_marker_ownership(
+                    staged_root, registry_sources, set(staged_project_files)
+                )
             )
             payload["actions"] = _build_preview_actions(
                 initial_files,
@@ -801,6 +995,7 @@ def _preview_init(
                 ownership=project_ownership,
                 default_ownership=("integration", selected_integration),
                 directory_conflict=False,
+                staged_files=staged_project_files,
             )
             staged_home_files = _snapshot_files(staged_home)
             initial_home_files = _snapshot_matching_files(
@@ -808,7 +1003,9 @@ def _preview_init(
             )
             home_ownership = registry_home_ownership
             home_ownership.update(
-                _preview_marker_ownership(staged_home, registry_sources)
+                _preview_marker_ownership(
+                    staged_home, registry_sources, set(staged_home_files)
+                )
             )
             payload["actions"].extend(
                 _build_preview_actions(
@@ -818,6 +1015,7 @@ def _preview_init(
                     ownership=home_ownership,
                     default_ownership=("integration", selected_integration),
                     directory_conflict=False,
+                    staged_files=staged_home_files,
                 )
             )
             payload["actions"] = _merge_recorded_plan_actions(

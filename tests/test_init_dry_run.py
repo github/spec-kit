@@ -18,6 +18,8 @@ from specify_cli.commands.init import (
     _normalize_fs_path,
     _preview_child_failure_message,
     _preview_content_ownership,
+    _preview_seed_paths,
+    _seed_preview_home,
     _snapshot_files,
     _stage_project_copy,
     _strip_windows_extended_prefix,
@@ -37,6 +39,29 @@ def _assert_same_path(left: Path | str, right: Path | str) -> None:
         assert os.path.samefile(left_path, right_path)
         return
     assert _normalize_fs_path(left_path) == _normalize_fs_path(right_path)
+
+
+def test_seed_preview_home_copies_auth_config(tmp_path: Path) -> None:
+    real_home = tmp_path / "real-home"
+    auth_config = real_home / ".specify" / "auth.json"
+    auth_config.parent.mkdir(parents=True)
+    auth_config.write_text('{"providers": []}\n', encoding="utf-8")
+    auth_config.chmod(0o600)
+    staged_home = tmp_path / "staged-home"
+    staged_home.mkdir()
+
+    _seed_preview_home(staged_home, real_home)
+
+    staged_auth = staged_home / ".specify" / "auth.json"
+    assert staged_auth.read_text(encoding="utf-8") == '{"providers": []}\n'
+    assert staged_auth.stat().st_mode & 0o777 == auth_config.stat().st_mode & 0o777
+
+
+def test_preview_seed_paths_include_cross_integration_event_targets() -> None:
+    paths = _preview_seed_paths("copilot", None, "sh")
+
+    assert Path("opencode.json") in paths
+    assert Path(".opencode/plugin/speckit-events.ts") in paths
 
 
 @pytest.mark.parametrize(
@@ -804,6 +829,41 @@ def test_dry_run_remaps_in_project_absolute_symlinks(tmp_path: Path) -> None:
     assert (kilo_dir / "commands").resolve() == real_commands.resolve()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="chmod does not remove read access on Windows")
+def test_dry_run_ignores_unreadable_unmanaged_file(tmp_path: Path) -> None:
+    target = tmp_path / "unreadable-unmanaged"
+    target.mkdir()
+    unrelated = target / "unrelated.bin"
+    unrelated.write_bytes(b"not used by init")
+    unrelated.chmod(0)
+
+    try:
+        result = CliRunner().invoke(
+            app,
+            [
+                "init",
+                str(target),
+                "--force",
+                "--dry-run",
+                "--json",
+                "--integration",
+                "copilot",
+                "--script",
+                "sh",
+                "--ignore-agent-tools",
+            ],
+            catch_exceptions=False,
+        )
+    finally:
+        unrelated.chmod(0o600)
+
+    assert result.exit_code == 0, result.output
+    assert all(
+        action["path"] != "unrelated.bin"
+        for action in json.loads(result.output)["actions"]
+    )
+
+
 def test_remap_in_project_absolute_symlinks_points_at_staged_copy(
     tmp_path: Path,
 ) -> None:
@@ -824,6 +884,43 @@ def test_remap_in_project_absolute_symlinks_points_at_staged_copy(
     _assert_same_path(remapped, staged / "store")
     assert (staged / "link" / "file.txt").read_text(encoding="utf-8") == "ok\n"
     _assert_same_path(Path(os.readlink(link)), store)
+
+
+def test_stage_project_copy_limits_copy_to_selected_paths(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    managed = project / ".specify" / "state.json"
+    managed.parent.mkdir(parents=True)
+    managed.write_text("{}\n", encoding="utf-8")
+    unrelated = project / ".git" / "objects" / "large-object"
+    unrelated.parent.mkdir(parents=True)
+    unrelated.write_bytes(b"unrelated")
+    staged = tmp_path / "staged"
+
+    _stage_project_copy(project, staged, {Path(".specify")})
+
+    assert (staged / ".specify" / "state.json").read_text(encoding="utf-8") == "{}\n"
+    assert not (staged / ".git").exists()
+
+
+def test_stage_selected_path_quarantines_symlinked_parent(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    outside = tmp_path / "outside-agent"
+    commands = outside / "commands"
+    commands.mkdir(parents=True)
+    (commands / "keep.md").write_text("external\n", encoding="utf-8")
+    try:
+        (project / ".agent").symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available")
+    staged = tmp_path / "staged"
+
+    _stage_project_copy(project, staged, {Path(".agent/commands")})
+
+    staged_agent = staged / ".agent"
+    assert staged_agent.is_symlink()
+    assert not (staged_agent / "commands" / "keep.md").exists()
+    assert (commands / "keep.md").read_text(encoding="utf-8") == "external\n"
 
 
 def test_stage_copy_quarantines_external_absolute_symlinks(tmp_path: Path) -> None:
