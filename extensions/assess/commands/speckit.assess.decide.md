@@ -4,7 +4,7 @@ description: "Apply a go / needs-clarification / kill gate and hand survivors of
 
 # Decide: Go, Clarify, or Kill
 
-Render the **verdict** on an assessed idea and record it at `.specify/assessments/<slug>/decision.md`. This is the gate between discovery and delivery: a **go** hands the idea off to `__SPECKIT_COMMAND_SPECIFY__`; a **kill** stops it with a documented reason; **needs-clarification** names what is still missing so the user can refine the relevant Markdown artifact before deciding again. Killing ideas here is a success, not a failure — that is the entire point of an assessment pipeline.
+Render the **verdict** on an assessed idea and record it at `.specify/assessments/<slug>/decision.md`. This is the gate between discovery and delivery: a **go** hands the idea off to `__SPECKIT_COMMAND_SPECIFY__`; a **kill** stops it with a documented reason; **needs-clarification** sends it back to an earlier stage. Killing ideas here is a success, not a failure — that is the entire point of an assessment pipeline.
 
 Decide **judges; it does not spec or build.** It weighs the evidence already gathered and commits to a defensible call.
 
@@ -36,7 +36,7 @@ $ARGUMENTS
    - **Risk posture** — are the major risks understood and acceptably mitigated? Rate with the same positive polarity as the other criteria: `strong` = key risks identified and credibly mitigated; `weak` = serious, unmitigated risk. (from all artifacts)
 2. **Reach a verdict**:
    - **go** — the idea is worth specifying. Requires problem validity `adequate`+, **evidence strength `adequate`+ (never `weak` or `unknown`)**, and a recommended concept option. If evidence is `weak`/`unknown`, the verdict is `needs-clarification`, not `go`.
-   - **needs-clarification** — promising but blocked on specific unknowns. List exactly what must be answered and which artifact (stage) those answers belong in.
+   - **needs-clarification** — promising but blocked on specific unknowns. List exactly what must be answered and which stage to revisit.
    - **kill** — not worth building now. State the decisive reason plainly (weak problem, better alternative exists, cost > value, out of scope, superseded).
 3. **Record the rationale** so the decision is auditable months later. Any `unknown` score must be acknowledged, not glossed.
 4. **Define the handoff (go only)**: summarize what `__SPECKIT_COMMAND_SPECIFY__` should receive — the problem statement, the recommended option, in/out of scope, success metrics, and open questions carried forward.
@@ -69,8 +69,7 @@ Write `ASSESS_DIR/decision.md`:
 ## If needs-clarification
 
 - **Blocking questions**: [NEEDS CLARIFICATION: …]
-- **Artifact to refine**: intake.md | research.md | problem.md | concept.md | decision.md
-- **How**: edit that file directly, or ask the agent in chat to incorporate the missing information. Prefer refining the existing artifact over re-running the stage command. After the gaps are filled, update this `decision.md` (scorecard / verdict / handoff) rather than discarding the assessment.
+- **Revisit stage**: intake | research | define | shape
 
 ## If go — Handoff to `__SPECKIT_COMMAND_SPECIFY__`
 
@@ -86,7 +85,7 @@ Write `ASSESS_DIR/decision.md`:
 - The path `.specify/assessments/<ASSESS_SLUG>/decision.md`.
 - The next step, by verdict:
   - **go** → `__SPECKIT_COMMAND_SPECIFY__` using the handoff summary as its input.
-  - **needs-clarification** → refine the named artifact in place (direct edit or free-form agent update), then revise `decision.md` once the blockers are cleared. Re-run a stage command only if the draft itself is wrong or discarded.
+  - **needs-clarification** → re-run the named stage (e.g. `__SPECKIT_COMMAND_ASSESS_RESEARCH__ slug=<ASSESS_SLUG>`).
   - **kill** → none; the assessment is closed. The record remains for future reference.
 
 ## Guardrails

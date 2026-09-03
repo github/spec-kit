@@ -54,7 +54,7 @@ The normal process is sequential and each command usually runs **once**:
 intake → research → define → shape → decide
 ```
 
-Each stage writes a Markdown artifact under `.specify/assessments/<slug>/`. Those files stay editable. `[NEEDS CLARIFICATION: …]` markers are gaps in the artifact, not a signal to regenerate the whole stage from scratch.
+Each stage writes a Markdown artifact under `.specify/assessments/<slug>/`. Those files stay editable. The commands keep their existing output templates: they do not rewrite an earlier artifact or perform that refinement themselves. `[NEEDS CLARIFICATION: …]` markers are gaps in the artifact, not a signal to regenerate the whole stage from scratch.
 
 Resolve them by refining the existing file:
 
