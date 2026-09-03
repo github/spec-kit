@@ -27,7 +27,7 @@ def test_bundled_extension_resolves(tmp_path: Path):
 def test_builtin_step_type_resolves(tmp_path: Path):
     """A built-in step type must resolve, like a bundled extension.
 
-    Spec Kit ships 11 step types as built-ins registered in ``STEP_REGISTRY``
+    Spec Kit ships 12 step types as built-ins registered in ``STEP_REGISTRY``
     rather than as on-disk asset directories, so there is no
     ``_locate_bundled_step``. The ``steps`` branch of ``_resolved_locally`` only
     asked ``StepRegistry(root).is_installed()``, which tracks *community* step
@@ -40,7 +40,7 @@ def test_builtin_step_type_resolves(tmp_path: Path):
     warnings: list[str] = []
     check = make_reference_checker(root, allow_network=True, warnings=warnings)
 
-    for step_id in ("shell", "gate", "command", "if"):
+    for step_id in ("shell", "gate", "command", "if", "slot"):
         assert step_id in BUILTIN_STEP_TYPES, step_id
         assert check(_ref("steps", step_id)) is None, step_id
     assert warnings == []

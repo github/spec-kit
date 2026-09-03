@@ -286,6 +286,40 @@ edits:
 
 Lower priority values have higher precedence. Change this overlay to `priority: 5` if it must win a conflict with the `add-lint` overlay above. It replaces the `review-plan` gate with a non-interactive command.
 
+### Workflow slots (upstream extension points)
+
+Workflow authors can declare a named, no-op workflow slot with `type: slot`:
+
+```yaml
+- id: post-implement
+  type: slot
+  name: "Post-implementation checks"
+```
+
+The step `id` is the unique overlay anchor; `name` is a required non-blank,
+human-readable label only. An unfilled slot completes as a `skipped` step with
+`output: {slot: <name>}`, so subsequent steps continue normally.
+
+Fill a slot with a schema-valid overlay `replace` edit anchored on the step
+`id`, not its `name`:
+
+```yaml
+id: fill-post-implement
+extends: my-workflow
+edits:
+  - replace: post-implement
+    step:
+      id: post-implement
+      type: shell
+      run: "echo Run project-specific checks"
+```
+
+Reuse the slot's `id` when later expressions or `fan-in.wait_for` refer to it.
+The replacement must also preserve every output key those later steps consume:
+an unfilled workflow slot supplies only `steps.<id>.output.slot`. Slot steps are
+not supported inside `fan-out.step` templates because runtime-multiplied
+templates cannot be overlay anchors.
+
 ### Interaction with Bundles and Updates
 
 `specify workflow add <local-directory>` installs the complete local workflow
@@ -494,6 +528,7 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 | `prompt`     | Send an arbitrary prompt to the AI coding agent  |
 | `shell`      | Execute a shell command and capture output       |
 | `init`       | Bootstrap a project (like `specify init`)        |
+| `slot`       | Named workflow slot; skipped when unfilled       |
 | `gate`       | Pause for human approval before continuing       |
 | `if`         | Conditional branching (then/else)                |
 | `switch`     | Multi-branch dispatch on an expression           |
