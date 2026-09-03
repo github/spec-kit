@@ -367,43 +367,30 @@ def main(argv: list[str] | None = None) -> int:
     spec_file = feature_dir / "spec.md"
 
     if not args.dry_run:
-        if feature_dir.is_dir() and not args.allow_existing:
-            if args.use_timestamp:
-                print(
-                    f"Error: Feature directory '{feature_dir}' already exists. "
-                    "Rerun to get a new timestamp or use a different --short-name.",
-                    file=sys.stderr,
-                )
-            else:
-                print(
-                    f"Error: Feature directory '{feature_dir}' already exists. "
-                    "Please use a different feature name or specify a different "
-                    "number with --number.",
-                    file=sys.stderr,
-                )
-            return 1
-
-        template_content = None
-        needs_spec = not spec_file.is_file()
-        if needs_spec:
-            try:
-                template_content = resolve_template_content(
-                    "spec-template", repo_root
-                )
-            except TemplateResolutionError as exc:
-                print(f"Error: {exc}", file=sys.stderr)
-                return 1
-
-        # Exclusive create: mkdir without exist_ok fails if another invocation
-        # reserved the same FEATURE_DIR after the exists check above. Rescan
-        # and retry before writing spec.md so the loser cannot overwrite it.
+        # Exclusive create first so a lost race rescans instead of exiting on the
+        # pre-mkdir exists check, and so needs_spec is derived for the final
+        # FEATURE_DIR (not a path abandoned after retry).
+        reserved_new_dir = False
         while True:
             if args.allow_existing and feature_dir.is_dir():
+                reserved_new_dir = False
                 break
             try:
                 feature_dir.mkdir(parents=True)
+                reserved_new_dir = True
                 break
             except FileExistsError:
+                # FileExistsError also means a regular file (or non-dir) occupies
+                # the path. Reject that before treat-as-reusable / rescan — a
+                # non-dir is never a feature directory, and rescan would loop
+                # forever because _get_highest_from_specs only counts dirs.
+                if not feature_dir.is_dir():
+                    print(
+                        f"Error: could not create feature directory "
+                        f"'{feature_dir}'",
+                        file=sys.stderr,
+                    )
+                    return 1
                 if args.allow_existing:
                     break
                 if args.use_timestamp:
@@ -425,6 +412,22 @@ def main(argv: list[str] | None = None) -> int:
                 branch_name = _fit_branch_name(feature_num, branch_suffix)
                 feature_dir = specs_dir / branch_name
                 spec_file = feature_dir / "spec.md"
+
+        template_content = None
+        needs_spec = not spec_file.is_file()
+        if needs_spec:
+            try:
+                template_content = resolve_template_content(
+                    "spec-template", repo_root
+                )
+            except TemplateResolutionError as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                if reserved_new_dir:
+                    try:
+                        feature_dir.rmdir()
+                    except OSError:
+                        pass
+                return 1
 
         if needs_spec:
             if template_content is not None:

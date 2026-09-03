@@ -358,39 +358,17 @@ FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
 SPEC_FILE="$FEATURE_DIR/spec.md"
 
 if [ "$DRY_RUN" != true ]; then
-    if [ -d "$FEATURE_DIR" ] && [ "$ALLOW_EXISTING" != true ]; then
-        if [ "$USE_TIMESTAMP" = true ]; then
-            >&2 echo "Error: Feature directory '$FEATURE_DIR' already exists. Rerun to get a new timestamp or use a different --short-name."
-        else
-            >&2 echo "Error: Feature directory '$FEATURE_DIR' already exists. Please use a different feature name or specify a different number with --number."
-        fi
-        exit 1
-    fi
-
-    NEEDS_SPEC=false
-    SPEC_TEMPLATE_FOUND=false
-    SPEC_TEMPLATE_CONTENT=""
-    if [ ! -f "$SPEC_FILE" ]; then
-        NEEDS_SPEC=true
-        if SPEC_TEMPLATE_CONTENT=$(resolve_template_content "spec-template" "$REPO_ROOT"; status=$?; printf x; exit "$status"); then
-            SPEC_TEMPLATE_CONTENT="${SPEC_TEMPLATE_CONTENT%x}"
-            SPEC_TEMPLATE_FOUND=true
-        else
-            resolve_status=$?
-            if [ "$resolve_status" -ne 1 ]; then
-                exit "$resolve_status"
-            fi
-        fi
-    fi
-
-    # Exclusive create: plain mkdir fails with EEXIST if another invocation
-    # reserved the same FEATURE_DIR after the exists check above. Rescan
-    # and retry before writing spec.md so the loser cannot overwrite it.
+    # Exclusive create first so a lost race rescans instead of exiting on the
+    # pre-mkdir exists check, and so NEEDS_SPEC is derived for the final
+    # FEATURE_DIR (not a path abandoned after retry).
+    RESERVED_NEW_DIR=false
     while true; do
         if [ "$ALLOW_EXISTING" = true ] && [ -d "$FEATURE_DIR" ]; then
+            RESERVED_NEW_DIR=false
             break
         fi
         if mkdir "$FEATURE_DIR" 2>/dev/null; then
+            RESERVED_NEW_DIR=true
             break
         fi
         if [ ! -d "$FEATURE_DIR" ]; then
@@ -406,6 +384,25 @@ if [ "$DRY_RUN" != true ]; then
         fi
         rescan_sequential_feature
     done
+
+    NEEDS_SPEC=false
+    SPEC_TEMPLATE_FOUND=false
+    SPEC_TEMPLATE_CONTENT=""
+    if [ ! -f "$SPEC_FILE" ]; then
+        NEEDS_SPEC=true
+        if SPEC_TEMPLATE_CONTENT=$(resolve_template_content "spec-template" "$REPO_ROOT"; status=$?; printf x; exit "$status"); then
+            SPEC_TEMPLATE_CONTENT="${SPEC_TEMPLATE_CONTENT%x}"
+            SPEC_TEMPLATE_FOUND=true
+        else
+            resolve_status=$?
+            if [ "$resolve_status" -ne 1 ]; then
+                if [ "$RESERVED_NEW_DIR" = true ]; then
+                    rmdir "$FEATURE_DIR" 2>/dev/null || true
+                fi
+                exit "$resolve_status"
+            fi
+        fi
+    fi
 
     if [ "$NEEDS_SPEC" = true ]; then
         if [ "$SPEC_TEMPLATE_FOUND" = true ]; then
