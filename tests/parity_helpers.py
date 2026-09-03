@@ -82,6 +82,37 @@ def clean_env() -> dict[str, str]:
     return env
 
 
+def collation_range_locale() -> str | None:
+    """A locale whose ``[a-z]`` bracket range is collation-ordered, or ``None``.
+
+    glibc resolves a bracket-expression *range* through the locale's collation
+    table, so under ``en_US.UTF-8`` ``[^a-z0-9]`` leaves accented lowercase
+    letters alone while ``C.UTF-8`` and the POSIX locale strip them. Probe
+    ``sed`` directly rather than trusting a locale name: the environments where
+    the divergence cannot be reproduced (no such locale installed, a non-glibc
+    libc, Git-for-Windows) are exactly the ones where the probe comes back
+    clean, so the caller can skip.
+    """
+    for name in ("en_US.UTF-8", "en_US.utf8"):
+        env = clean_env()
+        env["LC_ALL"] = name
+        env["LANG"] = name
+        try:
+            probe = subprocess.run(
+                ["sed", "s/[^a-z0-9]/-/g"],
+                input="é\n",
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+            )
+        except OSError:  # pragma: no cover - sed missing entirely
+            return None
+        if probe.returncode == 0 and "é" in probe.stdout:
+            return name
+    return None
+
+
 def run(
     cmd: list[str],
     repo: Path,

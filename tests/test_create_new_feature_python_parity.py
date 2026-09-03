@@ -14,6 +14,8 @@ from tests.parity_helpers import (
     HAS_POWERSHELL,
     bash_cmd,
     break_wrap_layer,
+    clean_env,
+    collation_range_locale,
     install_composition_stack,
     install_scripts,
     json_stdout,
@@ -117,8 +119,18 @@ def test_python_prefix_scan_tolerates_permission_error(
         "I want to add the new API rate limiting feature for users",
         "Fix UI for DB sync",
         "a to the of",
+        # An acronym touching an accented letter: bash probes with `grep -qw`
+        # under LC_ALL=C, where the accent is a word boundary, so the Python
+        # twin must use explicit ASCII lookarounds rather than a Unicode \b.
+        "Fix \u00e9DB\u00e9 sync",
     ],
-    ids=["plain", "stop_words", "acronyms", "all_stop_words_fallback"],
+    ids=[
+        "plain",
+        "stop_words",
+        "acronyms",
+        "all_stop_words_fallback",
+        "acronym_next_to_non_ascii",
+    ],
 )
 def test_python_branch_name_generation_matches_bash(
     repo: Path, description: str
@@ -129,6 +141,26 @@ def test_python_branch_name_generation_matches_bash(
     assert py.returncode == bash.returncode == 0
     assert py.stderr == bash.stderr == ""
     assert json_stdout(py) == json_stdout(bash)
+
+
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_all_variants_keep_acronym_next_to_non_ascii(repo: Path) -> None:
+    """An acronym touching an accented letter survives in all three twins.
+
+    bash probes for acronyms with `grep -qw` under LC_ALL=C, where an accented
+    letter is a non-word byte and therefore a boundary. Python's \\b and .NET's
+    \\b are Unicode-aware and saw "\u00e9DB\u00e9" as a single word, dropping the
+    acronym; all three now spell the boundary out as ASCII.
+    """
+    description = "Fix \u00e9DB\u00e9 sync"
+    bash = run(bash_cmd(repo, SCRIPT, "--json", "--dry-run", description), repo)
+    py = run(py_cmd(repo, SCRIPT, "--json", "--dry-run", description), repo)
+    ps = run(ps_cmd(repo, SCRIPT, "-Json", "-DryRun", description), repo)
+
+    assert bash.returncode == py.returncode == ps.returncode == 0
+    assert json_stdout(py) == json_stdout(bash) == json_stdout(ps)
+    assert json_stdout(ps)["BRANCH_NAME"] == "001-fix-db-sync"
 
 
 @requires_bash
@@ -1065,6 +1097,111 @@ def test_all_variants_corrected_prefix_skips_timestamp_collision(repo: Path) -> 
     assert json_stdout(py)["FEATURE_NUM"] == "20260320"
     for result in (bash, ps, py):
         assert "using 20260320 instead" in result.stderr
+
+
+@requires_bash
+@pytest.mark.parametrize(
+    "description",
+    [
+        "Añadir autenticación de usuario",
+        "Prüfung für Benutzer anlegen",
+        "Ajouter la réservation hôtelière",
+    ],
+    ids=["spanish", "german", "french"],
+)
+def test_bash_branch_name_ignores_locale_collation(
+    repo: Path, description: str
+) -> None:
+    """Branch naming must not depend on the caller's locale.
+
+    ``clean_branch_name``/``generate_branch_name`` sanitize with
+    ``sed 's/[^a-z0-9]/-/g'``. Run under a collation-ordered locale that class
+    keeps accented lowercase letters, so bash produced
+    ``001-ajouter-réservation-hôtelière`` where the Python and PowerShell twins
+    produce ``001-ajouter-servation-teli``: the same description yielded a
+    different ``specs/`` directory on two machines that differ only in ``LANG``.
+    """
+    locale_name = collation_range_locale()
+    if locale_name is None:
+        pytest.skip("no locale with collation-ordered [a-z] ranges available")
+
+    env = clean_env()
+    env["LC_ALL"] = locale_name
+    env["LANG"] = locale_name
+
+    bash = run(bash_cmd(repo, SCRIPT, "--json", "--dry-run", description), repo, env)
+    py = run(py_cmd(repo, SCRIPT, "--json", "--dry-run", description), repo, env)
+
+    assert py.returncode == bash.returncode == 0
+    assert json_stdout(py) == json_stdout(bash)
+    branch = json_stdout(bash)["BRANCH_NAME"]
+    assert isinstance(branch, str) and branch.isascii(), branch
+
+    # The run above reaches generate_branch_name. --short-name reaches
+    # clean_branch_name, a separate function carrying its own LC_ALL=C, so
+    # exercise the accented value through both: neither copy can then regress
+    # on its own without a failure here.
+    short_args = ("--json", "--dry-run", "--short-name", description, "x")
+    bash_short = run(bash_cmd(repo, SCRIPT, *short_args), repo, env)
+    py_short = run(py_cmd(repo, SCRIPT, *short_args), repo, env)
+
+    assert py_short.returncode == bash_short.returncode == 0
+    assert json_stdout(py_short) == json_stdout(bash_short)
+    short_branch = json_stdout(bash_short)["BRANCH_NAME"]
+    assert isinstance(short_branch, str) and short_branch.isascii(), short_branch
+
+
+@requires_bash
+@pytest.mark.parametrize(
+    ("short_name", "expected"),
+    [
+        ("My Fancy!! Name", "001-my-fancy-name"),
+        ("auth -- v2", "001-auth-v2"),
+    ],
+    ids=["punctuation_run", "separator_run"],
+)
+def test_bash_collapses_repeated_separators(
+    repo: Path, short_name: str, expected: str
+) -> None:
+    """Runs of non-alphanumeric characters collapse to a single hyphen.
+
+    The bash twin squeezed them with ``sed 's/-\\+/-/g'``. ``\\+`` is a GNU
+    extension, not POSIX BRE: BSD ``sed`` (macOS) reads it as a literal ``+``,
+    so nothing collapsed and the branch became ``001-my-fancy---name``.
+    """
+    bash = run(
+        bash_cmd(repo, SCRIPT, "--json", "--dry-run", "--short-name", short_name, "x"),
+        repo,
+    )
+    py = run(
+        py_cmd(repo, SCRIPT, "--json", "--dry-run", "--short-name", short_name, "x"),
+        repo,
+    )
+
+    assert bash.returncode == py.returncode == 0
+    assert json_stdout(bash) == json_stdout(py)
+    assert json_stdout(bash)["BRANCH_NAME"] == expected
+
+
+@requires_bash
+@pytest.mark.parametrize("short_name", ["-n", "-e", "-E"], ids=["n", "e", "E"])
+def test_python_dash_prefixed_short_name_matches_bash(
+    repo: Path, short_name: str
+) -> None:
+    """A short name that looks like an ``echo`` option is still text.
+
+    ``clean_branch_name`` piped the raw value through ``echo "$name"``, so bash
+    consumed ``-n``/``-e``/``-E`` as options and emitted nothing, yielding the
+    suffix-less ``001-`` where Python yields ``001-n``.
+    """
+    args = ("--json", "--dry-run", "--short-name", short_name, "x")
+    bash = run(bash_cmd(repo, SCRIPT, *args), repo)
+    py = run(py_cmd(repo, SCRIPT, *args), repo)
+
+    assert py.returncode == bash.returncode == 0
+    assert json_stdout(py) == json_stdout(bash)
+    expected = f"001-{short_name.lstrip('-').lower()}"
+    assert json_stdout(bash)["BRANCH_NAME"] == expected
 
 
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
