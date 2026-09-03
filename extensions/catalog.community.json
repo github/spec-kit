@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-31T00:00:00Z",
+  "updated_at": "2026-09-03T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -1773,11 +1773,7 @@
         "evidence",
         "provenance",
         "quality",
-        "governance",
-        "compliance",
-        "workflow",
-        "model-routing",
-        "portfolio"
+        "governance"
       ],
       "verified": false,
       "downloads": 0,

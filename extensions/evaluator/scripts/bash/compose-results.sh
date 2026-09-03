@@ -72,20 +72,23 @@ if [[ ${#RESULT_FILES[@]} -eq 0 ]]; then
         --arg ts "$TIMESTAMP" \
         '{
             schema_version: "1.0",
-            composed: true,
+            evaluator: { id: "composed", version: "1.0", name: "Composed (\($strategy))" },
             phase: $phase,
-            composition_strategy: $strategy,
-            composed_outcome: "pass",
-            composed_summary: "No evaluator results found for this phase.",
-            evaluator_results: [],
+            outcome: "pass",
+            summary: "No evaluator results found for this phase.",
             findings: [],
             next_action: { kind: "pass", target_phase: null, message: "No evaluator results found." },
-            evaluator_states: {},
             metadata: {
                 timestamp: $ts,
+                duration_ms: 0,
+                artifacts_evaluated: [],
+                deterministic: true,
                 evaluator_count: 0,
-                contradictory_findings: []
-            }
+                contradictory_findings: [],
+                composition_strategy: $strategy,
+                evaluator_results: []
+            },
+            state: {}
         }')
 else
     # Build a jq filter that merges all result files
@@ -128,20 +131,32 @@ else
     | resolve_outcome($outcomes; $STRATEGY) as $composed_outcome
     | {
         schema_version: "1.0",
-        composed: true,
+        evaluator: { id: "composed", version: "1.0", name: "Composed (\($STRATEGY))" },
         phase: $PHASE,
-        composition_strategy: $STRATEGY,
-        composed_outcome: $composed_outcome,
-        composed_summary: "\($results | length) evaluator(s) ran. \($all_findings | length) finding(s) total.",
-        evaluator_results: $results | map({ evaluator_id: .evaluator.id, outcome: .outcome, findings_count: (.findings // [] | length) }),
+        outcome: $composed_outcome,
+        summary: "\($results | length) evaluator(s) ran. \($all_findings | length) finding(s) total.",
         findings: $all_findings | sort_by(severity_order(.severity)),
         next_action: { kind: $composed_outcome, target_phase: null, message: "Composed outcome: \($composed_outcome)." },
-        evaluator_states: $results | map({ key: .evaluator.id, value: (.state // {}) }) | from_entries,
         metadata: {
             timestamp: $TIMESTAMP,
+            duration_ms: 0,
+            artifacts_evaluated: [],
+            deterministic: true,
             evaluator_count: $results | length,
-            contradictory_findings: []
-        }
+            contradictory_findings: ([$all_findings[] | {
+                subject: .subject,
+                kind: .kind,
+                id: .id,
+                evidence_refs: (.evidence_refs // [])
+            }] | group_by(.subject) | map(select(length > 1)) | map({
+                subject: .[0].subject,
+                finding_ids: [.[].id],
+                description: ("Conflicting findings on subject \(.[0].subject)")
+            })),
+            composition_strategy: $STRATEGY,
+            evaluator_results: $results | map({ evaluator_id: .evaluator.id, outcome: .outcome, findings_count: (.findings // [] | length) })
+        },
+        state: $results | map({ key: .evaluator.id, value: (.state // {}) }) | from_entries
     }'
 
     COMPOSED=$(for f in "${RESULT_FILES[@]}"; do cat "$f"; done | jq -s "$JQ_FILTER" \

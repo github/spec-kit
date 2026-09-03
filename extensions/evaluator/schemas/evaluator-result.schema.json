@@ -182,8 +182,8 @@
           "enum": ["pass", "warn", "iterate", "clarify", "gather_evidence", "block"]
         },
         "target_phase": {
-          "type": "string",
-          "description": "Target phase to iterate back to (for iterate actions)",
+          "type": ["string", "null"],
+          "description": "Target phase to iterate back to (for iterate actions); null for non-iterate outcomes",
           "enum": [
             "specify",
             "plan",
@@ -193,7 +193,8 @@
             "checklist",
             "clarify",
             "constitution",
-            "converge"
+            "converge",
+            null
           ]
         },
         "message": {
@@ -298,8 +299,8 @@
           }
         },
         "model": {
-          "type": "string",
-          "description": "AI model used for the evaluation, if applicable"
+          "type": ["string", "null"],
+          "description": "AI model used for the evaluation, if applicable; null for deterministic evaluators"
         },
         "deterministic": {
           "type": "boolean",

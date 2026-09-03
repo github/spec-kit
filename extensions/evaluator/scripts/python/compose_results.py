@@ -19,6 +19,7 @@ import argparse
 import json
 import os
 import sys
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -102,7 +103,24 @@ def _severity_sort_key(finding: dict[str, Any]) -> tuple[int, str]:
 
 
 def _detect_contradictions(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Detect pairs of findings that contradict each other on the same subject."""
+    """Detect pairs of findings that contradict each other on the same subject.
+
+    Contradictions are detected when two findings on the same subject have
+    opposing evidence: one with supporting evidence (observed/inferred) and
+    another with negative evidence (contradicted/unsupported) or a finding
+    kind that inherently contradicts (contradiction, unsupported_claim).
+    """
+    # Finding kinds that indicate a problem/negative assessment
+    _negative_kinds = {
+        "unsupported_claim",
+        "contradiction",
+        "missing_evidence",
+        "unverified_assertion",
+        "provenance_gap",
+        "coverage_gap",
+        "traceability_gap",
+    }
+
     by_subject: dict[str, list[dict[str, Any]]] = {}
     for f in findings:
         subject = f.get("subject", "")
@@ -113,13 +131,19 @@ def _detect_contradictions(findings: list[dict[str, Any]]) -> list[dict[str, Any
         if len(group) < 2:
             continue
         kinds = {f.get("kind") for f in group}
-        # Contradiction: one says "supported" / passes, another says "unsupported" / fails
-        has_positive = any(k in ("pass", "observed") for k in kinds)
-        has_negative = any(
-            k in ("unsupported_claim", "contradiction", "missing_evidence", "unverified_assertion")
-            for k in kinds
+        # Check for opposing evidence within evidence_refs across findings
+        has_supporting = any(
+            any(e.get("kind") in ("observed", "inferred") for e in f.get("evidence_refs", []))
+            for f in group
         )
-        if has_positive and has_negative:
+        has_contradicting = any(
+            any(e.get("kind") in ("contradicted", "unsupported") for e in f.get("evidence_refs", []))
+            for f in group
+        )
+        has_negative_kind = bool(kinds & _negative_kinds)
+        has_positive_kind = bool(kinds - _negative_kinds)
+
+        if (has_supporting and has_contradicting) or (has_positive_kind and has_negative_kind):
             contradictions.append(
                 {
                     "subject": subject,
@@ -130,10 +154,12 @@ def _detect_contradictions(findings: list[dict[str, Any]]) -> list[dict[str, Any
     return contradictions
 
 
-def _load_result_file(filepath: Path) -> dict[str, Any] | None:
+def _load_result_file(filepath: Path, schema: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """Load and validate a single evaluator result file.
 
     Returns the parsed result dict, or None if the file is invalid.
+    Performs structural validation; when *schema* is provided, also validates
+    against the evaluator result JSON Schema.
     """
     try:
         with open(filepath, encoding="utf-8") as fh:
@@ -142,8 +168,7 @@ def _load_result_file(filepath: Path) -> dict[str, Any] | None:
         print(f"Warning: skipping invalid result file {filepath}: {exc}", file=sys.stderr)
         return None
 
-    # Basic structural validation (full schema validation is done by the
-    # command template; this is a lightweight check for the script).
+    # Basic structural validation
     required = ["schema_version", "evaluator", "phase", "outcome", "findings"]
     for key in required:
         if key not in data:
@@ -153,6 +178,29 @@ def _load_result_file(filepath: Path) -> dict[str, Any] | None:
     if not isinstance(data.get("findings"), list):
         print(f"Warning: skipping {filepath}: 'findings' is not an array", file=sys.stderr)
         return None
+
+    # Validate outcome against known values
+    _valid_outcomes = {"pass", "warn", "iterate", "clarify", "gather_evidence", "block"}
+    if data.get("outcome") not in _valid_outcomes:
+        print(f"Warning: skipping {filepath}: invalid outcome '{data.get('outcome')}'", file=sys.stderr)
+        return None
+
+    # Validate evaluator object
+    evaluator = data.get("evaluator")
+    if not isinstance(evaluator, dict) or "id" not in evaluator:
+        print(f"Warning: skipping {filepath}: missing or invalid evaluator object", file=sys.stderr)
+        return None
+
+    # Full JSON Schema validation when schema is available
+    if schema is not None:
+        try:
+            import jsonschema
+            jsonschema.validate(instance=data, schema=schema)
+        except ImportError:
+            pass  # jsonschema not available; skip full validation
+        except jsonschema.ValidationError as exc:
+            print(f"Warning: skipping {filepath}: schema validation failed: {exc.message}", file=sys.stderr)
+            return None
 
     return data
 
@@ -230,7 +278,7 @@ def compose_results(
     if not results_dir.is_dir():
         return _empty_composed(phase, strategy, "No results directory found.")
 
-    # Discover result files for the phase
+    # Discover result files for the phase, select latest per evaluator
     result_files = sorted(results_dir.glob(f"*-{phase}-*.json"))
     # Exclude previously composed files
     result_files = [f for f in result_files if not f.name.startswith("composed-")]
@@ -238,10 +286,22 @@ def compose_results(
     if not result_files:
         return _empty_composed(phase, strategy, "No evaluator results found for this phase.")
 
-    # Load and validate all results
+    # Group by evaluator ID and select the latest result per evaluator
+    # Filename pattern: <evaluator-id>-<phase>-<timestamp>.json
+    by_evaluator: dict[str, Path] = {}
+    for fp in result_files:
+        name = fp.stem
+        phase_marker = f"-{phase}-"
+        idx = name.find(phase_marker)
+        if idx > 0:
+            eid = name[:idx]
+            if eid not in by_evaluator or fp.stat().st_mtime > by_evaluator[eid].stat().st_mtime:
+                by_evaluator[eid] = fp
+
+    # Load and validate all results (latest per evaluator)
     results: list[dict[str, Any]] = []
     evaluator_summaries: list[dict[str, Any]] = []
-    for fp in result_files:
+    for fp in sorted(by_evaluator.values()):
         data = _load_result_file(fp)
         if data is None:
             continue
@@ -273,13 +333,19 @@ def compose_results(
     outcomes = [r["outcome"] for r in results]
     composed_outcome = _resolve_outcome(outcomes, strategy)
 
-    # Determine iterate target phase
+    # Determine iterate target phase (deterministic tie-break)
     iterate_phases = [
         r.get("next_action", {}).get("target_phase")
         for r in results
         if r["outcome"] == "iterate" and r.get("next_action", {}).get("target_phase")
     ]
-    most_common_iterate = max(set(iterate_phases), key=iterate_phases.count) if iterate_phases else None
+    if iterate_phases:
+        # Sort for deterministic tie-break: most frequent first, then alphabetically
+        from collections import Counter
+        phase_counts = Counter(iterate_phases)
+        most_common_iterate = sorted(phase_counts.items(), key=lambda x: (-x[1], x[0]))[0][0]
+    else:
+        most_common_iterate = None
 
     # Detect contradictions
     contradictions = _detect_contradictions(all_findings)
@@ -294,28 +360,35 @@ def compose_results(
         if "state" in r:
             evaluator_states[eid] = r["state"]
 
-    # Build composed result
+    # Build composed result conforming to the standard evaluator result schema
     composed = {
         "schema_version": "1.0",
-        "composed": True,
+        "evaluator": {
+            "id": "composed",
+            "version": "1.0",
+            "name": f"Composed ({strategy})",
+        },
         "phase": phase,
-        "composition_strategy": strategy,
-        "composed_outcome": composed_outcome,
-        "composed_summary": (
+        "outcome": composed_outcome,
+        "summary": (
             f"{len(results)} evaluator(s) ran. "
             f"Outcomes: {', '.join(f'{s['evaluator_id']}={s['outcome']}' for s in evaluator_summaries)}. "
             f"{len(all_findings)} finding(s) total."
         ),
-        "evaluator_results": evaluator_summaries,
         "findings": all_findings,
         "next_action": _outcome_to_next_action(composed_outcome, most_common_iterate),
         "model_routing": model_routing,
-        "evaluator_states": evaluator_states,
         "metadata": {
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "duration_ms": 0,
+            "artifacts_evaluated": [],
+            "deterministic": True,
             "evaluator_count": len(results),
             "contradictory_findings": contradictions,
+            "composition_strategy": strategy,
+            "evaluator_results": evaluator_summaries,
         },
+        "state": evaluator_states,
     }
 
     return composed
@@ -324,20 +397,27 @@ def compose_results(
 def _empty_composed(phase: str, strategy: str, message: str) -> dict[str, Any]:
     return {
         "schema_version": "1.0",
-        "composed": True,
+        "evaluator": {
+            "id": "composed",
+            "version": "1.0",
+            "name": f"Composed ({strategy})",
+        },
         "phase": phase,
-        "composition_strategy": strategy,
-        "composed_outcome": "pass",
-        "composed_summary": message,
-        "evaluator_results": [],
+        "outcome": "pass",
+        "summary": message,
         "findings": [],
         "next_action": {"kind": "pass", "target_phase": None, "message": message},
-        "evaluator_states": {},
         "metadata": {
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "duration_ms": 0,
+            "artifacts_evaluated": [],
+            "deterministic": True,
             "evaluator_count": 0,
             "contradictory_findings": [],
+            "composition_strategy": strategy,
+            "evaluator_results": [],
         },
+        "state": {},
     }
 
 

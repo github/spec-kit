@@ -36,24 +36,31 @@ $resultFiles = Get-ChildItem -Path $ResultsDir -Filter "*-$Phase-*.json" |
 if ($resultFiles.Count -eq 0) {
     $composed = @{
         schema_version = "1.0"
-        composed = $true
+        evaluator = @{
+            id = "composed"
+            version = "1.0"
+            name = "Composed ($Strategy)"
+        }
         phase = $Phase
-        composition_strategy = $Strategy
-        composed_outcome = "pass"
-        composed_summary = "No evaluator results found for this phase."
-        evaluator_results = @()
+        outcome = "pass"
+        summary = "No evaluator results found for this phase."
         findings = @()
         next_action = @{
             kind = "pass"
             target_phase = $null
             message = "No evaluator results found."
         }
-        evaluator_states = @{}
         metadata = @{
             timestamp = $timestamp
+            duration_ms = 0
+            artifacts_evaluated = @()
+            deterministic = $true
             evaluator_count = 0
             contradictory_findings = @()
+            composition_strategy = $Strategy
+            evaluator_results = @()
         }
+        state = @{}
     }
 } else {
     $allResults = @()
@@ -146,26 +153,58 @@ if ($resultFiles.Count -eq 0) {
 
     $composedOutcome = Resolve-Outcome -Outcomes $outcomes -Strategy $Strategy
 
+    # Detect contradictions
+    $contradictions = @()
+    $bySubject = @{}
+    foreach ($f in $allFindings) {
+        $subj = if ($f.PSObject.Properties["subject"]) { $f.subject } else { "" }
+        if (-not $bySubject.ContainsKey($subj)) { $bySubject[$subj] = @() }
+        $bySubject[$subj] += $f
+    }
+    foreach ($subj in $bySubject.Keys) {
+        $group = $bySubject[$subj]
+        if ($group.Count -ge 2) {
+            $kinds = @($group | ForEach-Object { if ($_.PSObject.Properties["kind"]) { $_.kind } else { "" } })
+            $negativeKinds = @("unsupported_claim", "contradiction", "missing_evidence", "unverified_assertion", "provenance_gap", "coverage_gap", "traceability_gap")
+            $hasNegative = ($kinds | Where-Object { $negativeKinds -contains $_ }).Count -gt 0
+            $hasPositive = ($kinds | Where-Object { $negativeKinds -notcontains $_ }).Count -gt 0
+            if ($hasPositive -and $hasNegative) {
+                $contradictions += @{
+                    subject = $subj
+                    finding_ids = @($group | ForEach-Object { $_.id })
+                    description = "Conflicting findings on subject '$subj'"
+                }
+            }
+        }
+    }
+
     $composed = @{
         schema_version = "1.0"
-        composed = $true
+        evaluator = @{
+            id = "composed"
+            version = "1.0"
+            name = "Composed ($Strategy)"
+        }
         phase = $Phase
-        composition_strategy = $Strategy
-        composed_outcome = $composedOutcome
-        composed_summary = "$($allResults.Count) evaluator(s) ran. $($allFindings.Count) finding(s) total."
-        evaluator_results = $evaluatorSummaries
+        outcome = $composedOutcome
+        summary = "$($allResults.Count) evaluator(s) ran. $($allFindings.Count) finding(s) total."
         findings = $allFindings
         next_action = @{
             kind = $composedOutcome
             target_phase = $null
             message = "Composed outcome: $composedOutcome."
         }
-        evaluator_states = $evaluatorStates
         metadata = @{
             timestamp = $timestamp
+            duration_ms = 0
+            artifacts_evaluated = @()
+            deterministic = $true
             evaluator_count = $allResults.Count
-            contradictory_findings = @()
+            contradictory_findings = $contradictions
+            composition_strategy = $Strategy
+            evaluator_results = $evaluatorSummaries
         }
+        state = $evaluatorStates
     }
 }
 
