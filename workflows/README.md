@@ -150,21 +150,21 @@ and resolves the integration from the step config or the workflow default:
   preset: healthcare-compliance   # Optional preset ID
 ```
 
-### Plugin Steps
+### Workflow Slots
 
-Declare a named extension point that downstream projects can fill with a
+Declare a named workflow slot that downstream projects can fill with a
 workflow overlay. The slot is skipped when unfilled; its `id` is the overlay
 anchor and `name` is a required human-readable label:
 
 ```yaml
 - id: post-implement
-  type: plugin
+  type: slot
   name: "Post-implementation checks"
 ```
 
 Use an overlay `replace` edit anchored on `post-implement` to fill the slot.
 Keep the same `id` when downstream expressions or fan-in steps reference it,
-and preserve any output keys they consume. Plugin steps are invalid inside
+and preserve any output keys they consume. Slot steps are invalid inside
 `fan-out.step` templates because those runtime-multiplied templates cannot be
 targeted by overlays.
 

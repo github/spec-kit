@@ -40,7 +40,7 @@ def test_builtin_step_type_resolves(tmp_path: Path):
     warnings: list[str] = []
     check = make_reference_checker(root, allow_network=True, warnings=warnings)
 
-    for step_id in ("shell", "gate", "command", "if", "plugin"):
+    for step_id in ("shell", "gate", "command", "if", "slot"):
         assert step_id in BUILTIN_STEP_TYPES, step_id
         assert check(_ref("steps", step_id)) is None, step_id
     assert warnings == []

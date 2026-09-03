@@ -286,13 +286,13 @@ edits:
 
 Lower priority values have higher precedence. Change this overlay to `priority: 5` if it must win a conflict with the `add-lint` overlay above. It replaces the `review-plan` gate with a non-interactive command.
 
-### Plugin slots (upstream extension points)
+### Workflow slots (upstream extension points)
 
-Workflow authors can declare a named, no-op extension point with `type: plugin`:
+Workflow authors can declare a named, no-op workflow slot with `type: slot`:
 
 ```yaml
 - id: post-implement
-  type: plugin
+  type: slot
   name: "Post-implementation checks"
 ```
 
@@ -316,7 +316,7 @@ edits:
 
 Reuse the slot's `id` when later expressions or `fan-in.wait_for` refer to it.
 The replacement must also preserve every output key those later steps consume:
-an unfilled plugin slot supplies only `steps.<id>.output.slot`. Plugin slots are
+an unfilled workflow slot supplies only `steps.<id>.output.slot`. Slot steps are
 not supported inside `fan-out.step` templates because runtime-multiplied
 templates cannot be overlay anchors.
 
@@ -528,7 +528,7 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 | `prompt`     | Send an arbitrary prompt to the AI coding agent  |
 | `shell`      | Execute a shell command and capture output       |
 | `init`       | Bootstrap a project (like `specify init`)        |
-| `plugin`     | Named extension point; skipped when unfilled     |
+| `slot`       | Named workflow slot; skipped when unfilled       |
 | `gate`       | Pause for human approval before continuing       |
 | `if`         | Conditional branching (then/else)                |
 | `switch`     | Multi-branch dispatch on an expression           |

@@ -108,7 +108,7 @@ class TestStepRegistry:
 
         expected = {
             "command", "shell", "prompt", "gate", "if", "switch",
-            "while", "do-while", "fan-out", "fan-in", "init", "plugin",
+            "while", "do-while", "fan-out", "fan-in", "init", "slot",
         }
         assert expected.issubset(set(STEP_REGISTRY.keys()))
 

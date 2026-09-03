@@ -1,4 +1,4 @@
-"""Plugin step — a named, no-op workflow extension point.
+"""Slot step — a named, no-op workflow slot.
 
 An upstream workflow declares a slot at the position where a downstream
 project may extend it. The step ``id`` is the overlay anchor; ``name`` is only
@@ -10,7 +10,7 @@ Example YAML::
 
     # Upstream workflow
     - id: post-implement
-      type: plugin
+      type: slot
       name: post-implement
 
     # .specify/workflows/overlays/my-workflow/fill-post-implement.yml
@@ -31,17 +31,17 @@ from typing import Any
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 
 
-class PluginStep(StepBase):
-    """Provide a named workflow extension point that skips when unfilled."""
+class SlotStep(StepBase):
+    """Provide a named workflow slot that skips when unfilled."""
 
-    type_key = "plugin"
+    type_key = "slot"
 
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
         if context.inside_fan_out:
             return StepResult(
                 status=StepStatus.FAILED,
                 error=(
-                    f"Plugin step {config.get('id', '?')!r} is not supported "
+                    f"Slot step {config.get('id', '?')!r} is not supported "
                     "inside fan-out templates because overlays cannot address "
                     "runtime-multiplied templates."
                 ),
@@ -56,12 +56,12 @@ class PluginStep(StepBase):
         name = config.get("name")
         if name is None:
             errors.append(
-                f"Plugin step {config.get('id', '?')!r} requires a 'name' field "
+                f"Slot step {config.get('id', '?')!r} requires a 'name' field "
                 "(the slot label)."
             )
         elif not isinstance(name, str) or not name.strip():
             errors.append(
-                f"Plugin step {config.get('id', '?')!r}: 'name' must be a "
+                f"Slot step {config.get('id', '?')!r}: 'name' must be a "
                 "non-blank string."
             )
         return errors
