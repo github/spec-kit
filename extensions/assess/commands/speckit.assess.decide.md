@@ -69,7 +69,7 @@ Write `ASSESS_DIR/decision.md`:
 ## If needs-clarification
 
 - **Blocking questions**: [NEEDS CLARIFICATION: …]
-- **Artifact to refine**: intake.md | research.md | problem.md | concept.md
+- **Artifact to refine**: intake.md | research.md | problem.md | concept.md | decision.md
 - **How**: edit that file directly, or ask the agent in chat to incorporate the missing information. Prefer refining the existing artifact over re-running the stage command. After the gaps are filled, update this `decision.md` (scorecard / verdict / handoff) rather than discarding the assessment.
 
 ## If go — Handoff to `__SPECKIT_COMMAND_SPECIFY__`

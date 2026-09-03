@@ -26,7 +26,8 @@ flowchart LR
     A[intake] --> R[research] --> D[define] --> S[shape] --> C{decide}
     C -->|go| SPEC[/speckit.specify/]
     C -->|kill| X[closed, recorded]
-    C -.->|needs-clarification: refine the named artifact in place| A
+    C -.->|needs-clarification| F[refine named artifact in place]
+    F -.->|then revise decision.md| C
 ```
 
 ## Commands
