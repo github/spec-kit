@@ -703,6 +703,46 @@ def test_all_variants_honor_speckit_python_override_when_yaml_missing(
 
 
 @requires_bash
+def test_all_variants_fall_back_when_speckit_python_lacks_pyyaml(
+    tmp_path: Path,
+) -> None:
+    """SPECKIT_PYTHON naming a Python-3 interpreter without PyYAML must not
+    break composition that a PATH interpreter can already serve.
+
+    SPECKIT_PYTHON is an override for *expanding* what's available (#4443),
+    not a way to narrow it: falling through to a working PATH interpreter
+    when the override lacks PyYAML must behave the same as if SPECKIT_PYTHON
+    had never been set.
+    """
+    repo, expected = _setup_repo(tmp_path)
+
+    no_yaml_python = tmp_path / "no-yaml-venv"
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
+        check=True,
+        capture_output=True,
+    )
+    no_yaml_exe = no_yaml_python / "bin" / "python3"
+    assert no_yaml_exe.is_file()
+
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = str(no_yaml_exe)
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, env))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)
+        == {"TEMPLATE_NAME": TEMPLATE, "TEMPLATE_CONTENT": expected}
+        for result in results
+    )
+
+
+@requires_bash
 def test_bash_fails_when_override_read_fails(tmp_path: Path) -> None:
     repo = make_repo(tmp_path)
     install_scripts(repo, SCRIPT)

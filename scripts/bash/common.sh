@@ -400,7 +400,8 @@ check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" |
 
 _python3_command() {
     if [[ -n "${SPECKIT_PYTHON:-}" ]] && command -v "$SPECKIT_PYTHON" >/dev/null 2>&1 &&
-        "$SPECKIT_PYTHON" -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then
+        "$SPECKIT_PYTHON" -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1 &&
+        "$SPECKIT_PYTHON" -c 'import yaml' >/dev/null 2>&1; then
         printf '%s\n' "$SPECKIT_PYTHON"
     elif command -v python3 >/dev/null 2>&1 &&
         python3 -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then

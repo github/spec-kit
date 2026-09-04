@@ -322,7 +322,10 @@ function Format-SpecKitCommand {
 function Get-Python3Command {
     if ($env:SPECKIT_PYTHON -and (Get-Command $env:SPECKIT_PYTHON -ErrorAction SilentlyContinue)) {
         $ver = & $env:SPECKIT_PYTHON --version 2>&1
-        if ($ver -match 'Python 3') { return @($env:SPECKIT_PYTHON) }
+        if ($ver -match 'Python 3') {
+            & $env:SPECKIT_PYTHON -c 'import yaml' *> $null
+            if ($LASTEXITCODE -eq 0) { return @($env:SPECKIT_PYTHON) }
+        }
     }
     if (Get-Command python3 -ErrorAction SilentlyContinue) { return @('python3') }
     if (Get-Command python -ErrorAction SilentlyContinue) {
