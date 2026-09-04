@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -646,6 +648,58 @@ def test_all_variants_fail_when_yaml_parser_is_unavailable(
 
     assert all(result.returncode != 0 for result in results)
     assert all(result.stdout == "" for result in results)
+
+
+@requires_bash
+def test_all_variants_honor_speckit_python_override_when_yaml_missing(
+    tmp_path: Path,
+) -> None:
+    """SPECKIT_PYTHON can name an interpreter with PyYAML when the default
+    one lacks it, e.g. a `uv tool install` venv invisible to bare `python3`
+    on PATH (#4443)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    no_yaml_python = tmp_path / "no-yaml-venv"
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
+        check=True,
+        capture_output=True,
+    )
+    no_yaml_bin = no_yaml_python / "bin"
+    no_yaml_exe = no_yaml_bin / "python3"
+    assert no_yaml_exe.is_file()
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+
+    baseline_env = clean_env()
+    baseline_env["PATH"] = f"{no_yaml_bin}{os.pathsep}{baseline_env.get('PATH', '')}"
+    baseline_results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, baseline_env),
+        run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, baseline_env),
+    ]
+    if HAS_POWERSHELL:
+        baseline_results.append(
+            run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, baseline_env)
+        )
+    assert all(result.returncode != 0 for result in baseline_results)
+
+    override_env = dict(baseline_env)
+    override_env["SPECKIT_PYTHON"] = sys.executable
+    override_results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, override_env),
+        run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, override_env),
+    ]
+    if HAS_POWERSHELL:
+        override_results.append(
+            run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, override_env)
+        )
+
+    assert all(result.returncode == 0 for result in override_results)
+    assert all(
+        json_stdout(result)
+        == {"TEMPLATE_NAME": TEMPLATE, "TEMPLATE_CONTENT": expected}
+        for result in override_results
+    )
 
 
 @requires_bash
