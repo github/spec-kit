@@ -262,22 +262,81 @@ $featureDir = Join-Path $specsDir $branchName
 $specFile = Join-Path $featureDir 'spec.md'
 
 if (-not $DryRun) {
-    if ((Test-Path -LiteralPath $featureDir -PathType Container) -and -not $AllowExistingBranch) {
-        if ($Timestamp) {
-            Write-Error "Error: Feature directory '$featureDir' already exists. Rerun to get a new timestamp or use a different -ShortName."
-        } else {
-            Write-Error "Error: Feature directory '$featureDir' already exists. Please use a different feature name or specify a different number with -Number."
+    # Exclusive create first so a lost race rescans instead of exiting on the
+    # pre-create exists check, and so $needsSpec is derived for the final
+    # FEATURE_DIR (not a path abandoned after retry).
+    $reservedNewDir = $false
+    while ($true) {
+        if ($AllowExistingBranch -and (Test-Path -LiteralPath $featureDir -PathType Container)) {
+            $reservedNewDir = $false
+            break
         }
-        exit 1
+        # Test-only barrier: pause before New-Item when SPECKIT_MKDIR_BARRIER is
+        # set so concurrent reservations can be forced (mirrors the bash mkdir
+        # PATH wrapper / Python sitecustomize gate).
+        if ($env:SPECKIT_MKDIR_BARRIER) {
+            $barrierRoot = $env:SPECKIT_MKDIR_BARRIER
+            $released = Join-Path $barrierRoot 'released'
+            $nWaiters = 2
+            if ($env:SPECKIT_MKDIR_BARRIER_N) {
+                [void][int]::TryParse($env:SPECKIT_MKDIR_BARRIER_N, [ref]$nWaiters)
+            }
+            $leaf = Split-Path -Leaf $featureDir
+            $parentLeaf = Split-Path -Leaf (Split-Path -Parent $featureDir)
+            if ($parentLeaf -eq 'specs' -and $leaf -match '^\d' -and -not (Test-Path -LiteralPath $released)) {
+                $waiter = Join-Path $barrierRoot ("w-ps-{0}-{1}" -f $PID, [DateTime]::UtcNow.Ticks)
+                [void][System.IO.Directory]::CreateDirectory($waiter)
+                for ($i = 0; $i -lt 200; $i++) {
+                    if (Test-Path -LiteralPath $released) { break }
+                    $count = @(Get-ChildItem -LiteralPath $barrierRoot -Directory -Filter 'w-*' -ErrorAction SilentlyContinue).Count
+                    if ($count -ge $nWaiters) {
+                        [void][System.IO.File]::WriteAllText($released, '')
+                        break
+                    }
+                    Start-Sleep -Milliseconds 50
+                }
+            }
+        }
+        try {
+            New-Item -ItemType Directory -Path $featureDir | Out-Null
+            $reservedNewDir = $true
+            break
+        } catch {
+            if (-not (Test-Path -LiteralPath $featureDir -PathType Container)) {
+                throw
+            }
+            if ($AllowExistingBranch) {
+                break
+            }
+            if ($Timestamp) {
+                Write-Error "Error: Feature directory '$featureDir' already exists. Rerun to get a new timestamp or use a different -ShortName."
+                exit 1
+            }
+            $highestNumber = Get-HighestNumberFromSpecs -SpecsDir $specsDir
+            if ($highestNumber -eq [long]::MaxValue) {
+                Write-Error "Error: feature number must be between 0 and $([long]::MaxValue), got '9223372036854775808'"
+                exit 1
+            }
+            $resolvedNumber = $highestNumber + 1
+            $featureNum = ('{0:000}' -f $resolvedNumber)
+            $branchName = Get-FittedBranchName -FeatureNum $featureNum -BranchSuffix $branchSuffix
+            $featureDir = Join-Path $specsDir $branchName
+            $specFile = Join-Path $featureDir 'spec.md'
+        }
     }
 
     $needsSpec = -not (Test-Path -PathType Leaf $specFile)
     $content = $null
     if ($needsSpec) {
-        $content = Resolve-TemplateContent -TemplateName 'spec-template' -RepoRoot $repoRoot
+        try {
+            $content = Resolve-TemplateContent -TemplateName 'spec-template' -RepoRoot $repoRoot
+        } catch {
+            if ($reservedNewDir -and (Test-Path -LiteralPath $featureDir -PathType Container)) {
+                Remove-Item -LiteralPath $featureDir -Force -ErrorAction SilentlyContinue
+            }
+            throw
+        }
     }
-
-    New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
 
     if ($needsSpec) {
         if ($null -ne $content) {
