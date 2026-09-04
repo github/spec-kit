@@ -7801,6 +7801,32 @@ steps:
         engine = WorkflowEngine(project_dir)
         assert engine.list_runs() == []
 
+    def test_list_skips_missing_state_file(self, project_dir):
+        """Run directory exists but state.json is deleted (TOCTOU race)."""
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        orphan_dir = runs_dir / "orphan-run"
+        orphan_dir.mkdir(parents=True)
+        # No state.json written — simulates deletion between iterdir() and open().
+
+        engine = WorkflowEngine(project_dir)
+        assert engine.list_runs() == []
+
+    def test_list_skips_invalid_utf8_state_file(self, project_dir):
+        """State.json with invalid UTF-8 bytes is skipped (UnicodeError)."""
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        bad_dir = runs_dir / "bad-utf8"
+        bad_dir.mkdir(parents=True)
+        state_file = bad_dir / "state.json"
+        # Write raw bytes with an invalid UTF-8 sequence.
+        state_file.write_bytes(b'{"run_id": "x", \xff}')
+
+        engine = WorkflowEngine(project_dir)
+        assert engine.list_runs() == []
+
     def test_list_skips_bad_file_with_valid_sibling(self, project_dir):
         from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
 

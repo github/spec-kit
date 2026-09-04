@@ -296,10 +296,10 @@ def _run_inline(command_name, payload, project_root, timeout, envelope="plain", 
             return result.returncode
         return 0
     except subprocess.TimeoutExpired:
-        print(f"Event {command_name} timed out", file=sys.stderr)
+        logger.error("Event %s timed out", command_name)
         return 2
     except Exception as e:
-        print(f"Event {command_name} error: {e}", file=sys.stderr)
+        logger.error("Event %s error: %s", command_name, e)
         return 2
 
 
@@ -775,10 +775,10 @@ def resolve_and_run_event_command(
             return result.returncode
         return 0
     except subprocess.TimeoutExpired:
-        sys.stderr.write(f"Event command {command_name} timed out\n")
+        logger.error("Event command %s timed out", command_name)
         return 2
     except Exception as e:
-        sys.stderr.write(f"Event command {command_name} error: {e}\n")
+        logger.error("Event command %s error: %s", command_name, e)
         return 2
 
 
