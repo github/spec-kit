@@ -557,6 +557,34 @@ class CommandRegistrar:
 
         return f"speckit-{short_name}"
 
+    def validate_integration_output_paths(
+        self,
+        agent_name: str,
+        command_names: Iterable[str],
+        project_root: Path,
+    ) -> None:
+        """Run the integration-owned path guard before any output is written."""
+        self._ensure_configs()
+        agent_config = self.AGENT_CONFIGS.get(agent_name)
+        if not agent_config:
+            return
+
+        from specify_cli.integrations import get_integration  # noqa: PLC0415
+
+        integration = get_integration(agent_name)
+        if integration is None:
+            return
+        output_root = self._resolve_agent_dir(
+            agent_name, agent_config, project_root
+        )
+        integration.validate_output_path(output_root, project_root)
+        for command_name in command_names:
+            output_name = self._compute_output_name(
+                agent_name, command_name, agent_config
+            )
+            output_path = output_root / f"{output_name}{agent_config['extension']}"
+            integration.validate_output_path(output_path, project_root)
+
     @staticmethod
     def _ensure_inside(candidate: Path, base: Path) -> None:
         """Validate that a write target stays within the expected base directory.
@@ -651,6 +679,11 @@ class CommandRegistrar:
         commands_dir = _resolved_dir or self._resolve_agent_dir(
             agent_name, agent_config, project_root,
         )
+        from specify_cli.integrations import get_integration  # noqa: PLC0415
+
+        _integration = get_integration(agent_name)
+        if _integration is not None:
+            _integration.validate_output_path(commands_dir, project_root)
         commands_dir.mkdir(parents=True, exist_ok=True)
 
         registered = []
@@ -677,14 +710,8 @@ class CommandRegistrar:
         # ``.bob/commands``.
         _sep = agent_config.get("invoke_separator", ".")
         registrar_writes_skills = agent_config.get("extension") == "/SKILL.md"
-        try:
-            from specify_cli.integrations import get_integration  # noqa: PLC0415
-
-            _integ = get_integration(agent_name)
-            if _integ is not None:
-                _sep = _integ.invoke_separator_for_mode(registrar_writes_skills)
-        except (ImportError, ValueError, KeyError):
-            pass
+        if _integration is not None:
+            _sep = _integration.invoke_separator_for_mode(registrar_writes_skills)
         _prefix = get_invocation_prefix(agent_name, registrar_writes_skills)
 
         for cmd_info in commands:
@@ -835,18 +862,14 @@ class CommandRegistrar:
                 raise ValueError(f"Unsupported format: {agent_config['format']}")
 
             # -- Post-process for non-skills agents -----------------------
-            _integration = None
             if agent_config["extension"] != "/SKILL.md":
-                from specify_cli.integrations import (  # noqa: PLC0415
-                    get_integration,
-                )
-
-                _integration = get_integration(agent_name)
                 if _integration is not None:
                     output = _integration.post_process_command_content(output)
 
             dest_file = commands_dir / f"{output_name}{agent_config['extension']}"
             self._ensure_inside(dest_file, commands_dir)
+            if _integration is not None:
+                _integration.validate_output_path(dest_file, project_root)
             dest_file.parent.mkdir(parents=True, exist_ok=True)
             self._write_registered_output(
                 dest_file,
@@ -927,6 +950,8 @@ class CommandRegistrar:
                     commands_dir / f"{alias_output_name}{agent_config['extension']}"
                 )
                 self._ensure_inside(alias_file, commands_dir)
+                if _integration is not None:
+                    _integration.validate_output_path(alias_file, project_root)
                 alias_file.parent.mkdir(parents=True, exist_ok=True)
                 self._write_registered_output(
                     alias_file,
@@ -1084,6 +1109,9 @@ class CommandRegistrar:
             Dictionary mapping agent names to list of registered commands
         """
         results = {}
+        from specify_cli.integrations.base import (  # noqa: PLC0415
+            IntegrationOutputPathError,
+        )
 
         self._ensure_configs()
         active_skills_agent = (
@@ -1191,6 +1219,8 @@ class CommandRegistrar:
                         active_created_skills_dir = (
                             recovered_active_skills_dir or agent_dir
                         )
+                except IntegrationOutputPathError:
+                    raise
                 except ValueError:
                     continue
                 except OSError:
@@ -1241,6 +1271,9 @@ class CommandRegistrar:
             Dictionary mapping agent names to list of registered commands
         """
         results = {}
+        from specify_cli.integrations.base import (  # noqa: PLC0415
+            IntegrationOutputPathError,
+        )
         self._ensure_configs()
         extra_agents_set = frozenset(extra_agents) if extra_agents else frozenset()
         for agent_name, agent_config in self.AGENT_CONFIGS.items():
@@ -1275,6 +1308,8 @@ class CommandRegistrar:
                     )
                     if registered:
                         results[agent_name] = registered
+                except IntegrationOutputPathError:
+                    raise
                 except ValueError:
                     continue
         return results
@@ -1294,6 +1329,16 @@ class CommandRegistrar:
             project_root: Path to project root
         """
         self._ensure_configs()
+        from specify_cli.integrations import get_integration  # noqa: PLC0415
+        from specify_cli.integrations.base import (  # noqa: PLC0415
+            IntegrationOutputPathError,
+        )
+        from specify_cli.shared_infra import (  # noqa: PLC0415
+            _ensure_safe_shared_destination,
+        )
+
+        cleanup_files: list[tuple[Path, Path]] = []
+        copilot_prompts: set[Path] = set()
         for agent_name, cmd_names in registered_commands.items():
             if agent_name not in self.AGENT_CONFIGS:
                 continue
@@ -1302,6 +1347,9 @@ class CommandRegistrar:
             commands_dir = self._resolve_agent_dir(
                 agent_name, agent_config, project_root,
             )
+            integration = get_integration(agent_name)
+            if integration is not None:
+                integration.validate_output_path(commands_dir, project_root)
 
             # Collect all directories to clean: canonical (or resolved
             # legacy) plus the legacy dir if it exists separately.
@@ -1313,6 +1361,10 @@ class CommandRegistrar:
                     dirs_to_clean.append(legacy_dir)
 
             for cmd_name in cmd_names:
+                if not self._is_safe_command_name(cmd_name):
+                    raise IntegrationOutputPathError(
+                        f"Unsafe registered command name: {cmd_name!r}"
+                    )
                 output_name = self._compute_output_name(
                     agent_name, cmd_name, agent_config
                 )
@@ -1330,25 +1382,50 @@ class CommandRegistrar:
                             self._ensure_inside(cmd_file, target_dir)
                         except ValueError:
                             continue
-                        if cmd_file.exists() or cmd_file.is_symlink():
-                            cmd_file.unlink()
-                            # For SKILL.md agents each command lives in its own
-                            # subdirectory (e.g. .agents/skills/speckit-ext-cmd/
-                            # SKILL.md).  Remove the parent dir when it becomes
-                            # empty to avoid orphaned directories.
-                            parent = cmd_file.parent
-                            if parent != target_dir and parent.exists():
-                                try:
-                                    parent.rmdir()
-                                except OSError:
-                                    pass
+                        if integration is not None:
+                            integration.validate_output_path(
+                                cmd_file, project_root
+                            )
+                        cleanup_files.append((cmd_file, target_dir))
 
                 if agent_name == "copilot":
                     prompt_file = (
-                        project_root / ".github" / "prompts" / f"{cmd_name}.prompt.md"
+                        project_root
+                        / ".github"
+                        / "prompts"
+                        / f"{cmd_name}.prompt.md"
                     )
-                    if prompt_file.exists():
-                        prompt_file.unlink()
+                    try:
+                        _ensure_safe_shared_destination(
+                            project_root,
+                            prompt_file,
+                            parent_must_exist=False,
+                        )
+                    except ValueError as exc:
+                        raise IntegrationOutputPathError(str(exc)) from exc
+                    copilot_prompts.add(prompt_file)
+
+        seen: set[Path] = set()
+        for cmd_file, target_dir in cleanup_files:
+            if cmd_file in seen:
+                continue
+            seen.add(cmd_file)
+            if cmd_file.exists() or cmd_file.is_symlink():
+                cmd_file.unlink()
+                # For SKILL.md agents each command lives in its own
+                # subdirectory (e.g. .agents/skills/speckit-ext-cmd/
+                # SKILL.md).  Remove the parent dir when it becomes
+                # empty to avoid orphaned directories.
+                parent = cmd_file.parent
+                if parent != target_dir and parent.exists():
+                    try:
+                        parent.rmdir()
+                    except OSError:
+                        pass
+
+        for prompt_file in copilot_prompts:
+            if prompt_file.exists():
+                prompt_file.unlink()
 
 
 # Populate AGENT_CONFIGS after class definition.

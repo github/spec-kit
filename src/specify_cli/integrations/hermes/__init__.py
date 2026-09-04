@@ -18,8 +18,35 @@ from typing import Any
 
 import yaml
 
-from ..base import IntegrationOption, SkillsIntegration, yaml_quote
+from ..._utils import path_is_junction
+from ..base import (
+    IntegrationOption,
+    IntegrationOutputPathError,
+    SkillsIntegration,
+    yaml_quote,
+)
 from ..manifest import IntegrationManifest
+
+
+def _has_symlinked_component(path: Path, trusted_root: Path) -> bool:
+    """Return whether *path* escapes *trusted_root* or traverses a symlink."""
+    try:
+        relative = path.relative_to(trusted_root)
+        trusted_root_resolved = trusted_root.resolve()
+    except ValueError:
+        return True
+
+    current = trusted_root
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink() or path_is_junction(current):
+            return True
+        if current.exists():
+            try:
+                current.resolve().relative_to(trusted_root_resolved)
+            except (OSError, ValueError):
+                return True
+    return False
 
 
 class HermesIntegration(SkillsIntegration):
@@ -57,6 +84,14 @@ class HermesIntegration(SkillsIntegration):
     def _hermes_home_skills_dir() -> Path:
         """Return ``~/.hermes/skills/`` — the global skills directory."""
         return Path.home() / ".hermes" / "skills"
+
+    def validate_output_path(self, path: Path, project_root: Path) -> None:
+        """Reject global registrar outputs that traverse symlinks or junctions."""
+        if _has_symlinked_component(path, Path.home()):
+            raise IntegrationOutputPathError(
+                f"Hermes destination {path} contains a symlinked path component; "
+                "refusing to write through it."
+            )
 
     # -- Options -----------------------------------------------------------
 
@@ -102,6 +137,22 @@ class HermesIntegration(SkillsIntegration):
                 f"project_root ({project_root_resolved})"
             )
 
+        global_skills_dir = self._hermes_home_skills_dir()
+        local_marker_dir = project_root / ".hermes" / "skills"
+        skill_targets = [
+            global_skills_dir
+            / f"speckit-{src_file.stem.replace('.', '-')}"
+            / "SKILL.md"
+            for src_file in templates
+        ]
+        if _has_symlinked_component(local_marker_dir, project_root):
+            raise IntegrationOutputPathError(
+                f"Hermes destination {local_marker_dir} contains a symlinked path "
+                "component; refusing to install into it."
+            )
+        for skill_target in skill_targets:
+            self.validate_output_path(skill_target, project_root)
+
         script_type = opts.get("script_type", "sh")
         arg_placeholder = (
             self.registrar_config.get("args", "$ARGUMENTS")
@@ -109,7 +160,6 @@ class HermesIntegration(SkillsIntegration):
             else "$ARGUMENTS"
         )
 
-        global_skills_dir = self._hermes_home_skills_dir()
         global_skills_dir.mkdir(parents=True, exist_ok=True)
 
         created: list[Path] = []
@@ -213,7 +263,7 @@ class HermesIntegration(SkillsIntegration):
         # Create project-local marker directory so extension commands
         # (e.g. git) can detect Hermes as an active integration.
         # Hermes itself ignores this directory — skills live globally.
-        (project_root / ".hermes" / "skills").mkdir(parents=True, exist_ok=True)
+        local_marker_dir.mkdir(parents=True, exist_ok=True)
 
         return created
 
@@ -243,7 +293,9 @@ class HermesIntegration(SkillsIntegration):
 
         # Remove project-local marker directory if empty
         local_skills_dir = project_root / ".hermes" / "skills"
-        if local_skills_dir.is_dir() and not any(local_skills_dir.iterdir()):
+        if _has_symlinked_component(local_skills_dir, project_root):
+            skipped.append(local_skills_dir)
+        elif local_skills_dir.is_dir() and not any(local_skills_dir.iterdir()):
             local_skills_dir.rmdir()
             hermes_dir = project_root / ".hermes"
             if hermes_dir.is_dir() and not any(hermes_dir.iterdir()):
@@ -253,9 +305,16 @@ class HermesIntegration(SkillsIntegration):
         # removed on uninstall regardless of the force flag, matching the
         # standard behaviour where all integration files are cleaned up.
         global_skills_dir = self._hermes_home_skills_dir()
-        if global_skills_dir.is_dir():
+        if _has_symlinked_component(global_skills_dir, Path.home()):
+            skipped.append(global_skills_dir)
+        elif global_skills_dir.is_dir():
             for skill_dir in sorted(global_skills_dir.iterdir()):
-                if skill_dir.is_dir() and skill_dir.name.startswith("speckit-"):
+                if not skill_dir.name.startswith("speckit-"):
+                    continue
+                if _has_symlinked_component(skill_dir, Path.home()):
+                    skipped.append(skill_dir)
+                    continue
+                if skill_dir.is_dir():
                     try:
                         rmtree(skill_dir)
                         removed.append(skill_dir)

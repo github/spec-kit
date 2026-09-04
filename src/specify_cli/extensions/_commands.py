@@ -1227,6 +1227,7 @@ def extension_remove(
 ):
     """Uninstall an extension."""
     from . import ExtensionManager
+    from ..integrations.base import IntegrationOutputPathError
 
     project_root = _require_specify_project()
     manager = ExtensionManager(project_root)
@@ -1273,7 +1274,14 @@ def extension_remove(
             raise typer.Exit(0)
 
     # Remove extension
-    success = manager.remove(extension_id, keep_config=keep_config)
+    try:
+        success = manager.remove(extension_id, keep_config=keep_config)
+    except IntegrationOutputPathError as exc:
+        console.print(
+            f"[red]Error:[/red] Cannot safely remove extension: "
+            f"{_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1) from None
 
     if success:
         console.print(f"\n[green]✓[/green] Extension '{_escape_markup(str(display_name))}' removed successfully")

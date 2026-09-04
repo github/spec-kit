@@ -214,10 +214,12 @@ def _install_shared_infra_or_exit(
         raise typer.Exit(1)
 
 
-def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
+def ensure_executable_scripts(
+    project_path: Path, tracker: StepTracker | None = None
+) -> list[str]:
     """Ensure POSIX .sh scripts under .specify/scripts and .specify/extensions (recursively) have execute bits (no-op on Windows)."""
     if os.name == "nt":
-        return  # Windows: skip silently
+        return []  # Windows: skip silently
     scan_roots = [
         project_path / ".specify" / "scripts",
         project_path / ".specify" / "extensions",
@@ -265,6 +267,7 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
             console.print("[yellow]Some scripts could not be updated:[/yellow]")
             for f in failures:
                 console.print(f"  - {f}")
+    return failures
 
 # ---------------------------------------------------------------------------
 # Skills directory helpers

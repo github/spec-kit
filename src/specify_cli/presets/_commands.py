@@ -412,6 +412,7 @@ def preset_remove(
 ):
     """Remove an installed preset."""
     from .. import _require_specify_project
+    from ..integrations.base import IntegrationOutputPathError
     from . import PresetManager
 
     project_root = _require_specify_project()
@@ -421,7 +422,16 @@ def preset_remove(
         console.print(f"[red]Error:[/red] Preset '{preset_id}' is not installed")
         raise typer.Exit(1)
 
-    if manager.remove(preset_id):
+    try:
+        removed = manager.remove(preset_id)
+    except IntegrationOutputPathError as exc:
+        console.print(
+            f"[red]Error:[/red] Cannot safely remove preset: "
+            f"{_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1) from None
+
+    if removed:
         console.print(f"[green]✓[/green] Preset '{preset_id}' removed successfully")
     else:
         console.print(f"[red]Error:[/red] Failed to remove preset '{preset_id}'")
