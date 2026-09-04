@@ -27,6 +27,21 @@ from pathlib import Path
 DEFAULT_START = "<!-- SPECKIT START -->"
 DEFAULT_END = "<!-- SPECKIT END -->"
 
+# Any SPECKIT marker comment (the outer managed-section markers or the
+# per-preset ``PRESET:<id> START/END`` sub-markers). Instruction payloads that
+# embed one would collide with the find/replace in _upsert_section, so they are
+# rejected.
+_SPECKIT_MARKER_RE = re.compile(r"<!--\s*SPECKIT\b")
+
+# Deliberately small budget for always-on instruction payloads. The composed
+# managed section is re-sent as agent context on every request, so an oversized
+# preset file (a bundled archive member or an unbounded ``--dev`` source) must
+# not be allowed to bloat it. A single file over the per-file cap is skipped
+# with a warning; once the aggregate cap across all presets is reached, the
+# remaining entries are skipped too.
+_MAX_INSTRUCTION_FILE_BYTES = 32 * 1024
+_MAX_INSTRUCTION_TOTAL_BYTES = 64 * 1024
+
 
 def _err(message: str) -> None:
     print(message, file=sys.stderr)
@@ -201,7 +216,12 @@ def _resolve_plan_path(project_root: str) -> str:
     return plan_path
 
 
-def _build_section(marker_start: str, marker_end: str, plan_path: str) -> str:
+def _build_section(
+    marker_start: str,
+    marker_end: str,
+    plan_path: str,
+    preset_blocks: list[str] | None = None,
+) -> str:
     lines = [
         marker_start,
         "For additional context about technologies to be used, project structure,",
@@ -209,8 +229,177 @@ def _build_section(marker_start: str, marker_end: str, plan_path: str) -> str:
     ]
     if plan_path:
         lines.append(f"at {plan_path}")
+    # Always-on instruction blocks contributed by explicitly-enabled presets,
+    # each in its own namespaced sub-block so multiple presets coexist and each
+    # can be regenerated or dropped independently on the next update.
+    lines.extend(preset_blocks or [])
     lines.append(marker_end)
     return "\n".join(lines) + "\n"
+
+
+def _collect_preset_instruction_blocks(
+    project_root: str,
+    marker_start: str = DEFAULT_START,
+    marker_end: str = DEFAULT_END,
+) -> list[tuple[str, str]]:
+    """Collect always-on instruction blocks from installed + enabled presets.
+
+    A preset the user explicitly added (``specify preset add``) that declares
+    ``provides.instructions`` gets its rule block composed into the managed
+    section. Reads ``.specify/presets/.registry`` and each preset's
+    ``preset.yml`` directly, with no dependency on the Specify CLI (mirrors this
+    extension's by-design independence). Returns ``(preset_id, content)`` in
+    deterministic id order. Each referenced file must resolve inside its own
+    preset directory; path-unsafe, unreadable, non-UTF-8, oversized (per-file or
+    aggregate budget), or marker-colliding entries are skipped (fail closed).
+    Fails closed on an unreadable registry.
+    """
+    presets_dir = Path(project_root) / ".specify" / "presets"
+    registry = presets_dir / ".registry"
+    if not registry.is_file():
+        return []
+    try:
+        import yaml
+    except ImportError:
+        return []
+    try:
+        with open(registry, "r", encoding="utf-8") as fh:
+            reg = json.load(fh)
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+        return []
+    if not isinstance(reg, dict) or not isinstance(reg.get("presets"), dict):
+        return []
+
+    presets_root = presets_dir.resolve()
+    blocks: list[tuple[str, str]] = []
+    total_bytes = 0
+    for preset_id in sorted(reg["presets"]):
+        # The registry lives on disk and is untrusted. Reject ids that are not
+        # simple names (no path separators, '..' traversal, or absolute/drive
+        # forms), then confirm the resolved directory stays inside
+        # .specify/presets, so a crafted key or a symlink cannot read a manifest
+        # or payload outside it.
+        if not isinstance(preset_id, str) or not re.match(r"^[a-z0-9][a-z0-9._-]*$", preset_id):
+            continue
+        preset_root = (presets_dir / preset_id).resolve()
+        try:
+            preset_root.relative_to(presets_root)
+        except ValueError:
+            continue
+        meta = reg["presets"][preset_id]
+        if not isinstance(meta, dict) or not meta.get("enabled", True):
+            continue
+        manifest = preset_root / "preset.yml"
+        if not manifest.is_file():
+            continue
+        try:
+            with open(manifest, "r", encoding="utf-8") as fh:
+                pdata = yaml.safe_load(fh)
+        except Exception:
+            continue
+        provides = pdata.get("provides") if isinstance(pdata, dict) else None
+        instructions = provides.get("instructions") if isinstance(provides, dict) else None
+        if not isinstance(instructions, list):
+            continue
+        parts: list[str] = []
+        for entry in instructions:
+            if not isinstance(entry, dict):
+                continue
+            rel = entry.get("file")
+            if not isinstance(rel, str) or not rel.strip():
+                continue
+            # Path-unsafe entries (absolute, backslash, parent traversal, or a
+            # target escaping the preset directory) are skipped silently: this is
+            # a security fail-closed decision, so no diagnostic is emitted.
+            if rel.startswith("/") or "\\" in rel or ".." in rel.split("/"):
+                continue
+            target = (preset_root / rel).resolve()
+            try:
+                target.relative_to(preset_root)
+            except ValueError:
+                continue
+            if not target.is_file():
+                _err(
+                    f"agent-context: skipping instructions from preset '{preset_id}': "
+                    f"file '{rel}' not found."
+                )
+                continue
+            # Reject an oversized file by its on-disk size before reading it, so
+            # a huge member never gets allocated into memory.
+            try:
+                size = target.stat().st_size
+            except OSError:
+                _err(
+                    f"agent-context: skipping instructions from preset '{preset_id}': "
+                    f"file '{rel}' is not readable."
+                )
+                continue
+            if size > _MAX_INSTRUCTION_FILE_BYTES:
+                _err(
+                    f"agent-context: skipping instructions from preset '{preset_id}': "
+                    f"file '{rel}' is {size} bytes (per-file limit "
+                    f"{_MAX_INSTRUCTION_FILE_BYTES})."
+                )
+                continue
+            try:
+                text = target.read_text(encoding="utf-8").strip()
+            except (OSError, UnicodeDecodeError):
+                _err(
+                    f"agent-context: skipping instructions from preset '{preset_id}': "
+                    f"file '{rel}' is not readable UTF-8 text."
+                )
+                continue
+            if marker_start in text or marker_end in text or _SPECKIT_MARKER_RE.search(text):
+                _err(
+                    f"agent-context: skipping instructions from preset '{preset_id}': "
+                    "content contains a managed section marker."
+                )
+                continue
+            # Count the bytes this entry actually adds to the rendered section,
+            # not just its raw payload: the first entry of a preset materializes
+            # the surrounding marker block, and every later entry adds a blank-line
+            # separator. Without this, a flood of tiny entries would slip past the
+            # aggregate cap even though the composed section is far larger.
+            entry_bytes = len(text.encode("utf-8"))
+            if parts:
+                overhead = 2  # the "\n\n" joining this entry to the previous one
+            else:
+                overhead = (
+                    len(f"<!-- SPECKIT PRESET:{preset_id} START -->")
+                    + len(f"<!-- SPECKIT PRESET:{preset_id} END -->")
+                    + 4  # surrounding newlines and the leading blank line
+                )
+            if total_bytes + entry_bytes + overhead > _MAX_INSTRUCTION_TOTAL_BYTES:
+                _err(
+                    f"agent-context: skipping instructions from preset '{preset_id}': "
+                    f"aggregate instruction budget ({_MAX_INSTRUCTION_TOTAL_BYTES} "
+                    "bytes) exceeded."
+                )
+                continue
+            total_bytes += entry_bytes + overhead
+            parts.append(text)
+        if parts:
+            blocks.append((preset_id, "\n\n".join(parts)))
+    return blocks
+
+
+def _render_preset_block_lines(
+    project_root: str,
+    marker_start: str = DEFAULT_START,
+    marker_end: str = DEFAULT_END,
+) -> list[str]:
+    """Render the namespaced sub-block lines for all enabled presets' instruction
+    blocks, to be embedded inside the managed section.
+    """
+    lines: list[str] = []
+    for preset_id, content in _collect_preset_instruction_blocks(
+        project_root, marker_start, marker_end
+    ):
+        lines.append("")
+        lines.append(f"<!-- SPECKIT PRESET:{preset_id} START -->")
+        lines.append(content)
+        lines.append(f"<!-- SPECKIT PRESET:{preset_id} END -->")
+    return lines
 
 
 def ensure_mdc_frontmatter(content: str) -> str:
@@ -298,6 +487,25 @@ def _upsert_section(
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     project_root = os.getcwd()
+
+    # --emit-preset-blocks: print only the composed preset instruction sub-block
+    # lines and exit. Used by the bash/PowerShell twins so all three produce
+    # identical output from this single implementation. Does not require the
+    # agent-context config (the twin already validated it before calling).
+    if "--emit-preset-blocks" in args:
+        def _opt(name: str, default: str) -> str:
+            if name in args:
+                i = args.index(name)
+                if i + 1 < len(args):
+                    return args[i + 1]
+            return default
+        marker_start = _opt("--marker-start", DEFAULT_START)
+        marker_end = _opt("--marker-end", DEFAULT_END)
+        block_lines = _render_preset_block_lines(project_root, marker_start, marker_end)
+        if block_lines:
+            sys.stdout.buffer.write("\n".join(block_lines).encode("utf-8"))
+        return 0
+
     ext_config = (
         f"{project_root}/.specify/extensions/agent-context/agent-context-config.yml"
     )
@@ -353,7 +561,8 @@ def main(argv: list[str] | None = None) -> int:
     if not plan_path:
         plan_path = _resolve_plan_path(project_root)
 
-    section = _build_section(marker_start, marker_end, plan_path)
+    preset_blocks = _render_preset_block_lines(project_root, marker_start, marker_end)
+    section = _build_section(marker_start, marker_end, plan_path, preset_blocks)
 
     for context_file in context_files:
         ctx_path = os.path.join(project_root, context_file)

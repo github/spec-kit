@@ -345,6 +345,21 @@ PY
 fi
 
 # Build the managed section
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Always-on instruction blocks contributed by enabled presets (#4200).
+# Delegated to the python twin's --emit-preset-blocks so all three twins emit
+# byte-identical block text from a single implementation. Capture only stdout so
+# the composer's warnings (oversized, marker-colliding, or skipped entries) still
+# reach stderr. The assignment is the condition of an `if` so `set -e` does not
+# abort on a nonzero composer status before this diagnostic runs; on failure we
+# abort here so a composer failure never rewrites the section with previously
+# composed preset blocks silently dropped.
+if ! _PRESET_BLOCKS="$("$_python" "$_SCRIPT_DIR/../python/update_agent_context.py" --emit-preset-blocks --marker-start "$MARKER_START" --marker-end "$MARKER_END")"; then
+  echo "agent-context: preset instruction composer failed; aborting so the managed section is not rewritten with preset blocks dropped." >&2
+  exit 1
+fi
+
 TMP_SECTION="$(mktemp)"
 trap 'rm -f "$TMP_SECTION"' EXIT
 {
@@ -353,6 +368,9 @@ trap 'rm -f "$TMP_SECTION"' EXIT
   echo "shell commands, and other important information, read the current plan"
   if [[ -n "$PLAN_PATH" ]]; then
     echo "at $PLAN_PATH"
+  fi
+  if [[ -n "$_PRESET_BLOCKS" ]]; then
+    printf '%s\n' "$_PRESET_BLOCKS"
   fi
   echo "$MARKER_END"
 } > "$TMP_SECTION"

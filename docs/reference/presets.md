@@ -205,6 +205,19 @@ specify preset add team-workflow --priority 10
 
 For any file that both provide, `compliance` wins (priority 5 < 10). For files only one provides, that one is used. For files neither provides, the core default is used.
 
+## Always-on instructions
+
+A preset can also contribute an always-on instruction block through `provides.instructions`. Unlike templates, commands, and scripts (which are resolved by the priority stack when Spec Kit needs them), an instruction block is composed into the coding agent's always-on context file so it reaches the agent's work generally, including outside a Spec Kit workflow.
+
+```yaml
+provides:
+  instructions:
+    - file: "instructions/best-practices.md"
+      description: "Always-on engineering rules"
+```
+
+This is opt-in and owned by the `agent-context` extension: nothing is written unless `agent-context` is installed and the preset is enabled. When both hold, `agent-context` composes each enabled preset's block into the routed context file (for example `.github/copilot-instructions.md`) inside a namespaced `<!-- SPECKIT PRESET:<id> START/END -->` block, and drops it again on `preset disable`/`remove` at the next refresh. Enabling the preset is the explicit opt-in; installing an extension does not by itself change the agent's context.
+
 ## FAQ
 
 ### Can I use multiple presets at the same time?
