@@ -1048,8 +1048,9 @@ def _has_incomplete_operand(text: str) -> bool:
 # None, so a correction built on one turns a truthy condition false.
 _NAMESPACE_ROOTS = ("inputs", "steps", "item", "fan_in", "context")
 
-# Exactly what _resolve_dot_path accepts: a name, optionally one numeric index.
-_PATH_SEGMENT = re.compile(r"^[\w-]+(\[\d+\])?$")
+# Exactly what _resolve_dot_path accepts: a name, optionally one index, which
+# may be negative.
+_PATH_SEGMENT = re.compile(r"^[\w-]+(\[-?\d+\])?$")
 
 
 class _ProbeNamespace(dict):
@@ -1214,7 +1215,7 @@ def _unresolvable_term(text: str) -> str | None:
     # branch returns None for those however it is written -- so the index is
     # stripped for `item` alone rather than for roots in general.
     root = segments[0].strip()
-    indexed_root = re.fullmatch(r"([\w-]+)\[\d+\]", root)
+    indexed_root = re.fullmatch(r"([\w-]+)\[-?\d+\]", root)
     if indexed_root is not None and indexed_root.group(1) == "item":
         root = indexed_root.group(1)
     if root not in _NAMESPACE_ROOTS:
