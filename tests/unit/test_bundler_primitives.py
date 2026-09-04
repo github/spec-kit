@@ -139,6 +139,96 @@ def test_preset_install_preserves_explicit_zero_priority(tmp_path: Path, monkeyp
     assert calls["priority"] == 0
 
 
+def test_catalog_preset_install_and_refresh_forward_catalog_name(
+    tmp_path: Path, monkeypatch
+):
+    import specify_cli._assets as assets
+    from specify_cli.presets import PresetCatalog
+
+    archive = tmp_path / "preset.zip"
+    archive.write_bytes(b"placeholder")
+    calls = []
+
+    class _FakeManager:
+        def install_from_zip(self, *args, **kwargs):
+            calls.append(kwargs)
+
+    monkeypatch.setattr(assets, "_locate_bundled_preset", lambda _id: None)
+    monkeypatch.setattr(
+        PresetCatalog,
+        "get_pack_info",
+        lambda _self, _id: {
+            "version": "1.0.0",
+            "_install_allowed": True,
+            "_catalog_name": "bundle-preset-catalog",
+        },
+    )
+    monkeypatch.setattr(PresetCatalog, "download_pack", lambda _self, _id: archive)
+
+    manager = primitive_manager("presets", tmp_path, allow_network=True)
+    manager._manager = _FakeManager()
+    component = ComponentRef(kind="presets", id="catalog-preset", version="1.0.0")
+    manager.install(component)
+    archive.write_bytes(b"placeholder")
+    manager.refresh(component)
+
+    assert [call["catalog_name"] for call in calls] == [
+        "bundle-preset-catalog",
+        "bundle-preset-catalog",
+    ]
+    assert calls[1]["force"] is True
+
+
+def test_catalog_extension_install_and_refresh_forward_catalog_and_scaffolding(
+    tmp_path: Path, monkeypatch
+):
+    import specify_cli._assets as assets
+    from specify_cli.extensions import ExtensionCatalog
+
+    archive = tmp_path / "extension.zip"
+    archive.write_bytes(b"placeholder")
+    installs = []
+    scaffolded = []
+
+    class _FakeManager:
+        def install_from_zip(self, *args, **kwargs):
+            installs.append(kwargs)
+            return SimpleNamespace(id="catalog-extension")
+
+        def scaffold_config(self, extension_id):
+            scaffolded.append(extension_id)
+
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda _id: None)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "get_extension_info",
+        lambda _self, _id: {
+            "version": "1.0.0",
+            "_install_allowed": True,
+            "_catalog_name": "bundle-extension-catalog",
+        },
+    )
+    monkeypatch.setattr(
+        ExtensionCatalog, "download_extension", lambda _self, _id: archive
+    )
+
+    manager = primitive_manager("extensions", tmp_path, allow_network=True)
+    manager._manager = _FakeManager()
+    component = ComponentRef(
+        kind="extensions", id="catalog-extension", version="1.0.0"
+    )
+    manager.install(component)
+    archive.write_bytes(b"placeholder")
+    manager.refresh(component)
+
+    assert [call["catalog_name"] for call in installs] == [
+        "bundle-extension-catalog",
+        "bundle-extension-catalog",
+    ]
+    assert installs[1]["force"] is True
+    assert scaffolded == ["catalog-extension", "catalog-extension"]
+
+
 def _write_manifest(path: Path, root_key: str, version: str) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     (path / f"{root_key}.yml").write_text(

@@ -3834,6 +3834,8 @@ class PresetManager:
         speckit_version: str,
         priority: int = 10,
         force: bool = False,
+        *,
+        catalog_name: str | None = None,
     ) -> PresetManifest:
         """Install preset from a local directory.
 
@@ -3875,9 +3877,17 @@ class PresetManager:
 
         # Pre-register the preset so that composition resolution can see it
         # in the priority stack when resolving composed command content.
+        normalized_catalog_name = (
+            catalog_name.strip() if isinstance(catalog_name, str) else ""
+        )
+        source = (
+            {"kind": "catalog", "catalog": normalized_catalog_name}
+            if normalized_catalog_name
+            else "local"
+        )
         self.registry.add(manifest.id, {
             "version": manifest.version,
-            "source": "local",
+            "source": source,
             "manifest_hash": manifest.get_hash(),
             "enabled": True,
             "priority": priority,
@@ -4016,6 +4026,8 @@ class PresetManager:
         speckit_version: str,
         priority: int = 10,
         force: bool = False,
+        *,
+        catalog_name: str | None = None,
     ) -> PresetManifest:
         """Install a preset from a supported archive.
 
@@ -4059,7 +4071,13 @@ class PresetManager:
                     "No preset.yml found in archive"
                 )
 
-            return self.install_from_directory(pack_dir, speckit_version, priority, force=force)
+            return self.install_from_directory(
+                pack_dir,
+                speckit_version,
+                priority,
+                force=force,
+                catalog_name=catalog_name,
+            )
 
     def install_from_zip(
         self,
@@ -4067,6 +4085,8 @@ class PresetManager:
         speckit_version: str,
         priority: int = 10,
         force: bool = False,
+        *,
+        catalog_name: str | None = None,
     ) -> PresetManifest:
         """Backward-compatible wrapper for archive installation."""
         return self.install_from_archive(
@@ -4074,6 +4094,7 @@ class PresetManager:
             speckit_version,
             priority,
             force=force,
+            catalog_name=catalog_name,
         )
 
     def remove(self, pack_id: str) -> bool:
@@ -4360,6 +4381,10 @@ class PresetManager:
 
             try:
                 manifest = PresetManifest(manifest_path)
+                provided_counts = {"commands": 0, "templates": 0, "scripts": 0, "hooks": 0}
+                for template in manifest.templates:
+                    provided_counts[f"{template['type']}s"] += 1
+                author = manifest.author
                 result.append({
                     "id": pack_id,
                     "name": manifest.name,
@@ -4370,6 +4395,9 @@ class PresetManager:
                     "template_count": len(manifest.templates),
                     "tags": manifest.tags,
                     "priority": normalize_priority(metadata.get("priority")),
+                    "_json_author": author if isinstance(author, str) and author else None,
+                    "_json_source": metadata.get("source"),
+                    "_json_provides": provided_counts,
                 })
             except PresetValidationError:
                 result.append({
@@ -4382,6 +4410,9 @@ class PresetManager:
                     "template_count": 0,
                     "tags": [],
                     "priority": normalize_priority(metadata.get("priority")),
+                    "_json_author": None,
+                    "_json_source": metadata.get("source"),
+                    "_json_provides": {"commands": 0, "templates": 0, "scripts": 0, "hooks": 0},
                 })
 
         return result
@@ -4646,9 +4677,14 @@ class PresetCatalog:
                 install_allowed = raw_install.strip().lower() in ("true", "yes", "1")
             else:
                 install_allowed = bool(raw_install)
+            raw_name = item.get("name")
+            name = str(raw_name).strip() if raw_name is not None else ""
+            if not name:
+                name = f"catalog-{len(entries) + 1}"
+
             entries.append(PresetCatalogEntry(
                 url=url,
-                name=str(item.get("name", f"catalog-{idx + 1}")),
+                name=name,
                 priority=priority,
                 install_allowed=install_allowed,
                 description=str(item.get("description", "")),

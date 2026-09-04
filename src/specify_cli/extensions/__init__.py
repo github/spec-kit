@@ -2052,6 +2052,8 @@ class ExtensionManager:
         priority: int = 10,
         link_commands: bool = False,
         force: bool = False,
+        *,
+        catalog_name: str | None = None,
     ) -> ExtensionManifest:
         """Install extension from a local directory.
 
@@ -2612,11 +2614,19 @@ class ExtensionManager:
                 backup_config_dir.unlink()
 
         # Update registry
+        normalized_catalog_name = (
+            catalog_name.strip() if isinstance(catalog_name, str) else ""
+        )
+        source = (
+            {"kind": "catalog", "catalog": normalized_catalog_name}
+            if normalized_catalog_name
+            else "local"
+        )
         self.registry.add(
             manifest.id,
             {
                 "version": manifest.version,
-                "source": "local",
+                "source": source,
                 "manifest_hash": manifest.get_hash(),
                 "enabled": True,
                 "priority": priority,
@@ -2673,6 +2683,7 @@ class ExtensionManager:
         archive_file: BinaryIO | None = None,
         source_name: str | None = None,
         content_type: str | None = None,
+        catalog_name: str | None = None,
     ) -> ExtensionManifest:
         """Install an extension from a supported archive.
 
@@ -2724,7 +2735,11 @@ class ExtensionManager:
 
             # Install from extracted directory
             return self.install_from_directory(
-                extension_dir, speckit_version, priority=priority, force=force
+                extension_dir,
+                speckit_version,
+                priority=priority,
+                force=force,
+                catalog_name=catalog_name,
             )
 
     def _config_root_is_contained(self, specify_dir: Path) -> bool:
@@ -2880,6 +2895,7 @@ class ExtensionManager:
         archive_file: BinaryIO | None = None,
         source_name: str | None = None,
         content_type: str | None = None,
+        catalog_name: str | None = None,
     ) -> ExtensionManifest:
         """Backward-compatible wrapper for archive installation."""
         return self.install_from_archive(
@@ -2890,6 +2906,7 @@ class ExtensionManager:
             archive_file=archive_file,
             source_name=source_name,
             content_type=content_type,
+            catalog_name=catalog_name,
         )
 
     def remove(self, extension_id: str, keep_config: bool = False) -> bool:
@@ -3490,6 +3507,8 @@ class ExtensionManager:
 
             try:
                 manifest = ExtensionManifest(manifest_path)
+                author = manifest.data["extension"].get("author")
+                hook_count = len(manifest.hooks)
                 result.append(
                     {
                         "id": ext_id,
@@ -3500,7 +3519,15 @@ class ExtensionManager:
                         "priority": normalize_priority(metadata.get("priority")),
                         "installed_at": metadata.get("installed_at"),
                         "command_count": len(manifest.commands),
-                        "hook_count": len(manifest.hooks),
+                        "hook_count": hook_count,
+                        "_json_author": author if isinstance(author, str) and author else None,
+                        "_json_source": metadata.get("source"),
+                        "_json_provides": {
+                            "commands": len(manifest.commands),
+                            "templates": len(manifest.templates),
+                            "scripts": len(manifest.scripts),
+                            "hooks": hook_count,
+                        },
                     }
                 )
             except ValidationError:
@@ -3516,6 +3543,9 @@ class ExtensionManager:
                         "installed_at": metadata.get("installed_at"),
                         "command_count": 0,
                         "hook_count": 0,
+                        "_json_author": None,
+                        "_json_source": metadata.get("source"),
+                        "_json_provides": {"commands": 0, "templates": 0, "scripts": 0, "hooks": 0},
                     }
                 )
 
