@@ -18,10 +18,14 @@ This check enforces two invariants on the extensions listed in
    version must itself parse as PEP 440 — including for a brand-new
    extension, since the CLI rejects a manifest whose version it cannot
    parse.
-2. The `version` in `extensions/catalog.json` must equal the manifest's
-   `extension.version` (the catalog is what update checks compare
-   against, and the update preflight rejects a manifest whose version
-   differs from the catalog's).
+2. Every `version` in `extensions/catalog.json` must parse as PEP 440
+   (`extension update` skips entries it cannot parse), and for entries
+   with an in-repo directory it must equal a likewise-valid
+   `extension.version` in the manifest (the catalog is what update
+   checks compare against, and the update preflight rejects a manifest
+   whose version differs from the catalog's). This runs over every
+   catalog entry, so catalog-only (hosted) entries and catalog-only
+   promotions of existing directories are covered too.
 
 Usage:
     check_extension_version_bump.py BASE_REF [HEAD_REF]
@@ -172,18 +176,44 @@ def main(argv: list[str]) -> int:
                 f"Installed copies only receive changes when the version is bumped."
             )
 
-    # -- Invariant 2: catalog.json version matches the manifest ------------
+    # -- Invariant 2: catalog versions are valid and match the manifests ----
+    # Runs over every catalog entry, changed or not: a catalog-only entry
+    # (hosted elsewhere) never has files under extensions/<id>/, and a
+    # catalog-only promotion of an existing uncataloged directory never
+    # enters Invariant 1, so neither would otherwise have its version parsed.
     for ext_id, entry in sorted(catalog_entries.items()):
+        catalog_version = entry.get("version") if isinstance(entry, dict) else None
+        if not isinstance(catalog_version, str) or not catalog_version.strip():
+            errors.append(f"{CATALOG_PATH}: entry '{ext_id}' has no string 'version'")
+            continue
+        # `extension update` skips a catalog entry whose version packaging
+        # cannot parse, so an invalid catalog version is never offered.
+        try:
+            Version(catalog_version)
+        except InvalidVersion as exc:
+            errors.append(
+                f"{CATALOG_PATH}: entry '{ext_id}' version {catalog_version!r} is not a "
+                f"valid PEP 440 version ({exc}); `extension update` skips such entries."
+            )
+            continue
+
         manifest_path = f"{EXTENSIONS_ROOT}/{ext_id}/extension.yml"
         head_manifest = _show(head_ref, manifest_path)
         if head_manifest is None:
-            continue  # catalog-only entry (e.g. hosted elsewhere)
+            continue  # catalog-only entry (e.g. hosted elsewhere); version checked above
         try:
             manifest_version = _manifest_version(head_manifest, f"{head_ref}:{manifest_path}")
         except ValueError as exc:
             errors.append(str(exc))
             continue
-        catalog_version = entry.get("version")
+        try:
+            Version(manifest_version)
+        except InvalidVersion as exc:
+            errors.append(
+                f"{manifest_path}: extension.version {manifest_version!r} is not a valid "
+                f"PEP 440 version ({exc}); the CLI rejects this manifest."
+            )
+            continue
         if catalog_version != manifest_version:
             errors.append(
                 f"{CATALOG_PATH}: entry '{ext_id}' has version {catalog_version!r} but "

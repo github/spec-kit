@@ -46,13 +46,19 @@ def _write_extension(repo: Path, ext_id: str, version: str, script_line: str) ->
     (ext_dir / "script.sh").write_text(f"{script_line}\n", encoding="utf-8")
 
 
-def _write_catalog(repo: Path, versions: dict[str, str]) -> None:
+def _write_catalog(repo: Path, versions: dict[str, str | dict]) -> None:
+    """Write catalog.json; a value is either a bundled entry's version string
+    or a full entry dict (for e.g. hosted, non-bundled entries)."""
     (repo / "extensions").mkdir(exist_ok=True)
     payload = {
         "schema_version": "1.0",
         "extensions": {
-            ext_id: {"id": ext_id, "version": version, "bundled": True}
-            for ext_id, version in versions.items()
+            ext_id: (
+                {"id": ext_id, **spec}
+                if isinstance(spec, dict)
+                else {"id": ext_id, "version": spec, "bundled": True}
+            )
+            for ext_id, spec in versions.items()
         },
     }
     (repo / "extensions" / "catalog.json").write_text(
@@ -86,9 +92,14 @@ def guard_repo(tmp_path: Path) -> tuple[Path, str]:
     return repo, base_sha
 
 
-def _run_guard(repo: Path, base: str, head: str = "HEAD") -> subprocess.CompletedProcess:
+def _run_guard(
+    repo: Path, base: str, head: str | None = None
+) -> subprocess.CompletedProcess:
+    """Invoke the guard as the workflow does: base ref only, head defaulting
+    to HEAD inside the script. Pass *head* explicitly only to test the
+    optional second argument."""
     return subprocess.run(
-        [sys.executable, str(SCRIPT), base, head],
+        [sys.executable, str(SCRIPT), base, *([head] if head else [])],
         cwd=repo,
         capture_output=True,
         text=True,
@@ -223,6 +234,90 @@ def test_new_cataloged_extension_passes_without_base_version(guard_repo):
     _write_extension(repo, "fresh", "0.1.0", "echo new")
     _write_catalog(repo, {"demo": "1.0.0", "fresh": "0.1.0"})
     _commit_all(repo, "add new extension")
+
+    result = _run_guard(repo, base)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "all invariants hold" in result.stdout
+
+
+def test_explicit_head_argument_is_honored(guard_repo):
+    """The optional HEAD_REF argument must select the head to check: pointing
+    it at the base commit yields an empty diff even though HEAD has an
+    unbumped change."""
+    repo, base = guard_repo
+    _write_extension(repo, "demo", "1.0.0", "echo changed")
+    _commit_all(repo, "content change without bump")
+
+    result = _run_guard(repo, base, head=base)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "all invariants hold" in result.stdout
+
+
+def test_catalog_only_entry_with_unparseable_version_fails(guard_repo):
+    """A hosted (non-bundled) entry has no in-repo directory, so nothing under
+    extensions/ changes and Invariant 1 never sees it; its catalog version
+    must still parse because `extension update` skips entries it cannot."""
+    repo, base = guard_repo
+    _write_catalog(
+        repo,
+        {
+            "demo": "1.0.0",
+            "hosted": {
+                "version": "not-a-version",
+                "bundled": False,
+                "download_url": "https://example.com/hosted-1.0.0.zip",
+            },
+        },
+    )
+    _commit_all(repo, "add hosted entry with invalid version")
+
+    result = _run_guard(repo, base)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "entry 'hosted'" in result.stdout
+    assert "is not a valid PEP 440 version" in result.stdout
+
+
+def test_catalog_only_promotion_with_unparseable_version_fails(guard_repo):
+    """Promoting an existing uncataloged directory by adding only its catalog
+    entry changes nothing under extensions/<id>/, so Invariant 1 skips it;
+    matching invalid strings must still fail because the CLI cannot use them.
+    The catalog-version parse rejects the entry first."""
+    repo, _ = guard_repo
+    _write_extension(repo, "draft", "not-a-version", "echo draft")
+    base = _commit_all(repo, "uncataloged draft with invalid version on base")
+
+    _write_catalog(repo, {"demo": "1.0.0", "draft": "not-a-version"})
+    _commit_all(repo, "promote draft via catalog only")
+
+    result = _run_guard(repo, base)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "entry 'draft'" in result.stdout
+    assert "is not a valid PEP 440 version" in result.stdout
+
+
+def test_catalog_only_promotion_with_invalid_manifest_version_fails(guard_repo):
+    """Same promotion, but the catalog carries a valid version while the
+    untouched in-repo manifest does not: Invariant 2 must parse the manifest
+    itself (not only compare strings) and name the manifest in the error."""
+    repo, _ = guard_repo
+    _write_extension(repo, "draft", "not-a-version", "echo draft")
+    base = _commit_all(repo, "uncataloged draft with invalid version on base")
+
+    _write_catalog(repo, {"demo": "1.0.0", "draft": "1.0.0"})
+    _commit_all(repo, "promote draft with a valid catalog version only")
+
+    result = _run_guard(repo, base)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "extensions/draft/extension.yml" in result.stdout
+    assert "is not a valid PEP 440 version" in result.stdout
+
+
+def test_catalog_only_promotion_with_valid_version_passes(guard_repo):
+    """The uncataloged `scratch` fixture carries a valid 1.0.0; cataloging it
+    without touching its directory is a legitimate promotion."""
+    repo, base = guard_repo
+    _write_catalog(repo, {"demo": "1.0.0", "scratch": "1.0.0"})
+    _commit_all(repo, "promote scratch via catalog only")
 
     result = _run_guard(repo, base)
     assert result.returncode == 0, result.stdout + result.stderr

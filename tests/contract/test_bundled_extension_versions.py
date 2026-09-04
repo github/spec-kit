@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from packaging.version import InvalidVersion, Version
 
 REPO_ROOT = Path(__file__).parents[2]
 EXTENSIONS_ROOT = REPO_ROOT / "extensions"
@@ -62,3 +63,21 @@ def test_bundled_entries_ship_an_extension_directory(ext_id: str):
     assert (EXTENSIONS_ROOT / ext_id / "extension.yml").is_file(), (
         f"catalog marks '{ext_id}' as bundled but extensions/{ext_id}/extension.yml is missing"
     )
+
+
+@pytest.mark.parametrize("ext_id", sorted(_catalog_entries()))
+def test_catalog_version_is_valid_pep440(ext_id: str):
+    """`extension update` parses each catalog version with packaging and skips
+    entries it cannot parse, so every entry - bundled or hosted - must carry
+    a valid version, independent of whether it has an in-repo directory."""
+    version = _catalog_entries()[ext_id].get("version")
+    assert isinstance(version, str) and version.strip(), (
+        f"extensions/catalog.json entry '{ext_id}' has no string version"
+    )
+    try:
+        Version(version)
+    except InvalidVersion as exc:
+        pytest.fail(
+            f"extensions/catalog.json entry '{ext_id}' version {version!r} is not a valid "
+            f"PEP 440 version ({exc}); `extension update` would skip it"
+        )
