@@ -927,6 +927,25 @@ class TestExpressions:
         result = evaluate_expression("{{ steps.tasks.output.task_list[0].file }}", ctx)
         assert result == "a.md"
 
+    def test_negative_list_indexing(self):
+        """``list[-1]`` resolves from the end, as Python and Jinja2 both do.
+
+        Without it the index silently fell through to a dict lookup for the
+        literal key ``"task_list[-1]"`` and produced ``None``, so a template
+        reaching for the last element rendered empty with no error.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            steps={"tasks": {"output": {"task_list": [{"file": "a.md"}, {"file": "b.md"}]}}}
+        )
+        assert evaluate_expression("{{ steps.tasks.output.task_list[-1].file }}", ctx) == "b.md"
+        assert evaluate_expression("{{ steps.tasks.output.task_list[-2].file }}", ctx) == "a.md"
+        # Out of range in either direction stays None rather than raising.
+        assert evaluate_expression("{{ steps.tasks.output.task_list[-3] }}", ctx) is None
+        assert evaluate_expression("{{ steps.tasks.output.task_list[2] }}", ctx) is None
+
     def test_context_run_id_resolves(self):
         """``{{ context.run_id }}`` resolves to ``StepContext.run_id``.
 
