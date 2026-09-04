@@ -351,12 +351,12 @@ _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Delegated to the python twin's --emit-preset-blocks so all three twins emit
 # byte-identical block text from a single implementation. Capture only stdout so
 # the composer's warnings (oversized, marker-colliding, or skipped entries) still
-# reach stderr, and abort on a nonzero exit so a composer failure never rewrites
-# the section with previously composed preset blocks silently dropped.
-_PRESET_BLOCKS="$("$_python" "$_SCRIPT_DIR/../python/update_agent_context.py" --emit-preset-blocks --marker-start "$MARKER_START" --marker-end "$MARKER_END")"
-_emit_rc=$?
-if [[ $_emit_rc -ne 0 ]]; then
-  echo "agent-context: preset instruction composer failed (exit $_emit_rc); aborting so the managed section is not rewritten with preset blocks dropped." >&2
+# reach stderr. The assignment is the condition of an `if` so `set -e` does not
+# abort on a nonzero composer status before this diagnostic runs; on failure we
+# abort here so a composer failure never rewrites the section with previously
+# composed preset blocks silently dropped.
+if ! _PRESET_BLOCKS="$("$_python" "$_SCRIPT_DIR/../python/update_agent_context.py" --emit-preset-blocks --marker-start "$MARKER_START" --marker-end "$MARKER_END")"; then
+  echo "agent-context: preset instruction composer failed; aborting so the managed section is not rewritten with preset blocks dropped." >&2
   exit 1
 fi
 
