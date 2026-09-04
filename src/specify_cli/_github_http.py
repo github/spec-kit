@@ -11,6 +11,7 @@ through the config-driven helpers in :mod:`specify_cli.authentication.http`.
 import os
 import urllib.request
 from fnmatch import fnmatch
+from ipaddress import ip_address
 from typing import Callable, Dict, Optional
 from urllib.parse import quote, unquote, urlparse
 
@@ -25,6 +26,19 @@ GITHUB_HOSTS = frozenset({
     "codeload.github.com",
 })
 _MAX_RELEASE_METADATA_BYTES = 5 * 1024 * 1024
+
+
+def _has_valid_percent_escapes(value: str) -> bool:
+    """Return whether every percent sign in *value* starts a percent escape."""
+    hex_digits = "0123456789abcdefABCDEF"
+    for index, character in enumerate(value):
+        if character == "%" and (
+            index + 2 >= len(value)
+            or value[index + 1] not in hex_digits
+            or value[index + 2] not in hex_digits
+        ):
+            return False
+    return True
 
 
 def build_github_request(url: str) -> urllib.request.Request:
@@ -142,6 +156,16 @@ def resolve_github_release_asset_api_url(
     if hostname and parts[:2] == ["api", "v3"] and _is_asset_path(parts[2:]):
         return download_url
 
+    # Browser download URLs must be usable HTTP(S) URLs before they can cause
+    # a metadata request. Direct API-asset passthrough above intentionally
+    # retains its existing path-only behavior.
+    if parsed.scheme not in {"http", "https"}:
+        return None
+    try:
+        _browser_port = parsed.port
+    except ValueError:
+        return None
+
     # Determine the REST API base for browser release-download URLs.
     if hostname == "github.com":
         api_base = "https://api.github.com"
@@ -153,7 +177,10 @@ def resolve_github_release_asset_api_url(
             port = parsed.port
         except ValueError:
             return None
-        authority = hostname if port is None else f"{hostname}:{port}"
+        # ``urlparse().hostname`` removes IPv6 brackets. Restore them when
+        # constructing an authority so the derived API base remains a URL.
+        authority_host = f"[{hostname}]" if ":" in hostname else hostname
+        authority = authority_host if port is None else f"{authority_host}:{port}"
         api_base = f"{parsed.scheme}://{authority}/api/v3"
     else:
         return None
@@ -167,6 +194,77 @@ def resolve_github_release_asset_api_url(
     asset_name = parts[-1]
     encoded_tag = quote(tag, safe="")
     release_url = f"{api_base}/repos/{owner}/{repo}/releases/tags/{encoded_tag}"
+
+    def _is_expected_asset_url(asset_url: object) -> bool:
+        """Return whether metadata names this release's exact API asset endpoint."""
+        if not isinstance(asset_url, str):
+            return False
+        # ``urlparse`` tolerates some raw spellings (for example whitespace)
+        # even though the original metadata value is returned to the caller.
+        # Reject those spellings before parsing rather than normalizing them.
+        if (
+            any(
+                ord(character) <= 0x20 or ord(character) == 0x7F
+                for character in asset_url
+            )
+            or any(delimiter in asset_url for delimiter in ("?", "#", ";"))
+            or not _has_valid_percent_escapes(asset_url)
+        ):
+            return False
+        try:
+            asset_parsed = urlparse(asset_url)
+            asset_host = asset_parsed.hostname
+            asset_port = asset_parsed.port
+            api_parsed = urlparse(api_base)
+            api_host = api_parsed.hostname
+            api_port = api_parsed.port
+        except ValueError:
+            return False
+
+        if (
+            asset_parsed.scheme not in {"http", "https"}
+            or not asset_host
+            or asset_parsed.username is not None
+            or asset_parsed.password is not None
+            or asset_parsed.query
+            or asset_parsed.fragment
+            or asset_parsed.params
+        ):
+            return False
+
+        def _origin(parsed_url, host: str, port: int | None) -> tuple[str, str, int]:
+            default_port = 443 if parsed_url.scheme == "https" else 80
+            try:
+                normalized_host = ip_address(host).compressed
+            except ValueError:
+                normalized_host = host.lower()
+            return (
+                parsed_url.scheme,
+                normalized_host,
+                default_port if port is None else port,
+            )
+
+        if _origin(asset_parsed, asset_host, asset_port) != _origin(
+            api_parsed, api_host or "", api_port
+        ):
+            return False
+
+        asset_parts = asset_parsed.path.split("/")
+        owner_index = 2 if api_base == "https://api.github.com" else 4
+        expected_prefix = (
+            ["", "repos"]
+            if api_base == "https://api.github.com"
+            else ["", "api", "v3", "repos"]
+        )
+        return (
+            len(asset_parts) == owner_index + 5
+            and asset_parts[:owner_index] == expected_prefix
+            and unquote(asset_parts[owner_index]).casefold() == owner.casefold()
+            and unquote(asset_parts[owner_index + 1]).casefold() == repo.casefold()
+            and asset_parts[owner_index + 2:owner_index + 4] == ["releases", "assets"]
+            and asset_parts[-1].isascii()
+            and asset_parts[-1].isdigit()
+        )
 
     try:
         open_kwargs = {"timeout": timeout}
@@ -194,11 +292,9 @@ def resolve_github_release_asset_api_url(
     if not isinstance(assets, list):
         return None
     for asset in assets:
-        if (
-            isinstance(asset, dict)
-            and asset.get("name") == asset_name
-            and asset.get("url")
-        ):
-            return str(asset["url"])
+        if isinstance(asset, dict) and asset.get("name") == asset_name:
+            asset_url = asset.get("url")
+            if _is_expected_asset_url(asset_url):
+                return asset_url
 
     return None
