@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -380,6 +381,76 @@ def _validate_manifest_template_entry(entry: object) -> None:
         )
 
 
+class _DelegatedYAMLError(Exception):
+    """Raised when a SPECKIT_PYTHON-delegated manifest parse fails."""
+
+
+class _DelegatedYAML:
+    """``yaml.safe_load`` proxy that shells out to SPECKIT_PYTHON.
+
+    Used when this interpreter lacks PyYAML but SPECKIT_PYTHON names one
+    that has it (e.g. a `uv tool install` / `pipx` venv invisible to the
+    bare `python3` a script is launched with). See #4443.
+    """
+
+    YAMLError = _DelegatedYAMLError
+
+    def __init__(self, python_exe: str) -> None:
+        self._python_exe = python_exe
+
+    def safe_load(self, text: str) -> object:
+        try:
+            proc = subprocess.run(
+                [
+                    self._python_exe,
+                    "-c",
+                    "import sys, json, yaml; "
+                    "json.dump(yaml.safe_load(sys.stdin.read()), sys.stdout)",
+                ],
+                input=text,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise _DelegatedYAMLError(
+                f"SPECKIT_PYTHON could not parse the manifest: {exc}"
+            ) from exc
+        if proc.returncode != 0:
+            raise _DelegatedYAMLError(
+                proc.stderr.strip() or "SPECKIT_PYTHON could not parse the manifest"
+            )
+        try:
+            return json.loads(proc.stdout)
+        except json.JSONDecodeError as exc:
+            raise _DelegatedYAMLError(
+                f"SPECKIT_PYTHON returned invalid JSON: {exc}"
+            ) from exc
+
+
+def _import_yaml() -> object | None:
+    """Import PyYAML, delegating to SPECKIT_PYTHON if this interpreter lacks it."""
+    try:
+        import yaml
+
+        return yaml
+    except ImportError:
+        pass
+
+    python_override = os.environ.get("SPECKIT_PYTHON")
+    if not python_override:
+        return None
+    try:
+        probe = subprocess.run(
+            [python_override, "-c", "import yaml"], capture_output=True, timeout=10
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if probe.returncode != 0:
+        return None
+    return _DelegatedYAML(python_override)
+
+
 def _preset_template_layer(
     preset_dir: Path, template_name: str
 ) -> tuple[Path, str] | None:
@@ -387,13 +458,12 @@ def _preset_template_layer(
     manifest_path = preset_dir / "preset.yml"
     conventional = _conventional_template(preset_dir, template_name)
 
-    try:
-        import yaml
-    except ImportError as exc:
+    yaml = _import_yaml()
+    if yaml is None:
         if manifest_path.is_file():
             raise TemplateResolutionError(
                 "PyYAML is required to resolve preset template composition"
-            ) from exc
+            )
         return (conventional, "replace") if conventional is not None else None
 
     if manifest_path.is_file():
