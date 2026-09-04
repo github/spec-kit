@@ -59,6 +59,7 @@ class MuseIntegration(SkillsIntegration):
         # Muse Code uses ``muse exec "<prompt>"`` for non-interactive mode.
         # Resolve argv[0] via the shared executable resolver so operators can
         # override the binary with SPECKIT_INTEGRATION_MUSE_EXECUTABLE.
+        self.validate_runtime_config(integration_args, integration_options)
         args: list[str] = [self._resolve_executable(), "exec", prompt]
         self._apply_extra_args_env_var(args)
         if model:

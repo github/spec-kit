@@ -282,6 +282,7 @@ class HermesIntegration(SkillsIntegration):
         mapping slash-command invocations to the appropriate skill-based
         dispatch.
         """
+        self.validate_runtime_config(integration_args, integration_options)
         args = [self._resolve_executable(), "chat", "-Q"]
 
         # Operator-supplied SPECKIT_INTEGRATION_HERMES_EXTRA_ARGS go here —

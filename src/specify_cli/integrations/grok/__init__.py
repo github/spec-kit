@@ -49,6 +49,7 @@ class GrokIntegration(SkillsIntegration):
           dispatch and ``dispatch_command()`` are not blocked at permission
           gates (same role as Cursor's ``--force`` / Copilot's ``--yolo``).
         """
+        self.validate_runtime_config(integration_args, integration_options)
         if not self.config or not self.config.get("requires_cli"):
             return None
         args = [

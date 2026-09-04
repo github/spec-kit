@@ -269,34 +269,6 @@ class CommandStep(StepBase):
         """Resolve and validate this step's per-integration runtime config."""
         step_id = config.get("id", "?")
 
-        # A resumed command reuses the exact values resolved on its first
-        # attempt. This keeps agent selection deterministic even when resume
-        # supplies updated workflow inputs for other parts of the step.
-        if context.is_resume:
-            prior = context.steps.get(str(step_id), {})
-            if (
-                isinstance(prior, dict)
-                and "integration_args" in prior
-                and "integration_options" in prior
-            ):
-                prior_args = prior["integration_args"]
-                prior_options = prior["integration_options"]
-                if not isinstance(prior_args, list) or not all(
-                    isinstance(value, str) for value in prior_args
-                ):
-                    return (
-                        f"Command step {step_id!r}: persisted 'integration_args' "
-                        "must be a list of strings."
-                    )
-                if not isinstance(prior_options, dict) or not all(
-                    isinstance(key, str) for key in prior_options
-                ):
-                    return (
-                        f"Command step {step_id!r}: persisted "
-                        "'integration_options' must be a mapping with string keys."
-                    )
-                return list(prior_args), dict(prior_options)
-
         raw_args = config.get("integration_args", [])
         if not isinstance(raw_args, list):
             return (

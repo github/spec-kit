@@ -102,7 +102,8 @@ Invoke an installed Spec Kit command by name via the integration CLI:
 
 CLI integrations can expose per-step positional arguments and named runtime
 options. For example, Docker Agent accepts an agent reference plus validated
-`agent`, `model`, and `safety` options:
+`agent` and `safety` options. Use the command step's top-level `model` field for
+model selection:
 
 ```yaml
 - id: specify-with-docker-agent
@@ -113,6 +114,7 @@ options. For example, Docker Agent accepts an agent reference plus validated
   integration_options:
     agent: root
     safety: balanced
+  model: "openai/gpt-5"
   input:
     args: "{{ inputs.spec }}"
 ```
@@ -121,8 +123,10 @@ options. For example, Docker Agent accepts an agent reference plus validated
 one element at a time. `integration_options` must be a mapping with string keys;
 its values are likewise expression-resolved and validated by the selected
 integration. Non-empty runtime configuration is rejected when an integration
-does not support it. Resolved values are stored in workflow run state and reused
-when the current command step is resumed.
+does not support it. Resolved values are stored in workflow run state for audit
+and recovery. On resume, the complete dispatch configuration (`integration`,
+`model`, `integration_args`, and `integration_options`) is re-resolved from the
+current workflow inputs; without updated inputs this reproduces the prior values.
 
 ### Prompt Steps
 

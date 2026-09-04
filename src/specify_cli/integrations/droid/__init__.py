@@ -114,6 +114,7 @@ class DroidIntegration(SkillsIntegration):
         canonical one, so operators can still override ``--model`` or
         ``--output-format``.
         """
+        self.validate_runtime_config(integration_args, integration_options)
         if not self.config or not self.config.get("requires_cli"):
             return None
         args = [

@@ -40,6 +40,7 @@ class OmpIntegration(MarkdownIntegration):
         # can1357/oh-my-pi. JSON output is selected via `--mode json`.
         if not self.config or not self.config.get("requires_cli"):
             return None
+        self.validate_runtime_config(integration_args, integration_options)
         args = [self._resolve_executable(), "--print"]
         self._apply_extra_args_env_var(args)
         if model:

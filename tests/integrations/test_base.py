@@ -69,6 +69,20 @@ class TestIntegrationBase:
             assert "integration_args" in parameters, key
             assert "integration_options" in parameters, key
 
+    def test_unsupported_exec_builders_reject_runtime_config_directly(self):
+        from specify_cli.integrations import INTEGRATION_REGISTRY
+
+        for integration in INTEGRATION_REGISTRY.values():
+            if (
+                type(integration).validate_runtime_config
+                is not IntegrationBase.validate_runtime_config
+            ):
+                continue
+            with pytest.raises(ValueError, match="integration_args"):
+                integration.build_exec_args(
+                    "prompt", integration_args=["unexpected"]
+                )
+
     def test_shared_commands_dir(self):
         i = StubIntegration()
         cmd_dir = i.shared_commands_dir()

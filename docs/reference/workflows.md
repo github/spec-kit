@@ -535,6 +535,39 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 
 > **Security note:** a `shell` step runs a local command with **your** privileges. There is no capability sandbox — `requires` is an advisory pre-condition block (spec-kit version, integrations), not a runtime gate, so it does **not** restrict what a step can do. In particular there is no `requires.permissions` capability gate: it is rejected by validation precisely because it would imply a sandbox that does not exist. Review any catalog or downloaded workflow before running it, and use a `gate` step to require explicit approval before sensitive or destructive shell commands.
 
+### Per-Step Integration Configuration
+
+Command steps may pass structured runtime configuration to integrations that
+support it:
+
+```yaml
+- id: implement-with-docker-agent
+  type: command
+  command: speckit.implement
+  integration: docker-agent
+  integration_args:
+    - "{{ inputs.agent_config }}"
+  integration_options:
+    agent: root
+    safety: balanced
+  model: "openai/gpt-5"
+  input:
+    args: "{{ inputs.spec }}"
+```
+
+`integration_args` is an ordered list of strings. `integration_options` is a
+mapping with string keys. Values in both fields are resolved with the workflow
+expression mechanism and validated by the selected integration; unsupported,
+unknown, or malformed values fail with an actionable error. Docker Agent uses
+its single positional argument as the agent configuration reference and accepts
+`agent` and `safety` as named integration options. Configure its model through
+the command step's top-level `model` field.
+
+Resolved runtime configuration is recorded in workflow run state. When a failed
+or paused command is resumed, the complete dispatch configuration is re-resolved
+from the current inputs, so values supplied with `workflow resume --input` take
+effect consistently. A resume without updated inputs reproduces the same values.
+
 ## Expressions
 
 Steps can reference inputs and previous step outputs using `{{ expression }}` syntax:

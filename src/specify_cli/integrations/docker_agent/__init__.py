@@ -41,7 +41,6 @@ class DockerAgentIntegration(SkillsIntegration):
 
     _RUNTIME_OPTION_FLAGS = {
         "agent": "--agent",
-        "model": "--model",
         "safety": "--safety",
     }
     _SAFETY_MODES = {"strict", "balanced", "restricted", "autonomous"}
@@ -103,15 +102,31 @@ class DockerAgentIntegration(SkillsIntegration):
         # agent reference and reject malformed quoting or a leading option.
         # The reference may be a local file or a registry reference, so its
         # existence and validity are intentionally left to Docker Agent.
-        if not runtime_args:
+        legacy_args: list[str] = []
+        if extra_args:
             try:
-                first_arg = shlex.split(extra_args)[0]
-            except (IndexError, ValueError) as exc:
+                legacy_args = shlex.split(extra_args)
+            except ValueError as exc:
+                raise ValueError(
+                    f"{extra_env_name} is not parseable as a POSIX-quoted "
+                    f"command line (value: {extra_args!r})."
+                ) from exc
+
+        if runtime_args and legacy_args and not legacy_args[0].startswith("-"):
+            # Before per-step configuration existed, a valid legacy value had
+            # to start with the agent reference. The per-step reference is now
+            # authoritative; retain only the legacy flags so an existing
+            # environment does not turn its old config into a second message.
+            legacy_args = legacy_args[1:]
+
+        if not runtime_args:
+            if not legacy_args:
                 raise ValueError(
                     f"{extra_env_name} must start with an agent configuration "
                     "reference, for example ./agent.yaml"
-                ) from exc
-            if first_arg.startswith("-"):
+                )
+            first_arg = legacy_args[0]
+            if not first_arg or first_arg.startswith("-"):
                 raise ValueError(
                     f"{extra_env_name} must start with an agent configuration "
                     "reference, for example ./agent.yaml"
@@ -123,10 +138,10 @@ class DockerAgentIntegration(SkillsIntegration):
         # positional value is the local/registry/alias agent reference.
         args.extend(runtime_args)
 
-        # Extra args carry the required agent source (for example
-        # ``./agent.yaml``) and any Docker Agent CLI flags. The shared helper
-        # also preserves shell-style quoting when splitting multiple args.
-        self._apply_extra_args_env_var(args)
+        # Preserve flags from the legacy process-wide configuration. When a
+        # per-step agent reference is present, the legacy reference above has
+        # already been removed to prevent a second positional message.
+        args.extend(legacy_args)
 
         for option, value in (integration_options or {}).items():
             args.extend([self._RUNTIME_OPTION_FLAGS[option], value])
@@ -172,6 +187,11 @@ class DockerAgentIntegration(SkillsIntegration):
         if not all(isinstance(name, str) for name in options):
             raise ValueError(
                 "Docker Agent 'integration_options' keys must be strings."
+            )
+        if "model" in options:
+            raise ValueError(
+                "Docker Agent model selection must use the command-step "
+                "'model' field, not 'integration_options.model'."
             )
         unknown = sorted(set(options) - self._RUNTIME_OPTION_FLAGS.keys())
         if unknown:

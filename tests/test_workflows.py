@@ -1184,6 +1184,64 @@ class TestCommandStep:
         assert calls[0][1]["cwd"] == str(tmp_path)
         assert calls[1][1]["cwd"] == str(tmp_path)
 
+    @pytest.mark.parametrize(
+        ("step_model", "default_model", "expected_model"),
+        [
+            ("step/model", "workflow/model", "step/model"),
+            (None, "workflow/model", "workflow/model"),
+        ],
+    )
+    def test_docker_agent_uses_one_effective_model(
+        self,
+        tmp_path,
+        monkeypatch,
+        step_model,
+        default_model,
+        expected_model,
+    ):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.steps.command import CommandStep
+
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append(args)
+            return type("Result", (), {"returncode": 0})()
+
+        monkeypatch.delenv(
+            "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
+        )
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: (
+                "/usr/bin/docker-agent"
+                if name in {"docker-agent", "/usr/bin/docker-agent"}
+                else None
+            ),
+        )
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        config = {
+            "id": "implement",
+            "command": "speckit.implement",
+            "integration": "docker-agent",
+            "integration_args": ["./agent.yaml"],
+        }
+        if step_model is not None:
+            config["model"] = step_model
+
+        result = CommandStep().execute(
+            config,
+            StepContext(
+                default_model=default_model,
+                project_root=str(tmp_path),
+            ),
+        )
+
+        assert result.status is StepStatus.COMPLETED
+        assert calls[0].count("--model") == 1
+        assert calls[0][calls[0].index("--model") + 1] == expected_model
+
     def test_unsupported_runtime_config_fails_with_actionable_error(self):
         from specify_cli.workflows.base import StepContext, StepStatus
         from specify_cli.workflows.steps.command import CommandStep
@@ -11505,6 +11563,12 @@ inputs:
   config:
     type: string
     default: "./initial-agent.yaml"
+  agent_name:
+    type: string
+    default: "initial-root"
+  model_name:
+    type: string
+    default: "initial/model"
 steps:
   - id: implement
     type: command
@@ -11513,8 +11577,31 @@ steps:
     integration_args:
       - "{{ inputs.config }}"
     integration_options:
-      agent: root
+      agent: "{{ inputs.agent_name }}"
       safety: balanced
+    model: "{{ inputs.model_name }}"
+"""
+
+    _WF_DYNAMIC_INTEGRATION = """
+schema_version: "1.0"
+workflow:
+  id: "resume-dynamic-integration-wf"
+  name: "Resume Dynamic Integration WF"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: docker-agent
+  config:
+    type: string
+    default: "./initial-agent.yaml"
+steps:
+  - id: implement
+    type: command
+    command: speckit.implement
+    integration: "{{ inputs.integration }}"
+    integration_args:
+      - "{{ inputs.config }}"
 """
 
     def _engine(self, project_dir):
@@ -11549,7 +11636,7 @@ steps:
         assert resumed.status == RunStatus.FAILED  # still "exit 1"
         assert resumed.inputs["cmd"] == "exit 1"
 
-    def test_resume_reuses_persisted_integration_config(
+    def test_resume_re_resolves_complete_integration_config(
         self, project_dir, monkeypatch
     ):
         from specify_cli.workflows.base import RunStatus
@@ -11584,20 +11671,66 @@ steps:
             "./initial-agent.yaml"
         ]
         assert state.step_results["implement"]["integration_options"] == {
-            "agent": "root",
+            "agent": "initial-root",
             "safety": "balanced",
         }
 
         resumed = engine.resume(
-            state.run_id, {"config": "./changed-on-resume.yaml"}
+            state.run_id,
+            {
+                "config": "./changed-on-resume.yaml",
+                "agent_name": "changed-root",
+                "model_name": "changed/model",
+            },
         )
 
         assert resumed.status is RunStatus.COMPLETED
         assert resumed.inputs["config"] == "./changed-on-resume.yaml"
         assert len(calls) == 2
         assert "./initial-agent.yaml" in calls[0]
-        assert "./initial-agent.yaml" in calls[1]
-        assert "./changed-on-resume.yaml" not in calls[1]
+        assert "./changed-on-resume.yaml" in calls[1]
+        assert "./initial-agent.yaml" not in calls[1]
+        assert calls[1][calls[1].index("--agent") + 1] == "changed-root"
+        assert calls[1][calls[1].index("--model") + 1] == "changed/model"
+
+    def test_resume_does_not_mix_new_integration_with_old_runtime_config(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import WorkflowDefinition
+
+        monkeypatch.delenv(
+            "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
+        )
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: (
+                "/usr/bin/docker-agent"
+                if name in {"docker-agent", "/usr/bin/docker-agent"}
+                else None
+            ),
+        )
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda *args, **kwargs: type("Result", (), {"returncode": 1})(),
+        )
+
+        definition = WorkflowDefinition.from_string(self._WF_DYNAMIC_INTEGRATION)
+        engine = self._engine(project_dir)
+        state = engine.execute(definition)
+        assert state.status is RunStatus.FAILED
+
+        resumed = engine.resume(
+            state.run_id,
+            {"integration": "claude", "config": "./changed-on-resume.yaml"},
+        )
+
+        assert resumed.status is RunStatus.FAILED
+        step_result = resumed.step_results["implement"]
+        assert step_result["integration"] == "claude"
+        assert step_result["integration_args"] == ["./changed-on-resume.yaml"]
+        assert "Integration 'claude'" in (step_result["error"] or "")
+        assert "./initial-agent.yaml" not in str(step_result)
 
     def test_resume_merges_and_coerces_typed_input(self, project_dir):
         import json as _json

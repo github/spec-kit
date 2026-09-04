@@ -55,6 +55,7 @@ class GooseIntegration(YamlIntegration):
         the agent's own resolver. Any other prompt -- including Goose's own
         session commands such as ``/help`` or ``/plan`` -- goes to ``-t``.
         """
+        self.validate_runtime_config(integration_args, integration_options)
         args = [self._resolve_executable(), "run"]
         # Extra args are applied first, matching the opencode / codex /
         # cursor-agent ordering. Positional parity only, NOT precedence:

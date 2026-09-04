@@ -99,6 +99,7 @@ class CursorAgentIntegration(SkillsIntegration):
         either drops tool calls or exits non-zero on the first approval
         prompt.
         """
+        self.validate_runtime_config(integration_args, integration_options)
         args = [
             self._resolve_executable(),
             "-p",

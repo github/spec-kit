@@ -310,6 +310,7 @@ class CopilotIntegration(IntegrationBase):
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
     ) -> list[str] | None:
+        self.validate_runtime_config(integration_args, integration_options)
         # GitHub Copilot CLI uses ``copilot -p "prompt"`` for
         # non-interactive mode.  --yolo enables all permissions
         # (tools, paths, and URLs) so the agent can perform file

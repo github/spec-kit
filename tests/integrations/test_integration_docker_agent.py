@@ -59,8 +59,8 @@ def test_per_step_runtime_config_builds_ordered_argv(monkeypatch):
         integration_options={
             "agent": "root",
             "safety": "balanced",
-            "model": "openai/gpt-5",
         },
+        model="openai/gpt-5",
     )
 
     assert args == [
@@ -100,6 +100,54 @@ def test_per_step_args_precede_legacy_extra_flags(monkeypatch):
         "--",
         "prompt",
     ]
+
+
+def test_per_step_agent_replaces_legacy_agent_but_preserves_flags(monkeypatch):
+    monkeypatch.setenv(
+        "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS",
+        "./global.yaml --hide-tool-results",
+    )
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    args = DockerAgentIntegration().build_exec_args(
+        "prompt",
+        output_json=False,
+        integration_args=["./step.yaml"],
+    )
+
+    assert args == [
+        "docker-agent",
+        "run",
+        "--exec",
+        "./step.yaml",
+        "--hide-tool-results",
+        "--",
+        "prompt",
+    ]
+
+
+def test_command_step_model_is_the_only_model_source(monkeypatch):
+    monkeypatch.delenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False)
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    args = DockerAgentIntegration().build_exec_args(
+        "prompt",
+        output_json=False,
+        model="openai/gpt-5",
+        integration_args=["./agent.yaml"],
+    )
+
+    assert args.count("--model") == 1
+    assert args[args.index("--model") + 1] == "openai/gpt-5"
+
+
+def test_integration_options_model_is_rejected():
+    with pytest.raises(ValueError, match="command-step 'model' field"):
+        DockerAgentIntegration().build_exec_args(
+            "prompt",
+            integration_args=["./agent.yaml"],
+            integration_options={"model": "openai/gpt-5"},
+        )
 
 
 @pytest.mark.parametrize(
@@ -173,6 +221,13 @@ def test_prompt_starting_with_flag_is_delimited(monkeypatch):
 def test_requires_agent_config(monkeypatch):
     monkeypatch.delenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False)
     with pytest.raises(ValueError, match="requires an agent configuration reference"):
+        DockerAgentIntegration().build_exec_args("prompt", output_json=False)
+
+
+def test_legacy_agent_config_cannot_resolve_to_empty_token_list(monkeypatch):
+    monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", '""')
+
+    with pytest.raises(ValueError, match="must start with an agent configuration"):
         DockerAgentIntegration().build_exec_args("prompt", output_json=False)
 
 
