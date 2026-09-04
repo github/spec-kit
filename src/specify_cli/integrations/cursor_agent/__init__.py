@@ -12,6 +12,9 @@ is what indicates dispatch support, mirroring ``CopilotIntegration``.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+from typing import Any
+
 from ..base import IntegrationOption, SkillsIntegration
 
 
@@ -63,6 +66,8 @@ class CursorAgentIntegration(SkillsIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> list[str] | None:
         """Build CLI arguments for non-interactive ``cursor-agent`` execution.
 
@@ -94,6 +99,7 @@ class CursorAgentIntegration(SkillsIntegration):
         either drops tool calls or exits non-zero on the first approval
         prompt.
         """
+        self.validate_runtime_config(integration_args, integration_options)
         args = [
             self._resolve_executable(),
             "-p",

@@ -77,6 +77,9 @@ class StepContext:
     #: Current run ID.
     run_id: str | None = None
 
+    #: Whether the engine is re-executing the current step during resume.
+    is_resume: bool = False
+
     #: Source directory of the workflow definition file.
     workflow_dir: str | None = None
 

@@ -8,6 +8,7 @@ under ``.rovodev/prompts/`` and a ``prompts.yml`` manifest.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +64,8 @@ class RovodevIntegration(SkillsIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> list[str] | None:
         """Build non-interactive ACLI args for RovoDev.
 
@@ -79,6 +82,7 @@ class RovodevIntegration(SkillsIntegration):
           - ``SPECKIT_INTEGRATION_ROVODEV_EXTRA_ARGS`` injects extra CLI flags
         """
         _ = model
+        self.validate_runtime_config(integration_args, integration_options)
         args = [self._resolve_executable(), "rovodev", "run", prompt]
         self._apply_extra_args_env_var(args)
         if output_json:

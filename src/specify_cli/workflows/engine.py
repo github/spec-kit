@@ -1121,6 +1121,7 @@ class WorkflowEngine:
             default_options=definition.default_options,
             project_root=str(self.project_root),
             run_id=state.run_id,
+            is_resume=True,
             workflow_dir=state.workflow_dir,
         )
 
@@ -1237,6 +1238,11 @@ class WorkflowEngine:
                 "status": result.status.value,
                 "error": result.error,
             }
+            if step_type == "command" and "integration_args" in result.output:
+                step_data["integration_args"] = result.output["integration_args"]
+                step_data["integration_options"] = result.output[
+                    "integration_options"
+                ]
             self._record_result(context, state, step_id, step_data)
 
             state.append_log(

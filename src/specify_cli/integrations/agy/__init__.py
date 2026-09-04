@@ -6,6 +6,7 @@ Antigravity uses ``.agents/skills/speckit-<name>/SKILL.md`` layout (enforced sin
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -87,8 +88,11 @@ class AgyIntegration(SkillsIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> list[str] | None:
         # agy does not support --model or JSON output; both params are ignored
+        self.validate_runtime_config(integration_args, integration_options)
         args = [self._resolve_executable(), "--print", prompt]
         # Honor SPECKIT_INTEGRATION_AGY_EXTRA_ARGS (operator-supplied flags),
         # appended after the positional prompt like the devin integration.
