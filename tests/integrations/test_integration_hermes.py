@@ -12,7 +12,9 @@ non-destructive to a developer's real Hermes installation.
 
 import json
 import shutil
+import stat
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -35,6 +37,31 @@ class TestHermesIntegration(SkillsIntegrationTests):
     FOLDER = ".hermes/"
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = "~/.hermes/skills"
+
+    def test_path_guard_uses_python311_junction_fallback(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.integrations.hermes import _has_symlinked_component
+        import specify_cli._utils as utils
+
+        home = _fake_home(tmp_path)
+        junction = home / ".hermes" / "skills" / "speckit-plan"
+        junction.mkdir(parents=True)
+        target = junction / "SKILL.md"
+        mount_point_tag = getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", 0xA0000003)
+
+        monkeypatch.setattr(Path, "is_junction", None, raising=False)
+        monkeypatch.setattr(utils.os, "name", "nt")
+        monkeypatch.setattr(
+            Path,
+            "lstat",
+            lambda path: SimpleNamespace(
+                st_mode=stat.S_IFDIR | 0o755,
+                st_reparse_tag=mount_point_tag if path == junction else 0
+            ),
+        )
+
+        assert _has_symlinked_component(target, home)
 
     # -- Hermes-specific setup: skills go to ~/.hermes/skills/ -------------
 
@@ -710,7 +737,7 @@ class TestHermesIntegration(SkillsIntegrationTests):
         )
 
         assert result.exit_code == 0, result.output
-        assert "Hermes destination" in result.output
+        assert "Hermes destination" in " ".join(result.output.split())
         assert external_skill.read_text(encoding="utf-8") == "external\n"
         assert not (
             global_skills / "speckit-my-preset-primary" / "SKILL.md"

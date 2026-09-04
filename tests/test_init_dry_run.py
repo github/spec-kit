@@ -15,18 +15,21 @@ from typer.testing import CliRunner
 
 from specify_cli import app
 from specify_cli._assets import _locate_bundled_extension, _locate_bundled_preset
+from specify_cli._utils import (
+    windows_path_is_junction as _windows_path_is_junction,
+)
 from specify_cli.commands.init import (
     _is_within_root,
     _normalize_fs_path,
     _preview_child_failure_message,
     _preview_content_ownership,
+    _preview_home_seed_paths,
     _preview_seed_paths,
     _seed_preview_home,
     _snapshot_files,
     _snapshot_tree_entries,
     _stage_project_copy,
     _strip_windows_extended_prefix,
-    _windows_path_is_junction,
 )
 
 _PROVENANCE_CATEGORIES = {"core", "integration", "preset", "workflow", "extension"}
@@ -79,6 +82,64 @@ def test_seed_preview_home_copies_symlinked_read_only_config(tmp_path: Path) -> 
     staged_auth = staged_home / ".specify" / "auth.json"
     assert staged_auth.read_text(encoding="utf-8") == '{"providers": []}\n'
     assert not staged_auth.is_symlink()
+
+
+def test_preview_home_seed_paths_propagates_unreadable_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_home = tmp_path / "real-home"
+    skills_dir = real_home / ".hermes" / "skills"
+    skills_dir.mkdir(parents=True)
+    original_iterdir = Path.iterdir
+
+    def unreadable_iterdir(path: Path):
+        if path == skills_dir:
+            raise PermissionError(13, "Permission denied", str(path))
+        return original_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", unreadable_iterdir)
+
+    with pytest.raises(PermissionError, match="Permission denied"):
+        _preview_home_seed_paths(real_home, "hermes")
+
+
+def test_dry_run_reports_unreadable_home_seed_as_json_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_home = tmp_path / "real-home"
+    skills_dir = real_home / ".hermes" / "skills"
+    skills_dir.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(real_home))
+    monkeypatch.setenv("USERPROFILE", str(real_home))
+    original_iterdir = Path.iterdir
+
+    def unreadable_iterdir(path: Path):
+        if path == skills_dir:
+            raise PermissionError(13, "Permission denied", str(path))
+        return original_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", unreadable_iterdir)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(tmp_path / "unreadable-home-preview"),
+            "--dry-run",
+            "--json",
+            "--integration",
+            "hermes",
+            "--script",
+            "sh",
+            "--ignore-agent-tools",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert "failed to stage preview inputs" in payload["error"]
+    assert "Permission denied" in payload["error"]
 
 
 def test_preview_seed_paths_include_cross_integration_event_targets() -> None:

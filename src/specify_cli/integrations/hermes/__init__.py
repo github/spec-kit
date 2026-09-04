@@ -18,6 +18,7 @@ from typing import Any
 
 import yaml
 
+from ..._utils import path_is_junction
 from ..base import (
     IntegrationOption,
     IntegrationOutputPathError,
@@ -38,11 +39,7 @@ def _has_symlinked_component(path: Path, trusted_root: Path) -> bool:
     current = trusted_root
     for part in relative.parts:
         current = current / part
-        try:
-            is_junction = current.is_junction()
-        except (AttributeError, OSError):
-            is_junction = False
-        if current.is_symlink() or is_junction:
+        if current.is_symlink() or path_is_junction(current):
             return True
         if current.exists():
             try:

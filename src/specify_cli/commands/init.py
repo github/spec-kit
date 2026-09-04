@@ -30,7 +30,10 @@ from .._assets import (
     get_speckit_version,
 )
 from .._console import StepTracker, console, select_with_arrows, show_banner
-from .._utils import check_tool
+from .._utils import (
+    check_tool,
+    path_is_junction as _path_is_junction,
+)
 
 
 def _stdin_is_interactive() -> bool:
@@ -192,10 +195,7 @@ def _preview_home_seed_paths(
     paths = set(owned_paths)
     real_destination = real_home / destination
     if real_destination.is_dir() and not real_destination.is_symlink():
-        try:
-            entries = list(real_destination.iterdir())
-        except OSError:
-            entries = []
+        entries = list(real_destination.iterdir())
         for entry in entries:
             if not entry.name.startswith(("speckit-", "speckit.")):
                 continue
@@ -825,41 +825,6 @@ def _remap_in_project_symlinks(project_root: Path, staged_root: Path) -> None:
     raise RuntimeError("staged symlink isolation did not converge")
 
 
-def _windows_path_is_junction(path: Path) -> bool:
-    """Detect a Windows junction using Python 3.11-compatible reparse data."""
-    try:
-        path_stat = path.lstat()
-    except FileNotFoundError:
-        return False
-    except OSError as exc:
-        raise ValueError(
-            f"Cannot determine whether preview path is a junction: {path}: {exc}"
-        ) from exc
-
-    reparse_tag = getattr(path_stat, "st_reparse_tag", None)
-    if reparse_tag is None:
-        raise ValueError(
-            f"Cannot determine whether preview path is a junction: {path}"
-        )
-    mount_point_tag = getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", 0xA0000003)
-    return reparse_tag == mount_point_tag
-
-
-def _path_is_junction(path: Path) -> bool:
-    """Return whether *path* is a Windows directory junction."""
-    checker = getattr(path, "is_junction", None)
-    if callable(checker):
-        try:
-            return checker()
-        except OSError as exc:
-            raise ValueError(
-                f"Cannot determine whether preview path is a junction: {path}: {exc}"
-            ) from exc
-    if os.name == "nt":
-        return _windows_path_is_junction(path)
-    return False
-
-
 def _preview_path_is_managed(path: Path, copy_root: Path) -> bool:
     """Return whether an unreadable path may affect initialization behavior."""
     try:
@@ -1163,15 +1128,15 @@ def _preview_init(
     real_home = Path.home()
     url_extensions = [spec for spec in extensions or [] if _ext_spec_is_url(spec)]
     staged_extensions = [spec for spec in extensions or [] if not _ext_spec_is_url(spec)]
-    home_seed_paths, home_owned_paths = _preview_home_seed_paths(
-        real_home, selected_integration
-    )
 
     with tempfile.TemporaryDirectory(prefix="specify-init-preview-") as tmp_dir:
         staged_root = Path(tmp_dir) / "project"
         staged_home = Path(tmp_dir) / "home"
         staged_home.mkdir()
         try:
+            home_seed_paths, home_owned_paths = _preview_home_seed_paths(
+                real_home, selected_integration
+            )
             _seed_preview_home(staged_home, real_home)
             if home_seed_paths:
                 _stage_project_copy(real_home, staged_home, home_seed_paths)
