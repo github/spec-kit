@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-26T00:00:00Z",
+  "updated_at": "2026-09-04T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -964,6 +964,33 @@
       ],
       "created_at": "2026-05-27T00:00:00Z",
       "updated_at": "2026-06-30T00:00:00Z"
+    },
+    "zh-cn": {
+      "name": "Simplified Chinese",
+      "id": "zh-cn",
+      "version": "0.0.3",
+      "description": "Localizes core Spec Kit templates and workflow output to Simplified Chinese while preserving machine-readable identifiers and technical terminology.",
+      "author": "lin52025iq",
+      "repository": "https://github.com/lin52025iq/spec-kit-preset-zh-cn",
+      "download_url": "https://github.com/lin52025iq/spec-kit-preset-zh-cn/archive/refs/tags/v0.0.3.zip",
+      "homepage": "https://github.com/lin52025iq/spec-kit-preset-zh-cn",
+      "documentation": "https://github.com/lin52025iq/spec-kit-preset-zh-cn/blob/v0.0.3/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=1.0.5.dev0"
+      },
+      "provides": {
+        "templates": 5,
+        "commands": 9
+      },
+      "tags": [
+        "localization",
+        "chinese",
+        "zh-cn",
+        "i18n"
+      ],
+      "created_at": "2026-09-04T00:00:00Z",
+      "updated_at": "2026-09-04T00:00:00Z"
     }
   }
 }
