@@ -405,7 +405,7 @@ def test_installed_list_json_falls_back_for_legacy_unknown_and_malformed_sources
     assert extension["source"] == {"kind": "local"}
 
 
-def test_extension_json_counts_multiple_hooks_for_one_event(tmp_path, monkeypatch):
+def test_extension_json_counts_hook_events_not_entries(tmp_path, monkeypatch):
     project = _project(tmp_path)
     extension_dir = project / ".specify" / "extensions" / "multi-hook"
     extension_dir.mkdir(parents=True)
@@ -436,7 +436,7 @@ def test_extension_json_counts_multiple_hooks_for_one_event(tmp_path, monkeypatc
     monkeypatch.chdir(project)
     item = _json_result(runner.invoke(app, ["extension", "list", "--json"]))[0]
 
-    assert item["provides"]["hooks"] == 2
+    assert item["provides"]["hooks"] == 1
 
 
 def test_text_list_rendering_retains_legacy_flat_counts(tmp_path, monkeypatch):
