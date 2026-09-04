@@ -14,9 +14,20 @@
       "homepage": "https://github.com/hindermath/spec-kit-preset-a11y-governance",
       "documentation": "https://github.com/hindermath/spec-kit-preset-a11y-governance/blob/v0.4.3/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.8.0"},
-      "provides": {"templates": 11, "commands": 3},
-      "tags": ["a11y", "accessibility", "wcag", "inclusion", "model-routing"],
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "templates": 11,
+        "commands": 3
+      },
+      "tags": [
+        "a11y",
+        "accessibility",
+        "wcag",
+        "inclusion",
+        "model-routing"
+      ],
       "created_at": "2026-04-27T00:00:00Z",
       "updated_at": "2026-08-12T00:00:00Z"
     },
@@ -31,9 +42,22 @@
       "homepage": "https://github.com/hindermath/spec-kit-preset-agent-parity-governance",
       "documentation": "https://github.com/hindermath/spec-kit-preset-agent-parity-governance/blob/v0.4.2/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.8.0"},
-      "provides": {"templates": 7, "commands": 3},
-      "tags": ["agents", "governance", "parity", "agent-md", "agent-guidance", "model-routing", "multi-agent"],
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "templates": 7,
+        "commands": 3
+      },
+      "tags": [
+        "agents",
+        "governance",
+        "parity",
+        "agent-md",
+        "agent-guidance",
+        "model-routing",
+        "multi-agent"
+      ],
       "created_at": "2026-04-27T00:00:00Z",
       "updated_at": "2026-08-13T00:00:00Z"
     },
@@ -41,16 +65,29 @@
       "name": "AIDE In-Place Migration",
       "id": "aide-in-place",
       "version": "1.0.0",
-      "description": "Adapts the AIDE workflow for in-place technology migrations (X → Y pattern). Overrides vision, roadmap, progress, and work item commands with migration-specific guidance.",
+      "description": "Adapts the AIDE workflow for in-place technology migrations (X \u2192 Y pattern). Overrides vision, roadmap, progress, and work item commands with migration-specific guidance.",
       "author": "mnriem",
       "repository": "https://github.com/mnriem/spec-kit-presets",
       "download_url": "https://github.com/mnriem/spec-kit-presets/releases/download/aide-in-place-v1.0.0/aide-in-place.zip",
       "homepage": "https://github.com/mnriem/spec-kit-presets",
       "documentation": "https://github.com/mnriem/spec-kit-presets/blob/main/aide-in-place/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.2.0", "extensions": ["aide"]},
-      "provides": {"templates": 2, "commands": 8},
-      "tags": ["migration", "in-place", "brownfield", "aide"]
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "extensions": [
+          "aide"
+        ]
+      },
+      "provides": {
+        "templates": 2,
+        "commands": 8
+      },
+      "tags": [
+        "migration",
+        "in-place",
+        "brownfield",
+        "aide"
+      ]
     },
     "architecture-governance": {
       "name": "Architecture Governance",
@@ -63,9 +100,20 @@
       "homepage": "https://github.com/hindermath/spec-kit-preset-architecture-governance",
       "documentation": "https://github.com/hindermath/spec-kit-preset-architecture-governance/blob/v0.5.2/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.8.0"},
-      "provides": {"templates": 14, "commands": 3},
-      "tags": ["architecture", "governance", "threat-modeling", "cloud", "model-routing"],
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "templates": 14,
+        "commands": 3
+      },
+      "tags": [
+        "architecture",
+        "governance",
+        "threat-modeling",
+        "cloud",
+        "model-routing"
+      ],
       "created_at": "2026-04-27T00:00:00Z",
       "updated_at": "2026-08-11T00:00:00Z"
     },
@@ -80,9 +128,21 @@
       "homepage": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance",
       "documentation": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance/blob/v0.4.1/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.8.3"},
-      "provides": {"templates": 15, "commands": 5, "scripts": 11},
-      "tags": ["autonomous", "governance", "evidence", "permissions", "sdd"],
+      "requires": {
+        "speckit_version": ">=0.8.3"
+      },
+      "provides": {
+        "templates": 15,
+        "commands": 5,
+        "scripts": 11
+      },
+      "tags": [
+        "autonomous",
+        "governance",
+        "evidence",
+        "permissions",
+        "sdd"
+      ],
       "created_at": "2026-07-13T00:00:00Z",
       "updated_at": "2026-08-19T00:00:00Z"
     },
@@ -97,9 +157,18 @@
       "homepage": "https://github.com/maximiliamus/spec-kit-canon",
       "documentation": "https://github.com/maximiliamus/spec-kit-canon/blob/master/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.4.3"},
-      "provides": {"templates": 2, "commands": 8},
-      "tags": ["baseline", "canon", "spec-first"]
+      "requires": {
+        "speckit_version": ">=0.4.3"
+      },
+      "provides": {
+        "templates": 2,
+        "commands": 8
+      },
+      "tags": [
+        "baseline",
+        "canon",
+        "spec-first"
+      ]
     },
     "claude-ask-questions": {
       "name": "Claude AskUserQuestion",
@@ -112,9 +181,19 @@
       "homepage": "https://github.com/0xrafasec/spec-kit-preset-claude-ask-questions",
       "documentation": "https://github.com/0xrafasec/spec-kit-preset-claude-ask-questions/blob/main/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.6.0"},
-      "provides": {"templates": 0, "commands": 2},
-      "tags": ["claude", "ask-user-question", "clarify", "checklist"],
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "templates": 0,
+        "commands": 2
+      },
+      "tags": [
+        "claude",
+        "ask-user-question",
+        "clarify",
+        "checklist"
+      ],
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z"
     },
@@ -129,9 +208,19 @@
       "homepage": "https://github.com/yunusdim/spec-kit-preset-closed-vocabulary",
       "documentation": "https://github.com/yunusdim/spec-kit-preset-closed-vocabulary/blob/main/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.8.0"},
-      "provides": {"templates": 0, "commands": 1},
-      "tags": ["analysis", "consistency", "vocabulary", "verification"],
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "templates": 0,
+        "commands": 1
+      },
+      "tags": [
+        "analysis",
+        "consistency",
+        "vocabulary",
+        "verification"
+      ],
       "created_at": "2026-08-19T00:00:00Z",
       "updated_at": "2026-08-19T00:00:00Z"
     },
@@ -146,9 +235,19 @@
       "homepage": "https://github.com/philo-x/spec-kit-preset-codebase-memory-context",
       "documentation": "https://github.com/philo-x/spec-kit-preset-codebase-memory-context/blob/v1.0.1/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=1.0.1"},
-      "provides": {"templates": 1, "commands": 5},
-      "tags": ["code-intelligence", "codebase-memory", "architecture", "workflow"],
+      "requires": {
+        "speckit_version": ">=1.0.1"
+      },
+      "provides": {
+        "templates": 1,
+        "commands": 5
+      },
+      "tags": [
+        "code-intelligence",
+        "codebase-memory",
+        "architecture",
+        "workflow"
+      ],
       "created_at": "2026-08-26T00:00:00Z",
       "updated_at": "2026-08-26T00:00:00Z"
     },
@@ -163,9 +262,20 @@
       "homepage": "https://github.com/Xopoko/spec-kit-preset-command-density",
       "documentation": "https://github.com/Xopoko/spec-kit-preset-command-density/blob/main/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.10.3"},
-      "provides": {"templates": 0, "commands": 9},
-      "tags": ["commands", "tokens", "compact", "workflow", "prompt-density"],
+      "requires": {
+        "speckit_version": ">=0.10.3"
+      },
+      "provides": {
+        "templates": 0,
+        "commands": 9
+      },
+      "tags": [
+        "commands",
+        "tokens",
+        "compact",
+        "workflow",
+        "prompt-density"
+      ],
       "created_at": "2026-06-16T00:00:00Z",
       "updated_at": "2026-06-16T00:00:00Z"
     },
@@ -180,9 +290,20 @@
       "homepage": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance",
       "documentation": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance/blob/v0.2.2/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.8.0"},
-      "provides": {"templates": 9, "commands": 3},
-      "tags": ["cross-platform", "governance", "bash", "powershell", "model-routing"],
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "templates": 9,
+        "commands": 3
+      },
+      "tags": [
+        "cross-platform",
+        "governance",
+        "bash",
+        "powershell",
+        "model-routing"
+      ],
       "created_at": "2026-04-27T00:00:00Z",
       "updated_at": "2026-08-12T00:00:00Z"
     },
@@ -197,9 +318,19 @@
       "homepage": "https://github.com/Quratulain-bilal/spec-kit-preset-explicit-task-dependencies",
       "documentation": "https://github.com/Quratulain-bilal/spec-kit-preset-explicit-task-dependencies/blob/main/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.4.0"},
-      "provides": {"templates": 1, "commands": 1},
-      "tags": ["dependencies", "parallel", "scheduling", "wave-dag"]
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "templates": 1,
+        "commands": 1
+      },
+      "tags": [
+        "dependencies",
+        "parallel",
+        "scheduling",
+        "wave-dag"
+      ]
     },
     "fiction-book-writing": {
       "name": "Fiction Book Writing",
@@ -212,9 +343,29 @@
       "homepage": "https://github.com/adaumann/speckit-preset-fiction-book-writing",
       "documentation": "https://github.com/adaumann/speckit-preset-fiction-book-writing/blob/main/fiction-book-writing/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.5.0"},
-      "provides": {"templates": 26, "commands": 34, "scripts": 2},
-      "tags": ["writing", "novel", "fiction", "storytelling", "creative-writing", "kdp", "multi-pov", "export", "book", "brainstorming", "roleplay", "audiobook", "language-support"],
+      "requires": {
+        "speckit_version": ">=0.5.0"
+      },
+      "provides": {
+        "templates": 26,
+        "commands": 34,
+        "scripts": 2
+      },
+      "tags": [
+        "writing",
+        "novel",
+        "fiction",
+        "storytelling",
+        "creative-writing",
+        "kdp",
+        "multi-pov",
+        "export",
+        "book",
+        "brainstorming",
+        "roleplay",
+        "audiobook",
+        "language-support"
+      ],
       "created_at": "2026-04-09T08:00:00Z",
       "updated_at": "2026-06-02T08:00:00Z"
     },
@@ -229,9 +380,21 @@
       "homepage": "https://github.com/adaumann/speckit-preset-game-narrative-writing",
       "documentation": "https://github.com/adaumann/speckit-preset-game-narrative-writing/blob/main/game-narrative-writing/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.5.0"},
-      "provides": {"templates": 37, "commands": 34, "scripts": 5},
-      "tags": ["interactive-fiction", "game-narrative", "branching", "twine", "ink"],
+      "requires": {
+        "speckit_version": ">=0.5.0"
+      },
+      "provides": {
+        "templates": 37,
+        "commands": 34,
+        "scripts": 5
+      },
+      "tags": [
+        "interactive-fiction",
+        "game-narrative",
+        "branching",
+        "twine",
+        "ink"
+      ],
       "created_at": "2026-05-05T08:00:00Z",
       "updated_at": "2026-06-22T00:00:00Z"
     },
@@ -246,9 +409,21 @@
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance",
       "documentation": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/blob/v0.3.1/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.8.3"},
-      "provides": {"templates": 13, "commands": 5, "scripts": 7},
-      "tags": ["intake", "authoring", "governance", "requirements", "migration"],
+      "requires": {
+        "speckit_version": ">=0.8.3"
+      },
+      "provides": {
+        "templates": 13,
+        "commands": 5,
+        "scripts": 7
+      },
+      "tags": [
+        "intake",
+        "authoring",
+        "governance",
+        "requirements",
+        "migration"
+      ],
       "created_at": "2026-07-22T00:00:00Z",
       "updated_at": "2026-08-14T00:00:00Z"
     },
@@ -263,9 +438,21 @@
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-review-governance",
       "documentation": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/blob/v0.2.1/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.8.3"},
-      "provides": {"templates": 9, "commands": 3, "scripts": 5},
-      "tags": ["intake", "review", "governance", "requirements", "quality-gate"],
+      "requires": {
+        "speckit_version": ">=0.8.3"
+      },
+      "provides": {
+        "templates": 9,
+        "commands": 3,
+        "scripts": 5
+      },
+      "tags": [
+        "intake",
+        "review",
+        "governance",
+        "requirements",
+        "quality-gate"
+      ],
       "created_at": "2026-07-21T00:00:00Z",
       "updated_at": "2026-08-17T00:00:00Z"
     },
@@ -280,9 +467,21 @@
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance",
       "documentation": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/blob/v0.2.3/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.8.3"},
-      "provides": {"templates": 12, "commands": 6, "scripts": 8},
-      "tags": ["intake", "sequencing", "governance", "dag", "model-routing"],
+      "requires": {
+        "speckit_version": ">=0.8.3"
+      },
+      "provides": {
+        "templates": 12,
+        "commands": 6,
+        "scripts": 8
+      },
+      "tags": [
+        "intake",
+        "sequencing",
+        "governance",
+        "dag",
+        "model-routing"
+      ],
       "created_at": "2026-07-27T00:00:00Z",
       "updated_at": "2026-08-20T00:00:00Z"
     },
@@ -298,9 +497,23 @@
       "homepage": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment",
       "documentation": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/blob/main/inventory-alignment/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.9.0", "extensions": ["speckit-inventory"]},
-      "provides": {"templates": 1, "commands": 2},
-      "tags": ["inventory", "alignment", "requirements", "traceability", "workflow"],
+      "requires": {
+        "speckit_version": ">=0.9.0",
+        "extensions": [
+          "speckit-inventory"
+        ]
+      },
+      "provides": {
+        "templates": 1,
+        "commands": 2
+      },
+      "tags": [
+        "inventory",
+        "alignment",
+        "requirements",
+        "traceability",
+        "workflow"
+      ],
       "created_at": "2026-08-20T00:00:00Z",
       "updated_at": "2026-08-20T00:00:00Z"
     },
@@ -315,9 +528,20 @@
       "homepage": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance",
       "documentation": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/blob/v0.2.2/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.8.0"},
-      "provides": {"templates": 14, "commands": 3},
-      "tags": ["architecture", "governance", "isaqb", "arc42", "model-routing"],
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "templates": 14,
+        "commands": 3
+      },
+      "tags": [
+        "architecture",
+        "governance",
+        "isaqb",
+        "arc42",
+        "model-routing"
+      ],
       "created_at": "2026-04-27T00:00:00Z",
       "updated_at": "2026-08-11T00:00:00Z"
     },
@@ -332,9 +556,19 @@
       "homepage": "https://github.com/luno/spec-kit-preset-jira",
       "documentation": "https://github.com/luno/spec-kit-preset-jira/blob/main/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.1.0"},
-      "provides": {"templates": 0, "commands": 1},
-      "tags": ["jira", "atlassian", "issue-tracking", "preset"],
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "templates": 0,
+        "commands": 1
+      },
+      "tags": [
+        "jira",
+        "atlassian",
+        "issue-tracking",
+        "preset"
+      ],
       "created_at": "2026-04-15T00:00:00Z",
       "updated_at": "2026-04-15T00:00:00Z"
     },
@@ -349,9 +583,23 @@
       "homepage": "https://github.com/AI-MDE/spec-kit-preset-mde",
       "documentation": "https://github.com/AI-MDE/spec-kit-preset-mde/blob/main/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.1.0", "extensions": ["mde"]},
-      "provides": {"templates": 6, "commands": 11},
-      "tags": ["model-driven-engineering", "software-lifecycle", "business-analysis", "business-application", "multi-layered-architecture"],
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "extensions": [
+          "mde"
+        ]
+      },
+      "provides": {
+        "templates": 6,
+        "commands": 11
+      },
+      "tags": [
+        "model-driven-engineering",
+        "software-lifecycle",
+        "business-analysis",
+        "business-application",
+        "multi-layered-architecture"
+      ],
       "created_at": "2026-05-08T00:00:00Z",
       "updated_at": "2026-05-08T00:00:00Z"
     },
@@ -366,9 +614,21 @@
       "homepage": "https://github.com/hindermath/spec-kit-preset-model-routing-governance",
       "documentation": "https://github.com/hindermath/spec-kit-preset-model-routing-governance/blob/v0.1.4/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.8.3"},
-      "provides": {"templates": 4, "commands": 2, "scripts": 2},
-      "tags": ["model-routing", "agents", "governance", "provider-neutral", "cross-platform"],
+      "requires": {
+        "speckit_version": ">=0.8.3"
+      },
+      "provides": {
+        "templates": 4,
+        "commands": 2,
+        "scripts": 2
+      },
+      "tags": [
+        "model-routing",
+        "agents",
+        "governance",
+        "provider-neutral",
+        "cross-platform"
+      ],
       "created_at": "2026-08-10T00:00:00Z",
       "updated_at": "2026-08-10T00:00:00Z"
     },
@@ -383,9 +643,19 @@
       "homepage": "https://github.com/sakitA/spec-kit-preset-multi-repo-branching",
       "documentation": "https://github.com/sakitA/spec-kit-preset-multi-repo-branching/blob/master/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.4.0"},
-      "provides": {"templates": 0, "commands": 2},
-      "tags": ["multi-repo-branching", "multi-module", "submodules", "monorepo"],
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "templates": 0,
+        "commands": 2
+      },
+      "tags": [
+        "multi-repo-branching",
+        "multi-module",
+        "submodules",
+        "monorepo"
+      ],
       "created_at": "2026-04-09T00:00:00Z",
       "updated_at": "2026-04-09T00:00:00Z"
     },
@@ -400,9 +670,21 @@
       "homepage": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance",
       "documentation": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance/blob/v0.2.6/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.8.3"},
-      "provides": {"templates": 10, "commands": 5, "scripts": 2},
-      "tags": ["parallel", "autonomous", "governance", "orchestration", "model-routing"],
+      "requires": {
+        "speckit_version": ">=0.8.3"
+      },
+      "provides": {
+        "templates": 10,
+        "commands": 5,
+        "scripts": 2
+      },
+      "tags": [
+        "parallel",
+        "autonomous",
+        "governance",
+        "orchestration",
+        "model-routing"
+      ],
       "created_at": "2026-07-22T00:00:00Z",
       "updated_at": "2026-08-24T00:00:00Z"
     },
@@ -417,24 +699,55 @@
       "homepage": "https://github.com/mnriem/spec-kit-presets",
       "documentation": "https://github.com/mnriem/spec-kit-presets/blob/main/pirate/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.1.0"},
-      "provides": {"templates": 6, "commands": 9},
-      "tags": ["pirate", "theme", "fun", "experimental"]
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "templates": 6,
+        "commands": 9
+      },
+      "tags": [
+        "pirate",
+        "theme",
+        "fun",
+        "experimental"
+      ]
     },
     "screenwriting": {
       "name": "Screenwriting",
       "id": "screenwriting",
       "version": "1.0.0",
-      "description": "Spec-Driven Development for screenwriting/scriptwriting/tutorials: feature films, television (pilot, episode, limited series), and stage plays. Adapts the Spec Kit workflow to screenplay craft — slug lines, action lines, act breaks, beat sheets, and industry-standard pitch documents replace prose fiction conventions. Supports three-act, Save the Cat, TV pilot, network episode, cable/streaming episode, and stage-play structural frameworks.",
+      "description": "Spec-Driven Development for screenwriting/scriptwriting/tutorials: feature films, television (pilot, episode, limited series), and stage plays. Adapts the Spec Kit workflow to screenplay craft \u2014 slug lines, action lines, act breaks, beat sheets, and industry-standard pitch documents replace prose fiction conventions. Supports three-act, Save the Cat, TV pilot, network episode, cable/streaming episode, and stage-play structural frameworks.",
       "author": "Andreas Daumann",
       "repository": "https://github.com/adaumann/speckit-preset-screenwriting",
       "download_url": "https://github.com/adaumann/speckit-preset-screenwriting/archive/refs/tags/v1.0.0.zip",
       "homepage": "https://github.com/adaumann/speckit-preset-screenwriting",
       "documentation": "https://github.com/adaumann/speckit-preset-screenwriting/blob/main/screenwriting/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.5.0"},
-      "provides": {"templates": 26, "commands": 32, "scripts": 1},
-      "tags": ["writing", "screenplay", "scriptwriting", "film", "tv", "fountain", "fountain-format", "beat-sheet", "teleplay", "drama", "comedy", "storytelling", "tutorial", "education"],
+      "requires": {
+        "speckit_version": ">=0.5.0"
+      },
+      "provides": {
+        "templates": 26,
+        "commands": 32,
+        "scripts": 1
+      },
+      "tags": [
+        "writing",
+        "screenplay",
+        "scriptwriting",
+        "film",
+        "tv",
+        "fountain",
+        "fountain-format",
+        "beat-sheet",
+        "teleplay",
+        "drama",
+        "comedy",
+        "storytelling",
+        "tutorial",
+        "education"
+      ],
       "created_at": "2026-04-23T08:00:00Z",
       "updated_at": "2026-04-23T08:00:00Z"
     },
@@ -449,9 +762,20 @@
       "homepage": "https://github.com/hindermath/spec-kit-preset-security-governance",
       "documentation": "https://github.com/hindermath/spec-kit-preset-security-governance/blob/v0.6.2/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.8.0"},
-      "provides": {"templates": 15, "commands": 3},
-      "tags": ["security", "governance", "secure-coding", "supply-chain", "model-routing"],
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "templates": 15,
+        "commands": 3
+      },
+      "tags": [
+        "security",
+        "governance",
+        "secure-coding",
+        "supply-chain",
+        "model-routing"
+      ],
       "created_at": "2026-04-27T00:00:00Z",
       "updated_at": "2026-08-10T00:00:00Z"
     },
@@ -466,9 +790,19 @@
       "homepage": "https://github.com/dfirs1car1o/sicario-spec",
       "documentation": "https://github.com/dfirs1car1o/sicario-spec/blob/main/presets/sicario-core/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.9.0"},
-      "provides": {"templates": 5, "commands": 0},
-      "tags": ["governance", "security-ops", "secure-by-default", "evidence"],
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "templates": 5,
+        "commands": 0
+      },
+      "tags": [
+        "governance",
+        "security-ops",
+        "secure-by-default",
+        "evidence"
+      ],
       "created_at": "2026-06-22T00:00:00Z",
       "updated_at": "2026-06-25T00:00:00Z"
     },
@@ -476,16 +810,26 @@
       "name": "Spec2Cloud",
       "id": "spec2cloud",
       "version": "1.1.0",
-      "description": "Spec-driven workflow tuned for shipping to Azure: spec → plan → tasks → implement → deploy.",
+      "description": "Spec-driven workflow tuned for shipping to Azure: spec \u2192 plan \u2192 tasks \u2192 implement \u2192 deploy.",
       "author": "Azure Samples",
       "repository": "https://github.com/Azure-Samples/Spec2Cloud",
       "download_url": "https://github.com/Azure-Samples/Spec2Cloud/releases/download/spec-kit-spec2cloud-v1.1.0/preset.zip",
       "homepage": "https://aka.ms/spec2cloud",
       "documentation": "https://github.com/Azure-Samples/Spec2Cloud/blob/main/spec-kit/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.1.0"},
-      "provides": {"templates": 5, "commands": 8},
-      "tags": ["azure", "spec2cloud", "workflow", "deployment"],
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "templates": 5,
+        "commands": 8
+      },
+      "tags": [
+        "azure",
+        "spec2cloud",
+        "workflow",
+        "deployment"
+      ],
       "created_at": "2026-04-30T00:00:00Z",
       "updated_at": "2026-04-30T00:00:00Z"
     },
@@ -500,9 +844,19 @@
       "homepage": "https://github.com/rdryfoos/specassay",
       "documentation": "https://github.com/rdryfoos/specassay/blob/main/presets/specassay/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.14.0"},
-      "provides": {"templates": 3, "commands": 0},
-      "tags": ["traceability", "durable-ids", "governance", "sdd"],
+      "requires": {
+        "speckit_version": ">=0.14.0"
+      },
+      "provides": {
+        "templates": 3,
+        "commands": 0
+      },
+      "tags": [
+        "traceability",
+        "durable-ids",
+        "governance",
+        "sdd"
+      ],
       "created_at": "2026-08-14T00:00:00Z",
       "updated_at": "2026-08-21T00:00:00Z"
     },
@@ -511,15 +865,26 @@
       "id": "test-first-governance",
       "version": "1.3.0",
       "description": "Governs TDD with coverage-complete BDD/ATDD Gherkin scenarios, explicit suite ownership, professional test reports, traceability, and risk-based quality gates.",
-      "author": "Zoltán Katona, PhD",
+      "author": "Zolt\u00e1n Katona, PhD",
       "repository": "https://github.com/ka-zo/spec-kit-preset-test-first-governance",
       "download_url": "https://github.com/ka-zo/spec-kit-preset-test-first-governance/archive/refs/tags/1.3.0.zip",
       "homepage": "https://github.com/ka-zo/spec-kit-preset-test-first-governance",
       "documentation": "https://github.com/ka-zo/spec-kit-preset-test-first-governance/blob/main/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.12.11"},
-      "provides": {"templates": 10, "commands": 8},
-      "tags": ["tdd", "bdd", "atdd", "quality-gates", "traceability"],
+      "requires": {
+        "speckit_version": ">=0.12.11"
+      },
+      "provides": {
+        "templates": 10,
+        "commands": 8
+      },
+      "tags": [
+        "tdd",
+        "bdd",
+        "atdd",
+        "quality-gates",
+        "traceability"
+      ],
       "created_at": "2026-07-13T00:00:00Z",
       "updated_at": "2026-07-13T00:00:00Z"
     },
@@ -534,9 +899,18 @@
       "homepage": "https://github.com/Quratulain-bilal/spec-kit-preset-toc-navigation",
       "documentation": "https://github.com/Quratulain-bilal/spec-kit-preset-toc-navigation/blob/main/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.4.0"},
-      "provides": {"templates": 3, "commands": 3},
-      "tags": ["navigation", "toc", "documentation"]
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "templates": 3,
+        "commands": 3
+      },
+      "tags": [
+        "navigation",
+        "toc",
+        "documentation"
+      ]
     },
     "vscode-ask-questions": {
       "name": "VS Code Ask Questions",
@@ -549,9 +923,19 @@
       "homepage": "https://github.com/fdcastel/spec-kit-presets",
       "documentation": "https://github.com/fdcastel/spec-kit-presets/blob/main/vscode-ask-questions/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.1.0"},
-      "provides": {"templates": 0, "commands": 1},
-      "tags": ["vscode", "askquestions", "clarify", "interactive"]
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "templates": 0,
+        "commands": 1
+      },
+      "tags": [
+        "vscode",
+        "askquestions",
+        "clarify",
+        "interactive"
+      ]
     },
     "workflow-preset": {
       "name": "Workflow Preset",
@@ -564,9 +948,20 @@
       "homepage": "https://github.com/bigsmartben/spec-kit-workflow-preset",
       "documentation": "https://github.com/bigsmartben/spec-kit-workflow-preset/blob/main/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=0.8.10.dev0"},
-      "provides": {"templates": 22, "commands": 8},
-      "tags": ["behavior", "bdd", "planning", "implementation", "handoff"],
+      "requires": {
+        "speckit_version": ">=0.8.10.dev0"
+      },
+      "provides": {
+        "templates": 22,
+        "commands": 8
+      },
+      "tags": [
+        "behavior",
+        "bdd",
+        "planning",
+        "implementation",
+        "handoff"
+      ],
       "created_at": "2026-05-27T00:00:00Z",
       "updated_at": "2026-06-30T00:00:00Z"
     },
@@ -581,9 +976,19 @@
       "homepage": "https://github.com/lin52025iq/spec-kit-preset-zh-cn",
       "documentation": "https://github.com/lin52025iq/spec-kit-preset-zh-cn/blob/v0.0.3/README.md",
       "license": "MIT",
-      "requires": {"speckit_version": ">=1.0.5.dev0"},
-      "provides": {"templates": 5, "commands": 9},
-      "tags": ["localization", "chinese", "zh-cn", "i18n"],
+      "requires": {
+        "speckit_version": ">=1.0.5.dev0"
+      },
+      "provides": {
+        "templates": 5,
+        "commands": 9
+      },
+      "tags": [
+        "localization",
+        "chinese",
+        "zh-cn",
+        "i18n"
+      ],
       "created_at": "2026-09-04T00:00:00Z",
       "updated_at": "2026-09-04T00:00:00Z"
     }
