@@ -1179,6 +1179,13 @@ def _unresolvable_term(text: str) -> str | None:
     if not stripped:
         return "an operand is empty"
 
+    # Mirror the evaluator's group unwrapping. Without this a grouped operand
+    # reached the path check as literal text, so `(inputs.a or inputs.b) and
+    # inputs.c` -- which the evaluator resolves -- was reported unresolvable and
+    # the wrap correction was withheld from a condition that would have worked.
+    if _is_wrapped_in_parens(stripped):
+        return _unresolvable_term(stripped[1:-1])
+
     if _find_top_level(stripped, "|") != -1:
         segments = _split_top_level(stripped, "|")
         reason = _unresolvable_term(segments[0])
