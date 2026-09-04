@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import stat
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -24,6 +26,7 @@ from specify_cli.commands.init import (
     _snapshot_tree_entries,
     _stage_project_copy,
     _strip_windows_extended_prefix,
+    _windows_path_is_junction,
 )
 
 _PROVENANCE_CATEGORIES = {"core", "integration", "preset", "workflow", "extension"}
@@ -1366,6 +1369,169 @@ def test_dry_run_ignores_unreadable_unmanaged_file(tmp_path: Path) -> None:
         action["path"] != "unrelated.bin"
         for action in json.loads(result.output)["actions"]
     )
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod does not remove read access on Windows")
+def test_dry_run_ignores_unreadable_unmanaged_file_in_selected_root(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "unreadable-selected-root"
+    unrelated = target / ".github" / "skills" / "private" / "secret.txt"
+    unrelated.parent.mkdir(parents=True)
+    unrelated.write_text("not managed by Spec Kit\n", encoding="utf-8")
+    unrelated.chmod(0)
+
+    try:
+        result = CliRunner().invoke(
+            app,
+            [
+                "init",
+                str(target),
+                "--force",
+                "--dry-run",
+                "--json",
+                "--integration",
+                "copilot",
+                "--script",
+                "sh",
+                "--ignore-agent-tools",
+            ],
+            catch_exceptions=False,
+        )
+    finally:
+        unrelated.chmod(0o600)
+
+    assert result.exit_code == 0, result.output
+    assert all(
+        action["path"] != ".github/skills/private/secret.txt"
+        for action in json.loads(result.output)["actions"]
+    )
+    assert unrelated.read_text(encoding="utf-8") == "not managed by Spec Kit\n"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod does not remove read access on Windows")
+def test_dry_run_reports_unreadable_managed_file_in_selected_root(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "unreadable-managed-output"
+    managed = target / ".github" / "skills" / "speckit-plan" / "SKILL.md"
+    managed.parent.mkdir(parents=True)
+    managed.write_text("managed but unreadable\n", encoding="utf-8")
+    managed.chmod(0)
+
+    try:
+        result = CliRunner().invoke(
+            app,
+            [
+                "init",
+                str(target),
+                "--force",
+                "--dry-run",
+                "--json",
+                "--integration",
+                "copilot",
+                "--script",
+                "sh",
+                "--ignore-agent-tools",
+            ],
+            catch_exceptions=False,
+        )
+    finally:
+        managed.chmod(0o600)
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert "failed to stage preview inputs" in payload["error"]
+    assert "Permission denied" in payload["error"]
+    assert managed.read_text(encoding="utf-8") == "managed but unreadable\n"
+
+
+def test_dry_run_rejects_selected_directory_junction_before_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "junction-preview"
+    selected_root = target / ".github" / "skills"
+    selected_root.mkdir(parents=True)
+    (selected_root / "keep.txt").write_text("external-like\n", encoding="utf-8")
+    real_is_junction = getattr(Path, "is_junction", None)
+
+    def fake_is_junction(path: Path) -> bool:
+        return path == selected_root or bool(
+            real_is_junction and real_is_junction(path)
+        )
+
+    monkeypatch.setattr(Path, "is_junction", fake_is_junction, raising=False)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--force",
+            "--dry-run",
+            "--json",
+            "--integration",
+            "copilot",
+            "--script",
+            "sh",
+            "--ignore-agent-tools",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert "junction" in payload["error"].lower()
+    assert (selected_root / "keep.txt").read_text(encoding="utf-8") == "external-like\n"
+
+
+def test_windows_junction_fallback_uses_reparse_tag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mount_point_tag = getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", 0xA0000003)
+    monkeypatch.setattr(
+        Path,
+        "lstat",
+        lambda _path: SimpleNamespace(st_reparse_tag=mount_point_tag),
+    )
+
+    assert _windows_path_is_junction(tmp_path)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows junction behavior")
+def test_dry_run_rejects_real_windows_junction_before_copy(tmp_path: Path) -> None:
+    target = tmp_path / "real-junction-preview"
+    external = tmp_path / "external-skills"
+    external.mkdir()
+    selected_root = target / ".github" / "skills"
+    selected_root.parent.mkdir(parents=True)
+    subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(selected_root), str(external)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--force",
+            "--dry-run",
+            "--json",
+            "--integration",
+            "copilot",
+            "--script",
+            "ps",
+            "--ignore-agent-tools",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 1, result.output
+    assert "junction" in json.loads(result.output)["error"].lower()
+    assert list(external.iterdir()) == []
 
 
 def test_remap_in_project_absolute_symlinks_points_at_staged_copy(

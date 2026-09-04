@@ -825,16 +825,106 @@ def _remap_in_project_symlinks(project_root: Path, staged_root: Path) -> None:
     raise RuntimeError("staged symlink isolation did not converge")
 
 
-def _ignore_special_files(directory: str, names: list[str]) -> set[str]:
-    """Skip sockets, devices, and other non-file tree entries during staging."""
+def _windows_path_is_junction(path: Path) -> bool:
+    """Detect a Windows junction using Python 3.11-compatible reparse data."""
+    try:
+        path_stat = path.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise ValueError(
+            f"Cannot determine whether preview path is a junction: {path}: {exc}"
+        ) from exc
+
+    reparse_tag = getattr(path_stat, "st_reparse_tag", None)
+    if reparse_tag is None:
+        raise ValueError(
+            f"Cannot determine whether preview path is a junction: {path}"
+        )
+    mount_point_tag = getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", 0xA0000003)
+    return reparse_tag == mount_point_tag
+
+
+def _path_is_junction(path: Path) -> bool:
+    """Return whether *path* is a Windows directory junction."""
+    checker = getattr(path, "is_junction", None)
+    if callable(checker):
+        try:
+            return checker()
+        except OSError as exc:
+            raise ValueError(
+                f"Cannot determine whether preview path is a junction: {path}: {exc}"
+            ) from exc
+    if os.name == "nt":
+        return _windows_path_is_junction(path)
+    return False
+
+
+def _preview_path_is_managed(path: Path, copy_root: Path) -> bool:
+    """Return whether an unreadable path may affect initialization behavior."""
+    try:
+        relative = path.relative_to(copy_root)
+    except ValueError:
+        return True
+    parts = (copy_root.name, *relative.parts)
+    if copy_root.name == ".specify" and relative.parts:
+        return relative.parts[0] in {
+            ".gitignore",
+            "extensions",
+            "extensions.yml",
+            "init-options.json",
+            "integration.json",
+            "integrations",
+            "memory",
+            "presets",
+            "scripts",
+            "templates",
+            "workflows",
+        }
+    return any(part.startswith(("speckit-", "speckit.")) for part in parts)
+
+
+def _path_is_readable_for_staging(path: Path) -> bool:
+    """Probe whether copytree can read a regular file or enumerate a directory."""
+    try:
+        if path.is_file():
+            with path.open("rb"):
+                pass
+        elif path.is_dir():
+            with os.scandir(path):
+                pass
+        return True
+    except OSError:
+        return False
+
+
+def _ignore_special_files(
+    directory: str,
+    names: list[str],
+    *,
+    copy_root: Path | None = None,
+) -> set[str]:
+    """Skip inaccessible unrelated entries and unsupported filesystem nodes."""
     ignored: set[str] = set()
+    root = copy_root or Path(directory)
     for name in names:
         candidate = Path(directory) / name
         try:
+            if _path_is_junction(candidate):
+                raise ValueError(
+                    f"Preview staging refuses Windows directory junction: {candidate}"
+                )
             if (
                 not candidate.is_symlink()
                 and not candidate.is_file()
                 and not candidate.is_dir()
+            ):
+                ignored.add(name)
+                continue
+            if (
+                not candidate.is_symlink()
+                and not _path_is_readable_for_staging(candidate)
+                and not _preview_path_is_managed(candidate, root)
             ):
                 ignored.add(name)
         except OSError:
@@ -844,6 +934,10 @@ def _ignore_special_files(directory: str, names: list[str]) -> set[str]:
 
 def _copy_staged_path(source: Path, destination: Path) -> None:
     """Copy one selected path without following symlinks."""
+    if _path_is_junction(source):
+        raise ValueError(
+            f"Preview staging refuses Windows directory junction: {source}"
+        )
     if source.is_symlink():
         if os.path.lexists(destination):
             return
@@ -857,7 +951,9 @@ def _copy_staged_path(source: Path, destination: Path) -> None:
             destination,
             symlinks=True,
             dirs_exist_ok=True,
-            ignore=_ignore_special_files,
+            ignore=lambda directory, names: _ignore_special_files(
+                directory, names, copy_root=source
+            ),
         )
     elif source.is_file():
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -875,6 +971,10 @@ def _copy_selected_staged_path(
         current /= part
         source = project_path / current
         destination = staged_root / current
+        if _path_is_junction(source):
+            raise ValueError(
+                f"Preview staging refuses Windows directory junction: {source}"
+            )
         if source.is_symlink():
             _copy_staged_path(source, destination)
             return
@@ -925,7 +1025,9 @@ def _stage_project_copy(
             project_path,
             staged_root,
             symlinks=True,
-            ignore=_ignore_special_files,
+            ignore=lambda directory, names: _ignore_special_files(
+                directory, names, copy_root=project_path
+            ),
         )
     else:
         staged_root.mkdir(parents=True, exist_ok=True)
@@ -1069,21 +1171,26 @@ def _preview_init(
         staged_root = Path(tmp_dir) / "project"
         staged_home = Path(tmp_dir) / "home"
         staged_home.mkdir()
-        _seed_preview_home(staged_home, real_home)
-        if home_seed_paths:
-            _stage_project_copy(real_home, staged_home, home_seed_paths)
-        if project_path.exists():
-            _stage_project_copy(
-                project_path,
-                staged_root,
-                _preview_seed_paths(
-                    selected_integration,
-                    integration_options,
-                    script_type,
-                ),
-            )
-        else:
-            staged_root.mkdir()
+        try:
+            _seed_preview_home(staged_home, real_home)
+            if home_seed_paths:
+                _stage_project_copy(real_home, staged_home, home_seed_paths)
+            if project_path.exists():
+                _stage_project_copy(
+                    project_path,
+                    staged_root,
+                    _preview_seed_paths(
+                        selected_integration,
+                        integration_options,
+                        script_type,
+                    ),
+                )
+            else:
+                staged_root.mkdir()
+        except (OSError, RuntimeError, ValueError, shutil.Error) as exc:
+            payload["error"] = f"failed to stage preview inputs: {exc}"
+            _emit_dry_run_preview(payload, json_output=json_output)
+            raise typer.Exit(1) from None
 
         initial_project_files = _snapshot_files(staged_root)
         initial_home_files = _snapshot_files(staged_home)
