@@ -45,7 +45,11 @@ from .._init_options import (
 )
 from .._invocation_style import get_invocation_prefix
 from ..integrations.base import IntegrationBase
-from .._utils import dump_frontmatter, version_satisfies
+from .._utils import (
+    dump_frontmatter,
+    relative_extension_path_violation,
+    version_satisfies,
+)
 from ..shared_infra import (
     _ensure_safe_shared_destination,
     _ensure_safe_shared_directory,
@@ -75,6 +79,14 @@ def _is_comparable_version(value: str) -> bool:
     except pkg_version.InvalidVersion:
         return False
     return True
+
+
+def _versions_equal(left: str, right: str) -> bool:
+    """Compare versions using PEP 440 semantics where possible."""
+    try:
+        return pkg_version.Version(left) == pkg_version.Version(right)
+    except pkg_version.InvalidVersion:
+        return left == right
 
 
 def _constitution_is_generated(
@@ -156,9 +168,15 @@ def _materialize_constitution_template(
         content = composed_content.encode("utf-8")
         result = "composed"
 
+    provenance = memory_constitution.parent / _CONSTITUTION_PROVENANCE_FILE
+    if memory_constitution.exists() and memory_constitution.read_bytes() == content:
+        # An unchanged constitution must produce zero file changes, so no
+        # provenance sidecar is written here either. Provenance is recorded
+        # only when constitution content is actually materialized below.
+        return "unchanged"
+
     _ensure_safe_shared_directory(project_root, memory_constitution.parent)
     _write_shared_bytes(project_root, memory_constitution, content)
-    provenance = memory_constitution.parent / _CONSTITUTION_PROVENANCE_FILE
     _write_shared_text(
         project_root,
         provenance,
@@ -454,6 +472,22 @@ class PresetManifest:
                         f"Invalid template {field}: expected a string, "
                         f"got {type(tmpl[field]).__name__}"
                     )
+            aliases = tmpl.get("aliases", [])
+            if aliases is None:
+                aliases = []
+                tmpl["aliases"] = aliases
+            if not isinstance(aliases, list) or not all(
+                isinstance(alias, str) for alias in aliases
+            ):
+                raise PresetValidationError(
+                    "Invalid template aliases: expected a list of strings"
+                )
+            for alias in aliases:
+                reason = relative_extension_path_violation(alias)
+                if reason:
+                    raise PresetValidationError(
+                        f"Invalid template alias '{alias}': {reason}"
+                    )
 
             if tmpl["type"] not in VALID_PRESET_TEMPLATE_TYPES:
                 raise PresetValidationError(
@@ -467,13 +501,14 @@ class PresetManifest:
             # counted by PresetManifest.templates. Reject at validation time
             # instead, mirroring the sibling fix for ExtensionManifest's
             # provides.templates/scripts (#4016).
-            name_type = (tmpl["name"], tmpl["type"])
-            if name_type in seen_name_types:
-                raise PresetValidationError(
-                    f"Duplicate template name '{tmpl['name']}' of type "
-                    f"'{tmpl['type']}' in 'provides.templates'"
-                )
-            seen_name_types.add(name_type)
+            for declared_name in (tmpl["name"], *aliases):
+                name_type = (declared_name, tmpl["type"])
+                if name_type in seen_name_types:
+                    raise PresetValidationError(
+                        f"Duplicate template name or alias '{declared_name}' "
+                        f"of type '{tmpl['type']}' in 'provides.templates'"
+                    )
+                seen_name_types.add(name_type)
 
             # Validate file path safety: must be relative, no parent traversal
             file_path = tmpl["file"]
@@ -678,6 +713,85 @@ class PresetManifest:
             for chunk in iter(lambda: f.read(8192), b""):
                 h.update(chunk)
         return f"sha256:{h.hexdigest()}"
+
+
+def diff_preset_manifests(
+    old_manifest: PresetManifest, new_manifest: PresetManifest
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Diff preset templates by their stable ``(name, type)`` identity."""
+    old_entries = {
+        (item["name"], item["type"]): item for item in old_manifest.templates
+    }
+    new_entries = {
+        (item["name"], item["type"]): item for item in new_manifest.templates
+    }
+    added = []
+    removed = []
+    changed = []
+    unchanged = []
+    for identity in sorted(new_entries.keys() - old_entries.keys()):
+        added.append({"identity": identity, "new": new_entries[identity]})
+    for identity in sorted(old_entries.keys() - new_entries.keys()):
+        removed.append({"identity": identity, "old": old_entries[identity]})
+    for identity in sorted(old_entries.keys() & new_entries.keys()):
+        old_item = old_entries[identity]
+        new_item = new_entries[identity]
+        if old_item == new_item:
+            unchanged.append(
+                {"identity": identity, "old": old_item, "new": new_item}
+            )
+        else:
+            changed.append(
+                {"identity": identity, "old": old_item, "new": new_item}
+            )
+    return {
+        "added": added,
+        "removed": removed,
+        "changed": changed,
+        "unchanged": unchanged,
+    }
+
+
+def _diff_preset_template_files(
+    diff: Dict[str, List[Dict[str, Any]]],
+    old_manifest: PresetManifest,
+    new_manifest: PresetManifest,
+    old_dir: Path,
+    new_dir: Path,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Include referenced-file content changes in the manifest diff."""
+    old_by_identity = {
+        (item["name"], item["type"]): item for item in old_manifest.templates
+    }
+    new_by_identity = {
+        (item["name"], item["type"]): item for item in new_manifest.templates
+    }
+    unchanged = []
+    changed = list(diff["changed"])
+    for entry in diff["unchanged"]:
+        identity = entry["identity"]
+        old_path = old_dir / old_by_identity[identity]["file"]
+        new_path = new_dir / new_by_identity[identity]["file"]
+        if (
+            not old_path.is_file()
+            or not new_path.is_file()
+            or old_path.read_bytes() != new_path.read_bytes()
+        ):
+            changed.append(
+                {
+                    "identity": identity,
+                    "old": old_by_identity[identity],
+                    "new": new_by_identity[identity],
+                }
+            )
+        else:
+            unchanged.append(entry)
+    return {
+        "added": diff["added"],
+        "removed": diff["removed"],
+        "changed": changed,
+        "unchanged": unchanged,
+    }
 
 
 class PresetRegistry:
@@ -1123,7 +1237,9 @@ class PresetManager:
     def _register_commands(
         self,
         manifest: PresetManifest,
-        preset_dir: Path
+        preset_dir: Path,
+        *,
+        command_names: Optional[set[str]] = None,
     ) -> Dict[str, List[str]]:
         """Register preset command overrides with all detected AI agents.
 
@@ -1143,7 +1259,13 @@ class PresetManager:
             Dictionary mapping agent names to lists of registered command names
         """
         command_templates = [
-            t for t in manifest.templates if t.get("type") == "command"
+            t for t in manifest.templates
+            if t.get("type") == "command"
+            and (
+                command_names is None
+                or t["name"] in command_names
+                or any(alias in command_names for alias in t.get("aliases", []))
+            )
         ]
         if not command_templates:
             return {}
@@ -1932,6 +2054,7 @@ class PresetManager:
         command_names: List[str],
         extra_agents: Optional[Set[str]] = None,
         target_agent: Optional[str] = None,
+        include_disabled_id: Optional[str] = None,
     ) -> Set[str]:
         """Re-resolve and re-register composed commands from the full stack.
 
@@ -1980,7 +2103,9 @@ class PresetManager:
         except ImportError:
             return set()
 
-        resolver = PresetResolver(self.project_root)
+        resolver = PresetResolver(
+            self.project_root, include_disabled_id=include_disabled_id
+        )
         registrar = CommandRegistrar()
         reconciled_commands: set[str] = set()
 
@@ -2029,7 +2154,13 @@ class PresetManager:
 
         # Cache registry and manifests outside the loop to avoid
         # repeated filesystem reads for each command name.
-        presets_by_priority = list(self.registry.list_by_priority())
+        presets_by_priority = [
+            (pack_id, metadata)
+            for pack_id, metadata in self.registry.list_by_priority(
+                include_disabled=include_disabled_id is not None
+            )
+            if metadata.get("enabled", True) or pack_id == include_disabled_id
+        ]
 
         for cmd_name in command_names:
             layers = resolver.collect_all_layers(cmd_name, "command")
@@ -2393,6 +2524,7 @@ class PresetManager:
             Dict[Path, tuple[Optional[str], List[str]]]
         ] = None,
         target_agent: Optional[str] = None,
+        include_disabled_id: Optional[str] = None,
     ) -> Set[str]:
         """Re-register skills for commands whose winning layer changed.
 
@@ -2420,7 +2552,9 @@ class PresetManager:
         # command renders its skill whether or not a like-named extension is
         # installed. The per-name loop below skips anything that doesn't
         # resolve to a managed skill directory.
-        resolver = PresetResolver(self.project_root)
+        resolver = PresetResolver(
+            self.project_root, include_disabled_id=include_disabled_id
+        )
         active_skills_dir = self._get_skills_dir()
 
         from .. import load_init_options
@@ -2431,7 +2565,13 @@ class PresetManager:
             active_ai = None
 
         # Cache registry once to avoid repeated filesystem reads
-        presets_by_priority = list(self.registry.list_by_priority())
+        presets_by_priority = [
+            (pack_id, metadata)
+            for pack_id, metadata in self.registry.list_by_priority(
+                include_disabled=include_disabled_id is not None
+            )
+            if metadata.get("enabled", True) or pack_id == include_disabled_id
+        ]
 
         # Group command names by winning preset to batch _register_skills calls
         # while only registering skills for the specific commands being
@@ -2911,6 +3051,7 @@ class PresetManager:
         *,
         target_dir: Optional[Path] = None,
         target_agent: Optional[str] = None,
+        command_names: Optional[set[str]] = None,
     ) -> Dict[str, List[str]]:
         """Generate SKILL.md files for preset command overrides.
 
@@ -2944,7 +3085,13 @@ class PresetManager:
             two can be tracked/restored consistently (#2948).
         """
         command_templates = [
-            t for t in manifest.templates if t.get("type") == "command"
+            t for t in manifest.templates
+            if t.get("type") == "command"
+            and (
+                command_names is None
+                or t["name"] in command_names
+                or any(alias in command_names for alias in t.get("aliases", []))
+            )
         ]
         if not command_templates:
             return {}
@@ -3927,9 +4074,17 @@ class PresetManager:
         # Reconcile all affected commands from the full priority stack so that
         # install order doesn't determine the winning command file.
         cmd_names = [
-            t["name"]
+            name
             for t in manifest.templates
             if t.get("type") == "command"
+            for name in (
+                [t["name"]]
+                + [
+                    alias
+                    for alias in t.get("aliases", [])
+                    if isinstance(alias, str)
+                ]
+            )
         ]
         if cmd_names:
             try:
@@ -4009,6 +4164,533 @@ class PresetManager:
         ):
             return
         _materialize_constitution_template(self.project_root, memory_constitution)
+
+    def _validate_update_source(
+        self,
+        source_dir: Path,
+        pack_id: str,
+        speckit_version: str,
+    ) -> tuple[PresetManifest, PresetManifest, Dict[str, List[Dict[str, Any]]]]:
+        """Validate an update without touching the installed preset."""
+        current_dir = self.presets_dir / pack_id
+        try:
+            old_manifest = PresetManifest(current_dir / "preset.yml")
+        except PresetValidationError as exc:
+            raise PresetValidationError(
+                f"Installed preset '{pack_id}' has a corrupt manifest; "
+                "remove and add the preset again"
+            ) from exc
+
+        try:
+            new_manifest = PresetManifest(source_dir / "preset.yml")
+        except PresetValidationError as exc:
+            raise PresetValidationError(
+                f"Incoming preset '{pack_id}' has an unparseable or corrupt "
+                "manifest; remove and add the preset again"
+            ) from exc
+        if new_manifest.id != pack_id:
+            raise PresetValidationError(
+                f"Preset ID mismatch: installed '{pack_id}', "
+                f"incoming '{new_manifest.id}'. Remove and add the preset again."
+            )
+        self.check_compatibility(new_manifest, speckit_version)
+        for template in new_manifest.templates:
+            referenced = source_dir / template["file"]
+            if not referenced.is_file():
+                raise PresetValidationError(
+                    f"Preset '{pack_id}' is missing referenced file "
+                    f"'{template['file']}'. Remove and add the preset again."
+                )
+        diff = diff_preset_manifests(old_manifest, new_manifest)
+        diff = _diff_preset_template_files(
+            diff, old_manifest, new_manifest, current_dir, source_dir
+        )
+
+        def convention_constitution(base_dir: Path) -> Optional[bytes]:
+            for relative in (
+                "templates/constitution-template.md",
+                "constitution-template.md",
+            ):
+                candidate = base_dir / relative
+                if candidate.is_file():
+                    return candidate.read_bytes()
+            return None
+
+        diff["_constitution_changed"] = (
+            convention_constitution(current_dir)
+            != convention_constitution(source_dir)
+        )
+        diff["_constitution_layer"] = (
+            new_manifest.id == _CONSTITUTION_SYNC_PRESET_ID
+            or any(
+                item.get("type") == "template"
+                and item.get("name") == "constitution-template"
+                for item in old_manifest.templates + new_manifest.templates
+            )
+            or convention_constitution(current_dir) is not None
+            or convention_constitution(source_dir) is not None
+        )
+        return old_manifest, new_manifest, diff
+
+    def update_from_directory(
+        self,
+        source_dir: Path,
+        speckit_version: str,
+        *,
+        pack_id: Optional[str] = None,
+        priority: Optional[int] = None,
+        dry_run: bool = False,
+        expected_version: Optional[str] = None,
+    ) -> tuple[PresetManifest, Dict[str, List[Dict[str, Any]]]]:
+        """Update an installed preset while serializing its transaction."""
+        from ..workflows._commands import _workflow_install_transaction
+
+        if dry_run:
+            return self._update_from_directory_locked(
+                source_dir,
+                speckit_version,
+                pack_id=pack_id,
+                priority=priority,
+                dry_run=True,
+                expected_version=expected_version,
+            )
+
+        with _workflow_install_transaction(self.project_root):
+            # Refresh after waiting for the lock so concurrent updates cannot
+            # overwrite newer registry metadata with this manager's snapshot.
+            self.registry.data = PresetRegistry(self.presets_dir).data
+            if expected_version is not None:
+                metadata = self.registry.get(pack_id or "")
+                installed_version = (
+                    metadata.get("version") if isinstance(metadata, dict) else None
+                )
+                if isinstance(installed_version, str):
+                    try:
+                        installed = pkg_version.Version(installed_version)
+                        catalogue = pkg_version.Version(expected_version)
+                    except pkg_version.InvalidVersion:
+                        pass
+                    else:
+                        if installed > catalogue and priority is None:
+                            raise PresetCompatibilityError(
+                                f"installed preset version {installed_version} is "
+                                f"newer than catalogue version {expected_version}"
+                            )
+            return self._update_from_directory_locked(
+                source_dir,
+                speckit_version,
+                pack_id=pack_id,
+                priority=priority,
+                dry_run=dry_run,
+                expected_version=expected_version,
+            )
+
+    def _update_from_directory_locked(
+        self,
+        source_dir: Path,
+        speckit_version: str,
+        *,
+        pack_id: Optional[str] = None,
+        priority: Optional[int] = None,
+        dry_run: bool = False,
+        expected_version: Optional[str] = None,
+    ) -> tuple[PresetManifest, Dict[str, List[Dict[str, Any]]]]:
+        """Update an installed preset from a validated directory."""
+        if priority is not None and priority < 1:
+            raise PresetValidationError(
+                "Priority must be a positive integer (1 or higher)"
+            )
+        try:
+            incoming = PresetManifest(source_dir / "preset.yml")
+        except PresetValidationError as exc:
+            raise PresetValidationError(
+                "Incoming preset has an unparseable or corrupt manifest; "
+                "remove and add the preset again"
+            ) from exc
+        target_id = pack_id or incoming.id
+        if not self.registry.is_installed(target_id):
+            raise PresetError(f"Preset '{target_id}' is not installed")
+        old_manifest, new_manifest, diff = self._validate_update_source(
+            source_dir, target_id, speckit_version
+        )
+        if expected_version is not None and not _versions_equal(
+            new_manifest.version, expected_version
+        ):
+            raise PresetValidationError(
+                f"Preset '{target_id}' manifest version {new_manifest.version} "
+                f"does not match catalogue version {expected_version}"
+            )
+        if dry_run:
+            return new_manifest, diff
+
+        metadata = self.registry.get(target_id)
+        if metadata is None:
+            raise PresetError(f"Preset '{target_id}' has no valid registry entry")
+        preserved_priority = normalize_priority(
+            priority if priority is not None else metadata.get("priority", 10)
+        )
+        enabled = metadata.get("enabled", True)
+        swap_token = tempfile.mkdtemp(
+            prefix=f".{target_id}.update-", dir=self.presets_dir
+        )
+        os.rmdir(swap_token)
+        staging_dir = Path(f"{swap_token}.staging")
+        backup_dir = Path(f"{swap_token}.bak")
+        def remove_swap_path(path: Path) -> None:
+            if path.is_symlink():
+                path.unlink()
+            elif path.exists():
+                shutil.rmtree(path)
+
+        try:
+            shutil.copytree(source_dir, staging_dir)
+            generated_composition = staging_dir / ".composed"
+            if generated_composition.is_symlink():
+                generated_composition.unlink()
+            elif generated_composition.is_dir():
+                shutil.rmtree(generated_composition)
+            elif generated_composition.exists():
+                generated_composition.unlink()
+            _, staged_manifest, staged_diff = self._validate_update_source(
+                staging_dir, target_id, speckit_version
+            )
+            if expected_version is not None and not _versions_equal(
+                staged_manifest.version, expected_version
+            ):
+                raise PresetValidationError(
+                    f"Preset '{target_id}' manifest version "
+                    f"{staged_manifest.version} does not match catalogue version "
+                    f"{expected_version}"
+                )
+            # The source directory may be edited while it is being copied
+            # (notably during --dev updates). Once staged, the copied tree is
+            # the immutable input for this update, so its validation result
+            # must drive both the registry metadata and reconciliation.
+            new_manifest = staged_manifest
+            diff = staged_diff
+            staged_manifest_hash = new_manifest.get_hash()
+        except Exception:
+            remove_swap_path(staging_dir)
+            raise
+        current_dir = self.presets_dir / target_id
+        registry_before = copy.deepcopy(metadata)
+        try:
+            try:
+                os.replace(current_dir, backup_dir)
+            except FileNotFoundError as exc:
+                raise PresetError(
+                    f"Preset '{target_id}' changed on disk during the update "
+                    "(another update may be running); no changes were made"
+                ) from exc
+            try:
+                os.replace(staging_dir, current_dir)
+                new_manifest.path = current_dir / "preset.yml"
+                self.registry.update(
+                    target_id,
+                    {
+                        "version": new_manifest.version,
+                        "manifest_hash": staged_manifest_hash,
+                        "priority": preserved_priority,
+                        "enabled": enabled,
+                    },
+                )
+            except Exception:
+                remove_swap_path(current_dir)
+                if backup_dir.exists():
+                    os.replace(backup_dir, current_dir)
+                self.registry.restore(target_id, registry_before)
+                raise
+        except Exception:
+            remove_swap_path(staging_dir)
+            raise
+
+        primary_command_names = {
+            item["identity"][0]
+            for item in diff["added"] + diff["removed"] + diff["changed"]
+            if item["identity"][1] == "command"
+        }
+        command_names = set(primary_command_names)
+        if priority is not None:
+            original_priority = normalize_priority(metadata.get("priority", 10))
+        else:
+            original_priority = preserved_priority
+        if preserved_priority != original_priority:
+            primary_command_names.update(
+                item["name"]
+                for item in new_manifest.templates
+                if item.get("type") == "command" and isinstance(item.get("name"), str)
+            )
+            primary_command_names.update(
+                item["name"]
+                for item in old_manifest.templates
+                if item.get("type") == "command" and isinstance(item.get("name"), str)
+            )
+            for manifest in (old_manifest, new_manifest):
+                for item in manifest.templates:
+                    if item.get("type") == "command":
+                        command_names.update(
+                            alias
+                            for alias in item.get("aliases", [])
+                            if isinstance(alias, str)
+                        )
+        for item in diff["added"] + diff["removed"] + diff["changed"]:
+            for template in (item.get("old"), item.get("new")):
+                if template and template.get("type") == "command":
+                    command_names.update(
+                        alias
+                        for alias in template.get("aliases", [])
+                        if isinstance(alias, str)
+                    )
+        reconcile_command_names = set(primary_command_names)
+        reconcile_command_names.update(command_names)
+        try:
+            old_command_names = {
+                item["name"]
+                for item in old_manifest.templates
+                if item.get("type") == "command"
+            }
+            new_command_names = {
+                item["name"]
+                for item in new_manifest.templates
+                if item.get("type") == "command"
+            }
+            old_command_names.update(
+                alias
+                for item in old_manifest.templates
+                if item.get("type") == "command"
+                for alias in item.get("aliases", [])
+                if isinstance(alias, str)
+            )
+            new_command_names.update(
+                alias
+                for item in new_manifest.templates
+                if item.get("type") == "command"
+                for alias in item.get("aliases", [])
+                if isinstance(alias, str)
+            )
+            removed_command_names = old_command_names - new_command_names
+            reconcile_command_names.update(removed_command_names)
+            registered_commands_before = metadata.get("registered_commands", {})
+            if removed_command_names and isinstance(
+                registered_commands_before, dict
+            ):
+                stale_commands = {
+                    agent: [
+                        name
+                        for name in names
+                        if name in removed_command_names
+                    ]
+                    for agent, names in registered_commands_before.items()
+                    if isinstance(names, list)
+                }
+                stale_commands = {
+                    agent: names
+                    for agent, names in stale_commands.items()
+                    if names
+                }
+                if stale_commands:
+                    self._unregister_commands(stale_commands)
+            registered_commands = self._register_commands(
+                new_manifest, current_dir, command_names=primary_command_names
+            )
+            active_agent = resolve_active_agent_for_registration(self.project_root)
+            merged_commands: Dict[str, List[str]] = {}
+            for agent, names in registered_commands_before.items():
+                if isinstance(names, list):
+                    names_to_remove = removed_command_names | (
+                        command_names if agent == active_agent else set()
+                    )
+                    retained = [name for name in names if name not in names_to_remove]
+                    if retained:
+                        merged_commands[agent] = retained
+            for agent, names in registered_commands.items():
+                merged_commands.setdefault(agent, []).extend(
+                    name for name in names if name not in merged_commands.get(agent, [])
+                )
+            registered_commands = merged_commands
+            self.registry.update(
+                target_id, {"registered_commands": registered_commands}
+            )
+            affected_skill_names = set()
+            for name in reconcile_command_names:
+                modern, legacy = self._skill_names_for_command(name)
+                affected_skill_names.update((modern, legacy))
+            raw_registered_skills_before = metadata.get("registered_skills", {})
+            if isinstance(raw_registered_skills_before, list):
+                registered_skills_before = self._infer_legacy_skill_provenance(
+                    [name for name in raw_registered_skills_before if isinstance(name, str)],
+                    target_id,
+                )
+            elif isinstance(raw_registered_skills_before, dict):
+                registered_skills_before = copy.deepcopy(raw_registered_skills_before)
+            else:
+                registered_skills_before = {}
+            if isinstance(registered_skills_before, dict):
+                removed_skill_names = {
+                    skill_name
+                    for command_name in removed_command_names
+                    for skill_name in self._skill_names_for_command(command_name)
+                }
+                stale_skills = {
+                    agent: [
+                        name
+                        for name in names
+                        if name in removed_skill_names
+                    ]
+                    for agent, names in registered_skills_before.items()
+                    if isinstance(names, list)
+                }
+                stale_skills = {
+                    agent: names
+                    for agent, names in stale_skills.items()
+                    if names
+                }
+                if stale_skills:
+                    self._unregister_skills(
+                        stale_skills,
+                        current_dir,
+                        restore_from_bundled_core=True,
+                    )
+            registered_skills = self._register_skills(
+                new_manifest, current_dir, command_names=reconcile_command_names
+            )
+            if isinstance(registered_skills_before, dict):
+                merged_skills: Dict[str, List[str]] = {}
+                for agent, names in registered_skills_before.items():
+                    if isinstance(names, list):
+                        names_to_remove = removed_skill_names | (
+                            affected_skill_names if agent == active_agent else set()
+                        )
+                        retained = [name for name in names if name not in names_to_remove]
+                        if retained:
+                            merged_skills[agent] = retained
+                for agent, names in registered_skills.items():
+                    merged_skills.setdefault(agent, []).extend(
+                        name for name in names
+                        if name not in merged_skills.get(agent, [])
+                    )
+                registered_skills = merged_skills
+            self.registry.update(target_id, {"registered_skills": registered_skills})
+            if reconcile_command_names:
+                historical_agents = {
+                    agent
+                    for agent in registered_commands_before
+                    if agent != active_agent
+                }
+                # A priority change can promote this preset above a provider
+                # whose ownership lives only on another preset's registry
+                # entry, so inactive agents must be gathered stack-wide rather
+                # than from this preset's own history alone.
+                for other_id, other_meta in self.registry.list_by_priority(
+                    include_disabled=True
+                ):
+                    if other_id == target_id or not isinstance(other_meta, dict):
+                        continue
+                    other_commands = other_meta.get("registered_commands", {})
+                    if not isinstance(other_commands, dict):
+                        continue
+                    for agent, names in other_commands.items():
+                        if agent == active_agent or not isinstance(names, list):
+                            continue
+                        if reconcile_command_names.intersection(names):
+                            historical_agents.add(agent)
+                self._reconcile_composed_commands(
+                    sorted(reconcile_command_names),
+                    extra_agents=historical_agents,
+                    include_disabled_id=target_id if not enabled else None,
+                )
+                extra_skill_dirs = {}
+                if isinstance(registered_skills_before, dict):
+                    for agent, names in registered_skills_before.items():
+                        if agent == active_agent:
+                            continue
+                        if not isinstance(names, list):
+                            continue
+                        skill_dir = self._resolve_agent_skills_dir(agent)
+                        extra_skill_dirs[skill_dir] = (
+                            agent,
+                            sorted(
+                                name
+                                for name in names
+                                if isinstance(name, str)
+                            ),
+                        )
+                self._reconcile_skills(
+                    sorted(reconcile_command_names),
+                    extra_skills_dirs=extra_skill_dirs or None,
+                    include_disabled_id=target_id if not enabled else None,
+                )
+            def _preset_has_constitution_layer(
+                manifest: PresetManifest, preset_dir: Path
+            ) -> bool:
+                return (
+                    any(
+                        item.get("type") == "template"
+                        and item.get("name") == "constitution-template"
+                        for item in manifest.templates
+                    )
+                    or any(
+                        (preset_dir / relative_path).is_file()
+                        for relative_path in (
+                            "templates/constitution-template.md",
+                            "constitution-template.md",
+                        )
+                    )
+                )
+
+            has_constitution_layer = _preset_has_constitution_layer(
+                old_manifest, backup_dir
+            ) or _preset_has_constitution_layer(new_manifest, current_dir)
+            if has_constitution_layer:
+                self.reconcile_constitution(
+                    f"Failed to reconcile constitution after updating {target_id}",
+                    create_if_missing=True,
+                )
+        except Exception as exc:
+            import warnings
+
+            warnings.warn(
+                f"Preset '{target_id}' was swapped, but post-update "
+                f"reconciliation failed: {exc}. Generated command, skill, or "
+                "constitution files may be stale. Re-run the update with "
+                f"--from <url> or --dev <path>, or remove and re-add "
+                f"preset '{target_id}' to refresh them.",
+                stacklevel=2,
+            )
+        finally:
+            remove_swap_path(backup_dir)
+            remove_swap_path(staging_dir)
+        return new_manifest, diff
+
+    def update_from_archive(
+        self,
+        archive_path: Path,
+        speckit_version: str,
+        *,
+        pack_id: str,
+        priority: Optional[int] = None,
+        dry_run: bool = False,
+        expected_version: Optional[str] = None,
+    ) -> tuple[PresetManifest, Dict[str, List[Dict[str, Any]]]]:
+        """Update an installed preset from a supported archive."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            extracted = Path(tmpdir)
+            safe_extract_archive(
+                archive_path, extracted, error_type=PresetValidationError
+            )
+            roots = [extracted]
+            if not (extracted / "preset.yml").exists():
+                roots = [item for item in extracted.iterdir() if item.is_dir()]
+            if len(roots) != 1 or not (roots[0] / "preset.yml").is_file():
+                raise PresetValidationError("No preset.yml found in archive")
+            return self.update_from_directory(
+                roots[0],
+                speckit_version,
+                pack_id=pack_id,
+                priority=priority,
+                dry_run=dry_run,
+                expected_version=expected_version,
+            )
 
     def install_from_archive(
         self,
@@ -4418,7 +5100,7 @@ class PresetCatalog:
     COMMUNITY_CATALOG_URL = "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json"
     CACHE_DURATION = 3600  # 1 hour in seconds
 
-    def __init__(self, project_root: Path):
+    def __init__(self, project_root: Path, cache_dir: Optional[Path] = None):
         """Initialize preset catalog manager.
 
         Args:
@@ -4426,7 +5108,7 @@ class PresetCatalog:
         """
         self.project_root = project_root
         self.presets_dir = project_root / ".specify" / "presets"
-        self.cache_dir = self.presets_dir / ".cache"
+        self.cache_dir = cache_dir or self.presets_dir / ".cache"
         self.cache_file = self.cache_dir / "catalog.json"
         self.cache_metadata_file = self.cache_dir / "catalog-metadata.json"
 
@@ -5298,7 +5980,9 @@ class PresetResolver:
     4. .specify/templates/                    - Core templates (shipped with Spec Kit)
     """
 
-    def __init__(self, project_root: Path):
+    def __init__(
+        self, project_root: Path, include_disabled_id: Optional[str] = None
+    ):
         """Initialize preset resolver.
 
         Args:
@@ -5309,6 +5993,7 @@ class PresetResolver:
         self.presets_dir = project_root / ".specify" / "presets"
         self.overrides_dir = self.templates_dir / "overrides"
         self.extensions_dir = project_root / ".specify" / "extensions"
+        self.include_disabled_id = include_disabled_id
         self._manifest_cache: Dict[str, Optional["PresetManifest"]] = {}
 
     def _get_manifest(self, pack_dir: Path) -> Optional["PresetManifest"]:
@@ -5333,7 +6018,10 @@ class PresetResolver:
         registry = PresetRegistry(self.presets_dir)
         return [
             (pack_id, metadata)
-            for pack_id, metadata in registry.list_by_priority()
+            for pack_id, metadata in registry.list_by_priority(
+                include_disabled=self.include_disabled_id is not None
+            )
+            if metadata.get("enabled", True) or pack_id == self.include_disabled_id
             if self._is_safe_registry_id(pack_id)
         ]
 
@@ -5360,7 +6048,17 @@ class PresetResolver:
         if not manifest:
             return None, None
         for tmpl in manifest.templates:
-            if tmpl.get("name") == template_name and tmpl.get("type") == template_type:
+            aliases = tmpl.get("aliases", [])
+            if (
+                tmpl.get("type") == template_type
+                and (
+                    tmpl.get("name") == template_name
+                    or (
+                        isinstance(aliases, list)
+                        and template_name in aliases
+                    )
+                )
+            ):
                 file_path = tmpl.get("file")
                 if file_path:
                     manifest_candidate = pack_dir / file_path
