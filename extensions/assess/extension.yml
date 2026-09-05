@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: assess
   name: "Idea Assessment Pipeline"
-  version: "1.0.0"
+  version: "1.0.1"
   description: "Assess an idea before Spec-Driven Development via intake, research, define, shape, and decide. A go verdict hands off to /speckit.specify; a kill closes it. Lives under .specify/assessments/<slug>/"
   category: "process"
   effect: "read-write"
