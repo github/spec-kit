@@ -14750,6 +14750,51 @@ class TestPresetUpdate:
         )
         return preset_dir
 
+    def _updated_command_source(self, preset_dir, version, body):
+        source = preset_dir.parent / f"updated-{preset_dir.name}"
+        shutil.copytree(preset_dir, source)
+        manifest_path = source / "preset.yml"
+        data = yaml.safe_load(manifest_path.read_text())
+        data["preset"]["version"] = version
+        manifest_path.write_text(yaml.safe_dump(data))
+        (source / "commands" / "speckit.specify.md").write_text(
+            "---\ndescription: Test command\n---\n\n"
+            f"{body}\n"
+        )
+        return source
+
+    def _constitution_preset(
+        self, temp_dir, preset_id, body, *, strategy="replace", version="1.0.0"
+    ):
+        preset_dir = temp_dir / preset_id
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(body)
+        (preset_dir / "preset.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": preset_id,
+                        "name": preset_id,
+                        "version": version,
+                        "description": "Test",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "strategy": strategy,
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+        return preset_dir
+
     def test_manifest_diff_uses_name_and_type_identity(self, pack_dir):
         source = self._updated_source(pack_dir)
         old = PresetManifest(pack_dir / "preset.yml")
@@ -14817,19 +14862,142 @@ class TestPresetUpdate:
 
         assert manager.registry.get("test-pack")["version"] == "1.0.0"
 
-    def test_disabled_preset_is_included_when_reconciling_its_update(
-        self, project_dir, pack_dir
+    def test_disabled_preset_update_preserves_existing_artifacts(
+        self, project_dir, temp_dir
     ):
+        from specify_cli import save_init_options
+
+        save_init_options(
+            project_dir, {"ai": "qwen", "ai_skills": False, "script": "sh"}
+        )
+        (project_dir / ".qwen" / "commands").mkdir(parents=True)
+        preset_dir = self._command_preset(
+            temp_dir, "disabled-update-preset", "Original disabled body"
+        )
         manager = PresetManager(project_dir)
-        manager.install_from_directory(pack_dir, "0.1.0")
-        manager.registry.update("test-pack", {"enabled": False})
+        manager.install_from_directory(preset_dir, "0.1.0")
+        manager.registry.update("disabled-update-preset", {"enabled": False})
 
-        resolver = PresetResolver(project_dir, include_disabled_id="test-pack")
-        layers = resolver.collect_all_layers("spec-template", "template")
+        command_file = project_dir / ".qwen" / "commands" / "speckit.specify.md"
+        command_before = command_file.read_bytes()
+        metadata_before = manager.registry.get("disabled-update-preset")
 
-        assert layers
-        assert layers[0]["path"] == (
-            project_dir / ".specify" / "presets" / "test-pack" / "templates" / "spec-template.md"
+        save_init_options(
+            project_dir, {"ai": "claude", "ai_skills": True, "script": "sh"}
+        )
+        source = self._updated_command_source(
+            preset_dir, "2.0.0", "Updated disabled body"
+        )
+
+        manager.update_from_directory(
+            source, "0.1.0", pack_id="disabled-update-preset"
+        )
+
+        metadata_after = manager.registry.get("disabled-update-preset")
+        assert command_file.read_bytes() == command_before
+        assert not (project_dir / ".claude" / "skills").exists()
+        assert "Updated disabled body" in (
+            project_dir
+            / ".specify"
+            / "presets"
+            / "disabled-update-preset"
+            / "commands"
+            / "speckit.specify.md"
+        ).read_text(encoding="utf-8")
+        assert metadata_after["version"] == "2.0.0"
+        assert metadata_after["enabled"] is False
+        assert (
+            metadata_after["registered_commands"]
+            == metadata_before["registered_commands"]
+        )
+        assert metadata_after["registered_skills"] == metadata_before["registered_skills"]
+        assert not list(
+            (project_dir / ".specify" / "presets").glob(
+                ".disabled-update-preset.update-*"
+            )
+        )
+
+    def test_disabled_preset_update_does_not_replace_enabled_winner(
+        self, project_dir, temp_dir
+    ):
+        from specify_cli import save_init_options
+
+        save_init_options(
+            project_dir, {"ai": "qwen", "ai_skills": False, "script": "sh"}
+        )
+        (project_dir / ".qwen" / "commands").mkdir(parents=True)
+        disabled_dir = self._command_preset(
+            temp_dir, "disabled-winner-preset", "Disabled body v1"
+        )
+        enabled_dir = self._command_preset(
+            temp_dir, "enabled-winner-preset", "Enabled body"
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(disabled_dir, "0.1.0", priority=1)
+        manager.registry.update("disabled-winner-preset", {"enabled": False})
+        manager.install_from_directory(enabled_dir, "0.1.0", priority=5)
+
+        command_file = project_dir / ".qwen" / "commands" / "speckit.specify.md"
+        assert "Enabled body" in command_file.read_text(encoding="utf-8")
+        source = self._updated_command_source(
+            disabled_dir, "2.0.0", "Disabled body v2"
+        )
+
+        manager.update_from_directory(
+            source, "0.1.0", pack_id="disabled-winner-preset"
+        )
+
+        assert "Enabled body" in command_file.read_text(encoding="utf-8")
+        assert "Disabled body v2" not in command_file.read_text(
+            encoding="utf-8"
+        )
+
+    def test_disabled_preset_update_retains_removed_command_for_cleanup(
+        self, project_dir, temp_dir
+    ):
+        from specify_cli import save_init_options
+
+        save_init_options(
+            project_dir, {"ai": "qwen", "ai_skills": False, "script": "sh"}
+        )
+        (project_dir / ".qwen" / "commands").mkdir(parents=True)
+        preset_dir = self._command_preset(
+            temp_dir, "disabled-removed-command", "Removed command body"
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.0")
+        manager.registry.update("disabled-removed-command", {"enabled": False})
+        command_file = project_dir / ".qwen" / "commands" / "speckit.specify.md"
+
+        source = preset_dir.parent / "updated-disabled-removed-command"
+        shutil.copytree(preset_dir, source)
+        manifest_path = source / "preset.yml"
+        data = yaml.safe_load(manifest_path.read_text())
+        data["preset"]["version"] = "2.0.0"
+        data["provides"]["templates"] = [
+            {
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+            }
+        ]
+        manifest_path.write_text(yaml.safe_dump(data))
+        (source / "commands" / "speckit.specify.md").unlink()
+        (source / "templates").mkdir()
+        (source / "templates" / "spec-template.md").write_text("# Spec\n")
+
+        manager.update_from_directory(
+            source, "0.1.0", pack_id="disabled-removed-command"
+        )
+
+        metadata = manager.registry.get("disabled-removed-command")
+        assert command_file.exists()
+        assert metadata["registered_commands"]["qwen"] == ["speckit.specify"]
+
+        manager.remove("disabled-removed-command")
+
+        assert "Removed command body" not in command_file.read_text(
+            encoding="utf-8"
         )
 
     def test_missing_referenced_file_leaves_installation_untouched(
@@ -15255,6 +15423,322 @@ class TestPresetUpdate:
         assert PresetManager(project_dir).registry.get(
             "convention-constitution"
         )["priority"] == 7
+
+    def test_cli_dry_run_ignores_shadowed_constitution_change(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        higher_source = _make_convention_constitution_preset(temp_dir)
+        higher_manifest = higher_source / "preset.yml"
+        higher_data = yaml.safe_load(higher_manifest.read_text())
+        higher_data["preset"]["id"] = "higher-constitution"
+        higher_manifest.write_text(yaml.safe_dump(higher_data))
+        (higher_source / "templates" / "constitution-template.md").write_text(
+            "# Higher Constitution\n"
+        )
+        manager.install_from_directory(higher_source, "0.15.0", priority=1)
+
+        lower_source = temp_dir / "lower-constitution"
+        shutil.copytree(higher_source, lower_source)
+        lower_manifest = lower_source / "preset.yml"
+        lower_data = yaml.safe_load(lower_manifest.read_text())
+        lower_data["preset"]["id"] = "lower-constitution"
+        lower_manifest.write_text(yaml.safe_dump(lower_data))
+        (lower_source / "templates" / "constitution-template.md").write_text(
+            "# Lower Constitution\n"
+        )
+        manager.install_from_directory(lower_source, "0.15.0", priority=10)
+
+        lower_data["preset"]["version"] = "2.0.0"
+        lower_manifest.write_text(yaml.safe_dump(lower_data))
+        (lower_source / "templates" / "constitution-template.md").write_text(
+            "# Updated Lower Constitution\n"
+        )
+        constitution_path = (
+            project_dir / ".specify" / "memory" / "constitution.md"
+        )
+        constitution_before = constitution_path.read_bytes()
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.15.0")
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "preset",
+                "update",
+                "lower-constitution",
+                "--dev",
+                str(lower_source),
+                "--priority",
+                "8",
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "constitution unchanged" in result.output
+        assert constitution_path.read_bytes() == constitution_before
+
+    def test_cli_dry_run_plans_new_winning_constitution_layer(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        lower_source = _make_convention_constitution_preset(temp_dir)
+        lower_manifest = lower_source / "preset.yml"
+        lower_data = yaml.safe_load(lower_manifest.read_text())
+        lower_data["preset"]["id"] = "lower-constitution"
+        lower_manifest.write_text(yaml.safe_dump(lower_data))
+        manager.install_from_directory(lower_source, "0.15.0", priority=5)
+
+        target_source = self._command_preset(
+            temp_dir, "higher-new-constitution", "Command body"
+        )
+        manager.install_from_directory(target_source, "0.15.0", priority=1)
+        (target_source / "templates").mkdir()
+        (target_source / "templates" / "constitution-template.md").write_text(
+            "# New Winning Constitution\n"
+        )
+        target_manifest = target_source / "preset.yml"
+        target_data = yaml.safe_load(target_manifest.read_text())
+        target_data["preset"]["version"] = "2.0.0"
+        target_manifest.write_text(yaml.safe_dump(target_data))
+        constitution_path = (
+            project_dir / ".specify" / "memory" / "constitution.md"
+        )
+        constitution_before = constitution_path.read_bytes()
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.15.0")
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "preset",
+                "update",
+                "higher-new-constitution",
+                "--dev",
+                str(target_source),
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "constitution change planned" in result.output
+        assert constitution_path.read_bytes() == constitution_before
+
+    def test_cli_dry_run_plans_change_to_composed_constitution_layer(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        target_source = self._constitution_preset(
+            temp_dir, "composed-target", "# Target v1\n"
+        )
+        manager.install_from_directory(target_source, "0.15.0", priority=5)
+        top_source = self._constitution_preset(
+            temp_dir, "composed-top", "# Top\n", strategy="prepend"
+        )
+        manager.install_from_directory(top_source, "0.15.0", priority=1)
+
+        target_manifest = target_source / "preset.yml"
+        target_data = yaml.safe_load(target_manifest.read_text())
+        target_data["preset"]["version"] = "2.0.0"
+        target_manifest.write_text(yaml.safe_dump(target_data))
+        (target_source / "templates" / "constitution-template.md").write_text(
+            "# Target v2\n"
+        )
+        constitution_path = (
+            project_dir / ".specify" / "memory" / "constitution.md"
+        )
+        constitution_before = constitution_path.read_bytes()
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.15.0")
+        runner = CliRunner()
+
+        dry_run = runner.invoke(
+            app,
+            [
+                "preset",
+                "update",
+                "composed-target",
+                "--dev",
+                str(target_source),
+                "--dry-run",
+            ],
+        )
+        assert dry_run.exit_code == 0, dry_run.output
+        assert "constitution change planned" in dry_run.output
+        assert constitution_path.read_bytes() == constitution_before
+
+        update = runner.invoke(
+            app,
+            [
+                "preset",
+                "update",
+                "composed-target",
+                "--dev",
+                str(target_source),
+            ],
+        )
+        assert update.exit_code == 0, update.output
+        assert "constitution reconciled" in update.output
+
+    def test_cli_dry_run_plans_missing_shadowed_constitution(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        higher_source = self._constitution_preset(
+            temp_dir, "missing-higher", "# Higher\n"
+        )
+        manager.install_from_directory(higher_source, "0.15.0", priority=1)
+        target_source = self._constitution_preset(
+            temp_dir, "missing-target", "# Target v1\n"
+        )
+        manager.install_from_directory(target_source, "0.15.0", priority=5)
+
+        target_manifest = target_source / "preset.yml"
+        target_data = yaml.safe_load(target_manifest.read_text())
+        target_data["preset"]["version"] = "2.0.0"
+        target_manifest.write_text(yaml.safe_dump(target_data))
+        (target_source / "templates" / "constitution-template.md").write_text(
+            "# Target v2\n"
+        )
+        constitution_path = (
+            project_dir / ".specify" / "memory" / "constitution.md"
+        )
+        constitution_path.unlink()
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.15.0")
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "preset",
+                "update",
+                "missing-target",
+                "--dev",
+                str(target_source),
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "constitution change planned" in result.output
+        assert not constitution_path.exists()
+
+    def test_cli_dry_run_ignores_priority_change_with_same_constitution(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        source = self._constitution_preset(
+            temp_dir, "same-constitution", "# Same Constitution\n"
+        )
+        manager.install_from_directory(source, "0.15.0", priority=10)
+        manifest_path = source / "preset.yml"
+        data = yaml.safe_load(manifest_path.read_text())
+        data["preset"]["version"] = "2.0.0"
+        manifest_path.write_text(yaml.safe_dump(data))
+        constitution_path = (
+            project_dir / ".specify" / "memory" / "constitution.md"
+        )
+        constitution_before = constitution_path.read_bytes()
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.15.0")
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "preset",
+                "update",
+                "same-constitution",
+                "--dev",
+                str(source),
+                "--priority",
+                "8",
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "constitution unchanged" in result.output
+        assert constitution_path.read_bytes() == constitution_before
+
+    def test_cli_dry_run_compares_replace_constitution_as_bytes(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        source = self._constitution_preset(
+            temp_dir, "crlf-constitution", "# placeholder\n"
+        )
+        crlf_content = b"# CRLF\r\n\r\nBody line\r\n"
+        (source / "templates" / "constitution-template.md").write_bytes(
+            crlf_content
+        )
+        manager.install_from_directory(source, "0.15.0")
+        manifest_path = source / "preset.yml"
+        data = yaml.safe_load(manifest_path.read_text())
+        data["preset"]["version"] = "2.0.0"
+        manifest_path.write_text(yaml.safe_dump(data))
+        constitution_path = (
+            project_dir / ".specify" / "memory" / "constitution.md"
+        )
+        assert constitution_path.read_bytes() == crlf_content
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.15.0")
+        runner = CliRunner()
+
+        dry_run = runner.invoke(
+            app,
+            [
+                "preset",
+                "update",
+                "crlf-constitution",
+                "--dev",
+                str(source),
+                "--dry-run",
+            ],
+        )
+
+        assert dry_run.exit_code == 0, dry_run.output
+        assert "constitution unchanged" in dry_run.output
+        assert constitution_path.read_bytes() == crlf_content
+
+        update = runner.invoke(
+            app,
+            [
+                "preset",
+                "update",
+                "crlf-constitution",
+                "--dev",
+                str(source),
+            ],
+        )
+
+        assert update.exit_code == 0, update.output
+        assert "constitution unchanged" in update.output
+        assert constitution_path.read_bytes() == crlf_content
 
     @pytest.mark.parametrize(
         "legacy_registry_owner", [None, "other", "target"]

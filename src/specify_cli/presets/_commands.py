@@ -746,15 +746,20 @@ def preset_update(
             constitution_after = (
                 constitution_path.read_bytes() if constitution_path.exists() else None
             )
-            constitution_diff = diff.get("_constitution_changed", False) or any(
-                entry["identity"] == ("constitution-template", "template")
-                for category in ("added", "removed", "changed")
-                for entry in diff[category]
-            )
             if dry_run:
                 sync_metadata = manager.registry.get("constitution-sync")
+                target_enabled = metadata.get("enabled", True)
+                prospective_constitution = diff.get(
+                    "_constitution_content_after"
+                )
+                prospective_bytes = (
+                    prospective_constitution
+                    if isinstance(prospective_constitution, bytes)
+                    else None
+                )
                 constitution_can_reconcile = (
                     bool(diff.get("_constitution_layer"))
+                    and target_enabled
                     and isinstance(sync_metadata, dict)
                     and sync_metadata.get("enabled", True)
                     and (
@@ -769,10 +774,10 @@ def preset_update(
                 constitution_status = (
                     "constitution change planned"
                     if constitution_can_reconcile
+                    and prospective_bytes is not None
                     and (
                         not constitution_path.exists()
-                        or constitution_diff
-                        or effective_priority is not None
+                        or constitution_before != prospective_bytes
                     )
                     else "constitution unchanged"
                 )
@@ -782,12 +787,18 @@ def preset_update(
                     if constitution_before == constitution_after
                     else "constitution reconciled"
                 )
+            generated_status = (
+                ", generated files unchanged while disabled"
+                if not metadata.get("enabled", True)
+                else ""
+            )
             console.print(
                 f"[green]✓[/green] {safe_id}: {action} to v{manifest.version} "
                 f"(+{added_commands} commands, -{removed_commands} commands, "
                 f"~{changed_commands} commands, "
                 f"{constitution_status}, "
-                f"priority {'kept at ' + str(metadata.get('priority', 10)) if effective_priority is None else 'set to ' + str(effective_priority)})"
+                f"priority {'kept at ' + str(metadata.get('priority', 10)) if effective_priority is None else 'set to ' + str(effective_priority)}"
+                f"{generated_status})"
             )
             if dry_run:
                 for category in ("added", "removed", "changed", "unchanged"):
@@ -801,7 +812,10 @@ def preset_update(
                         console.print(
                             f"  {category}: {', '.join(identities)}"
                         )
-                console.print("  planned actions: stage, validate, atomically swap, reconcile")
+                planned_actions = "stage, validate, atomically swap"
+                if metadata.get("enabled", True):
+                    planned_actions += ", reconcile"
+                console.print(f"  planned actions: {planned_actions}")
             else:
                 _warn_unmet_extension_dependencies(manager, manifest)
             outcomes.append("updated")

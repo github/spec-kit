@@ -153,20 +153,10 @@ def _materialize_constitution_template(
         via ``resolve_content``; ``None`` when no constitution template resolves.
     """
     resolver = PresetResolver(project_root)
-    layers = resolver.collect_all_layers("constitution-template", "template")
-    if not layers:
+    resolved = _resolve_constitution_template_bytes(resolver)
+    if resolved is None:
         return None
-
-    top_layer = layers[0]
-    if top_layer["strategy"] == "replace":
-        content = top_layer["path"].read_bytes()
-        result = "copied"
-    else:
-        composed_content = resolver.resolve_content("constitution-template", "template")
-        if composed_content is None:
-            return None
-        content = composed_content.encode("utf-8")
-        result = "composed"
+    content, top_layer, result = resolved
 
     provenance = memory_constitution.parent / _CONSTITUTION_PROVENANCE_FILE
     if memory_constitution.exists() and memory_constitution.read_bytes() == content:
@@ -190,6 +180,27 @@ def _materialize_constitution_template(
         + "\n",
     )
     return result
+
+
+def _resolve_constitution_template_bytes(
+    resolver: "PresetResolver",
+) -> tuple[bytes, Dict[str, Any], str] | None:
+    """Resolve constitution bytes using the same rules as materialization."""
+    layers = resolver.collect_all_layers("constitution-template", "template")
+    if not layers:
+        return None
+
+    top_layer = layers[0]
+    if top_layer["strategy"] == "replace":
+        content = top_layer["path"].read_bytes()
+        result = "copied"
+    else:
+        composed_content = resolver.resolve_content("constitution-template", "template")
+        if composed_content is None:
+            return None
+        content = composed_content.encode("utf-8")
+        result = "composed"
+    return content, top_layer, result
 
 
 def _substitute_core_template(
@@ -2054,7 +2065,6 @@ class PresetManager:
         command_names: List[str],
         extra_agents: Optional[Set[str]] = None,
         target_agent: Optional[str] = None,
-        include_disabled_id: Optional[str] = None,
     ) -> Set[str]:
         """Re-resolve and re-register composed commands from the full stack.
 
@@ -2103,9 +2113,7 @@ class PresetManager:
         except ImportError:
             return set()
 
-        resolver = PresetResolver(
-            self.project_root, include_disabled_id=include_disabled_id
-        )
+        resolver = PresetResolver(self.project_root)
         registrar = CommandRegistrar()
         reconciled_commands: set[str] = set()
 
@@ -2156,10 +2164,7 @@ class PresetManager:
         # repeated filesystem reads for each command name.
         presets_by_priority = [
             (pack_id, metadata)
-            for pack_id, metadata in self.registry.list_by_priority(
-                include_disabled=include_disabled_id is not None
-            )
-            if metadata.get("enabled", True) or pack_id == include_disabled_id
+            for pack_id, metadata in self.registry.list_by_priority()
         ]
 
         for cmd_name in command_names:
@@ -2524,7 +2529,6 @@ class PresetManager:
             Dict[Path, tuple[Optional[str], List[str]]]
         ] = None,
         target_agent: Optional[str] = None,
-        include_disabled_id: Optional[str] = None,
     ) -> Set[str]:
         """Re-register skills for commands whose winning layer changed.
 
@@ -2552,9 +2556,7 @@ class PresetManager:
         # command renders its skill whether or not a like-named extension is
         # installed. The per-name loop below skips anything that doesn't
         # resolve to a managed skill directory.
-        resolver = PresetResolver(
-            self.project_root, include_disabled_id=include_disabled_id
-        )
+        resolver = PresetResolver(self.project_root)
         active_skills_dir = self._get_skills_dir()
 
         from .. import load_init_options
@@ -2567,10 +2569,7 @@ class PresetManager:
         # Cache registry once to avoid repeated filesystem reads
         presets_by_priority = [
             (pack_id, metadata)
-            for pack_id, metadata in self.registry.list_by_priority(
-                include_disabled=include_disabled_id is not None
-            )
-            if metadata.get("enabled", True) or pack_id == include_disabled_id
+            for pack_id, metadata in self.registry.list_by_priority()
         ]
 
         # Group command names by winning preset to batch _register_skills calls
@@ -4319,12 +4318,33 @@ class PresetManager:
                 f"Preset '{target_id}' manifest version {new_manifest.version} "
                 f"does not match catalogue version {expected_version}"
             )
-        if dry_run:
-            return new_manifest, diff
-
         metadata = self.registry.get(target_id)
         if metadata is None:
             raise PresetError(f"Preset '{target_id}' has no valid registry entry")
+        if dry_run:
+            if diff.get("_constitution_layer"):
+                prospective_metadata = {
+                    **metadata,
+                    "version": new_manifest.version,
+                    "priority": normalize_priority(
+                        priority
+                        if priority is not None
+                        else metadata.get("priority", 10)
+                    ),
+                }
+                prospective_resolver = PresetResolver(
+                    self.project_root,
+                    preset_overrides={
+                        target_id: (source_dir, prospective_metadata),
+                    },
+                )
+                resolved_constitution = _resolve_constitution_template_bytes(
+                    prospective_resolver
+                )
+                if resolved_constitution is not None:
+                    diff["_constitution_content_after"] = resolved_constitution[0]
+            return new_manifest, diff
+
         preserved_priority = normalize_priority(
             priority if priority is not None else metadata.get("priority", 10)
         )
@@ -4402,6 +4422,15 @@ class PresetManager:
         except Exception:
             remove_swap_path(staging_dir)
             raise
+
+        if not enabled:
+            # Disabled presets keep their existing generated artifacts and
+            # provenance until removal. Updating only replaces the source and
+            # metadata while retaining enough ownership data for a later
+            # removal to clean up artifacts left on disk.
+            remove_swap_path(backup_dir)
+            remove_swap_path(staging_dir)
+            return new_manifest, diff
 
         primary_command_names = {
             item["identity"][0]
@@ -4597,7 +4626,6 @@ class PresetManager:
                 self._reconcile_composed_commands(
                     sorted(reconcile_command_names),
                     extra_agents=historical_agents,
-                    include_disabled_id=target_id if not enabled else None,
                 )
                 extra_skill_dirs: Dict[
                     Path, tuple[Optional[str], Set[str]]
@@ -4700,7 +4728,6 @@ class PresetManager:
                 self._reconcile_skills(
                     sorted(reconcile_command_names),
                     extra_skills_dirs=reconciled_skill_dirs or None,
-                    include_disabled_id=target_id if not enabled else None,
                 )
             def _preset_has_constitution_layer(
                 manifest: PresetManifest, preset_dir: Path
@@ -6063,7 +6090,10 @@ class PresetResolver:
     """
 
     def __init__(
-        self, project_root: Path, include_disabled_id: Optional[str] = None
+        self,
+        project_root: Path,
+        *,
+        preset_overrides: Optional[Dict[str, tuple[Path, Dict[str, Any]]]] = None,
     ):
         """Initialize preset resolver.
 
@@ -6075,8 +6105,12 @@ class PresetResolver:
         self.presets_dir = project_root / ".specify" / "presets"
         self.overrides_dir = self.templates_dir / "overrides"
         self.extensions_dir = project_root / ".specify" / "extensions"
-        self.include_disabled_id = include_disabled_id
+        self.preset_overrides = preset_overrides or {}
         self._manifest_cache: Dict[str, Optional["PresetManifest"]] = {}
+
+    def _preset_dir(self, pack_id: str) -> Path:
+        override = self.preset_overrides.get(pack_id)
+        return override[0] if override is not None else self.presets_dir / pack_id
 
     def _get_manifest(self, pack_dir: Path) -> Optional["PresetManifest"]:
         """Get a cached preset manifest, parsing it on first access."""
@@ -6098,12 +6132,30 @@ class PresetResolver:
 
     def _get_all_presets_by_priority(self) -> List[tuple[str, dict]]:
         registry = PresetRegistry(self.presets_dir)
+        if self.preset_overrides:
+            presets = {
+                pack_id: metadata
+                for pack_id, metadata in registry.list_by_priority(
+                    include_disabled=True
+                )
+            }
+            for pack_id, (_pack_dir, metadata) in self.preset_overrides.items():
+                presets[pack_id] = copy.deepcopy(metadata)
+            return sorted(
+                (
+                    (pack_id, metadata)
+                    for pack_id, metadata in presets.items()
+                    if metadata.get("enabled", True)
+                    and self._is_safe_registry_id(pack_id)
+                ),
+                key=lambda item: (
+                    normalize_priority(item[1].get("priority", 10)),
+                    item[0],
+                ),
+            )
         return [
             (pack_id, metadata)
-            for pack_id, metadata in registry.list_by_priority(
-                include_disabled=self.include_disabled_id is not None
-            )
-            if metadata.get("enabled", True) or pack_id == self.include_disabled_id
+            for pack_id, metadata in registry.list_by_priority()
             if self._is_safe_registry_id(pack_id)
         ]
 
@@ -6320,7 +6372,7 @@ class PresetResolver:
         # Priority 2: Installed presets (sorted by priority — lower number wins)
         if not skip_presets and self.presets_dir.exists():
             for pack_id, _metadata in self._get_all_presets_by_priority():
-                pack_dir = self.presets_dir / pack_id
+                pack_dir = self._preset_dir(pack_id)
                 # The preset manifest is authoritative: if it declares this
                 # template with an explicit ``file:``, resolve to that path —
                 # and do NOT fall back to convention when it's missing, to
@@ -6521,9 +6573,9 @@ class PresetResolver:
         if str(self.overrides_dir) in resolved_str:
             return {"path": resolved_str, "source": "project override"}
 
-        if str(self.presets_dir) in resolved_str and self.presets_dir.exists():
+        if self.presets_dir.exists() or self.preset_overrides:
             for pack_id, metadata in self._get_all_presets_by_priority():
-                pack_dir = self.presets_dir / pack_id
+                pack_dir = self._preset_dir(pack_id)
                 try:
                     resolved.relative_to(pack_dir)
                     version = metadata.get("version", "?")
@@ -6613,7 +6665,7 @@ class PresetResolver:
         # Priority 2: Installed presets (sorted by priority — lower number = higher precedence)
         if self.presets_dir.exists():
             for pack_id, metadata in self._get_all_presets_by_priority():
-                pack_dir = self.presets_dir / pack_id
+                pack_dir = self._preset_dir(pack_id)
                 # Read strategy and manifest file path from preset manifest
                 strategy = "replace"
                 manifest_has_strategy = False
