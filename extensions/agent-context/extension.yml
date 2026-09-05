@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: agent-context
   name: "Coding Agent Context"
-  version: "1.0.0"
+  version: "1.1.0"
   description: "Manages coding agent context/instruction files (e.g., CLAUDE.md, copilot-instructions.md) with project-specific plan references and configurable markers"
   author: spec-kit-core
   repository: https://github.com/github/spec-kit
