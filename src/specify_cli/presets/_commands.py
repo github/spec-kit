@@ -757,17 +757,23 @@ def preset_update(
                     bool(diff.get("_constitution_layer"))
                     and isinstance(sync_metadata, dict)
                     and sync_metadata.get("enabled", True)
-                    and constitution_path.exists()
-                    and _constitution_is_generated(
-                        project_root,
-                        constitution_path,
-                        PresetResolver(project_root),
+                    and (
+                        not constitution_path.exists()
+                        or _constitution_is_generated(
+                            project_root,
+                            constitution_path,
+                            PresetResolver(project_root),
+                        )
                     )
                 )
                 constitution_status = (
                     "constitution change planned"
                     if constitution_can_reconcile
-                    and (constitution_diff or priority is not None)
+                    and (
+                        not constitution_path.exists()
+                        or constitution_diff
+                        or effective_priority is not None
+                    )
                     else "constitution unchanged"
                 )
             else:

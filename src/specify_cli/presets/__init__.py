@@ -4221,8 +4221,7 @@ class PresetManager:
             != convention_constitution(source_dir)
         )
         diff["_constitution_layer"] = (
-            new_manifest.id == _CONSTITUTION_SYNC_PRESET_ID
-            or any(
+            any(
                 item.get("type") == "template"
                 and item.get("name") == "constitution-template"
                 for item in old_manifest.templates + new_manifest.templates
@@ -4271,7 +4270,7 @@ class PresetManager:
                     except pkg_version.InvalidVersion:
                         pass
                     else:
-                        if installed > catalogue and priority is None:
+                        if installed > catalogue:
                             raise PresetCompatibilityError(
                                 f"installed preset version {installed_version} is "
                                 f"newer than catalogue version {expected_version}"
@@ -4520,6 +4519,7 @@ class PresetManager:
                 registered_skills_before = self._infer_legacy_skill_provenance(
                     [name for name in raw_registered_skills_before if isinstance(name, str)],
                     target_id,
+                    active_agent or "",
                 )
             elif isinstance(raw_registered_skills_before, dict):
                 registered_skills_before = copy.deepcopy(raw_registered_skills_before)
@@ -4599,25 +4599,107 @@ class PresetManager:
                     extra_agents=historical_agents,
                     include_disabled_id=target_id if not enabled else None,
                 )
-                extra_skill_dirs = {}
+                extra_skill_dirs: Dict[
+                    Path, tuple[Optional[str], Set[str]]
+                ] = {}
+
+                def add_extra_skill_dir(
+                    agent: str, names: Set[str]
+                ) -> None:
+                    if not names:
+                        return
+                    skill_dir = self._safe_skills_dir_for_agent(agent)
+                    if skill_dir is None:
+                        return
+                    existing_agent, existing_names = extra_skill_dirs.get(
+                        skill_dir, (agent, set())
+                    )
+                    extra_skill_dirs[skill_dir] = (
+                        existing_agent,
+                        existing_names | names,
+                    )
+
                 if isinstance(registered_skills_before, dict):
                     for agent, names in registered_skills_before.items():
                         if agent == active_agent:
                             continue
                         if not isinstance(names, list):
                             continue
-                        skill_dir = self._resolve_agent_skills_dir(agent)
-                        extra_skill_dirs[skill_dir] = (
+                        add_extra_skill_dir(
                             agent,
-                            sorted(
+                            {
                                 name
                                 for name in names
-                                if isinstance(name, str)
-                            ),
+                                if self._is_safe_registry_skill_name(name)
+                            },
                         )
+
+                for other_id, other_meta in self.registry.list_by_priority(
+                    include_disabled=True
+                ):
+                    if other_id == target_id or not isinstance(other_meta, dict):
+                        continue
+                    raw_other_skills = other_meta.get("registered_skills", {})
+                    if isinstance(raw_other_skills, list):
+                        other_skills = self._infer_legacy_skill_provenance(
+                            [
+                                name
+                                for name in raw_other_skills
+                                if isinstance(name, str)
+                            ],
+                            other_id,
+                            active_agent or "",
+                        )
+                    elif isinstance(raw_other_skills, dict):
+                        other_skills = raw_other_skills
+                    else:
+                        continue
+                    for agent, names in other_skills.items():
+                        if not isinstance(agent, str) or not isinstance(names, list):
+                            continue
+                        add_extra_skill_dir(
+                            agent,
+                            {
+                                name
+                                for name in names
+                                if self._is_safe_registry_skill_name(name)
+                                and name in affected_skill_names
+                            },
+                        )
+
+                if extra_skill_dirs:
+                    active_skill_dir = self._get_skills_dir()
+                    if active_skill_dir is not None:
+                        active_tracked_names = {
+                            name
+                            for skill_map in (
+                                registered_skills_before,
+                                registered_skills,
+                            )
+                            if isinstance(skill_map, dict)
+                            and isinstance(active_agent, str)
+                            for name in skill_map.get(active_agent, [])
+                            if self._is_safe_registry_skill_name(name)
+                            and name in affected_skill_names
+                        }
+                        active_dir_agent, active_dir_names = (
+                            extra_skill_dirs.get(
+                                active_skill_dir,
+                                (active_agent, set()),
+                            )
+                        )
+                        extra_skill_dirs[active_skill_dir] = (
+                            active_dir_agent,
+                            active_dir_names | active_tracked_names,
+                        )
+
+                reconciled_skill_dirs = {
+                    skill_dir: (agent, sorted(names))
+                    for skill_dir, (agent, names) in extra_skill_dirs.items()
+                }
                 self._reconcile_skills(
                     sorted(reconcile_command_names),
-                    extra_skills_dirs=extra_skill_dirs or None,
+                    extra_skills_dirs=reconciled_skill_dirs or None,
                     include_disabled_id=target_id if not enabled else None,
                 )
             def _preset_has_constitution_layer(
