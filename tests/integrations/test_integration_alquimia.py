@@ -37,6 +37,99 @@ class TestAlquimiaAIIntegration:
         assert integration.config["requires_cli"] is True
         assert integration.multi_install_safe is True
 
+    def test_is_slash_skills_agent(self):
+        """Alquimia installs `.alquimia/skills/speckit-<name>/SKILL.md`, so the
+        invocation helper must report the hyphenated form when skills are on.
+
+        It was the only `SkillsIntegration` subclass absent from every set in
+        `_invocation_style`, so `is_slash_skills_agent` returned False and the
+        two callers that consult it — `HookExecutor._render_hook_invocation`
+        and `specify init`'s Next Steps panel — emitted the dotted
+        `/speckit.<name>` form Alquimia never registers.
+        """
+        from specify_cli._invocation_style import is_slash_skills_agent
+
+        assert is_slash_skills_agent("alquimia", True) is True
+        # Conditional, not always -- matching every other skills-only agent.
+        # This is NOT a claim that the dotted form is ever right for Alquimia:
+        # it never is. It is that the `False` argument is unreachable for a
+        # skills-only integration, because `ai_skills` is persisted straight
+        # from `is_skills_mode()`, which `SkillsIntegration` returns
+        # unconditionally. `test_ai_skills_is_always_persisted_for_alquimia`
+        # and `test_classified_like_its_skills_only_peers` pin both halves.
+        assert is_slash_skills_agent("alquimia", False) is False
+
+    def test_ai_skills_is_always_persisted_for_alquimia(self):
+        """The conditional resolves to True for every real Alquimia project.
+
+        Both writers of `ai_skills` key off `integration.is_skills_mode(...)`
+        (`commands/init.py` on init, `integrations/_helpers.py` on
+        install/use/upgrade), and `SkillsIntegration.is_skills_mode` returns
+        True unconditionally. So `is_ai_skills_enabled(opts)` is True for any
+        Alquimia project written by any supported path, and the conditional
+        classification behaves exactly like an always-slash one.
+        """
+        integration = get_integration("alquimia")
+        assert integration.is_skills_mode() is True
+        assert integration.is_skills_mode({}, project_root=None) is True
+
+    def test_classified_like_its_skills_only_peers(self):
+        """Alquimia must sit in the same set as the other skills-only agents.
+
+        Being a `SkillsIntegration` does not by itself imply always-slash:
+        `ALWAYS_SLASH_AGENTS` and `CONDITIONAL_SLASH_AGENTS` are *both* full of
+        `SkillsIntegration` subclasses. What the conditional set actually holds
+        is the agents whose skills mode is recorded in init options, which is
+        where Alquimia belongs. Moving it alone to the always set would make it
+        inconsistent with five identical peers for no behavioural gain.
+        """
+        from specify_cli._invocation_style import (
+            ALWAYS_SLASH_AGENTS,
+            CONDITIONAL_SLASH_AGENTS,
+        )
+
+        peers = {"rovodev", "agy", "hermes", "lingma", "vibe"}
+        assert peers <= CONDITIONAL_SLASH_AGENTS
+        assert "alquimia" in CONDITIONAL_SLASH_AGENTS
+        assert "alquimia" not in ALWAYS_SLASH_AGENTS
+
+    def test_never_renders_the_dotted_form_in_either_skills_state(self):
+        """No reachable path may emit `/speckit.<name>` for Alquimia.
+
+        The helper returning False is not the last word: the remaining consumer
+        (`_register_extension_skills`'s command-ref resolution) falls through to
+        `integration.build_command_invocation`, which `SkillsIntegration`
+        overrides to emit the hyphenated skill form. This pins that fallback so
+        the dotted form cannot reappear from that direction either.
+        """
+        from specify_cli._invocation_style import (
+            is_dollar_skills_agent,
+            is_slash_skills_agent,
+        )
+
+        integration = get_integration("alquimia")
+        for skills_enabled in (True, False):
+            if is_dollar_skills_agent("alquimia", skills_enabled):
+                rendered = "$speckit-git-commit"
+            elif is_slash_skills_agent("alquimia", skills_enabled):
+                rendered = "/speckit-git-commit"
+            else:
+                rendered = integration.build_command_invocation("speckit.git.commit")
+            assert rendered == "/speckit-git-commit", skills_enabled
+
+    def test_build_command_invocation_matches_the_invocation_helper(self):
+        """The integration's own renderer and the helper must agree.
+
+        `SkillsIntegration.build_command_invocation` already returned
+        `/speckit-plan`; only the helper disagreed, which is why the two
+        outputs diverged for the same on-disk layout.
+        """
+        from specify_cli._invocation_style import is_slash_skills_agent
+
+        integration = get_integration("alquimia")
+        assert integration.build_command_invocation("plan") == "/speckit-plan"
+        assert is_slash_skills_agent("alquimia", True) is True
+
     def test_build_exec_args_uses_headless_prompt_flag(self):
         """Workflow dispatch relies on the inherited
         ``SkillsIntegration.build_exec_args()`` — pin its argv shape so a
