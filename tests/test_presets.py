@@ -11757,6 +11757,109 @@ class TestPresetEnableDisable:
             codex_skills / "speckit-specify" / "SKILL.md"
         ).read_text(encoding="utf-8")
 
+    def test_enable_reconciles_stale_skill_for_namespaced_command(
+        self, project_dir, temp_dir
+    ):
+        """A stale skill left over from a disabled update for a namespaced
+        command (e.g. ``speckit.git.feature``) must be reconciled back to
+        the surviving lower-priority preset's content on enable (#4441).
+
+        ``speckit.git.feature`` (a 3-segment, extension-style namespaced
+        command per ``presets/scaffold/preset.yml``) encodes to the skill
+        directory ``speckit-git-feature``. A review flagged that recovering
+        the command name from that directory name by naive reversal (every
+        hyphen after the first segment treated as literal) collides with
+        ``speckit.git-feature`` and would target the wrong command; the
+        forward-matching lookup in ``preset_enable`` avoids that ambiguity
+        by construction rather than relying on an invertible encoding. This
+        test locks in correct end-to-end behaviour for the namespaced case,
+        including when the agent whose skill goes stale (copilot, in
+        skills-opt-in mode) is a historical/inactive one that
+        ``register_enabled_presets_for_agent`` doesn't otherwise refresh.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        self_ = TestPresetSkills()
+        self_._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        copilot_skills = project_dir / ".github" / "skills"
+
+        manager = PresetManager(project_dir)
+
+        lo_dir = self_._create_command_preset(
+            temp_dir,
+            "lo-priority-preset",
+            "speckit.git.feature",
+            "Lo git feature",
+            "Lo content",
+        )
+        manager.install_from_directory(lo_dir, "0.1.5", priority=10)
+
+        hi_dir = self_._create_command_preset(
+            temp_dir,
+            "hi-priority-preset",
+            "speckit.git.feature",
+            "Hi git feature",
+            "Hi content",
+        )
+        manager.install_from_directory(hi_dir, "0.1.5", priority=1)
+        assert "Hi content" in (
+            copilot_skills / "speckit-git-feature" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        hi_metadata = manager.registry.get("hi-priority-preset")
+        assert not hi_metadata.get("registered_commands", {}).get("copilot"), (
+            "sanity: copilot in skills-opt-in mode must not record this "
+            "override in registered_commands, otherwise the lossy-inverse "
+            "bug this test targets can't be reached"
+        )
+
+        # Switch the active agent to claude — copilot becomes historical
+        # (inactive) and register_enabled_presets_for_agent will no longer
+        # touch it, isolating its recovery to the stale-skill fallback.
+        self_._write_init_options(project_dir, ai="claude", ai_skills=True)
+        manager.register_enabled_presets_for_agent("claude")
+
+        manager.registry.update("hi-priority-preset", {"enabled": False})
+
+        # Update the disabled hi-priority preset so it no longer provides
+        # speckit.git.feature at all -- its skill override becomes stale.
+        hi_dir_v2 = self_._create_command_preset(
+            temp_dir,
+            "hi-priority-preset-v2",
+            "speckit.other",
+            "Unrelated",
+            "Hi other content",
+        )
+        data = yaml.safe_load((hi_dir_v2 / "preset.yml").read_text())
+        data["preset"]["id"] = "hi-priority-preset"
+        data["preset"]["version"] = "2.0.0"
+        (hi_dir_v2 / "preset.yml").write_text(yaml.safe_dump(data))
+        manager.update_from_directory(
+            hi_dir_v2, "0.1.5", pack_id="hi-priority-preset"
+        )
+
+        # Still disabled: the stale override remains untouched on disk.
+        assert "Hi content" in (
+            copilot_skills / "speckit-git-feature" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "enable", "hi-priority-preset"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Lo content" in (
+            copilot_skills / "speckit-git-feature" / "SKILL.md"
+        ).read_text(encoding="utf-8"), (
+            "the namespaced command's stale skill must be reconciled back "
+            "to the surviving lo-priority preset's override under its "
+            "correct command name, not left on stale/core content because "
+            "of a lossy skill-name-to-command-name reversal"
+        )
+
     def test_disable_corrupted_registry_entry(self, project_dir, pack_dir):
         """Test disable fails gracefully for corrupted registry entry."""
         from typer.testing import CliRunner
@@ -16899,6 +17002,84 @@ class TestPresetUpdate:
         assert result.exit_code == 1, result.output
         assert "not re-resolvable" in result.output
         assert "--from/--dev" in result.output
+
+    def test_update_removing_command_reconciles_surviving_preset_for_native_skill_agent(
+        self, project_dir, temp_dir
+    ):
+        """A command dropped by an update must reconcile back to a
+        surviving lower-priority preset's content for native skill-only
+        agents (e.g. claude), never leaving the SKILL.md directory deleted.
+
+        Guards the exact scenario a review flagged as a possible ordering
+        bug (stale commands unregistered before stale skills, for agents
+        where "command" and "skill" track the same physical file). It
+        already passes on unmodified code because `_reconcile_skills` runs
+        unconditionally afterwards for every affected command name,
+        regenerating content regardless of unregister ordering -- this
+        test locks that guarantee in place.
+        """
+        from specify_cli import save_init_options
+
+        save_init_options(
+            project_dir, {"ai": "claude", "ai_skills": True, "script": "sh"}
+        )
+        lo_source = self._multi_command_preset(
+            temp_dir,
+            "lo-preset",
+            {"speckit.plan": "lo-preset plan body"},
+            version="1.0.0",
+        )
+        hi_source = self._multi_command_preset(
+            temp_dir,
+            "hi-preset",
+            {
+                "speckit.specify": "hi-preset specify body",
+                "speckit.plan": "hi-preset plan body",
+            },
+            version="1.0.0",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(lo_source, "0.1.0", priority=20)
+        manager.install_from_directory(hi_source, "0.1.0", priority=10)
+
+        plan_skill = (
+            project_dir / ".claude" / "skills" / "speckit-plan" / "SKILL.md"
+        )
+        specify_skill = (
+            project_dir / ".claude" / "skills" / "speckit-specify" / "SKILL.md"
+        )
+        assert "hi-preset plan body" in plan_skill.read_text()
+        assert "hi-preset specify body" in specify_skill.read_text()
+
+        # Update hi-preset to a version that drops "speckit.plan" entirely.
+        updated_hi_source = self._multi_command_preset(
+            temp_dir / "updated",
+            "hi-preset",
+            {"speckit.specify": "hi-preset specify body v2"},
+            version="2.0.0",
+        )
+        manager.update_from_directory(
+            updated_hi_source, "0.1.0", pack_id="hi-preset"
+        )
+
+        assert specify_skill.is_file()
+        assert "hi-preset specify body v2" in specify_skill.read_text()
+
+        # The dropped command's skill must still exist and now show the
+        # surviving lower-priority preset's content, not be deleted.
+        assert plan_skill.is_file(), (
+            "speckit-plan SKILL.md was deleted instead of being reconciled "
+            "to the surviving lower-priority preset"
+        )
+        assert "lo-preset plan body" in plan_skill.read_text()
+
+        hi_metadata = PresetManager(project_dir).registry.get("hi-preset")
+        assert "speckit.plan" not in hi_metadata["registered_commands"].get(
+            "claude", []
+        )
+        assert "speckit-plan" not in hi_metadata["registered_skills"].get(
+            "claude", []
+        )
 
 
 class TestPresetUpdateConcurrency:

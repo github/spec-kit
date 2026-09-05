@@ -2940,22 +2940,6 @@ class PresetManager:
         return modern_skill_name, legacy_skill_name
 
     @staticmethod
-    def _command_name_for_skill_name(skill_name: str) -> Optional[str]:
-        """Return the command name a skill directory name derives from.
-
-        Inverse of `_skill_names_for_command`: "speckit-specify" and
-        "speckit.specify" both map back to "speckit.specify". Returns None
-        for names that don't follow the skill-naming convention.
-        """
-        if skill_name.startswith("speckit-"):
-            short_name = skill_name[len("speckit-"):]
-        elif skill_name.startswith("speckit."):
-            short_name = skill_name[len("speckit."):]
-        else:
-            return None
-        return f"speckit.{short_name}"
-
-    @staticmethod
     def _skill_title_from_command(cmd_name: str) -> str:
         """Return a human-friendly title for a skill command name."""
         title_name = cmd_name

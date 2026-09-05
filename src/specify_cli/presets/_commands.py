@@ -1421,17 +1421,30 @@ def preset_enable(
         # `reconcile_command_names` above (derived only from
         # `stale_commands`) can be empty even though `affected_skill_dirs`
         # is not — and `_reconcile_skills` no-ops on an empty command-name
-        # list. Recover a command name for each stale skill via
-        # `_command_name_for_skill_name` (the inverse of
-        # `_skill_names_for_command`), so the surviving-lower-priority-preset
-        # lookup below still runs for skills-only reconciliation.
-        stale_skill_command_names = {
-            command_name
-            for names in stale_skills.values()
-            for skill_name in names
-            for command_name in [manager._command_name_for_skill_name(skill_name)]
-            if command_name is not None
-        }
+        # list. Recover the command name for each stale skill by matching
+        # forward via `_skill_names_for_command` against every command name
+        # this preset is known to have used (its current manifest plus
+        # everything ever recorded in `registered_commands`), rather than
+        # reversing the skill-name encoding: that reverse mapping is lossy
+        # for namespaced commands (e.g. "speckit.git.feature" ->
+        # "speckit-git-feature" collides with "speckit.git-feature" on the
+        # way back), so the surviving-lower-priority-preset lookup below
+        # could target the wrong command entirely.
+        all_known_command_names = set(current_command_names)
+        if isinstance(registered_commands, dict):
+            for names in registered_commands.values():
+                if isinstance(names, list):
+                    all_known_command_names.update(
+                        name for name in names if isinstance(name, str)
+                    )
+        stale_skill_command_names = set()
+        for names in stale_skills.values():
+            for skill_name in names:
+                for command_name in all_known_command_names:
+                    modern, legacy = manager._skill_names_for_command(command_name)
+                    if skill_name in (modern, legacy):
+                        stale_skill_command_names.add(command_name)
+                        break
         skill_reconcile_command_names = sorted(
             set(reconcile_command_names) | stale_skill_command_names
         )
