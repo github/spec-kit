@@ -1422,14 +1422,26 @@ def preset_enable(
         # `stale_commands`) can be empty even though `affected_skill_dirs`
         # is not — and `_reconcile_skills` no-ops on an empty command-name
         # list. Recover the command name for each stale skill by matching
-        # forward via `_skill_names_for_command` against every command name
-        # this preset is known to have used (its current manifest plus
-        # everything ever recorded in `registered_commands`), rather than
-        # reversing the skill-name encoding: that reverse mapping is lossy
-        # for namespaced commands (e.g. "speckit.git.feature" ->
-        # "speckit-git-feature" collides with "speckit.git-feature" on the
-        # way back), so the surviving-lower-priority-preset lookup below
-        # could target the wrong command entirely.
+        # forward via `_skill_names_for_command`, rather than reversing the
+        # skill-name encoding: that reverse mapping is lossy for namespaced
+        # commands (e.g. "speckit.git.feature" -> "speckit-git-feature"
+        # collides with "speckit.git-feature" on the way back), so the
+        # surviving-lower-priority-preset lookup below could target the
+        # wrong command entirely.
+        #
+        # The candidate set can't be limited to *this* preset's own current
+        # manifest plus its own `registered_commands`: a command-backed
+        # integration running in explicit skills-opt-in mode (e.g. Copilot
+        # with `ai_skills` on) never gets an entry in `registered_commands`
+        # at all (see `_register_commands`'s ai_skills guard), and the
+        # command itself is, by definition, no longer present in this
+        # preset's *current* (post-update) manifest — it's the very thing
+        # that went stale. In that case this preset alone can never supply
+        # the name. The preset that's actually meant to win the skill back
+        # (a surviving lower-priority provider) still lists the command in
+        # its own current manifest, so the candidate set is gathered from
+        # every installed preset's manifest and registered_commands, not
+        # just this one's.
         all_known_command_names = set(current_command_names)
         if isinstance(registered_commands, dict):
             for names in registered_commands.values():
@@ -1437,6 +1449,39 @@ def preset_enable(
                     all_known_command_names.update(
                         name for name in names if isinstance(name, str)
                     )
+        if stale_skills:
+            for other_pack_id, other_metadata in manager.registry.list().items():
+                if other_pack_id == preset_id or not isinstance(other_metadata, dict):
+                    continue
+                other_registered_commands = other_metadata.get(
+                    "registered_commands", {}
+                )
+                if isinstance(other_registered_commands, dict):
+                    for names in other_registered_commands.values():
+                        if isinstance(names, list):
+                            all_known_command_names.update(
+                                name for name in names if isinstance(name, str)
+                            )
+                other_pack_dir = manager.presets_dir / other_pack_id
+                other_manifest_path = other_pack_dir / "preset.yml"
+                if other_manifest_path.exists():
+                    try:
+                        other_manifest = PresetManifest(other_manifest_path)
+                    except PresetValidationError:
+                        continue
+                    for template in other_manifest.templates:
+                        if template.get("type") != "command":
+                            continue
+                        for name in (
+                            [template.get("name")]
+                            + [
+                                alias
+                                for alias in template.get("aliases", [])
+                                if isinstance(alias, str)
+                            ]
+                        ):
+                            if isinstance(name, str):
+                                all_known_command_names.add(name)
         stale_skill_command_names = set()
         for names in stale_skills.values():
             for skill_name in names:

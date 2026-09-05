@@ -11762,20 +11762,36 @@ class TestPresetEnableDisable:
     ):
         """A stale skill left over from a disabled update for a namespaced
         command (e.g. ``speckit.git.feature``) must be reconciled back to
-        the surviving lower-priority preset's content on enable (#4441).
+        the surviving lower-priority preset's content on enable (#4441),
+        even when the preset whose command went stale never had a
+        ``registered_commands`` entry for it at all.
 
         ``speckit.git.feature`` (a 3-segment, extension-style namespaced
         command per ``presets/scaffold/preset.yml``) encodes to the skill
-        directory ``speckit-git-feature``. A review flagged that recovering
-        the command name from that directory name by naive reversal (every
-        hyphen after the first segment treated as literal) collides with
-        ``speckit.git-feature`` and would target the wrong command; the
-        forward-matching lookup in ``preset_enable`` avoids that ambiguity
-        by construction rather than relying on an invertible encoding. This
-        test locks in correct end-to-end behaviour for the namespaced case,
-        including when the agent whose skill goes stale (copilot, in
-        skills-opt-in mode) is a historical/inactive one that
-        ``register_enabled_presets_for_agent`` doesn't otherwise refresh.
+        directory ``speckit-git-feature``. Recovering the command name from
+        that directory name by naive reversal (every hyphen after the first
+        segment treated as literal) collides with ``speckit.git-feature``
+        and would target the wrong command; forward-matching avoids that
+        ambiguity by construction.
+
+        Copilot starts active (skills-opt-in mode), so
+        ``_register_commands``'s guard never populates
+        ``registered_commands`` for it there. The active agent is then
+        switched to ``amp`` -- another command-backed, skills-opt-in
+        integration -- making copilot *historical*. This matters:
+        ``register_enabled_presets_for_agent`` only rescaffolds the
+        newly-active agent's own directory, so if copilot stayed active it
+        would be fully re-derived (correctly) by that call regardless of
+        whether the stale-skill candidate search below works at all,
+        masking the bug. With copilot historical and amp active instead,
+        neither agent's ``registered_commands`` is ever populated (amp is
+        also skills-opt-in), and the disabled update also drops the command
+        from hi-priority-preset's own current manifest. So neither
+        hi-priority-preset's manifest nor its own ``registered_commands``
+        can supply the name for copilot's stale skill -- the only source is
+        the surviving lo-priority preset's own current manifest, which the
+        candidate search must reach across the whole installed preset stack
+        (not just the preset whose skill went stale) to find.
         """
         from typer.testing import CliRunner
         from unittest.mock import patch
@@ -11811,20 +11827,26 @@ class TestPresetEnableDisable:
         hi_metadata = manager.registry.get("hi-priority-preset")
         assert not hi_metadata.get("registered_commands", {}).get("copilot"), (
             "sanity: copilot in skills-opt-in mode must not record this "
-            "override in registered_commands, otherwise the lossy-inverse "
-            "bug this test targets can't be reached"
+            "override in registered_commands, otherwise the candidate "
+            "search this test targets can't be reached"
         )
 
-        # Switch the active agent to claude — copilot becomes historical
-        # (inactive) and register_enabled_presets_for_agent will no longer
-        # touch it, isolating its recovery to the stale-skill fallback.
-        self_._write_init_options(project_dir, ai="claude", ai_skills=True)
-        manager.register_enabled_presets_for_agent("claude")
+        # Switch the active agent to amp (also command-backed,
+        # skills-opt-in) so copilot becomes historical -- see the docstring
+        # for why this is required to actually reach the bug.
+        self_._write_init_options(project_dir, ai="amp", ai_skills=True)
+        manager.register_enabled_presets_for_agent("amp")
+        hi_metadata = manager.registry.get("hi-priority-preset")
+        assert not hi_metadata.get("registered_commands", {}).get("copilot"), (
+            "sanity: switching active agent must not retroactively "
+            "populate registered_commands for the now-historical copilot"
+        )
 
         manager.registry.update("hi-priority-preset", {"enabled": False})
 
         # Update the disabled hi-priority preset so it no longer provides
-        # speckit.git.feature at all -- its skill override becomes stale.
+        # speckit.git.feature at all -- its skill override becomes stale,
+        # and the command is now also absent from its own current manifest.
         hi_dir_v2 = self_._create_command_preset(
             temp_dir,
             "hi-priority-preset-v2",
