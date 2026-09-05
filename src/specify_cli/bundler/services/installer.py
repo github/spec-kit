@@ -11,6 +11,7 @@ write (FR-018, SC partial-failure-stop).
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -250,8 +251,10 @@ def _rollback(
     installer: PrimitiveInstaller,
     done: list[ComponentRef],
 ) -> None:
+    logger = logging.getLogger(__name__)
     for component in reversed(done):
         try:
             installer.remove(project_root, component)
         except Exception:  # noqa: BLE001 - best-effort rollback
+            logger.debug("rollback failed for %s", component, exc_info=True)
             continue
