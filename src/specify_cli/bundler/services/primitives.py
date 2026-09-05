@@ -430,8 +430,30 @@ class _StepKindManager:
             except BundlerError:
                 if backup_dir.exists():
                     shutil.copytree(backup_dir, step_dir, dirs_exist_ok=True)
-                if metadata is not None and not self._registry.is_installed(component.id):
-                    self._registry.add(component.id, metadata)
+                # Re-read the registry: ``StepRegistry`` snapshots the file once
+                # in ``__init__`` (``self.data = self._load()``) and
+                # ``is_installed`` only consults that snapshot. ``self.remove()``
+                # above has already deleted the entry from disk, but
+                # ``self._registry``'s snapshot still contains it -- so the
+                # guard was always False here and the restore never ran, in
+                # exactly the failure case it was written for. The step package
+                # came back but stayed unregistered: ``workflow step list``
+                # stopped showing it and ``workflow step add`` then refused with
+                # "Step directory already exists".
+                from ...workflows.catalog import StepRegistry
+
+                current = StepRegistry(self._root)
+                if metadata is not None and not current.is_installed(component.id):
+                    # Restore the saved entry verbatim rather than via ``add()``,
+                    # which would rewrite the metadata it is meant to roll back:
+                    # this registry is freshly constructed *after*
+                    # ``self.remove()`` deleted the entry, so ``add()`` sees no
+                    # existing record and stamps ``installed_at`` with
+                    # ``datetime.now()`` (it also overwrites ``updated_at``
+                    # unconditionally). ``workflow_step_remove`` bypasses
+                    # ``add()`` for exactly this reason.
+                    current.data["steps"][component.id] = metadata
+                    current.save()
                 raise
         finally:
             shutil.rmtree(backup_dir.parent, ignore_errors=True)
