@@ -133,6 +133,23 @@ def _download_preset_archive(url: str, error_type: type[Exception]) -> Path:
     return _write_preset_archive(data, final_url, content_type, error_type)
 
 
+def _bundled_update_source(preset_id: str):
+    """Locate a bundled preset and return its parsed local version."""
+    from packaging import version as pkg_version
+
+    from .. import _locate_bundled_preset
+    from . import PresetManifest, PresetValidationError
+
+    bundled_dir = _locate_bundled_preset(preset_id)
+    if bundled_dir is None:
+        return None, None
+    try:
+        manifest = PresetManifest(bundled_dir / "preset.yml")
+        return bundled_dir, pkg_version.Version(manifest.version)
+    except (PresetValidationError, pkg_version.InvalidVersion, OSError):
+        return None, None
+
+
 def _cleanup_archive(path: Path | None) -> None:
     if path is None:
         return
@@ -483,7 +500,6 @@ def preset_update(
     from packaging import version as pkg_version
 
     from .. import (
-        _locate_bundled_preset,
         _require_specify_project,
         get_speckit_version,
     )
@@ -565,12 +581,19 @@ def preset_update(
                     outcomes.append("skipped")
                     continue
                 if pack_info.get("bundled") and not pack_info.get("download_url"):
-                    source_path = _locate_bundled_preset(item_id)
-                    if source_path is None:
-                        raise PresetError(
-                            f"Preset '{item_id}' is bundled with spec-kit but "
-                            "could not be found in the installed package"
+                    source_path, bundled_version = _bundled_update_source(item_id)
+                    if source_path is None or bundled_version < catalog_version:
+                        local_desc = (
+                            f"only ships v{bundled_version}"
+                            if source_path is not None
+                            else "does not ship a local copy"
                         )
+                        raise PresetError(
+                            f"preset v{catalog_version} is available, but this "
+                            f"spec-kit release {local_desc}; upgrade spec-kit, "
+                            "then rerun 'specify preset update'"
+                        )
+                    pack_info = {**pack_info, "version": str(bundled_version)}
                     manager.update_from_directory(
                         source_path,
                         speckit_version,
@@ -706,9 +729,23 @@ def preset_update(
                     outcomes.append("skipped")
                     continue
                 if pack_info.get("bundled") and not pack_info.get("download_url"):
-                    source_path = catalog_sources.get(item_id) or _locate_bundled_preset(
-                        item_id
-                    )
+                    bundled_source = catalog_sources.get(item_id)
+                    if bundled_source is not None:
+                        source_path = bundled_source
+                    else:
+                        source_path, bundled_version = _bundled_update_source(item_id)
+                        if source_path is None or bundled_version < catalog_version:
+                            local_desc = (
+                                f"only ships v{bundled_version}"
+                                if source_path is not None
+                                else "does not ship a local copy"
+                            )
+                            raise PresetError(
+                                f"preset v{catalog_version} is available, but this "
+                                f"spec-kit release {local_desc}; upgrade spec-kit, "
+                                "then rerun 'specify preset update'"
+                            )
+                        pack_info = {**pack_info, "version": str(bundled_version)}
                     if source_path is None:
                         raise PresetError(
                             f"Preset '{item_id}' is bundled with spec-kit but "
@@ -1150,7 +1187,8 @@ def preset_enable(
 ):
     """Enable a disabled preset."""
     from .. import _require_specify_project
-    from . import PresetManager
+    from .._init_options import resolve_active_agent_for_registration
+    from . import PresetManager, PresetManifest
 
     project_root = _require_specify_project()
     manager = PresetManager(project_root)
@@ -1172,6 +1210,92 @@ def preset_enable(
 
     # Enable the preset
     manager.registry.update(preset_id, {"enabled": True})
+    pack_dir = manager.presets_dir / preset_id
+    manifest = PresetManifest(pack_dir / "preset.yml")
+    current_command_names = {
+        name
+        for template in manifest.templates
+        if template.get("type") == "command"
+        for name in (
+            [template.get("name")]
+            + [
+                alias
+                for alias in template.get("aliases", [])
+                if isinstance(alias, str)
+            ]
+        )
+        if isinstance(name, str)
+    }
+    stale_commands = {}
+    registered_commands = metadata.get("registered_commands", {})
+    if isinstance(registered_commands, dict):
+        for agent, names in registered_commands.items():
+            if not isinstance(agent, str) or not isinstance(names, list):
+                continue
+            stale_names = [
+                name
+                for name in names
+                if isinstance(name, str) and name not in current_command_names
+            ]
+            if stale_names:
+                stale_commands[agent] = stale_names
+        if stale_commands:
+            manager._unregister_commands(stale_commands)
+            updated_commands = {}
+            for agent, names in registered_commands.items():
+                if not isinstance(agent, str) or not isinstance(names, list):
+                    continue
+                retained = [
+                    name
+                    for name in names
+                    if isinstance(name, str)
+                    and name not in stale_commands.get(agent, [])
+                ]
+                if retained:
+                    updated_commands[agent] = retained
+            manager.registry.update(preset_id, {"registered_commands": updated_commands})
+    current_skill_names = {
+        skill_name
+        for command_name in current_command_names
+        for skill_name in manager._skill_names_for_command(command_name)
+    }
+    raw_registered_skills = metadata.get("registered_skills", {})
+    registered_skills = manager._normalize_registered_skills(raw_registered_skills)
+    stale_skills = {}
+    for agent, names in registered_skills.items():
+        if not isinstance(agent, str) or not isinstance(names, list):
+            continue
+        stale_names = [
+            name
+            for name in names
+            if isinstance(name, str) and name not in current_skill_names
+        ]
+        if stale_names:
+            stale_skills[agent] = stale_names
+    if stale_skills:
+        manager._unregister_skills(
+            stale_skills,
+            pack_dir,
+            restore_from_bundled_core=True,
+        )
+        updated_skills = {}
+        for agent, names in registered_skills.items():
+            retained = [
+                name for name in names if name not in stale_skills.get(agent, [])
+            ]
+            if retained:
+                updated_skills[agent] = retained
+        manager.registry.update(preset_id, {"registered_skills": updated_skills})
+
+    active_agent = resolve_active_agent_for_registration(project_root)
+    if isinstance(active_agent, str):
+        manager.register_enabled_presets_for_agent(active_agent)
+    if stale_commands:
+        manager._reconcile_composed_commands(
+            sorted({name for names in stale_commands.values() for name in names}),
+            extra_agents=set(stale_commands),
+        )
+
     manager.reconcile_constitution(
         f"Failed to reconcile constitution after enabling preset {preset_id}"
     )

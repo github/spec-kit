@@ -14750,6 +14750,40 @@ class TestPresetUpdate:
         )
         return preset_dir
 
+    def _multi_command_preset(self, temp_dir, preset_id, commands, version="1.0.0"):
+        preset_dir = temp_dir / preset_id
+        (preset_dir / "commands").mkdir(parents=True)
+        templates = []
+        for command_name, body in commands.items():
+            file_name = f"{command_name}.md"
+            (preset_dir / "commands" / file_name).write_text(
+                "---\ndescription: Test command\n---\n\n"
+                f"{body}\n"
+            )
+            templates.append(
+                {
+                    "type": "command",
+                    "name": command_name,
+                    "file": f"commands/{file_name}",
+                }
+            )
+        (preset_dir / "preset.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": preset_id,
+                        "name": preset_id,
+                        "version": version,
+                        "description": "Test",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {"templates": templates},
+                }
+            )
+        )
+        return preset_dir
+
     def _updated_command_source(self, preset_dir, version, body):
         source = preset_dir.parent / f"updated-{preset_dir.name}"
         shutil.copytree(preset_dir, source)
@@ -14999,6 +15033,134 @@ class TestPresetUpdate:
         assert "Removed command body" not in command_file.read_text(
             encoding="utf-8"
         )
+
+    def test_enable_after_disabled_update_refreshes_generated_commands(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app, save_init_options
+
+        save_init_options(
+            project_dir, {"ai": "qwen", "ai_skills": False, "script": "sh"}
+        )
+        (project_dir / ".qwen" / "commands").mkdir(parents=True)
+        source_v1 = self._multi_command_preset(
+            temp_dir,
+            "enable-refresh-preset",
+            {
+                "speckit.specify": "Specify v1",
+                "speckit.removed": "Removed v1",
+            },
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(source_v1, "0.1.0")
+        manager.registry.update("enable-refresh-preset", {"enabled": False})
+
+        source_v2 = self._multi_command_preset(
+            temp_dir,
+            "enable-refresh-preset-v2",
+            {
+                "speckit.specify": "Specify v2",
+                "speckit.added": "Added v2",
+            },
+            version="2.0.0",
+        )
+        data = yaml.safe_load((source_v2 / "preset.yml").read_text())
+        data["preset"]["id"] = "enable-refresh-preset"
+        (source_v2 / "preset.yml").write_text(yaml.safe_dump(data))
+
+        manager.update_from_directory(
+            source_v2, "0.1.0", pack_id="enable-refresh-preset"
+        )
+
+        commands_dir = project_dir / ".qwen" / "commands"
+        assert "Specify v1" in (
+            commands_dir / "speckit.specify.md"
+        ).read_text(encoding="utf-8")
+        assert (commands_dir / "speckit.removed.md").exists()
+        assert not (commands_dir / "speckit.added.md").exists()
+
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        result = CliRunner().invoke(app, ["preset", "enable", "enable-refresh-preset"])
+
+        assert result.exit_code == 0, result.output
+        assert "Specify v2" in (
+            commands_dir / "speckit.specify.md"
+        ).read_text(encoding="utf-8")
+        assert "Added v2" in (
+            commands_dir / "speckit.added.md"
+        ).read_text(encoding="utf-8")
+        assert not (commands_dir / "speckit.removed.md").exists()
+        registered = PresetManager(project_dir).registry.get(
+            "enable-refresh-preset"
+        )["registered_commands"]["qwen"]
+        assert "speckit.added" in registered
+        assert "speckit.removed" not in registered
+
+    def test_enable_after_disabled_update_refreshes_generated_skills(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app, save_init_options
+
+        save_init_options(
+            project_dir, {"ai": "claude", "ai_skills": True, "script": "sh"}
+        )
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+        source_v1 = self._multi_command_preset(
+            temp_dir,
+            "enable-skill-refresh-preset",
+            {
+                "speckit.specify": "Specify skill v1",
+                "speckit.removed": "Removed skill v1",
+            },
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(source_v1, "0.1.0")
+        manager.registry.update("enable-skill-refresh-preset", {"enabled": False})
+
+        source_v2 = self._multi_command_preset(
+            temp_dir,
+            "enable-skill-refresh-preset-v2",
+            {
+                "speckit.specify": "Specify skill v2",
+                "speckit.added": "Added skill v2",
+            },
+            version="2.0.0",
+        )
+        data = yaml.safe_load((source_v2 / "preset.yml").read_text())
+        data["preset"]["id"] = "enable-skill-refresh-preset"
+        (source_v2 / "preset.yml").write_text(yaml.safe_dump(data))
+
+        manager.update_from_directory(
+            source_v2, "0.1.0", pack_id="enable-skill-refresh-preset"
+        )
+
+        assert "Specify skill v1" in (
+            skills_dir / "speckit-specify" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        assert (skills_dir / "speckit-removed" / "SKILL.md").exists()
+        assert not (skills_dir / "speckit-added" / "SKILL.md").exists()
+
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        result = CliRunner().invoke(
+            app, ["preset", "enable", "enable-skill-refresh-preset"]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Specify skill v2" in (
+            skills_dir / "speckit-specify" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        assert "Added skill v2" in (
+            skills_dir / "speckit-added" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        assert not (skills_dir / "speckit-removed").exists()
+        registered = PresetManager(project_dir).registry.get(
+            "enable-skill-refresh-preset"
+        )["registered_skills"]["claude"]
+        assert "speckit-added" in registered
+        assert "speckit-removed" not in registered
 
     def test_dev_update_from_project_root_does_not_copy_staging_into_itself(
         self, project_dir, temp_dir
@@ -16249,6 +16411,50 @@ class TestPresetUpdate:
         metadata = PresetManager(project_dir).registry.get("test-pack")
         assert metadata["version"] == "5.0.0"
         assert metadata["priority"] == 7
+
+    def test_cli_bundled_update_uses_local_bundled_version_when_newer(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        local_source = self._updated_source(pack_dir, version="3.0.0")
+        self._bulk_cli_env(
+            project_dir,
+            monkeypatch,
+            {"test-pack": {"version": "2.0.0", "bundled": True}},
+            {"test-pack": local_source},
+        )
+
+        result = CliRunner().invoke(app, ["preset", "update", "test-pack"])
+
+        assert result.exit_code == 0, result.output
+        assert "updated to v3.0.0" in result.output
+        assert PresetManager(project_dir).registry.get("test-pack")["version"] == "3.0.0"
+
+    def test_cli_bundled_update_blocks_when_local_bundled_copy_lags(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        local_source = self._updated_source(pack_dir, version="1.5.0")
+        self._bulk_cli_env(
+            project_dir,
+            monkeypatch,
+            {"test-pack": {"version": "2.0.0", "bundled": True}},
+            {"test-pack": local_source},
+        )
+
+        result = CliRunner().invoke(app, ["preset", "update", "test-pack"])
+
+        assert result.exit_code == 1, result.output
+        assert "upgrade spec-kit" in result.output
+        assert PresetManager(project_dir).registry.get("test-pack")["version"] == "1.0.0"
 
     def test_cli_bulk_unresolvable_source_reports_clearly(
         self, project_dir, pack_dir, monkeypatch
