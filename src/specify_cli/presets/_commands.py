@@ -1226,135 +1226,236 @@ def preset_enable(
         )
         raise typer.Exit(1)
 
-    # Enable the preset
+    # Enable the preset. Snapshot the pre-enable registry entry first: if
+    # anything below raises, the registry is restored to this snapshot so a
+    # failed enable never leaves the preset marked enabled with only
+    # partially refreshed artifacts (fail-closed, matching the manifest
+    # validation above). Filesystem writes already performed before the
+    # failure are not unwound — the registry itself is what CLI/tests treat
+    # as the source of truth for enabled/disabled state.
+    registry_before = copy.deepcopy(metadata)
     manager.registry.update(preset_id, {"enabled": True})
-    resolved_agent = resolve_active_agent_for_registration(project_root)
-    fallback_agent = resolved_agent if isinstance(resolved_agent, str) else ""
-    current_command_names = {
-        name
-        for template in manifest.templates
-        if template.get("type") == "command"
-        for name in (
-            [template.get("name")]
-            + [
-                alias
-                for alias in template.get("aliases", [])
-                if isinstance(alias, str)
-            ]
-        )
-        if isinstance(name, str)
-    }
-    stale_commands = {}
-    registered_commands = metadata.get("registered_commands", {})
-    if isinstance(registered_commands, dict):
-        for agent, names in registered_commands.items():
+    try:
+        resolved_agent = resolve_active_agent_for_registration(project_root)
+        fallback_agent = resolved_agent if isinstance(resolved_agent, str) else ""
+        current_command_names = {
+            name
+            for template in manifest.templates
+            if template.get("type") == "command"
+            for name in (
+                [template.get("name")]
+                + [
+                    alias
+                    for alias in template.get("aliases", [])
+                    if isinstance(alias, str)
+                ]
+            )
+            if isinstance(name, str)
+        }
+        current_skill_names = {
+            skill_name
+            for command_name in current_command_names
+            for skill_name in manager._skill_names_for_command(command_name)
+        }
+
+        # Compute stale skills *before* stale commands (mirrors
+        # PresetManager.remove()): for a native skill-only agent (extension
+        # == "/SKILL.md", e.g. claude/codex), `_register_commands` writes
+        # the exact same SKILL.md file `_register_skills` does, so
+        # `registered_commands` and `registered_skills` both track that
+        # agent for the same on-disk file. Restoring/reconciling via
+        # `_unregister_skills` first, then excluding that coverage from the
+        # commands pass below, avoids `_unregister_commands` deleting the
+        # file outright (no core-fallback there) before `_unregister_skills`
+        # ever gets a chance to restore or reconcile it.
+        raw_registered_skills = metadata.get("registered_skills", {})
+        if isinstance(raw_registered_skills, list):
+            # Legacy flat-list value: infer real per-agent ownership from
+            # on-disk provenance rather than dropping it, otherwise a removed
+            # command's skill can never be identified as stale here.
+            registered_skills = manager._infer_legacy_skill_provenance(
+                [name for name in raw_registered_skills if isinstance(name, str)],
+                preset_id,
+                fallback_agent,
+            )
+        else:
+            registered_skills = manager._normalize_registered_skills(
+                raw_registered_skills, fallback_agent=fallback_agent
+            )
+        stale_skills = {}
+        for agent, names in registered_skills.items():
             if not isinstance(agent, str) or not isinstance(names, list):
                 continue
             stale_names = [
                 name
                 for name in names
-                if isinstance(name, str) and name not in current_command_names
+                if isinstance(name, str) and name not in current_skill_names
             ]
             if stale_names:
-                stale_commands[agent] = stale_names
-        if stale_commands:
-            manager._unregister_commands(stale_commands)
-            updated_commands = {}
+                stale_skills[agent] = stale_names
+        # Populated by _unregister_skills below with the directories it
+        # restored to extension/core content, so a surviving lower-priority
+        # preset that should actually win those commands can be reconciled
+        # back in afterwards instead of being left showing core content.
+        affected_skill_dirs: Dict[Path, tuple] = {}
+        if stale_skills:
+            affected_skill_dirs = manager._unregister_skills(
+                stale_skills,
+                pack_dir,
+                restore_from_bundled_core=True,
+            )
+            updated_skills = {}
+            for agent, names in registered_skills.items():
+                retained = [
+                    name for name in names if name not in stale_skills.get(agent, [])
+                ]
+                if retained:
+                    updated_skills[agent] = retained
+            manager.registry.update(preset_id, {"registered_skills": updated_skills})
+
+        stale_commands = {}
+        registered_commands = metadata.get("registered_commands", {})
+        if isinstance(registered_commands, dict):
             for agent, names in registered_commands.items():
                 if not isinstance(agent, str) or not isinstance(names, list):
                     continue
-                retained = [
+                stale_names = [
                     name
                     for name in names
-                    if isinstance(name, str)
-                    and name not in stale_commands.get(agent, [])
+                    if isinstance(name, str) and name not in current_command_names
                 ]
-                if retained:
-                    updated_commands[agent] = retained
-            manager.registry.update(preset_id, {"registered_commands": updated_commands})
-    current_skill_names = {
-        skill_name
-        for command_name in current_command_names
-        for skill_name in manager._skill_names_for_command(command_name)
-    }
-    raw_registered_skills = metadata.get("registered_skills", {})
-    if isinstance(raw_registered_skills, list):
-        # Legacy flat-list value: infer real per-agent ownership from
-        # on-disk provenance rather than dropping it, otherwise a removed
-        # command's skill can never be identified as stale here.
-        registered_skills = manager._infer_legacy_skill_provenance(
-            [name for name in raw_registered_skills if isinstance(name, str)],
-            preset_id,
-            fallback_agent,
-        )
-    else:
-        registered_skills = manager._normalize_registered_skills(
-            raw_registered_skills, fallback_agent=fallback_agent
-        )
-    stale_skills = {}
-    for agent, names in registered_skills.items():
-        if not isinstance(agent, str) or not isinstance(names, list):
-            continue
-        stale_names = [
-            name
-            for name in names
-            if isinstance(name, str) and name not in current_skill_names
-        ]
-        if stale_names:
-            stale_skills[agent] = stale_names
-    if stale_skills:
-        manager._unregister_skills(
-            stale_skills,
-            pack_dir,
-            restore_from_bundled_core=True,
-        )
-        updated_skills = {}
-        for agent, names in registered_skills.items():
-            retained = [
-                name for name in names if name not in stale_skills.get(agent, [])
-            ]
-            if retained:
-                updated_skills[agent] = retained
-        manager.registry.update(preset_id, {"registered_skills": updated_skills})
+                if stale_names:
+                    stale_commands[agent] = stale_names
+            if stale_commands:
+                # Exclude native skill-only agents (extension == "/SKILL.md")
+                # whose stale command names are already covered by the
+                # stale-skills pass above: for those agents the "command"
+                # and "skill" registrations are the same physical SKILL.md
+                # file, which _unregister_skills already restored/reconciled
+                # with core-fallback support. _unregister_commands has no
+                # such fallback — it always deletes — so re-running it here
+                # would blow away what was just restored (mirrors
+                # PresetManager.remove()'s identical filtering).
+                from ..agents import CommandRegistrar as _CommandRegistrarForFilter
 
-    if resolved_agent is MISSING_INIT_OPTIONS_FILE:
-        # Legacy pre-init-options project: there is no single "active
-        # agent" to target, so mirror install-time behaviour and
-        # register/re-register this preset's commands and skills for
-        # every agent directory actually present on disk, merging the
-        # fresh result into the stored registry state.
-        fresh_commands = manager._register_commands(manifest, pack_dir)
-        if fresh_commands:
-            current_metadata = manager.registry.get(preset_id) or {}
-            merged = copy.deepcopy(current_metadata.get("registered_commands") or {})
-            for agent, names in fresh_commands.items():
-                existing = merged.get(agent, [])
-                merged[agent] = existing + [
-                    name for name in names if name not in existing
-                ]
-            manager.registry.update(preset_id, {"registered_commands": merged})
+                commands_to_unregister: Dict[str, List[str]] = {}
+                for agent, names in stale_commands.items():
+                    is_native_skill_agent = (
+                        _CommandRegistrarForFilter.AGENT_CONFIGS.get(agent, {}).get(
+                            "extension"
+                        )
+                        == "/SKILL.md"
+                    )
+                    if not is_native_skill_agent:
+                        commands_to_unregister[agent] = names
+                        continue
+                    covered_skill_names = {
+                        skill_name
+                        for skill_name in stale_skills.get(agent, [])
+                    }
+                    uncovered = [
+                        name
+                        for name in names
+                        if covered_skill_names.isdisjoint(
+                            manager._skill_names_for_command(name)
+                        )
+                    ]
+                    if uncovered:
+                        commands_to_unregister[agent] = uncovered
+                if commands_to_unregister:
+                    manager._unregister_commands(commands_to_unregister)
+                updated_commands = {}
+                for agent, names in registered_commands.items():
+                    if not isinstance(agent, str) or not isinstance(names, list):
+                        continue
+                    retained = [
+                        name
+                        for name in names
+                        if isinstance(name, str)
+                        and name not in stale_commands.get(agent, [])
+                    ]
+                    if retained:
+                        updated_commands[agent] = retained
+                manager.registry.update(preset_id, {"registered_commands": updated_commands})
 
-        fresh_skills = manager._register_skills(manifest, pack_dir)
-        if fresh_skills:
-            current_metadata = manager.registry.get(preset_id) or {}
-            merged_skills = copy.deepcopy(current_metadata.get("registered_skills") or {})
-            for agent, names in fresh_skills.items():
-                existing = merged_skills.get(agent, [])
-                merged_skills[agent] = existing + [
-                    name for name in names if name not in existing
-                ]
-            manager.registry.update(preset_id, {"registered_skills": merged_skills})
-    elif isinstance(resolved_agent, str):
-        manager.register_enabled_presets_for_agent(resolved_agent)
-    if stale_commands:
-        manager._reconcile_composed_commands(
-            sorted({name for names in stale_commands.values() for name in names}),
-            extra_agents=set(stale_commands),
+        if resolved_agent is MISSING_INIT_OPTIONS_FILE:
+            # Legacy pre-init-options project: there is no single "active
+            # agent" to target, so mirror install-time behaviour and
+            # register/re-register this preset's commands and skills for
+            # every agent directory actually present on disk, merging the
+            # fresh result into the stored registry state.
+            fresh_commands = manager._register_commands(manifest, pack_dir)
+            if fresh_commands:
+                current_metadata = manager.registry.get(preset_id) or {}
+                merged = copy.deepcopy(current_metadata.get("registered_commands") or {})
+                for agent, names in fresh_commands.items():
+                    existing = merged.get(agent, [])
+                    merged[agent] = existing + [
+                        name for name in names if name not in existing
+                    ]
+                manager.registry.update(preset_id, {"registered_commands": merged})
+
+            fresh_skills = manager._register_skills(manifest, pack_dir)
+            if fresh_skills:
+                current_metadata = manager.registry.get(preset_id) or {}
+                merged_skills = copy.deepcopy(current_metadata.get("registered_skills") or {})
+                for agent, names in fresh_skills.items():
+                    existing = merged_skills.get(agent, [])
+                    merged_skills[agent] = existing + [
+                        name for name in names if name not in existing
+                    ]
+                manager.registry.update(preset_id, {"registered_skills": merged_skills})
+        elif isinstance(resolved_agent, str):
+            manager.register_enabled_presets_for_agent(resolved_agent)
+
+        reconcile_command_names = sorted(
+            {name for names in stale_commands.values() for name in names}
         )
+        if stale_commands:
+            manager._reconcile_composed_commands(
+                reconcile_command_names,
+                extra_agents=set(stale_commands),
+            )
+        # A skill can go stale without ever being registered as a command
+        # (skills-only agents have no `registered_commands` entry), so
+        # `reconcile_command_names` above (derived only from
+        # `stale_commands`) can be empty even though `affected_skill_dirs`
+        # is not — and `_reconcile_skills` no-ops on an empty command-name
+        # list. Recover a command name for each stale skill via
+        # `_command_name_for_skill_name` (the inverse of
+        # `_skill_names_for_command`), so the surviving-lower-priority-preset
+        # lookup below still runs for skills-only reconciliation.
+        stale_skill_command_names = {
+            command_name
+            for names in stale_skills.values()
+            for skill_name in names
+            for command_name in [manager._command_name_for_skill_name(skill_name)]
+            if command_name is not None
+        }
+        skill_reconcile_command_names = sorted(
+            set(reconcile_command_names) | stale_skill_command_names
+        )
+        if skill_reconcile_command_names or affected_skill_dirs:
+            # Mirrors PresetManager.remove(): a stale skill directory
+            # restored to extension/core content above may actually be
+            # owned by a surviving lower-priority preset, which must be
+            # reconciled back in rather than left showing core content.
+            manager._reconcile_skills(
+                skill_reconcile_command_names, extra_skills_dirs=affected_skill_dirs
+            )
 
-    manager.reconcile_constitution(
-        f"Failed to reconcile constitution after enabling preset {preset_id}"
-    )
+        manager.reconcile_constitution(
+            f"Failed to reconcile constitution after enabling preset {preset_id}"
+        )
+    except Exception as e:
+        manager.registry.restore(preset_id, registry_before)
+        console.print(
+            f"[red]Error:[/red] Failed to enable '{preset_id}': "
+            f"{_escape_markup(str(e))}. The preset has been restored to its "
+            f"previous disabled state; resolve the underlying issue and "
+            f"re-run 'specify preset enable {preset_id}'."
+        )
+        raise typer.Exit(1) from e
 
     console.print(f"[green]✓[/green] Preset '{preset_id}' enabled")
     console.print("\nTemplates from this preset will now be included in resolution.")

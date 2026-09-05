@@ -11432,7 +11432,13 @@ class TestPresetEnableDisable:
         manager.registry.update("legacy-skill-preset", {"enabled": False})
 
         # Simulate a disabled update that dropped "speckit.drop" from the
-        # installed manifest.
+        # installed manifest. A real `update_from_directory` replaces the
+        # installed preset directory wholesale, so the dropped command's
+        # file is gone from disk too — remove it here as well, or the
+        # resolver's convention-based fallback (an on-disk file with no
+        # matching manifest entry still resolves as a layer) would treat
+        # the leftover file as still "provided" by this preset and
+        # reconciliation would legitimately recreate it.
         installed_manifest_path = (
             project_dir
             / ".specify"
@@ -11447,6 +11453,14 @@ class TestPresetEnableDisable:
             if t["name"] != "speckit.drop"
         ]
         installed_manifest_path.write_text(yaml.safe_dump(installed_manifest))
+        (
+            project_dir
+            / ".specify"
+            / "presets"
+            / "legacy-skill-preset"
+            / "commands"
+            / "speckit.drop.md"
+        ).unlink()
 
         with patch.object(Path, "cwd", return_value=project_dir):
             result = CliRunner().invoke(
@@ -11547,6 +11561,200 @@ class TestPresetEnableDisable:
         ).read_text(encoding="utf-8")
         assert "Specify v2" in (
             claude_skills / "speckit-specify" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+    def test_enable_restores_disabled_state_on_reconciliation_failure(
+        self, project_dir, temp_dir
+    ):
+        """If reconciliation raises partway through enable, the registry
+        must be restored to its pre-enable (disabled) snapshot rather than
+        being left showing ``enabled: True`` with only partially refreshed
+        artifacts (#4441).
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        # An agent directory must exist for registration to actually
+        # record any command names — otherwise registered_commands stays
+        # empty and there's nothing for enable to consider stale.
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        def build_preset(preset_id, command_names, version="1.0.0"):
+            preset_dir = temp_dir / f"{preset_id}-{version}"
+            (preset_dir / "commands").mkdir(parents=True)
+            templates = []
+            for name in command_names:
+                (preset_dir / "commands" / f"{name}.md").write_text(
+                    f"---\ndescription: test\n---\n\n{name} body\n"
+                )
+                templates.append({
+                    "type": "command",
+                    "name": name,
+                    "file": f"commands/{name}.md",
+                })
+            manifest_data = {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": preset_id,
+                    "name": preset_id,
+                    "version": version,
+                    "description": "Test",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {"templates": templates},
+            }
+            (preset_dir / "preset.yml").write_text(yaml.safe_dump(manifest_data))
+            return preset_dir
+
+        manager = PresetManager(project_dir)
+        source_v1 = build_preset(
+            "rollback-preset", ["speckit.specify", "speckit.plan"]
+        )
+        manager.install_from_directory(source_v1, "0.1.0")
+        manager.registry.update("rollback-preset", {"enabled": False})
+
+        # Update while disabled, dropping speckit.plan — this makes it a
+        # stale command that enable must reconcile (and is exactly the code
+        # path we're about to make fail).
+        source_v2 = build_preset(
+            "rollback-preset", ["speckit.specify"], version="2.0.0"
+        )
+        manager.update_from_directory(
+            source_v2, "0.1.0", pack_id="rollback-preset"
+        )
+
+        registry_before = manager.registry.get("rollback-preset")
+        assert registry_before["enabled"] is False
+
+        with patch.object(
+            PresetManager,
+            "_unregister_commands",
+            side_effect=RuntimeError("simulated reconciliation failure"),
+        ), patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "enable", "rollback-preset"]
+            )
+
+        assert result.exit_code != 0
+        assert "restored" in result.output.lower() or "previous disabled state" in result.output.lower()
+
+        # Reload registry fresh from disk: it must still show disabled,
+        # not a half-completed "enabled" state.
+        manager2 = PresetManager(project_dir)
+        metadata_after = manager2.registry.get("rollback-preset")
+        assert metadata_after["enabled"] is False
+        assert metadata_after["version"] == "2.0.0"
+
+    def test_enable_reconciles_surviving_lower_priority_preset_skill_for_historical_agent(
+        self, project_dir, temp_dir
+    ):
+        """A disabled update that drops a command the preset used to
+        override must, on enable, hand that command's skill back to a
+        surviving lower-priority preset for *every* agent directory the
+        preset's ``registered_skills`` actually spans, including a
+        historical (currently inactive) agent, not just the one active
+        agent that ``register_enabled_presets_for_agent`` refreshes.
+
+        Mirrors ``test_remove_reconciles_skill_for_every_historical_agent``
+        for the enable-after-disabled-update path (#4441): without
+        capturing ``_unregister_skills``'s return value and handing it to
+        ``_reconcile_skills``, the historical (claude) directory is left
+        showing core/extension content instead of the surviving
+        lo-priority preset's override.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        self_ = TestPresetSkills()
+        self_._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills = project_dir / ".claude" / "skills"
+
+        # A core template fallback is required so unregistering the stale
+        # override restores core content rather than deleting the skill
+        # directory outright, matching the historical-agent removal test.
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        manager = PresetManager(project_dir)
+
+        lo_dir = self_._create_command_preset(
+            temp_dir, "lo-priority-preset", "speckit.specify", "lo", "Lo content"
+        )
+        manager.install_from_directory(lo_dir, "0.1.5", priority=10)
+
+        hi_dir = self_._create_command_preset(
+            temp_dir, "hi-priority-preset", "speckit.specify", "hi", "Hi content"
+        )
+        manager.install_from_directory(hi_dir, "0.1.5", priority=1)
+        assert "Hi content" in (
+            claude_skills / "speckit-specify" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        # Switch the active integration to codex and rescaffold, mirroring
+        # `integration use codex` — this records the hi-priority preset's
+        # registered_skills for codex too, leaving claude as a historical
+        # (now inactive) agent it still owns a directory in.
+        self_._write_init_options(project_dir, ai="codex", ai_skills=True)
+        codex_skills = project_dir / ".agents" / "skills"
+        manager.register_enabled_presets_for_agent("codex")
+
+        metadata_hi = manager.registry.get("hi-priority-preset")
+        assert set(metadata_hi.get("registered_skills", {})) == {"claude", "codex"}, (
+            "sanity: hi-priority-preset's registered_skills must span "
+            "both the historical (claude) and active (codex) agents"
+        )
+
+        manager.registry.update("hi-priority-preset", {"enabled": False})
+
+        # Update the disabled hi-priority preset so it no longer provides
+        # speckit.specify at all — its skill override becomes stale in
+        # both the historical and active agent directories.
+        hi_dir_v2 = self_._create_command_preset(
+            temp_dir, "hi-priority-preset-v2", "speckit.other", "hi2", "Hi other content"
+        )
+        data = yaml.safe_load((hi_dir_v2 / "preset.yml").read_text())
+        data["preset"]["id"] = "hi-priority-preset"
+        data["preset"]["version"] = "2.0.0"
+        (hi_dir_v2 / "preset.yml").write_text(yaml.safe_dump(data))
+        manager.update_from_directory(
+            hi_dir_v2, "0.1.5", pack_id="hi-priority-preset"
+        )
+
+        # Still disabled: the stale override remains untouched on disk in
+        # both directories.
+        assert "Hi content" in (
+            claude_skills / "speckit-specify" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        assert "Hi content" in (
+            codex_skills / "speckit-specify" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "enable", "hi-priority-preset"]
+            )
+
+        assert result.exit_code == 0, result.output
+        # The surviving lo-priority preset's override must win back both
+        # directories — codex (currently active, refreshed by
+        # register_enabled_presets_for_agent) and claude (historical,
+        # only fixed by the _reconcile_skills(extra_skills_dirs=...) call).
+        assert "Lo content" in (
+            claude_skills / "speckit-specify" / "SKILL.md"
+        ).read_text(encoding="utf-8"), (
+            "the historical (claude) directory must be reconciled back "
+            "to the surviving lo-priority preset's override, not left "
+            "showing core/extension content"
+        )
+        assert "Lo content" in (
+            codex_skills / "speckit-specify" / "SKILL.md"
         ).read_text(encoding="utf-8")
 
     def test_disable_corrupted_registry_entry(self, project_dir, pack_dir):
