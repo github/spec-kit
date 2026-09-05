@@ -11329,6 +11329,226 @@ class TestPresetEnableDisable:
         assert result.exit_code == 1
         assert "corrupted state" in result.output.lower()
 
+    def test_enable_fails_closed_on_corrupt_installed_manifest(
+        self, project_dir, pack_dir
+    ):
+        """Enable must not flip `enabled` when the installed manifest is invalid.
+
+        A missing or corrupt preset.yml must be validated before the
+        registry is mutated, otherwise the command fails after the preset
+        has already been marked enabled with unreconciled artifacts (#4441).
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+        manager.registry.update("test-pack", {"enabled": False})
+
+        installed_manifest = (
+            project_dir / ".specify" / "presets" / "test-pack" / "preset.yml"
+        )
+        installed_manifest.write_text("not: [valid")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(app, ["preset", "enable", "test-pack"])
+
+        assert result.exit_code != 0
+        assert "invalid" in result.output.lower()
+        manager2 = PresetManager(project_dir)
+        assert manager2.registry.get("test-pack")["enabled"] is False
+
+    def test_enable_reconciles_legacy_flat_list_registered_skills(
+        self, project_dir, temp_dir
+    ):
+        """A legacy flat-list `registered_skills` value must still let enable
+        detect and clean up a skill whose command was removed while disabled.
+
+        `_normalize_registered_skills()` drops a legacy flat list when no
+        fallback agent is supplied, which would otherwise skip cleanup of
+        the removed command's stale skill entirely (#4441).
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app, save_init_options
+
+        save_init_options(
+            project_dir, {"ai": "claude", "ai_skills": True, "script": "sh"}
+        )
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        preset_dir = temp_dir / "legacy-skill-preset"
+        (preset_dir / "commands").mkdir(parents=True)
+        for name, body in (
+            ("speckit.keep", "Keep body"),
+            ("speckit.drop", "Drop body"),
+        ):
+            (preset_dir / "commands" / f"{name}.md").write_text(
+                f"---\ndescription: {name}\n---\n\n{body}\n"
+            )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "legacy-skill-preset",
+                "name": "legacy-skill-preset",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.keep",
+                        "file": "commands/speckit.keep.md",
+                    },
+                    {
+                        "type": "command",
+                        "name": "speckit.drop",
+                        "file": "commands/speckit.drop.md",
+                    },
+                ]
+            },
+        }
+        (preset_dir / "preset.yml").write_text(yaml.safe_dump(manifest_data))
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.0")
+        metadata = manager.registry.get("legacy-skill-preset")
+        assert set(metadata["registered_skills"]["claude"]) == {
+            "speckit-keep",
+            "speckit-drop",
+        }
+
+        # Simulate a legacy pre-#2948 registry: flatten registered_skills to
+        # a bare list, matching what old registries stored before per-agent
+        # provenance existed.
+        manager.registry.update(
+            "legacy-skill-preset",
+            {"registered_skills": ["speckit-keep", "speckit-drop"]},
+        )
+        manager.registry.update("legacy-skill-preset", {"enabled": False})
+
+        # Simulate a disabled update that dropped "speckit.drop" from the
+        # installed manifest.
+        installed_manifest_path = (
+            project_dir
+            / ".specify"
+            / "presets"
+            / "legacy-skill-preset"
+            / "preset.yml"
+        )
+        installed_manifest = yaml.safe_load(installed_manifest_path.read_text())
+        installed_manifest["provides"]["templates"] = [
+            t
+            for t in installed_manifest["provides"]["templates"]
+            if t["name"] != "speckit.drop"
+        ]
+        installed_manifest_path.write_text(yaml.safe_dump(installed_manifest))
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "enable", "legacy-skill-preset"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert not (skills_dir / "speckit-drop").exists()
+        assert (skills_dir / "speckit-keep" / "SKILL.md").exists()
+        registered = PresetManager(project_dir).registry.get(
+            "legacy-skill-preset"
+        )["registered_skills"]
+        assert "speckit-drop" not in registered.get("claude", [])
+        assert "speckit-keep" in registered.get("claude", [])
+
+    def test_enable_legacy_project_refreshes_all_detected_agents(
+        self, project_dir, temp_dir
+    ):
+        """A legacy pre-init-options project has no single active agent;
+        enabling a preset updated while disabled must still refresh every
+        agent directory actually present on disk, not silently do nothing
+        (#4441).
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        claude_skills = project_dir / ".claude" / "skills"
+        claude_skills.mkdir(parents=True)
+        gemini_commands = project_dir / ".gemini" / "commands"
+        gemini_commands.mkdir(parents=True)
+
+        def build_preset(preset_id, body, version="1.0.0"):
+            preset_dir = temp_dir / preset_id
+            (preset_dir / "commands").mkdir(parents=True)
+            (preset_dir / "commands" / "speckit.specify.md").write_text(
+                f"---\ndescription: test\n---\n\n{body}\n"
+            )
+            manifest_data = {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": preset_id,
+                    "name": preset_id,
+                    "version": version,
+                    "description": "Test",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "templates": [
+                        {
+                            "type": "command",
+                            "name": "speckit.specify",
+                            "file": "commands/speckit.specify.md",
+                        },
+                    ]
+                },
+            }
+            (preset_dir / "preset.yml").write_text(yaml.safe_dump(manifest_data))
+            return preset_dir
+
+        source_v1 = build_preset("legacy-refresh-preset", "Specify v1")
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(source_v1, "0.1.0")
+
+        assert "Specify v1" in (
+            gemini_commands / "speckit.specify.toml"
+        ).read_text(encoding="utf-8")
+        assert "Specify v1" in (
+            claude_skills / "speckit-specify" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        manager.registry.update("legacy-refresh-preset", {"enabled": False})
+
+        source_v2 = build_preset(
+            "legacy-refresh-preset-v2", "Specify v2", version="2.0.0"
+        )
+        data = yaml.safe_load((source_v2 / "preset.yml").read_text())
+        data["preset"]["id"] = "legacy-refresh-preset"
+        (source_v2 / "preset.yml").write_text(yaml.safe_dump(data))
+        manager.update_from_directory(
+            source_v2, "0.1.0", pack_id="legacy-refresh-preset"
+        )
+
+        # Confirm the disabled update deliberately left generated artifacts
+        # untouched while disabled.
+        assert "Specify v1" in (
+            gemini_commands / "speckit.specify.toml"
+        ).read_text(encoding="utf-8")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "enable", "legacy-refresh-preset"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Specify v2" in (
+            gemini_commands / "speckit.specify.toml"
+        ).read_text(encoding="utf-8")
+        assert "Specify v2" in (
+            claude_skills / "speckit-specify" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
     def test_disable_corrupted_registry_entry(self, project_dir, pack_dir):
         """Test disable fails gracefully for corrupted registry entry."""
         from typer.testing import CliRunner

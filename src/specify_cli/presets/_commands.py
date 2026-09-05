@@ -1186,9 +1186,14 @@ def preset_enable(
     preset_id: str = typer.Argument(help="Preset ID to enable"),
 ):
     """Enable a disabled preset."""
+    import copy
+
     from .. import _require_specify_project
-    from .._init_options import resolve_active_agent_for_registration
-    from . import PresetManager, PresetManifest
+    from .._init_options import (
+        MISSING_INIT_OPTIONS_FILE,
+        resolve_active_agent_for_registration,
+    )
+    from . import PresetManager, PresetManifest, PresetValidationError
 
     project_root = _require_specify_project()
     manager = PresetManager(project_root)
@@ -1208,10 +1213,23 @@ def preset_enable(
         console.print(f"[yellow]Preset '{preset_id}' is already enabled[/yellow]")
         raise typer.Exit(0)
 
+    pack_dir = manager.presets_dir / preset_id
+    # Validate the installed manifest *before* flipping `enabled`: a missing
+    # or corrupt preset.yml must fail closed with the preset still disabled,
+    # not raise after the registry has already been mutated.
+    try:
+        manifest = PresetManifest(pack_dir / "preset.yml")
+    except PresetValidationError as e:
+        console.print(
+            f"[red]Error:[/red] Cannot enable '{preset_id}': installed "
+            f"manifest is invalid ({_escape_markup(str(e))})"
+        )
+        raise typer.Exit(1)
+
     # Enable the preset
     manager.registry.update(preset_id, {"enabled": True})
-    pack_dir = manager.presets_dir / preset_id
-    manifest = PresetManifest(pack_dir / "preset.yml")
+    resolved_agent = resolve_active_agent_for_registration(project_root)
+    fallback_agent = resolved_agent if isinstance(resolved_agent, str) else ""
     current_command_names = {
         name
         for template in manifest.templates
@@ -1260,7 +1278,19 @@ def preset_enable(
         for skill_name in manager._skill_names_for_command(command_name)
     }
     raw_registered_skills = metadata.get("registered_skills", {})
-    registered_skills = manager._normalize_registered_skills(raw_registered_skills)
+    if isinstance(raw_registered_skills, list):
+        # Legacy flat-list value: infer real per-agent ownership from
+        # on-disk provenance rather than dropping it, otherwise a removed
+        # command's skill can never be identified as stale here.
+        registered_skills = manager._infer_legacy_skill_provenance(
+            [name for name in raw_registered_skills if isinstance(name, str)],
+            preset_id,
+            fallback_agent,
+        )
+    else:
+        registered_skills = manager._normalize_registered_skills(
+            raw_registered_skills, fallback_agent=fallback_agent
+        )
     stale_skills = {}
     for agent, names in registered_skills.items():
         if not isinstance(agent, str) or not isinstance(names, list):
@@ -1287,9 +1317,35 @@ def preset_enable(
                 updated_skills[agent] = retained
         manager.registry.update(preset_id, {"registered_skills": updated_skills})
 
-    active_agent = resolve_active_agent_for_registration(project_root)
-    if isinstance(active_agent, str):
-        manager.register_enabled_presets_for_agent(active_agent)
+    if resolved_agent is MISSING_INIT_OPTIONS_FILE:
+        # Legacy pre-init-options project: there is no single "active
+        # agent" to target, so mirror install-time behaviour and
+        # register/re-register this preset's commands and skills for
+        # every agent directory actually present on disk, merging the
+        # fresh result into the stored registry state.
+        fresh_commands = manager._register_commands(manifest, pack_dir)
+        if fresh_commands:
+            current_metadata = manager.registry.get(preset_id) or {}
+            merged = copy.deepcopy(current_metadata.get("registered_commands") or {})
+            for agent, names in fresh_commands.items():
+                existing = merged.get(agent, [])
+                merged[agent] = existing + [
+                    name for name in names if name not in existing
+                ]
+            manager.registry.update(preset_id, {"registered_commands": merged})
+
+        fresh_skills = manager._register_skills(manifest, pack_dir)
+        if fresh_skills:
+            current_metadata = manager.registry.get(preset_id) or {}
+            merged_skills = copy.deepcopy(current_metadata.get("registered_skills") or {})
+            for agent, names in fresh_skills.items():
+                existing = merged_skills.get(agent, [])
+                merged_skills[agent] = existing + [
+                    name for name in names if name not in existing
+                ]
+            manager.registry.update(preset_id, {"registered_skills": merged_skills})
+    elif isinstance(resolved_agent, str):
+        manager.register_enabled_presets_for_agent(resolved_agent)
     if stale_commands:
         manager._reconcile_composed_commands(
             sorted({name for names in stale_commands.values() for name in names}),
