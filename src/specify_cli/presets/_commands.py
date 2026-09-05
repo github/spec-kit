@@ -1297,7 +1297,7 @@ def preset_enable(
         # restored to extension/core content, so a surviving lower-priority
         # preset that should actually win those commands can be reconciled
         # back in afterwards instead of being left showing core content.
-        affected_skill_dirs: Dict[Path, tuple] = {}
+        affected_skill_dirs: dict[Path, tuple] = {}
         if stale_skills:
             affected_skill_dirs = manager._unregister_skills(
                 stale_skills,
@@ -1338,7 +1338,7 @@ def preset_enable(
                 # PresetManager.remove()'s identical filtering).
                 from ..agents import CommandRegistrar as _CommandRegistrarForFilter
 
-                commands_to_unregister: Dict[str, List[str]] = {}
+                commands_to_unregister: dict[str, list[str]] = {}
                 for agent, names in stale_commands.items():
                     is_native_skill_agent = (
                         _CommandRegistrarForFilter.AGENT_CONFIGS.get(agent, {}).get(
