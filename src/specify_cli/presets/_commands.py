@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
+import tempfile
 from pathlib import Path
 
 import typer
@@ -18,7 +20,6 @@ from rich.markup import escape as _escape_markup
 
 from .._console import console
 from .._download_security import (
-    archive_format_from_name,
     archive_suffix,
     detect_archive_format,
     is_https_or_localhost_http,
@@ -38,6 +39,127 @@ preset_catalog_app = typer.Typer(
     add_completion=False,
 )
 preset_app.add_typer(preset_catalog_app, name="catalog")
+
+
+def _fetch_preset_archive_data(
+    url: str,
+    error_type: type[Exception],
+) -> tuple[bytes, str | None, str]:
+    """Fetch bounded archive bytes after validating URL and redirects."""
+    import urllib.error
+    from urllib.parse import urlparse
+
+    from specify_cli._github_http import resolve_github_release_asset_api_url
+    from specify_cli.authentication.http import github_provider_hosts, open_url
+
+    try:
+        parsed = urlparse(url)
+        _ = parsed.port
+    except ValueError as exc:
+        raise error_type(f"Invalid URL: {url}") from exc
+    if not is_https_or_localhost_http(url):
+        raise error_type("URL must use HTTPS (HTTP is only allowed for localhost)")
+
+    def validate_redirect(old_url, new_url):
+        if not is_safe_download_redirect(old_url, new_url):
+            raise error_type(
+                "redirect target must use HTTPS or remain on localhost"
+            )
+
+    try:
+        resolved_url = resolve_github_release_asset_api_url(
+            url, open_url, github_hosts=github_provider_hosts()
+        )
+        download_url = resolved_url or url
+        extra_headers = {"Accept": "application/octet-stream"} if resolved_url else None
+        with open_url(
+            download_url,
+            timeout=60,
+            extra_headers=extra_headers,
+            redirect_validator=validate_redirect,
+        ) as response:
+            final_url = (
+                response.geturl() if hasattr(response, "geturl") else download_url
+            )
+            if not is_https_or_localhost_http(final_url):
+                raise error_type(
+                    "Preset URL redirected to a disallowed URL: "
+                    f"{final_url}. Redirect targets must use HTTPS with a hostname, "
+                    "or HTTP for localhost (127.0.0.1, ::1)."
+                )
+            data = read_response_limited(
+                response, error_type=error_type, label=f"preset {url}"
+            )
+            content_type = (
+                response.getheader("Content-Type")
+                if hasattr(response, "getheader")
+                else None
+            )
+    except urllib.error.URLError as exc:
+        raise error_type(f"Failed to download preset: {exc}") from exc
+    return data, content_type, final_url
+
+
+def _write_preset_archive(
+    data: bytes,
+    source_url: str,
+    content_type: str | None,
+    error_type: type[Exception],
+) -> Path:
+    """Write downloaded bytes to a temporary archive with a detected suffix."""
+    fd, name = tempfile.mkstemp(prefix="speckit-preset-update-", suffix=".archive")
+    path = Path(name)
+    try:
+        os.close(fd)
+        path.write_bytes(data)
+        detected = detect_archive_format(
+            path,
+            source_name=source_url,
+            content_type=content_type,
+            error_type=error_type,
+        )
+        detected_path = path.with_suffix(archive_suffix(detected))
+        os.replace(path, detected_path)
+        path = detected_path
+        return path
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
+
+
+def _download_preset_archive(url: str, error_type: type[Exception]) -> Path:
+    """Download and classify a preset archive into a temporary file."""
+    data, content_type, final_url = _fetch_preset_archive_data(url, error_type)
+    return _write_preset_archive(data, final_url, content_type, error_type)
+
+
+def _bundled_update_source(preset_id: str):
+    """Locate a bundled preset and return its parsed local version."""
+    from packaging import version as pkg_version
+
+    from .. import _locate_bundled_preset
+    from . import PresetManifest, PresetValidationError
+
+    bundled_dir = _locate_bundled_preset(preset_id)
+    if bundled_dir is None:
+        return None, None
+    try:
+        manifest = PresetManifest(bundled_dir / "preset.yml")
+        return bundled_dir, pkg_version.Version(manifest.version)
+    except (PresetValidationError, pkg_version.InvalidVersion, OSError):
+        return None, None
+
+
+def _cleanup_archive(path: Path | None) -> None:
+    if path is None:
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        console.print(
+            f"[yellow]Warning:[/yellow] Could not remove temporary archive "
+            f"'{path}': {exc}"
+        )
 
 
 def _warn_unmet_extension_dependencies(manager, manifest) -> None:
@@ -206,11 +328,11 @@ def preset_add(
     """Install a preset."""
     from .. import _locate_bundled_preset, _require_specify_project, get_speckit_version
     from . import (
-        PresetManager,
         PresetCatalog,
-        PresetError,
-        PresetValidationError,
         PresetCompatibilityError,
+        PresetError,
+        PresetManager,
+        PresetValidationError,
     )
 
     project_root = _require_specify_project()
@@ -239,19 +361,10 @@ def preset_add(
 
             try:
                 _parsed = _urlparse(from_url)
-                _parsed.port
+                _ = _parsed.port
             except ValueError:
                 console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(from_url)}")
                 raise typer.Exit(1)
-
-            def _validate_download_redirect(old_url, new_url):
-                if not is_safe_download_redirect(old_url, new_url):
-                    import urllib.error
-
-                    raise urllib.error.URLError(
-                        "redirect target must use HTTPS without entering a local "
-                        "target, or stay within loopback over HTTP"
-                    )
 
             if not is_https_or_localhost_http(from_url):
                 console.print(
@@ -262,78 +375,24 @@ def preset_add(
                 raise typer.Exit(1)
 
             console.print(f"Installing preset from [cyan]{_escape_markup(from_url)}[/cyan]...")
-            import urllib.error
-            import tempfile
-
-            with tempfile.TemporaryDirectory() as tmpdir:
-                archive_path = Path(tmpdir) / "preset.archive"
-                try:
-                    from specify_cli.authentication.http import open_url as _open_url
-                    from specify_cli.authentication.http import github_provider_hosts
-                    from specify_cli._github_http import resolve_github_release_asset_api_url
-
-                    _preset_extra_headers = None
-                    _resolved_from_url = resolve_github_release_asset_api_url(
-                        from_url, _open_url, github_hosts=github_provider_hosts()
-                    )
-                    if _resolved_from_url:
-                        from_url = _resolved_from_url
-                        _preset_extra_headers = {"Accept": "application/octet-stream"}
-
-                    with _open_url(
-                        from_url,
-                        timeout=60,
-                        extra_headers=_preset_extra_headers,
-                        redirect_validator=_validate_download_redirect,
-                    ) as response:
-                        final_url = response.geturl() if hasattr(response, "geturl") else from_url
-                        if not is_https_or_localhost_http(final_url):
-                            console.print(
-                                "[red]Error:[/red] Preset URL redirected to a disallowed URL: "
-                                f"{final_url}. Redirect targets must use HTTPS with a hostname, "
-                                "or HTTP for localhost (127.0.0.1, ::1)."
-                            )
-                            raise typer.Exit(1)
-                        archive_data = read_response_limited(
-                            response,
-                            error_type=PresetError,
-                            label=f"preset {from_url}",
-                        )
-                        content_type = (
-                            response.getheader("Content-Type")
-                            if hasattr(response, "getheader")
-                            else None
-                        )
-                    archive_path.write_bytes(archive_data)
-                    format_source = (
-                        final_url
-                        if archive_format_from_name(final_url) is not None
-                        else from_url
-                    )
-                    archive_format = detect_archive_format(
-                        archive_path,
-                        source_name=format_source,
-                        content_type=content_type,
-                        error_type=PresetError,
-                    )
-                    detected_path = archive_path.with_suffix(
-                        archive_suffix(archive_format)
-                    )
-                    os.replace(archive_path, detected_path)
-                    archive_path = detected_path
-                except (urllib.error.URLError, PresetError) as e:
-                    console.print(
-                        f"[red]Error:[/red] Failed to download: "
-                        f"{_escape_markup(str(e))}"
-                    )
-                    raise typer.Exit(1)
-
+            archive_path = None
+            try:
+                archive_path = _download_preset_archive(from_url, PresetError)
+            except PresetError as e:
+                console.print(
+                    f"[red]Error:[/red] Failed to download: "
+                    f"{_escape_markup(str(e))}"
+                )
+                raise typer.Exit(1)
+            try:
                 manifest = manager.install_from_zip(
                     archive_path,
                     speckit_version,
                     priority,
                 )
-
+            finally:
+                if archive_path is not None and archive_path.exists():
+                    _cleanup_archive(archive_path)
             console.print(f"[green]✓[/green] Preset '{manifest.name}' v{manifest.version} installed (priority {priority})")
 
         elif preset_id:
@@ -384,7 +443,7 @@ def preset_add(
                     console.print(f"[green]✓[/green] Preset '{manifest.name}' v{manifest.version} installed (priority {priority})")
                 finally:
                     if 'archive_path' in locals() and archive_path.exists():
-                        archive_path.unlink(missing_ok=True)
+                        _cleanup_archive(archive_path)
         else:
             console.print("[red]Error:[/red] Specify a preset ID, --from URL, or --dev path")
             raise typer.Exit(1)
@@ -426,6 +485,412 @@ def preset_remove(
     else:
         console.print(f"[red]Error:[/red] Failed to remove preset '{preset_id}'")
         raise typer.Exit(1)
+
+
+@preset_app.command("update")
+def preset_update(
+    preset_id: str = typer.Argument(None, help="Preset ID to update (or all)"),
+    from_url: str = typer.Option(None, "--from", help="Update from an archive URL"),
+    dev: str = typer.Option(None, "--dev", help="Update from a local directory"),
+    priority: int = typer.Option(None, "--priority", help="New priority"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show changes without writing"),
+    all_presets: bool = typer.Option(False, "--all", help="Update all installed presets"),
+):
+    """Update one preset, or all installed presets."""
+    from packaging import version as pkg_version
+
+    from .. import (
+        _require_specify_project,
+        get_speckit_version,
+    )
+    from . import (
+        PresetCatalog,
+        PresetCompatibilityError,
+        PresetError,
+        PresetManager,
+        PresetResolver,
+        PresetValidationError,
+        _constitution_is_generated,
+    )
+
+    project_root = _require_specify_project()
+    manager = PresetManager(project_root)
+    if priority is not None and not (all_presets or not preset_id) and priority < 1:
+        console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
+        raise typer.Exit(1)
+    if from_url and dev:
+        console.print("[red]Error:[/red] Use only one of --from or --dev")
+        raise typer.Exit(1)
+    if preset_id and all_presets:
+        console.print("[red]Error:[/red] Use either a preset ID or --all, not both")
+        raise typer.Exit(1)
+    if (from_url or dev) and (not preset_id or all_presets):
+        console.print("[red]Error:[/red] --from and --dev require a preset ID")
+        raise typer.Exit(1)
+
+    installed = manager.list_installed()
+    bulk = all_presets or not preset_id
+    effective_priority = None if bulk else priority
+    ids = [preset_id] if not bulk else [item["id"] for item in installed]
+    if not ids:
+        console.print("[yellow]No presets installed.[/yellow]")
+        return
+
+    dry_run_cache = (
+        Path(tempfile.mkdtemp(prefix="speckit-preset-dry-run-"))
+        if dry_run
+        else None
+    )
+    catalog = PresetCatalog(project_root, cache_dir=dry_run_cache)
+    speckit_version = get_speckit_version()
+    outcomes = []
+    catalog_candidates = {}
+    catalog_sources = {}
+
+    if bulk:
+        actionable_ids = []
+        catalog_archives = {}
+        for item_id in ids:
+            safe_id = _escape_markup(str(item_id))
+            metadata = manager.registry.get(item_id)
+            archive_path = None
+            try:
+                if not manager.registry.is_installed(item_id):
+                    raise PresetError(
+                        f"Preset '{item_id}' is not installed; use 'preset add' instead"
+                    )
+                if metadata is None or "version" not in metadata:
+                    raise PresetError("registry entry is missing or corrupt")
+                installed_version = pkg_version.Version(str(metadata["version"]))
+                pack_info = catalog.get_pack_info(item_id)
+                if not pack_info:
+                    raise PresetError(
+                        "source not re-resolvable — supply --from/--dev explicitly"
+                    )
+                if not pack_info.get("_install_allowed", True):
+                    raise PresetError(
+                        f"updates are not allowed from "
+                        f"'{pack_info.get('_catalog_name', 'catalog')}'"
+                    )
+                catalog_version = pkg_version.Version(str(pack_info["version"]))
+                if catalog_version <= installed_version and effective_priority is None:
+                    console.print(
+                        f"[dim]• {safe_id}: Up to date, skipped "
+                        f"(v{installed_version})[/dim]"
+                    )
+                    outcomes.append("skipped")
+                    continue
+                if pack_info.get("bundled") and not pack_info.get("download_url"):
+                    source_path, bundled_version = _bundled_update_source(item_id)
+                    if source_path is None or bundled_version < catalog_version:
+                        local_desc = (
+                            f"only ships v{bundled_version}"
+                            if source_path is not None
+                            else "does not ship a local copy"
+                        )
+                        raise PresetError(
+                            f"preset v{catalog_version} is available, but this "
+                            f"spec-kit release {local_desc}; upgrade spec-kit, "
+                            "then rerun 'specify preset update'"
+                        )
+                    pack_info = {**pack_info, "version": str(bundled_version)}
+                    manager.update_from_directory(
+                        source_path,
+                        speckit_version,
+                        pack_id=item_id,
+                        priority=effective_priority,
+                        dry_run=True,
+                        expected_version=str(pack_info["version"]),
+                    )
+                    catalog_sources[item_id] = source_path
+                else:
+                    archive_path = catalog.download_pack(item_id)
+                    manager.update_from_archive(
+                        archive_path,
+                        speckit_version,
+                        pack_id=item_id,
+                        priority=effective_priority,
+                        dry_run=True,
+                        expected_version=str(pack_info["version"]),
+                    )
+                catalog_candidates[item_id] = pack_info
+                catalog_archives[item_id] = archive_path
+                actionable_ids.append(item_id)
+            except PresetCompatibilityError as exc:
+                detail = _escape_markup(str(exc).replace("\n", " "))
+                console.print(
+                    f"[yellow]•[/yellow] {safe_id}: skipped — {detail}"
+                )
+                outcomes.append("skipped")
+                if archive_path is not None:
+                    _cleanup_archive(archive_path)
+            except (KeyError, TypeError, ValueError):
+                detail = _escape_markup(
+                    f"invalid version metadata for preset '{item_id}'"
+                )
+                console.print(f"[yellow]•[/yellow] {safe_id}: failed — {detail}")
+                outcomes.append("failed")
+                if archive_path is not None:
+                    _cleanup_archive(archive_path)
+            except (OSError, PresetValidationError, PresetError) as exc:
+                detail = _escape_markup(str(exc).replace("\n", " "))
+                console.print(f"[yellow]•[/yellow] {safe_id}: failed — {detail}")
+                outcomes.append("failed")
+                if archive_path is not None:
+                    _cleanup_archive(archive_path)
+
+        ids = actionable_ids
+        if not ids:
+            if any(outcome == "failed" for outcome in outcomes):
+                if dry_run_cache is not None:
+                    shutil.rmtree(dry_run_cache, ignore_errors=True)
+                raise typer.Exit(1)
+            if dry_run_cache is not None:
+                shutil.rmtree(dry_run_cache, ignore_errors=True)
+            return
+        if priority is not None:
+            console.print(
+                "[yellow]Note:[/yellow] --priority is ignored for bulk updates; "
+                "existing preset priorities will be preserved."
+            )
+        if not typer.confirm("Update all installed presets?"):
+            for archive_path in catalog_archives.values():
+                if archive_path is not None:
+                    _cleanup_archive(archive_path)
+            console.print("Cancelled")
+            if dry_run_cache is not None:
+                shutil.rmtree(dry_run_cache, ignore_errors=True)
+            return
+
+    for item_id in ids:
+        safe_id = _escape_markup(str(item_id))
+        source_kind = "catalog"
+        archive_path = catalog_archives.get(item_id) if bulk else None
+        try:
+            metadata = manager.registry.get(item_id)
+            if not manager.registry.is_installed(item_id):
+                raise PresetError(
+                    f"Preset '{item_id}' is not installed; use 'preset add' instead"
+                )
+            if metadata is None or "version" not in metadata:
+                raise PresetError("registry entry is missing or corrupt")
+            try:
+                installed_version = pkg_version.Version(str(metadata["version"]))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PresetError(
+                    f"invalid installed version for preset '{item_id}'"
+                ) from exc
+            source_path = None
+            pack_info = None
+            if dev:
+                source_kind = "dev"
+                source_path = Path(dev).resolve()
+                if not source_path.is_dir():
+                    raise PresetError(f"Directory not found: {dev}")
+            elif from_url:
+                source_kind = "url"
+                archive_path = _download_preset_archive(from_url, PresetError)
+            else:
+                pack_info = catalog_candidates.get(item_id) or catalog.get_pack_info(item_id)
+                if not pack_info:
+                    raise PresetError(
+                        "source not re-resolvable — supply --from/--dev explicitly"
+                    )
+                if not pack_info.get("_install_allowed", True):
+                    raise PresetError(
+                        f"updates are not allowed from "
+                        f"'{pack_info.get('_catalog_name', 'catalog')}'"
+                    )
+                try:
+                    catalog_version = pkg_version.Version(str(pack_info["version"]))
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise PresetError(
+                        f"catalog entry for preset '{item_id}' has an invalid version"
+                    ) from exc
+                if catalog_version < installed_version:
+                    if effective_priority is not None:
+                        raise PresetError(
+                            f"installed preset version {installed_version} is "
+                            f"newer than catalogue version {catalog_version}; "
+                            "use 'specify preset set-priority' to reprioritize "
+                            "without downgrading"
+                        )
+                    console.print(
+                        f"[dim]• {safe_id}: Up to date, skipped "
+                        f"(v{installed_version})[/dim]"
+                    )
+                    outcomes.append("skipped")
+                    continue
+                if catalog_version == installed_version and effective_priority is None:
+                    console.print(
+                        f"[dim]• {safe_id}: Up to date, skipped "
+                        f"(v{installed_version})[/dim]"
+                    )
+                    outcomes.append("skipped")
+                    continue
+                if pack_info.get("bundled") and not pack_info.get("download_url"):
+                    bundled_source = catalog_sources.get(item_id)
+                    if bundled_source is not None:
+                        source_path = bundled_source
+                    else:
+                        source_path, bundled_version = _bundled_update_source(item_id)
+                        if source_path is None or bundled_version < catalog_version:
+                            local_desc = (
+                                f"only ships v{bundled_version}"
+                                if source_path is not None
+                                else "does not ship a local copy"
+                            )
+                            raise PresetError(
+                                f"preset v{catalog_version} is available, but this "
+                                f"spec-kit release {local_desc}; upgrade spec-kit, "
+                                "then rerun 'specify preset update'"
+                            )
+                        pack_info = {**pack_info, "version": str(bundled_version)}
+                    if source_path is None:
+                        raise PresetError(
+                            f"Preset '{item_id}' is bundled with spec-kit but "
+                            "could not be found in the installed package"
+                        )
+                elif archive_path is None:
+                    archive_path = catalog.download_pack(item_id)
+
+            constitution_path = (
+                project_root / ".specify" / "memory" / "constitution.md"
+            )
+            constitution_before = (
+                constitution_path.read_bytes() if constitution_path.exists() else None
+            )
+            if source_kind == "dev" or source_path is not None:
+                manifest, diff = manager.update_from_directory(
+                    source_path,
+                    speckit_version,
+                    pack_id=item_id,
+                    priority=effective_priority,
+                    dry_run=dry_run,
+                    expected_version=(
+                        str(pack_info["version"]) if pack_info is not None else None
+                    ),
+                )
+            else:
+                manifest, diff = manager.update_from_archive(
+                    archive_path,
+                    speckit_version,
+                    pack_id=item_id,
+                    priority=effective_priority,
+                    dry_run=dry_run,
+                    expected_version=(
+                        str(pack_info["version"]) if pack_info is not None else None
+                    ),
+                )
+            action = "would update" if dry_run else "updated"
+            added_commands = sum(
+                entry["identity"][1] == "command" for entry in diff["added"]
+            )
+            removed_commands = sum(
+                entry["identity"][1] == "command" for entry in diff["removed"]
+            )
+            changed_commands = sum(
+                entry["identity"][1] == "command" for entry in diff["changed"]
+            )
+            constitution_after = (
+                constitution_path.read_bytes() if constitution_path.exists() else None
+            )
+            if dry_run:
+                sync_metadata = manager.registry.get("constitution-sync")
+                target_enabled = metadata.get("enabled", True)
+                prospective_constitution = diff.get(
+                    "_constitution_content_after"
+                )
+                prospective_bytes = (
+                    prospective_constitution
+                    if isinstance(prospective_constitution, bytes)
+                    else None
+                )
+                constitution_can_reconcile = (
+                    bool(diff.get("_constitution_layer"))
+                    and target_enabled
+                    and isinstance(sync_metadata, dict)
+                    and sync_metadata.get("enabled", True)
+                    and (
+                        not constitution_path.exists()
+                        or _constitution_is_generated(
+                            project_root,
+                            constitution_path,
+                            PresetResolver(project_root),
+                        )
+                    )
+                )
+                constitution_status = (
+                    "constitution change planned"
+                    if constitution_can_reconcile
+                    and prospective_bytes is not None
+                    and (
+                        not constitution_path.exists()
+                        or constitution_before != prospective_bytes
+                    )
+                    else "constitution unchanged"
+                )
+            else:
+                constitution_status = (
+                    "constitution unchanged"
+                    if constitution_before == constitution_after
+                    else "constitution reconciled"
+                )
+            generated_status = (
+                ", generated files unchanged while disabled"
+                if not metadata.get("enabled", True)
+                else ""
+            )
+            console.print(
+                f"[green]✓[/green] {safe_id}: {action} to v{manifest.version} "
+                f"(+{added_commands} commands, -{removed_commands} commands, "
+                f"~{changed_commands} commands, "
+                f"{constitution_status}, "
+                f"priority {'kept at ' + str(metadata.get('priority', 10)) if effective_priority is None else 'set to ' + str(effective_priority)}"
+                f"{generated_status})"
+            )
+            if dry_run:
+                for category in ("added", "removed", "changed", "unchanged"):
+                    identities = [
+                        f"{name} ({template_type})"
+                        for (name, template_type) in (
+                            entry["identity"] for entry in diff[category]
+                        )
+                    ]
+                    if identities:
+                        console.print(
+                            f"  {category}: {', '.join(identities)}"
+                        )
+                planned_actions = "stage, validate, atomically swap"
+                if metadata.get("enabled", True):
+                    planned_actions += ", reconcile"
+                console.print(f"  planned actions: {planned_actions}")
+            else:
+                _warn_unmet_extension_dependencies(manager, manifest)
+            outcomes.append("updated")
+        except OSError as exc:
+            detail = _escape_markup(str(exc).replace("\n", " "))
+            console.print(f"[yellow]•[/yellow] {safe_id}: failed — {detail}")
+            outcomes.append("failed")
+        except (PresetCompatibilityError, PresetValidationError, PresetError) as exc:
+            detail = _escape_markup(str(exc).replace("\n", " "))
+            prefix = (
+                "skipped"
+                if bulk and isinstance(exc, PresetCompatibilityError)
+                else "failed"
+            )
+            console.print(f"[yellow]•[/yellow] {safe_id}: {prefix} — {detail}")
+            outcomes.append(prefix)
+        finally:
+            if archive_path is not None:
+                _cleanup_archive(archive_path)
+
+    if any(outcome == "failed" for outcome in outcomes):
+        if dry_run_cache is not None:
+            shutil.rmtree(dry_run_cache, ignore_errors=True)
+        raise typer.Exit(1)
+    if dry_run_cache is not None:
+        shutil.rmtree(dry_run_cache, ignore_errors=True)
 
 
 @preset_app.command("search")
@@ -577,7 +1042,7 @@ def preset_info(
     """Show detailed information about a preset."""
     from .. import _require_specify_project
     from ..extensions import normalize_priority
-    from . import PresetCatalog, PresetManager, PresetError
+    from . import PresetCatalog, PresetError, PresetManager
 
     project_root = _require_specify_project()
     safe_preset_id = _escape_markup(str(preset_id))
@@ -721,8 +1186,14 @@ def preset_enable(
     preset_id: str = typer.Argument(help="Preset ID to enable"),
 ):
     """Enable a disabled preset."""
+    import copy
+
     from .. import _require_specify_project
-    from . import PresetManager
+    from .._init_options import (
+        MISSING_INIT_OPTIONS_FILE,
+        resolve_active_agent_for_registration,
+    )
+    from . import PresetManager, PresetManifest, PresetValidationError
 
     project_root = _require_specify_project()
     manager = PresetManager(project_root)
@@ -742,11 +1213,307 @@ def preset_enable(
         console.print(f"[yellow]Preset '{preset_id}' is already enabled[/yellow]")
         raise typer.Exit(0)
 
-    # Enable the preset
+    pack_dir = manager.presets_dir / preset_id
+    # Validate the installed manifest *before* flipping `enabled`: a missing
+    # or corrupt preset.yml must fail closed with the preset still disabled,
+    # not raise after the registry has already been mutated.
+    try:
+        manifest = PresetManifest(pack_dir / "preset.yml")
+    except PresetValidationError as e:
+        console.print(
+            f"[red]Error:[/red] Cannot enable '{preset_id}': installed "
+            f"manifest is invalid ({_escape_markup(str(e))})"
+        )
+        raise typer.Exit(1)
+
+    # Enable the preset. Snapshot the pre-enable registry entry first: if
+    # anything below raises, the registry is restored to this snapshot so a
+    # failed enable never leaves the preset marked enabled with only
+    # partially refreshed artifacts (fail-closed, matching the manifest
+    # validation above). Filesystem writes already performed before the
+    # failure are not unwound — the registry itself is what CLI/tests treat
+    # as the source of truth for enabled/disabled state.
+    registry_before = copy.deepcopy(metadata)
     manager.registry.update(preset_id, {"enabled": True})
-    manager.reconcile_constitution(
-        f"Failed to reconcile constitution after enabling preset {preset_id}"
-    )
+    try:
+        resolved_agent = resolve_active_agent_for_registration(project_root)
+        fallback_agent = resolved_agent if isinstance(resolved_agent, str) else ""
+        current_command_names = {
+            name
+            for template in manifest.templates
+            if template.get("type") == "command"
+            for name in (
+                [template.get("name")]
+                + [
+                    alias
+                    for alias in template.get("aliases", [])
+                    if isinstance(alias, str)
+                ]
+            )
+            if isinstance(name, str)
+        }
+        current_skill_names = {
+            skill_name
+            for command_name in current_command_names
+            for skill_name in manager._skill_names_for_command(command_name)
+        }
+
+        # Compute stale skills *before* stale commands (mirrors
+        # PresetManager.remove()): for a native skill-only agent (extension
+        # == "/SKILL.md", e.g. claude/codex), `_register_commands` writes
+        # the exact same SKILL.md file `_register_skills` does, so
+        # `registered_commands` and `registered_skills` both track that
+        # agent for the same on-disk file. Restoring/reconciling via
+        # `_unregister_skills` first, then excluding that coverage from the
+        # commands pass below, avoids `_unregister_commands` deleting the
+        # file outright (no core-fallback there) before `_unregister_skills`
+        # ever gets a chance to restore or reconcile it.
+        raw_registered_skills = metadata.get("registered_skills", {})
+        if isinstance(raw_registered_skills, list):
+            # Legacy flat-list value: infer real per-agent ownership from
+            # on-disk provenance rather than dropping it, otherwise a removed
+            # command's skill can never be identified as stale here.
+            registered_skills = manager._infer_legacy_skill_provenance(
+                [name for name in raw_registered_skills if isinstance(name, str)],
+                preset_id,
+                fallback_agent,
+            )
+        else:
+            registered_skills = manager._normalize_registered_skills(
+                raw_registered_skills, fallback_agent=fallback_agent
+            )
+        stale_skills = {}
+        for agent, names in registered_skills.items():
+            if not isinstance(agent, str) or not isinstance(names, list):
+                continue
+            stale_names = [
+                name
+                for name in names
+                if isinstance(name, str) and name not in current_skill_names
+            ]
+            if stale_names:
+                stale_skills[agent] = stale_names
+        # Populated by _unregister_skills below with the directories it
+        # restored to extension/core content, so a surviving lower-priority
+        # preset that should actually win those commands can be reconciled
+        # back in afterwards instead of being left showing core content.
+        affected_skill_dirs: dict[Path, tuple] = {}
+        if stale_skills:
+            affected_skill_dirs = manager._unregister_skills(
+                stale_skills,
+                pack_dir,
+                restore_from_bundled_core=True,
+            )
+            updated_skills = {}
+            for agent, names in registered_skills.items():
+                retained = [
+                    name for name in names if name not in stale_skills.get(agent, [])
+                ]
+                if retained:
+                    updated_skills[agent] = retained
+            manager.registry.update(preset_id, {"registered_skills": updated_skills})
+
+        stale_commands = {}
+        registered_commands = metadata.get("registered_commands", {})
+        if isinstance(registered_commands, dict):
+            for agent, names in registered_commands.items():
+                if not isinstance(agent, str) or not isinstance(names, list):
+                    continue
+                stale_names = [
+                    name
+                    for name in names
+                    if isinstance(name, str) and name not in current_command_names
+                ]
+                if stale_names:
+                    stale_commands[agent] = stale_names
+            if stale_commands:
+                # Exclude native skill-only agents (extension == "/SKILL.md")
+                # whose stale command names are already covered by the
+                # stale-skills pass above: for those agents the "command"
+                # and "skill" registrations are the same physical SKILL.md
+                # file, which _unregister_skills already restored/reconciled
+                # with core-fallback support. _unregister_commands has no
+                # such fallback — it always deletes — so re-running it here
+                # would blow away what was just restored (mirrors
+                # PresetManager.remove()'s identical filtering).
+                from ..agents import CommandRegistrar as _CommandRegistrarForFilter
+
+                commands_to_unregister: dict[str, list[str]] = {}
+                for agent, names in stale_commands.items():
+                    is_native_skill_agent = (
+                        _CommandRegistrarForFilter.AGENT_CONFIGS.get(agent, {}).get(
+                            "extension"
+                        )
+                        == "/SKILL.md"
+                    )
+                    if not is_native_skill_agent:
+                        commands_to_unregister[agent] = names
+                        continue
+                    covered_skill_names = {
+                        skill_name
+                        for skill_name in stale_skills.get(agent, [])
+                    }
+                    uncovered = [
+                        name
+                        for name in names
+                        if covered_skill_names.isdisjoint(
+                            manager._skill_names_for_command(name)
+                        )
+                    ]
+                    if uncovered:
+                        commands_to_unregister[agent] = uncovered
+                if commands_to_unregister:
+                    manager._unregister_commands(commands_to_unregister)
+                updated_commands = {}
+                for agent, names in registered_commands.items():
+                    if not isinstance(agent, str) or not isinstance(names, list):
+                        continue
+                    retained = [
+                        name
+                        for name in names
+                        if isinstance(name, str)
+                        and name not in stale_commands.get(agent, [])
+                    ]
+                    if retained:
+                        updated_commands[agent] = retained
+                manager.registry.update(preset_id, {"registered_commands": updated_commands})
+
+        if resolved_agent is MISSING_INIT_OPTIONS_FILE:
+            # Legacy pre-init-options project: there is no single "active
+            # agent" to target, so mirror install-time behaviour and
+            # register/re-register this preset's commands and skills for
+            # every agent directory actually present on disk, merging the
+            # fresh result into the stored registry state.
+            fresh_commands = manager._register_commands(manifest, pack_dir)
+            if fresh_commands:
+                current_metadata = manager.registry.get(preset_id) or {}
+                merged = copy.deepcopy(current_metadata.get("registered_commands") or {})
+                for agent, names in fresh_commands.items():
+                    existing = merged.get(agent, [])
+                    merged[agent] = existing + [
+                        name for name in names if name not in existing
+                    ]
+                manager.registry.update(preset_id, {"registered_commands": merged})
+
+            fresh_skills = manager._register_skills(manifest, pack_dir)
+            if fresh_skills:
+                current_metadata = manager.registry.get(preset_id) or {}
+                merged_skills = copy.deepcopy(current_metadata.get("registered_skills") or {})
+                for agent, names in fresh_skills.items():
+                    existing = merged_skills.get(agent, [])
+                    merged_skills[agent] = existing + [
+                        name for name in names if name not in existing
+                    ]
+                manager.registry.update(preset_id, {"registered_skills": merged_skills})
+        elif isinstance(resolved_agent, str):
+            manager.register_enabled_presets_for_agent(resolved_agent)
+
+        reconcile_command_names = sorted(
+            {name for names in stale_commands.values() for name in names}
+        )
+        if stale_commands:
+            manager._reconcile_composed_commands(
+                reconcile_command_names,
+                extra_agents=set(stale_commands),
+            )
+        # A skill can go stale without ever being registered as a command
+        # (skills-only agents have no `registered_commands` entry), so
+        # `reconcile_command_names` above (derived only from
+        # `stale_commands`) can be empty even though `affected_skill_dirs`
+        # is not — and `_reconcile_skills` no-ops on an empty command-name
+        # list. Recover the command name for each stale skill by matching
+        # forward via `_skill_names_for_command`, rather than reversing the
+        # skill-name encoding: that reverse mapping is lossy for namespaced
+        # commands (e.g. "speckit.git.feature" -> "speckit-git-feature"
+        # collides with "speckit.git-feature" on the way back), so the
+        # surviving-lower-priority-preset lookup below could target the
+        # wrong command entirely.
+        #
+        # The candidate set can't be limited to *this* preset's own current
+        # manifest plus its own `registered_commands`: a command-backed
+        # integration running in explicit skills-opt-in mode (e.g. Copilot
+        # with `ai_skills` on) never gets an entry in `registered_commands`
+        # at all (see `_register_commands`'s ai_skills guard), and the
+        # command itself is, by definition, no longer present in this
+        # preset's *current* (post-update) manifest — it's the very thing
+        # that went stale. In that case this preset alone can never supply
+        # the name. The preset that's actually meant to win the skill back
+        # (a surviving lower-priority provider) still lists the command in
+        # its own current manifest, so the candidate set is gathered from
+        # every installed preset's manifest and registered_commands, not
+        # just this one's.
+        all_known_command_names = set(current_command_names)
+        if isinstance(registered_commands, dict):
+            for names in registered_commands.values():
+                if isinstance(names, list):
+                    all_known_command_names.update(
+                        name for name in names if isinstance(name, str)
+                    )
+        if stale_skills:
+            for other_pack_id, other_metadata in manager.registry.list().items():
+                if other_pack_id == preset_id or not isinstance(other_metadata, dict):
+                    continue
+                other_registered_commands = other_metadata.get(
+                    "registered_commands", {}
+                )
+                if isinstance(other_registered_commands, dict):
+                    for names in other_registered_commands.values():
+                        if isinstance(names, list):
+                            all_known_command_names.update(
+                                name for name in names if isinstance(name, str)
+                            )
+                other_pack_dir = manager.presets_dir / other_pack_id
+                other_manifest_path = other_pack_dir / "preset.yml"
+                if other_manifest_path.exists():
+                    try:
+                        other_manifest = PresetManifest(other_manifest_path)
+                    except PresetValidationError:
+                        continue
+                    for template in other_manifest.templates:
+                        if template.get("type") != "command":
+                            continue
+                        for name in (
+                            [template.get("name")]
+                            + [
+                                alias
+                                for alias in template.get("aliases", [])
+                                if isinstance(alias, str)
+                            ]
+                        ):
+                            if isinstance(name, str):
+                                all_known_command_names.add(name)
+        stale_skill_command_names = set()
+        for names in stale_skills.values():
+            for skill_name in names:
+                for command_name in all_known_command_names:
+                    modern, legacy = manager._skill_names_for_command(command_name)
+                    if skill_name in (modern, legacy):
+                        stale_skill_command_names.add(command_name)
+                        break
+        skill_reconcile_command_names = sorted(
+            set(reconcile_command_names) | stale_skill_command_names
+        )
+        if skill_reconcile_command_names or affected_skill_dirs:
+            # Mirrors PresetManager.remove(): a stale skill directory
+            # restored to extension/core content above may actually be
+            # owned by a surviving lower-priority preset, which must be
+            # reconciled back in rather than left showing core content.
+            manager._reconcile_skills(
+                skill_reconcile_command_names, extra_skills_dirs=affected_skill_dirs
+            )
+
+        manager.reconcile_constitution(
+            f"Failed to reconcile constitution after enabling preset {preset_id}"
+        )
+    except Exception as e:
+        manager.registry.restore(preset_id, registry_before)
+        console.print(
+            f"[red]Error:[/red] Failed to enable '{preset_id}': "
+            f"{_escape_markup(str(e))}. The preset has been restored to its "
+            f"previous disabled state; resolve the underlying issue and "
+            f"re-run 'specify preset enable {preset_id}'."
+        )
+        raise typer.Exit(1) from e
 
     console.print(f"[green]✓[/green] Preset '{preset_id}' enabled")
     console.print("\nTemplates from this preset will now be included in resolution.")

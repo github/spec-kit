@@ -39,6 +39,73 @@ specify preset remove <preset_id>
 
 Removes an installed preset and cleans up its registered commands.
 
+## Update a Preset
+
+```bash
+specify preset update [<preset_id>]
+```
+
+Updates one installed preset, or all installed presets when no ID is given.
+Catalogue updates are resolved by preset ID alone. Spec Kit searches the active
+catalogues for a matching entry and only uses entries from catalogues that
+allow installation. It does not retain or replay the original URL or local
+directory used to install a preset. If the installed preset ID cannot be
+resolved through an installation-enabled catalogue, provide an explicit
+`--dev <path>` or `--from <url>` source.
+
+This means a preset installed from a catalogue can later be updated from the
+catalogue entry currently associated with its ID, while a development or
+one-off archive installation remains updateable only when an explicit source
+is supplied or when that ID is otherwise available from an installation-enabled
+catalogue. The incoming manifest must still use the installed preset ID and
+pass normal compatibility and file validation.
+
+| Option           | Description                                      |
+| ---------------- | ------------------------------------------------ |
+| `--from <url>`   | Update from a `.zip`, `.tar.gz`, or `.tgz` URL   |
+| `--dev <path>`   | Update from a local directory                    |
+| `--priority <N>` | Set a new resolution priority for a single update |
+| `--all`          | Update all installed presets |
+| `--dry-run`      | Show the manifest diff without changing anything |
+
+Single-preset updates do not prompt for confirmation and may use `--priority`
+to reprioritize the preset. Bulk updates ask once, report each preset
+independently, preserve priority and enabled state, and skip compatible
+presets that are already current. If `--priority` is supplied to a bulk
+update, it is ignored and a note is printed after pre-flight checks to prevent
+unintended priority collisions.
+Updates stage and validate the new preset before atomically replacing the
+installed directory.
+
+### Recovering from an interrupted update
+
+An interrupted update can leave `.<preset_id>.update-*.bak` (the pre-update
+directory) or `.<preset_id>.update-*.staging` (the validated candidate) under
+`.specify/presets/`. These are crash-recovery artefacts, not additional
+installed presets. Do not edit the registry to point at either directory.
+
+Inspect both manifests before taking action:
+
+```bash
+find .specify/presets -maxdepth 1 \
+  \( -name '<preset_id>' -o -name '.*.update-*.bak' -o -name '.*.update-*.staging' \) \
+  -print
+sed -n '1,120p' .specify/presets/<preset_id>/preset.yml
+sed -n '1,120p' .specify/presets/.<preset_id>.update-*.bak/preset.yml
+sed -n '1,120p' .specify/presets/.<preset_id>.update-*.staging/preset.yml
+```
+
+If the live `<preset_id>` directory is missing and the backup manifest is the
+version recorded in `.specify/presets/.registry`, restore the backup by
+renaming it to `<preset_id>`. Leave a staging directory untouched until its
+contents have been inspected, then remove it only after confirming that the
+live directory and registry agree. If the state is ambiguous, copy the
+affected directories aside for inspection and use the supported update flow
+with `--from <url>` or `--dev <path>`, or remove and re-add the preset. There
+is deliberately no repair command. Recovery uses the normal update, remove, and
+add flows, and catalogue re-resolution is deliberately based on preset ID
+rather than stored source provenance.
+
 ## List Installed Presets
 
 ```bash

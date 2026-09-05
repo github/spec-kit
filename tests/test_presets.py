@@ -41,7 +41,11 @@ from specify_cli.presets import (
 )
 from specify_cli.extensions import ExtensionRegistry
 from specify_cli._console import console
-from specify_cli.presets._commands import _warn_unmet_extension_dependencies
+from specify_cli.presets._commands import (
+    _download_preset_archive,
+    _warn_unmet_extension_dependencies,
+    _write_preset_archive,
+)
 
 
 # ===== Fixtures =====
@@ -524,6 +528,30 @@ provides:
         with open(manifest_path, 'w') as f:
             yaml.dump(valid_pack_data, f)
         with pytest.raises(PresetValidationError, match="Duplicate template name"):
+            PresetManifest(manifest_path)
+
+    def test_duplicate_template_alias_and_type_raises_validation_error(
+        self, temp_dir, valid_pack_data
+    ):
+        """Aliases must not shadow another template's primary identity."""
+        valid_pack_data["provides"]["templates"] = [
+            {
+                "type": "command",
+                "name": "specify",
+                "file": "commands/specify.md",
+                "aliases": ["spec"],
+            },
+            {
+                "type": "command",
+                "name": "other",
+                "file": "commands/other.md",
+                "aliases": ["spec"],
+            },
+        ]
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_pack_data, f)
+        with pytest.raises(PresetValidationError, match="Duplicate template name or alias"):
             PresetManifest(manifest_path)
 
     def test_same_name_different_type_templates_allowed(
@@ -5480,6 +5508,24 @@ class TestPresetSkills:
         with open(preset_dir / "preset.yml", "w") as f:
             yaml.dump(manifest_data, f)
         return preset_dir
+
+    def test_resolver_matches_manifest_aliases(self, project_dir, temp_dir):
+        preset_dir = self._create_multi_command_preset_with_aliases(
+            temp_dir, "alias-resolver-preset", [("speckit.primary", ["speckit.alias"])]
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.0")
+
+        resolver = PresetResolver(project_dir)
+        entry, candidate = resolver._manifest_declared_template(
+            manager.presets_dir / "alias-resolver-preset",
+            "speckit.alias",
+            "command",
+        )
+
+        assert entry is not None
+        assert candidate is not None
+        assert candidate.name == "speckit.primary.md"
 
     def test_skill_overridden_on_preset_install(self, project_dir, temp_dir):
         """When skills mode was used, a preset command override should update the skill."""
@@ -11283,6 +11329,559 @@ class TestPresetEnableDisable:
         assert result.exit_code == 1
         assert "corrupted state" in result.output.lower()
 
+    def test_enable_fails_closed_on_corrupt_installed_manifest(
+        self, project_dir, pack_dir
+    ):
+        """Enable must not flip `enabled` when the installed manifest is invalid.
+
+        A missing or corrupt preset.yml must be validated before the
+        registry is mutated, otherwise the command fails after the preset
+        has already been marked enabled with unreconciled artifacts (#4441).
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+        manager.registry.update("test-pack", {"enabled": False})
+
+        installed_manifest = (
+            project_dir / ".specify" / "presets" / "test-pack" / "preset.yml"
+        )
+        installed_manifest.write_text("not: [valid")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(app, ["preset", "enable", "test-pack"])
+
+        assert result.exit_code != 0
+        assert "invalid" in result.output.lower()
+        manager2 = PresetManager(project_dir)
+        assert manager2.registry.get("test-pack")["enabled"] is False
+
+    def test_enable_reconciles_legacy_flat_list_registered_skills(
+        self, project_dir, temp_dir
+    ):
+        """A legacy flat-list `registered_skills` value must still let enable
+        detect and clean up a skill whose command was removed while disabled.
+
+        `_normalize_registered_skills()` drops a legacy flat list when no
+        fallback agent is supplied, which would otherwise skip cleanup of
+        the removed command's stale skill entirely (#4441).
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app, save_init_options
+
+        save_init_options(
+            project_dir, {"ai": "claude", "ai_skills": True, "script": "sh"}
+        )
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        preset_dir = temp_dir / "legacy-skill-preset"
+        (preset_dir / "commands").mkdir(parents=True)
+        for name, body in (
+            ("speckit.keep", "Keep body"),
+            ("speckit.drop", "Drop body"),
+        ):
+            (preset_dir / "commands" / f"{name}.md").write_text(
+                f"---\ndescription: {name}\n---\n\n{body}\n"
+            )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "legacy-skill-preset",
+                "name": "legacy-skill-preset",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.keep",
+                        "file": "commands/speckit.keep.md",
+                    },
+                    {
+                        "type": "command",
+                        "name": "speckit.drop",
+                        "file": "commands/speckit.drop.md",
+                    },
+                ]
+            },
+        }
+        (preset_dir / "preset.yml").write_text(yaml.safe_dump(manifest_data))
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.0")
+        metadata = manager.registry.get("legacy-skill-preset")
+        assert set(metadata["registered_skills"]["claude"]) == {
+            "speckit-keep",
+            "speckit-drop",
+        }
+
+        # Simulate a legacy pre-#2948 registry: flatten registered_skills to
+        # a bare list, matching what old registries stored before per-agent
+        # provenance existed.
+        manager.registry.update(
+            "legacy-skill-preset",
+            {"registered_skills": ["speckit-keep", "speckit-drop"]},
+        )
+        manager.registry.update("legacy-skill-preset", {"enabled": False})
+
+        # Simulate a disabled update that dropped "speckit.drop" from the
+        # installed manifest. A real `update_from_directory` replaces the
+        # installed preset directory wholesale, so the dropped command's
+        # file is gone from disk too — remove it here as well, or the
+        # resolver's convention-based fallback (an on-disk file with no
+        # matching manifest entry still resolves as a layer) would treat
+        # the leftover file as still "provided" by this preset and
+        # reconciliation would legitimately recreate it.
+        installed_manifest_path = (
+            project_dir
+            / ".specify"
+            / "presets"
+            / "legacy-skill-preset"
+            / "preset.yml"
+        )
+        installed_manifest = yaml.safe_load(installed_manifest_path.read_text())
+        installed_manifest["provides"]["templates"] = [
+            t
+            for t in installed_manifest["provides"]["templates"]
+            if t["name"] != "speckit.drop"
+        ]
+        installed_manifest_path.write_text(yaml.safe_dump(installed_manifest))
+        (
+            project_dir
+            / ".specify"
+            / "presets"
+            / "legacy-skill-preset"
+            / "commands"
+            / "speckit.drop.md"
+        ).unlink()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "enable", "legacy-skill-preset"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert not (skills_dir / "speckit-drop").exists()
+        assert (skills_dir / "speckit-keep" / "SKILL.md").exists()
+        registered = PresetManager(project_dir).registry.get(
+            "legacy-skill-preset"
+        )["registered_skills"]
+        assert "speckit-drop" not in registered.get("claude", [])
+        assert "speckit-keep" in registered.get("claude", [])
+
+    def test_enable_legacy_project_refreshes_all_detected_agents(
+        self, project_dir, temp_dir
+    ):
+        """A legacy pre-init-options project has no single active agent;
+        enabling a preset updated while disabled must still refresh every
+        agent directory actually present on disk, not silently do nothing
+        (#4441).
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        claude_skills = project_dir / ".claude" / "skills"
+        claude_skills.mkdir(parents=True)
+        gemini_commands = project_dir / ".gemini" / "commands"
+        gemini_commands.mkdir(parents=True)
+
+        def build_preset(preset_id, body, version="1.0.0"):
+            preset_dir = temp_dir / preset_id
+            (preset_dir / "commands").mkdir(parents=True)
+            (preset_dir / "commands" / "speckit.specify.md").write_text(
+                f"---\ndescription: test\n---\n\n{body}\n"
+            )
+            manifest_data = {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": preset_id,
+                    "name": preset_id,
+                    "version": version,
+                    "description": "Test",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "templates": [
+                        {
+                            "type": "command",
+                            "name": "speckit.specify",
+                            "file": "commands/speckit.specify.md",
+                        },
+                    ]
+                },
+            }
+            (preset_dir / "preset.yml").write_text(yaml.safe_dump(manifest_data))
+            return preset_dir
+
+        source_v1 = build_preset("legacy-refresh-preset", "Specify v1")
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(source_v1, "0.1.0")
+
+        assert "Specify v1" in (
+            gemini_commands / "speckit.specify.toml"
+        ).read_text(encoding="utf-8")
+        assert "Specify v1" in (
+            claude_skills / "speckit-specify" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        manager.registry.update("legacy-refresh-preset", {"enabled": False})
+
+        source_v2 = build_preset(
+            "legacy-refresh-preset-v2", "Specify v2", version="2.0.0"
+        )
+        data = yaml.safe_load((source_v2 / "preset.yml").read_text())
+        data["preset"]["id"] = "legacy-refresh-preset"
+        (source_v2 / "preset.yml").write_text(yaml.safe_dump(data))
+        manager.update_from_directory(
+            source_v2, "0.1.0", pack_id="legacy-refresh-preset"
+        )
+
+        # Confirm the disabled update deliberately left generated artifacts
+        # untouched while disabled.
+        assert "Specify v1" in (
+            gemini_commands / "speckit.specify.toml"
+        ).read_text(encoding="utf-8")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "enable", "legacy-refresh-preset"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Specify v2" in (
+            gemini_commands / "speckit.specify.toml"
+        ).read_text(encoding="utf-8")
+        assert "Specify v2" in (
+            claude_skills / "speckit-specify" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+    def test_enable_restores_disabled_state_on_reconciliation_failure(
+        self, project_dir, temp_dir
+    ):
+        """If reconciliation raises partway through enable, the registry
+        must be restored to its pre-enable (disabled) snapshot rather than
+        being left showing ``enabled: True`` with only partially refreshed
+        artifacts (#4441).
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        # An agent directory must exist for registration to actually
+        # record any command names — otherwise registered_commands stays
+        # empty and there's nothing for enable to consider stale.
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        def build_preset(preset_id, command_names, version="1.0.0"):
+            preset_dir = temp_dir / f"{preset_id}-{version}"
+            (preset_dir / "commands").mkdir(parents=True)
+            templates = []
+            for name in command_names:
+                (preset_dir / "commands" / f"{name}.md").write_text(
+                    f"---\ndescription: test\n---\n\n{name} body\n"
+                )
+                templates.append({
+                    "type": "command",
+                    "name": name,
+                    "file": f"commands/{name}.md",
+                })
+            manifest_data = {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": preset_id,
+                    "name": preset_id,
+                    "version": version,
+                    "description": "Test",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {"templates": templates},
+            }
+            (preset_dir / "preset.yml").write_text(yaml.safe_dump(manifest_data))
+            return preset_dir
+
+        manager = PresetManager(project_dir)
+        source_v1 = build_preset(
+            "rollback-preset", ["speckit.specify", "speckit.plan"]
+        )
+        manager.install_from_directory(source_v1, "0.1.0")
+        manager.registry.update("rollback-preset", {"enabled": False})
+
+        # Update while disabled, dropping speckit.plan — this makes it a
+        # stale command that enable must reconcile (and is exactly the code
+        # path we're about to make fail).
+        source_v2 = build_preset(
+            "rollback-preset", ["speckit.specify"], version="2.0.0"
+        )
+        manager.update_from_directory(
+            source_v2, "0.1.0", pack_id="rollback-preset"
+        )
+
+        registry_before = manager.registry.get("rollback-preset")
+        assert registry_before["enabled"] is False
+
+        with patch.object(
+            PresetManager,
+            "_unregister_commands",
+            side_effect=RuntimeError("simulated reconciliation failure"),
+        ), patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "enable", "rollback-preset"]
+            )
+
+        assert result.exit_code != 0
+        assert "restored" in result.output.lower() or "previous disabled state" in result.output.lower()
+
+        # Reload registry fresh from disk: it must still show disabled,
+        # not a half-completed "enabled" state.
+        manager2 = PresetManager(project_dir)
+        metadata_after = manager2.registry.get("rollback-preset")
+        assert metadata_after["enabled"] is False
+        assert metadata_after["version"] == "2.0.0"
+
+    def test_enable_reconciles_surviving_lower_priority_preset_skill_for_historical_agent(
+        self, project_dir, temp_dir
+    ):
+        """A disabled update that drops a command the preset used to
+        override must, on enable, hand that command's skill back to a
+        surviving lower-priority preset for *every* agent directory the
+        preset's ``registered_skills`` actually spans, including a
+        historical (currently inactive) agent, not just the one active
+        agent that ``register_enabled_presets_for_agent`` refreshes.
+
+        Mirrors ``test_remove_reconciles_skill_for_every_historical_agent``
+        for the enable-after-disabled-update path (#4441): without
+        capturing ``_unregister_skills``'s return value and handing it to
+        ``_reconcile_skills``, the historical (claude) directory is left
+        showing core/extension content instead of the surviving
+        lo-priority preset's override.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        self_ = TestPresetSkills()
+        self_._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills = project_dir / ".claude" / "skills"
+
+        # A core template fallback is required so unregistering the stale
+        # override restores core content rather than deleting the skill
+        # directory outright, matching the historical-agent removal test.
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        manager = PresetManager(project_dir)
+
+        lo_dir = self_._create_command_preset(
+            temp_dir, "lo-priority-preset", "speckit.specify", "lo", "Lo content"
+        )
+        manager.install_from_directory(lo_dir, "0.1.5", priority=10)
+
+        hi_dir = self_._create_command_preset(
+            temp_dir, "hi-priority-preset", "speckit.specify", "hi", "Hi content"
+        )
+        manager.install_from_directory(hi_dir, "0.1.5", priority=1)
+        assert "Hi content" in (
+            claude_skills / "speckit-specify" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        # Switch the active integration to codex and rescaffold, mirroring
+        # `integration use codex` — this records the hi-priority preset's
+        # registered_skills for codex too, leaving claude as a historical
+        # (now inactive) agent it still owns a directory in.
+        self_._write_init_options(project_dir, ai="codex", ai_skills=True)
+        codex_skills = project_dir / ".agents" / "skills"
+        manager.register_enabled_presets_for_agent("codex")
+
+        metadata_hi = manager.registry.get("hi-priority-preset")
+        assert set(metadata_hi.get("registered_skills", {})) == {"claude", "codex"}, (
+            "sanity: hi-priority-preset's registered_skills must span "
+            "both the historical (claude) and active (codex) agents"
+        )
+
+        manager.registry.update("hi-priority-preset", {"enabled": False})
+
+        # Update the disabled hi-priority preset so it no longer provides
+        # speckit.specify at all — its skill override becomes stale in
+        # both the historical and active agent directories.
+        hi_dir_v2 = self_._create_command_preset(
+            temp_dir, "hi-priority-preset-v2", "speckit.other", "hi2", "Hi other content"
+        )
+        data = yaml.safe_load((hi_dir_v2 / "preset.yml").read_text())
+        data["preset"]["id"] = "hi-priority-preset"
+        data["preset"]["version"] = "2.0.0"
+        (hi_dir_v2 / "preset.yml").write_text(yaml.safe_dump(data))
+        manager.update_from_directory(
+            hi_dir_v2, "0.1.5", pack_id="hi-priority-preset"
+        )
+
+        # Still disabled: the stale override remains untouched on disk in
+        # both directories.
+        assert "Hi content" in (
+            claude_skills / "speckit-specify" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        assert "Hi content" in (
+            codex_skills / "speckit-specify" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "enable", "hi-priority-preset"]
+            )
+
+        assert result.exit_code == 0, result.output
+        # The surviving lo-priority preset's override must win back both
+        # directories — codex (currently active, refreshed by
+        # register_enabled_presets_for_agent) and claude (historical,
+        # only fixed by the _reconcile_skills(extra_skills_dirs=...) call).
+        assert "Lo content" in (
+            claude_skills / "speckit-specify" / "SKILL.md"
+        ).read_text(encoding="utf-8"), (
+            "the historical (claude) directory must be reconciled back "
+            "to the surviving lo-priority preset's override, not left "
+            "showing core/extension content"
+        )
+        assert "Lo content" in (
+            codex_skills / "speckit-specify" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+    def test_enable_reconciles_stale_skill_for_namespaced_command(
+        self, project_dir, temp_dir
+    ):
+        """A stale skill left over from a disabled update for a namespaced
+        command (e.g. ``speckit.git.feature``) must be reconciled back to
+        the surviving lower-priority preset's content on enable (#4441),
+        even when the preset whose command went stale never had a
+        ``registered_commands`` entry for it at all.
+
+        ``speckit.git.feature`` (a 3-segment, extension-style namespaced
+        command per ``presets/scaffold/preset.yml``) encodes to the skill
+        directory ``speckit-git-feature``. Recovering the command name from
+        that directory name by naive reversal (every hyphen after the first
+        segment treated as literal) collides with ``speckit.git-feature``
+        and would target the wrong command; forward-matching avoids that
+        ambiguity by construction.
+
+        Copilot starts active (skills-opt-in mode), so
+        ``_register_commands``'s guard never populates
+        ``registered_commands`` for it there. The active agent is then
+        switched to ``amp`` -- another command-backed, skills-opt-in
+        integration -- making copilot *historical*. This matters:
+        ``register_enabled_presets_for_agent`` only rescaffolds the
+        newly-active agent's own directory, so if copilot stayed active it
+        would be fully re-derived (correctly) by that call regardless of
+        whether the stale-skill candidate search below works at all,
+        masking the bug. With copilot historical and amp active instead,
+        neither agent's ``registered_commands`` is ever populated (amp is
+        also skills-opt-in), and the disabled update also drops the command
+        from hi-priority-preset's own current manifest. So neither
+        hi-priority-preset's manifest nor its own ``registered_commands``
+        can supply the name for copilot's stale skill -- the only source is
+        the surviving lo-priority preset's own current manifest, which the
+        candidate search must reach across the whole installed preset stack
+        (not just the preset whose skill went stale) to find.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        self_ = TestPresetSkills()
+        self_._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        copilot_skills = project_dir / ".github" / "skills"
+
+        manager = PresetManager(project_dir)
+
+        lo_dir = self_._create_command_preset(
+            temp_dir,
+            "lo-priority-preset",
+            "speckit.git.feature",
+            "Lo git feature",
+            "Lo content",
+        )
+        manager.install_from_directory(lo_dir, "0.1.5", priority=10)
+
+        hi_dir = self_._create_command_preset(
+            temp_dir,
+            "hi-priority-preset",
+            "speckit.git.feature",
+            "Hi git feature",
+            "Hi content",
+        )
+        manager.install_from_directory(hi_dir, "0.1.5", priority=1)
+        assert "Hi content" in (
+            copilot_skills / "speckit-git-feature" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        hi_metadata = manager.registry.get("hi-priority-preset")
+        assert not hi_metadata.get("registered_commands", {}).get("copilot"), (
+            "sanity: copilot in skills-opt-in mode must not record this "
+            "override in registered_commands, otherwise the candidate "
+            "search this test targets can't be reached"
+        )
+
+        # Switch the active agent to amp (also command-backed,
+        # skills-opt-in) so copilot becomes historical -- see the docstring
+        # for why this is required to actually reach the bug.
+        self_._write_init_options(project_dir, ai="amp", ai_skills=True)
+        manager.register_enabled_presets_for_agent("amp")
+        hi_metadata = manager.registry.get("hi-priority-preset")
+        assert not hi_metadata.get("registered_commands", {}).get("copilot"), (
+            "sanity: switching active agent must not retroactively "
+            "populate registered_commands for the now-historical copilot"
+        )
+
+        manager.registry.update("hi-priority-preset", {"enabled": False})
+
+        # Update the disabled hi-priority preset so it no longer provides
+        # speckit.git.feature at all -- its skill override becomes stale,
+        # and the command is now also absent from its own current manifest.
+        hi_dir_v2 = self_._create_command_preset(
+            temp_dir,
+            "hi-priority-preset-v2",
+            "speckit.other",
+            "Unrelated",
+            "Hi other content",
+        )
+        data = yaml.safe_load((hi_dir_v2 / "preset.yml").read_text())
+        data["preset"]["id"] = "hi-priority-preset"
+        data["preset"]["version"] = "2.0.0"
+        (hi_dir_v2 / "preset.yml").write_text(yaml.safe_dump(data))
+        manager.update_from_directory(
+            hi_dir_v2, "0.1.5", pack_id="hi-priority-preset"
+        )
+
+        # Still disabled: the stale override remains untouched on disk.
+        assert "Hi content" in (
+            copilot_skills / "speckit-git-feature" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "enable", "hi-priority-preset"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Lo content" in (
+            copilot_skills / "speckit-git-feature" / "SKILL.md"
+        ).read_text(encoding="utf-8"), (
+            "the namespaced command's stale skill must be reconciled back "
+            "to the surviving lo-priority preset's override under its "
+            "correct command name, not left on stale/core content because "
+            "of a lossy skill-name-to-command-name reversal"
+        )
+
     def test_disable_corrupted_registry_entry(self, project_dir, pack_dir):
         """Test disable fails gracefully for corrupted registry entry."""
         from typer.testing import CliRunner
@@ -14651,3 +15250,2005 @@ class TestConstitutionSyncPreset:
         assert "## Constitution Template Sync" in content
         assert "supersedes the \"Scope Guard\" above" in content
         assert "plan-template.md" in content
+
+
+class TestPresetUpdate:
+    def _updated_source(self, pack_dir, version="2.0.0"):
+        source = pack_dir.parent / "updated-pack"
+        shutil.copytree(pack_dir, source)
+        manifest_path = source / "preset.yml"
+        data = yaml.safe_load(manifest_path.read_text())
+        data["preset"]["version"] = version
+        data["provides"]["templates"].append(
+            {
+                "type": "command",
+                "name": "new-command",
+                "file": "commands/new-command.md",
+            }
+        )
+        (source / "commands").mkdir()
+        (source / "commands" / "new-command.md").write_text("# New\n")
+        manifest_path.write_text(yaml.safe_dump(data))
+        return source
+
+    def _command_preset(self, temp_dir, preset_id, body):
+        preset_dir = temp_dir / preset_id
+        (preset_dir / "commands").mkdir(parents=True)
+        (preset_dir / "commands" / "speckit.specify.md").write_text(
+            "---\ndescription: Test command\n---\n\n"
+            f"{body}\n"
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": preset_id,
+                        "name": preset_id,
+                        "version": "1.0.0",
+                        "description": "Test",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "command",
+                                "name": "speckit.specify",
+                                "file": "commands/speckit.specify.md",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+        return preset_dir
+
+    def _multi_command_preset(self, temp_dir, preset_id, commands, version="1.0.0"):
+        preset_dir = temp_dir / preset_id
+        (preset_dir / "commands").mkdir(parents=True)
+        templates = []
+        for command_name, body in commands.items():
+            file_name = f"{command_name}.md"
+            (preset_dir / "commands" / file_name).write_text(
+                "---\ndescription: Test command\n---\n\n"
+                f"{body}\n"
+            )
+            templates.append(
+                {
+                    "type": "command",
+                    "name": command_name,
+                    "file": f"commands/{file_name}",
+                }
+            )
+        (preset_dir / "preset.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": preset_id,
+                        "name": preset_id,
+                        "version": version,
+                        "description": "Test",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {"templates": templates},
+                }
+            )
+        )
+        return preset_dir
+
+    def _updated_command_source(self, preset_dir, version, body):
+        source = preset_dir.parent / f"updated-{preset_dir.name}"
+        shutil.copytree(preset_dir, source)
+        manifest_path = source / "preset.yml"
+        data = yaml.safe_load(manifest_path.read_text())
+        data["preset"]["version"] = version
+        manifest_path.write_text(yaml.safe_dump(data))
+        (source / "commands" / "speckit.specify.md").write_text(
+            "---\ndescription: Test command\n---\n\n"
+            f"{body}\n"
+        )
+        return source
+
+    def _constitution_preset(
+        self, temp_dir, preset_id, body, *, strategy="replace", version="1.0.0"
+    ):
+        preset_dir = temp_dir / preset_id
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(body)
+        (preset_dir / "preset.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": preset_id,
+                        "name": preset_id,
+                        "version": version,
+                        "description": "Test",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "strategy": strategy,
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+        return preset_dir
+
+    def test_manifest_diff_uses_name_and_type_identity(self, pack_dir):
+        source = self._updated_source(pack_dir)
+        old = PresetManifest(pack_dir / "preset.yml")
+        new = PresetManifest(source / "preset.yml")
+        from specify_cli.presets import diff_preset_manifests
+
+        diff = diff_preset_manifests(old, new)
+        assert [item["identity"] for item in diff["added"]] == [
+            ("new-command", "command")
+        ]
+        assert diff["changed"] == []
+        assert diff["unchanged"][0]["identity"] == ("spec-template", "template")
+
+    def test_update_preserves_priority_and_enabled_state(
+        self, project_dir, pack_dir
+    ):
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0", priority=3)
+        manager.registry.update("test-pack", {"enabled": False})
+        source = self._updated_source(pack_dir)
+
+        manifest, diff = manager.update_from_directory(
+            source, "0.1.0", pack_id="test-pack"
+        )
+
+        assert manifest.version == "2.0.0"
+        assert diff["added"]
+        metadata = manager.registry.get("test-pack")
+        assert metadata["priority"] == 3
+        assert metadata["enabled"] is False
+        assert (project_dir / ".specify/presets/test-pack/preset.yml").exists()
+
+    def test_dry_run_does_not_modify_installation(self, project_dir, pack_dir):
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0", priority=4)
+        before = (project_dir / ".specify/presets/test-pack/preset.yml").read_bytes()
+        source = self._updated_source(pack_dir)
+
+        manifest, diff = manager.update_from_directory(
+            source, "0.1.0", pack_id="test-pack", dry_run=True
+        )
+
+        assert manifest.version == "2.0.0"
+        assert diff["added"]
+        assert (
+            project_dir / ".specify/presets/test-pack/preset.yml"
+        ).read_bytes() == before
+        assert manager.registry.get("test-pack")["version"] == "1.0.0"
+
+    def test_dry_run_validates_catalogue_expected_version(
+        self, project_dir, pack_dir
+    ):
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        source = self._updated_source(pack_dir)
+
+        with pytest.raises(PresetValidationError, match="does not match catalogue"):
+            manager.update_from_directory(
+                source,
+                "0.1.0",
+                pack_id="test-pack",
+                dry_run=True,
+                expected_version="9.9.9",
+            )
+
+        assert manager.registry.get("test-pack")["version"] == "1.0.0"
+
+    def test_disabled_preset_update_preserves_existing_artifacts(
+        self, project_dir, temp_dir
+    ):
+        from specify_cli import save_init_options
+
+        save_init_options(
+            project_dir, {"ai": "qwen", "ai_skills": False, "script": "sh"}
+        )
+        (project_dir / ".qwen" / "commands").mkdir(parents=True)
+        preset_dir = self._command_preset(
+            temp_dir, "disabled-update-preset", "Original disabled body"
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.0")
+        manager.registry.update("disabled-update-preset", {"enabled": False})
+
+        command_file = project_dir / ".qwen" / "commands" / "speckit.specify.md"
+        command_before = command_file.read_bytes()
+        metadata_before = manager.registry.get("disabled-update-preset")
+
+        save_init_options(
+            project_dir, {"ai": "claude", "ai_skills": True, "script": "sh"}
+        )
+        source = self._updated_command_source(
+            preset_dir, "2.0.0", "Updated disabled body"
+        )
+
+        manager.update_from_directory(
+            source, "0.1.0", pack_id="disabled-update-preset"
+        )
+
+        metadata_after = manager.registry.get("disabled-update-preset")
+        assert command_file.read_bytes() == command_before
+        assert not (project_dir / ".claude" / "skills").exists()
+        assert "Updated disabled body" in (
+            project_dir
+            / ".specify"
+            / "presets"
+            / "disabled-update-preset"
+            / "commands"
+            / "speckit.specify.md"
+        ).read_text(encoding="utf-8")
+        assert metadata_after["version"] == "2.0.0"
+        assert metadata_after["enabled"] is False
+        assert (
+            metadata_after["registered_commands"]
+            == metadata_before["registered_commands"]
+        )
+        assert metadata_after["registered_skills"] == metadata_before["registered_skills"]
+        assert not list(
+            (project_dir / ".specify" / "presets").glob(
+                ".disabled-update-preset.update-*"
+            )
+        )
+
+    def test_disabled_preset_update_does_not_replace_enabled_winner(
+        self, project_dir, temp_dir
+    ):
+        from specify_cli import save_init_options
+
+        save_init_options(
+            project_dir, {"ai": "qwen", "ai_skills": False, "script": "sh"}
+        )
+        (project_dir / ".qwen" / "commands").mkdir(parents=True)
+        disabled_dir = self._command_preset(
+            temp_dir, "disabled-winner-preset", "Disabled body v1"
+        )
+        enabled_dir = self._command_preset(
+            temp_dir, "enabled-winner-preset", "Enabled body"
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(disabled_dir, "0.1.0", priority=1)
+        manager.registry.update("disabled-winner-preset", {"enabled": False})
+        manager.install_from_directory(enabled_dir, "0.1.0", priority=5)
+
+        command_file = project_dir / ".qwen" / "commands" / "speckit.specify.md"
+        assert "Enabled body" in command_file.read_text(encoding="utf-8")
+        source = self._updated_command_source(
+            disabled_dir, "2.0.0", "Disabled body v2"
+        )
+
+        manager.update_from_directory(
+            source, "0.1.0", pack_id="disabled-winner-preset"
+        )
+
+        assert "Enabled body" in command_file.read_text(encoding="utf-8")
+        assert "Disabled body v2" not in command_file.read_text(
+            encoding="utf-8"
+        )
+
+    def test_disabled_preset_update_retains_removed_command_for_cleanup(
+        self, project_dir, temp_dir
+    ):
+        from specify_cli import save_init_options
+
+        save_init_options(
+            project_dir, {"ai": "qwen", "ai_skills": False, "script": "sh"}
+        )
+        (project_dir / ".qwen" / "commands").mkdir(parents=True)
+        preset_dir = self._command_preset(
+            temp_dir, "disabled-removed-command", "Removed command body"
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.0")
+        manager.registry.update("disabled-removed-command", {"enabled": False})
+        command_file = project_dir / ".qwen" / "commands" / "speckit.specify.md"
+
+        source = preset_dir.parent / "updated-disabled-removed-command"
+        shutil.copytree(preset_dir, source)
+        manifest_path = source / "preset.yml"
+        data = yaml.safe_load(manifest_path.read_text())
+        data["preset"]["version"] = "2.0.0"
+        data["provides"]["templates"] = [
+            {
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+            }
+        ]
+        manifest_path.write_text(yaml.safe_dump(data))
+        (source / "commands" / "speckit.specify.md").unlink()
+        (source / "templates").mkdir()
+        (source / "templates" / "spec-template.md").write_text("# Spec\n")
+
+        manager.update_from_directory(
+            source, "0.1.0", pack_id="disabled-removed-command"
+        )
+
+        metadata = manager.registry.get("disabled-removed-command")
+        assert command_file.exists()
+        assert metadata["registered_commands"]["qwen"] == ["speckit.specify"]
+
+        manager.remove("disabled-removed-command")
+
+        assert "Removed command body" not in command_file.read_text(
+            encoding="utf-8"
+        )
+
+    def test_enable_after_disabled_update_refreshes_generated_commands(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app, save_init_options
+
+        save_init_options(
+            project_dir, {"ai": "qwen", "ai_skills": False, "script": "sh"}
+        )
+        (project_dir / ".qwen" / "commands").mkdir(parents=True)
+        source_v1 = self._multi_command_preset(
+            temp_dir,
+            "enable-refresh-preset",
+            {
+                "speckit.specify": "Specify v1",
+                "speckit.removed": "Removed v1",
+            },
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(source_v1, "0.1.0")
+        manager.registry.update("enable-refresh-preset", {"enabled": False})
+
+        source_v2 = self._multi_command_preset(
+            temp_dir,
+            "enable-refresh-preset-v2",
+            {
+                "speckit.specify": "Specify v2",
+                "speckit.added": "Added v2",
+            },
+            version="2.0.0",
+        )
+        data = yaml.safe_load((source_v2 / "preset.yml").read_text())
+        data["preset"]["id"] = "enable-refresh-preset"
+        (source_v2 / "preset.yml").write_text(yaml.safe_dump(data))
+
+        manager.update_from_directory(
+            source_v2, "0.1.0", pack_id="enable-refresh-preset"
+        )
+
+        commands_dir = project_dir / ".qwen" / "commands"
+        assert "Specify v1" in (
+            commands_dir / "speckit.specify.md"
+        ).read_text(encoding="utf-8")
+        assert (commands_dir / "speckit.removed.md").exists()
+        assert not (commands_dir / "speckit.added.md").exists()
+
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        result = CliRunner().invoke(app, ["preset", "enable", "enable-refresh-preset"])
+
+        assert result.exit_code == 0, result.output
+        assert "Specify v2" in (
+            commands_dir / "speckit.specify.md"
+        ).read_text(encoding="utf-8")
+        assert "Added v2" in (
+            commands_dir / "speckit.added.md"
+        ).read_text(encoding="utf-8")
+        assert not (commands_dir / "speckit.removed.md").exists()
+        registered = PresetManager(project_dir).registry.get(
+            "enable-refresh-preset"
+        )["registered_commands"]["qwen"]
+        assert "speckit.added" in registered
+        assert "speckit.removed" not in registered
+
+    def test_enable_after_disabled_update_refreshes_generated_skills(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app, save_init_options
+
+        save_init_options(
+            project_dir, {"ai": "claude", "ai_skills": True, "script": "sh"}
+        )
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+        source_v1 = self._multi_command_preset(
+            temp_dir,
+            "enable-skill-refresh-preset",
+            {
+                "speckit.specify": "Specify skill v1",
+                "speckit.removed": "Removed skill v1",
+            },
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(source_v1, "0.1.0")
+        manager.registry.update("enable-skill-refresh-preset", {"enabled": False})
+
+        source_v2 = self._multi_command_preset(
+            temp_dir,
+            "enable-skill-refresh-preset-v2",
+            {
+                "speckit.specify": "Specify skill v2",
+                "speckit.added": "Added skill v2",
+            },
+            version="2.0.0",
+        )
+        data = yaml.safe_load((source_v2 / "preset.yml").read_text())
+        data["preset"]["id"] = "enable-skill-refresh-preset"
+        (source_v2 / "preset.yml").write_text(yaml.safe_dump(data))
+
+        manager.update_from_directory(
+            source_v2, "0.1.0", pack_id="enable-skill-refresh-preset"
+        )
+
+        assert "Specify skill v1" in (
+            skills_dir / "speckit-specify" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        assert (skills_dir / "speckit-removed" / "SKILL.md").exists()
+        assert not (skills_dir / "speckit-added" / "SKILL.md").exists()
+
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        result = CliRunner().invoke(
+            app, ["preset", "enable", "enable-skill-refresh-preset"]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Specify skill v2" in (
+            skills_dir / "speckit-specify" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        assert "Added skill v2" in (
+            skills_dir / "speckit-added" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        assert not (skills_dir / "speckit-removed").exists()
+        registered = PresetManager(project_dir).registry.get(
+            "enable-skill-refresh-preset"
+        )["registered_skills"]["claude"]
+        assert "speckit-added" in registered
+        assert "speckit-removed" not in registered
+
+    def test_dev_update_from_project_root_does_not_copy_staging_into_itself(
+        self, project_dir, temp_dir
+    ):
+        preset_dir = self._command_preset(
+            temp_dir, "project-root-update", "Original body"
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.0")
+
+        shutil.copytree(preset_dir / "commands", project_dir / "commands")
+        (project_dir / "preset.yml").write_text(
+            (preset_dir / "preset.yml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        data = yaml.safe_load((project_dir / "preset.yml").read_text())
+        data["preset"]["version"] = "2.0.0"
+        (project_dir / "preset.yml").write_text(yaml.safe_dump(data))
+        (project_dir / "commands" / "speckit.specify.md").write_text(
+            "---\ndescription: Test command\n---\n\nUpdated root body\n",
+            encoding="utf-8",
+        )
+
+        manager.update_from_directory(
+            project_dir, "0.1.0", pack_id="project-root-update"
+        )
+
+        installed = (
+            project_dir
+            / ".specify"
+            / "presets"
+            / "project-root-update"
+        )
+        assert "Updated root body" in (
+            installed / "commands" / "speckit.specify.md"
+        ).read_text(encoding="utf-8")
+        assert not (installed / ".specify").exists()
+        assert not (installed / ".registry").exists()
+        assert not list(installed.glob("**/.project-root-update.update-*"))
+
+    def test_missing_referenced_file_leaves_installation_untouched(
+        self, project_dir, pack_dir
+    ):
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        source = self._updated_source(pack_dir)
+        (source / "commands" / "new-command.md").unlink()
+        installed = (
+            project_dir / ".specify/presets/test-pack/preset.yml"
+        ).read_bytes()
+
+        with pytest.raises(PresetValidationError, match="[Rr]emove and add"):
+            manager.update_from_directory(source, "0.1.0", pack_id="test-pack")
+
+        assert (
+            project_dir / ".specify/presets/test-pack/preset.yml"
+        ).read_bytes() == installed
+
+    def test_template_file_content_change_is_reconciled(
+        self, project_dir, pack_dir
+    ):
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        source = pack_dir.parent / "content-updated-pack"
+        shutil.copytree(pack_dir, source)
+        source_file = source / "templates" / "spec-template.md"
+        source_file.write_text(source_file.read_text() + "\nUpdated.\n")
+
+        _, _, diff = manager._validate_update_source(
+            source, "test-pack", "0.1.0"
+        )
+
+        assert diff["changed"][0]["identity"] == ("spec-template", "template")
+        assert diff["unchanged"] == []
+
+    def test_id_mismatch_is_rejected_before_swap(self, project_dir, pack_dir):
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        source = self._updated_source(pack_dir)
+        data = yaml.safe_load((source / "preset.yml").read_text())
+        data["preset"]["id"] = "renamed-pack"
+        (source / "preset.yml").write_text(yaml.safe_dump(data))
+
+        with pytest.raises(PresetValidationError, match="Remove and add"):
+            manager.update_from_directory(source, "0.1.0", pack_id="test-pack")
+
+        assert manager.registry.get("test-pack")["version"] == "1.0.0"
+
+    def test_corrupt_manifest_is_rejected_before_swap(self, project_dir, pack_dir):
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        source = self._updated_source(pack_dir)
+        (source / "preset.yml").write_text("not: [valid")
+
+        with pytest.raises(PresetValidationError, match="corrupt"):
+            manager.update_from_directory(source, "0.1.0", pack_id="test-pack")
+
+        assert manager.registry.get("test-pack")["version"] == "1.0.0"
+
+    def test_type_change_remains_reconcilable(self, project_dir, pack_dir):
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        source = self._updated_source(pack_dir)
+        data = yaml.safe_load((source / "preset.yml").read_text())
+        data["provides"]["templates"][0]["type"] = "script"
+        data["provides"]["templates"][0]["name"] = "spec-template-script"
+        (source / "preset.yml").write_text(yaml.safe_dump(data))
+        (source / "templates" / "spec-template.md").write_text("# Script\n")
+
+        _, diff = manager.update_from_directory(
+            source, "0.1.0", pack_id="test-pack"
+        )
+
+        assert ("spec-template", "template") in [
+            entry["identity"] for entry in diff["removed"]
+        ]
+        assert ("spec-template-script", "script") in [
+            entry["identity"] for entry in diff["added"]
+        ]
+
+    def test_swap_failure_restores_directory_and_registry(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        source = self._updated_source(pack_dir)
+        installed_manifest = (
+            project_dir / ".specify" / "presets" / "test-pack" / "preset.yml"
+        ).read_bytes()
+        original_update = manager.registry.update
+
+        def fail_update(pack_id, updates):
+            if updates.get("version") == "2.0.0":
+                raise OSError("simulated registry failure")
+            return original_update(pack_id, updates)
+
+        monkeypatch.setattr(manager.registry, "update", fail_update)
+        with pytest.raises(OSError, match="simulated registry failure"):
+            manager.update_from_directory(source, "0.1.0", pack_id="test-pack")
+
+        assert (
+            project_dir / ".specify" / "presets" / "test-pack" / "preset.yml"
+        ).read_bytes() == installed_manifest
+        assert manager.registry.get("test-pack")["version"] == "1.0.0"
+
+    def test_staged_validation_failure_leaves_live_install_untouched(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        source = self._updated_source(pack_dir)
+        installed_manifest = (
+            project_dir / ".specify" / "presets" / "test-pack" / "preset.yml"
+        ).read_bytes()
+        original_validate = manager._validate_update_source
+        calls = 0
+
+        def fail_staged(source_dir, pack_id, speckit_version):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise PresetValidationError("staged validation failed")
+            return original_validate(source_dir, pack_id, speckit_version)
+
+        monkeypatch.setattr(manager, "_validate_update_source", fail_staged)
+        with pytest.raises(PresetValidationError, match="staged validation"):
+            manager.update_from_directory(source, "0.1.0", pack_id="test-pack")
+
+        assert (
+            project_dir / ".specify" / "presets" / "test-pack" / "preset.yml"
+        ).read_bytes() == installed_manifest
+        assert not list(
+            (project_dir / ".specify" / "presets").glob(".test-pack.update-*")
+        )
+
+    def test_staged_validation_result_is_authoritative(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        source = self._updated_source(pack_dir)
+        original_copytree = shutil.copytree
+
+        def copy_then_mutate(source_dir, destination_dir, *args, **kwargs):
+            result = original_copytree(source_dir, destination_dir, *args, **kwargs)
+            if isinstance(source_dir, Path) and source_dir == source:
+                data = yaml.safe_load((source_dir / "preset.yml").read_text())
+                data["preset"]["version"] = "3.0.0"
+                (source_dir / "preset.yml").write_text(yaml.safe_dump(data))
+            return result
+
+        monkeypatch.setattr(shutil, "copytree", copy_then_mutate)
+
+        manifest, _ = manager.update_from_directory(
+            source, "0.1.0", pack_id="test-pack"
+        )
+
+        assert manifest.version == "2.0.0"
+        assert manager.registry.get("test-pack")["version"] == "2.0.0"
+
+    def test_convention_only_constitution_update_reconciles(
+        self, project_dir, temp_dir
+    ):
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(CONSTITUTION_SYNC_PRESET_DIR, "0.15.0")
+        source = _make_convention_constitution_preset(temp_dir)
+        manager.install_from_directory(source, "0.1.5")
+        updated = temp_dir / "updated-convention-constitution"
+        shutil.copytree(source, updated)
+        data = yaml.safe_load((updated / "preset.yml").read_text())
+        data["preset"]["version"] = "2.0.0"
+        (updated / "preset.yml").write_text(yaml.safe_dump(data))
+        (updated / "templates" / "constitution-template.md").write_text(
+            "# Updated Convention Constitution\n"
+        )
+
+        manager.update_from_directory(
+            updated, "0.1.5", pack_id="convention-constitution"
+        )
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Updated Convention Constitution\n"
+
+    def test_archive_write_cleans_temp_file_on_detection_failure(
+        self, monkeypatch
+    ):
+        created = {}
+        original_mkstemp = tempfile.mkstemp
+
+        def record_mkstemp(*args, **kwargs):
+            fd, name = original_mkstemp(*args, **kwargs)
+            created["path"] = Path(name)
+            return fd, name
+
+        monkeypatch.setattr(tempfile, "mkstemp", record_mkstemp)
+        monkeypatch.setattr(
+            "specify_cli.presets._commands.detect_archive_format",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                PresetValidationError("invalid archive")
+            ),
+        )
+
+        with pytest.raises(PresetValidationError, match="invalid archive"):
+            _write_preset_archive(
+                b"not an archive",
+                "https://example.com/preset",
+                None,
+                PresetValidationError,
+            )
+
+        assert not created["path"].exists()
+
+    def test_archive_download_uses_final_redirect_url_and_canonical_suffix(
+        self, monkeypatch
+    ):
+        """A .zip request redirected to a tarball must retain the final format."""
+        archive = io.BytesIO()
+        with tarfile.open(fileobj=archive, mode="w:gz") as tar:
+            info = tarfile.TarInfo("preset.yml")
+            payload = b"schema_version: '1.0'\n"
+            info.size = len(payload)
+            tar.addfile(info, io.BytesIO(payload))
+
+        monkeypatch.setattr(
+            "specify_cli.presets._commands._fetch_preset_archive_data",
+            lambda url, error_type: (
+                archive.getvalue(),
+                "application/gzip",
+                "https://cdn.example.test/preset.tgz",
+            ),
+        )
+
+        path = _download_preset_archive(
+            "https://example.test/preset.zip", PresetValidationError
+        )
+        try:
+            assert path.suffixes[-2:] == [".tar", ".gz"]
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_cli_missing_id_directs_user_to_add(self, project_dir):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        result = CliRunner().invoke(
+            app,
+            ["preset", "update", "missing-pack"],
+            obj={"project_root": project_dir},
+        )
+
+        assert result.exit_code == 1
+        assert "preset" in result.output and "add" in result.output
+
+    def test_cli_single_dry_run_does_not_prompt(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        source = self._updated_source(pack_dir)
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.1.0")
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "preset",
+                "update",
+                "test-pack",
+                "--dev",
+                str(source),
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "would update" in result.output
+        assert "planned actions" in result.output
+        assert "Update all installed presets?" not in result.output
+
+    def test_cli_dry_run_does_not_plan_constitution_for_command_only_priority_change(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(CONSTITUTION_SYNC_PRESET_DIR, "0.15.0")
+        manager.install_from_directory(pack_dir, "0.1.0")
+        source = self._updated_source(pack_dir)
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.1.0")
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "preset",
+                "update",
+                "test-pack",
+                "--dev",
+                str(source),
+                "--priority",
+                "5",
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "constitution unchanged" in result.output
+        assert "constitution reconciliation pending" not in result.output
+
+    def test_cli_dry_run_plans_missing_constitution_without_creating_it(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        source = _make_convention_constitution_preset(temp_dir)
+        manager.install_from_directory(source, "0.15.0")
+        manifest_path = source / "preset.yml"
+        manifest_data = yaml.safe_load(manifest_path.read_text())
+        manifest_data["preset"]["version"] = "2.0.0"
+        manifest_path.write_text(yaml.safe_dump(manifest_data))
+
+        constitution_path = (
+            project_dir / ".specify" / "memory" / "constitution.md"
+        )
+        constitution_path.unlink()
+        registry_path = project_dir / ".specify" / "presets" / ".registry"
+        registry_before = registry_path.read_bytes()
+        installed_before = (
+            project_dir
+            / ".specify"
+            / "presets"
+            / "convention-constitution"
+            / "preset.yml"
+        ).read_bytes()
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.15.0")
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "preset",
+                "update",
+                "convention-constitution",
+                "--dev",
+                str(source),
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "constitution change planned" in result.output
+        assert not constitution_path.exists()
+        assert registry_path.read_bytes() == registry_before
+        assert (
+            project_dir
+            / ".specify"
+            / "presets"
+            / "convention-constitution"
+            / "preset.yml"
+        ).read_bytes() == installed_before
+        assert not (
+            project_dir / ".specify" / ".workflow-install.lock"
+        ).exists()
+
+    def test_cli_bulk_dry_run_ignores_priority_in_constitution_preview(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        source = _make_convention_constitution_preset(temp_dir)
+        manager.install_from_directory(source, "0.15.0", priority=7)
+        manifest_path = source / "preset.yml"
+        manifest_data = yaml.safe_load(manifest_path.read_text())
+        manifest_data["preset"]["version"] = "2.0.0"
+        manifest_path.write_text(yaml.safe_dump(manifest_data))
+        registry_path = project_dir / ".specify" / "presets" / ".registry"
+        registry_before = registry_path.read_bytes()
+        constitution_path = (
+            project_dir / ".specify" / "memory" / "constitution.md"
+        )
+        constitution_before = constitution_path.read_bytes()
+        self._bulk_cli_env(
+            project_dir,
+            monkeypatch,
+            {
+                "constitution-sync": {
+                    "version": "1.0.0",
+                    "bundled": True,
+                },
+                "convention-constitution": {
+                    "version": "2.0.0",
+                    "bundled": True,
+                },
+            },
+            {
+                "constitution-sync": CONSTITUTION_SYNC_PRESET_DIR,
+                "convention-constitution": source,
+            },
+        )
+
+        result = CliRunner().invoke(
+            app,
+            ["preset", "update", "--all", "--priority", "3", "--dry-run"],
+            input="y\n",
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "constitution unchanged" in result.output
+        assert registry_path.read_bytes() == registry_before
+        assert constitution_path.read_bytes() == constitution_before
+        assert PresetManager(project_dir).registry.get(
+            "convention-constitution"
+        )["priority"] == 7
+
+    def test_cli_dry_run_ignores_shadowed_constitution_change(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        higher_source = _make_convention_constitution_preset(temp_dir)
+        higher_manifest = higher_source / "preset.yml"
+        higher_data = yaml.safe_load(higher_manifest.read_text())
+        higher_data["preset"]["id"] = "higher-constitution"
+        higher_manifest.write_text(yaml.safe_dump(higher_data))
+        (higher_source / "templates" / "constitution-template.md").write_text(
+            "# Higher Constitution\n"
+        )
+        manager.install_from_directory(higher_source, "0.15.0", priority=1)
+
+        lower_source = temp_dir / "lower-constitution"
+        shutil.copytree(higher_source, lower_source)
+        lower_manifest = lower_source / "preset.yml"
+        lower_data = yaml.safe_load(lower_manifest.read_text())
+        lower_data["preset"]["id"] = "lower-constitution"
+        lower_manifest.write_text(yaml.safe_dump(lower_data))
+        (lower_source / "templates" / "constitution-template.md").write_text(
+            "# Lower Constitution\n"
+        )
+        manager.install_from_directory(lower_source, "0.15.0", priority=10)
+
+        lower_data["preset"]["version"] = "2.0.0"
+        lower_manifest.write_text(yaml.safe_dump(lower_data))
+        (lower_source / "templates" / "constitution-template.md").write_text(
+            "# Updated Lower Constitution\n"
+        )
+        constitution_path = (
+            project_dir / ".specify" / "memory" / "constitution.md"
+        )
+        constitution_before = constitution_path.read_bytes()
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.15.0")
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "preset",
+                "update",
+                "lower-constitution",
+                "--dev",
+                str(lower_source),
+                "--priority",
+                "8",
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "constitution unchanged" in result.output
+        assert constitution_path.read_bytes() == constitution_before
+
+    def test_cli_dry_run_plans_new_winning_constitution_layer(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        lower_source = _make_convention_constitution_preset(temp_dir)
+        lower_manifest = lower_source / "preset.yml"
+        lower_data = yaml.safe_load(lower_manifest.read_text())
+        lower_data["preset"]["id"] = "lower-constitution"
+        lower_manifest.write_text(yaml.safe_dump(lower_data))
+        manager.install_from_directory(lower_source, "0.15.0", priority=5)
+
+        target_source = self._command_preset(
+            temp_dir, "higher-new-constitution", "Command body"
+        )
+        manager.install_from_directory(target_source, "0.15.0", priority=1)
+        (target_source / "templates").mkdir()
+        (target_source / "templates" / "constitution-template.md").write_text(
+            "# New Winning Constitution\n"
+        )
+        target_manifest = target_source / "preset.yml"
+        target_data = yaml.safe_load(target_manifest.read_text())
+        target_data["preset"]["version"] = "2.0.0"
+        target_manifest.write_text(yaml.safe_dump(target_data))
+        constitution_path = (
+            project_dir / ".specify" / "memory" / "constitution.md"
+        )
+        constitution_before = constitution_path.read_bytes()
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.15.0")
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "preset",
+                "update",
+                "higher-new-constitution",
+                "--dev",
+                str(target_source),
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "constitution change planned" in result.output
+        assert constitution_path.read_bytes() == constitution_before
+
+    def test_cli_dry_run_plans_change_to_composed_constitution_layer(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        target_source = self._constitution_preset(
+            temp_dir, "composed-target", "# Target v1\n"
+        )
+        manager.install_from_directory(target_source, "0.15.0", priority=5)
+        top_source = self._constitution_preset(
+            temp_dir, "composed-top", "# Top\n", strategy="prepend"
+        )
+        manager.install_from_directory(top_source, "0.15.0", priority=1)
+
+        target_manifest = target_source / "preset.yml"
+        target_data = yaml.safe_load(target_manifest.read_text())
+        target_data["preset"]["version"] = "2.0.0"
+        target_manifest.write_text(yaml.safe_dump(target_data))
+        (target_source / "templates" / "constitution-template.md").write_text(
+            "# Target v2\n"
+        )
+        constitution_path = (
+            project_dir / ".specify" / "memory" / "constitution.md"
+        )
+        constitution_before = constitution_path.read_bytes()
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.15.0")
+        runner = CliRunner()
+
+        dry_run = runner.invoke(
+            app,
+            [
+                "preset",
+                "update",
+                "composed-target",
+                "--dev",
+                str(target_source),
+                "--dry-run",
+            ],
+        )
+        assert dry_run.exit_code == 0, dry_run.output
+        assert "constitution change planned" in dry_run.output
+        assert constitution_path.read_bytes() == constitution_before
+
+        update = runner.invoke(
+            app,
+            [
+                "preset",
+                "update",
+                "composed-target",
+                "--dev",
+                str(target_source),
+            ],
+        )
+        assert update.exit_code == 0, update.output
+        assert "constitution reconciled" in update.output
+
+    def test_cli_dry_run_plans_missing_shadowed_constitution(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        higher_source = self._constitution_preset(
+            temp_dir, "missing-higher", "# Higher\n"
+        )
+        manager.install_from_directory(higher_source, "0.15.0", priority=1)
+        target_source = self._constitution_preset(
+            temp_dir, "missing-target", "# Target v1\n"
+        )
+        manager.install_from_directory(target_source, "0.15.0", priority=5)
+
+        target_manifest = target_source / "preset.yml"
+        target_data = yaml.safe_load(target_manifest.read_text())
+        target_data["preset"]["version"] = "2.0.0"
+        target_manifest.write_text(yaml.safe_dump(target_data))
+        (target_source / "templates" / "constitution-template.md").write_text(
+            "# Target v2\n"
+        )
+        constitution_path = (
+            project_dir / ".specify" / "memory" / "constitution.md"
+        )
+        constitution_path.unlink()
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.15.0")
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "preset",
+                "update",
+                "missing-target",
+                "--dev",
+                str(target_source),
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "constitution change planned" in result.output
+        assert not constitution_path.exists()
+
+    def test_cli_dry_run_ignores_priority_change_with_same_constitution(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        source = self._constitution_preset(
+            temp_dir, "same-constitution", "# Same Constitution\n"
+        )
+        manager.install_from_directory(source, "0.15.0", priority=10)
+        manifest_path = source / "preset.yml"
+        data = yaml.safe_load(manifest_path.read_text())
+        data["preset"]["version"] = "2.0.0"
+        manifest_path.write_text(yaml.safe_dump(data))
+        constitution_path = (
+            project_dir / ".specify" / "memory" / "constitution.md"
+        )
+        constitution_before = constitution_path.read_bytes()
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.15.0")
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "preset",
+                "update",
+                "same-constitution",
+                "--dev",
+                str(source),
+                "--priority",
+                "8",
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "constitution unchanged" in result.output
+        assert constitution_path.read_bytes() == constitution_before
+
+    def test_cli_dry_run_compares_replace_constitution_as_bytes(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        source = self._constitution_preset(
+            temp_dir, "crlf-constitution", "# placeholder\n"
+        )
+        crlf_content = b"# CRLF\r\n\r\nBody line\r\n"
+        (source / "templates" / "constitution-template.md").write_bytes(
+            crlf_content
+        )
+        manager.install_from_directory(source, "0.15.0")
+        manifest_path = source / "preset.yml"
+        data = yaml.safe_load(manifest_path.read_text())
+        data["preset"]["version"] = "2.0.0"
+        manifest_path.write_text(yaml.safe_dump(data))
+        constitution_path = (
+            project_dir / ".specify" / "memory" / "constitution.md"
+        )
+        assert constitution_path.read_bytes() == crlf_content
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.15.0")
+        runner = CliRunner()
+
+        dry_run = runner.invoke(
+            app,
+            [
+                "preset",
+                "update",
+                "crlf-constitution",
+                "--dev",
+                str(source),
+                "--dry-run",
+            ],
+        )
+
+        assert dry_run.exit_code == 0, dry_run.output
+        assert "constitution unchanged" in dry_run.output
+        assert constitution_path.read_bytes() == crlf_content
+
+        update = runner.invoke(
+            app,
+            [
+                "preset",
+                "update",
+                "crlf-constitution",
+                "--dev",
+                str(source),
+            ],
+        )
+
+        assert update.exit_code == 0, update.output
+        assert "constitution unchanged" in update.output
+        assert constitution_path.read_bytes() == crlf_content
+
+    @pytest.mark.parametrize(
+        "legacy_registry_owner", [None, "other", "target"]
+    )
+    def test_priority_update_reconciles_other_presets_inactive_skill_agent(
+        self, project_dir, temp_dir, legacy_registry_owner
+    ):
+        from specify_cli import save_init_options
+
+        save_init_options(
+            project_dir,
+            {"ai": "claude", "ai_skills": True, "script": "sh"},
+        )
+        higher_source = self._command_preset(
+            temp_dir, "higher-preset", "higher preset body"
+        )
+        target_source = self._command_preset(
+            temp_dir, "target-preset", "target preset body"
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(higher_source, "0.1.0", priority=5)
+
+        save_init_options(
+            project_dir,
+            {"ai": "codex", "ai_skills": True, "script": "sh"},
+        )
+        manager.install_from_directory(target_source, "0.1.0", priority=10)
+        if legacy_registry_owner == "other":
+            manager.registry.update(
+                "higher-preset",
+                {"registered_skills": ["speckit-specify"]},
+            )
+        elif legacy_registry_owner == "target":
+            manager.registry.update(
+                "target-preset",
+                {"registered_skills": ["speckit-specify"]},
+            )
+
+        claude_skill = (
+            project_dir
+            / ".claude"
+            / "skills"
+            / "speckit-specify"
+            / "SKILL.md"
+        )
+        codex_skill = (
+            project_dir
+            / ".agents"
+            / "skills"
+            / "speckit-specify"
+            / "SKILL.md"
+        )
+        assert "preset:higher-preset" in claude_skill.read_text()
+        assert "preset:higher-preset" in codex_skill.read_text()
+
+        manifest_path = target_source / "preset.yml"
+        manifest_data = yaml.safe_load(manifest_path.read_text())
+        manifest_data["preset"]["version"] = "2.0.0"
+        manifest_path.write_text(yaml.safe_dump(manifest_data))
+        (target_source / "commands" / "speckit.specify.md").write_text(
+            "---\ndescription: Test command\n---\n\n"
+            "updated target preset body\n"
+        )
+
+        manager.update_from_directory(
+            target_source,
+            "0.1.0",
+            pack_id="target-preset",
+            priority=1,
+        )
+
+        assert "preset:target-preset" in claude_skill.read_text()
+        assert "updated target preset body" in claude_skill.read_text()
+        assert "preset:target-preset" in codex_skill.read_text()
+        assert "updated target preset body" in codex_skill.read_text()
+        assert not (project_dir / ".github" / "skills").exists()
+        assert not (
+            project_dir / ".agents" / "skills" / "speckit.specify"
+        ).exists()
+        target_skills = PresetManager(project_dir).registry.get(
+            "target-preset"
+        )["registered_skills"]
+        assert "speckit-specify" in target_skills["claude"]
+        assert "speckit-specify" in target_skills["codex"]
+
+    def test_dry_run_does_not_create_transaction_lock(
+        self, project_dir, pack_dir
+    ):
+        """Dry-run validation must not leave a project lock behind."""
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        source = self._updated_source(pack_dir)
+        lock_path = project_dir / ".specify" / ".workflow-install.lock"
+        assert not lock_path.exists()
+
+        manager.update_from_directory(
+            source, "0.1.0", pack_id="test-pack", dry_run=True
+        )
+
+        assert not lock_path.exists()
+
+    def _second_pack(self, pack_dir, pack_id, version="1.0.0"):
+        source = pack_dir.parent / pack_id
+        shutil.copytree(pack_dir, source)
+        manifest_path = source / "preset.yml"
+        data = yaml.safe_load(manifest_path.read_text())
+        data["preset"]["id"] = pack_id
+        data["preset"]["name"] = pack_id
+        data["preset"]["version"] = version
+        manifest_path.write_text(yaml.safe_dump(data))
+        return source
+
+    def _bulk_cli_env(self, project_dir, monkeypatch, pack_infos, sources):
+        import specify_cli
+        from specify_cli.presets import PresetCatalog
+
+        monkeypatch.setattr(
+            "specify_cli._require_specify_project", lambda: project_dir
+        )
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.1.0")
+        monkeypatch.setattr(
+            PresetCatalog,
+            "get_pack_info",
+            lambda self, pack_id: pack_infos.get(pack_id),
+        )
+        monkeypatch.setattr(
+            specify_cli,
+            "_locate_bundled_preset",
+            lambda pack_id: sources.get(pack_id),
+        )
+
+    def test_cli_bulk_isolates_failures_and_preserves_state(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0", priority=7)
+        second_source = self._second_pack(pack_dir, "second-pack")
+        manager.install_from_directory(second_source, "0.1.0", priority=5)
+        manager.registry.update("second-pack", {"enabled": False})
+
+        broken = pack_dir.parent / "broken-update"
+        shutil.copytree(pack_dir, broken)
+        (broken / "preset.yml").write_text("preset: [unbalanced\n")
+        good = self._second_pack(pack_dir, "second-pack-v2", version="2.0.0")
+        data = yaml.safe_load((good / "preset.yml").read_text())
+        data["preset"]["id"] = "second-pack"
+        data["preset"]["name"] = "second-pack"
+        (good / "preset.yml").write_text(yaml.safe_dump(data))
+
+        self._bulk_cli_env(
+            project_dir,
+            monkeypatch,
+            {
+                "test-pack": {"version": "2.0.0", "bundled": True},
+                "second-pack": {"version": "2.0.0", "bundled": True},
+            },
+            {"test-pack": broken, "second-pack": good},
+        )
+
+        result = CliRunner().invoke(app, ["preset", "update"], input="y\n")
+
+        assert result.exit_code == 1, result.output
+        assert result.output.count("Update all installed presets?") == 1
+        assert "test-pack: failed" in result.output
+        registry = PresetManager(project_dir).registry
+        second = registry.get("second-pack")
+        assert second["version"] == "2.0.0"
+        assert second["enabled"] is False
+        assert second["priority"] == 5
+        assert registry.get("test-pack")["version"] == "1.0.0"
+
+    def test_cli_bulk_skips_already_current_presets(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+
+        self._bulk_cli_env(
+            project_dir,
+            monkeypatch,
+            {"test-pack": {"version": "1.0.0", "bundled": True}},
+            {"test-pack": pack_dir},
+        )
+
+        result = CliRunner().invoke(app, ["preset", "update"], input="y\n")
+
+        assert result.exit_code == 0, result.output
+        assert "Up to date, skipped" in result.output
+        assert PresetManager(project_dir).registry.get("test-pack")["version"] == "1.0.0"
+
+    def test_cli_bulk_cancellation_leaves_installations_untouched(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        source = self._updated_source(pack_dir)
+
+        self._bulk_cli_env(
+            project_dir,
+            monkeypatch,
+            {"test-pack": {"version": "2.0.0", "bundled": True}},
+            {"test-pack": source},
+        )
+
+        result = CliRunner().invoke(app, ["preset", "update"], input="n\n")
+
+        assert result.exit_code == 0, result.output
+        assert "Cancelled" in result.output
+        assert PresetManager(project_dir).registry.get("test-pack")["version"] == "1.0.0"
+
+    def _two_actionable_packs(self, project_dir, pack_dir, monkeypatch):
+        """Install two presets that both clear preflight, so the main update
+        loop is genuinely exercised rather than short-circuited early."""
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0", priority=7)
+        manager.install_from_directory(
+            self._second_pack(pack_dir, "second-pack"), "0.1.0", priority=5
+        )
+
+        def _renamed(tmp_id, target_id):
+            src = self._second_pack(pack_dir, tmp_id, version="2.0.0")
+            data = yaml.safe_load((src / "preset.yml").read_text())
+            data["preset"]["id"] = target_id
+            data["preset"]["name"] = target_id
+            (src / "preset.yml").write_text(yaml.safe_dump(data))
+            return src
+
+        self._bulk_cli_env(
+            project_dir,
+            monkeypatch,
+            {
+                "test-pack": {"version": "2.0.0", "bundled": True},
+                "second-pack": {"version": "2.0.0", "bundled": True},
+            },
+            {
+                "test-pack": _renamed("first-new", "test-pack"),
+                "second-pack": _renamed("second-new", "second-pack"),
+            },
+        )
+
+    def test_cli_bulk_confirms_once_for_multiple_presets(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        """Two actionable presets must produce exactly one confirmation."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        self._two_actionable_packs(project_dir, pack_dir, monkeypatch)
+
+        result = CliRunner().invoke(app, ["preset", "update"], input="y\n")
+
+        assert result.exit_code == 0, result.output
+        assert result.output.count("Update all installed presets?") == 1
+        registry = PresetManager(project_dir).registry
+        assert registry.get("test-pack")["version"] == "2.0.0"
+        assert registry.get("second-pack")["version"] == "2.0.0"
+
+    def test_cli_all_flag_matches_bare_bulk_invocation(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        """The explicit --all spelling drives the same bulk path."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        self._two_actionable_packs(project_dir, pack_dir, monkeypatch)
+
+        result = CliRunner().invoke(app, ["preset", "update", "--all"], input="y\n")
+
+        assert result.exit_code == 0, result.output
+        assert result.output.count("Update all installed presets?") == 1
+        registry = PresetManager(project_dir).registry
+        assert registry.get("test-pack")["version"] == "2.0.0"
+        assert registry.get("second-pack")["version"] == "2.0.0"
+
+    def test_cli_bulk_execution_failure_does_not_abort_later_presets(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        """A failure raised inside the main update loop, after preflight and
+        confirmation both succeeded, must not stop a later preset updating."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.presets import PresetManager as RealManager
+
+        self._two_actionable_packs(project_dir, pack_dir, monkeypatch)
+        real_update = RealManager.update_from_directory
+
+        def failing_update(self, source, speckit_version, **kwargs):
+            # Only fail the real update, never the preflight dry run, so the
+            # failure is guaranteed to occur in the main loop.
+            if kwargs.get("pack_id") == "test-pack" and not kwargs.get("dry_run"):
+                raise PresetError("simulated execution failure")
+            return real_update(self, source, speckit_version, **kwargs)
+
+        monkeypatch.setattr(RealManager, "update_from_directory", failing_update)
+
+        result = CliRunner().invoke(app, ["preset", "update"], input="y\n")
+
+        assert result.exit_code == 1, result.output
+        assert "test-pack: failed — simulated execution failure" in result.output
+        registry = PresetManager(project_dir).registry
+        assert registry.get("test-pack")["version"] == "1.0.0"
+        assert registry.get("second-pack")["version"] == "2.0.0"
+
+    def test_cli_bulk_reports_incompatible_as_skipped_not_failed(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        """An incompatible preset surfacing during the real update is a true
+        no-op: reported as skipped, and it must not force a nonzero exit."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.presets import PresetCompatibilityError
+        from specify_cli.presets import PresetManager as RealManager
+
+        self._two_actionable_packs(project_dir, pack_dir, monkeypatch)
+        real_update = RealManager.update_from_directory
+
+        def incompatible(self, source, speckit_version, **kwargs):
+            if kwargs.get("pack_id") == "test-pack" and not kwargs.get("dry_run"):
+                raise PresetCompatibilityError("requires speckit >=9.0.0")
+            return real_update(self, source, speckit_version, **kwargs)
+
+        monkeypatch.setattr(RealManager, "update_from_directory", incompatible)
+
+        result = CliRunner().invoke(app, ["preset", "update"], input="y\n")
+
+        assert result.exit_code == 0, result.output
+        assert "test-pack: skipped" in result.output
+        assert "failed" not in result.output
+        registry = PresetManager(project_dir).registry
+        assert registry.get("test-pack")["version"] == "1.0.0"
+        assert registry.get("second-pack")["version"] == "2.0.0"
+
+    def test_cli_bulk_rejects_discovery_only_catalogue(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        """The _install_allowed discovery-only gate applies to updates."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.0")
+        self._bulk_cli_env(
+            project_dir,
+            monkeypatch,
+            {
+                "test-pack": {
+                    "version": "2.0.0",
+                    "bundled": True,
+                    "_install_allowed": False,
+                    "_catalog_name": "community",
+                }
+            },
+            {"test-pack": self._updated_source(pack_dir)},
+        )
+
+        result = CliRunner().invoke(app, ["preset", "update"], input="y\n")
+
+        assert result.exit_code == 1, result.output
+        assert "not allowed from" in result.output
+        assert "community" in result.output
+        assert PresetManager(project_dir).registry.get("test-pack")["version"] == "1.0.0"
+
+    def test_cli_bulk_skips_when_installed_is_newer_than_catalogue(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        """A catalogue entry older than the installed version is a skip, never
+        a silent downgrade."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        manager.registry.update("test-pack", {"version": "5.0.0"})
+
+        self._bulk_cli_env(
+            project_dir,
+            monkeypatch,
+            {"test-pack": {"version": "2.0.0", "bundled": True}},
+            {"test-pack": self._updated_source(pack_dir)},
+        )
+
+        result = CliRunner().invoke(app, ["preset", "update"], input="y\n")
+
+        assert result.exit_code == 0, result.output
+        assert "Up to date, skipped" in result.output
+        assert PresetManager(project_dir).registry.get("test-pack")["version"] == "5.0.0"
+
+    def test_cli_bulk_priority_is_ignored_for_equal_catalogue_version(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        """Bulk priority remains ignored when the catalogue is already current."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0", priority=7)
+        self._bulk_cli_env(
+            project_dir,
+            monkeypatch,
+            {"test-pack": {"version": "1.0.0", "bundled": True}},
+            {"test-pack": pack_dir},
+        )
+
+        result = CliRunner().invoke(
+            app, ["preset", "update", "--all", "--priority", "3"], input="y\n"
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Up to date, skipped" in result.output
+        assert PresetManager(project_dir).registry.get("test-pack")["priority"] == 7
+
+    def test_cli_single_priority_update_runs_at_equal_catalogue_version(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        """An explicit single-item priority change is actionable at equal version."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0", priority=7)
+        self._bulk_cli_env(
+            project_dir,
+            monkeypatch,
+            {"test-pack": {"version": "1.0.0", "bundled": True}},
+            {"test-pack": pack_dir},
+        )
+
+        result = CliRunner().invoke(
+            app, ["preset", "update", "test-pack", "--priority", "3"]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "updated" in result.output
+        assert PresetManager(project_dir).registry.get("test-pack")["priority"] == 3
+
+    def test_cli_single_priority_update_rejects_newer_installed_catalogue(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        """A single catalogue update must not silently ignore requested priority
+        when applying it would require a downgrade."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0", priority=7)
+        manager.registry.update("test-pack", {"version": "5.0.0"})
+        self._bulk_cli_env(
+            project_dir,
+            monkeypatch,
+            {"test-pack": {"version": "2.0.0", "bundled": True}},
+            {"test-pack": self._updated_source(pack_dir)},
+        )
+
+        result = CliRunner().invoke(
+            app, ["preset", "update", "test-pack", "--priority", "3"]
+        )
+
+        assert result.exit_code == 1, result.output
+        assert "newer than catalogue" in result.output
+        assert "preset set-priority" in result.output
+        metadata = PresetManager(project_dir).registry.get("test-pack")
+        assert metadata["version"] == "5.0.0"
+        assert metadata["priority"] == 7
+
+    def test_cli_bundled_update_uses_local_bundled_version_when_newer(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        local_source = self._updated_source(pack_dir, version="3.0.0")
+        self._bulk_cli_env(
+            project_dir,
+            monkeypatch,
+            {"test-pack": {"version": "2.0.0", "bundled": True}},
+            {"test-pack": local_source},
+        )
+
+        result = CliRunner().invoke(app, ["preset", "update", "test-pack"])
+
+        assert result.exit_code == 0, result.output
+        assert "updated to v3.0.0" in result.output
+        assert PresetManager(project_dir).registry.get("test-pack")["version"] == "3.0.0"
+
+    def test_cli_bundled_update_blocks_when_local_bundled_copy_lags(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        local_source = self._updated_source(pack_dir, version="1.5.0")
+        self._bulk_cli_env(
+            project_dir,
+            monkeypatch,
+            {"test-pack": {"version": "2.0.0", "bundled": True}},
+            {"test-pack": local_source},
+        )
+
+        result = CliRunner().invoke(app, ["preset", "update", "test-pack"])
+
+        assert result.exit_code == 1, result.output
+        assert "upgrade spec-kit" in result.output
+        assert PresetManager(project_dir).registry.get("test-pack")["version"] == "1.0.0"
+
+    def test_cli_bulk_unresolvable_source_reports_clearly(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        """A preset with no catalogue entry cannot be re-resolved by id."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.0")
+        self._bulk_cli_env(project_dir, monkeypatch, {}, {})
+
+        result = CliRunner().invoke(app, ["preset", "update"], input="y\n")
+
+        assert result.exit_code == 1, result.output
+        assert "not re-resolvable" in result.output
+        assert "--from/--dev" in result.output
+
+    def test_update_removing_command_reconciles_surviving_preset_for_native_skill_agent(
+        self, project_dir, temp_dir
+    ):
+        """A command dropped by an update must reconcile back to a
+        surviving lower-priority preset's content for native skill-only
+        agents (e.g. claude), never leaving the SKILL.md directory deleted.
+
+        Guards the exact scenario a review flagged as a possible ordering
+        bug (stale commands unregistered before stale skills, for agents
+        where "command" and "skill" track the same physical file). It
+        already passes on unmodified code because `_reconcile_skills` runs
+        unconditionally afterwards for every affected command name,
+        regenerating content regardless of unregister ordering -- this
+        test locks that guarantee in place.
+        """
+        from specify_cli import save_init_options
+
+        save_init_options(
+            project_dir, {"ai": "claude", "ai_skills": True, "script": "sh"}
+        )
+        lo_source = self._multi_command_preset(
+            temp_dir,
+            "lo-preset",
+            {"speckit.plan": "lo-preset plan body"},
+            version="1.0.0",
+        )
+        hi_source = self._multi_command_preset(
+            temp_dir,
+            "hi-preset",
+            {
+                "speckit.specify": "hi-preset specify body",
+                "speckit.plan": "hi-preset plan body",
+            },
+            version="1.0.0",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(lo_source, "0.1.0", priority=20)
+        manager.install_from_directory(hi_source, "0.1.0", priority=10)
+
+        plan_skill = (
+            project_dir / ".claude" / "skills" / "speckit-plan" / "SKILL.md"
+        )
+        specify_skill = (
+            project_dir / ".claude" / "skills" / "speckit-specify" / "SKILL.md"
+        )
+        assert "hi-preset plan body" in plan_skill.read_text()
+        assert "hi-preset specify body" in specify_skill.read_text()
+
+        # Update hi-preset to a version that drops "speckit.plan" entirely.
+        updated_hi_source = self._multi_command_preset(
+            temp_dir / "updated",
+            "hi-preset",
+            {"speckit.specify": "hi-preset specify body v2"},
+            version="2.0.0",
+        )
+        manager.update_from_directory(
+            updated_hi_source, "0.1.0", pack_id="hi-preset"
+        )
+
+        assert specify_skill.is_file()
+        assert "hi-preset specify body v2" in specify_skill.read_text()
+
+        # The dropped command's skill must still exist and now show the
+        # surviving lower-priority preset's content, not be deleted.
+        assert plan_skill.is_file(), (
+            "speckit-plan SKILL.md was deleted instead of being reconciled "
+            "to the surviving lower-priority preset"
+        )
+        assert "lo-preset plan body" in plan_skill.read_text()
+
+        hi_metadata = PresetManager(project_dir).registry.get("hi-preset")
+        assert "speckit.plan" not in hi_metadata["registered_commands"].get(
+            "claude", []
+        )
+        assert "speckit-plan" not in hi_metadata["registered_skills"].get(
+            "claude", []
+        )
+
+
+class TestPresetUpdateConcurrency:
+    def _updated_source(self, pack_dir, version="2.0.0"):
+        source = pack_dir.parent / "concurrent-updated-pack"
+        shutil.copytree(pack_dir, source)
+        manifest_path = source / "preset.yml"
+        data = yaml.safe_load(manifest_path.read_text())
+        data["preset"]["version"] = version
+        manifest_path.write_text(yaml.safe_dump(data))
+        return source
+
+    def test_vanished_install_during_swap_reports_clear_error(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        """A racing update that removes the live directory mid-swap must yield a
+        readable message rather than a raw errno."""
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        source = self._updated_source(pack_dir)
+        import os
+
+        real_replace = os.replace
+        current = project_dir / ".specify" / "presets" / "test-pack"
+
+        def racing_replace(src, dst):
+            if Path(src) == current:
+                shutil.rmtree(current)
+            return real_replace(src, dst)
+
+        monkeypatch.setattr(
+            "specify_cli.presets.os.replace", racing_replace
+        )
+
+        with pytest.raises(PresetError, match="changed on disk during the update"):
+            manager.update_from_directory(source, "0.1.0", pack_id="test-pack")
+
+        assert not list(
+            (project_dir / ".specify" / "presets").glob(".test-pack.update-*")
+        )
+
+    def test_catalogue_version_is_rechecked_after_lock(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        """A newer concurrent install must prevent a stale catalogue update."""
+        from contextlib import contextmanager
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        source = self._updated_source(pack_dir, version="2.0.0")
+
+        @contextmanager
+        def racing_transaction(_project_root):
+            concurrent = PresetManager(project_dir)
+            concurrent.registry.update("test-pack", {"version": "3.0.0"})
+            yield
+
+        monkeypatch.setattr(
+            "specify_cli.workflows._commands._workflow_install_transaction",
+            racing_transaction,
+        )
+
+        with pytest.raises(PresetCompatibilityError, match="newer than catalogue"):
+            manager.update_from_directory(
+                source,
+                "0.1.0",
+                pack_id="test-pack",
+                expected_version="2.0.0",
+            )
+
+        assert PresetManager(project_dir).registry.get("test-pack")["version"] == "3.0.0"
+        assert (
+            PresetManifest(
+                project_dir / ".specify" / "presets" / "test-pack" / "preset.yml"
+            ).version
+            == "1.0.0"
+        )
+
+    def test_priority_update_rechecks_catalogue_version_after_lock(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        """A priority change must not permit a stale catalogue downgrade."""
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0", priority=7)
+        source = self._updated_source(pack_dir, version="2.0.0")
+
+        @contextmanager
+        def racing_transaction(_project_root):
+            concurrent = PresetManager(project_dir)
+            concurrent.registry.update(
+                "test-pack", {"version": "3.0.0", "priority": 4}
+            )
+            yield
+
+        monkeypatch.setattr(
+            "specify_cli.workflows._commands._workflow_install_transaction",
+            racing_transaction,
+        )
+
+        with pytest.raises(PresetCompatibilityError, match="newer than catalogue"):
+            manager.update_from_directory(
+                source,
+                "0.1.0",
+                pack_id="test-pack",
+                priority=5,
+                expected_version="2.0.0",
+            )
+
+        metadata = PresetManager(project_dir).registry.get("test-pack")
+        assert metadata["version"] == "3.0.0"
+        assert metadata["priority"] == 4
+        assert (
+            PresetManifest(
+                project_dir / ".specify" / "presets" / "test-pack" / "preset.yml"
+            ).version
+            == "1.0.0"
+        )
+
+    def test_equal_catalogue_version_priority_update_still_applies_after_lock(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        """An equal freshly observed version still permits reprioritisation."""
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0", priority=7)
+        source = self._updated_source(pack_dir, version="2.0.0")
+
+        @contextmanager
+        def racing_transaction(_project_root):
+            concurrent = PresetManager(project_dir)
+            concurrent.registry.update("test-pack", {"version": "2.0.0"})
+            yield
+
+        monkeypatch.setattr(
+            "specify_cli.workflows._commands._workflow_install_transaction",
+            racing_transaction,
+        )
+
+        manager.update_from_directory(
+            source,
+            "0.1.0",
+            pack_id="test-pack",
+            priority=5,
+            expected_version="2.0.0",
+        )
+
+        metadata = PresetManager(project_dir).registry.get("test-pack")
+        assert metadata["version"] == "2.0.0"
+        assert metadata["priority"] == 5
