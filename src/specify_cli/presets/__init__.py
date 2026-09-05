@@ -4361,16 +4361,16 @@ class PresetManager:
             elif path.exists():
                 shutil.rmtree(path)
 
-        def ignore_swap_paths(directory: str, names: List[str]) -> Set[str]:
+        def ignore_staging_state(directory: str, names: List[str]) -> Set[str]:
             directory_path = Path(directory)
             return {
                 name
                 for name in names
-                if directory_path / name in (staging_dir, backup_dir)
+                if directory_path / name in (self.presets_dir, staging_dir, backup_dir)
             }
 
         try:
-            shutil.copytree(source_dir, staging_dir, ignore=ignore_swap_paths)
+            shutil.copytree(source_dir, staging_dir, ignore=ignore_staging_state)
             generated_composition = staging_dir / ".composed"
             if generated_composition.is_symlink():
                 generated_composition.unlink()
