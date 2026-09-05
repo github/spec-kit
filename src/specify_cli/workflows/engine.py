@@ -17,6 +17,7 @@ import re
 import tempfile
 import threading
 import uuid
+from collections import ChainMap
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -898,6 +899,76 @@ class RunState:
                 f.write(json.dumps(entry) + "\n")
 
 
+# Nested step keys that may contain a list of steps, mirroring
+# ``overlays/merge.py``'s ``_NESTED_LIST_KEYS`` (this module cannot import
+# that one without a circular import: ``overlays`` imports ``WorkflowDefinition``
+# from here).
+_NESTED_STEP_LIST_KEYS = ("then", "else", "steps", "default")
+
+
+def _rename_step_tree_ids(
+    step: dict[str, Any], prefix: str, suffix: str, *, default_id: str | None = None
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Return a copy of *step* with every id in its subtree rewritten to
+    ``f"{prefix}:{orig_id}:{suffix}"``, plus a ``{new_id: original_id}`` map.
+
+    A loop iteration or fan-out item previously renamed only the id of the
+    step it iterates over directly (the immediate loop-body/fan-out-template
+    step). A step nested one level deeper — e.g. a ``shell`` step inside an
+    ``if`` inside a ``while`` body or fan-out ``step:`` template — kept its
+    bare, unnamespaced id across every iteration/item, so each iteration/item
+    silently overwrote the previous one's entry in ``context.steps`` /
+    ``state.step_results`` under that same key: only the last iteration's or
+    item's result for that nested step ever survived.
+
+    Recurses into ``then``, ``else``, ``steps``, ``default``, and ``cases.*``
+    — the same nesting keys ``overlays/merge.py`` walks for step-tree
+    attribution — so every descendant gets a unique id, not just the direct
+    child. ``default_id`` supplies the fallback used only when the top-level
+    *step* itself has no ``id`` (mirroring each caller's own historical
+    fallback, e.g. fan-out's ``template.get("id", "item")``); a validated
+    workflow requires an id on every nested step, so nested frames that lack
+    one are left unrenamed rather than guessing a name.
+    """
+    new_step = dict(step)
+    id_map: dict[str, str] = {}
+    orig_id = new_step.get("id") or default_id
+    if isinstance(orig_id, str):
+        new_id = f"{prefix}:{orig_id}:{suffix}"
+        new_step["id"] = new_id
+        id_map[new_id] = orig_id
+    for key in _NESTED_STEP_LIST_KEYS:
+        nested = new_step.get(key)
+        if isinstance(nested, list):
+            renamed_list = []
+            for child in nested:
+                if isinstance(child, dict):
+                    new_child, child_map = _rename_step_tree_ids(child, prefix, suffix)
+                    renamed_list.append(new_child)
+                    id_map.update(child_map)
+                else:
+                    renamed_list.append(child)
+            new_step[key] = renamed_list
+    cases = new_step.get("cases")
+    if isinstance(cases, dict):
+        new_cases = {}
+        for case_key, case_steps in cases.items():
+            if isinstance(case_steps, list):
+                renamed_cases = []
+                for child in case_steps:
+                    if isinstance(child, dict):
+                        new_child, child_map = _rename_step_tree_ids(child, prefix, suffix)
+                        renamed_cases.append(new_child)
+                        id_map.update(child_map)
+                    else:
+                        renamed_cases.append(child)
+                new_cases[case_key] = renamed_cases
+            else:
+                new_cases[case_key] = case_steps
+        new_step["cases"] = new_cases
+    return new_step, id_map
+
+
 # -- Workflow Engine ------------------------------------------------------
 
 
@@ -1182,8 +1253,27 @@ class WorkflowEngine:
         registry: dict[str, Any],
         *,
         step_offset: int = 0,
+        alias_map: dict[str, str] | None = None,
+        alias_local_only: bool = False,
     ) -> None:
-        """Execute a list of steps sequentially."""
+        """Execute a list of steps sequentially.
+
+        ``alias_map`` (``{namespaced_id: original_id}``, from
+        ``_rename_step_tree_ids``) mirrors each recorded step's result to its
+        original, unprefixed id *immediately* after that step finishes -- not
+        after its whole subtree finishes -- so a sibling step later in the
+        same loop iteration / fan-out item that references an earlier
+        sibling by its original id (``steps.<id>``) sees that value right
+        away. It is propagated through the recursive nested-step call below
+        so descendants nested arbitrarily deep (e.g. an ``if`` inside the
+        namespaced step) are aliased too, not just the immediate child.
+
+        ``alias_local_only`` routes that mirror through ``context.steps``
+        only, never ``state.step_results``. A concurrent fan-out item passes
+        a private overlay as ``context.steps`` and this flag so concurrently
+        running items never race to write the same original id in shared
+        state; see ``_run_fan_out``.
+        """
         for i, step_config in enumerate(steps):
             step_id = step_config.get("id", f"step-{i}")
             step_type = step_config.get("type", "command")
@@ -1238,6 +1328,13 @@ class WorkflowEngine:
                 "error": result.error,
             }
             self._record_result(context, state, step_id, step_data)
+            if alias_map is not None:
+                orig_id = alias_map.get(step_id)
+                if orig_id is not None:
+                    if alias_local_only:
+                        context.steps[orig_id] = step_data
+                    else:
+                        self._record_result(context, state, orig_id, step_data)
 
             state.append_log(
                 {
@@ -1322,18 +1419,14 @@ class WorkflowEngine:
             # A step-path stack for exact nested resume is a future
             # enhancement.
             if result.next_steps:
-                self._execute_steps(
-                    result.next_steps, context, state, registry,
-                    step_offset=-1,
-                )
-                if state.status in (
-                    RunStatus.PAUSED,
-                    RunStatus.FAILED,
-                    RunStatus.ABORTED,
-                ):
-                    return
-
-                # Loop iteration: while/do-while re-evaluate after body
+                # Loop iteration: while/do-while re-evaluate after body. Every
+                # iteration -- including the first -- is namespaced and run
+                # through the same _rename_step_tree_ids + alias_map path, so
+                # each has its own state.step_results entry (see
+                # _rename_step_tree_ids). Previously only iterations after the
+                # first were namespaced: the first ran with bare ids and no
+                # dedicated entry, and iteration 1's aliasing then silently
+                # overwrote it, making iteration 0's result unrecoverable.
                 if step_type in ("while", "do-while"):
                     from .expressions import evaluate_condition
 
@@ -1350,23 +1443,30 @@ class WorkflowEngine:
                     ):
                         max_iters = 10
                     condition = step_config.get("condition", False)
-                    for _loop_iter in range(max_iters - 1):
-                        if not evaluate_condition(condition, context):
+                    for _loop_iter in range(max_iters):
+                        if _loop_iter > 0 and not evaluate_condition(
+                            condition, context
+                        ):
                             break
-                        # Namespace nested step IDs per iteration
-                        # so logs and state keys are unique.
-                        # Execute one step at a time and alias each
-                        # result back to the unprefixed key so that
-                        # later steps in the same body and the loop
-                        # condition see the latest values.
+                        # Namespace nested step IDs (recursively, including
+                        # descendants nested inside e.g. an 'if' in the loop
+                        # body — see _rename_step_tree_ids) per iteration so
+                        # logs and state keys are unique. Execute one step at
+                        # a time; alias_map aliases each renamed id in the
+                        # subtree back to its original, unprefixed id
+                        # immediately as that step completes (not after the
+                        # whole iteration finishes), so later steps in the
+                        # same body and the loop condition see the latest
+                        # values.
                         for ns_idx, ns in enumerate(result.next_steps):
-                            ns_copy = dict(ns)
-                            orig = ns_copy.get("id")
-                            base_id = orig or f"step-{ns_idx}"
-                            ns_copy["id"] = f"{step_id}:{base_id}:{_loop_iter + 1}"
+                            ns_copy, id_map = _rename_step_tree_ids(
+                                ns, step_id, str(_loop_iter),
+                                default_id=f"step-{ns_idx}",
+                            )
                             self._execute_steps(
                                 [ns_copy], context, state, registry,
-                                step_offset=-1,
+                                step_offset=-1, alias_map=id_map,
+                                alias_local_only=alias_local_only,
                             )
                             if state.status in (
                                 RunStatus.PAUSED,
@@ -1374,11 +1474,18 @@ class WorkflowEngine:
                                 RunStatus.ABORTED,
                             ):
                                 return
-                            if orig and ns_copy["id"] in context.steps:
-                                self._record_result(
-                                    context, state, orig,
-                                    context.steps[ns_copy["id"]],
-                                )
+                else:
+                    self._execute_steps(
+                        result.next_steps, context, state, registry,
+                        step_offset=-1, alias_map=alias_map,
+                        alias_local_only=alias_local_only,
+                    )
+                    if state.status in (
+                        RunStatus.PAUSED,
+                        RunStatus.FAILED,
+                        RunStatus.ABORTED,
+                    ):
+                        return
 
             # Fan-out: execute the nested step template once per item. Honors
             # max_concurrency — <=1 runs sequentially (default, historical
@@ -1464,18 +1571,65 @@ class WorkflowEngine:
             # Per-item ID grammar: parentId:templateId:index.
             return f"{step_id}:{base_id}:{idx}"
 
-        def run_item(idx: int, item_ctx: StepContext) -> Any:
-            item_step = dict(template)
-            item_step["id"] = item_id(idx)
-            self._execute_steps(
-                [item_step], item_ctx, state, registry, step_offset=-1,
+        def run_item(
+            idx: int, item_ctx: StepContext, *, local_only: bool
+        ) -> tuple[Any, dict[str, dict[str, Any]]]:
+            # Namespace every id in the template's subtree (not just the
+            # template's own top-level id) so a step nested inside e.g. an
+            # 'if'/'switch' branch of the fan-out template gets a unique key
+            # per item instead of colliding across items — and, more
+            # seriously, potentially colliding with an unrelated step of the
+            # same id elsewhere in the workflow (fan-out templates are
+            # exempted from the global id-uniqueness check specifically
+            # because runtime namespacing was assumed to make collisions
+            # safe; see _rename_step_tree_ids).
+            item_step, id_map = _rename_step_tree_ids(
+                template, step_id, str(idx), default_id=base_id,
             )
-            # Read back through the context that was actually executed against,
-            # not the outer closure — clearer and robust if StepContext copying
-            # ever stops sharing the steps dict by reference.
-            return item_ctx.steps.get(item_step["id"], {}).get("output", {})
+            # ``local_only`` (concurrent path): give this item a private
+            # overlay for its ``.steps`` reads/writes. Namespaced results
+            # still land in the real ``state.step_results`` (via
+            # _record_result's unconditional write — see _execute_steps),
+            # but the immediate bare-id alias (see alias_map below) writes
+            # only into this overlay. That lets a later sibling step in
+            # THIS item's template resolve an earlier sibling by its
+            # original id via the overlay, without ever mutating the
+            # shared steps dict that other concurrently-running items also
+            # read from — the actual race Copilot flagged: every worker
+            # writing the same bare-id key could otherwise expose another
+            # item's value to a sibling read. The caller applies exactly
+            # one item's aliases to shared state — deterministically the
+            # last item in item order — once every item has finished.
+            original_steps = item_ctx.steps
+            local_overlay: dict[str, dict[str, Any]] = {}
+            if local_only:
+                item_ctx.steps = ChainMap(local_overlay, original_steps)
+            try:
+                self._execute_steps(
+                    [item_step], item_ctx, state, registry, step_offset=-1,
+                    alias_map=id_map, alias_local_only=local_only,
+                )
+            finally:
+                item_ctx.steps = original_steps
+            alias_records: dict[str, dict[str, Any]] = {}
+            steps_view = local_overlay if local_only else item_ctx.steps
+            for new_id, orig_id in id_map.items():
+                if new_id in steps_view:
+                    data = steps_view[new_id]
+                    if local_only:
+                        # Publish the namespaced (disjoint, per-item) result
+                        # into the truly-shared steps dict explicitly — safe
+                        # even under concurrency since each item only ever
+                        # writes its own namespaced keys here.
+                        original_steps[new_id] = data
+                    alias_records[orig_id] = data
+            # Read back through the local view, not the outer closure —
+            # clearer and robust if StepContext copying ever stops sharing
+            # the steps dict by reference.
+            return steps_view.get(item_step["id"], {}).get("output", {}), alias_records
 
-        # Sequential path — identical to the historical behavior.
+        # Sequential path — identical to the historical behavior, plus
+        # immediate (not post-subtree) bare-id aliasing.
         if workers <= 1:
             results: list[Any] = []
             previous_item = context.item
@@ -1484,7 +1638,10 @@ class WorkflowEngine:
             try:
                 for item_idx, item_val in enumerate(items):
                     context.item = item_val
-                    results.append(run_item(item_idx, context))
+                    output, _alias_records = run_item(
+                        item_idx, context, local_only=False
+                    )
+                    results.append(output)
                     if state.status in halting:
                         break
             finally:
@@ -1495,11 +1652,13 @@ class WorkflowEngine:
         # Concurrent path — bounded sliding window; results assembled in item order.
         n = len(items)
         slots: list[Any] = [None] * n
+        alias_slots: list[dict[str, dict[str, Any]]] = [{}] * n
 
-        def run_isolated(idx: int) -> Any:
+        def run_isolated(idx: int) -> tuple[Any, dict[str, dict[str, Any]]]:
             # Each item runs against its own context copy so context.item is not
-            # clobbered across threads; the shared steps dict is written only on the
-            # disjoint parentId:templateId:index key (GIL-safe on distinct keys).
+            # clobbered across threads; local_only=True gives it a private
+            # steps overlay so its immediate bare-id aliases cannot race a
+            # concurrently-running sibling item's aliases (see run_item).
             return run_item(
                 idx,
                 dataclasses.replace(
@@ -1507,6 +1666,7 @@ class WorkflowEngine:
                     item=items[idx],
                     inside_fan_out=True,
                 ),
+                local_only=True,
             )
 
         def item_halt_status(idx: int) -> RunStatus | None:
@@ -1516,7 +1676,13 @@ class WorkflowEngine:
             # misattributed here. Mirrors the sequential mapping: PAUSED -> PAUSED;
             # FAILED -> ABORTED when aborted, else FAILED, unless continue_on_error
             # routes around it.
-            rec = context.steps.get(item_id(idx))
+            # Reads from state.step_results (not context.steps): a concurrent
+            # item's steps overlay is private (see run_item), so
+            # context.steps is no longer guaranteed to carry this item's
+            # namespaced entry, while state.step_results always does — every
+            # namespaced write reaches it unconditionally regardless of the
+            # overlay.
+            rec = state.step_results.get(item_id(idx))
             if rec is None:
                 # Ran but recorded nothing — only when the item failed before
                 # record_step_result (e.g. an unknown step type returns early).
@@ -1561,7 +1727,7 @@ class WorkflowEngine:
                     # change ever breaks that invariant.
                     break
                 try:
-                    slots[idx] = fut.result()
+                    slots[idx], alias_slots[idx] = fut.result()
                 except Exception:
                     # A genuine exception escaping a step (not a normal step
                     # FAILED, which sets state.status) must not be masked: cancel
@@ -1582,6 +1748,16 @@ class WorkflowEngine:
                         other.cancel()
                     break
 
+        # Apply exactly one item's bare-id aliases to the real shared state —
+        # deterministically the last item in item order (the halting item, if
+        # any, else the last one collected) — now that the pool has joined
+        # and this runs single-threaded again, so it can never race a
+        # concurrently-running item the way writing it during run_item would.
+        last_idx = halt[0] if halt is not None else (collected - 1 if collected else None)
+        if last_idx is not None:
+            for orig_id, data in alias_slots[last_idx].items():
+                self._record_result(context, state, orig_id, data)
+
         if halt is not None:
             halted_at, halted_status = halt
             # A later in-flight item may have overwritten state.status before the
@@ -1595,7 +1771,7 @@ class WorkflowEngine:
             # third-party step returning FAILED with no message never inherits
             # an unrelated concurrent item's error; this mirrors the sequential
             # path, which sets state.error = result.error verbatim.
-            halt_rec = context.steps.get(item_id(halted_at))
+            halt_rec = state.step_results.get(item_id(halted_at))
             if isinstance(halt_rec, dict):
                 state.error = halt_rec.get("error")
             return slots[: halted_at + 1]
