@@ -15000,6 +15000,43 @@ class TestPresetUpdate:
             encoding="utf-8"
         )
 
+    def test_dev_update_from_project_root_does_not_copy_staging_into_itself(
+        self, project_dir, temp_dir
+    ):
+        preset_dir = self._command_preset(
+            temp_dir, "project-root-update", "Original body"
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.0")
+
+        shutil.copytree(preset_dir / "commands", project_dir / "commands")
+        (project_dir / "preset.yml").write_text(
+            (preset_dir / "preset.yml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        data = yaml.safe_load((project_dir / "preset.yml").read_text())
+        data["preset"]["version"] = "2.0.0"
+        (project_dir / "preset.yml").write_text(yaml.safe_dump(data))
+        (project_dir / "commands" / "speckit.specify.md").write_text(
+            "---\ndescription: Test command\n---\n\nUpdated root body\n",
+            encoding="utf-8",
+        )
+
+        manager.update_from_directory(
+            project_dir, "0.1.0", pack_id="project-root-update"
+        )
+
+        installed = (
+            project_dir
+            / ".specify"
+            / "presets"
+            / "project-root-update"
+        )
+        assert "Updated root body" in (
+            installed / "commands" / "speckit.specify.md"
+        ).read_text(encoding="utf-8")
+        assert not list(installed.glob("**/.project-root-update.update-*"))
+
     def test_missing_referenced_file_leaves_installation_untouched(
         self, project_dir, pack_dir
     ):
@@ -16181,6 +16218,35 @@ class TestPresetUpdate:
         assert result.exit_code == 0, result.output
         assert "updated" in result.output
         assert PresetManager(project_dir).registry.get("test-pack")["priority"] == 3
+
+    def test_cli_single_priority_update_rejects_newer_installed_catalogue(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        """A single catalogue update must not silently ignore requested priority
+        when applying it would require a downgrade."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0", priority=7)
+        manager.registry.update("test-pack", {"version": "5.0.0"})
+        self._bulk_cli_env(
+            project_dir,
+            monkeypatch,
+            {"test-pack": {"version": "2.0.0", "bundled": True}},
+            {"test-pack": self._updated_source(pack_dir)},
+        )
+
+        result = CliRunner().invoke(
+            app, ["preset", "update", "test-pack", "--priority", "3"]
+        )
+
+        assert result.exit_code == 1, result.output
+        assert "newer than catalogue" in result.output
+        assert "preset set-priority" in result.output
+        metadata = PresetManager(project_dir).registry.get("test-pack")
+        assert metadata["version"] == "5.0.0"
+        assert metadata["priority"] == 7
 
     def test_cli_bulk_unresolvable_source_reports_clearly(
         self, project_dir, pack_dir, monkeypatch

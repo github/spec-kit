@@ -684,9 +684,21 @@ def preset_update(
                     raise PresetError(
                         f"catalog entry for preset '{item_id}' has an invalid version"
                     ) from exc
-                if catalog_version < installed_version or (
-                    catalog_version == installed_version and effective_priority is None
-                ):
+                if catalog_version < installed_version:
+                    if effective_priority is not None:
+                        raise PresetError(
+                            f"installed preset version {installed_version} is "
+                            f"newer than catalogue version {catalog_version}; "
+                            "use 'specify preset set-priority' to reprioritize "
+                            "without downgrading"
+                        )
+                    console.print(
+                        f"[dim]• {safe_id}: Up to date, skipped "
+                        f"(v{installed_version})[/dim]"
+                    )
+                    outcomes.append("skipped")
+                    continue
+                if catalog_version == installed_version and effective_priority is None:
                     console.print(
                         f"[dim]• {safe_id}: Up to date, skipped "
                         f"(v{installed_version})[/dim]"
