@@ -17400,3 +17400,48 @@ steps:
         result = runner.invoke(app, ["workflow", "disable", "align-wf"])
         assert result.exit_code == 0
         assert "already disabled" in result.output
+
+
+class TestStepRegistryAtomicSaveRegression:
+    """Regression: StepRegistry must use atomic save and raise on corruption."""
+
+    def test_load_raises_on_symlinked_file(self, tmp_path):
+        """StepRegistry must raise OSError on symlinked registry file."""
+        import json
+        from specify_cli.workflows.catalog import StepRegistry
+
+        steps_dir = tmp_path / ".specify" / "workflows" / "steps"
+        steps_dir.mkdir(parents=True)
+        registry_path = steps_dir / StepRegistry.REGISTRY_FILE
+        real_file = tmp_path / "real_registry.json"
+        real_file.write_text(json.dumps({"schema_version": "1.0", "steps": {}}), encoding="utf-8")
+        registry_path.symlink_to(real_file)
+
+        with pytest.raises(OSError, match="symlink"):
+            StepRegistry(tmp_path)
+
+    def test_load_raises_on_corrupted_json(self, tmp_path):
+        """StepRegistry must raise OSError on corrupted JSON."""
+        from specify_cli.workflows.catalog import StepRegistry
+
+        steps_dir = tmp_path / ".specify" / "workflows" / "steps"
+        steps_dir.mkdir(parents=True)
+        registry_path = steps_dir / StepRegistry.REGISTRY_FILE
+        registry_path.write_text("not valid json {{{", encoding="utf-8")
+
+        with pytest.raises(OSError, match="corrupted"):
+            StepRegistry(tmp_path)
+
+    def test_save_uses_atomic_write(self, tmp_path):
+        """StepRegistry.save() must use atomic write via mkstemp + os.replace."""
+        from specify_cli.workflows.catalog import StepRegistry
+
+        registry = StepRegistry(tmp_path)
+        registry.add("test-step", {"type": "command", "config": {}})
+        registry.save()
+
+        registry_path = tmp_path / ".specify" / "workflows" / "steps" / StepRegistry.REGISTRY_FILE
+        assert registry_path.exists()
+        import json
+        data = json.loads(registry_path.read_text(encoding="utf-8"))
+        assert "test-step" in data.get("steps", {})
