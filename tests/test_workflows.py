@@ -3471,6 +3471,61 @@ class TestSwitchStep:
         assert any("case 'a' must be a list" in e for e in errors)
         assert any("'default' must be a list" in e for e in errors)
 
+    def test_expression_without_a_block_is_rejected(self):
+        """`expression: inputs.mode` matches its own source text, not the input.
+
+        `evaluate_expression` only substitutes `{{ ... }}`, so the braceless form comes
+        back unchanged, matches no case key, and falls through to `default` on every
+        run while still reporting COMPLETED.
+        """
+        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        config = {
+            "id": "route",
+            "expression": "inputs.mode",
+            "cases": {"review": [{"id": "r", "type": "command", "command": "echo"}]},
+            "default": [{"id": "d", "type": "command", "command": "echo"}],
+        }
+
+        # Ground truth first: this is what the step does with it today.
+        result = SwitchStep().execute(config, StepContext(inputs={"mode": "review"}))
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["matched_case"] == "__default__"
+        assert result.output["expression_value"] == "inputs.mode"
+
+        errors = [e for e in SwitchStep().validate(config) if "'expression'" in e]
+        assert len(errors) == 1
+        assert "never evaluated" in errors[0]
+
+    def test_expression_with_an_unclosable_block_is_rejected(self):
+        """Different fault, different message: the block is evaluated, but truncated."""
+        from specify_cli.workflows.steps.switch import SwitchStep
+
+        cases = {"review": [{"id": "r", "type": "command", "command": "echo"}]}
+        for expression in ("{{ inputs.x", "{{ inputs.missing | default('oops }}"):
+            config = {"id": "route", "expression": expression, "cases": cases}
+            errors = [
+                e for e in SwitchStep().validate(config) if "'expression'" in e
+            ]
+            assert len(errors) == 1, expression
+
+    def test_a_composite_key_expression_stays_accepted(self):
+        """A switch matches on strings, so more than one block is legitimate here.
+
+        This is the boundary that keeps the two condition predicates safe to reuse on
+        a non-boolean field: `{{ a }}-{{ b }}` is a composite case key, not a fault.
+        A literal `true` and the empty string are likewise ordinary case keys.
+        """
+        from specify_cli.workflows.steps.switch import SwitchStep
+
+        cases = {"a-b": [{"id": "r", "type": "command", "command": "echo"}]}
+        for expression in ("{{ inputs.a }}-{{ inputs.b }}", "{{ inputs.mode }}", "true", ""):
+            config = {"id": "route", "expression": expression, "cases": cases}
+            assert [
+                e for e in SwitchStep().validate(config) if "'expression'" in e
+            ] == [], expression
+
 
 class TestWhileStep:
     """Test the while loop step type."""
