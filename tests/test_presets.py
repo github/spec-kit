@@ -15035,7 +15035,7 @@ class TestPresetUpdate:
         assert "Updated root body" in (
             installed / "commands" / "speckit.specify.md"
         ).read_text(encoding="utf-8")
-        assert not (installed / ".specify" / "presets").exists()
+        assert not (installed / ".specify").exists()
         assert not (installed / ".registry").exists()
         assert not list(installed.glob("**/.project-root-update.update-*"))
 

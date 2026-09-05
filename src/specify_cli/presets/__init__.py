@@ -4366,7 +4366,13 @@ class PresetManager:
             return {
                 name
                 for name in names
-                if directory_path / name in (self.presets_dir, staging_dir, backup_dir)
+                if directory_path / name
+                in (
+                    self.project_root / ".specify",
+                    self.presets_dir,
+                    staging_dir,
+                    backup_dir,
+                )
             }
 
         try:
