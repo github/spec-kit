@@ -2828,10 +2828,10 @@
     "maqa": {
       "name": "MAQA — Multi-Agent & Quality Assurance",
       "id": "maqa",
-      "description": "GitHub-Issues-first coordinator → feature → QA workflow with parallel worktrees. Uses Spec Kit taskstoissues; tasks.md remains read-only execution context. Optional board mirrors and CI gate.",
+      "description": "Idempotent, agent-neutral coordinator → feature → QA workflow with GitHub Issues as the source of truth. Uses Spec Kit taskstoissues for missing issues and supports parallel or sequential dispatch.",
       "author": "GenieRobot",
-      "version": "0.2.0",
-      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-ext/releases/download/maqa-v0.2.0/maqa.zip",
+      "version": "0.3.0",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-ext/releases/download/maqa-v0.3.0/maqa.zip",
       "repository": "https://github.com/GenieRobot/spec-kit-maqa-ext",
       "homepage": "https://github.com/GenieRobot/spec-kit-maqa-ext",
       "documentation": "https://github.com/GenieRobot/spec-kit-maqa-ext/blob/main/README.md",
@@ -2843,12 +2843,11 @@
         "speckit_version": ">=0.3.0",
         "tools": [
           { "name": "git", "required": true },
-          { "name": "gh", "required": true },
-          { "name": "python3", "required": true }
+          { "name": "gh", "required": true }
         ]
       },
       "provides": {
-        "commands": 4,
+        "commands": 5,
         "hooks": 1
       },
       "tags": [
@@ -2858,7 +2857,9 @@
         "workflow",
         "parallel",
         "tdd",
-        "github-issues"
+        "github-issues",
+        "idempotent",
+        "agent-neutral"
       ],
       "verified": false,
       "downloads": 0,
