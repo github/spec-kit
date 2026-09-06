@@ -27,7 +27,17 @@ _PARSE_FAILURE_LINE = re.compile(
     r"^.*If the YAML cannot be parsed or is invalid.*$", re.MULTILINE
 )
 _SILENT = "skip hook checking silently"
-_REPORTED = ("could not be read", "no hooks were checked")
+# Every clause of the replacement instruction, so that dropping any one of
+# them from the templates fails the test: the manifest could not be read, the
+# parser error is shown, no hooks were checked, mandatory hooks are named, and
+# the command still continues afterwards.
+_REPORTED = (
+    "could not be read",
+    "include the parser error",
+    "no hooks were checked",
+    "including any mandatory (`optional: false`) hooks",
+    "then continue",
+)
 
 HOOK_TEMPLATES = sorted(
     p.name
