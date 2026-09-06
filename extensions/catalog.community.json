@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-03T00:00:00Z",
+  "updated_at": "2026-09-06T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -2828,10 +2828,10 @@
     "maqa": {
       "name": "MAQA — Multi-Agent & Quality Assurance",
       "id": "maqa",
-      "description": "Coordinator → feature → QA agent workflow with parallel worktree-based implementation. Language-agnostic. Auto-detects installed board plugins (Trello, Linear, GitHub Projects, Jira, Azure DevOps). Optional CI gate.",
+      "description": "GitHub-Issues-first coordinator → feature → QA workflow with parallel worktrees. Uses Spec Kit taskstoissues; tasks.md remains read-only execution context. Optional board mirrors and CI gate.",
       "author": "GenieRobot",
-      "version": "0.1.6",
-      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-ext/releases/download/maqa-v0.1.6/maqa.zip",
+      "version": "0.2.0",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-ext/releases/download/maqa-v0.2.0/maqa.zip",
       "repository": "https://github.com/GenieRobot/spec-kit-maqa-ext",
       "homepage": "https://github.com/GenieRobot/spec-kit-maqa-ext",
       "documentation": "https://github.com/GenieRobot/spec-kit-maqa-ext/blob/main/README.md",
@@ -2843,6 +2843,7 @@
         "speckit_version": ">=0.3.0",
         "tools": [
           { "name": "git", "required": true },
+          { "name": "gh", "required": true },
           { "name": "python3", "required": true }
         ]
       },
@@ -2856,13 +2857,14 @@
         "quality-assurance",
         "workflow",
         "parallel",
-        "tdd"
+        "tdd",
+        "github-issues"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-26T00:00:00Z",
-      "updated_at": "2026-08-20T00:00:00Z"
+      "updated_at": "2026-09-06T00:00:00Z"
     },
     "maqa-azure-devops": {
       "name": "MAQA Azure DevOps Integration",
