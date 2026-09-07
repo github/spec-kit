@@ -178,7 +178,6 @@ class CommandRegistrar:
         Args:
             frontmatter: Frontmatter dictionary
             extension_id: Extension id when rendering extension-owned commands.
-            author: Author attributed in generated skill metadata.
 
         Returns:
             Modified frontmatter with normalized project paths
@@ -1087,6 +1086,7 @@ class CommandRegistrar:
                 skills directory) and is skipped when safe resolution or
                 creation fails.
             extension_id: Extension id when rendering extension-owned commands.
+            author: Author attributed in generated skill metadata.
             only_agent: If set, restrict registration to this single agent
                 while keeping all detection and recovery safeguards (#2948).
 
