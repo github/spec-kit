@@ -15,8 +15,9 @@ from specify_cli.workflows.expressions import (
     _has_unbalanced_bracket,
     _has_incomplete_operand,
     _unresolvable_term,
+    _collect_leaves,
+    _leaf_sink,
     _evaluator_rejects,
-    _is_literal,
     _strip_stray_delimiters,
     _COMPARISON_OPERATORS,
     _WORD_OPERATORS,
@@ -676,26 +677,36 @@ def test_filter_wiring_errors_are_still_rejections(condition):
 
 
 @pytest.mark.parametrize(
-    "condition,literal",
+    "condition,resolvable",
     [
         ("42", True),
         ("3.14", True),
         ("-7", True),
         # `1e3` has no "." so the evaluator calls int() on it, which fails; it then
-        # falls through to a path lookup. float() alone accepted it here.
+        # falls through to a path lookup and resolves to None. The gate used to
+        # decide this for itself with a float() test that accepted `1e3`, and the
+        # correction turned a truthy condition false. Now the evaluator reaches the
+        # dot-path resolution with `1e3` and reports it, so the two cannot disagree.
         ("1e3", False),
         ("'one'", True),
         ('"one"', True),
         # Two literals, not one: the evaluator requires the opening quote's match to
         # be the final character, which first/last-character equality does not.
         ("'a' 'b'", False),
-        ("'a' == 'b'", False),
+        ("'a' == 'b'", True),
         ("true", True),
-        ("inputs.name", False),
+        ("inputs.name", True),
+        ("bogus", False),
     ],
 )
-def test_literal_test_mirrors_the_evaluator(condition, literal):
-    assert _is_literal(condition) is literal
+def test_literal_handling_comes_from_the_evaluator(condition, resolvable):
+    """What `_is_literal` used to assert, asserted through the gate instead.
+
+    The helper existed only to restate the evaluator's literal tests, and its test
+    could pass while the two had drifted. Asking whether the gate accepts the
+    condition tests the property that actually matters.
+    """
+    assert (_unresolvable_term(condition) is None) is resolvable
 
 
 @pytest.mark.parametrize(
@@ -827,3 +838,49 @@ def test_indexing_an_always_mapping_root_still_loses_the_correction(condition):
     ctx = StepContext(inputs={"a": 1}, item=["x", "y"])
     assert CORRECTION_OFFERED not in format_condition_remediation(condition)
     assert evaluate_condition("{{ " + condition + " }}", ctx) is False
+
+
+# --- what the leaf sink rests on ----------------------------------------------
+
+
+def test_the_sink_is_off_outside_a_probe():
+    """A normal evaluation must not pay for, or be observed by, the gate."""
+    assert _leaf_sink.get() is None
+
+    evaluate_expression("{{ inputs.name }}", StepContext(inputs={"name": "x"}))
+
+    assert _leaf_sink.get() is None
+
+
+def test_the_sink_is_cleared_even_when_the_probe_raises():
+    """`_collect_leaves` swallows probe errors; it must still reset the var."""
+    _collect_leaves("inputs.tags | nosuchfilter")
+
+    assert _leaf_sink.get() is None
+
+
+def test_both_sides_of_a_boolean_are_reported():
+    """The load-bearing property: `_evaluate_simple_expression` evaluates both
+    operands of `and`/`or` and only then combines them. If it ever
+    short-circuits, the gate would stop seeing the right-hand operand and go
+    quietly blind -- so assert it here rather than rely on it silently.
+    """
+    assert _collect_leaves("inputs.a or bogus") == ["inputs.a", "bogus"]
+    assert _collect_leaves("false and bogus") == ["bogus"]
+    assert _unresolvable_term("false and bogus") is not None
+
+
+def test_leaves_seen_before_a_probe_error_are_kept():
+    """The probe hands `join` a placeholder and it raises. The leaves reached
+    before that are real, so discarding them would lose `bogus` -- the filter
+    argument case an earlier round of #4230 had to add by hand.
+    """
+    assert "bogus" in _collect_leaves("inputs.tags | join(bogus)")
+    assert _unresolvable_term("inputs.tags | join(bogus)") is not None
+
+
+def test_a_literal_never_reaches_the_resolver():
+    """Why the gate needs no literal test of its own any more."""
+    assert _collect_leaves("'a literal'") == []
+    assert _collect_leaves("42") == []
+    assert _collect_leaves("true") == []
