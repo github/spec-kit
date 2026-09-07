@@ -2894,6 +2894,7 @@ class PresetManager:
                     "command_name": cmd_name,
                     "source_file": source_file,
                     "source": f"extension:{manifest.id}",
+                    "author": manifest.data["extension"].get("author") or "github-spec-kit",
                     "extension_id": manifest.id,
                     "extension_dir": ext_root,
                 }
@@ -3805,6 +3806,7 @@ class PresetManager:
                     skill_name,
                     frontmatter.get("description", f"Extension command: {command_name}"),
                     extension_restore["source"],
+                    author=extension_restore.get("author", "github-spec-kit"),
                 )
                 registrar.apply_argument_hint(frontmatter, frontmatter_data, integration)
                 frontmatter_text = dump_frontmatter(frontmatter_data)

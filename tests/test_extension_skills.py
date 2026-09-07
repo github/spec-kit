@@ -445,6 +445,35 @@ class TestExtensionSkillRegistration:
         assert "compatibility:" in content
         assert "Run this to say hello." in content
 
+    @pytest.mark.parametrize("register_commands", [False, True])
+    @pytest.mark.parametrize("link_commands", [False, True])
+    @pytest.mark.parametrize("author", ["acme-corp", 'Acme: "Platform"\nTeam', None, ""])
+    def test_extension_author_preserved(
+        self, skills_project, extension_dir, register_commands, link_commands, author
+    ):
+        """Both skill generators retain attribution, including dev output and aliases."""
+        project_dir, skills_dir = skills_project
+        manifest_path = extension_dir / "extension.yml"
+        data = yaml.safe_load(manifest_path.read_text())
+        if author is not None:
+            data["extension"]["author"] = author
+        data["provides"]["commands"][0]["aliases"] = ["speckit.test-ext.greet"]
+        manifest_path.write_text(yaml.safe_dump(data))
+
+        ExtensionManager(project_dir).install_from_directory(
+            extension_dir, "0.1.0",
+            register_commands=register_commands, link_commands=link_commands,
+        )
+
+        names = ["hello", "world"]
+        if register_commands:
+            names.append("greet")
+        for name in names:
+            content = (skills_dir / f"speckit-test-ext-{name}" / "SKILL.md").read_text()
+            frontmatter = yaml.safe_load(content.split("---", 2)[1])
+            assert frontmatter["metadata"]["author"] == (author or "github-spec-kit")
+            assert "test-ext" in frontmatter["metadata"]["source"]
+
     def test_skill_md_has_parseable_yaml(self, skills_project, extension_dir):
         """Generated SKILL.md should contain valid, parseable YAML frontmatter."""
         project_dir, skills_dir = skills_project
