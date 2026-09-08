@@ -5997,6 +5997,7 @@ class PresetResolver:
                         "strategy": strategy,
                         "preset_id": pack_id,
                         "pack_dir": pack_dir,
+                        "manifest_declared": entry is not None,
                         "lookupId": derive_named_id(
                             "preset", source_id_for_lookup, template_type, template_name
                         ),
@@ -6059,6 +6060,7 @@ class PresetResolver:
                     "strategy": "replace",
                     "extension_id": ext_id,
                     "extension_dir": ext_dir,
+                    "manifest_declared": entry is not None,
                     "lookupId": derive_named_id(
                         "extension", source_id_for_lookup, template_type, template_name
                     ),

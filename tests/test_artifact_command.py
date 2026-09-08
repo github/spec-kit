@@ -1344,6 +1344,7 @@ class TestManifestPathPortability:
             "path": pack_dir / "spec-template.md",
             "preset_id": "my-pack",
             "pack_dir": pack_dir,
+            "manifest_declared": True,
         }
         assert (
             _derive_manifest_path(layer, project_root)
@@ -1361,6 +1362,7 @@ class TestManifestPathPortability:
             "path": ext_dir / "commands" / "speckit.my-ext.go.md",
             "extension_id": "my-ext",
             "extension_dir": ext_dir,
+            "manifest_declared": True,
         }
         assert (
             _derive_manifest_path(layer, project_root)
@@ -1384,6 +1386,7 @@ class TestManifestPathPortability:
             "path": pack_dir / "spec-template.md",
             "preset_id": "renamed-on-disk",
             "pack_dir": pack_dir,
+            "manifest_declared": True,
         }
         assert (
             _derive_manifest_path(layer, project_root)
@@ -1400,6 +1403,7 @@ class TestManifestPathPortability:
             "path": pack_dir / "spec-template.md",
             "preset_id": "my-pack",
             "pack_dir": pack_dir,
+            "manifest_declared": True,
         }
         assert _derive_manifest_path(layer, project_root) is None
 
@@ -1414,6 +1418,7 @@ class TestManifestPathPortability:
         layer = {
             "lookupId": "preset:my-pack:template:spec-template",
             "path": pack_dir / "spec-template.md",
+            "manifest_declared": True,
         }
         assert _derive_manifest_path(layer, project_root) is None
 
@@ -1425,6 +1430,30 @@ class TestManifestPathPortability:
         project_layer = {"lookupId": "project:_:template:spec-template"}
         assert _derive_manifest_path(builtin_layer, project_root) is None
         assert _derive_manifest_path(project_layer, project_root) is None
+
+    def test_convention_only_extension_layer_reports_no_manifest_path(
+        self, tmp_path: Path
+    ):
+        """A contribution the manifest does not declare in ``provides`` — a
+        "convention-only" contribution — must NOT report the manifest as its
+        source, even when the manifest file exists on disk. Joining on the
+        reported path would find no matching contribution. One extension test
+        covers both the preset and extension branches: ``_derive_manifest_path``
+        gates on the layer's ``manifest_declared`` flag before dispatching by
+        layer kind."""
+        project_root = tmp_path / "proj"
+        ext_dir = project_root / ".specify" / "extensions" / "foo"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "extension.yml").write_text("id: foo\n", encoding="utf-8")
+
+        layer = {
+            "lookupId": "extension:foo:command:speckit.baz",
+            "path": ext_dir / "commands" / "baz.md",
+            "extension_id": "foo",
+            "extension_dir": ext_dir,
+            "manifest_declared": False,
+        }
+        assert _derive_manifest_path(layer, project_root) is None
 
 
 class TestPresetDisplayName:

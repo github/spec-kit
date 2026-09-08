@@ -25,6 +25,7 @@ from .._identifier import (
     derive_public_id,
     is_dotted_command_name,
     layer_kind_from_lookup_id,
+    source_id_from_lookup_id,
     validate_component,
 )
 from .._script_variants import canonical_script_name
@@ -261,7 +262,10 @@ def _public_layer_shape(
     layer_kind = layer_kind_from_lookup_id(lookup_id)
     if layer_kind not in ("project", "preset", "extension"):
         raise ArtifactResolutionError()
-    return layer_kind, lookup_id.split(":", 2)[1], lookup_id
+    source_id = source_id_from_lookup_id(lookup_id)
+    if source_id is None:
+        raise ArtifactResolutionError()
+    return layer_kind, source_id, lookup_id
 
 
 def _derive_manifest_path(layer: dict[str, Any], project_root: Path) -> str | None:
@@ -280,10 +284,22 @@ def _derive_manifest_path(layer: dict[str, Any], project_root: Path) -> str | No
     layers — which ``collect_all_layers()`` always sets alongside
     ``lookupId``. Missing provenance keys mean no manifest path is available.
 
+    Convention-only contributions are surfaced by the resolver even when the
+    pack's manifest does not declare them — the manifest file exists on disk
+    but does not list the artifact in ``provides``. Reporting the manifest
+    path in that case would be a false positive: consumers joining on the
+    reported path would find no matching contribution. ``collect_all_layers``
+    sets ``manifest_declared=True`` on layers that came from a manifest
+    ``provides`` entry, so those layers alone report a manifest path; a layer
+    without that flag falls through to ``None`` even when the manifest file
+    exists on disk.
+
     Uses ``as_posix()`` so the string is stable across Windows and POSIX — a
     caller comparing snapshots between operating systems gets the same value
     on both.
     """
+    if not layer.get("manifest_declared"):
+        return None
     lookup_id = layer.get("lookupId", "")
     layer_kind = layer_kind_from_lookup_id(lookup_id)
     if layer_kind == "preset":

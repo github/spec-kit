@@ -95,6 +95,15 @@ def derive_named_id(layer: str, source_id: str, kind: str, name: str) -> str:
     derivation boundary that must enforce the grammar. Callers passing raw
     strings should either pre-validate or handle
     :class:`IdentifierComponentError`.
+
+    The project-layer sentinel is also enforced here: the project layer uses
+    ``sourceId == "_"`` (see :data:`PROJECT_OVERRIDE_LAYER`) and no other
+    value; the preset and extension layers never use ``"_"``, which is
+    reserved for the project layer. Callers that mix these up would produce a
+    lookupId :func:`layer_kind_from_lookup_id` still parses but that no
+    manifest ever emits — a silent join-key mismatch. Rejecting the mix here
+    keeps the grammar's sentinel contract enforced at the single derivation
+    boundary rather than in each caller.
     """
     validate_component(layer, "layer")
     validate_component(source_id, "sourceId")
@@ -104,6 +113,14 @@ def derive_named_id(layer: str, source_id: str, kind: str, name: str) -> str:
     if kind not in _NAMED_CONTRIBUTION_KINDS:
         raise IdentifierComponentError(f"Invalid named contribution kind '{kind}'")
     validate_component(name, "name")
+    if layer == PROJECT_OVERRIDE_LAYER and source_id != "_":
+        raise IdentifierComponentError(
+            f"Invalid sourceId '{source_id}': project layer requires '_'"
+        )
+    if layer in {"preset", "extension"} and source_id == "_":
+        raise IdentifierComponentError(
+            "Invalid sourceId '_': reserved for project layer"
+        )
     return f"{layer}:{source_id}:{kind}:{name}"
 
 
@@ -169,6 +186,20 @@ def is_dotted_command_name(value: str) -> bool:
         and all((("0" <= char <= "9") or ("a" <= char <= "z") or char == "-") for char in segment)
         for segment in segments
     )
+
+
+def source_id_from_lookup_id(lookup_id: str) -> str | None:
+    """Return the sourceId segment of a resolved-stack ``lookupId``, or ``None``.
+
+    Returns ``None`` for any value that :func:`layer_kind_from_lookup_id`
+    would reject — same validation, same grammar, single source of truth.
+    Consumers must not ``.split(":")`` a ``lookupId`` themselves: the
+    grammar's segmentation lives in this module, and any caller doing its
+    own split leaks the layout across the codebase.
+    """
+    if layer_kind_from_lookup_id(lookup_id) is None:
+        return None
+    return lookup_id.split(":", 2)[1]
 
 
 def derive_hook_id(
