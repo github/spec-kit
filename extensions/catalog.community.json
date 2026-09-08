@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-03T00:00:00Z",
+  "updated_at": "2026-09-08T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -906,20 +906,27 @@
       "id": "brownkit",
       "description": "Evidence-driven capability discovery, security and QA risk assessment for existing codebases.",
       "author": "Maksim Shautsou",
-      "version": "1.0.1",
-      "download_url": "https://github.com/MaksimShevtsov/BrownKit/archive/refs/tags/v1.0.1.zip",
+      "version": "1.2.0",
+      "download_url": "https://github.com/MaksimShevtsov/BrownKit/archive/refs/tags/v1.2.0.zip",
       "repository": "https://github.com/MaksimShevtsov/BrownKit",
-      "homepage": "https://github.com/MaksimShevtsov/BrownKit",
-      "documentation": "https://github.com/MaksimShevtsov/BrownKit/blob/main/README.md",
+      "homepage": "https://github.com/MaksimShevtsov/BrownKit/blob/main/README.md",
+      "documentation": "https://github.com/MaksimShevtsov/BrownKit/blob/main/docs/methodology.md",
       "changelog": "https://github.com/MaksimShevtsov/BrownKit/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "python",
+            "version": ">=3.9",
+            "required": false
+          }
+        ]
       },
       "provides": {
-        "commands": 10,
+        "commands": 11,
         "hooks": 5
       },
       "tags": [
@@ -933,7 +940,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-10T00:00:00Z",
-      "updated_at": "2026-05-10T00:00:00Z"
+      "updated_at": "2026-09-08T00:00:00Z"
     },
     "bugfix": {
       "name": "Bugfix Workflow",
