@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-03T00:00:00Z",
+  "updated_at": "2026-09-08T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -3622,10 +3622,10 @@
     "pay-x402": {
       "name": "AgentPay x402 — Spend Controls for Spec Kit Agents",
       "id": "pay-x402",
-      "description": "Set USDC spending caps and execute x402 payments to paid APIs during spec implementation. Zero platform fee on Base L2.",
+      "description": "Set USDC spending caps, check a counterparty's credit before paying it, and pay x402-enabled APIs during spec implementation. Settles on Base or Solana.",
       "author": "AgentPay Team",
-      "version": "1.0.0",
-      "download_url": "https://github.com/shawnhvac/spec-kit-pay-x402/archive/refs/tags/v1.0.0.zip",
+      "version": "1.1.0",
+      "download_url": "https://github.com/shawnhvac/spec-kit-pay-x402/archive/refs/tags/v1.1.0.zip",
       "repository": "https://github.com/shawnhvac/spec-kit-pay-x402",
       "homepage": "https://x402-agent-pay.com",
       "documentation": "https://github.com/shawnhvac/spec-kit-pay-x402#readme",
@@ -3651,7 +3651,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-17T00:00:00Z",
-      "updated_at": "2026-08-17T00:00:00Z"
+      "updated_at": "2026-09-08T00:00:00Z"
     },
     "plan-review-gate": {
       "name": "Plan Review Gate",
