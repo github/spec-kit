@@ -57,6 +57,60 @@ Here are a few things you can do that will increase the likelihood of your pull 
 
 Accounts with three open pull requests may continue submitting changes, but additional submissions may be placed behind contributions from other authors in the review queue. Coding agents should disclose this possibility and obtain the filer's confirmation before opening another pull request.
 
+### Evidence gate
+
+A contribution is evaluated on the evidence it carries, not on how plausible its reasoning sounds. The same bar applies to everyone — human and AI-assisted contributions are judged identically.
+
+A valid, in-scope change that arrives without evidence is not rejected outright. It may be labeled [`triage-can-wait`](#triage-and-author-labels) and held behind proven work until evidence is added, at which point it can be reprioritized.
+
+What counts as evidence:
+
+- **A reproduction or a linked real-world report** — a failing case, a stack trace, or a link to an issue where the problem actually occurred. "This could theoretically fail" reasoning on its own does not clear the gate.
+- **A regression test that fails on `main` and passes with your change** — this proves both that the problem is real and that your change fixes it.
+- **Scope discipline** — one concern per pull request. Split unrelated changes into separate PRs (see the [focused-change guidance](#submitting-a-pull-request) above); sprawling batch diffs are hard to review and slow to land.
+- **Disclosed AI assistance** — if any AI tooling was involved, disclose it and its extent per [AI contributions in Spec Kit](#ai-contributions-in-spec-kit).
+
+Speculative hardening is welcome, but it sits behind proven, evidence-backed work. If you can attach a reproduction and a failing test, your change moves to the front; if you can't yet, say so, and it will be queued rather than closed.
+
+### Review rubric
+
+Triaged items are weighed across seven dimensions, each scored `0`–`2` (`0` absent, `1` partial, `2` clearly demonstrated), for a maximum of 14. The score guides **prioritization** — it is not a hard pass/fail gate. The one firm rule is the [evidence gate](#evidence-gate) above: theoretical-only changes with no evidence are deprioritized.
+
+| Dimension | What it measures |
+|---|---|
+| D1 — Real-world evidence | A reproduction or linked report, versus theory alone |
+| D2 — Reachability / severity | Whether the issue can actually be hit, and how bad it is |
+| D3 — Scope discipline | One focused concern per PR, no unrelated changes |
+| D4 — Test evidence | A regression test that fails on `main` and passes with the change |
+| D5 — Disclosure / understanding | AI use disclosed, and the author understands the change |
+| D6 — Cost vs. benefit | Value delivered against added complexity and maintenance cost |
+| D7 — Roadmap alignment | Fit with Spec Kit's goals and direction |
+
+### Triage and author labels
+
+Every triaged item receives one **verdict** label recording where it stands. **Author** labels signal the specific action needed to move an item forward.
+
+Verdict (one per item):
+
+| Label | Meaning |
+|---|---|
+| `triage-must-have` | Verdict: high-value, important work for Spec Kit — do first |
+| `triage-nice-to-have` | Verdict: evidence-backed fix or greenlit feature — land after review |
+| `triage-can-wait` | Verdict: valid and in-scope but deprioritized; held behind the evidence gate |
+| `triage-out-of-scope` | Verdict: won't land in core — invalid, duplicate, off-mission, or redirected to an extension |
+
+Author actions:
+
+| Label | Meaning |
+|---|---|
+| `author-needs-tests` | Real change but missing a regression test — add one that fails before / passes after |
+| `author-needs-disclosure` | AI assistance not disclosed — disclose AI use per CONTRIBUTING |
+| `author-needs-info` | Missing detail needed to assess — supply requested info |
+| `author-over-cap` | Over the 3-open-PR cap or repetitive batch submissions — please consolidate |
+| `author-awaiting` | Waiting on author response (hands off to the existing stale workflow) |
+
+For further reading on the thinking behind this gate, see [one maintainer's perspective on AI-source contributions](https://blog.manorrock.com/blog/2026/09/08/spec_kit_ai_source.html). That piece is a personal viewpoint, not project policy — the policy is what's documented here.
+
 ### Branch naming
 
 We recommend naming branches as `<type>/<number>-<short-slug>`, where `<number>` is the issue or PR number (whichever comes first) and `<type>` is one of:
