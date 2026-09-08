@@ -30,7 +30,7 @@ The month's quiet structural change was the completion of the **Copilot skills-d
 
 ### Spec Kit Triages Itself: the `feature-assess` Workflow
 
-August's most on-brand feature was the **`feature-assess` agentic workflow** (#4186), which **installs and runs Spec Kit to assess an incoming feature request end to end**. Rather than a human reading each new request cold, the workflow provisions `uv` and Python (#4193), stands up the Spec Kit CLI and the `assess` extension (#4195), and runs the July `assess` "Idea Assessment Pipeline" against the request — capture → evidence → refine → design → decision — before a maintainer touches it. The initial landing was quickly followed by the provisioning and daily-credit-budget fixes needed to make it run reliably in CI (#4193, #4195, #4222). It is the clearest instance yet of the project **dogfooding its own primitives**: the tool that helps teams decide "should we build this?" is now wired into Spec Kit's own triage, running the `assess` pipeline on a labeled feature-request issue and posting each stage back. [\[github.com\]](https://github.com/github/spec-kit/releases)
+August's most on-brand feature was the **`feature-assess` agentic workflow** (#4186), which **installs and runs Spec Kit to assess an incoming feature request end to end**. Rather than a human reading each new request cold, the workflow provisions `uv` and Python (#4193), stands up the Spec Kit CLI and the `assess` extension (#4195), and runs the July `assess` "Idea Assessment Pipeline" against the request — intake → research → define → shape → decide — before a maintainer touches it. The initial landing was quickly followed by the provisioning and daily-credit-budget fixes needed to make it run reliably in CI (#4193, #4195, #4222). It is the clearest instance yet of the project **dogfooding its own primitives**: the tool that helps teams decide "should we build this?" is now wired into Spec Kit's own triage, running the `assess` pipeline on a labeled feature-request issue and posting each stage back. [\[github.com\]](https://github.com/github/spec-kit/releases)
 
 ### The Composition Layer Matures
 
@@ -52,7 +52,7 @@ The community extension catalog grew from 144 to **162 entries** during August �
 
 The month's most telling signal was **July's companion tooling entering the official catalog**. **SpecJudge** — the CLI that reads Spec Kit's constitution/spec/tasks artifacts to recommend a right-sized model, profiled in July's newsletter — was cataloged as an extension (#4079). And **SpecAssay** arrived as a **multi-artifact suite**: an extension (SpecAssay Check, #4113), a preset (#4123), and a **bundle** (#4125) — the second cataloged community bundle. The third-party layer that formed *around* Spec Kit in July is consolidating *into* the ecosystem.
 
-Notable new extensions by category:
+Notable catalog additions and updates by category:
 
 - **Verification, review & governance**: Architecture Governance, SpecAssay Check, Taco Review (human review packaging), adrkit (ADR authoring)
 - **Requirements & intake**: SpecKit Grill Me (a more thorough clarification skill), Pre-Spec Cards, Charter (updated)
@@ -76,7 +76,7 @@ August's coverage centered on the 1.0.0 milestone, with the mix continuing July'
 
 **Roan Brasil Monteiro** (Medium, August 20) published a 21-minute *field guide to BMAD, Spec Kit, OpenSpec, and Kiro*, framed around "too much process burns money, too little burns more," positioning Spec Kit as the thorough, heavier option among four SDD frameworks. [\[medium.com\]](https://medium.com/@roanmonteiro/bmad-spec-kit-openspec-kiro-a-field-guide-to-getting-real-work-out-of-ai-coding-agents-b17833c24b3f)
 
-**百度百家号** (AI钉子铺, August 23) ran a half-year growth-rate review of five SDD frameworks that credits Spec Kit's GitHub/Microsoft brand pull and 14+ agent support but amplifies Martin Fowler's "8+ markdown files per spec" critique, arguing its growth is partly "brand premium." **Andrew** (DEV Community, August 28), reviewing OpenSpec, engaged Spec Kit substantively as the main comparison — citing 131,957 stars, phase gates, the Python requirement, and the larger extension catalog. [\[baijiahao.baidu.com\]](https://baijiahao.baidu.com/s?id=1874316315966110702)
+**百度百家号** (AI钉子铺, August 23) ran a half-year growth-rate review of five SDD frameworks that credits Spec Kit's GitHub/Microsoft brand pull and 14+ agent support but amplifies Martin Fowler's "8+ markdown files per spec" critique, arguing its growth is partly "brand premium." [\[baijiahao.baidu.com\]](https://baijiahao.baidu.com/s?id=1874316315966110702) **Andrew** (DEV Community, August 28), reviewing OpenSpec, engaged Spec Kit substantively as the main comparison — citing 131,957 stars, phase gates, the Python requirement, and the larger extension catalog. [\[dev.to\]](https://dev.to/andrew-ooo/openspec-review-spec-driven-dev-without-the-ceremony-8jb)
 
 ### Developer Articles and Field Reports
 
