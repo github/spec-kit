@@ -639,6 +639,3 @@ class TestManifestIdWinsOverDirectoryName:
         manifest = ExtensionManifest(ext_dir / "extension.yml")
         assert layer["lookupId"] == manifest.contribution_id("command", namespaced)
         assert layer["lookupId"] == f"extension:{manifest_id}:command:{namespaced}"
-
-
-
