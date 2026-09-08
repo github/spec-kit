@@ -127,6 +127,20 @@ def test_components_property_orders_by_kind():
     assert kinds == ["extensions", "presets", "steps", "workflows"]
 
 
+def test_duplicate_component_in_same_kind_is_rejected():
+    data = valid_manifest_dict()
+    data["provides"]["extensions"].append(
+        {"id": "ext-a", "version": "9.9.9"}
+    )
+
+    errors = BundleManifest.from_dict(data).structural_errors()
+
+    assert any(
+        "duplicate extension 'ext-a'" in error.lower()
+        for error in errors
+    )
+
+
 def test_string_tags_rejected_not_split_per_character():
     # A bare string would otherwise be iterated character-by-character; the
     # schema requires a list of strings.

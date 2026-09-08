@@ -192,9 +192,17 @@ class BundleManifest:
                 "(lowercase letters, digits, '.', '_', '-'; no path separators)."
             )
 
+        seen_components: set[tuple[str, str]] = set()
         for ref in self.components:
             if not ref.id:
                 errors.append(f"A {ref.kind[:-1]} entry is missing its 'id'.")
+            key = (ref.kind, ref.id)
+            if ref.id and key in seen_components:
+                errors.append(
+                    f"Duplicate {ref.kind[:-1]} '{ref.id}' in "
+                    f"'provides.{ref.kind}'."
+                )
+            seen_components.add(key)
             if ref.kind != "steps" and not ref.version:
                 errors.append(
                     f"{ref.kind[:-1]} '{ref.id or '<unknown>'}' must be pinned to a 'version'."
