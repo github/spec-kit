@@ -10079,6 +10079,68 @@ class TestWorkflowAddCaseInsensitiveSuffix:
         assert result.exit_code == 0, result.output
         assert "installed" in result.output
 
+    def test_add_installs_workflow_with_custom_step(self, temp_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+        step_dir = temp_dir / ".specify" / "workflows" / "steps" / "test-add-step"
+        step_dir.mkdir(parents=True)
+        step_manifest = {
+            "schema_version": "1.0",
+            "step": {
+                "type_key": "test-add-step",
+                "name": "Test Add Step",
+                "version": "1.0.0",
+            },
+        }
+        (step_dir / "step.yml").write_text(
+            yaml.safe_dump(step_manifest, sort_keys=False),
+            encoding="utf-8",
+        )
+        (step_dir / "__init__.py").write_text(
+            """
+from specify_cli.workflows.base import StepBase, StepResult
+
+
+class TestAddStep(StepBase):
+    type_key = "test-add-step"
+
+    def execute(self, config, context):
+        return StepResult()
+""",
+            encoding="utf-8",
+        )
+
+        src = temp_dir / "sample.yml"
+        workflow_definition = {
+            "schema_version": "1.0",
+            "workflow": {
+                "id": "test-workflow-with-custom-step",
+                "name": "Test Workflow With Custom Step",
+                "version": "1.0.0",
+            },
+            "steps": [
+                {"id": "custom-step", "type": "test-add-step"},
+            ],
+        }
+        src.write_text(
+            yaml.safe_dump(workflow_definition, sort_keys=False),
+            encoding="utf-8",
+        )
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
+
+        assert result.exit_code == 0, result.output
+        installed_workflow = (
+            temp_dir
+            / ".specify"
+            / "workflows"
+            / "test-workflow-with-custom-step"
+            / "workflow.yml"
+        )
+        assert installed_workflow.is_file()
+
 
 class TestWorkflowInfoStepGraph:
     """`workflow info` must render each step as `→ <id> [<type>]` with LITERAL
