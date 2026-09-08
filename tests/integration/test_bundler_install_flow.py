@@ -51,6 +51,28 @@ def test_install_is_idempotent(tmp_path: Path):
     assert len(load_records(tmp_path)) == 1
 
 
+def test_install_rejects_version_change_without_refresh(tmp_path: Path):
+    """A normal install must not advance a record past stale components.
+
+    ``bundle install`` is intentionally idempotent.  When the same bundle ID
+    resolves to a different version, callers must use ``bundle update`` so the
+    owned primitives are refreshed before the record is changed.
+    """
+    make_project(tmp_path)
+    installer = FakeInstaller()
+
+    version_one = _bundle("demo", ["ext-a"], version="1.0.0")
+    install_bundle(tmp_path, _plan(version_one), installer, manifest=version_one)
+
+    version_two = _bundle("demo", ["ext-a"], version="2.0.0")
+    with pytest.raises(BundlerError, match="bundle update"):
+        install_bundle(tmp_path, _plan(version_two), installer, manifest=version_two)
+
+    record = load_records(tmp_path)[0]
+    assert record.version == "1.0.0"
+    assert len(installer.install_calls) == 1
+
+
 def test_partial_failure_rolls_back_and_records_nothing(tmp_path: Path):
     make_project(tmp_path)
     manifest = BundleManifest.from_dict(valid_manifest_dict())

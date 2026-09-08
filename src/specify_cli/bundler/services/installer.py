@@ -80,7 +80,9 @@ def install_bundle(
     Version-pin enforcement is install-time only. The primitive ``is_installed``
     checks are id-based (they do not compare versions), so when a component is
     already present and *refresh* is False it is skipped without verifying that
-    the on-disk version matches the manifest pin. Pins are therefore only
+    the on-disk version matches the manifest pin. A recorded bundle whose
+    resolved version changes is rejected unless *refresh* is True, preventing
+    the record from advancing past stale components. Pins are therefore only
     guaranteed to be applied when the bundler actually performs an install or a
     refresh; running ``specify bundle update`` re-applies every owned component
     at its pinned version.
@@ -94,6 +96,18 @@ def install_bundle(
 
     result = InstallResult(bundle_id=plan.bundle_id)
     existing = find_record(records, plan.bundle_id)
+    if (
+        existing is not None
+        and not refresh
+        and existing.version != plan.version
+    ):
+        raise BundlerError(
+            f"Bundle '{plan.bundle_id}' is already installed at version "
+            f"{existing.version}, but version {plan.version} was requested. "
+            "Use 'specify bundle update' to refresh its components before "
+            "advancing the installed record."
+        )
+
     prior_ours = {
         (c.kind, c.id) for c in existing.contributed_components
     } if existing is not None else set()
