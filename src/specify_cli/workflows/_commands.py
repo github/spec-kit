@@ -3408,6 +3408,28 @@ def workflow_step_add(
             )
             raise typer.Exit(1)
 
+        catalog_version = info.get("version")
+        downloaded_version = step_meta.get("version")
+        if catalog_version and downloaded_version:
+            from packaging import version as pkg_version
+
+            try:
+                versions_match = pkg_version.Version(
+                    str(downloaded_version)
+                ) == pkg_version.Version(str(catalog_version))
+            except pkg_version.InvalidVersion:
+                versions_match = str(downloaded_version).strip() == str(
+                    catalog_version
+                ).strip()
+            if not versions_match:
+                console.print(
+                    f"[red]Error:[/red] step.yml version "
+                    f"({_escape_markup(repr(downloaded_version))}) does not match "
+                    f"the catalog version ({_escape_markup(repr(catalog_version))}). "
+                    "The catalog entry may be stale or misconfigured."
+                )
+                raise typer.Exit(1)
+
         # Write the two required files.
         try:
             (tmp_path / "step.yml").write_bytes(step_yml_content)
