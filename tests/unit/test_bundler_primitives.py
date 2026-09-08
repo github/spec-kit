@@ -433,3 +433,24 @@ def _plan(manifest):
         effective_integration=None,
         components=components,
     )
+
+
+class TestRollbackLoggingRegression:
+    """Regression: _rollback() must log errors, not silently swallow them."""
+
+    def test_rollback_logs_exception_on_remove_failure(self, caplog, tmp_path):
+        """When installer.remove() fails, _rollback() must log the error."""
+        import logging
+        from unittest.mock import MagicMock
+        from specify_cli.bundler.services.installer import _rollback
+        from specify_cli.bundler.models.manifest import ComponentRef
+
+        installer = MagicMock()
+        installer.remove.side_effect = RuntimeError("simulated remove failure")
+        done = [ComponentRef(kind="extensions", id="test-ext")]
+
+        with caplog.at_level(logging.DEBUG):
+            _rollback(tmp_path, installer, done)
+
+        assert any("rollback failed" in record.message for record in caplog.records)
+        assert any("test-ext" in record.message for record in caplog.records)
