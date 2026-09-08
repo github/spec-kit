@@ -22,6 +22,7 @@ from tests.parity_helpers import (
     ps_cmd,
     py_cmd,
     run,
+    venv_python3_exe,
 )
 
 SCRIPT = "resolve-template"
@@ -665,13 +666,14 @@ def test_all_variants_honor_speckit_python_override_when_yaml_missing(
         check=True,
         capture_output=True,
     )
-    no_yaml_bin = no_yaml_python / "bin"
-    no_yaml_exe = no_yaml_bin / "python3"
+    no_yaml_exe = venv_python3_exe(no_yaml_python)
+    no_yaml_bin = no_yaml_exe.parent
     assert no_yaml_exe.is_file()
 
     py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
 
     baseline_env = clean_env()
+    baseline_env.pop("SPECKIT_PYTHON", None)
     baseline_env["PATH"] = f"{no_yaml_bin}{os.pathsep}{baseline_env.get('PATH', '')}"
     baseline_results = [
         run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, baseline_env),
@@ -722,7 +724,7 @@ def test_all_variants_fall_back_when_speckit_python_lacks_pyyaml(
         check=True,
         capture_output=True,
     )
-    no_yaml_exe = no_yaml_python / "bin" / "python3"
+    no_yaml_exe = venv_python3_exe(no_yaml_python)
     assert no_yaml_exe.is_file()
 
     env = clean_env()
@@ -740,6 +742,71 @@ def test_all_variants_fall_back_when_speckit_python_lacks_pyyaml(
         == {"TEMPLATE_NAME": TEMPLATE, "TEMPLATE_CONTENT": expected}
         for result in results
     )
+
+
+@requires_bash
+def test_bash_honors_speckit_python_path_containing_spaces(tmp_path: Path) -> None:
+    """SPECKIT_PYTHON may be an absolute path containing spaces (e.g. a venv
+    named "tool env"); callers must treat it as one argv element rather than
+    splitting it on whitespace (#4445)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    spaced_venv = tmp_path / "tool env"
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--system-site-packages", str(spaced_venv)],
+        check=True,
+        capture_output=True,
+    )
+    spaced_exe = venv_python3_exe(spaced_venv)
+    assert spaced_exe.is_file()
+
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = str(spaced_exe)
+
+    result = run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
+@requires_bash
+def test_python_variant_delegates_manifest_with_non_json_native_yaml_value(
+    tmp_path: Path,
+) -> None:
+    """A manifest holding a value PyYAML parses into a non-JSON-native type
+    (e.g. an unquoted date) must still resolve when the Python twin delegates
+    parsing to SPECKIT_PYTHON because its own interpreter lacks PyYAML."""
+    repo, expected = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "created_at: 2026-09-08\n" + manifest.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    no_yaml_python = tmp_path / "no-yaml-venv"
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
+        check=True,
+        capture_output=True,
+    )
+    no_yaml_exe = venv_python3_exe(no_yaml_python)
+    assert no_yaml_exe.is_file()
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
 
 
 @requires_bash

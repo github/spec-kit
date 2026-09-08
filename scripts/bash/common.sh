@@ -411,7 +411,7 @@ _python3_command() {
         printf '%s\n' "python"
     elif command -v py >/dev/null 2>&1 &&
         py -3 -c 'import sys' >/dev/null 2>&1; then
-        printf '%s\n' "py -3"
+        printf '%s\n' "py" "-3"
     else
         return 1
     fi
@@ -419,10 +419,9 @@ _python3_command() {
 
 _sorted_extension_ids() {
     local ext_dir="$1"
-    local python_spec
-    if python_spec=$(_python3_command); then
-        local -a python_cmd
-        read -r -a python_cmd <<< "$python_spec"
+    local -a python_cmd=()
+    mapfile -t python_cmd < <(_python3_command)
+    if [ "${#python_cmd[@]}" -gt 0 ]; then
         local py_stderr sorted_ids
         py_stderr=$(mktemp)
         if sorted_ids=$(SPECKIT_EXTENSIONS="$ext_dir" "${python_cmd[@]}" -c "
@@ -517,11 +516,8 @@ resolve_template() {
     local presets_dir="$repo_root/.specify/presets"
     if [ -d "$presets_dir" ]; then
         local registry_file="$presets_dir/.registry"
-        local python_spec=""
         local -a python_cmd=()
-        if python_spec=$(_python3_command); then
-            read -r -a python_cmd <<< "$python_spec"
-        fi
+        mapfile -t python_cmd < <(_python3_command)
         if [ -f "$registry_file" ] && [ "${#python_cmd[@]}" -gt 0 ]; then
             # Read preset IDs sorted by priority (lower number = higher precedence).
             # The python3 call is wrapped in an if-condition so that set -e does not
@@ -640,11 +636,8 @@ resolve_template_content() {
         local registry_file="$presets_dir/.registry"
         local sorted_presets=""
         local registry_parsed=false
-        local python_spec=""
         local -a python_cmd=()
-        if python_spec=$(_python3_command); then
-            read -r -a python_cmd <<< "$python_spec"
-        fi
+        mapfile -t python_cmd < <(_python3_command)
         if [ -f "$registry_file" ] && [ "${#python_cmd[@]}" -gt 0 ]; then
             if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" "${python_cmd[@]}" -c "
 import json, re, sys, os

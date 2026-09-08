@@ -405,7 +405,7 @@ class _DelegatedYAML:
                     self._python_exe,
                     "-c",
                     "import sys, json, yaml; "
-                    "json.dump(yaml.safe_load(sys.stdin.read()), sys.stdout)",
+                    "json.dump(yaml.safe_load(sys.stdin.read()), sys.stdout, default=str)",
                 ],
                 input=text,
                 capture_output=True,

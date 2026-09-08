@@ -82,6 +82,13 @@ def clean_env() -> dict[str, str]:
     return env
 
 
+def venv_python3_exe(venv_dir: Path) -> Path:
+    """Path to the python3 executable of a venv created with ``--without-pip``."""
+    if os.name == "nt":
+        return venv_dir / "Scripts" / "python.exe"
+    return venv_dir / "bin" / "python3"
+
+
 def collation_range_locale() -> str | None:
     """A locale whose ``[a-z]`` bracket range is collation-ordered, or ``None``.
 
