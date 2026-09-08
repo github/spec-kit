@@ -5456,16 +5456,20 @@ class PresetResolver:
 
     def _extension_manifest_declared_template(
         self, ext_dir: Path, template_name: str, template_type: str
-    ) -> tuple[dict | None, Path | None]:
+    ) -> tuple[dict | None, Path | None, str | None]:
         """Resolve an extension's manifest-declared command/template/script entry and usable file.
 
-        Mirrors ``_manifest_declared_template`` (for presets): returns ``(entry, candidate)``
-        where ``entry`` is the matching ``provides.<type>`` mapping, or ``None`` if the
-        extension has no (valid) manifest or doesn't declare this ``(name, type)``.
-        ``candidate`` is the declared ``file:`` resolved under ``ext_dir`` IFF it is a
-        regular file that stays within ``ext_dir`` (guards against path traversal via a
-        malformed manifest, mirroring ``resolve_extension_command_via_manifest``);
-        ``None`` otherwise.
+        Mirrors ``_manifest_declared_template`` (for presets): returns
+        ``(entry, candidate, manifest_id)`` where ``entry`` is the matching
+        ``provides.<type>`` mapping, or ``None`` if the extension has no
+        (valid) manifest or doesn't declare this ``(name, type)``.
+        ``candidate`` is the declared ``file:`` resolved under ``ext_dir`` IFF
+        it is a regular file that stays within ``ext_dir`` (guards against path
+        traversal via a malformed manifest, mirroring
+        ``resolve_extension_command_via_manifest``); ``None`` otherwise.
+        ``manifest_id`` comes from the same successful parse that produced
+        ``entry``, so callers never need a second fallible read to derive the
+        contribution identity.
 
         The manifest is authoritative: when ``entry`` is not ``None`` but ``candidate`` is
         ``None``, callers must NOT fall back to convention-based lookup — that would mask
@@ -5474,16 +5478,16 @@ class PresetResolver:
         diverge (the divergence flagged in review on #4012).
         """
         if template_type not in ("command", "template", "script"):
-            return None, None
+            return None, None, None
         ext_manifest_path = ext_dir / "extension.yml"
         if not ext_manifest_path.exists():
-            return None, None
+            return None, None, None
         from ..extensions import ExtensionManifest, ValidationError as ExtValidationError
 
         try:
             ext_manifest = ExtensionManifest(ext_manifest_path)
         except (ExtValidationError, yaml.YAMLError, OSError, TypeError, AttributeError):
-            return None, None
+            return None, None, None
         if template_type == "command":
             entries = ext_manifest.commands
         elif template_type == "template":
@@ -5495,10 +5499,10 @@ class PresetResolver:
                 continue
             file_rel = entry.get("file")
             if not file_rel:
-                return entry, None
+                return entry, None, ext_manifest.id
             rel_path = Path(file_rel)
             if rel_path.is_absolute():
-                return entry, None
+                return entry, None, ext_manifest.id
             candidate = ext_dir / rel_path
             try:
                 # Resolve only for the containment check, not for the
@@ -5508,9 +5512,13 @@ class PresetResolver:
                 # lookup returns for the same directory.
                 candidate.resolve().relative_to(ext_dir.resolve())  # raises ValueError if outside
             except (OSError, ValueError):
-                return entry, None
-            return entry, (candidate if candidate.is_file() else None)
-        return None, None
+                return entry, None, ext_manifest.id
+            return (
+                entry,
+                candidate if candidate.is_file() else None,
+                ext_manifest.id,
+            )
+        return None, None, None
 
     def _get_all_extensions_by_priority(self) -> list[tuple[int, str, dict | None]]:
         """Build unified list of registered and unregistered extensions sorted by priority.
@@ -5694,8 +5702,10 @@ class PresetResolver:
             # The extension manifest is authoritative, same as preset manifests
             # above: check it before convention-based lookup so a declared entry
             # at a non-conventional path wins over a stale conventional file.
-            entry, manifest_candidate = self._extension_manifest_declared_template(
-                ext_dir, template_name, template_type
+            entry, manifest_candidate, _manifest_id = (
+                self._extension_manifest_declared_template(
+                    ext_dir, template_name, template_type
+                )
             )
             if manifest_candidate is not None:
                 return manifest_candidate
@@ -6012,7 +6022,7 @@ class PresetResolver:
             # above: check it before convention-based lookup so a declared entry
             # at a non-conventional path wins over a stale conventional file, and
             # a declared-but-missing file isn't silently masked by convention.
-            entry, candidate = self._extension_manifest_declared_template(
+            entry, candidate, manifest_id = self._extension_manifest_declared_template(
                 ext_dir, template_name, template_type
             )
             if entry is None:
@@ -6032,28 +6042,8 @@ class PresetResolver:
                 # separately via ``extension_id`` / ``extension_dir`` for path
                 # / provenance lookup.
                 source_id_for_lookup = ext_id
-                if entry is not None:
-                    ext_manifest_path = ext_dir / "extension.yml"
-                    if ext_manifest_path.is_file():
-                        try:
-                            from ..extensions import (
-                                ExtensionManifest,
-                                ValidationError as ExtValidationError,
-                            )
-                            ext_manifest = ExtensionManifest(ext_manifest_path)
-                            if isinstance(ext_manifest.id, str) and ext_manifest.id:
-                                source_id_for_lookup = ext_manifest.id
-                        except (
-                            ExtValidationError,
-                            yaml.YAMLError,
-                            OSError,
-                            TypeError,
-                            AttributeError,
-                        ):
-                            # Fall back to the directory identity when the
-                            # manifest can't be re-read — same recovery as
-                            # ``_extension_manifest_declared_template``.
-                            pass
+                if entry is not None and manifest_id is not None:
+                    source_id_for_lookup = manifest_id
                 layers.append({
                     "path": candidate,
                     "source": source,

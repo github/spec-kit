@@ -619,7 +619,9 @@ class TestManifestIdWinsOverDirectoryName:
         assert layer["lookupId"] == manifest.contribution_id("template", "spec-template")
         assert layer["lookupId"] == f"preset:{manifest_id}:template:spec-template"
 
-    def test_extension_lookup_id_uses_manifest_id_when_directory_renamed(self, tmp_path):
+    def test_extension_lookup_id_uses_manifest_id_when_directory_renamed(
+        self, tmp_path, monkeypatch
+    ):
         project = _make_project(tmp_path)
         dir_name, manifest_id = "renamed-ext", "original-ext"
         # Extension commands are auto-namespaced under speckit.<manifest_id>
@@ -631,11 +633,24 @@ class TestManifestIdWinsOverDirectoryName:
         data["provides"]["commands"] = [
             {"name": "speckit.branch", "file": "commands/branch.md", "description": "F"}
         ]
-        _write_manifest(ext_dir, data, "extension.yml")
+        manifest_path = _write_manifest(ext_dir, data, "extension.yml")
         _write_registry(project, "extensions", dir_name)
 
+        manifest = ExtensionManifest(manifest_path)
+        read_count = 0
+
+        def read_manifest_once(path):
+            nonlocal read_count
+            read_count += 1
+            if read_count > 1:
+                raise OSError("simulated transient second-read failure")
+            return ExtensionManifest(path)
+
+        monkeypatch.setattr(
+            "specify_cli.extensions.ExtensionManifest", read_manifest_once
+        )
         layers = PresetResolver(project).collect_all_layers(namespaced, "command")
         layer = next(L for L in layers if L.get("extension_id") == dir_name)
-        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        assert read_count == 1
         assert layer["lookupId"] == manifest.contribution_id("command", namespaced)
         assert layer["lookupId"] == f"extension:{manifest_id}:command:{namespaced}"
