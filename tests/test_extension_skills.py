@@ -1166,6 +1166,52 @@ class TestExtensionSkillRegistration:
         assert "__SPECKIT_COMMAND_PLAN__" not in content
         assert expected_invocation in content
 
+    def test_skill_registration_resolves_hyphenated_command_ref_tokens(
+        self, project_dir, temp_dir
+    ):
+        """Command names containing a hyphen resolve like any other name."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+
+        ext_dir = temp_dir / "hyphen-ref-ext"
+        ext_dir.mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "hyphen-ref-ext",
+                "name": "Hyphen Ref Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.hyphen-ref-ext.run",
+                        "file": "commands/run.md",
+                        "description": "Run command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.safe_dump(manifest_data, f)
+
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Run command\n"
+            "---\n\n"
+            "Use __SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__ before proceeding.\n"
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        content = (skills_dir / "speckit-hyphen-ref-ext-run" / "SKILL.md").read_text()
+        assert "__SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__" not in content
+        assert "/speckit-agent-context-update" in content
+
     def test_skill_registration_does_not_rewrite_literal_speckit_text(
         self, project_dir, temp_dir
     ):

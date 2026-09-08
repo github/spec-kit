@@ -511,7 +511,40 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     pipe_idx = _find_top_level(expr, "|")
     if pipe_idx != -1:
         segments = _split_top_level(expr, "|")
-        value = _evaluate_simple_expression(segments[0].strip(), namespace)
+        # The pipe is detected before the operators below, so a filter written on
+        # the right-hand operand of a comparison was applied to the comparison's
+        # BOOLEAN RESULT instead: `count > limit | default(5)` evaluated
+        # `count > limit` first and then `default` on the bool, which is a no-op,
+        # so the expression silently returned the comparison against the
+        # *unfiltered* operand. This is the mirror of a filter followed by a
+        # comparison (`default('7') > '5'`), which this module already refuses
+        # rather than guessing at the intended precedence. Refuse both the same
+        # way, so an ambiguous expression is reported instead of quietly
+        # producing the answer the author did not ask for.
+        head = segments[0].strip()
+        # Unary ``not`` is a leading prefix, not an infix token, so it has no
+        # surrounding space for the scan below to match -- it has to be checked
+        # the same way the parser itself does (``expr.startswith("not ")``).
+        # Without this, ``not inputs.missing | default(1)`` still evaluated
+        # ``not inputs.missing`` first and applied the filter to that boolean,
+        # which is the exact mis-binding this guard exists to reject.
+        # (A ``not`` that follows ``and``/``or`` is already caught by those
+        # tokens below.)
+        _ambiguous_op = "not" if head.startswith("not ") else None
+        if _ambiguous_op is None:
+            for _op in ("!=", "==", ">=", "<=", ">", "<", " not in ", " in ",
+                        " or ", " and "):
+                if _find_top_level(head, _op) != -1:
+                    _ambiguous_op = _op.strip()
+                    break
+        if _ambiguous_op is not None:
+            raise ValueError(
+                f"ambiguous filter precedence in '{expr}': "
+                f"'| {segments[1].strip()}' would apply to the result of "
+                f"'{head}', not to an operand of '{_ambiguous_op}'. Filter the "
+                f"operand in its own expression instead."
+            )
+        value = _evaluate_simple_expression(head, namespace)
         for segment in segments[1:]:
             value = _apply_filter(value, segment.strip(), namespace)
         return value
@@ -783,6 +816,42 @@ def condition_is_never_evaluated(condition: Any) -> bool:
     # body *is* evaluated. Only the first is "never evaluated"; see
     # ``condition_has_malformed_expression_block`` for the second.
     return _first_unclosable_block(stripped) == "verbatim"
+
+
+def condition_is_interpolated_to_text(condition: Any) -> bool:
+    """True when *condition* holds ``{{ }}`` blocks but is spliced into text, not evaluated.
+
+    ``evaluate_expression`` takes its typed fast path only when the whole string is
+    exactly one ``{{ ... }}`` block (``_is_single_expression``). Anything else — two
+    blocks, or one block with any text around it — goes to ``_interpolate_expressions``,
+    which substitutes each block into the surrounding string and returns a *string*.
+    ``evaluate_condition`` then coerces that with ``bool()``, so the result is true for
+    every rendering except ``""``, ``"true"`` and ``"false"``::
+
+        {{ inputs.ready }} and {{ inputs.count > 100 }}   ->  "False and False"  ->  True
+        not {{ inputs.ready }}                            ->  "not False"        ->  True
+        {{ inputs.count }} > 100                          ->  "0 > 100"          ->  True
+
+    Each of those reads as a real expression and is always true, which is the same
+    silent-truthiness fault ``condition_is_never_evaluated`` reports one layer out: there
+    the braces are missing, here they are present but do not cover the whole condition.
+    The operators belong *inside* one block, and the validators already tell authors the
+    condition must be "a single complete '{{ }}' block" -- this is the check behind that
+    sentence.
+
+    Deliberately derived from ``_is_single_expression`` rather than restated, so this
+    cannot drift from the fast path it is predicting.
+    """
+    if not isinstance(condition, str):
+        return False
+    stripped = condition.strip()
+    if not stripped or "{{" not in stripped:
+        return False
+    # Leave both of the faults that already have their own message and advice: a block
+    # the substituter cannot close is not an interpolation problem.
+    if condition_is_never_evaluated(condition) or condition_has_malformed_expression_block(condition):
+        return False
+    return not _is_single_expression(stripped)
 
 
 def condition_has_malformed_expression_block(condition: Any) -> bool:

@@ -42,7 +42,9 @@ def main(argv: list[str] | None = None) -> int:
         elif arg in {"--help", "-h"}:
             sys.stdout.write(_help_text(sys.argv[0]))
             return 0
-        # Other arguments are accepted and silently ignored, matching setup-plan.sh.
+        else:
+            print(f"ERROR: Unknown option '{arg}'", file=sys.stderr)
+            return 1
 
     try:
         paths = get_feature_paths(script_file=Path(__file__))
@@ -80,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "FEATURE_SPEC": str(paths.feature_spec),
                     "IMPL_PLAN": str(paths.impl_plan),
-                    "SPECS_DIR": str(paths.feature_dir),
+                    "FEATURE_DIR": str(paths.feature_dir),
                     "BRANCH": paths.current_branch,
                 }
             )
@@ -88,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(f"FEATURE_SPEC: {paths.feature_spec}")
         print(f"IMPL_PLAN: {paths.impl_plan}")
-        print(f"SPECS_DIR: {paths.feature_dir}")
+        print(f"FEATURE_DIR: {paths.feature_dir}")
         print(f"BRANCH: {paths.current_branch}")
     return 0
 

@@ -188,6 +188,22 @@ class TestCollectExtensionEvents:
 
         assert collect_extension_events(tmp_path) == {}
 
+    def test_unreadable_manifest_skipped(self, tmp_path, monkeypatch):
+        ext_dir = tmp_path / ".specify" / "extensions" / "my-ext"
+        ext_dir.mkdir(parents=True)
+        manifest = ext_dir / "extension.yml"
+        manifest.write_text("events: {}\n", encoding="utf-8")
+        real_read_text = Path.read_text
+
+        def unreadable(path, *args, **kwargs):
+            if path == manifest:
+                raise OSError("simulated read failure")
+            return real_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", unreadable)
+
+        assert collect_extension_events(tmp_path) == {}
+
     def test_event_command_ref_canonicalized_via_manifest(self, tmp_path):
         """R1: events are read from a validated ExtensionManifest, so an
         obsolete command ref (e.g. my-ext.boot) is canonicalized
@@ -1339,6 +1355,37 @@ class TestCommandRunner:
         assert PurePath(argv[0]).stem.lower() in ("pwsh", "powershell")
         assert argv[1] == "-File"
         assert PurePath(argv[2]).as_posix().endswith(".specify/scripts/powershell/boot.ps1")
+
+    def test_ps_variant_returns_none_when_no_launcher_available(self, tmp_path, monkeypatch):
+        """When NEITHER pwsh nor powershell is on PATH, the resolver must
+        degrade to "no argv" like every other failure branch in this
+        function — not fall back to a bare "pwsh" string, which would make
+        subprocess.run() raise FileNotFoundError instead of the caller's
+        clean "No script found for event command" warning.
+
+        The generated dispatcher's documented stdlib mirror, `_resolve_argv`,
+        already does this correctly (`if not launcher: return None`).
+        """
+        from specify_cli.events import _resolve_event_command_argv
+        import shutil as _shutil
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "boot.md").write_text(
+            "---\n"
+            "description: \"Boot\"\n"
+            "scripts:\n"
+            "  ps: scripts/powershell/boot.ps1\n"
+            "---\nBody\n",
+            encoding="utf-8",
+        )
+        ps_dir = tmp_path / ".specify" / "scripts" / "powershell"
+        ps_dir.mkdir(parents=True)
+        (ps_dir / "boot.ps1").write_text("exit 0\n", encoding="utf-8")
+
+        monkeypatch.setattr(_shutil, "which", lambda name: None)
+        argv = _resolve_event_command_argv(cmd_dir / "boot.md", tmp_path, None)
+        assert argv is None
 
     def test_run_command_executes_with_project_root_cwd(self, tmp_path):
         """R1: the event command runs with cwd set to the project root, not the

@@ -42,6 +42,16 @@ class TestBuildGitHubRequest:
         with pytest.raises(ValueError, match="url must start with http"):
             build_github_request("ftp://github.com/file.zip")
 
+    @pytest.mark.parametrize(
+        "url", ["https://github.com:notaport/file", "https://github.com:65536/file"]
+    )
+    def test_malformed_explicit_port_raises_before_request_construction(self, url):
+        """Malformed explicit ports are rejected before creating a Request."""
+        with patch("specify_cli._github_http.urllib.request.Request") as request:
+            with pytest.raises(ValueError):
+                build_github_request(url)
+        request.assert_not_called()
+
     # --- Valid URL Tests ---
 
     def test_valid_https_url_returns_request(self):
@@ -53,6 +63,14 @@ class TestBuildGitHubRequest:
         """build_github_request() must accept http:// URLs."""
         req = build_github_request("http://example.com/file")
         assert req.full_url == "http://example.com/file"
+
+    def test_valid_explicit_port_retains_url_method_and_github_auth(self):
+        """A valid explicit port retains normal GitHub request behavior."""
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "test-token", "GH_TOKEN": ""}):
+            req = build_github_request("https://github.com:8443/github/spec-kit")
+        assert req.full_url == "https://github.com:8443/github/spec-kit"
+        assert req.get_method() == "GET"
+        assert req.get_header("Authorization") == "Bearer test-token"
 
     # --- Auth Header Tests ---
 

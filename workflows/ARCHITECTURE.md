@@ -19,6 +19,7 @@ flowchart TD
     G --> H{Step type?}
     H -- command --> I["CommandStep.execute()"]
     H -- shell --> J["ShellStep.execute()"]
+    H -- slot --> V["SlotStep.execute()"]
     H -- gate --> K["GateStep.execute()"]
     H -- "if" --> L["IfThenStep.execute()"]
     H -- switch --> M["SwitchStep.execute()"]
@@ -27,12 +28,13 @@ flowchart TD
 
     I --> P{Result status?}
     J --> P
+    V --> P
     K --> P
     L --> P
     M --> P
     N --> P
     O --> P
-    P -- COMPLETED --> Q{Has next_steps?}
+    P -- "COMPLETED / SKIPPED" --> Q{Has next_steps?}
     P -- PAUSED --> R["Save state → exit"]
     P -- FAILED --> S["Log error → exit"]
     Q -- Yes --> G
@@ -77,7 +79,7 @@ When a `gate` step pauses execution, the engine persists `current_step_index` an
 
 ## Step Types
 
-The engine ships with 11 built-in step types, each in its own subpackage under `src/specify_cli/workflows/steps/`:
+The engine ships with 12 built-in step types, each in its own subpackage under `src/specify_cli/workflows/steps/`:
 
 | Type Key | Class | Purpose | Returns `next_steps`? |
 |----------|-------|---------|-----------------------|
@@ -85,6 +87,7 @@ The engine ships with 11 built-in step types, each in its own subpackage under `
 | `prompt` | `PromptStep` | Send an arbitrary inline prompt to integration CLI | No |
 | `shell` | `ShellStep` | Run a shell command, capture output | No |
 | `init` | `InitStep` | Bootstrap a project (equivalent to `specify init`) | No |
+| `slot` | `SlotStep` | Named workflow slot; skipped when unfilled | No |
 | `gate` | `GateStep` | Interactive human review/approval | No (pauses in CI) |
 | `if` | `IfThenStep` | Conditional branching (then/else) | Yes |
 | `switch` | `SwitchStep` | Multi-branch dispatch on expression | Yes |
@@ -200,6 +203,7 @@ src/specify_cli/
 │       ├── command/         # Dispatch command to AI integration
 │       ├── shell/           # Run shell command
 │       ├── init/            # Bootstrap a project (specify init)
+│       ├── slot/            # Named workflow slot; skipped when unfilled
 │       ├── gate/            # Human review checkpoint
 │       ├── if_then/         # Conditional branching
 │       ├── prompt/          # Arbitrary inline prompts

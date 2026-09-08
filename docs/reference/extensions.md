@@ -75,6 +75,8 @@ specify extension update [<name>]
 
 Updates a specific extension, or all installed extensions if no name is given.
 
+Bundled extensions (such as `agent-context` and `git`) have no download URL; their updates install from the copy shipped with the running spec-kit release. When the catalog advertises a newer version than your spec-kit release ships, the update is reported as requiring a spec-kit upgrade first.
+
 ## Enable / Disable an Extension
 
 ```bash

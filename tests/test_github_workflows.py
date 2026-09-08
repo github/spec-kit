@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
+import sys
 from pathlib import Path
+
+import yaml
+
+from tests.conftest import requires_bash
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -12,6 +19,11 @@ WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 # inline shorthand (`      - uses: x@sha`) used in catalog-assign.yml.
 USES_RE = re.compile(r"^\s*(?:-\s*)?uses:\s*(?P<ref>\S+)", re.MULTILINE)
 PINNED_SHA_RE = re.compile(r"@[0-9a-f]{40}$", re.IGNORECASE)
+PUBLISH_WORKFLOW = WORKFLOWS_DIR / "publish-pypi.yml"
+PUBLISH_VALIDATION_STEPS = (
+    "Verify tag format",
+    "Verify tag matches package version",
+)
 COMMUNITY_SUBMISSION_WORKFLOWS = (
     (
         "bundle",
@@ -35,6 +47,34 @@ COMMUNITY_SUBMISSION_WORKFLOWS = (
         "Do not modify any other files",
     ),
 )
+
+
+def _publish_workflow_steps() -> dict[str, dict[str, object]]:
+    workflow = yaml.safe_load(PUBLISH_WORKFLOW.read_text(encoding="utf-8"))
+    return {step["name"]: step for step in workflow["jobs"]["build"]["steps"]}
+
+
+def _run_publish_validation_step(
+    step_name: str, tag: str, working_directory: Path
+) -> subprocess.CompletedProcess[str]:
+    step = _publish_workflow_steps()[step_name]
+    env = os.environ.copy()
+    env["TAG"] = tag
+    env["PATH"] = f"{Path(sys.executable).parent}{os.pathsep}{env['PATH']}"
+    return subprocess.run(
+        ["bash", "-euo", "pipefail", "-c", step["run"]],
+        cwd=working_directory,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _write_project_version(working_directory: Path, version: str) -> None:
+    (working_directory / "pyproject.toml").write_text(
+        f'[project]\nversion = "{version}"\n', encoding="utf-8"
+    )
 
 
 def _create_pull_request_allowed_files(source_text: str) -> list[str]:
@@ -76,6 +116,52 @@ def test_github_actions_are_pinned_to_full_commit_shas():
             unpinned_refs.append(f"{workflow.relative_to(REPO_ROOT)}: {uses_ref}")
 
     assert unpinned_refs == []
+
+
+def test_publish_tag_validation_uses_environment_variable():
+    steps = _publish_workflow_steps()
+
+    for step_name in PUBLISH_VALIDATION_STEPS:
+        step = steps[step_name]
+        assert step["env"]["TAG"] == "${{ inputs.tag }}"
+        assert "${{ inputs.tag }}" not in step["run"]
+
+
+@requires_bash
+def test_publish_tag_validation_accepts_valid_tag(tmp_path):
+    _write_project_version(tmp_path, "1.2.3")
+
+    for step_name in PUBLISH_VALIDATION_STEPS:
+        result = _run_publish_validation_step(step_name, "v1.2.3", tmp_path)
+        assert result.returncode == 0, result.stderr
+
+
+@requires_bash
+def test_publish_tag_validation_rejects_invalid_tag(tmp_path):
+    for invalid_tag in ("1.2.3", "v1.2", "v1.2.3-rc1"):
+        result = _run_publish_validation_step(
+            "Verify tag format", invalid_tag, tmp_path
+        )
+        assert result.returncode != 0
+        assert "is not a valid release tag" in result.stdout
+
+    injected_file = tmp_path / "interpolated"
+    injected_tag = f'v1.2.3"; touch "{injected_file}"; #'
+    result = _run_publish_validation_step("Verify tag format", injected_tag, tmp_path)
+    assert result.returncode != 0
+    assert not injected_file.exists()
+
+
+@requires_bash
+def test_publish_tag_validation_rejects_version_mismatch(tmp_path):
+    _write_project_version(tmp_path, "1.2.3")
+
+    result = _run_publish_validation_step(
+        "Verify tag matches package version", "v1.2.4", tmp_path
+    )
+
+    assert result.returncode != 0
+    assert "does not match pyproject.toml version" in result.stdout
 
 
 def test_pinned_action_ref_accepts_uppercase_hex_sha():

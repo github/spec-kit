@@ -214,7 +214,15 @@ def workflow_overlay_add(
         existed_before = target_path.exists()
         staged = _stage_workflow_file(target_path.parent)
         try:
-            staged.write_bytes(yaml.safe_dump(data, sort_keys=False).encode("utf-8"))
+            # ``allow_unicode=True`` matches every other YAML writer in the
+            # repo. Without it every non-ASCII character in a hand-authored
+            # overlay is rewritten as a ``\uXXXX`` escape, so merely toggling
+            # an overlay makes the user's own file unreadable.
+            staged.write_bytes(
+                yaml.safe_dump(data, sort_keys=False, allow_unicode=True).encode(
+                    "utf-8"
+                )
+            )
             backup = _commit_workflow_file(staged, target_path, existed_before)
         except BaseException:
             _safe_discard_staged_workflow_file(
@@ -267,7 +275,15 @@ def _update_overlay_field(
         existed_before = path.exists()
         staged = _stage_workflow_file(path.parent)
         try:
-            staged.write_bytes(yaml.safe_dump(data, sort_keys=False).encode("utf-8"))
+            # ``allow_unicode=True`` matches every other YAML writer in the
+            # repo. Without it every non-ASCII character in a hand-authored
+            # overlay is rewritten as a ``\uXXXX`` escape, so merely toggling
+            # an overlay makes the user's own file unreadable.
+            staged.write_bytes(
+                yaml.safe_dump(data, sort_keys=False, allow_unicode=True).encode(
+                    "utf-8"
+                )
+            )
             backup = _commit_workflow_file(staged, path, existed_before)
         except BaseException:
             _safe_discard_staged_workflow_file(staged, path.parent, existed_before)

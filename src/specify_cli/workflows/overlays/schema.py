@@ -60,7 +60,13 @@ def _validate_safe_id(
 
 def _parse_edit(edit_raw: dict[str, Any], idx: int) -> tuple[OverlayEdit | None, str | None]:
     """Parse a single edit dict into an OverlayEdit or an error string."""
-    shorthand_keys = [key for key in _SHORTHAND_OPERATION_KEYS if key in edit_raw]
+    # Iterate ``edit_raw`` rather than ``_SHORTHAND_OPERATION_KEYS``: the latter
+    # is a frozenset, whose iteration order varies between processes with
+    # string-hash randomization, so the error messages built from this list
+    # named the offending keys in a different order on every run for the very
+    # same overlay file. Dict keys are always hashable, so the membership test
+    # is safe in this direction too.
+    shorthand_keys = [key for key in edit_raw if key in _SHORTHAND_OPERATION_KEYS]
     has_operation = "operation" in edit_raw
 
     operation: str | None = None

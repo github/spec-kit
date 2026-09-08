@@ -13,7 +13,7 @@ from typing import Any
 
 from .. import BundlerError
 from ..lib.yamlio import dump_json, ensure_within, load_json
-from .manifest import COMPONENT_KINDS, ComponentRef
+from .manifest import COMPONENT_KINDS, ComponentRef, _text
 
 RECORDS_FILENAME = "bundle-records.json"
 RECORDS_SCHEMA_VERSION = "1.0"
@@ -65,8 +65,14 @@ class InstalledBundleRecord:
             raise BundlerError(
                 "Corrupt record: 'contributed_components' must be a list."
             )
-        bundle_id = str(data.get("bundle_id", "")).strip()
-        version = str(data.get("version", "")).strip()
+        # ``.get(key, "")`` defaults only a *missing* key. A key that is
+        # present but null -- how a hand-edited or corrupt record spells an
+        # empty field -- yields ``None``, and ``str(None)`` is the non-empty
+        # literal ``"None"``, which sails past the required-field checks
+        # below. Reuse the manifest's ``_text`` so records and bundle.yml
+        # agree on what an explicit null means.
+        bundle_id = _text(data.get("bundle_id"))
+        version = _text(data.get("version"))
         if not bundle_id:
             raise BundlerError(
                 "Corrupt records file: an installed-bundle record is missing "
@@ -80,7 +86,7 @@ class InstalledBundleRecord:
         return cls(
             bundle_id=bundle_id,
             version=version,
-            installed_at=str(data.get("installed_at", "")).strip(),
+            installed_at=_text(data.get("installed_at")),
             contributed_components=tuple(
                 _component_from_dict(c) for c in components_raw
             ),
@@ -201,8 +207,8 @@ def _component_to_dict(ref: ComponentRef) -> dict[str, Any]:
 def _component_from_dict(data: Any) -> ComponentRef:
     if not isinstance(data, dict):
         raise BundlerError("Each contributed component must be a mapping.")
-    kind = str(data.get("kind", "")).strip()
-    cid = str(data.get("id", "")).strip()
+    kind = _text(data.get("kind"))
+    cid = _text(data.get("id"))
     if kind not in COMPONENT_KINDS:
         raise BundlerError(
             f"Corrupt records file: component 'kind' must be one of "

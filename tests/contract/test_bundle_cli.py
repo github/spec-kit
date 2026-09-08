@@ -340,7 +340,10 @@ def test_build_escapes_markup_in_output_path(project: Path):
 
     assert result.exit_code == 0, repr(result.exception)
     assert list(out_dir.glob("*.zip")), "the artifact should still be built"
-    assert "dist[bold]out" in strip_ansi(result.output), (
+    # Join across Rich's wrap points: the success line prints an absolute path,
+    # so the console folds it mid-token whenever the temp directory is long
+    # enough, which is a property of the runner's path, not of the escaping.
+    assert "dist[bold]out" in "".join(strip_ansi(result.output).split()), (
         "the reported path must match the directory actually written"
     )
 
