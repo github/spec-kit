@@ -120,6 +120,26 @@ def test_workflow_version_mismatch_refuses(tmp_path: Path, monkeypatch):
         manager.install(component)
 
 
+def test_step_version_mismatch_refuses(tmp_path: Path, monkeypatch):
+    import specify_cli
+    from specify_cli.workflows.catalog import StepCatalog
+
+    monkeypatch.setattr(
+        StepCatalog, "get_step_info", lambda self, sid: {"version": "9.9.9"}
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(
+        specify_cli, "workflow_step_add", lambda sid: calls.append(sid)
+    )
+
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    component = ComponentRef(kind="steps", id="step-a", version="0.3.0")
+
+    with pytest.raises(BundlerError, match="pinned to version 0.3.0"):
+        manager.install(component)
+    assert calls == []
+
+
 def test_preset_install_preserves_explicit_zero_priority(tmp_path: Path, monkeypatch):
     import specify_cli._assets as assets
 

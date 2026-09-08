@@ -399,6 +399,7 @@ class _StepKindManager:
                 f"is disabled; re-run without --offline or install it first with "
                 f"'specify workflow step add {component.id}'."
             )
+        self._assert_pinned_version(component)
         from ... import workflow_step_add
 
         with _chdir(self._root):
@@ -435,6 +436,20 @@ class _StepKindManager:
                 raise
         finally:
             shutil.rmtree(backup_dir.parent, ignore_errors=True)
+
+    def _assert_pinned_version(self, component: ComponentRef) -> None:
+        if not component.version:
+            return
+        try:
+            from ...workflows.catalog import StepCatalog
+
+            info = StepCatalog(self._root).get_step_info(component.id)
+        except Exception:  # noqa: BLE001 - catalog unreachable: cannot enforce
+            return
+        if info:
+            _assert_pinned_version(
+                "Step", component.id, component.version, info.get("version")
+            )
 
     def remove(self, component: ComponentRef) -> None:
         from ... import workflow_step_remove
