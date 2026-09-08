@@ -9560,6 +9560,57 @@ class ProjectScopedStep(StepBase):
             sys.modules.pop(module_name, None)
             sys.modules.pop(f"{module_name}.helper", None)
 
+    def test_reloading_same_project_ignores_stale_bytecode(self, tmp_path):
+        import hashlib
+        import os
+        import sys
+
+        from specify_cli.workflows import STEP_REGISTRY, load_custom_steps
+
+        type_key = "reload-step"
+        key_hash = hashlib.sha256(type_key.encode()).hexdigest()[:8]
+        module_name = f"_speckit_custom_step_reload_step_{key_hash}"
+        step_dir = (
+            tmp_path / ".specify" / "workflows" / "steps" / type_key
+        )
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            f"step:\n  type_key: {type_key}\n", encoding="utf-8"
+        )
+        helper = step_dir / "helper.py"
+        helper.write_text("MARKER = 'version-a'\n", encoding="utf-8")
+        (step_dir / "__init__.py").write_text(
+            f"""
+from specify_cli.workflows.base import StepBase, StepResult
+from .helper import MARKER
+
+class ReloadStep(StepBase):
+    type_key = {type_key!r}
+    marker = MARKER
+
+    def execute(self, config, context):
+        return StepResult()
+""",
+            encoding="utf-8",
+        )
+
+        try:
+            assert load_custom_steps(tmp_path) == [type_key]
+            assert STEP_REGISTRY[type_key].marker == "version-a"
+            original_stat = helper.stat()
+            helper.write_text("MARKER = 'version-b'\n", encoding="utf-8")
+            os.utime(
+                helper,
+                ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
+            )
+
+            assert load_custom_steps(tmp_path) == [type_key]
+            assert STEP_REGISTRY[type_key].marker == "version-b"
+        finally:
+            STEP_REGISTRY.pop(type_key, None)
+            sys.modules.pop(module_name, None)
+            sys.modules.pop(f"{module_name}.helper", None)
+
     def test_empty_steps_dir(self, project_dir):
         from specify_cli.workflows import load_custom_steps
 
