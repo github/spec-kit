@@ -3418,9 +3418,7 @@ def workflow_step_add(
                     str(downloaded_version)
                 ) == pkg_version.Version(str(catalog_version))
             except pkg_version.InvalidVersion:
-                versions_match = str(downloaded_version).strip() == str(
-                    catalog_version
-                ).strip()
+                versions_match = str(downloaded_version) == str(catalog_version)
             if not versions_match:
                 console.print(
                     f"[red]Error:[/red] step.yml version "

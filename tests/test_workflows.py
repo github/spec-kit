@@ -10879,11 +10879,18 @@ class TestWorkflowStepRichMarkup:
 
 class TestWorkflowStepAddCLI:
     @pytest.mark.parametrize(
-        "downloaded_version",
-        ["2.0.0", 0, False, "", None],
+        ("catalog_version", "downloaded_version"),
+        [
+            ("1.0.0", "2.0.0"),
+            ("1.0.0", 0),
+            ("1.0.0", False),
+            ("1.0.0", ""),
+            ("1.0.0", None),
+            ("release-a", " release-a "),
+        ],
     )
     def test_add_rejects_step_yml_version_mismatch(
-        self, project_dir, monkeypatch, downloaded_version
+        self, project_dir, monkeypatch, catalog_version, downloaded_version
     ):
         from typer.testing import CliRunner
 
@@ -10898,7 +10905,7 @@ class TestWorkflowStepAddCLI:
             lambda self, step_id: {
                 "id": step_id,
                 "name": "Test Step",
-                "version": "1.0.0",
+                "version": catalog_version,
                 "url": "https://example.com/step.yml",
                 "init_url": "https://example.com/__init__.py",
                 "_install_allowed": True,
