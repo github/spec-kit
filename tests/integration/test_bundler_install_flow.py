@@ -64,6 +64,25 @@ def test_partial_failure_rolls_back_and_records_nothing(tmp_path: Path):
     assert load_records(tmp_path) == []
 
 
+def test_record_save_failure_rolls_back_new_components(tmp_path: Path, monkeypatch):
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+
+    def fail_save(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(
+        "specify_cli.bundler.services.installer.save_records", fail_save
+    )
+
+    with pytest.raises(BundlerError, match="disk full"):
+        install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    assert installer.installed == set()
+    assert load_records(tmp_path) == []
+
+
 def test_remove_is_non_collateral(tmp_path: Path):
     make_project(tmp_path)
     installer = FakeInstaller()

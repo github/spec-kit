@@ -155,6 +155,16 @@ def install_bundle(
                 if installer.is_installed(project_root, component):
                     installer.remove(project_root, component)
                     result.uninstalled.append(component)
+
+        record = InstalledBundleRecord.create(
+            bundle_id=plan.bundle_id,
+            version=plan.version,
+            components=contributed,
+            # Preserve the original install time across refresh/update so
+            # ``bundle list`` keeps reporting when the bundle was first installed.
+            installed_at=existing.installed_at if existing is not None else None,
+        )
+        save_records(project_root, upsert_record(records, record))
     except BundlerError:
         _rollback(project_root, installer, done)
         raise
@@ -165,15 +175,6 @@ def install_bundle(
             "No changes were recorded."
         ) from exc
 
-    record = InstalledBundleRecord.create(
-        bundle_id=plan.bundle_id,
-        version=plan.version,
-        components=contributed,
-        # Preserve the original install time across refresh/update so
-        # ``bundle list`` keeps reporting when the bundle was first installed.
-        installed_at=existing.installed_at if existing is not None else None,
-    )
-    save_records(project_root, upsert_record(records, record))
     return result
 
 
