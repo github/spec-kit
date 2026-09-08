@@ -9504,6 +9504,62 @@ class TestStepCatalog:
 class TestLoadCustomSteps:
     """Test dynamic loading of custom step types from the filesystem."""
 
+    def test_loading_another_project_replaces_custom_step_modules(self, tmp_path):
+        import hashlib
+        import sys
+
+        from specify_cli.workflows import STEP_REGISTRY, load_custom_steps
+
+        type_key = "project-scoped-step"
+        key_hash = hashlib.sha256(type_key.encode()).hexdigest()[:8]
+        module_name = f"_speckit_custom_step_project_scoped_step_{key_hash}"
+
+        def write_step(project_root, marker):
+            step_dir = (
+                project_root
+                / ".specify"
+                / "workflows"
+                / "steps"
+                / type_key
+            )
+            step_dir.mkdir(parents=True)
+            (step_dir / "step.yml").write_text(
+                f"step:\n  type_key: {type_key}\n", encoding="utf-8"
+            )
+            (step_dir / "helper.py").write_text(
+                f"MARKER = {marker!r}\n", encoding="utf-8"
+            )
+            (step_dir / "__init__.py").write_text(
+                f"""
+from specify_cli.workflows.base import StepBase, StepResult
+from .helper import MARKER
+
+class ProjectScopedStep(StepBase):
+    type_key = {type_key!r}
+    marker = MARKER
+
+    def execute(self, config, context):
+        return StepResult()
+""",
+                encoding="utf-8",
+            )
+
+        project_a = tmp_path / "project-a"
+        project_b = tmp_path / "project-b"
+        write_step(project_a, "project-a")
+        write_step(project_b, "project-b")
+
+        try:
+            assert load_custom_steps(project_a) == [type_key]
+            assert STEP_REGISTRY[type_key].marker == "project-a"
+
+            assert load_custom_steps(project_b) == [type_key]
+            assert STEP_REGISTRY[type_key].marker == "project-b"
+        finally:
+            STEP_REGISTRY.pop(type_key, None)
+            sys.modules.pop(module_name, None)
+            sys.modules.pop(f"{module_name}.helper", None)
+
     def test_empty_steps_dir(self, project_dir):
         from specify_cli.workflows import load_custom_steps
 
