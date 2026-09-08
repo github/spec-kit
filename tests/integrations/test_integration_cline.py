@@ -106,6 +106,59 @@ class TestClineIntegration(MarkdownIntegrationTests):
         # Instruction stays on its own line rather than being mashed onto the note.
         assert "\n- For each executable hook, output the following:" in injected
 
+    def test_cline_hook_note_not_suppressed_by_unrelated_prose(self):
+        """Unrelated prose must not suppress the note for a real instruction.
+
+        The idempotency guard used to be a whole-document substring scan
+        (``if "replace dots" in content``), so any command or extension
+        markdown whose prose merely contained that phrase lost the note
+        entirely -- leaving the agent told to emit ``/speckit.git.commit``,
+        a dotted command Cline never registers.
+        """
+        cline = get_integration("cline")
+        content = (
+            "# DB extension command\n\n"
+            "When normalizing table names, replace dots with underscores.\n\n"
+            "## Pre-Execution Hooks\n"
+            "- For each executable hook, output the following:\n"
+        )
+        injected = cline._inject_hook_command_note(content)
+        assert "`/speckit-git-commit`" in injected, injected
+        # The user's own prose is untouched.
+        assert "replace dots with underscores" in injected
+
+    def test_cline_hook_note_added_to_every_un_noted_instruction(self):
+        """A second, un-noted hook section must still get its own note."""
+        cline = get_integration("cline")
+        instruction = "- For each executable hook, output the following:\n"
+        # Section 1 already carries the note; section 2 does not.
+        first = cline._inject_hook_command_note("## Hooks A\n" + instruction)
+        content = first + "\n## Hooks B\n" + instruction
+
+        injected = cline._inject_hook_command_note(content)
+        assert injected.count("replace dots (`.`) with hyphens (`-`)") == 2, injected
+        # Still idempotent: re-running adds nothing.
+        assert cline._inject_hook_command_note(injected) == injected
+
+    def test_cline_hook_note_sits_directly_above_indented_instruction(self):
+        """No blank line may be inserted between the note and the instruction.
+
+        The regex captured indentation with ``\\s*``, which matches newlines,
+        so a preceding blank line was swallowed into the "indent" and re-emitted
+        between the note and the instruction.
+        """
+        cline = get_integration("cline")
+        content = "## Hooks\n\n  - For each executable hook, output the following:\n"
+        injected = cline._inject_hook_command_note(content)
+        lines = injected.splitlines()
+        instruction_idx = next(
+            i for i, line in enumerate(lines) if "For each executable hook" in line
+        )
+        assert "replace dots" in lines[instruction_idx - 1], injected
+        # Indentation is preserved on both lines.
+        assert lines[instruction_idx].startswith("  - For each")
+        assert lines[instruction_idx - 1].startswith("  - When constructing")
+
     # -- Overrides for MarkdownIntegrationTests ---------------------------
 
     def test_setup_creates_files(self, tmp_path):
