@@ -74,11 +74,8 @@ def _register_builtin_steps() -> None:
 _register_builtin_steps()
 
 # The step types Spec Kit ships, snapshotted before any community step can be
-# loaded. ``load_custom_steps`` adds project-installed ids to the process-global
-# ``STEP_REGISTRY`` and never removes them, so ``STEP_REGISTRY`` cannot answer
-# "is this bundled with Spec Kit?" in a long-lived process: a step loaded for one
-# project would look built-in for the next. Callers that need the immutable set
-# (e.g. the bundler's reference checker) must use this instead.
+# loaded. Callers that need the immutable set (e.g. the bundler's reference
+# checker) must use this instead of the project-scoped entries in STEP_REGISTRY.
 BUILTIN_STEP_TYPES: frozenset[str] = frozenset(STEP_REGISTRY)
 
 
@@ -98,6 +95,16 @@ def load_custom_steps(project_root: Path) -> list[str]:
     import sys as _sys
 
     steps_dir = Path(project_root) / ".specify" / "workflows" / "steps"
+
+    # Custom steps are project-scoped even though the registry and Python module
+    # cache are process-global. Clear the previous project's classes and package
+    # modules before every scan so removed or updated code cannot remain active.
+    for _type_key in tuple(STEP_REGISTRY):
+        if _type_key not in BUILTIN_STEP_TYPES:
+            STEP_REGISTRY.pop(_type_key, None)
+    _module_prefix = "_speckit_custom_step_"
+    for _mod_key in [k for k in _sys.modules if k.startswith(_module_prefix)]:
+        _sys.modules.pop(_mod_key, None)
 
     # Defense-in-depth: refuse to execute step code from a symlinked
     # parent directory under .specify/workflows/steps, which could redirect
