@@ -139,6 +139,12 @@ def get_feature_paths(
     repo_root = get_repo_root(script_file)
     current_branch = get_current_branch()
 
+    # SPECIFY_NO_PERSIST is the environment-level equivalent of no_persist=True,
+    # letting an orchestrator (multi-agent runner, CI matrix) guarantee that no
+    # script invocation in the process tree writes .specify/feature.json, even
+    # scripts that don't pass no_persist themselves (#4128).
+    no_persist = no_persist or os.environ.get("SPECIFY_NO_PERSIST", "") in ("1", "true")
+
     feature_dir_raw = os.environ.get("SPECIFY_FEATURE_DIRECTORY", "")
     if feature_dir_raw:
         feature_dir = Path(feature_dir_raw)

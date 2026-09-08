@@ -379,8 +379,11 @@ if [ "$DRY_RUN" != true ]; then
         fi
     fi
 
-    # Persist to .specify/feature.json so downstream commands can find the feature
-    _persist_feature_json "$REPO_ROOT" "$FEATURE_DIR"
+    # Persist to .specify/feature.json so downstream commands can find the
+    # feature, unless the orchestrator opted out via SPECIFY_NO_PERSIST (#4129).
+    if [[ "${SPECIFY_NO_PERSIST:-}" != "1" && "${SPECIFY_NO_PERSIST:-}" != "true" ]]; then
+        _persist_feature_json "$REPO_ROOT" "$FEATURE_DIR"
+    fi
 
     # Inform the user how to set feature state in their own shell
     printf '# To persist: export SPECIFY_FEATURE=%s\n' "$(shell_quote "$BRANCH_NAME")" >&2
