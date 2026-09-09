@@ -43,10 +43,12 @@ PROJECT_OVERRIDE_LAYER = "project"
 
 Project overrides are a resolver feature — they are not backed by any manifest
 contribution. When a resolved artifact stack contains a project-override layer,
-its ``lookupId`` uses this label so the round-trip invariant (every layer
-carries a ``lookupId``) still holds. No manifest ``iter_contributions()`` will
-ever emit a matching ``id``, so consumers see "not found" for the lookup, which
-is the correct outcome for a layer with no originating manifest entry.
+its ``lookupId`` uses this label so provenance-backed non-built-in layers have
+a stable stack identity. No manifest ``iter_contributions()`` will ever emit a
+matching ``id``, so consumers see "not found" for the lookup, which is the
+correct outcome for a layer with no originating manifest entry. Built-in layers
+carry no ``lookupId`` and round-trip through their source-agnostic public
+``kind:name`` artifact ID instead.
 """
 
 _LAYER_KINDS = frozenset({PROJECT_OVERRIDE_LAYER, "preset", "extension"})
