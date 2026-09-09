@@ -200,7 +200,16 @@ class PromptStep(StepBase):
         if impl is None:
             return None
 
-        exec_args = impl.build_exec_args(prompt, model=model, output_json=False)
+        project_root = (
+            Path(context.project_root) if context.project_root else Path.cwd()
+        )
+
+        exec_args = impl.build_exec_args(
+            prompt,
+            model=model,
+            output_json=False,
+            project_root=project_root,
+        )
 
         # Check if the CLI tool is actually installed.
         # Try the integration key first (covers most agents), then fall back
@@ -226,10 +235,6 @@ class PromptStep(StepBase):
             exec_args = [fallback_cli_path, *exec_args[1:]]
 
         import subprocess
-
-        project_root = (
-            Path(context.project_root) if context.project_root else Path.cwd()
-        )
 
         try:
             result = subprocess.run(
