@@ -3679,6 +3679,46 @@
       "created_at": "2026-08-17T00:00:00Z",
       "updated_at": "2026-09-08T00:00:00Z"
     },
+    "pdac-product": {
+      "name": "ProductShape PRODUCT workflows",
+      "id": "pdac-product",
+      "description": "Author, refine, validate, apply, archive and recover ProductShape product meaning in a separate Spec Kit lane.",
+      "author": "Juan G. Carmona (@juangcarmona)",
+      "version": "0.1.0",
+      "download_url": "https://github.com/juangcarmona/productshape/releases/download/speckit-pdac-product-v0.1.0/speckit-pdac-product.zip",
+      "repository": "https://github.com/juangcarmona/productshape",
+      "homepage": "https://pdac.dev",
+      "documentation": "https://github.com/juangcarmona/productshape/blob/main/extensions/speckit-pdac-product/README.md",
+      "changelog": "https://github.com/juangcarmona/productshape/blob/main/extensions/speckit-pdac-product/CHANGELOG.md",
+      "license": "Apache-2.0",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.4",
+        "tools": [
+          {
+            "name": "prodshape",
+            "version": ">=0.19.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 6,
+        "hooks": 0
+      },
+      "tags": [
+        "product",
+        "product-change",
+        "recovery",
+        "pdac"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-08T00:00:00Z",
+      "updated_at": "2026-09-08T00:00:00Z"
+    },
     "plan-review-gate": {
       "name": "Plan Review Gate",
       "id": "plan-review-gate",
