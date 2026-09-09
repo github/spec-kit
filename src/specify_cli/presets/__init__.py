@@ -38,6 +38,7 @@ from .._download_security import (
 )
 from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
 from .._identifier import (
+    IdentifierComponentError,
     PROJECT_OVERRIDE_LAYER,
     derive_named_id,
 )
@@ -5858,6 +5859,9 @@ class PresetResolver:
 
         Returns:
             List of layer dicts ordered highest-to-lowest priority.
+            Filesystem-derived legacy layers whose names cannot be represented
+            by the contribution-ID grammar are preserved with ``lookupId=None``.
+            Manifest-declared layers remain subject to strict ID validation.
         """
         if template_type == "template":
             subdirs = ["templates", ""]
@@ -5873,6 +5877,12 @@ class PresetResolver:
             ext = ".sh"
 
         layers: List[Dict[str, Any]] = []
+
+        def _filesystem_lookup_id(layer: str, source_id: str) -> Optional[str]:
+            try:
+                return derive_named_id(layer, source_id, template_type, template_name)
+            except IdentifierComponentError:
+                return None
 
         def _find_in_subdirs(base_dir: Path) -> Optional[Path]:
             for subdir in subdirs:
@@ -5896,9 +5906,7 @@ class PresetResolver:
                 "path": override,
                 "source": "project override",
                 "strategy": "replace",
-                "lookupId": derive_named_id(
-                    PROJECT_OVERRIDE_LAYER, "_", template_type, template_name
-                ),
+                "lookupId": _filesystem_lookup_id(PROJECT_OVERRIDE_LAYER, "_"),
             })
 
         # Priority 2: Installed presets (sorted by priority — lower number = higher precedence)
@@ -5972,8 +5980,17 @@ class PresetResolver:
                         "preset_id": pack_id,
                         "pack_dir": pack_dir,
                         "manifest_declared": entry is not None,
-                        "lookupId": derive_named_id(
-                            "preset", source_id_for_lookup, template_type, template_name
+                        "lookupId": (
+                            derive_named_id(
+                                "preset",
+                                source_id_for_lookup,
+                                template_type,
+                                template_name,
+                            )
+                            if entry is not None
+                            else _filesystem_lookup_id(
+                                "preset", source_id_for_lookup
+                            )
                         ),
                     })
 
@@ -6015,8 +6032,17 @@ class PresetResolver:
                     "extension_id": ext_id,
                     "extension_dir": ext_dir,
                     "manifest_declared": entry is not None,
-                    "lookupId": derive_named_id(
-                        "extension", source_id_for_lookup, template_type, template_name
+                    "lookupId": (
+                        derive_named_id(
+                            "extension",
+                            source_id_for_lookup,
+                            template_type,
+                            template_name,
+                        )
+                        if entry is not None
+                        else _filesystem_lookup_id(
+                            "extension", source_id_for_lookup
+                        )
                     ),
                 })
 

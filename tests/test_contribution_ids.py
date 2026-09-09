@@ -378,6 +378,42 @@ class TestLookupIdRoundTrip:
             PROJECT_OVERRIDE_LAYER, "_", "template", "spec-template"
         )
 
+    @pytest.mark.skipif(os.name == "nt", reason="':' filenames are unsupported on Windows")
+    @pytest.mark.parametrize("layer_kind", ["project", "preset", "extension"])
+    def test_legacy_colon_name_preserves_resolution_without_lookup_id(
+        self, tmp_path, layer_kind
+    ):
+        project = _make_project(tmp_path)
+        name = "legacy:name"
+
+        if layer_kind == "project":
+            candidate = (
+                project / ".specify" / "templates" / "overrides" / f"{name}.md"
+            )
+            candidate.parent.mkdir(parents=True)
+        else:
+            pack_id = f"legacy-{layer_kind}"
+            candidate = (
+                project
+                / ".specify"
+                / f"{layer_kind}s"
+                / pack_id
+                / "templates"
+                / f"{name}.md"
+            )
+            candidate.parent.mkdir(parents=True)
+            _write_registry(project, f"{layer_kind}s", pack_id)
+        candidate.write_text("legacy", encoding="utf-8")
+
+        resolver = PresetResolver(project)
+        assert resolver.resolve(name, "template") == candidate
+        layer = next(
+            item
+            for item in resolver.collect_all_layers(name, "template")
+            if item["path"] == candidate
+        )
+        assert layer["lookupId"] is None
+
     def test_builtin_layer_preserves_resolver_provenance(self, tmp_path):
         project = _make_project(tmp_path)
         (project / "templates" / "spec-template.md").write_text("core", encoding="utf-8")
