@@ -22,7 +22,11 @@ def _script_variants() -> list[str]:
         for path in (REPO_ROOT / "scripts").iterdir()
         if path.is_dir()
         and path.name != "__pycache__"
-        and any(path.glob(pattern) for pattern in ("*.sh", "*.ps1", "*.py"))
+        and any(
+            candidate.is_file()
+            for pattern in ("*.sh", "*.ps1", "*.py")
+            for candidate in path.glob(pattern)
+        )
     )
 
 
@@ -48,3 +52,20 @@ def test_python_script_variant_is_bundled():
     # invoked python3 .specify/scripts/python/*.py while the wheel bundled
     # only the bash and PowerShell variants.
     assert _force_include()["scripts/python"] == "specify_cli/core_pack/scripts/python"
+
+
+def test_script_variants_require_source_files(tmp_path, monkeypatch):
+    scripts = tmp_path / "scripts"
+    for name in ("bash", "powershell", "python", "empty", "docs", "__pycache__"):
+        (scripts / name).mkdir(parents=True)
+    for variant, filename in (
+        ("bash", "run.sh"),
+        ("powershell", "run.ps1"),
+        ("python", "run.py"),
+        ("docs", "README.md"),
+        ("__pycache__", "cached.py"),
+    ):
+        (scripts / variant / filename).write_text("", encoding="utf-8")
+    monkeypatch.setitem(_script_variants.__globals__, "REPO_ROOT", tmp_path)
+
+    assert _script_variants() == ["bash", "powershell", "python"]
