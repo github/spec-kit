@@ -99,6 +99,7 @@ def test_status_and_review_metrics_are_cut_off_at_observation_time() -> None:
     assert record["status"] == "open"
     assert record["first_submitted_review_at"] == "2026-09-08T00:00:00Z"
     assert record["review_count"] == 1
+    assert record["review_states"] == {"COMMENTED": 1}
     assert record["check_run_count"] == 101
     assert record["status_count"] == 101
     assert record["time_to_terminal_or_observation_minutes"] == 11520.0

@@ -2,6 +2,10 @@
 description: "Run a read-only assessment pilot for a maintainer-labeled community pull request"
 emoji: "🔎"
 
+# This is an intentionally inert, reviewable workflow proposal. Its generated
+# lockfile is not checked in while fork execution and trusted publication still
+# require an approved repository context and unavailable secrets.
+
 on:
   pull_request:
     types: [labeled]
@@ -33,8 +37,9 @@ checkout:
   fetch-depth: 0
 
 safe-outputs:
-  # The agent never receives a GitHub write tool. This job is the only
-  # assessment publication path and re-fetches the PR immediately before each mutation.
+  # The agent never receives a GitHub write tool. If this proposal is approved
+  # and compiled in a trusted context, this job is the only assessment
+  # publication path and re-fetches the PR immediately before each mutation.
   jobs:
     community-assess-publish:
       description: "Publish one SHA-qualified assessment comment and its single outcome label after a trusted freshness check"
@@ -93,9 +98,13 @@ safe-outputs:
               const owner = context.repo.owner;
               const repo = context.repo.repo;
               const current = async () => github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
-              const clearOutcomes = async () => {
+              const clearOutcomes = async (expectedSha) => {
                 for (const label of Object.values(outcomeLabels)) {
                   const pr = await current();
+                  if (pr.data.head.sha !== expectedSha) {
+                    core.info('A newer head is present; skip stale outcome cleanup.');
+                    return;
+                  }
                   if (pr.data.labels.some((item) => item.name === label)) {
                     await github.rest.issues.removeLabel({ owner, repo, issue_number: pullNumber, name: label }).catch((error) => {
                       if (error.status !== 404) throw error;
@@ -120,14 +129,14 @@ safe-outputs:
               const expectedSha = item.expected_head_sha.trim();
               if (!/^[0-9a-f]{40}$/i.test(expectedSha) || expectedSha !== expectedEventSha) {
                 core.warning('Agent output did not carry the event head SHA; no output was written.');
-                await clearOutcomes();
+                await clearOutcomes(expectedEventSha);
                 return;
               }
               // Fresh check immediately before the comment mutation.
               let pr = await current();
               if (pr.data.state !== 'open' || pr.data.head.sha !== expectedSha) {
                 core.info('The PR is closed or its head changed before the comment; no output was written.');
-                await clearOutcomes();
+                await clearOutcomes(expectedSha);
                 return;
               }
               const body = `**Community assessment pilot — PR #${pullNumber} — head \`${expectedSha}\`**\n\n${item.body}`;
@@ -136,15 +145,15 @@ safe-outputs:
               pr = await current();
               if (pr.data.state !== 'open' || pr.data.head.sha !== expectedSha) {
                 core.info('The PR head changed after the comment; labels were not updated.');
-                await clearOutcomes();
+                await clearOutcomes(expectedSha);
                 return;
               }
-              await clearOutcomes();
+              await clearOutcomes(expectedSha);
               // Fresh check immediately before applying the one current outcome label.
               pr = await current();
               if (pr.data.state !== 'open' || pr.data.head.sha !== expectedSha) {
                 core.info('The PR head changed before the outcome label; no label was applied.');
-                await clearOutcomes();
+                await clearOutcomes(expectedSha);
                 return;
               }
               const label = outcomeLabels[item.outcome];
@@ -152,6 +161,11 @@ safe-outputs:
               // fresh PR check above; no label name from agent output is used.
               await github.rest.issues.getLabel({ owner, repo, name: label }).catch(async (error) => {
                 if (error.status !== 404) throw error;
+                pr = await current();
+                if (pr.data.state !== 'open' || pr.data.head.sha !== expectedSha) {
+                  core.info('The PR head changed before creating the outcome label; no label was applied.');
+                  return;
+                }
                 await github.rest.issues.createLabel({ owner, repo, name: label, ...labelMetadata[label] });
               });
               // Re-fetch again immediately before applying the label because
@@ -159,7 +173,7 @@ safe-outputs:
               pr = await current();
               if (pr.data.state !== 'open' || pr.data.head.sha !== expectedSha) {
                 core.info('The PR head changed before the outcome label; no label was applied.');
-                await clearOutcomes();
+                await clearOutcomes(expectedSha);
                 return;
               }
               await github.rest.issues.addLabels({ owner, repo, issue_number: pullNumber, labels: [label] });
@@ -182,18 +196,18 @@ For a `labeled` event, verify that the added label is `community-review`, then
 capture the PR number, base ref and SHA, head ref and **head SHA**, author,
 `author_association`, and the activation timestamp before reading any other
 content. The captured head SHA is `expected_head_sha` for the entire report.
-The companion `community-assess-cleanup.yml` workflow handles `synchronize`
-and `closed` mechanically in a `pull_request_target` context. It does not
-check out or execute the fork, and removes only the fixed workflow-owned
-outcome labels. A later `synchronize` event therefore removes the historical
-label and a maintainer must re-apply the trigger after confirming the revision.
+No cleanup workflow is active in this checkout. A previously proposed
+`pull_request_target` cleanup path was removed because it crossed the approved
+`pull_request` security boundary. Until maintainers approve a trusted,
+write-capable context, this source remains a proposal and no labels are
+published or cleaned up by repository automation.
 
-The trusted publisher re-fetches the PR immediately before the comment, before
-removing prior outcomes, and before applying the new outcome. If the PR is
-closed or the SHA differs at any check, it writes no further output and clears
-workflow-owned current-state labels. A later `synchronize` event never reuses
-the old report: cleanup removes current-state labels and a maintainer must
-re-apply the trigger label after confirming the revision. The report must
+If this proposal is compiled in an approved trusted context, its publisher
+re-fetches the PR immediately before the comment, before removing prior
+outcomes, and before applying the new outcome. If the PR is closed or the SHA
+differs at any check, it writes no further output and clears workflow-owned
+current-state labels only when the current revision still matches the event
+revision. A newer revision's labels are left untouched. The report must
 include the assessed head SHA and state that later pushes make the report
 historical. GitHub offers no atomic ref-read/comment/label transaction, so this
 workflow promises fail-closed freshness checks rather than impossible atomicity.
@@ -257,12 +271,12 @@ be converted into approval.
 
 ## Report and outcome
 
-Call `community_assess_publish` exactly once with `expected_head_sha`, one of
+If compiled, call `community_assess_publish` exactly once with `expected_head_sha`, one of
 the four allowed `outcome` values, and the complete report body. The trusted
 safe-output job posts at most one top-level PR comment and applies one current
 outcome label only after its own live checks. Do not call a built-in comment or
-label tool. This agent workflow is only invoked for `labeled`; the companion
-cleanup workflow owns `synchronize` and `closed` cleanup.
+label tool. The source has no active compiled workflow until the fork
+execution and trusted publication requirements are approved.
 
 The report body has this structure:
 

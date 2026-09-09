@@ -18,10 +18,11 @@ Example:
 /speckit.community-assess.assess 123
 ```
 
-The command is also used as the assessment rubric by the maintainer-triggered
-`community-assess` GitHub Agentic Workflow. In that workflow the Markdown
-artifact is transient and only the single SHA-qualified pull request comment
-is durable.
+The command is also retained as the assessment rubric for the reviewable
+`community-assess` GitHub Agentic Workflow proposal. The proposal is
+intentionally not compiled or activated: fork execution and trusted
+publication require a repository context and secrets that are unavailable to
+ordinary `pull_request` runs.
 
 ## Assessment boundary
 

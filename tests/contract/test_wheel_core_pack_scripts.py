@@ -14,6 +14,18 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parents[2]
 
 
+def _script_variants() -> list[str]:
+    """Return source script variants, excluding interpreter caches."""
+
+    return sorted(
+        path.name
+        for path in (REPO_ROOT / "scripts").iterdir()
+        if path.is_dir()
+        and path.name != "__pycache__"
+        and any(path.glob(pattern) for pattern in ("*.sh", "*.ps1", "*.py"))
+    )
+
+
 def _force_include() -> dict[str, str]:
     with (REPO_ROOT / "pyproject.toml").open("rb") as pyproject_file:
         pyproject = tomllib.load(pyproject_file)
@@ -22,9 +34,7 @@ def _force_include() -> dict[str, str]:
 
 def test_every_script_variant_is_bundled_into_core_pack():
     force_include = _force_include()
-    variants = sorted(
-        path.name for path in (REPO_ROOT / "scripts").iterdir() if path.is_dir()
-    )
+    variants = _script_variants()
 
     assert variants, "expected at least one script variant under scripts/"
     for variant in variants:

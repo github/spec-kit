@@ -243,6 +243,8 @@ def enrich_pr(api: GitHubAPI, pr: dict[str, Any], measurement_at: str) -> dict[s
         str(review.get("state", "UNKNOWN"))
         for review in reviews
         if review.get("submitted_at")
+        and parse_timestamp(review["submitted_at"]) <= parse_timestamp(measurement_at)
+        and review.get("state") not in {"PENDING"}
     )
     return {
         "number": number,

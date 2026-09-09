@@ -224,8 +224,7 @@ def test_community_submission_allowed_files_do_not_include_other_catalogs_or_doc
 
 def test_community_assessment_pilot_is_read_only_and_sha_qualified():
     source = COMMUNITY_ASSESS_WORKFLOW.read_text(encoding="utf-8")
-    compiled = COMMUNITY_ASSESS_COMPILED.read_text(encoding="utf-8")
-    cleanup = (WORKFLOWS_DIR / "community-assess-cleanup.yml").read_text(encoding="utf-8")
+    frontmatter = source.split("---", 2)[1]
 
     assert "  pull_request:" in source
     assert "    types: [labeled]" in source
@@ -237,37 +236,28 @@ def test_community_assessment_pilot_is_read_only_and_sha_qualified():
     assert "expected_head_sha" in source
     assert "speckit.community-assess.assess" in source
     assert "extensions/community-assess/commands/speckit.community-assess.assess.md" in source
-    assert "the SHA differs" in source
+    assert "differs at any check" in source
     assert "safe-outputs:" in source
     assert "community-assess-publish:" in source
     assert "community-assess-cleanup:" not in source
-    assert "community-assess-cleanup.yml" in source
-    assert "pull_request_target:" in cleanup
-    assert "types: [synchronize, closed]" in cleanup
-    assert "deliberately has no checkout" in cleanup
+    assert "intentionally inert" in frontmatter
+    assert not COMMUNITY_ASSESS_COMPILED.exists()
+    assert not (WORKFLOWS_DIR / "community-assess-cleanup.yml").exists()
+    assert "No cleanup workflow is active" in source
+    assert "pull_request_target" in source  # documented as the removed proposal
     assert "type: choice" in source
     assert "options: [fits-project, needs-clarification, out-of-scope, invalid]" in source
     assert "at most one top-level PR comment" in source
     assert "fixed namespaced assessment labels" in source
 
     # The agent must not receive built-in GitHub mutation tools. The custom
-    # publisher and cleanup jobs are the only declared write paths.
+    # publisher is the only declared write path if this proposal is approved.
     assert "add-comment:" not in source
     assert "add-labels:" not in source
     assert "remove-labels:" not in source
     assert "create-pull-request" not in source
 
-    # gh-aw lowers the label filter into the compiled activation guard and
-    # preserves PR-number cancellation for a newer run on the same PR.
-    assert "pull_request:" in compiled
-    assert "community-review" in compiled
-    assert "github.event.pull_request.number" in compiled
-    assert "cancel-in-progress: true" in compiled
-    assert "GH_AW_SAFE_OUTPUTS_CONFIG" in compiled
-    assert "community-assess-publish" in compiled
-    assert "community-assess-cleanup" not in compiled
     assert "GH_AW_AGENT_OUTPUT=$output" in source
-    assert '"add_comment":' not in compiled
 
 
 def test_bug_test_workflow_provisions_python_dependencies():
