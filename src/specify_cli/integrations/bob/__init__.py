@@ -254,6 +254,48 @@ class BobIntegration(IntegrationBase):
         """
         return "-" if skills_enabled else "."
 
+    def build_command_invocation(self, command_name: str, args: str = "") -> str:
+        """Render ``/speckit-<cmd>`` for skills mode, ``/speckit.<cmd>`` legacy.
+
+        ``IntegrationBase`` hardcodes ``.``; Bob's skills live at
+        ``.bob/skills/speckit-<cmd>/SKILL.md``, so the base rendering names a
+        command that does not exist in a skills-mode project.
+        """
+        stem = command_name
+        if stem.startswith("speckit."):
+            stem = stem[len("speckit."):]
+        sep = self.effective_invoke_separator()
+        invocation = f"/speckit{sep}{stem}"
+        return f"{invocation} {args}" if args else invocation
+
+    def build_exec_args(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        output_json: bool = True,
+    ) -> list[str] | None:
+        """Non-interactive dispatch through ``bob run``.
+
+        The prompt is **positional and last** -- Bob Shell 2.x has no ``-p`` on
+        ``run``.  ``--trust`` is per-invocation (``run`` never persists it) and
+        ``--accept-license`` is required non-interactively.
+
+        *model* is ignored: ``run`` exposes no model flag; model choice comes
+        from ``session.model`` in Bob's settings.
+        """
+        args = [
+            self._resolve_executable(),
+            "run",
+            "--trust",
+            "--accept-license",
+            "-f",
+            "json" if output_json else "pretty",
+        ]
+        self._apply_extra_args_env_var(args)
+        args.append(prompt)
+        return args
+
     def post_process_skill_content(self, content: str) -> str:
         """Bob skills are intent-activated; no slash-command note is injected.
 

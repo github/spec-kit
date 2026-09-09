@@ -925,3 +925,54 @@ class TestBobPostProcessSkillContent:
             bob.post_process_skill_content(sample)
             == _BobSkillsHelper().post_process_skill_content(sample)
         )
+
+
+class TestBobCliDispatch:
+    """Headless dispatch through ``bob run``."""
+
+    def test_requires_cli_is_false_for_ide_first_flow(self):
+        """``requires_cli`` must stay False so the IDE-only flow keeps working.
+
+        ``specify init --integration bob`` (without ``--ignore-agent-tools``)
+        treats ``requires_cli=True`` as a hard precheck and fails when the
+        ``bob`` CLI isn't on PATH -- even though the Bob IDE / skills flow can
+        run without it.  Workflow dispatch support is signalled by overriding
+        ``build_exec_args()`` instead, mirroring ``CursorAgentIntegration``.
+        """
+        bob = get_integration("bob")
+        assert bob.config.get("requires_cli") is False
+
+    def test_build_exec_args_default_is_bob_run_with_json(self):
+        """Default argv is ``bob run`` with the headless flags, ``-f json``,
+        then the prompt: ``run`` takes the prompt positionally, not via ``-p``.
+        """
+        bob = get_integration("bob")
+        assert bob.build_exec_args("/speckit-specify some-feature") == [
+            "bob", "run", "--trust", "--accept-license", "-f", "json",
+            "/speckit-specify some-feature",
+        ]
+
+    def test_build_exec_args_text_output_uses_pretty(self):
+        bob = get_integration("bob")
+        assert bob.build_exec_args("/speckit-plan", output_json=False) == [
+            "bob", "run", "--trust", "--accept-license", "-f", "pretty",
+            "/speckit-plan",
+        ]
+
+    def test_build_exec_args_ignores_model(self):
+        """Bob exposes no model flag on ``run``, so *model* is a no-op."""
+        bob = get_integration("bob")
+        assert bob.build_exec_args("/speckit-plan", model="some-model") == \
+            bob.build_exec_args("/speckit-plan")
+
+    def test_command_invocation_uses_hyphen_in_skills_mode(self):
+        """Skills-mode projects install ``.bob/skills/speckit-<cmd>/``, so the
+        invocation must use the same separator.
+        """
+        bob = get_integration("bob")
+        assert bob.build_command_invocation("speckit.specify") == "/speckit-specify"
+        assert bob.build_command_invocation("speckit.plan", "arg") == "/speckit-plan arg"
+
+    def test_command_invocation_accepts_bare_stem(self):
+        bob = get_integration("bob")
+        assert bob.build_command_invocation("specify") == "/speckit-specify"
