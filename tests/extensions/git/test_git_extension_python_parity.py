@@ -310,6 +310,114 @@ class TestCreateFeatureBranchParity:
         assert re.fullmatch(r"[0-9]{8}-[0-9]{6}", data["FEATURE_NUM"])
         assert data["BRANCH_NAME"] == f"{data['FEATURE_NUM']}-user-auth"
 
+    def test_custom_feature_id_normalizes_to_lowercase(self, tmp_path: Path):
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        args = (
+            "--json",
+            "--dry-run",
+            "--feature-id",
+            "ENHANCEMENT-XYZ",
+            "--short-name",
+            "user-auth",
+            "desc",
+        )
+        b = _run_bash("create-new-feature-branch.sh", bash_proj, *args)
+        p = _run_py("create-new-feature-branch", py_proj, *args)
+        _assert_parity(b, p)
+        assert json.loads(p.stdout) == {
+            "BRANCH_NAME": "enhancement-xyz-user-auth",
+            "FEATURE_NUM": "enhancement-xyz",
+            "DRY_RUN": True,
+        }
+
+    def test_custom_feature_id_environment(self, tmp_path: Path):
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        env = {"FEATURE_ID": "WORK_ITEM.42"}
+        args = ("--json", "--dry-run", "--short-name", "sync", "desc")
+        b = _run_bash(
+            "create-new-feature-branch.sh", bash_proj, *args, env_extra=env
+        )
+        p = _run_py(
+            "create-new-feature-branch", py_proj, *args, env_extra=env
+        )
+        _assert_parity(b, p)
+        assert json.loads(p.stdout)["BRANCH_NAME"] == "work_item.42-sync"
+
+    def test_custom_feature_id_creates_matching_branch(self, tmp_path: Path):
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        args = (
+            "--json",
+            "--feature-id",
+            "ENHANCEMENT-XYZ",
+            "--short-name",
+            "user-auth",
+            "desc",
+        )
+        b = _run_bash("create-new-feature-branch.sh", bash_proj, *args)
+        p = _run_py("create-new-feature-branch", py_proj, *args)
+        _assert_parity(b, p)
+        for project in (bash_proj, py_proj):
+            branch = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=project,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            assert branch == "enhancement-xyz-user-auth"
+
+    @pytest.mark.parametrize("feature_id", ["../BAD", "-BAD", "BAD/", "BAD value"])
+    def test_custom_feature_id_rejects_unsafe_values(
+        self, tmp_path: Path, feature_id: str
+    ):
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        args = ("--json", "--dry-run", "--feature-id", feature_id, "desc")
+        b = _run_bash("create-new-feature-branch.sh", bash_proj, *args)
+        p = _run_py("create-new-feature-branch", py_proj, *args)
+        _assert_parity(b, p)
+        assert p.returncode == 1
+        assert "feature identifier must start and end" in p.stderr
+
+    def test_custom_feature_id_uses_branch_template(self, tmp_path: Path):
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        for proj in (bash_proj, py_proj):
+            _write_config(proj, 'branch_template: "{author}/{app}/{number}-{slug}"\n')
+        args = (
+            "--json",
+            "--dry-run",
+            "--feature-id",
+            "ENHANCEMENT-XYZ",
+            "--short-name",
+            "user-auth",
+            "desc",
+        )
+        b = _run_bash("create-new-feature-branch.sh", bash_proj, *args)
+        p = _run_py("create-new-feature-branch", py_proj, *args)
+        _assert_parity(b, p)
+        assert (
+            json.loads(p.stdout)["BRANCH_NAME"]
+            == "test-user/proj/enhancement-xyz-user-auth"
+        )
+
+    def test_custom_feature_id_conflict_fails(self, tmp_path: Path):
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        for proj in (bash_proj, py_proj):
+            (proj / "specs" / "enhancement-xyz-existing").mkdir(parents=True)
+        args = (
+            "--json",
+            "--dry-run",
+            "--feature-id",
+            "ENHANCEMENT-XYZ",
+            "--short-name",
+            "new",
+            "desc",
+        )
+        b = _run_bash("create-new-feature-branch.sh", bash_proj, *args)
+        p = _run_py("create-new-feature-branch", py_proj, *args)
+        _assert_parity(b, p)
+        assert p.returncode == 1
+        assert "conflicts with an existing spec directory" in p.stderr
+
     def test_timestamp_with_number_warns(self, tmp_path: Path):
         bash_proj, py_proj = _twin_projects(tmp_path)
         b = _run_bash(
@@ -794,6 +902,14 @@ class TestGitCommonPython:
     )
     def test_check_feature_branch(self, git_common, branch: str, expected: bool):
         assert git_common.check_feature_branch(branch, True) is expected
+
+    def test_check_feature_branch_with_custom_identifier(self, git_common):
+        assert git_common.check_feature_branch(
+            "enhancement-xyz-feature-name", True, "ENHANCEMENT-XYZ"
+        )
+        assert not git_common.check_feature_branch(
+            "other-xyz-feature-name", True, "ENHANCEMENT-XYZ"
+        )
 
     def test_check_feature_branch_no_git_warns_but_passes(self, git_common, capsys):
         assert git_common.check_feature_branch("main", False) is True

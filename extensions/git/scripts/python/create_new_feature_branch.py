@@ -28,7 +28,7 @@ MAX_BRANCH_LENGTH = 244  # GitHub enforces a 244-byte limit on branch names
 USAGE = (
     "Usage: create_new_feature_branch.py [--json] [--dry-run] "
     "[--allow-existing-branch] [--short-name <name>] [--number N] "
-    "[--timestamp] <feature_description>"
+    "[--timestamp] [--feature-id <id>] <feature_description>"
 )
 
 HELP_TEXT = f"""{USAGE}
@@ -40,10 +40,12 @@ Options:
   --short-name <name> Provide a custom short name (2-4 words) for the branch
   --number N          Specify branch number manually (overrides auto-detection)
   --timestamp         Use timestamp prefix (YYYYMMDD-HHMMSS) instead of sequential numbering
+  --feature-id <id>   Use a custom prefix such as ENHANCEMENT-XYZ
   --help, -h          Show this help message
 
 Environment variables:
   GIT_BRANCH_NAME     Use this exact branch name, bypassing all prefix/suffix generation
+  FEATURE_ID          Custom prefix used when --feature-id is not provided
 
 Configuration:
   branch_template     Optional git-config.yml template with {{author}}, {{app}}, {{number}}, {{slug}}
@@ -53,6 +55,7 @@ Examples:
   create_new_feature_branch.py 'Add user authentication system' --short-name 'user-auth'
   create_new_feature_branch.py 'Implement OAuth2 integration for API' --number 5
   create_new_feature_branch.py --timestamp --short-name 'user-auth' 'Add user authentication'
+  create_new_feature_branch.py --feature-id ENHANCEMENT-XYZ --short-name 'user-auth' 'Add user authentication'
   GIT_BRANCH_NAME=my-branch create_new_feature_branch.py 'feature description'
 """
 
@@ -84,6 +87,7 @@ class Args:
     short_name: str = ""
     branch_number: str = ""
     use_timestamp: bool = False
+    feature_id: str = ""
     description_parts: list[str] = field(default_factory=list)
 
 
@@ -113,6 +117,12 @@ def parse_args(argv: list[str]) -> Args:
             if not re.fullmatch(r"[0-9]+", args.branch_number):
                 _err("Error: --number must be a non-negative integer")
                 raise SystemExit(1)
+        elif arg == "--feature-id":
+            if i + 1 >= len(argv) or argv[i + 1].startswith("--"):
+                _err("Error: --feature-id requires a value")
+                raise SystemExit(1)
+            i += 1
+            args.feature_id = argv[i]
         elif arg == "--timestamp":
             args.use_timestamp = True
         elif arg in ("--help", "-h"):
@@ -284,6 +294,13 @@ def clean_branch_name(name: str) -> str:
     name = re.sub(r"[^a-z0-9]", "-", name.lower())
     name = re.sub(r"-+", "-", name)
     return name.strip("-")
+
+
+def validate_feature_id(feature_id: str) -> bool:
+    """Return whether a custom identifier is a safe single path segment."""
+    return bool(
+        re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?", feature_id)
+    )
 
 
 def generate_branch_name(description: str) -> str:
@@ -496,16 +513,54 @@ def main(argv: list[str]) -> int:
         feature_num = extract_feature_num_from_branch(branch_name)
         branch_suffix = branch_name
     else:
+        custom_feature_id = (
+            args.feature_id or os.environ.get("FEATURE_ID", "")
+        ).strip()
+        if custom_feature_id and not validate_feature_id(custom_feature_id):
+            _err(
+                "Error: feature identifier must start and end with a letter or digit "
+                "and contain only letters, digits, dots, underscores, or hyphens"
+            )
+            return 1
+        custom_feature_id = custom_feature_id.lower()
+
         if args.short_name:
             branch_suffix = clean_branch_name(args.short_name)
         else:
             branch_suffix = generate_branch_name(feature_description)
 
-        if args.use_timestamp and branch_number:
+        if custom_feature_id and (args.use_timestamp or branch_number):
+            _err(
+                "[specify] Warning: --number and --timestamp are ignored when a "
+                "custom feature identifier is used"
+            )
+            branch_number = ""
+        elif args.use_timestamp and branch_number:
             _err("[specify] Warning: --number is ignored when --timestamp is used")
             branch_number = ""
 
-        if args.use_timestamp:
+        if custom_feature_id:
+            feature_num = custom_feature_id
+            requested_branch_name = build_branch_name(feature_num, branch_suffix)
+            requested_feature_segment = requested_branch_name.rsplit("/", 1)[-1]
+            requested_dir = specs_dir / requested_feature_segment
+            prefix_in_use = (
+                specs_dir.is_dir()
+                and any(
+                    entry.is_dir() and entry.name.startswith(f"{feature_num}-")
+                    for entry in specs_dir.iterdir()
+                )
+            )
+            if prefix_in_use and not (
+                args.allow_existing and requested_dir.is_dir()
+            ):
+                _err(
+                    f"Error: feature identifier '{feature_num}' conflicts with an "
+                    "existing spec directory"
+                )
+                return 1
+            branch_name = requested_branch_name
+        elif args.use_timestamp:
             feature_num = datetime.now().strftime("%Y%m%d-%H%M%S")
             branch_name = build_branch_name(feature_num, branch_suffix)
         else:

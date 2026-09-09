@@ -1,5 +1,5 @@
 ---
-description: "Create a feature branch with sequential or timestamp numbering"
+description: "Create a feature branch with a custom identifier, sequential number, or timestamp"
 ---
 
 # Create Feature Branch
@@ -21,6 +21,8 @@ If the user explicitly provided `GIT_BRANCH_NAME` (e.g., via environment variabl
 - `--short-name`, `--number`, and `--timestamp` flags are ignored
 - `FEATURE_NUM` is extracted when the final path segment starts with a numeric or timestamp feature marker (for example `042-name`, `feat/042-name`, or `jdoe/app/042-name`), otherwise set to the full branch name
 
+If the user explicitly provided `FEATURE_ID` (for example, `FEATURE_ID=ENHANCEMENT-XYZ`), pass it to the script with `--feature-id`/`-FeatureId`. The script normalizes it to lowercase and creates a branch such as `enhancement-xyz-user-auth`. `GIT_BRANCH_NAME` takes precedence when both are provided.
+
 ## Prerequisites
 
 - Verify Git is available by running `git rev-parse --is-inside-work-tree 2>/dev/null`
@@ -41,7 +43,7 @@ Check `.specify/extensions/git/git-config.yml` for an optional `branch_template`
 
 - `{author}`: sanitized Git config author (`user.name`, falling back to the email local part)
 - `{app}`: sanitized Spec Kit init directory name
-- `{number}`: sequential number or timestamp
+- `{number}`: selected feature prefix (custom identifier, sequential number, or timestamp)
 - `{slug}`: generated short branch slug
 
 For monorepos, a template such as `{author}/{app}/{number}-{slug}` creates names like `jdoe/web/008-guided-tour` while preserving per-project feature numbering.
@@ -61,6 +63,8 @@ Run the appropriate script based on your platform:
 - **Bash (timestamp)**: `.specify/extensions/git/scripts/bash/create-new-feature-branch.sh --json --timestamp --short-name "<short-name>" "<feature description>"`
 - **PowerShell**: `.specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1 -Json -ShortName "<short-name>" "<feature description>"`
 - **PowerShell (timestamp)**: `.specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1 -Json -Timestamp -ShortName "<short-name>" "<feature description>"`
+- **Bash (custom identifier)**: `.specify/extensions/git/scripts/bash/create-new-feature-branch.sh --json --feature-id "<FEATURE_ID>" --short-name "<short-name>" "<feature description>"`
+- **PowerShell (custom identifier)**: `.specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1 -Json -FeatureId "<FEATURE_ID>" -ShortName "<short-name>" "<feature description>"`
 
 **IMPORTANT**:
 - Do NOT pass `--number` — the script determines the correct next number automatically
@@ -78,5 +82,5 @@ If Git is not installed or the current directory is not a Git repository:
 ## Output
 
 The script outputs JSON with:
-- `BRANCH_NAME`: The branch name (e.g., `003-user-auth`, `20260319-143022-user-auth`, or `jdoe/web/003-user-auth`)
-- `FEATURE_NUM`: The numeric or timestamp prefix used
+- `BRANCH_NAME`: The branch name (e.g., `003-user-auth`, `20260319-143022-user-auth`, `enhancement-xyz-user-auth`, or `jdoe/web/003-user-auth`)
+- `FEATURE_NUM`: The selected feature prefix; this legacy key also contains a custom identifier when one is used

@@ -29,6 +29,12 @@ spec_kit_effective_branch_name() {
 check_feature_branch() {
     local raw="$1"
     local has_git_repo="$2"
+    local feature_id="${3:-${FEATURE_ID:-}}"
+    feature_id=$(printf '%s' "$feature_id" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+    if [ -n "$feature_id" ] \
+        && [[ "$feature_id" =~ ^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$ ]]; then
+        feature_id=$(printf '%s' "$feature_id" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+    fi
 
     # For non-git repos, we can't enforce branch naming but still provide output
     if [[ "$has_git_repo" != "true" ]]; then
@@ -46,9 +52,17 @@ check_feature_branch() {
     if [[ "$feature_segment" =~ ^[0-9]{3,}- ]] && [[ ! "$feature_segment" =~ ^[0-9]{7}-[0-9]{6}- ]] && [[ ! "$feature_segment" =~ ^[0-9]{7,8}-[0-9]{6}$ ]]; then
         is_sequential=true
     fi
-    if [[ "$is_sequential" != "true" ]] && [[ ! "$feature_segment" =~ ^[0-9]{8}-[0-9]{6}- ]]; then
+    local is_custom=false
+    if [ -n "$feature_id" ] \
+        && [[ "$feature_id" =~ ^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$ ]] \
+        && [[ "$feature_segment" == "$feature_id-"* ]]; then
+        is_custom=true
+    fi
+    if [[ "$is_sequential" != "true" ]] \
+        && [[ ! "$feature_segment" =~ ^[0-9]{8}-[0-9]{6}- ]] \
+        && [[ "$is_custom" != "true" ]]; then
         echo "ERROR: Not on a feature branch. Current branch: $raw" >&2
-        echo "Feature branches should be named like: 001-feature-name, 1234-feature-name, 20260319-143022-feature-name, or <prefix>/001-feature-name" >&2
+        echo "Feature branches should be named like: 001-feature-name, 1234-feature-name, 20260319-143022-feature-name, enhancement-xyz-feature-name, or <prefix>/001-feature-name" >&2
         return 1
     fi
 

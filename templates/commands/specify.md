@@ -51,6 +51,7 @@ You **MUST** consider the user input before proceeding (if not empty).
     Wait for the result of the hook command before proceeding to the Outline.
     ```
     After emitting the block above you MUST actually invoke the hook and wait for it to finish before continuing. Run it the same way you would run the command yourself in this agent/session (the invocation may differ from the literal `{command}` id shown above, e.g. a skills-mode agent runs it as `/skill:speckit-...` or `$speckit-...`). Emitting the block alone does not run the hook.
+- When invoking a `before_specify` hook, forward any explicit `GIT_BRANCH_NAME` and `FEATURE_ID` values from the user's input so branch creation uses the requested naming override.
 - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
 
 ## Outline
@@ -77,6 +78,8 @@ Given that feature description, do this:
 
    If the user explicitly provided `GIT_BRANCH_NAME`, pass it through to the hook so the branch script uses the exact value as the branch name (bypassing all prefix/suffix generation).
 
+   If the user explicitly provided `FEATURE_ID` (for example, `FEATURE_ID=ENHANCEMENT-XYZ`), pass it through to the hook. The hook must normalize it to lowercase and use it as the feature prefix instead of a sequential number or timestamp.
+
 3. **Create the spec feature directory**:
 
    Specs live under the default `specs/` directory unless the user explicitly provides `SPECIFY_FEATURE_DIRECTORY`.
@@ -84,10 +87,13 @@ Given that feature description, do this:
    **Resolution order for `SPECIFY_FEATURE_DIRECTORY`**:
    1. If the user explicitly provided `SPECIFY_FEATURE_DIRECTORY` (e.g., via environment variable, argument, or configuration), use it as-is
    2. Otherwise, auto-generate it under `specs/`:
-      - Check `.specify/init-options.json` for `feature_numbering` (preferred) or `branch_numbering` (deprecated, migration only — will be removed in a future release)
+      - If the user explicitly provided `FEATURE_ID`, validate that it starts and ends with a letter or digit and contains only letters, digits, dots, underscores, or hyphens. Normalize it to lowercase and use it as the prefix.
+      - Otherwise, check `.specify/init-options.json` for `feature_numbering` (preferred) or `branch_numbering` (deprecated, migration only — will be removed in a future release)
       - If `"timestamp"`: prefix is `YYYYMMDD-HHMMSS` (current timestamp)
       - If `"sequential"` or absent: prefix is `NNN` (next available 3-digit number after scanning existing directories in `specs/`)
-      - Construct the directory name: `<prefix>-<short-name>` (e.g., `003-user-auth` or `20260319-143022-user-auth`)
+      - Construct the directory name: `<prefix>-<short-name>` (e.g., `003-user-auth`, `20260319-143022-user-auth`, or `enhancement-xyz-user-auth`)
+      - When `FEATURE_ID` was provided and the branch hook returned `BRANCH_NAME`, use the branch name's final path segment as the directory name after verifying it starts with `<FEATURE_ID>-`. This keeps custom-ID branches and folders aligned even when a branch namespace template is active.
+      - If a different directory already starts with `<FEATURE_ID>-`, stop with an error; custom identifiers are never silently changed
       - Set `SPECIFY_FEATURE_DIRECTORY` to `specs/<directory-name>`
       - If `branch_numbering` was used (and `feature_numbering` was absent), emit a one-line warning: "⚠️ `branch_numbering` in init-options.json is deprecated. Rename to `feature_numbering`."
 

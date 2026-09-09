@@ -6,6 +6,7 @@ branch_numbering: sequential
 
 # Optional branch name template. Leave empty for the default "{number}-{slug}".
 # Supported tokens: {author}, {app}, {number}, {slug}
+# {number} receives the selected prefix: custom FEATURE_ID, sequential number, or timestamp.
 # {slug} must not appear before {number}; final path segment must start with {number}-.
 # Example for monorepos: "{author}/{app}/{number}-{slug}"
 branch_template: ""

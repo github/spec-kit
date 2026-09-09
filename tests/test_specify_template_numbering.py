@@ -37,3 +37,12 @@ def test_main_execution_list_is_sequential():
 
     assert ordinals, "Could not find the main execution list in specify.md"
     assert ordinals == list(range(1, 9))
+
+
+def test_custom_feature_identifier_precedes_numbering():
+    """The command must keep branch and folder prefixes aligned for custom IDs."""
+    text = SPECIFY_TEMPLATE.read_text(encoding="utf-8")
+
+    assert "FEATURE_ID=ENHANCEMENT-XYZ" in text
+    assert "enhancement-xyz-user-auth" in text
+    assert "custom identifiers are never silently changed" in text

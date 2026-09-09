@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import re
 import shlex
 import sys
@@ -73,7 +74,8 @@ def _persistence_assignments(
 def _usage(argv0: str) -> str:
     return (
         f"Usage: {argv0} [--json] [--dry-run] [--allow-existing-branch] "
-        "[--short-name <name>] [--number N] [--timestamp] <feature_description>"
+        "[--short-name <name>] [--number N] [--timestamp] "
+        "[--feature-id <id>] <feature_description>"
     )
 
 
@@ -87,12 +89,17 @@ Options:
   --short-name <name> Provide a custom short name (2-4 words) for the feature
   --number N          Prefer a feature number (auto-corrected if its specs prefix exists)
   --timestamp         Use timestamp prefix (YYYYMMDD-HHMMSS) instead of sequential numbering
+  --feature-id <id>   Use a custom prefix such as ENHANCEMENT-XYZ
   --help, -h          Show this help message
+
+Environment variables:
+  FEATURE_ID          Custom prefix used when --feature-id is not provided
 
 Examples:
   {argv0} 'Add user authentication system' --short-name 'user-auth'
   {argv0} 'Implement OAuth2 integration for API' --number 5
   {argv0} --timestamp --short-name 'user-auth' 'Add user authentication'
+  {argv0} --feature-id ENHANCEMENT-XYZ --short-name 'user-auth' 'Add user authentication'
 """
 
 
@@ -104,6 +111,7 @@ class Args:
     short_name: str = ""
     branch_number: str = ""
     use_timestamp: bool = False
+    feature_id: str = ""
     description: str = ""
 
 
@@ -114,6 +122,7 @@ def _parse_args(argv: list[str], argv0: str) -> Args:
     short_name = ""
     branch_number = ""
     use_timestamp = False
+    feature_id = ""
     rest: list[str] = []
 
     i = 0
@@ -125,13 +134,15 @@ def _parse_args(argv: list[str], argv0: str) -> Args:
             dry_run = True
         elif arg == "--allow-existing-branch":
             allow_existing = True
-        elif arg in {"--short-name", "--number"}:
+        elif arg in {"--short-name", "--number", "--feature-id"}:
             if i + 1 >= len(argv) or argv[i + 1].startswith("--"):
                 print(f"Error: {arg} requires a value", file=sys.stderr)
                 raise SystemExit(1)
             i += 1
             if arg == "--short-name":
                 short_name = argv[i]
+            elif arg == "--feature-id":
+                feature_id = argv[i]
             else:
                 branch_number = argv[i]
         elif arg == "--timestamp":
@@ -161,6 +172,7 @@ def _parse_args(argv: list[str], argv0: str) -> Args:
         short_name=short_name,
         branch_number=branch_number,
         use_timestamp=use_timestamp,
+        feature_id=feature_id,
         description=description,
     )
 
@@ -224,6 +236,13 @@ def _fit_branch_name(feature_num: str, branch_suffix: str) -> str:
     return f"{feature_num}-{truncated_suffix}"
 
 
+def _validate_feature_id(feature_id: str) -> bool:
+    """Return whether a custom identifier is a safe single path segment."""
+    return bool(
+        re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?", feature_id)
+    )
+
+
 def _spec_prefix_exists(specs_dir: Path, feature_num: str) -> bool:
     """Return whether a spec directory owns the given numeric prefix."""
     try:
@@ -265,14 +284,47 @@ def main(argv: list[str] | None = None) -> int:
         branch_suffix = _generate_branch_name(args.description)
 
     branch_number = args.branch_number
-    if args.use_timestamp and branch_number:
+    feature_id = (args.feature_id or os.environ.get("FEATURE_ID", "")).strip()
+    if feature_id and not _validate_feature_id(feature_id):
+        print(
+            "Error: feature identifier must start and end with a letter or digit "
+            "and contain only letters, digits, dots, underscores, or hyphens",
+            file=sys.stderr,
+        )
+        return 1
+    feature_id = feature_id.lower()
+
+    if feature_id and (args.use_timestamp or branch_number):
+        print(
+            "[specify] Warning: --number and --timestamp are ignored when a "
+            "custom feature identifier is used",
+            file=sys.stderr,
+        )
+        branch_number = ""
+    elif args.use_timestamp and branch_number:
         print(
             "[specify] Warning: --number is ignored when --timestamp is used",
             file=sys.stderr,
         )
         branch_number = ""
 
-    if args.use_timestamp:
+    if feature_id:
+        feature_num = feature_id
+        requested_branch_name = _fit_branch_name(feature_num, branch_suffix)
+        requested_dir = specs_dir / requested_branch_name
+        if _has_spec_prefix_conflict(
+            specs_dir,
+            feature_num,
+            requested_dir,
+            allow_existing=args.allow_existing,
+        ):
+            print(
+                f"Error: feature identifier '{feature_num}' conflicts with an "
+                "existing spec directory",
+                file=sys.stderr,
+            )
+            return 1
+    elif args.use_timestamp:
         feature_num = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     else:
         if branch_number:
@@ -341,7 +393,7 @@ def main(argv: list[str] | None = None) -> int:
 
     max_suffix_length = _MAX_BRANCH_LENGTH - (len(feature_num) + 1)
     if max_suffix_length <= 0:
-        print("Error: feature number is too long for a branch name", file=sys.stderr)
+        print("Error: feature prefix is too long for a branch name", file=sys.stderr)
         return 1
 
     original_branch_name = f"{feature_num}-{branch_suffix}"

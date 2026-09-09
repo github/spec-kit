@@ -26,7 +26,8 @@ function Get-SpecKitEffectiveBranchName {
 function Test-FeatureBranch {
     param(
         [string]$Branch,
-        [bool]$HasGit = $true
+        [bool]$HasGit = $true,
+        [string]$FeatureId = $env:FEATURE_ID
     )
 
     # For non-git repos, we can't enforce branch naming but still provide output
@@ -38,14 +39,21 @@ function Test-FeatureBranch {
     $raw = $Branch
     $Branch = Get-SpecKitEffectiveBranchName $raw
     $featureSegment = ($Branch -split '/')[-1]
+    $FeatureId = $FeatureId.Trim()
+    if ($FeatureId -match '^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$') {
+        $FeatureId = $FeatureId.ToLowerInvariant()
+    }
 
     # Accept sequential prefix (3+ digits), at the start or after namespace
     # segments, but exclude malformed timestamps.
     $hasMalformedTimestamp = ($featureSegment -match '^[0-9]{7}-[0-9]{6}-') -or ($featureSegment -match '^(?:\d{7}|\d{8})-\d{6}$')
     $isSequential = ($featureSegment -match '^[0-9]{3,}-') -and (-not $hasMalformedTimestamp)
-    if (-not $isSequential -and $featureSegment -notmatch '^\d{8}-\d{6}-') {
+    $isCustom = $FeatureId -and
+        $FeatureId -match '^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$' -and
+        $featureSegment.StartsWith("$FeatureId-", [System.StringComparison]::Ordinal)
+    if (-not $isSequential -and $featureSegment -notmatch '^\d{8}-\d{6}-' -and -not $isCustom) {
         [Console]::Error.WriteLine("ERROR: Not on a feature branch. Current branch: $raw")
-        [Console]::Error.WriteLine("Feature branches should be named like: 001-feature-name, 1234-feature-name, 20260319-143022-feature-name, or <prefix>/001-feature-name")
+        [Console]::Error.WriteLine("Feature branches should be named like: 001-feature-name, 1234-feature-name, 20260319-143022-feature-name, enhancement-xyz-feature-name, or <prefix>/001-feature-name")
         return $false
     }
     return $true

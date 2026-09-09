@@ -9,6 +9,7 @@ param(
     [Parameter()]
     [string]$Number = '',
     [switch]$Timestamp,
+    [string]$FeatureId,
     [switch]$Help,
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
     [string[]]$FeatureDescription
@@ -18,7 +19,7 @@ $maxBranchLength = 244
 
 # Show help if requested
 if ($Help) {
-    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] <feature description>"
+    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] [-FeatureId <id>] <feature description>"
     Write-Host ""
     Write-Host "Options:"
     Write-Host "  -Json               Output in JSON format"
@@ -27,18 +28,23 @@ if ($Help) {
     Write-Host "  -ShortName <name>   Provide a custom short name (2-4 words) for the feature"
     Write-Host "  -Number N           Prefer a feature number (auto-corrected if its specs prefix exists)"
     Write-Host "  -Timestamp          Use timestamp prefix (YYYYMMDD-HHMMSS) instead of sequential numbering"
+    Write-Host "  -FeatureId <id>     Use a custom prefix such as ENHANCEMENT-XYZ"
     Write-Host "  -Help               Show this help message"
+    Write-Host ""
+    Write-Host "Environment variables:"
+    Write-Host "  FEATURE_ID          Custom prefix used when -FeatureId is not provided"
     Write-Host ""
     Write-Host "Examples:"
     Write-Host "  ./create-new-feature.ps1 'Add user authentication system' -ShortName 'user-auth'"
     Write-Host "  ./create-new-feature.ps1 'Implement OAuth2 integration for API'"
     Write-Host "  ./create-new-feature.ps1 -Timestamp -ShortName 'user-auth' 'Add user authentication'"
+    Write-Host "  ./create-new-feature.ps1 -FeatureId ENHANCEMENT-XYZ -ShortName 'user-auth' 'Add user authentication'"
     exit 0
 }
 
 # Check if feature description provided
 if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
-    Write-Error "Usage: ./create-new-feature.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] <feature description>"
+    Write-Error "Usage: ./create-new-feature.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] [-FeatureId <id>] <feature description>"
     exit 1
 }
 
@@ -99,6 +105,9 @@ function Get-FittedBranchName {
     if ($fittedName.Length -gt $maxBranchLength) {
         $prefixLength = $FeatureNum.Length + 1
         $maxSuffixLength = $maxBranchLength - $prefixLength
+        if ($maxSuffixLength -le 0) {
+            throw "feature prefix is too long for a branch name"
+        }
         $truncatedSuffix = $BranchSuffix.Substring(0, [Math]::Min($BranchSuffix.Length, $maxSuffixLength))
         $truncatedSuffix = $truncatedSuffix -replace '-$', ''
         $fittedName = "$FeatureNum-$truncatedSuffix"
@@ -187,15 +196,35 @@ if ($ShortName) {
 
 # Treat an explicit empty string as omitted, matching the bash and Python twins.
 $hasNumber = $PSBoundParameters.ContainsKey('Number') -and $Number -ne ''
+$customFeatureId = if ($PSBoundParameters.ContainsKey('FeatureId')) { $FeatureId } else { $env:FEATURE_ID }
+$customFeatureId = ([string]$customFeatureId).Trim()
+if ($customFeatureId -and $customFeatureId -notmatch '^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$') {
+    Write-Error "Error: feature identifier must start and end with a letter or digit and contain only letters, digits, dots, underscores, or hyphens"
+    exit 1
+}
+$customFeatureId = $customFeatureId.ToLowerInvariant()
 
 # Warn if -Number and -Timestamp are both specified.
-if ($Timestamp -and $hasNumber) {
+if ($customFeatureId -and ($Timestamp -or $hasNumber)) {
+    [Console]::Error.WriteLine("[specify] Warning: --number and --timestamp are ignored when a custom feature identifier is used")
+    $Number = ''
+    $hasNumber = $false
+} elseif ($Timestamp -and $hasNumber) {
     [Console]::Error.WriteLine("[specify] Warning: -Number is ignored when -Timestamp is used")
     $Number = ''
 }
 
 # Determine branch prefix
-if ($Timestamp) {
+if ($customFeatureId) {
+    $featureNum = $customFeatureId
+    $requestedBranchName = Get-FittedBranchName -FeatureNum $featureNum -BranchSuffix $branchSuffix
+    $requestedDir = Join-Path $specsDir $requestedBranchName
+    if ((-not $AllowExistingBranch -or -not (Test-Path -LiteralPath $requestedDir -PathType Container)) -and
+        (Test-SpecPrefixInUse -SpecsDir $specsDir -FeatureNum $featureNum)) {
+        Write-Error "Error: feature identifier '$featureNum' conflicts with an existing spec directory"
+        exit 1
+    }
+} elseif ($Timestamp) {
     $featureNum = Get-Date -Format 'yyyyMMdd-HHmmss'
     $branchName = "$featureNum-$branchSuffix"
 } else {

@@ -13,6 +13,7 @@ param(
     [Parameter()]
     [long]$Number = 0,
     [switch]$Timestamp,
+    [string]$FeatureId,
     [switch]$Help,
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
     [string[]]$FeatureDescription
@@ -20,7 +21,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 if ($Help) {
-    Write-Host "Usage: ./create-new-feature-branch.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] <feature description>"
+    Write-Host "Usage: ./create-new-feature-branch.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] [-FeatureId <id>] <feature description>"
     Write-Host ""
     Write-Host "Options:"
     Write-Host "  -Json               Output in JSON format"
@@ -29,10 +30,12 @@ if ($Help) {
     Write-Host "  -ShortName <name>   Provide a custom short name (2-4 words) for the branch"
     Write-Host "  -Number N           Specify branch number manually (overrides auto-detection)"
     Write-Host "  -Timestamp          Use timestamp prefix (YYYYMMDD-HHMMSS) instead of sequential numbering"
+    Write-Host "  -FeatureId <id>     Use a custom prefix such as ENHANCEMENT-XYZ"
     Write-Host "  -Help               Show this help message"
     Write-Host ""
     Write-Host "Environment variables:"
     Write-Host "  GIT_BRANCH_NAME     Use this exact branch name, bypassing all prefix/suffix generation"
+    Write-Host "  FEATURE_ID          Custom prefix used when -FeatureId is not provided"
     Write-Host ""
     Write-Host "Configuration:"
     Write-Host "  branch_template     Optional git-config.yml template with {author}, {app}, {number}, {slug}"
@@ -52,7 +55,7 @@ if ($Number -lt 0) {
 }
 
 if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
-    Write-Error "Usage: ./create-new-feature-branch.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] <feature description>"
+    Write-Error "Usage: ./create-new-feature-branch.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] [-FeatureId <id>] <feature description>"
     exit 1
 }
 
@@ -400,6 +403,8 @@ $authorToken = Get-GitAuthorToken
 $appToken = Get-AppToken
 $branchTemplate = Resolve-BranchTemplate
 Assert-BranchTemplateValid -Template $branchTemplate
+$customFeatureId = if ($PSBoundParameters.ContainsKey('FeatureId')) { $FeatureId } else { $env:FEATURE_ID }
+$customFeatureId = ([string]$customFeatureId).Trim()
 
 function Get-BranchName {
     param([string]$Description)
@@ -452,6 +457,12 @@ if ($env:GIT_BRANCH_NAME) {
     }
     $featureNum = Get-FeatureNumberFromBranchName -BranchName $branchName
 } else {
+    if ($customFeatureId -and $customFeatureId -notmatch '^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$') {
+        Write-Error "Error: feature identifier must start and end with a letter or digit and contain only letters, digits, dots, underscores, or hyphens"
+        exit 1
+    }
+    $customFeatureId = $customFeatureId.ToLowerInvariant()
+
     if ($ShortName) {
         $branchSuffix = ConvertTo-CleanBranchName -Name $ShortName
     } else {
@@ -461,12 +472,31 @@ if ($env:GIT_BRANCH_NAME) {
     # Warn if -Number and -Timestamp are both specified. Use ContainsKey (not
     # `-ne 0`) so an explicit `-Number 0` is also detected, matching the bash twin's
     # `[ -n "$BRANCH_NUMBER" ]` check.
-    if ($Timestamp -and $PSBoundParameters.ContainsKey('Number')) {
+    if ($customFeatureId -and ($Timestamp -or $PSBoundParameters.ContainsKey('Number'))) {
+        [Console]::Error.WriteLine("[specify] Warning: --number and --timestamp are ignored when a custom feature identifier is used")
+        $Number = 0
+    } elseif ($Timestamp -and $PSBoundParameters.ContainsKey('Number')) {
         Write-Warning "[specify] Warning: -Number is ignored when -Timestamp is used"
         $Number = 0
     }
 
-    if ($Timestamp) {
+    if ($customFeatureId) {
+        $featureNum = $customFeatureId
+        $branchName = New-BranchName -FeatureNum $featureNum -BranchSuffix $branchSuffix
+        $featureSegment = ($branchName -split '/')[-1]
+        $conflictingSpec = $null
+        $requestedSpecDir = Join-Path $specsDir $featureSegment
+        if ((-not $AllowExistingBranch -or -not (Test-Path -LiteralPath $requestedSpecDir -PathType Container)) -and
+            (Test-Path -LiteralPath $specsDir -PathType Container)) {
+            $conflictingSpec = Get-ChildItem -LiteralPath $specsDir -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name.StartsWith("$featureNum-", [System.StringComparison]::Ordinal) } |
+                Select-Object -First 1
+        }
+        if ($null -ne $conflictingSpec) {
+            Write-Error "Error: feature identifier '$featureNum' conflicts with an existing spec directory"
+            exit 1
+        }
+    } elseif ($Timestamp) {
         $featureNum = Get-Date -Format 'yyyyMMdd-HHmmss'
         $branchName = New-BranchName -FeatureNum $featureNum -BranchSuffix $branchSuffix
     } else {

@@ -10,7 +10,7 @@ Commands are shown here in `/speckit.*` form, but the exact invocation depends o
 ## Recommended Process
 
 > [!TIP]
-> **Context Awareness**: Spec Kit tracks the active feature by the feature directory recorded in `.specify/feature.json` (overridable with the `SPECIFY_FEATURE_DIRECTORY` environment variable). Commands resolve the feature from that state, **not** from the checked-out Git branch — no Git required. The opt-in **git** extension adds numbered feature branches (e.g. `001-feature-name`) for organizing work in version control, but the active feature is still whichever directory that state points to; `git checkout` alone does not change it. To point commands at a different feature, update `.specify/feature.json` (or set `SPECIFY_FEATURE_DIRECTORY`).
+> **Context Awareness**: Spec Kit tracks the active feature by the feature directory recorded in `.specify/feature.json` (overridable with the `SPECIFY_FEATURE_DIRECTORY` environment variable). Commands resolve the feature from that state, **not** from the checked-out Git branch — no Git required. Set a per-feature `FEATURE_ID` such as `ENHANCEMENT-XYZ` when invoking `/speckit.specify` to replace the default numeric/timestamp prefix; it is normalized to lowercase for the directory and branch. The opt-in **git** extension uses the same identifier for its branch when enabled. The active feature is still whichever directory `.specify/feature.json` points to; `git checkout` alone does not change it.
 
 After installing Spec Kit, each command below is a step in the process. Two paths are common:
 

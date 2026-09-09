@@ -7,6 +7,7 @@ git-specific branch validation and detection logic.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -42,7 +43,9 @@ def effective_branch_name(raw: str) -> str:
     return raw
 
 
-def check_feature_branch(raw: str, has_git_repo: bool) -> bool:
+def check_feature_branch(
+    raw: str, has_git_repo: bool, feature_id: str | None = None
+) -> bool:
     """Validate that a branch name matches the expected feature branch pattern.
 
     Accepts sequential (###-* with >=3 digits) or timestamp (YYYYMMDD-HHMMSS-*)
@@ -67,12 +70,23 @@ def check_feature_branch(raw: str, has_git_repo: bool) -> bool:
         and not re.fullmatch(r"[0-9]{7,8}-[0-9]{6}", feature_segment)
     )
     is_timestamp = bool(re.match(r"^[0-9]{8}-[0-9]{6}-", feature_segment))
+    custom_id = (feature_id if feature_id is not None else os.environ.get("FEATURE_ID", "")).strip()
+    if re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?", custom_id):
+        custom_id = custom_id.lower()
+    is_custom = bool(
+        custom_id
+        and re.fullmatch(
+            r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?", custom_id
+        )
+        and feature_segment.startswith(f"{custom_id}-")
+    )
 
-    if not is_sequential and not is_timestamp:
+    if not is_sequential and not is_timestamp and not is_custom:
         print(f"ERROR: Not on a feature branch. Current branch: {raw}", file=sys.stderr)
         print(
             "Feature branches should be named like: 001-feature-name, "
-            "1234-feature-name, 20260319-143022-feature-name, or "
+            "1234-feature-name, 20260319-143022-feature-name, "
+            "enhancement-xyz-feature-name, or "
             "<prefix>/001-feature-name",
             file=sys.stderr,
         )

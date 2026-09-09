@@ -8,6 +8,7 @@ ALLOW_EXISTING=false
 SHORT_NAME=""
 BRANCH_NUMBER=""
 USE_TIMESTAMP=false
+FEATURE_ID_ARG=""
 NUMBER_EXPLICIT=false
 ARGS=()
 i=1
@@ -56,8 +57,21 @@ while [ $i -le $# ]; do
         --timestamp)
             USE_TIMESTAMP=true
             ;;
+        --feature-id)
+            if [ $((i + 1)) -gt $# ]; then
+                echo 'Error: --feature-id requires a value' >&2
+                exit 1
+            fi
+            i=$((i + 1))
+            next_arg="${!i}"
+            if [[ "$next_arg" == --* ]]; then
+                echo 'Error: --feature-id requires a value' >&2
+                exit 1
+            fi
+            FEATURE_ID_ARG="$next_arg"
+            ;;
         --help|-h)
-            echo "Usage: $0 [--json] [--dry-run] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] <feature_description>"
+            echo "Usage: $0 [--json] [--dry-run] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] [--feature-id <id>] <feature_description>"
             echo ""
             echo "Options:"
             echo "  --json              Output in JSON format"
@@ -66,12 +80,17 @@ while [ $i -le $# ]; do
             echo "  --short-name <name> Provide a custom short name (2-4 words) for the feature"
             echo "  --number N          Prefer a feature number (auto-corrected if its specs prefix exists)"
             echo "  --timestamp         Use timestamp prefix (YYYYMMDD-HHMMSS) instead of sequential numbering"
+            echo "  --feature-id <id>   Use a custom prefix such as ENHANCEMENT-XYZ"
             echo "  --help, -h          Show this help message"
+            echo ""
+            echo "Environment variables:"
+            echo "  FEATURE_ID          Custom prefix used when --feature-id is not provided"
             echo ""
             echo "Examples:"
             echo "  $0 'Add user authentication system' --short-name 'user-auth'"
             echo "  $0 'Implement OAuth2 integration for API' --number 5"
             echo "  $0 --timestamp --short-name 'user-auth' 'Add user authentication'"
+            echo "  $0 --feature-id ENHANCEMENT-XYZ --short-name 'user-auth' 'Add user authentication'"
             exit 0
             ;;
         *)
@@ -83,7 +102,7 @@ done
 
 FEATURE_DESCRIPTION="${ARGS[*]}"
 if [ -z "$FEATURE_DESCRIPTION" ]; then
-    echo "Usage: $0 [--json] [--dry-run] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] <feature_description>" >&2
+    echo "Usage: $0 [--json] [--dry-run] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] [--feature-id <id>] <feature_description>" >&2
     exit 1
 fi
 
@@ -168,6 +187,10 @@ fit_branch_name() {
     if [ ${#branch_name} -gt $MAX_BRANCH_LENGTH ]; then
         local prefix_length=$(( ${#feature_num} + 1 ))
         local max_suffix_length=$((MAX_BRANCH_LENGTH - prefix_length))
+        if [ "$max_suffix_length" -le 0 ]; then
+            echo "Error: feature prefix is too long for a branch name" >&2
+            return 1
+        fi
         local truncated_suffix
         truncated_suffix=$(printf '%s' "$branch_suffix" | cut -c "1-$max_suffix_length" | sed 's/-$//')
         branch_name="${feature_num}-${truncated_suffix}"
@@ -266,13 +289,33 @@ else
 fi
 
 # Warn if --number and --timestamp are both specified
-if [ "$USE_TIMESTAMP" = true ] && [ -n "$BRANCH_NUMBER" ]; then
+CUSTOM_FEATURE_ID="${FEATURE_ID_ARG:-${FEATURE_ID:-}}"
+CUSTOM_FEATURE_ID=$(printf '%s' "$CUSTOM_FEATURE_ID" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+if [ -n "$CUSTOM_FEATURE_ID" ] && [[ ! "$CUSTOM_FEATURE_ID" =~ ^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$ ]]; then
+    echo "Error: feature identifier must start and end with a letter or digit and contain only letters, digits, dots, underscores, or hyphens" >&2
+    exit 1
+fi
+CUSTOM_FEATURE_ID=$(printf '%s' "$CUSTOM_FEATURE_ID" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+
+if [ -n "$CUSTOM_FEATURE_ID" ] && { [ "$USE_TIMESTAMP" = true ] || [ -n "$BRANCH_NUMBER" ]; }; then
+    >&2 echo "[specify] Warning: --number and --timestamp are ignored when a custom feature identifier is used"
+    BRANCH_NUMBER=""
+elif [ "$USE_TIMESTAMP" = true ] && [ -n "$BRANCH_NUMBER" ]; then
     >&2 echo "[specify] Warning: --number is ignored when --timestamp is used"
     BRANCH_NUMBER=""
 fi
 
 # Determine branch prefix
-if [ "$USE_TIMESTAMP" = true ]; then
+if [ -n "$CUSTOM_FEATURE_ID" ]; then
+    FEATURE_NUM="$CUSTOM_FEATURE_ID"
+    REQUESTED_BRANCH_NAME=$(fit_branch_name "$FEATURE_NUM" "$BRANCH_SUFFIX")
+    REQUESTED_DIR="$SPECS_DIR/$REQUESTED_BRANCH_NAME"
+    if { [ "$ALLOW_EXISTING" != true ] || [ ! -d "$REQUESTED_DIR" ]; } \
+        && spec_prefix_exists "$SPECS_DIR" "$FEATURE_NUM"; then
+        echo "Error: feature identifier '$FEATURE_NUM' conflicts with an existing spec directory" >&2
+        exit 1
+    fi
+elif [ "$USE_TIMESTAMP" = true ]; then
     FEATURE_NUM=$(date +%Y%m%d-%H%M%S)
     BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
 else

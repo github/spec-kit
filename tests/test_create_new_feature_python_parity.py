@@ -225,6 +225,135 @@ def test_all_variants_timestamp_mode_match_shape(repo: Path) -> None:
 
 
 @requires_bash
+def test_all_variants_custom_feature_id_normalizes_to_lowercase(repo: Path) -> None:
+    args = (
+        "--json",
+        "--dry-run",
+        "--feature-id",
+        "ENHANCEMENT-XYZ",
+        "--short-name",
+        "user-auth",
+        "x",
+    )
+    bash = run(bash_cmd(repo, SCRIPT, *args), repo)
+    py = run(py_cmd(repo, SCRIPT, *args), repo)
+    results = [bash, py]
+    if HAS_POWERSHELL:
+        results.append(
+            run(
+                ps_cmd(
+                    repo,
+                    SCRIPT,
+                    "-Json",
+                    "-DryRun",
+                    "-FeatureId",
+                    "ENHANCEMENT-XYZ",
+                    "-ShortName",
+                    "user-auth",
+                    "x",
+                ),
+                repo,
+            )
+        )
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["BRANCH_NAME"] == "enhancement-xyz-user-auth"
+        for result in results
+    )
+    assert all(
+        json_stdout(result)["FEATURE_NUM"] == "enhancement-xyz"
+        for result in results
+    )
+
+
+@requires_bash
+def test_custom_feature_id_environment_matches_flag(repo: Path) -> None:
+    env = clean_env()
+    env["FEATURE_ID"] = "WORK_ITEM.42"
+    bash = run(
+        bash_cmd(repo, SCRIPT, "--json", "--dry-run", "--short-name", "sync", "x"),
+        repo,
+        env=env,
+    )
+    py = run(
+        py_cmd(repo, SCRIPT, "--json", "--dry-run", "--short-name", "sync", "x"),
+        repo,
+        env=env,
+    )
+
+    assert bash.returncode == py.returncode == 0
+    assert json_stdout(bash) == json_stdout(py)
+    assert json_stdout(py)["BRANCH_NAME"] == "work_item.42-sync"
+
+
+@requires_bash
+def test_custom_feature_id_full_run_creates_matching_directory(
+    repo_pair: tuple[Path, Path],
+) -> None:
+    repo_a, repo_b = repo_pair
+    args = (
+        "--json",
+        "--feature-id",
+        "ENHANCEMENT-XYZ",
+        "--short-name",
+        "user-auth",
+        "x",
+    )
+    bash = run(bash_cmd(repo_a, SCRIPT, *args), repo_a)
+    py = run(py_cmd(repo_b, SCRIPT, *args), repo_b)
+
+    assert bash.returncode == py.returncode == 0
+    assert normalize_repo_paths(py.stdout, repo_b) == normalize_repo_paths(
+        bash.stdout, repo_a
+    )
+    for current in repo_pair:
+        assert (
+            current / "specs" / "enhancement-xyz-user-auth" / "spec.md"
+        ).is_file()
+        assert (
+            current / ".specify" / "feature.json"
+        ).read_text(encoding="utf-8") == (
+            '{"feature_directory":"specs/enhancement-xyz-user-auth"}\n'
+        )
+
+
+@requires_bash
+@pytest.mark.parametrize("feature_id", ["../BAD", "-BAD", "BAD/", "BAD value"])
+def test_custom_feature_id_rejects_unsafe_values(
+    repo: Path, feature_id: str
+) -> None:
+    args = ("--json", "--dry-run", "--feature-id", feature_id, "x")
+    bash = run(bash_cmd(repo, SCRIPT, *args), repo)
+    py = run(py_cmd(repo, SCRIPT, *args), repo)
+
+    assert bash.returncode == py.returncode == 1
+    assert bash.stdout == py.stdout == ""
+    assert "feature identifier must start and end" in bash.stderr
+    assert py.stderr == bash.stderr
+
+
+@requires_bash
+def test_custom_feature_id_conflict_fails_instead_of_renumbering(repo: Path) -> None:
+    (repo / "specs" / "enhancement-xyz-existing").mkdir(parents=True)
+    args = (
+        "--json",
+        "--dry-run",
+        "--feature-id",
+        "ENHANCEMENT-XYZ",
+        "--short-name",
+        "new",
+        "x",
+    )
+    bash = run(bash_cmd(repo, SCRIPT, *args), repo)
+    py = run(py_cmd(repo, SCRIPT, *args), repo)
+
+    assert bash.returncode == py.returncode == 1
+    assert "conflicts with an existing spec directory" in bash.stderr
+    assert py.stderr == bash.stderr
+
+
+@requires_bash
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
 def test_all_variants_timestamp_number_warning_matches(repo: Path) -> None:
     args = (
