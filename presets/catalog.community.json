@@ -488,7 +488,7 @@
     "inventory-alignment": {
       "name": "Inventory Alignment",
       "id": "inventory-alignment",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Classifies each requirement against a read-only inventory of live IDs before writing, so reworded requirements are updated instead of duplicated.",
       "author": "Yash Chindam",
       "repository": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment",
