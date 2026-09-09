@@ -15617,6 +15617,51 @@ class TestPresetUpdate:
         assert metadata["enabled"] is False
         assert (project_dir / ".specify/presets/test-pack/preset.yml").exists()
 
+    @pytest.mark.parametrize("enabled", [False, True])
+    def test_post_commit_backup_cleanup_failure_warns_without_failing_update(
+        self, project_dir, pack_dir, monkeypatch, enabled
+    ):
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        if not enabled:
+            manager.registry.update("test-pack", {"enabled": False})
+        source = self._updated_source(pack_dir)
+        original_rmtree = shutil.rmtree
+
+        def fail_committed_backup(path, *args, **kwargs):
+            if Path(path).name.startswith(".test-pack.update-") and Path(
+                path
+            ).name.endswith(".bak"):
+                raise PermissionError("simulated committed backup cleanup failure")
+            return original_rmtree(path, *args, **kwargs)
+
+        monkeypatch.setattr(shutil, "rmtree", fail_committed_backup)
+
+        with pytest.warns(UserWarning, match="updated successfully") as caught:
+            manifest, diff = manager.update_from_directory(
+                source, "0.1.0", pack_id="test-pack"
+            )
+
+        assert manifest.version == "2.0.0"
+        assert diff["added"]
+        metadata = manager.registry.get("test-pack")
+        assert metadata["version"] == "2.0.0"
+        assert metadata["enabled"] is enabled
+        assert "2.0.0" in (
+            project_dir / ".specify/presets/test-pack/preset.yml"
+        ).read_text(encoding="utf-8")
+        backups = list(
+            (project_dir / ".specify/presets").glob(
+                ".test-pack.update-*.bak"
+            )
+        )
+        assert len(backups) == 1
+        warning = str(caught[0].message)
+        assert "temporary backup path" in warning
+        assert str(backups[0]) in warning
+        assert "Inspect and remove this recovery artifact" in warning
+        original_rmtree(backups[0])
+
     def test_dry_run_does_not_modify_installation(self, project_dir, pack_dir):
         manager = PresetManager(project_dir)
         manager.install_from_directory(pack_dir, "0.1.0", priority=4)
@@ -16961,6 +17006,42 @@ class TestPresetUpdate:
         registry = PresetManager(project_dir).registry
         assert registry.get("test-pack")["version"] == "2.0.0"
         assert registry.get("second-pack")["version"] == "2.0.0"
+
+    def test_cli_bulk_cleanup_warning_does_not_report_successful_update_as_failed(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        self._two_actionable_packs(project_dir, pack_dir, monkeypatch)
+        original_rmtree = shutil.rmtree
+
+        def fail_first_committed_backup(path, *args, **kwargs):
+            name = Path(path).name
+            if name.startswith(".test-pack.update-") and name.endswith(".bak"):
+                raise PermissionError("simulated committed backup cleanup failure")
+            return original_rmtree(path, *args, **kwargs)
+
+        monkeypatch.setattr(shutil, "rmtree", fail_first_committed_backup)
+
+        with pytest.warns(UserWarning, match="updated successfully") as caught:
+            result = CliRunner().invoke(app, ["preset", "update"], input="y\n")
+
+        assert result.exit_code == 0, result.output
+        assert "test-pack: updated" in result.output
+        assert "second-pack: updated" in result.output
+        assert "failed" not in result.output
+        registry = PresetManager(project_dir).registry
+        assert registry.get("test-pack")["version"] == "2.0.0"
+        assert registry.get("second-pack")["version"] == "2.0.0"
+        backups = list(
+            (project_dir / ".specify/presets").glob(
+                ".test-pack.update-*.bak"
+            )
+        )
+        assert len(backups) == 1
+        assert str(backups[0]) in str(caught[0].message)
+        original_rmtree(backups[0])
 
     def test_cli_all_flag_matches_bare_bulk_invocation(
         self, project_dir, pack_dir, monkeypatch

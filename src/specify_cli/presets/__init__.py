@@ -4383,11 +4383,26 @@ class PresetManager:
         os.rmdir(swap_token)
         staging_dir = Path(f"{swap_token}.staging")
         backup_dir = Path(f"{swap_token}.bak")
+
         def remove_swap_path(path: Path) -> None:
             if path.is_symlink():
                 path.unlink()
             elif path.exists():
                 shutil.rmtree(path)
+
+        def remove_committed_swap_path(path: Path, artifact_kind: str) -> None:
+            try:
+                remove_swap_path(path)
+            except OSError as exc:
+                import warnings
+
+                warnings.warn(
+                    f"Preset '{target_id}' was updated successfully, but its "
+                    f"temporary {artifact_kind} path could not be removed: "
+                    f"{path} ({exc}). Inspect and remove this recovery "
+                    "artifact manually once it is safe to do so.",
+                    stacklevel=2,
+                )
 
         def ignore_staging_state(directory: str, names: List[str]) -> Set[str]:
             directory_path = Path(directory)
@@ -4470,8 +4485,8 @@ class PresetManager:
             # provenance until removal. Updating only replaces the source and
             # metadata while retaining enough ownership data for a later
             # removal to clean up artifacts left on disk.
-            remove_swap_path(backup_dir)
-            remove_swap_path(staging_dir)
+            remove_committed_swap_path(backup_dir, "backup")
+            remove_committed_swap_path(staging_dir, "staging")
             return new_manifest, diff
 
         primary_command_names = {
@@ -4810,8 +4825,8 @@ class PresetManager:
                 stacklevel=2,
             )
         finally:
-            remove_swap_path(backup_dir)
-            remove_swap_path(staging_dir)
+            remove_committed_swap_path(backup_dir, "backup")
+            remove_committed_swap_path(staging_dir, "staging")
         return new_manifest, diff
 
     def update_from_archive(
