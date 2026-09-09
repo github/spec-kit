@@ -33,8 +33,8 @@ checkout:
   fetch-depth: 0
 
 safe-outputs:
-  # The agent never receives a GitHub write tool. These two jobs are the only
-  # write path and re-fetch the PR immediately before each mutation.
+  # The agent never receives a GitHub write tool. This job is the only
+  # assessment publication path and re-fetches the PR immediately before each mutation.
   jobs:
     community-assess-publish:
       description: "Publish one SHA-qualified assessment comment and its single outcome label after a trusted freshness check"
