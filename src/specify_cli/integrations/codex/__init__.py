@@ -6,6 +6,9 @@ Commands are deprecated; ``--skills`` defaults to ``True``.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+from typing import Any
+
 from ..base import IntegrationOption, SkillsIntegration
 
 
@@ -46,10 +49,13 @@ class CodexIntegration(SkillsIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> list[str] | None:
         # Codex uses ``codex exec "prompt"`` for non-interactive mode.
         # Resolve argv[0] via the shared executable resolver so operators can
         # override the binary with SPECKIT_INTEGRATION_CODEX_EXECUTABLE.
+        self.validate_runtime_config(integration_args, integration_options)
         args: list[str] = [self._resolve_executable(), "exec", prompt]
         self._apply_extra_args_env_var(args)
         if model:
