@@ -59,6 +59,17 @@ EXAMPLES:
 # Get feature paths
 $paths = Get-FeaturePathsEnv
 
+# In paths-only mode, feature.json may contain a path written on another OS.
+# Derive the fallback branch from either slash style rather than relying on
+# platform-specific Path/Split-Path separator semantics.
+if ($PathsOnly -and -not $env:SPECIFY_FEATURE) {
+    $portableFeatureDir = ([string]$paths.FEATURE_DIR).TrimEnd('/', '\')
+    $portableLeaf = ($portableFeatureDir -split '[\\/]+')[-1]
+    if ($portableLeaf) {
+        $paths.CURRENT_BRANCH = $portableLeaf
+    }
+}
+
 # If paths-only mode, output paths and exit (no validation)
 if ($PathsOnly) {
     if ($Json) {
