@@ -109,7 +109,9 @@ Follow this execution flow:
    - Ensure each Principle section: succinct name line, paragraph (or bullet list) capturing non‑negotiable rules, explicit rationale if not obvious.
    - Ensure Governance section lists amendment procedure, versioning policy, and compliance review expectations.
 
-4. Produce a Sync Impact Report (prepend as an HTML comment at top of the constitution file after update):
+4. Produce a Sync Impact Report as an HTML comment at the top of the constitution file after update.
+   This report is temporary scratch material for human review of the amendment, not governance
+   content; it is expected to be removed before the amended constitution file is committed.
    - Version change: old → new
    - List of modified principles (old title → new title if renamed)
    - Added sections
