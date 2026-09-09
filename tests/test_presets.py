@@ -11757,6 +11757,127 @@ class TestPresetEnableDisable:
             codex_skills / "speckit-specify" / "SKILL.md"
         ).read_text(encoding="utf-8")
 
+    def test_enable_refreshes_changed_current_artifacts_for_recorded_agents(
+        self, project_dir, temp_dir
+    ):
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        skills = TestPresetSkills()
+        skills._write_init_options(project_dir, ai="claude", ai_skills=True)
+        manager = PresetManager(project_dir)
+        source_v1 = skills._create_command_preset(
+            temp_dir,
+            "changed-current-preset",
+            "speckit.specify",
+            "Changed",
+            "Changed body v1",
+        )
+        manager.install_from_directory(source_v1, "0.1.0")
+
+        skills._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        manager.registry.update("changed-current-preset", {"enabled": False})
+
+        source_v2 = skills._create_command_preset(
+            temp_dir,
+            "changed-current-preset-v2",
+            "speckit.specify",
+            "Changed",
+            "Changed body v2",
+        )
+        data = yaml.safe_load((source_v2 / "preset.yml").read_text())
+        data["preset"]["id"] = "changed-current-preset"
+        data["preset"]["version"] = "2.0.0"
+        (source_v2 / "preset.yml").write_text(yaml.safe_dump(data))
+        manager.update_from_directory(
+            source_v2, "0.1.0", pack_id="changed-current-preset"
+        )
+
+        skills._write_init_options(project_dir, ai="amp", ai_skills=True)
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "enable", "changed-current-preset"]
+            )
+
+        assert result.exit_code == 0, result.output
+        for skill_dir in (
+            project_dir / ".claude" / "skills",
+            project_dir / ".agents" / "skills",
+        ):
+            assert "Changed body v2" in (
+                skill_dir / "speckit-specify" / "SKILL.md"
+            ).read_text(encoding="utf-8")
+        assert not (project_dir / ".amp" / "skills" / "speckit-specify").exists()
+
+    def test_enable_refreshes_only_tracked_commands_for_historical_agent(
+        self, project_dir, temp_dir
+    ):
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        skills = TestPresetSkills()
+        skills._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        (project_dir / ".gemini" / "commands").mkdir(parents=True)
+        manager = PresetManager(project_dir)
+        source_v1 = skills._create_command_preset(
+            temp_dir,
+            "changed-command-preset",
+            "speckit.specify",
+            "Changed",
+            "Changed body v1",
+        )
+        manager.install_from_directory(source_v1, "0.1.0")
+
+        skills._write_init_options(project_dir, ai="opencode", ai_skills=False)
+        (project_dir / ".opencode" / "commands").mkdir(parents=True)
+        manager.register_enabled_presets_for_agent("opencode")
+        manager.registry.update("changed-command-preset", {"enabled": False})
+
+        source_v2 = skills._create_command_preset(
+            temp_dir,
+            "changed-command-preset-v2",
+            "speckit.specify",
+            "Changed",
+            "Changed body v2",
+        )
+        data = yaml.safe_load((source_v2 / "preset.yml").read_text())
+        data["preset"]["id"] = "changed-command-preset"
+        data["preset"]["version"] = "2.0.0"
+        data["provides"]["templates"].append(
+            {
+                "type": "command",
+                "name": "speckit.plan",
+                "file": "commands/speckit.plan.md",
+            }
+        )
+        (source_v2 / "commands" / "speckit.plan.md").write_text(
+            "---\ndescription: Plan\n---\n\nNew plan body\n"
+        )
+        (source_v2 / "preset.yml").write_text(yaml.safe_dump(data))
+        manager.update_from_directory(
+            source_v2, "0.1.0", pack_id="changed-command-preset"
+        )
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "enable", "changed-command-preset"]
+            )
+
+        assert result.exit_code == 0, result.output
+        gemini_commands = project_dir / ".gemini" / "commands"
+        assert "Changed body v2" in (
+            gemini_commands / "speckit.specify.toml"
+        ).read_text(encoding="utf-8")
+        assert not (gemini_commands / "speckit.plan.toml").exists()
+        assert (project_dir / ".opencode" / "commands" / "speckit.plan.md").exists()
+
     def test_enable_reconciles_stale_skill_for_namespaced_command(
         self, project_dir, temp_dir
     ):
@@ -16888,6 +17009,29 @@ class TestPresetUpdate:
         assert "Up to date, skipped" in result.output
         assert PresetManager(project_dir).registry.get("test-pack")["version"] == "5.0.0"
 
+    def test_cli_bulk_bundled_missing_local_copy_skips_newer_installed_version(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        manager.registry.update("test-pack", {"version": "3.0.0"})
+        self._bulk_cli_env(
+            project_dir,
+            monkeypatch,
+            {"test-pack": {"version": "2.0.0", "bundled": True}},
+            {},
+        )
+
+        result = CliRunner().invoke(app, ["preset", "update", "--all"])
+
+        assert result.exit_code == 0, result.output
+        assert "Up to date, skipped" in result.output
+        assert PresetManager(project_dir).registry.get("test-pack")["version"] == "3.0.0"
+
     def test_cli_bulk_priority_is_ignored_for_equal_catalogue_version(
         self, project_dir, pack_dir, monkeypatch
     ):
@@ -16965,6 +17109,34 @@ class TestPresetUpdate:
         assert metadata["version"] == "5.0.0"
         assert metadata["priority"] == 7
 
+    def test_cli_single_priority_bundled_missing_local_copy_uses_set_priority_error(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0", priority=7)
+        manager.registry.update("test-pack", {"version": "3.0.0"})
+        self._bulk_cli_env(
+            project_dir,
+            monkeypatch,
+            {"test-pack": {"version": "2.0.0", "bundled": True}},
+            {},
+        )
+
+        result = CliRunner().invoke(
+            app, ["preset", "update", "test-pack", "--priority", "3"]
+        )
+
+        assert result.exit_code == 1, result.output
+        assert "newer than catalogue" in result.output
+        assert "preset set-priority" in result.output
+        metadata = PresetManager(project_dir).registry.get("test-pack")
+        assert metadata["version"] == "3.0.0"
+        assert metadata["priority"] == 7
+
     def test_cli_bundled_update_uses_local_bundled_version_when_newer(
         self, project_dir, pack_dir, monkeypatch
     ):
@@ -16973,6 +17145,54 @@ class TestPresetUpdate:
 
         manager = PresetManager(project_dir)
         manager.install_from_directory(pack_dir, "0.1.0")
+        local_source = self._updated_source(pack_dir, version="3.0.0")
+        self._bulk_cli_env(
+            project_dir,
+            monkeypatch,
+            {"test-pack": {"version": "2.0.0", "bundled": True}},
+            {"test-pack": local_source},
+        )
+
+        result = CliRunner().invoke(app, ["preset", "update", "test-pack"])
+
+        assert result.exit_code == 0, result.output
+        assert "updated to v3.0.0" in result.output
+        assert PresetManager(project_dir).registry.get("test-pack")["version"] == "3.0.0"
+
+    def test_cli_bulk_bundled_update_uses_local_version_when_catalogue_matches_installed(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        manager.registry.update("test-pack", {"version": "2.0.0"})
+        local_source = self._updated_source(pack_dir, version="3.0.0")
+        self._bulk_cli_env(
+            project_dir,
+            monkeypatch,
+            {"test-pack": {"version": "2.0.0", "bundled": True}},
+            {"test-pack": local_source},
+        )
+
+        result = CliRunner().invoke(app, ["preset", "update", "--all"], input="y\n")
+
+        assert result.exit_code == 0, result.output
+        assert "updated to v3.0.0" in result.output
+        assert PresetManager(project_dir).registry.get("test-pack")["version"] == "3.0.0"
+
+    def test_cli_single_bundled_update_uses_local_version_when_catalogue_matches_installed(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.0")
+        manager.registry.update("test-pack", {"version": "2.0.0"})
         local_source = self._updated_source(pack_dir, version="3.0.0")
         self._bulk_cli_env(
             project_dir,
@@ -17024,6 +17244,42 @@ class TestPresetUpdate:
         assert result.exit_code == 1, result.output
         assert "not re-resolvable" in result.output
         assert "--from/--dev" in result.output
+
+    def test_update_legacy_skills_normalizes_missing_active_agent_fallback(
+        self, project_dir, temp_dir
+    ):
+        from unittest.mock import patch
+
+        from specify_cli._init_options import MISSING_INIT_OPTIONS_FILE
+
+        manager = PresetManager(project_dir)
+        source_v1 = self._multi_command_preset(
+            temp_dir,
+            "legacy-update-preset",
+            {"speckit.keep": "Keep v1"},
+            version="1.0.0",
+        )
+        manager.install_from_directory(source_v1, "0.1.0")
+        manager.registry.update(
+            "legacy-update-preset",
+            {"registered_skills": ["unmatched-legacy-skill"]},
+        )
+        source_v2 = self._updated_command_source(
+            source_v1, "2.0.0", "Keep v2"
+        )
+
+        with patch(
+            "specify_cli.presets.resolve_active_agent_for_registration",
+            return_value=MISSING_INIT_OPTIONS_FILE,
+        ):
+            manager.update_from_directory(
+                source_v2, "0.1.0", pack_id="legacy-update-preset"
+            )
+
+        reloaded = PresetManager(project_dir).registry.get("legacy-update-preset")
+        assert reloaded["version"] == "2.0.0"
+        assert isinstance(reloaded.get("registered_skills"), dict)
+        assert all(isinstance(agent, str) for agent in reloaded["registered_skills"])
 
     def test_update_removing_command_reconciles_surviving_preset_for_native_skill_agent(
         self, project_dir, temp_dir

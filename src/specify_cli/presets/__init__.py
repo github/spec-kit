@@ -4536,6 +4536,7 @@ class PresetManager:
                 new_manifest, current_dir, command_names=primary_command_names
             )
             active_agent = resolve_active_agent_for_registration(self.project_root)
+            fallback_agent = active_agent if isinstance(active_agent, str) else ""
             merged_commands: Dict[str, List[str]] = {}
             for agent, names in registered_commands_before.items():
                 if isinstance(names, list):
@@ -4562,7 +4563,7 @@ class PresetManager:
                 registered_skills_before = self._infer_legacy_skill_provenance(
                     [name for name in raw_registered_skills_before if isinstance(name, str)],
                     target_id,
-                    active_agent or "",
+                    fallback_agent,
                 )
             elif isinstance(raw_registered_skills_before, dict):
                 registered_skills_before = copy.deepcopy(raw_registered_skills_before)
@@ -4690,7 +4691,7 @@ class PresetManager:
                                 if isinstance(name, str)
                             ],
                             other_id,
-                            active_agent or "",
+                            fallback_agent,
                         )
                     elif isinstance(raw_other_skills, dict):
                         other_skills = raw_other_skills

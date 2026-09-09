@@ -531,6 +531,29 @@ def preset_update(
     installed = manager.list_installed()
     bulk = all_presets or not preset_id
     effective_priority = None if bulk else priority
+
+    def resolve_bundled_candidate(item_id, catalog_version, installed_version):
+        source_path, bundled_version = _bundled_update_source(item_id)
+        if source_path is not None and bundled_version >= catalog_version:
+            return source_path, bundled_version
+        if catalog_version < installed_version and effective_priority is not None:
+            raise PresetError(
+                f"installed preset version {installed_version} is newer than "
+                f"catalogue version {catalog_version}; use 'specify preset "
+                "set-priority' to reprioritize without downgrading"
+            )
+        if catalog_version <= installed_version and effective_priority is None:
+            return None, installed_version
+        local_desc = (
+            f"only ships v{bundled_version}"
+            if source_path is not None
+            else "does not ship a local copy"
+        )
+        raise PresetError(
+            f"preset v{catalog_version} is available, but this spec-kit release "
+            f"{local_desc}; upgrade spec-kit, then rerun 'specify preset update'"
+        )
+
     ids = [preset_id] if not bulk else [item["id"] for item in installed]
     if not ids:
         console.print("[yellow]No presets installed.[/yellow]")
@@ -573,6 +596,13 @@ def preset_update(
                         f"'{pack_info.get('_catalog_name', 'catalog')}'"
                     )
                 catalog_version = pkg_version.Version(str(pack_info["version"]))
+                source_path = None
+                if pack_info.get("bundled") and not pack_info.get("download_url"):
+                    source_path, catalog_version = resolve_bundled_candidate(
+                        item_id, catalog_version, installed_version
+                    )
+                    if source_path is not None:
+                        pack_info = {**pack_info, "version": str(catalog_version)}
                 if catalog_version <= installed_version and effective_priority is None:
                     console.print(
                         f"[dim]• {safe_id}: Up to date, skipped "
@@ -580,20 +610,7 @@ def preset_update(
                     )
                     outcomes.append("skipped")
                     continue
-                if pack_info.get("bundled") and not pack_info.get("download_url"):
-                    source_path, bundled_version = _bundled_update_source(item_id)
-                    if source_path is None or bundled_version < catalog_version:
-                        local_desc = (
-                            f"only ships v{bundled_version}"
-                            if source_path is not None
-                            else "does not ship a local copy"
-                        )
-                        raise PresetError(
-                            f"preset v{catalog_version} is available, but this "
-                            f"spec-kit release {local_desc}; upgrade spec-kit, "
-                            "then rerun 'specify preset update'"
-                        )
-                    pack_info = {**pack_info, "version": str(bundled_version)}
+                if source_path is not None:
                     manager.update_from_directory(
                         source_path,
                         speckit_version,
@@ -707,6 +724,20 @@ def preset_update(
                     raise PresetError(
                         f"catalog entry for preset '{item_id}' has an invalid version"
                     ) from exc
+                if pack_info.get("bundled") and not pack_info.get("download_url"):
+                    bundled_source = catalog_sources.get(item_id)
+                    if bundled_source is not None:
+                        source_path = bundled_source
+                        catalog_version = pkg_version.Version(str(pack_info["version"]))
+                    else:
+                        source_path, catalog_version = resolve_bundled_candidate(
+                            item_id, catalog_version, installed_version
+                        )
+                        if source_path is not None:
+                            pack_info = {
+                                **pack_info,
+                                "version": str(catalog_version),
+                            }
                 if catalog_version < installed_version:
                     if effective_priority is not None:
                         raise PresetError(
@@ -729,23 +760,6 @@ def preset_update(
                     outcomes.append("skipped")
                     continue
                 if pack_info.get("bundled") and not pack_info.get("download_url"):
-                    bundled_source = catalog_sources.get(item_id)
-                    if bundled_source is not None:
-                        source_path = bundled_source
-                    else:
-                        source_path, bundled_version = _bundled_update_source(item_id)
-                        if source_path is None or bundled_version < catalog_version:
-                            local_desc = (
-                                f"only ships v{bundled_version}"
-                                if source_path is not None
-                                else "does not ship a local copy"
-                            )
-                            raise PresetError(
-                                f"preset v{catalog_version} is available, but this "
-                                f"spec-kit release {local_desc}; upgrade spec-kit, "
-                                "then rerun 'specify preset update'"
-                            )
-                        pack_info = {**pack_info, "version": str(bundled_version)}
                     if source_path is None:
                         raise PresetError(
                             f"Preset '{item_id}' is bundled with spec-kit but "
@@ -1407,6 +1421,65 @@ def preset_enable(
                 manager.registry.update(preset_id, {"registered_skills": merged_skills})
         elif isinstance(resolved_agent, str):
             manager.register_enabled_presets_for_agent(resolved_agent)
+
+        # Group identical tracked-name sets so historical agents stay scoped
+        # without repeating the helper's active-agent reconciliation per key.
+        historical_command_groups: dict[tuple[str, ...], set[str]] = {}
+        if isinstance(registered_commands, dict):
+            for agent, names in registered_commands.items():
+                if agent == resolved_agent or not isinstance(agent, str):
+                    continue
+                if not isinstance(names, list):
+                    continue
+                tracked_names = tuple(
+                    sorted(
+                        current_command_names.intersection(
+                            name for name in names if isinstance(name, str)
+                        )
+                    )
+                )
+                if tracked_names:
+                    historical_command_groups.setdefault(tracked_names, set()).add(
+                        agent
+                    )
+        for tracked_names, agents in historical_command_groups.items():
+            manager._reconcile_composed_commands(
+                list(tracked_names),
+                extra_agents=agents,
+            )
+
+        historical_skill_dirs: dict[Path, tuple[str, list[str]]] = {}
+        historical_skill_agents: dict[Path, set[str]] = {}
+        active_skill_dir = manager._get_skills_dir()
+        if isinstance(registered_skills, dict):
+            for agent, names in registered_skills.items():
+                if agent == resolved_agent or not isinstance(agent, str):
+                    continue
+                if not isinstance(names, list):
+                    continue
+                tracked_names = {
+                    name
+                    for name in names
+                    if isinstance(name, str) and name in current_skill_names
+                }
+                if not tracked_names:
+                    continue
+                skill_dir = manager._safe_skills_dir_for_agent(agent)
+                if skill_dir is None or skill_dir == active_skill_dir:
+                    continue
+                historical_skill_agents.setdefault(skill_dir, set()).add(agent)
+                _existing_agent, existing_names = historical_skill_dirs.get(
+                    skill_dir, (agent, [])
+                )
+                historical_skill_dirs[skill_dir] = (
+                    min(historical_skill_agents[skill_dir]),
+                    sorted(set(existing_names).union(tracked_names)),
+                )
+        if historical_skill_dirs:
+            manager._reconcile_skills(
+                sorted(current_command_names),
+                extra_skills_dirs=historical_skill_dirs,
+            )
 
         reconcile_command_names = sorted(
             {name for names in stale_commands.values() for name in names}
