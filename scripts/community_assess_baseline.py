@@ -138,16 +138,21 @@ def is_community_pr(item: dict[str, Any]) -> bool:
     )
 
 
-def status_group(pr: dict[str, Any]) -> str:
-    if pr.get("merged_at"):
+def status_group(pr: dict[str, Any], observed_at: str | None = None) -> str:
+    """Classify the PR using only terminal events known by observed_at."""
+
+    def happened(value: str | None) -> bool:
+        return bool(value and (observed_at is None or parse_timestamp(value) <= parse_timestamp(observed_at)))
+
+    if happened(pr.get("merged_at")):
         return "merged"
-    if pr.get("state") == "closed":
+    if pr.get("state") == "closed" and happened(pr.get("closed_at")):
         return "closed-unmerged"
     return "open"
 
 
-def stratum_key(pr: dict[str, Any]) -> str:
-    return f"{status_group(pr)}:{pr.get('author_association', 'UNKNOWN')}"
+def stratum_key(pr: dict[str, Any], observed_at: str | None = None) -> str:
+    return f"{status_group(pr, observed_at)}:{pr.get('author_association', 'UNKNOWN')}"
 
 
 def deterministic_order(repo: str, since: str, until: str, pr: dict[str, Any]) -> tuple[str, int]:
@@ -188,10 +193,11 @@ def select_sample(
     until: str,
     prs: Iterable[dict[str, Any]],
     sample_size: int,
+    observed_at: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int], dict[str, int]]:
     by_stratum: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for pr in prs:
-        by_stratum[stratum_key(pr)].append(pr)
+        by_stratum[stratum_key(pr, observed_at)].append(pr)
     population = {key: len(value) for key, value in sorted(by_stratum.items())}
     allocation = allocate_counts(population, sample_size)
     sample: list[dict[str, Any]] = []
@@ -211,23 +217,27 @@ def enrich_pr(api: GitHubAPI, pr: dict[str, Any], measurement_at: str) -> dict[s
     check_runs: list[dict[str, Any]] = []
     statuses: list[dict[str, Any]] = []
     if head_sha:
-        check_runs = api.get(
-            f"/repos/{api.repo}/commits/{head_sha}/check-runs",
-            {"per_page": 100},
-        ).get("check_runs", [])
-        statuses = api.get(
-            f"/repos/{api.repo}/commits/{head_sha}/status",
-            {"per_page": 100},
-        ).get("statuses", [])
+        check_runs = paginate_field(
+            api, f"/repos/{api.repo}/commits/{head_sha}/check-runs", "check_runs"
+        )
+        statuses = paginate_field(
+            api, f"/repos/{api.repo}/commits/{head_sha}/status", "statuses"
+        )
     submitted = sorted(
         review["submitted_at"]
         for review in reviews
-        if review.get("submitted_at") and review.get("state") not in {"PENDING"}
+        if review.get("submitted_at")
+        and parse_timestamp(review["submitted_at"]) <= parse_timestamp(measurement_at)
+        and review.get("state") not in {"PENDING"}
     )
     first_review_at = submitted[0] if submitted else None
     created_at = detail["created_at"]
-    close_at = detail.get("merged_at") or detail.get("closed_at") or measurement_at
-    terminal_minutes = minutes_between(created_at, close_at)
+    observed_status = status_group(detail, measurement_at)
+    terminal_at = (
+        detail.get("merged_at") if observed_status == "merged" else detail.get("closed_at")
+    )
+    close_at = terminal_at if terminal_at and parse_timestamp(terminal_at) <= parse_timestamp(measurement_at) else measurement_at
+    observation_or_terminal_minutes = minutes_between(created_at, close_at)
     first_review_minutes = minutes_between(created_at, first_review_at)
     review_states = Counter(
         str(review.get("state", "UNKNOWN"))
@@ -240,8 +250,8 @@ def enrich_pr(api: GitHubAPI, pr: dict[str, Any], measurement_at: str) -> dict[s
         "title": detail.get("title", ""),
         "author_association": detail.get("author_association"),
         "author_login": detail.get("user", {}).get("login"),
-        "status": status_group(detail),
-        "state": detail.get("state"),
+        "status": observed_status,
+        "state": "closed" if observed_status in {"merged", "closed-unmerged"} else "open",
         "created_at": created_at,
         "closed_at": detail.get("closed_at"),
         "merged_at": detail.get("merged_at"),
@@ -252,15 +262,32 @@ def enrich_pr(api: GitHubAPI, pr: dict[str, Any], measurement_at: str) -> dict[s
         "comment_count": len(comments),
         "review_count": len(submitted),
         "review_states": dict(sorted(review_states.items())),
-        "first_review_at": first_review_at,
-        "first_review_minutes": first_review_minutes,
+        "first_submitted_review_at": first_review_at,
+        "minutes_to_first_submitted_review": first_review_minutes,
         "check_run_count": len(check_runs),
         "status_count": len(statuses),
-        "time_to_terminal_minutes": terminal_minutes,
+        "time_to_terminal_or_observation_minutes": observation_or_terminal_minutes,
         # GitHub has no field for these human-time measures.
         "clarification_rounds": None,
         "triage_minutes": None,
     }
+
+
+def paginate_field(api: GitHubAPI, path: str, field: str) -> list[dict[str, Any]]:
+    """Paginate object responses such as check-runs and commit statuses."""
+
+    result: list[dict[str, Any]] = []
+    page = 1
+    while True:
+        payload = api.get(path, {"per_page": 100, "page": page})
+        values = payload.get(field) if isinstance(payload, dict) else None
+        if not isinstance(values, list):
+            raise RuntimeError(f"Expected field {field!r} in {path}")
+        result.extend(value for value in values if isinstance(value, dict))
+        total_count = payload.get("total_count") if isinstance(payload, dict) else None
+        if len(values) < 100 or (isinstance(total_count, int) and len(result) >= total_count):
+            return result
+        page += 1
 
 
 def median(values: Iterable[float | None]) -> float | None:
@@ -273,8 +300,8 @@ def render_summary(payload: dict[str, Any]) -> str:
     lines = [
         "# Community assessment retrospective baseline",
         "",
-        f"Captured at `{payload['captured_at']}` for `{payload['repo']}`.",
-        f"The reproducible window is `{payload['window']['since']}` inclusive through `{payload['window']['until']}` exclusive. The population contains **{payload['population']['community_pr_count']}** eligible non-bot community PRs; the deterministic stratified sample contains **{payload['sample_size']}** records.",
+        f"Captured at `{payload['captured_at']}` for `{payload['repo']}`; observable measurements are cut off at `{payload['window']['measurement_at']}`.",
+        f"The reproducible creation window is `{payload['window']['since']}` inclusive through `{payload['window']['until']}` exclusive. The population contains **{payload['population']['community_pr_count']}** eligible non-bot community PRs; the deterministic stratified sample contains **{payload['sample_size']}** records.",
         "",
         "## Selection contract",
         "",
@@ -289,8 +316,8 @@ def render_summary(payload: dict[str, Any]) -> str:
         "",
         "## Observable measurements",
         "",
-        f"- Median time from creation to merged/closed or the fixed measurement time for open PRs: **{metrics['median_time_to_terminal_days']} days** (observable timestamp proxy).",
-        f"- Median time from creation to the first submitted review: **{metrics['median_first_review_minutes']} minutes** across {metrics['first_review_observation_count']} sampled PRs with a submitted review.",
+        f"- Median time from creation to terminal event, or to the observation cutoff for PRs still open at that cutoff: **{metrics['median_time_to_terminal_or_observation_days']} days** (observable timestamp proxy).",
+        f"- Median time from creation to the first submitted review observed by the cutoff: **{metrics['median_minutes_to_first_submitted_review']} minutes** across {metrics['first_submitted_review_observation_count']} sampled PRs with a submitted review.",
         f"- Sampled PRs with at least one check run: **{metrics['sample_with_check_runs']}**; with commit statuses: **{metrics['sample_with_statuses']}**.",
         f"- Sampled review states: `{json.dumps(metrics['review_states'], sort_keys=True)}`; sampled labels and comment counts are retained in the JSON artifact.",
         "",
@@ -298,7 +325,8 @@ def render_summary(payload: dict[str, Any]) -> str:
         "",
         "GitHub does not expose maintainer triage minutes or a reliable clarification-round field. `triage_minutes` and `clarification_rounds` are therefore `null` for every record; no self-reported or inferred time is presented as a baseline. The pilot must collect those fields from maintainers under a separately defined measurement protocol before claiming the success thresholds.",
         "",
-        "The JSON artifact retains the exact window, strata, sample numbers, revision SHAs, observable timestamps, review/check counts, and API method needed to reproduce the selection.",
+        "The creation window is fixed independently from the observation cutoff. Event-time metrics exclude reviews and terminal events after that cutoff; labels, comments, and check/status collections are the API snapshot obtained during this capture.",
+        "The JSON artifact retains the exact window, observation cutoff, strata, sample numbers, revision SHAs, observable timestamps, review/check counts, and API method needed to reproduce the selection.",
         "",
     ]
     return "\n".join(lines)
@@ -315,6 +343,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("GH_TOKEN or GITHUB_TOKEN is required; it is never written to the output")
     api = GitHubAPI(args.api_url, token)
     api.repo = args.repo  # type: ignore[attr-defined]
+    measurement_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     last_inclusive_date = (until - timedelta(days=1)).date().isoformat()
     query = f"repo:{args.repo} is:pr created:{since.date().isoformat()}..{last_inclusive_date}"
     search_items = list_window_prs(api, args.repo, since, until)
@@ -325,8 +354,8 @@ def main(argv: list[str] | None = None) -> int:
         until.isoformat(),
         candidates,
         args.sample_size,
+        measurement_at,
     )
-    measurement_at = until.isoformat().replace("+00:00", "Z")
     records = [enrich_pr(api, pr, measurement_at) for pr in sample]
     strata: dict[str, dict[str, int]] = {}
     for key, count in population.items():
@@ -341,13 +370,13 @@ def main(argv: list[str] | None = None) -> int:
         "window": {
             "since": since.isoformat().replace("+00:00", "Z"),
             "until": until.isoformat().replace("+00:00", "Z"),
-            "measurement_at_for_open_prs": measurement_at,
+            "measurement_at": measurement_at,
         },
         "api": {
             "base_url": args.api_url,
             "query": query,
             "list_items_returned": len(search_items),
-            "pagination": "pull request list sorted by created descending until the window start; detail/reviews/comments endpoints paginated at 100",
+            "pagination": "pull request list sorted by created descending until the window start; detail/reviews/comments/check-runs/status endpoints paginated at 100",
         },
         "eligibility": {
             "author_association": sorted(COMMUNITY_ASSOCIATIONS),
@@ -362,16 +391,16 @@ def main(argv: list[str] | None = None) -> int:
         "strata": strata,
         "records": records,
         "metrics": {
-            "median_time_to_terminal_days": (
+            "median_time_to_terminal_or_observation_days": (
                 round(
-                    median(record["time_to_terminal_minutes"] for record in records) / 1440,
+                    median(record["time_to_terminal_or_observation_minutes"] for record in records) / 1440,
                     3,
                 )
                 if records
                 else None
             ),
-            "median_first_review_minutes": median(record["first_review_minutes"] for record in records),
-            "first_review_observation_count": sum(record["first_review_minutes"] is not None for record in records),
+            "median_minutes_to_first_submitted_review": median(record["minutes_to_first_submitted_review"] for record in records),
+            "first_submitted_review_observation_count": sum(record["minutes_to_first_submitted_review"] is not None for record in records),
             "sample_with_check_runs": sum(record["check_run_count"] > 0 for record in records),
             "sample_with_statuses": sum(record["status_count"] > 0 for record in records),
             "review_states": dict(sorted(review_states.items())),
@@ -380,7 +409,7 @@ def main(argv: list[str] | None = None) -> int:
         },
         "boundaries": [
             "Observable timestamps, labels, reviews, comments, check runs, and commit statuses are evidence; they are not maintainer-time measurements.",
-            "The fixed window and deterministic hash order reproduce the sample, while current GitHub API fields may change if records are edited or deleted.",
+            "The fixed creation window and deterministic hash order reproduce the sample. Measurements use the recorded observation cutoff; current labels, comments, and check/status snapshots may change if records are edited or deleted.",
             "No PR body, comment, diff, or contributor command is executed by this baseline collector.",
         ],
     }

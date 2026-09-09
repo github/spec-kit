@@ -4,7 +4,7 @@ emoji: "🔎"
 
 on:
   pull_request:
-    types: [labeled, synchronize, closed]
+    types: [labeled]
     names: [community-review]
     # The trigger remains pull_request; a maintainer-applied label is the
     # execution gate for community PRs whose head repository is a fork.
@@ -57,10 +57,19 @@ safe-outputs:
           required: true
           type: string
       steps:
+        - name: Locate agent output
+          shell: bash
+          run: |
+            set -eu
+            output="$(find "$RUNNER_TEMP/gh-aw/safe-jobs" -type f -name agent_output.json -print -quit 2>/dev/null || true)"
+            if [ -n "$output" ]; then
+              echo "GH_AW_AGENT_OUTPUT=$output" >> "$GITHUB_ENV"
+            else
+              echo 'GH_AW_AGENT_OUTPUT=' >> "$GITHUB_ENV"
+            fi
         - name: Validate and publish SHA-qualified assessment
           uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
           env:
-            GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
             GH_AW_EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
             GH_AW_PR_NUMBER: ${{ github.event.pull_request.number }}
           with:
@@ -156,54 +165,6 @@ safe-outputs:
               await github.rest.issues.addLabels({ owner, repo, issue_number: pullNumber, labels: [label] });
               core.info(`Published assessment for ${expectedSha} with ${label}.`);
 
-    community-assess-cleanup:
-      description: "Remove workflow-owned assessment outcome labels after a PR synchronize or close event"
-      runs-on: ubuntu-slim
-      permissions:
-        issues: write
-        pull-requests: write
-      inputs:
-        expected_head_sha:
-          description: "The pull request head SHA from the synchronize or closed event"
-          required: true
-          type: string
-      steps:
-        - name: Remove stale assessment outcome labels
-          uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-          env:
-            GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
-            GH_AW_EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-            GH_AW_PR_NUMBER: ${{ github.event.pull_request.number }}
-          with:
-            github-token: ${{ secrets.GITHUB_TOKEN }}
-            script: |
-              const fs = require('fs');
-              if (context.eventName !== 'pull_request' || !['synchronize', 'closed'].includes(context.payload.action)) return;
-              if (!process.env.GH_AW_AGENT_OUTPUT || !fs.existsSync(process.env.GH_AW_AGENT_OUTPUT)) return;
-              const payload = JSON.parse(fs.readFileSync(process.env.GH_AW_AGENT_OUTPUT, 'utf8'));
-              const item = (payload.items || []).find((candidate) => candidate.type === 'community_assess_cleanup');
-              if (!item || item.expected_head_sha !== process.env.GH_AW_EXPECTED_HEAD_SHA) {
-                core.info('No valid cleanup request for this event head was found.');
-                return;
-              }
-              const owner = context.repo.owner;
-              const repo = context.repo.repo;
-              const pullNumber = Number(process.env.GH_AW_PR_NUMBER);
-              const labels = ['community-assessment-fits', 'community-assessment-needs-clarification', 'community-assessment-out-of-scope', 'community-assessment-invalid'];
-              const current = async () => github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
-              const eventPr = await current();
-              if (eventPr.data.head.sha !== item.expected_head_sha) {
-                core.info('A newer head is already present; continuing cleanup of stale current-state labels.');
-              }
-              for (const label of labels) {
-                const pr = await current();
-                if (pr.data.labels.some((item) => item.name === label)) {
-                  await github.rest.issues.removeLabel({ owner, repo, issue_number: pullNumber, name: label }).catch((error) => {
-                    if (error.status !== 404) throw error;
-                  });
-                }
-              }
-              core.info(`Removed workflow-owned assessment outcomes for PR #${pullNumber}.`);
 ---
 
 # Assess a Maintainer-Labeled Community Pull Request
@@ -221,8 +182,11 @@ For a `labeled` event, verify that the added label is `community-review`, then
 capture the PR number, base ref and SHA, head ref and **head SHA**, author,
 `author_association`, and the activation timestamp before reading any other
 content. The captured head SHA is `expected_head_sha` for the entire report.
-For `synchronize` and `closed`, call the cleanup safe job and do not assess the
-PR. Cleanup removes only the workflow-owned outcome labels.
+The companion `community-assess-cleanup.yml` workflow handles `synchronize`
+and `closed` mechanically in a `pull_request_target` context. It does not
+check out or execute the fork, and removes only the fixed workflow-owned
+outcome labels. A later `synchronize` event therefore removes the historical
+label and a maintainer must re-apply the trigger after confirming the revision.
 
 The trusted publisher re-fetches the PR immediately before the comment, before
 removing prior outcomes, and before applying the new outcome. If the PR is
@@ -297,8 +261,8 @@ Call `community_assess_publish` exactly once with `expected_head_sha`, one of
 the four allowed `outcome` values, and the complete report body. The trusted
 safe-output job posts at most one top-level PR comment and applies one current
 outcome label only after its own live checks. Do not call a built-in comment or
-label tool. For `synchronize` or `closed`, call `community_assess_cleanup` once
-and do not call the publisher.
+label tool. This agent workflow is only invoked for `labeled`; the companion
+cleanup workflow owns `synchronize` and `closed` cleanup.
 
 The report body has this structure:
 

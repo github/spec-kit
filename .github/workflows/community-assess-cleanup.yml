@@ -1,0 +1,44 @@
+name: Community assessment cleanup
+
+on:
+  pull_request_target:
+    types: [synchronize, closed]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  remove-stale-outcome-labels:
+    runs-on: ubuntu-slim
+    steps:
+      - name: Remove workflow-owned outcome labels
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pullNumber = context.payload.pull_request.number;
+            const labels = [
+              'community-assessment-fits',
+              'community-assessment-needs-clarification',
+              'community-assessment-out-of-scope',
+              'community-assessment-invalid',
+            ];
+            // This pull_request_target job deliberately has no checkout. The
+            // only durable operation is removal of these fixed labels.
+            const pr = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+            for (const label of labels) {
+              if (!pr.data.labels.some((item) => item.name === label)) continue;
+              await github.rest.issues.removeLabel({
+                owner,
+                repo,
+                issue_number: pullNumber,
+                name: label,
+              }).catch((error) => {
+                if (error.status !== 404) throw error;
+              });
+            }
+            core.info(`Removed workflow-owned assessment outcomes for PR #${pullNumber}.`);

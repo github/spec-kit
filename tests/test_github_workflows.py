@@ -225,9 +225,10 @@ def test_community_submission_allowed_files_do_not_include_other_catalogs_or_doc
 def test_community_assessment_pilot_is_read_only_and_sha_qualified():
     source = COMMUNITY_ASSESS_WORKFLOW.read_text(encoding="utf-8")
     compiled = COMMUNITY_ASSESS_COMPILED.read_text(encoding="utf-8")
+    cleanup = (WORKFLOWS_DIR / "community-assess-cleanup.yml").read_text(encoding="utf-8")
 
     assert "  pull_request:" in source
-    assert "    types: [labeled, synchronize, closed]" in source
+    assert "    types: [labeled]" in source
     assert "    names: [community-review]" in source
     assert '    forks: ["*"]' in source
     assert "  pull-requests: read" in source
@@ -239,7 +240,11 @@ def test_community_assessment_pilot_is_read_only_and_sha_qualified():
     assert "the SHA differs" in source
     assert "safe-outputs:" in source
     assert "community-assess-publish:" in source
-    assert "community-assess-cleanup:" in source
+    assert "community-assess-cleanup:" not in source
+    assert "community-assess-cleanup.yml" in source
+    assert "pull_request_target:" in cleanup
+    assert "types: [synchronize, closed]" in cleanup
+    assert "deliberately has no checkout" in cleanup
     assert "type: choice" in source
     assert "options: [fits-project, needs-clarification, out-of-scope, invalid]" in source
     assert "at most one top-level PR comment" in source
@@ -260,7 +265,8 @@ def test_community_assessment_pilot_is_read_only_and_sha_qualified():
     assert "cancel-in-progress: true" in compiled
     assert "GH_AW_SAFE_OUTPUTS_CONFIG" in compiled
     assert "community-assess-publish" in compiled
-    assert "community-assess-cleanup" in compiled
+    assert "community-assess-cleanup" not in compiled
+    assert "GH_AW_AGENT_OUTPUT=$output" in source
     assert '"add_comment":' not in compiled
 
 
