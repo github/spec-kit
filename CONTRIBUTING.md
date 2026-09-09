@@ -105,6 +105,7 @@ Author actions:
 |---|---|
 | `author-needs-proof` | The problem isn't demonstrated yet — supply a reproduction or a test that fails on `main` and passes with the change |
 | `author-needs-tests` | Real change but missing a regression test — add one that fails before / passes after |
+| `author-needs-rescope` | Sprawling or batched diff — split into one focused, single-concern PR |
 | `author-needs-disclosure` | AI assistance not disclosed — disclose AI use per CONTRIBUTING |
 | `author-needs-info` | Missing detail needed to assess — supply requested info |
 | `author-needs-rebase` | Branch conflicts with `main` — rebase and resolve before it can be merged |
