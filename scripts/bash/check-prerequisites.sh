@@ -79,7 +79,7 @@ SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
 # Get feature paths
-if $PATHS_ONLY; then
+if [[ "${PATHS_ONLY:-false}" == "true" ]]; then
     _paths_output=$(get_feature_paths --no-persist) || { echo "ERROR: Failed to resolve feature paths" >&2; exit 1; }
 else
     _paths_output=$(get_feature_paths) || { echo "ERROR: Failed to resolve feature paths" >&2; exit 1; }
@@ -88,8 +88,8 @@ eval "$_paths_output"
 unset _paths_output
 
 # If paths-only mode, output paths and exit (no validation)
-if $PATHS_ONLY; then
-    if $JSON_MODE; then
+if [[ "${PATHS_ONLY:-false}" == "true" ]]; then
+    if [[ "${JSON_MODE:-false}" == "true" ]]; then
         # Minimal JSON paths payload (no validation performed)
         if has_jq; then
             jq -cn \
@@ -129,7 +129,7 @@ if [[ ! -f "$IMPL_PLAN" ]]; then
 fi
 
 # Check for tasks.md if required
-if $REQUIRE_TASKS && [[ ! -f "$TASKS" ]]; then
+if [[ "${REQUIRE_TASKS:-false}" == "true" ]] && [[ ! -f "$TASKS" ]]; then
     echo "ERROR: tasks.md not found in $FEATURE_DIR" >&2
     echo "Run $(format_speckit_command tasks "$REPO_ROOT") first to create the task list." >&2
     exit 1
@@ -150,12 +150,12 @@ fi
 [[ -f "$QUICKSTART" ]] && docs+=("quickstart.md")
 
 # Include tasks.md if requested and it exists
-if $INCLUDE_TASKS && [[ -f "$TASKS" ]]; then
+if [[ "${INCLUDE_TASKS:-false}" == "true" ]] && [[ -f "$TASKS" ]]; then
     docs+=("tasks.md")
 fi
 
 # Output results
-if $JSON_MODE; then
+if [[ "${JSON_MODE:-false}" == "true" ]]; then
     # Build JSON array of documents
     if has_jq; then
         if [[ ${#docs[@]} -eq 0 ]]; then
@@ -187,7 +187,7 @@ else
     check_dir "$CONTRACTS_DIR" "contracts/"
     check_file "$QUICKSTART" "quickstart.md"
     
-    if $INCLUDE_TASKS; then
+    if [[ "${INCLUDE_TASKS:-false}" == "true" ]]; then
         check_file "$TASKS" "tasks.md"
     fi
 fi
