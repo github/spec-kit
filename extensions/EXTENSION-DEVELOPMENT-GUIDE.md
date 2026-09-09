@@ -296,15 +296,16 @@ A command body is a *template* that Spec Kit renders once per agent. Different a
 
 Instead use the agent-neutral token `__SPECKIT_COMMAND_<NAME>__`. Spec Kit resolves it to a `/speckit<separator>...` invocation using the active integration's `invoke_separator` (and integrations may post-process that further in skills output).
 
-Encode the command name in upper case, dropping the `speckit.` prefix and turning each dotted segment separator into an underscore:
+Encode the command name in upper case, dropping the `speckit.` prefix and turning each dotted segment separator into an underscore. A hyphen inside a segment is kept as a hyphen:
 
 | Command file | Token |
 | --- | --- |
 | `speckit.plan.md` | `__SPECKIT_COMMAND_PLAN__` |
 | `speckit.bug.fix.md` | `__SPECKIT_COMMAND_BUG_FIX__` |
 | `speckit.git.commit.md` | `__SPECKIT_COMMAND_GIT_COMMIT__` |
+| `speckit.agent-context.update.md` | `__SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__` |
 
-The resolver maps each underscore back to the active agent's separator, so use tokens to reference commands whose name segments are single words. (Command names are dotted segments like `git.commit`; the token scheme rebuilds those dots and does not carry hyphens within a segment.)
+The resolver maps each underscore back to the active agent's separator. An underscore separates segments and a hyphen belongs to the segment it sits in, so `AGENT-CONTEXT_UPDATE` is the two segments `agent-context` and `update` rather than three.
 
 **Example** — a command body that points the user at the next step:
 
@@ -314,15 +315,19 @@ Once the assessment exists, the next step is `__SPECKIT_COMMAND_BUG_FIX__ slug=<
 
 This renders as `/speckit.bug.fix slug=<slug>` for a slash-based agent, `/speckit-bug-fix slug=<slug>` for a skills-based agent, and so on — the author writes it once and it stays portable. The first-party `bug` and `git` extensions use this token exclusively; see `extensions/bug/commands/` for working examples.
 
-> **Current limitation — skills mode.** Token resolution runs in the
-> command-rendering path (`CommandRegistrar`), so it applies when an extension
-> installs *command files*. It does **not** yet run when an extension is
-> registered as *skills* for a skills-based agent: `_register_extension_skills`
-> resolves placeholders and post-processes content but never calls
-> `resolve_command_refs`, so a `__SPECKIT_COMMAND_<NAME>__` token reaches
-> agents such as Codex, ZCode, and Kimi verbatim in that mode. Until that
-> rendering step lands, prefer the token for command-file extensions and avoid
-> relying on it inside skill bodies destined for skills-based agents.
+> **Skills mode.** Token resolution runs in both paths, so the token is safe to
+> use either way. Command files go through the command-rendering path
+> (`CommandRegistrar`). Skill bodies go through `_resolve_command_ref_tokens` in
+> `_register_extension_skills`, which resolves the same token shape against the
+> active skill style, so `__SPECKIT_COMMAND_BUG_FIX__` renders as:
+>
+> | Agent | Rendered |
+> | --- | --- |
+> | Codex, ZCode, Command Code | `$speckit-bug-fix` |
+> | Claude, Copilot, Cursor, Devin, Droid, Grok and the other slash agents | `/speckit-bug-fix` |
+> | Kimi | `/skill:speckit-bug-fix` |
+>
+> Anything else falls through to the integration's own `build_command_invocation`.
 
 ### Script Path Rewriting
 

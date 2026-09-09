@@ -1596,7 +1596,7 @@ class ExtensionManager:
                 )
 
             return re.sub(
-                r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_]*)__", _replacement, body
+                r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_-]*)__", _replacement, body
             )
 
         for cmd_info in manifest.commands:

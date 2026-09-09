@@ -70,15 +70,22 @@ specify workflow run ./my-workflow.yml --input spec="Build a user authentication
 
 ### Multiple Inputs
 
+When a workflow declares more than one input, pass each with a separate
+`--input` flag. For example, a custom workflow that gates steps on a
+`scope` selector:
+
 ```bash
-specify workflow run speckit \
+specify workflow run ./my-workflow.yml \
   --input spec="Build a user authentication system with OAuth support" \
   --input scope="backend-only"
 ```
 
+The bundled `speckit` workflow only declares `spec` (and optional
+`integration`); it does not take a `scope` input.
+
 ## Step Types
 
-Workflows support 11 built-in step types:
+Workflows support 12 built-in step types:
 
 ### Command Steps (default)
 
@@ -149,6 +156,24 @@ and resolves the integration from the step config or the workflow default:
   force: true                # Optional: required when target directory already exists
   preset: healthcare-compliance   # Optional preset ID
 ```
+
+### Workflow Slots
+
+Declare a named workflow slot that downstream projects can fill with a
+workflow overlay. The slot is skipped when unfilled; its `id` is the overlay
+anchor and `name` is a required human-readable label:
+
+```yaml
+- id: post-implement
+  type: slot
+  name: "Post-implementation checks"
+```
+
+Use an overlay `replace` edit anchored on `post-implement` to fill the slot.
+Keep the same `id` when downstream expressions or fan-in steps reference it,
+and preserve any output keys they consume. Slot steps are invalid inside
+`fan-out.step` templates because those runtime-multiplied templates cannot be
+targeted by overlays.
 
 ### Gate Steps
 

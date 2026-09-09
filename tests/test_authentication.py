@@ -205,7 +205,7 @@ class TestLoadAuthConfig:
     def test_invalid_json_raises(self, tmp_path):
         cfg = tmp_path / "auth.json"
         cfg.write_text("not json")
-        with pytest.raises(json.JSONDecodeError):
+        with pytest.raises(ValueError, match="invalid JSON"):
             load_auth_config(cfg)
 
     def test_not_object_raises(self, tmp_path):

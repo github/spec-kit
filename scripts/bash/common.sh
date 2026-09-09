@@ -902,12 +902,20 @@ except Exception as exc:
                     *'{CORE_TEMPLATE}'*) ;;
                     *) echo "Error: wrap strategy missing {CORE_TEMPLATE} placeholder" >&2; return 2 ;;
                 esac
-                while [[ "$layer_content" == *'{CORE_TEMPLATE}'* ]]; do
-                    local before="${layer_content%%\{CORE_TEMPLATE\}*}"
-                    local after="${layer_content#*\{CORE_TEMPLATE\}}"
-                    layer_content="${before}${content}${after}"
+                # Consume the wrapper left to right instead of rewriting it in
+                # place. Rewriting re-scanned the string just modified, so base
+                # content holding a literal {CORE_TEMPLATE} reintroduced the
+                # token every pass and the loop never terminated. Advancing over
+                # ``rest`` bounds the work by the tokens in the original wrapper
+                # and leaves inserted content untouched, matching the single-pass
+                # semantics of .Replace()/.replace() in the PowerShell and Python
+                # ports.
+                local wrapped="" rest="$layer_content"
+                while [[ "$rest" == *'{CORE_TEMPLATE}'* ]]; do
+                    wrapped="${wrapped}${rest%%\{CORE_TEMPLATE\}*}${content}"
+                    rest="${rest#*\{CORE_TEMPLATE\}}"
                 done
-                content="$layer_content"
+                content="${wrapped}${rest}"
                 ;;
             *) echo "Error: unknown strategy '$strat'" >&2; return 2 ;;
         esac

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-01T00:00:00Z",
+  "updated_at": "2026-09-08T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -614,6 +614,44 @@
       "created_at": "2026-08-13T00:00:00Z",
       "updated_at": "2026-08-19T00:00:00Z"
     },
+    "axi": {
+      "name": "Axi Extension",
+      "id": "axi",
+      "description": "A Spec Kit extension that renders a feature's markdown in a local browser review surface for human annotation, then returns the queued notes to the agent to apply.",
+      "author": "d0whc3r",
+      "version": "1.1.4",
+      "download_url": "https://github.com/d0whc3r/spec-kit-axi/releases/download/v1.1.4/axi-1.1.4.zip",
+      "repository": "https://github.com/d0whc3r/spec-kit-axi",
+      "homepage": "https://d0whc3r.github.io/spec-kit-axi/",
+      "documentation": "https://github.com/d0whc3r/spec-kit-axi/wiki",
+      "changelog": "https://github.com/d0whc3r/spec-kit-axi/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "node",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "axi",
+        "spec-kit",
+        "spec-kit-extension"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-02T00:00:00Z",
+      "updated_at": "2026-09-02T00:00:00Z"
+    },
     "azure-devops": {
       "name": "Azure DevOps Integration",
       "id": "azure-devops",
@@ -868,20 +906,27 @@
       "id": "brownkit",
       "description": "Evidence-driven capability discovery, security and QA risk assessment for existing codebases.",
       "author": "Maksim Shautsou",
-      "version": "1.0.1",
-      "download_url": "https://github.com/MaksimShevtsov/BrownKit/archive/refs/tags/v1.0.1.zip",
+      "version": "1.2.0",
+      "download_url": "https://github.com/MaksimShevtsov/BrownKit/archive/refs/tags/v1.2.0.zip",
       "repository": "https://github.com/MaksimShevtsov/BrownKit",
-      "homepage": "https://github.com/MaksimShevtsov/BrownKit",
-      "documentation": "https://github.com/MaksimShevtsov/BrownKit/blob/main/README.md",
+      "homepage": "https://github.com/MaksimShevtsov/BrownKit/blob/main/README.md",
+      "documentation": "https://github.com/MaksimShevtsov/BrownKit/blob/main/docs/methodology.md",
       "changelog": "https://github.com/MaksimShevtsov/BrownKit/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "python",
+            "version": ">=3.9",
+            "required": false
+          }
+        ]
       },
       "provides": {
-        "commands": 10,
+        "commands": 11,
         "hooks": 5
       },
       "tags": [
@@ -895,7 +940,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-10T00:00:00Z",
-      "updated_at": "2026-05-10T00:00:00Z"
+      "updated_at": "2026-09-08T00:00:00Z"
     },
     "bugfix": {
       "name": "Bugfix Workflow",
@@ -1039,13 +1084,13 @@
     "charter": {
       "name": "Charter",
       "id": "charter",
-      "description": "Compose modular project constitutions from shared fragment registries. Centralize governance rules, select per-project fragments, track upstream changes, and keep multi-project setups consistent.",
+      "description": "Compose project constitutions from shared fragment registries",
       "author": "Fyloss",
-      "version": "0.5.1",
-      "download_url": "https://github.com/Fyloss/spec-kit-charter/archive/refs/tags/v0.5.1.zip",
+      "version": "0.6.1",
+      "download_url": "https://github.com/Fyloss/spec-kit-charter/archive/refs/tags/v0.6.1.zip",
       "repository": "https://github.com/Fyloss/spec-kit-charter",
       "homepage": "https://github.com/Fyloss/spec-kit-charter",
-      "documentation": "https://github.com/Fyloss/spec-kit-charter/tree/master/docs",
+      "documentation": "https://github.com/Fyloss/spec-kit-charter/blob/master/README.md",
       "changelog": "https://github.com/Fyloss/spec-kit-charter/blob/master/CHANGELOG.md",
       "license": "MIT",
       "category": "process",
@@ -1066,15 +1111,15 @@
       "tags": [
         "constitution",
         "governance",
-        "modular",
-        "fragments",
-        "registry"
+        "multi-repo",
+        "composition",
+        "fragments"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-06T00:00:00Z",
-      "updated_at": "2026-08-04T00:00:00Z"
+      "updated_at": "2026-09-02T00:00:00Z"
     },
     "ci-guard": {
       "name": "CI Guard",
@@ -1746,6 +1791,40 @@
       "stars": 0,
       "created_at": "2026-07-08T00:00:00Z",
       "updated_at": "2026-07-08T00:00:00Z"
+    },
+    "evaluator": {
+      "name": "Evaluator Contract",
+      "id": "evaluator",
+      "description": "Provider-neutral evaluator contract for evidence, provenance, uncertainty, and recovery across Spec-Driven Development phases.",
+      "author": "ElectroHire",
+      "version": "1.0.0",
+      "download_url": "https://github.com/electrohire/spec-kit-evaluator/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/electrohire/spec-kit-evaluator",
+      "homepage": "https://github.com/electrohire/spec-kit-evaluator",
+      "documentation": "https://github.com/electrohire/spec-kit-evaluator/blob/main/README.md",
+      "changelog": "https://github.com/electrohire/spec-kit-evaluator/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 4
+      },
+      "tags": [
+        "evaluator",
+        "evidence",
+        "provenance",
+        "quality",
+        "governance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-03T00:00:00Z",
+      "updated_at": "2026-09-03T00:00:00Z"
     },
     "extensify": {
       "name": "Extensify",
@@ -2608,10 +2687,10 @@
     "linear": {
       "name": "Linear Integration",
       "id": "linear",
-      "description": "Mirror spec-kit feature directories into Linear (filesystem → Linear, reconcile-based, unidirectional).",
+      "description": "Automatically mirror your spec-kit specs into Linear — one issue per spec, a sub-issue per task phase, kept in sync as you work.",
       "author": "Ash Brener",
-      "version": "0.7.0",
-      "download_url": "https://github.com/ashbrener/spec-kit-linear-sync/archive/refs/tags/v0.7.0.zip",
+      "version": "0.8.0",
+      "download_url": "https://github.com/ashbrener/spec-kit-linear-sync/archive/refs/tags/v0.8.0.zip",
       "repository": "https://github.com/ashbrener/spec-kit-linear-sync",
       "homepage": "https://github.com/ashbrener/spec-kit-linear-sync",
       "documentation": "https://github.com/ashbrener/spec-kit-linear-sync/blob/main/README.md",
@@ -2638,7 +2717,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-01T00:00:00Z",
-      "updated_at": "2026-06-22T00:00:00Z"
+      "updated_at": "2026-09-03T00:00:00Z"
     },
     "linear-weave": {
       "name": "Linear Weave",
@@ -3340,19 +3419,34 @@
     "okf": {
       "name": "OKF Knowledge Bundle Generator",
       "id": "okf",
-      "description": "Generates and maintains an Open Knowledge Format (OKF v0.1) knowledge bundle from a source-code repository, mining git history for significance and rationale, and resolving open questions with the user.",
+      "description": "Generates and maintains an Open Knowledge Format (OKF v0.1) knowledge bundle from a source-code repository, mining git history for rationale and parking what it cannot verify as open questions.",
       "author": "Alex Punnen",
-      "version": "0.3.0",
-      "download_url": "https://github.com/alexcpn/speckit_ofk/archive/refs/tags/v0.3.0.zip",
-      "repository": "https://github.com/alexcpn/speckit_ofk",
-      "homepage": "https://github.com/alexcpn/speckit_ofk",
-      "documentation": "https://github.com/alexcpn/speckit_ofk/blob/main/README.md",
-      "changelog": "https://github.com/alexcpn/speckit_ofk/blob/main/CHANGELOG.md",
+      "version": "0.5.0",
+      "download_url": "https://github.com/alexcpn/speckit_okf/archive/refs/tags/v0.5.0.zip",
+      "repository": "https://github.com/alexcpn/speckit_okf",
+      "homepage": "https://github.com/alexcpn/speckit_okf",
+      "documentation": "https://github.com/alexcpn/speckit_okf/blob/main/README.md",
+      "changelog": "https://github.com/alexcpn/speckit_okf/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "docs",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.12.0"
+        "speckit_version": ">=0.12.0",
+        "tools": [
+          {
+            "name": "bash",
+            "required": true
+          },
+          {
+            "name": "python3",
+            "version": ">=3.9",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": false
+          }
+        ]
       },
       "provides": {
         "commands": 4,
@@ -3369,7 +3463,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-17T00:00:00Z",
-      "updated_at": "2026-07-21T00:00:00Z"
+      "updated_at": "2026-09-08T00:00:00Z"
     },
     "onboard": {
       "name": "Onboard",

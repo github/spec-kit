@@ -1012,6 +1012,7 @@ def register(app: typer.Typer) -> None:
         copilot_skill_mode = selected_ai == "copilot" and _is_skills_integration
         devin_skill_mode = selected_ai == "devin"
         zed_skill_mode = selected_ai == "zed" and _is_skills_integration
+        muse_skill_mode = selected_ai == "muse" and _is_skills_integration
         grok_skill_mode = selected_ai == "grok" and _is_skills_integration
         dsh_skill_mode = selected_ai == "dsh" and _is_skills_integration
         cline_skill_mode = selected_ai == "cline"
@@ -1028,6 +1029,7 @@ def register(app: typer.Typer) -> None:
             or copilot_skill_mode
             or devin_skill_mode
             or zed_skill_mode
+            or muse_skill_mode
             or grok_skill_mode
             or dsh_skill_mode
             or bob_skill_mode
@@ -1061,6 +1063,11 @@ def register(app: typer.Typer) -> None:
         if zed_skill_mode:
             steps_lines.append(
                 f"{step_num}. Start Zed in this project directory; spec-kit skills were installed to [cyan].agents/skills[/cyan]"
+            )
+            step_num += 1
+        if muse_skill_mode:
+            steps_lines.append(
+                f"{step_num}. Start Muse Code in this project directory; spec-kit skills were installed to [cyan].agents/skills[/cyan]"
             )
             step_num += 1
         if grok_skill_mode:

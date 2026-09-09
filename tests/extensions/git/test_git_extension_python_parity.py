@@ -17,10 +17,13 @@ from pathlib import Path
 import pytest
 
 from tests.conftest import requires_bash
+from tests.parity_helpers import collation_range_locale
 from tests.extensions.git.test_git_extension import (
     _GIT_ENV,
+    HAS_PWSH,
     _init_git,
     _run_bash,
+    _run_pwsh,
     _setup_project,
     _write_config,
 )
@@ -139,20 +142,144 @@ class TestCreateFeatureBranchParity:
         p = _run_py("create-new-feature-branch", py_proj, "--json", "--dry-run", description)
         _assert_parity(b, p)
 
-    def test_short_name_cleaning(self, tmp_path: Path):
+    @pytest.mark.parametrize(
+        "description",
+        [
+            "Fix \u00e9DB\u00e9 sync",
+            "Tune the \u00fcUI\u00fc layer",
+        ],
+        ids=["db_between_accents", "ui_between_accents"],
+    )
+    def test_acronym_adjacent_to_non_ascii_matches_python(
+        self, tmp_path: Path, description: str
+    ):
+        """A short acronym touching an accented letter is kept by both twins.
+
+        The bash twin probes for acronyms with `grep -qw` under LC_ALL=C, where
+        an accented letter is a non-word byte and therefore a word boundary.
+        Python's \\b and .NET's \\b are Unicode-aware and saw no boundary there,
+        so the twins disagreed on whether the acronym survived.
+        """
         bash_proj, py_proj = _twin_projects(tmp_path)
-        # Single separator runs only: the bash twin's collapse step
-        # (sed 's/-\+/-/g') is a GNU-ism that BSD sed treats literally.
         b = _run_bash(
             "create-new-feature-branch.sh", bash_proj,
-            "--json", "--dry-run", "--short-name", "User_Auth!", "desc",
+            "--json", "--dry-run", description,
         )
         p = _run_py(
             "create-new-feature-branch", py_proj,
-            "--json", "--dry-run", "--short-name", "User_Auth!", "desc",
+            "--json", "--dry-run", description,
         )
         _assert_parity(b, p)
-        assert json.loads(p.stdout)["BRANCH_NAME"] == "001-user-auth"
+
+        if not HAS_PWSH:
+            pytest.skip("pwsh not available")
+        ps_proj = _setup_project(tmp_path / "ps" / "proj")
+        ps = _run_pwsh(
+            "create-new-feature-branch.ps1", ps_proj,
+            "-Json", "-DryRun", description,
+        )
+        assert ps.returncode == 0, ps.stderr
+        assert json.loads(ps.stdout) == json.loads(b.stdout)
+
+    @pytest.mark.parametrize(
+        ("short_name", "expected"),
+        [
+            ("User_Auth!", "001-user-auth"),
+            ("User__Auth!!", "001-user-auth"),
+            ("auth -- v2", "001-auth-v2"),
+        ],
+        ids=["single_separators", "repeated_separators", "separator_run"],
+    )
+    def test_short_name_cleaning(
+        self, tmp_path: Path, short_name: str, expected: str
+    ):
+        # Repeated separators included: the bash twin used to collapse them with
+        # sed 's/-\+/-/g', a GNU-ism that POSIX/BSD sed reads as a literal '+',
+        # so the runs survived on macOS.
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        b = _run_bash(
+            "create-new-feature-branch.sh", bash_proj,
+            "--json", "--dry-run", "--short-name", short_name, "desc",
+        )
+        p = _run_py(
+            "create-new-feature-branch", py_proj,
+            "--json", "--dry-run", "--short-name", short_name, "desc",
+        )
+        _assert_parity(b, p)
+        assert json.loads(p.stdout)["BRANCH_NAME"] == expected
+
+    @pytest.mark.parametrize(
+        "description",
+        [
+            "Añadir autenticación de usuario",
+            "Ajouter la réservation hôtelière",
+        ],
+        ids=["spanish", "french"],
+    )
+    def test_branch_name_ignores_locale_collation(
+        self, tmp_path: Path, description: str
+    ):
+        """The created git branch must not depend on the caller's locale.
+
+        The bash twin sanitizes with sed 's/[^a-z0-9]/-/g'. Under a locale whose
+        a-z range is collation-ordered that class keeps accented lowercase
+        letters, so bash checked out 001-ajouter-réservation-hôtelière where
+        the Python twin checks out 001-ajouter-servation-teli.
+        """
+        locale_name = collation_range_locale()
+        if locale_name is None:
+            pytest.skip("no locale with collation-ordered [a-z] ranges available")
+        env_extra = {"LC_ALL": locale_name, "LANG": locale_name}
+
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        b = _run_bash(
+            "create-new-feature-branch.sh", bash_proj,
+            "--json", "--dry-run", description, env_extra=env_extra,
+        )
+        p = _run_py(
+            "create-new-feature-branch", py_proj,
+            "--json", "--dry-run", description, env_extra=env_extra,
+        )
+        _assert_parity(b, p)
+        branch = json.loads(b.stdout)["BRANCH_NAME"]
+        assert branch.isascii(), branch
+
+        # The run above reaches generate_branch_name. --short-name reaches
+        # clean_branch_name, a separate function carrying its own LC_ALL=C, so
+        # exercise the accented value through both: neither copy can then
+        # regress on its own without a failure here.
+        sn_bash_proj, sn_py_proj = _twin_projects(tmp_path / "short")
+        sb = _run_bash(
+            "create-new-feature-branch.sh", sn_bash_proj,
+            "--json", "--dry-run", "--short-name", description, "desc",
+            env_extra=env_extra,
+        )
+        sp = _run_py(
+            "create-new-feature-branch", sn_py_proj,
+            "--json", "--dry-run", "--short-name", description, "desc",
+            env_extra=env_extra,
+        )
+        _assert_parity(sb, sp)
+        short_branch = json.loads(sb.stdout)["BRANCH_NAME"]
+        assert short_branch.isascii(), short_branch
+
+    @pytest.mark.parametrize("short_name", ["-n", "-e", "-E"], ids=["n", "e", "E"])
+    def test_dash_prefixed_short_name(self, tmp_path: Path, short_name: str):
+        """A short name that looks like an ``echo`` option is still text.
+
+        clean_branch_name piped the raw value through `echo "$name"`, so bash
+        consumed -n/-e/-E as options and emitted nothing, yielding a suffix-less
+        001- where Python yields 001-n. This extension duplicates the
+        implementation, so it needs its own regression case: the core script's
+        test cannot catch a revert to `echo` here.
+        """
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        args = ("--json", "--dry-run", "--short-name", short_name, "desc")
+        b = _run_bash("create-new-feature-branch.sh", bash_proj, *args)
+        p = _run_py("create-new-feature-branch", py_proj, *args)
+        _assert_parity(b, p)
+        expected = f"001-{short_name.lstrip('-').lower()}"
+        assert json.loads(b.stdout)["BRANCH_NAME"] == expected
 
     def test_numbering_from_specs_and_branches(self, tmp_path: Path):
         bash_proj, py_proj = _twin_projects(tmp_path)
