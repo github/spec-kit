@@ -1,0 +1,27 @@
+schema_version: "1.0"
+
+extension:
+  id: github
+  name: "GitHub Integration"
+  version: "1.0.0"
+  description: "GitHub platform integration for Spec Kit - create GitHub issues from a feature's task list"
+  author: spec-kit-core
+  repository: https://github.com/github/spec-kit
+  license: MIT
+
+requires:
+  speckit_version: ">=0.2.0"
+  tools:
+    - name: git
+      required: false
+
+provides:
+  commands:
+    - name: speckit.github.taskstoissues
+      file: commands/speckit.github.taskstoissues.md
+      description: "Convert tasks from tasks.md into dependency-ordered GitHub issues"
+
+tags:
+  - "github"
+  - "issues"
+  - "integration"

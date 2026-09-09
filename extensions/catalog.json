@@ -62,6 +62,20 @@
         "workflow",
         "core"
       ]
+    },
+    "github": {
+      "name": "GitHub Integration",
+      "id": "github",
+      "version": "1.0.0",
+      "description": "GitHub platform integration for Spec Kit - create GitHub issues from a feature's task list",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "bundled": true,
+      "tags": [
+        "github",
+        "issues",
+        "integration"
+      ]
     }
   }
 }
