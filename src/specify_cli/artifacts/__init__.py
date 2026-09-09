@@ -865,6 +865,9 @@ class ArtifactCatalog:
                 key = (kind, name)
                 if not _is_valid_artifact_name_component(name, kind):
                     continue
+                # Resolve each candidate through Spec Kit's existing single-artifact
+                # path for behavioral parity; optimize shared manifest reads only if
+                # typical small extension sets show a measurable inventory cost.
                 layers = _layers_for(kind, name)
                 if layers and _has_any_replace_layer(layers):
                     names.add(key)
