@@ -4483,7 +4483,7 @@
     "schedule": {
       "name": "Spec Kit Schedule — parallel subagent rounds",
       "id": "schedule",
-      "description": "Zero-config planner that turns tasks.md into optimal parallel rounds for subagents (CP-SAT, critical-path aware, file-conflict safe) and an implement command that runs them round by round with tasks.md checkboxes as the single source of progress.",
+      "description": "Zero-config planner that turns tasks.md into optimal parallel rounds for subagents (CP-SAT, critical-path aware, file-conflict safe) and runs them round by round.",
       "author": "Julio César Franco Ardila",
       "version": "0.7.4",
       "download_url": "https://github.com/jfranc38/spec-kit-schedule/archive/refs/tags/v0.7.4.zip",
