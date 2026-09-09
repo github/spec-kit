@@ -1,8 +1,11 @@
 """A string condition with no ``{{ }}`` block is never evaluated (always true)."""
 
+import re
+
 import pytest
 import yaml
 
+from specify_cli.workflows import expressions
 from specify_cli.workflows.base import StepContext
 from specify_cli.workflows.expressions import (
     condition_has_malformed_expression_block,
@@ -884,3 +887,51 @@ def test_a_literal_never_reaches_the_resolver():
     assert _collect_leaves("'a literal'") == []
     assert _collect_leaves("42") == []
     assert _collect_leaves("true") == []
+
+
+# --- The gate reads the evaluator's definitions, it does not restate them ---
+#
+# The point of this refactor is that widening what the evaluator accepts reaches
+# the validation gate for free. That is easy to claim and easy to lose: a second
+# copy of the grammar in the gate keeps every existing test green while silently
+# reintroducing the drift. These two pin the wiring by moving the evaluator's own
+# definitions and asserting the gate follows.
+
+
+def test_gate_reads_the_shared_indexed_segment_definition(monkeypatch):
+    """Widening `_INDEXED_SEGMENT` alone must reach the gate.
+
+    `steps.…​.task_list[-1]` is rejected today because `_INDEXED_SEGMENT` — the
+    one place `_resolve_dot_path` says what an index looks like — accepts digits
+    only. Widening it there and nowhere else must be enough; if the gate keeps
+    its own copy of the shape (as `_PATH_SEGMENT` used to), this fails.
+    """
+    path = "steps.tasks.output.task_list[-1].file"
+    assert expressions._unresolvable_term(path) is not None
+
+    monkeypatch.setattr(
+        expressions, "_INDEXED_SEGMENT", re.compile(r"^([\w-]+)\[(-?\d+)\]$")
+    )
+    assert expressions._unresolvable_term(path) is None
+
+
+def test_gate_reports_the_leaves_the_evaluator_actually_reached(monkeypatch):
+    """The gate's operands come from the evaluator's own walk, not a second parse.
+
+    If `_evaluate_simple_expression` stops treating something as a leaf — which
+    is what unwrapping a parenthesised group does — the gate stops checking it,
+    with no change to the gate itself.
+    """
+    grouped = "(inputs.a or inputs.b) and inputs.c"
+    assert expressions._unresolvable_term(grouped) is not None
+
+    real = expressions._evaluate_simple_expression
+
+    def unwrapping(expr, namespace):
+        stripped = expr.strip()
+        if stripped.startswith("(") and stripped.endswith(")"):
+            return unwrapping(stripped[1:-1], namespace)
+        return real(expr, namespace)
+
+    monkeypatch.setattr(expressions, "_evaluate_simple_expression", unwrapping)
+    assert expressions._unresolvable_term(grouped) is None
