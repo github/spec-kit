@@ -162,6 +162,6 @@ On failure, nothing is written to stdout. A single-key JSON envelope is written 
 | `not a Spec Kit project: no .specify/ directory found` | Run outside an initialized project                             |
 | `unknown artifact <name>`                           | No artifact matches the requested name (and kind, when given)     |
 | `ambiguous artifact <name>: matches kinds [...]`    | The bare name matches more than one kind — re-run with `--kind`   |
-| `artifact resolution failed`                        | The preset/extension registries could not be read, or artifact content could not be composed |
+| `artifact resolution failed`                        | The extension registry could not be read, or artifact content could not be composed |
 
 Exit code `2` is reserved for usage errors — a missing `--json` flag or an invalid `--kind` value — and emits a plain-text message on stderr rather than a JSON envelope.

@@ -771,42 +771,6 @@ class PresetRegistry:
         with open(self.registry_path, 'w', encoding='utf-8') as f:
             json.dump(self.data, f, indent=2)
 
-    def is_corrupt(self) -> bool:
-        """Report whether an existing registry file is present but unreadable.
-
-        ``_load`` deliberately recovers from a corrupt registry by normalizing
-        it to an empty mapping so install/enable/disable flows keep working.
-        Resolution paths (e.g. the artifact catalog), however, must fail
-        closed: a corrupt registry that normalizes to ``{}`` would otherwise
-        cause every installed preset to be silently dropped from the reported
-        inventory. This probe lets those callers distinguish "no registry"
-        (safe) from "registry exists but is invalid" (unsafe) without changing
-        recovery behavior. An absent registry returns ``False``; a directory,
-        broken or dangling symlink, non-regular file, unreadable file,
-        non-mapping root, or non-mapping ``presets`` value returns ``True``.
-
-        Mirrors :meth:`ExtensionRegistry.is_corrupt` — the two registries have
-        the same corruption model, so both surfaces (artifact catalog,
-        extension enumeration) can share the same fail-closed pattern.
-        """
-        # os.path.lexists (not Path.exists) so a dangling symlink is detected
-        # rather than followed to a non-existent target and mistaken for an
-        # absent registry.
-        if not os.path.lexists(self.registry_path):
-            return False
-        if not self.registry_path.is_file():
-            return True
-        try:
-            with open(self.registry_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
-            return True
-        if not isinstance(data, dict):
-            return True
-        if "presets" not in data or not isinstance(data["presets"], dict):
-            return True
-        return False
-
     def add(self, pack_id: str, metadata: dict):
         """Add preset to registry.
 

@@ -286,14 +286,10 @@ class TestListArtifactsContract:
             row for row in catalog.list_artifacts() if row.name == "legacy-root"
         ).description == "Legacy root template"
 
-    @pytest.mark.parametrize("registry_dir, registry_name", [
-        ("extensions", "extensions"),
-        ("presets", "presets"),
-    ])
-    def test_registry_missing_collection_key_is_corrupt(
-        self, spec_kit_project: Path, registry_dir: str, registry_name: str
+    def test_extension_registry_missing_collection_key_is_corrupt(
+        self, spec_kit_project: Path
     ):
-        registry_path = spec_kit_project / ".specify" / registry_dir / ".registry"
+        registry_path = spec_kit_project / ".specify" / "extensions" / ".registry"
         registry_path.write_text('{"schema_version": "1.0"}', encoding="utf-8")
 
         with pytest.raises(ArtifactResolutionError):
@@ -599,19 +595,16 @@ class TestErrors:
         with pytest.raises(ArtifactResolutionError):
             ArtifactCatalog(spec_kit_project).get_artifact_info("command:speckit.constitution")
 
-    def test_info_rejects_corrupt_preset_registry(self, spec_kit_project: Path):
+    def test_corrupt_preset_registry_uses_empty_registry_fallback(self, spec_kit_project: Path):
         registry = spec_kit_project / ".specify" / "presets" / ".registry"
         registry.write_text("{invalid", encoding="utf-8")
 
-        with pytest.raises(ArtifactResolutionError):
-            ArtifactCatalog(spec_kit_project).get_artifact_info("command:speckit.constitution")
-
-    def test_list_rejects_corrupt_preset_registry(self, spec_kit_project: Path):
-        registry = spec_kit_project / ".specify" / "presets" / ".registry"
-        registry.write_text("{invalid", encoding="utf-8")
-
-        with pytest.raises(ArtifactResolutionError):
-            ArtifactCatalog(spec_kit_project).list_artifacts()
+        catalog = ArtifactCatalog(spec_kit_project)
+        assert any(row.id == "command:speckit.constitution" for row in catalog.list_artifacts())
+        assert (
+            catalog.get_artifact_info("command:speckit.constitution")["id"]
+            == "command:speckit.constitution"
+        )
 
 
 class TestKindHint:
