@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-08T00:00:00Z",
+  "updated_at": "2026-09-09T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -1918,16 +1918,16 @@
     "figma-starter": {
       "name": "Figma Starter",
       "id": "figma-starter",
-      "description": "Turns a Figma section's screens into per-screen spec.md files, an app-level user-stories.md, and a build-order.md, then hands off to /speckit.specify.",
+      "description": "Turns a Figma section's screens into Figma-derived specs — per-screen spec.md files, app-level user-stories.md, and a build-order.md — and turns an OpenAPI/Swagger document into an entity model plus per-page UI-to-API bindings, then hands off to /speckit.specify.",
       "author": "WaveMaker",
-      "version": "1.0.0",
-      "download_url": "https://github.com/wavemaker/spec-kit-figma-starter/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/wavemaker/spec-kit-figma-starter",
-      "homepage": "https://github.com/wavemaker/spec-kit-figma-starter",
-      "documentation": "https://github.com/wavemaker/spec-kit-figma-starter/blob/main/README.md",
-      "changelog": "https://github.com/wavemaker/spec-kit-figma-starter/blob/main/CHANGELOG.md",
+      "version": "1.1.0",
+      "download_url": "https://github.com/OmneWave/spec-kit-figma-starter/archive/refs/tags/v1.1.0.zip",
+      "repository": "https://github.com/OmneWave/spec-kit-figma-starter",
+      "homepage": "https://github.com/OmneWave/spec-kit-figma-starter",
+      "documentation": "https://github.com/OmneWave/spec-kit-figma-starter/blob/main/README.md",
+      "changelog": "https://github.com/OmneWave/spec-kit-figma-starter/blob/main/CHANGELOG.md",
       "license": "MIT",
-      "category": "integration",
+      "category": "docs",
       "effect": "read-write",
       "requires": {
         "speckit_version": ">=0.1.0",
@@ -1940,7 +1940,7 @@
         ]
       },
       "provides": {
-        "commands": 1,
+        "commands": 2,
         "hooks": 1
       },
       "tags": [
@@ -1948,13 +1948,16 @@
         "design",
         "design-to-spec",
         "ui",
-        "frontend"
+        "frontend",
+        "openapi",
+        "swagger",
+        "api"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-15T00:00:00Z",
-      "updated_at": "2026-07-15T00:00:00Z"
+      "updated_at": "2026-09-09T00:00:00Z"
     },
     "fix-findings": {
       "name": "Fix Findings",
