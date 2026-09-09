@@ -135,6 +135,15 @@ def _filter_from_json(value: Any) -> Any:
 _EXPR_PATTERN = re.compile(r"\{\{(.+?)\}\}")
 
 
+# The one definition of an indexed path segment. _resolve_dot_path matches
+# against it, and the condition gate below reuses it rather than describing the
+# same shape a second time, so widening what indexing accepts cannot leave the
+# evaluator and the gate disagreeing.
+_INDEXED_SEGMENT = re.compile(r"^([\w-]+)\[(\d+)\]$")
+
+_PLAIN_SEGMENT = re.compile(r"^[\w-]+$")
+
+
 def _resolve_dot_path(obj: Any, path: str) -> Any:
     """Resolve a dotted path like ``steps.specify.output.file`` against *obj*.
 
@@ -144,7 +153,7 @@ def _resolve_dot_path(obj: Any, path: str) -> Any:
     current = obj
     for part in parts:
         # Handle list indexing: name[0]
-        idx_match = re.match(r"^([\w-]+)\[(\d+)\]$", part)
+        idx_match = _INDEXED_SEGMENT.match(part)
         if idx_match:
             key, idx = idx_match.group(1), int(idx_match.group(2))
             if isinstance(current, dict):
@@ -1058,8 +1067,9 @@ def _has_incomplete_operand(text: str) -> bool:
 # None, so a correction built on one turns a truthy condition false.
 _NAMESPACE_ROOTS = ("inputs", "steps", "item", "fan_in", "context")
 
-# Exactly what _resolve_dot_path accepts: a name, optionally one numeric index.
-_PATH_SEGMENT = re.compile(r"^[\w-]+(\[\d+\])?$")
+def _is_path_segment(segment: str) -> bool:
+    """Whether _resolve_dot_path can walk *segment*: a name, or a name it indexes."""
+    return bool(_PLAIN_SEGMENT.match(segment) or _INDEXED_SEGMENT.match(segment))
 
 
 class _ProbeNamespace(dict):
@@ -1143,7 +1153,7 @@ def _unresolvable_leaf(leaf: str) -> str | None:
     the evaluator itself, so nothing here restates the grammar.
     """
     segments = _split_top_level(leaf, ".")
-    if not _PATH_SEGMENT.match(segments[0].strip()):
+    if not _is_path_segment(segments[0].strip()):
         return f"{leaf!r} is not a name the evaluator can resolve"
     # `item` is the only root that is not always a mapping: `StepContext.item` is
     # `Any` and a fan-out assigns the item value itself, so when that value is a
@@ -1152,7 +1162,7 @@ def _unresolvable_leaf(leaf: str) -> str | None:
     # branch returns None for those however it is written -- so the index is
     # stripped for `item` alone rather than for roots in general.
     root = segments[0].strip()
-    indexed_root = re.fullmatch(r"([\w-]+)\[\d+\]", root)
+    indexed_root = _INDEXED_SEGMENT.match(root)
     if indexed_root is not None and indexed_root.group(1) == "item":
         root = indexed_root.group(1)
     if root not in _NAMESPACE_ROOTS:
@@ -1161,7 +1171,7 @@ def _unresolvable_leaf(leaf: str) -> str | None:
             f"({', '.join(_NAMESPACE_ROOTS)})"
         )
     for segment in segments[1:]:
-        if not _PATH_SEGMENT.match(segment.strip()):
+        if not _is_path_segment(segment.strip()):
             return f"{segment.strip()!r} is not a valid path segment"
     return None
 
