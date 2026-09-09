@@ -123,18 +123,26 @@ unset _cf_parts _seg
 PLAN_PATH="${1:-}"
 if [[ -z "$PLAN_PATH" ]]; then
   # Pick the most recently modified plan.md anywhere under specs/.
-  # Use Python pathlib + stat sorting to avoid shell glob portability issues,
-  # ls/head fragility with spaces, and SIGPIPE from pipefail.
+  # Use Python pathlib + guarded stat calls to avoid shell glob portability
+  # issues and to keep unreadable entries from aborting discovery.
   _plan_abs="$("$_python" - "$PROJECT_ROOT" <<'PY'
-import sys, os
+import sys
 from pathlib import Path
+
 specs = Path(sys.argv[1]) / "specs"
-plans = sorted(
-    specs.glob("**/plan.md"),
-    key=lambda p: p.stat().st_mtime,
-    reverse=True,
-)
-print(plans[0] if plans else "")
+plans = []
+try:
+    for path in specs.glob("**/plan.md"):
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        plans.append((mtime, path))
+except OSError:
+    pass
+
+plans.sort(key=lambda item: item[0], reverse=True)
+print(plans[0][1] if plans else "")
 PY
 )"
   if [[ -n "$_plan_abs" ]]; then
