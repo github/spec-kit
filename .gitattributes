@@ -5,3 +5,5 @@
 # Keep it exempt from git's whitespace checks (git diff --check / CI) since its
 # generated formatting is not hand-edited.
 .specify/memory/constitution.md -whitespace
+
+.github/workflows/*.lock.yml linguist-generated=true
