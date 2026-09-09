@@ -447,9 +447,26 @@ class TestExtensionSkillRegistration:
 
     @pytest.mark.parametrize("register_commands", [False, True])
     @pytest.mark.parametrize("link_commands", [False, True])
-    @pytest.mark.parametrize("author", ["acme-corp", 'Acme: "Platform"\nTeam', None, ""])
+    @pytest.mark.parametrize(
+        ("author", "expected_author"),
+        [
+            ("acme-corp", "acme-corp"),
+            ('Acme: "Platform"\nTeam', 'Acme: "Platform"\nTeam'),
+            (None, "github-spec-kit"),
+            ("", "github-spec-kit"),
+            (123, "123"),
+            (0, "0"),
+            (False, "False"),
+        ],
+    )
     def test_extension_author_preserved(
-        self, skills_project, extension_dir, register_commands, link_commands, author
+        self,
+        skills_project,
+        extension_dir,
+        register_commands,
+        link_commands,
+        author,
+        expected_author,
     ):
         """Both skill generators retain attribution, including dev output and aliases."""
         project_dir, skills_dir = skills_project
@@ -471,7 +488,7 @@ class TestExtensionSkillRegistration:
         for name in names:
             content = (skills_dir / f"speckit-test-ext-{name}" / "SKILL.md").read_text()
             frontmatter = yaml.safe_load(content.split("---", 2)[1])
-            assert frontmatter["metadata"]["author"] == (author or "github-spec-kit")
+            assert frontmatter["metadata"]["author"] == expected_author
             assert "test-ext" in frontmatter["metadata"]["source"]
 
     def test_skill_md_has_parseable_yaml(self, skills_project, extension_dir):

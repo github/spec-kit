@@ -1687,7 +1687,7 @@ class ExtensionManager:
                 skill_name,
                 description,
                 f"extension:{manifest.id}",
-                author=manifest.data["extension"].get("author") or "github-spec-kit",
+                author=manifest.data["extension"].get("author"),
             )
             # Preserve the command's argument-hint in the generated skill,
             # mirroring the core template path (ClaudeIntegration.setup injects
@@ -3616,7 +3616,7 @@ class CommandRegistrar:
             context_note=context_note,
             link_outputs=link_outputs,
             extension_id=manifest.id,
-            author=manifest.data["extension"].get("author") or "github-spec-kit",
+            author=manifest.data["extension"].get("author"),
         )
 
     def register_commands_for_all_agents(
@@ -3640,7 +3640,7 @@ class CommandRegistrar:
             create_missing_active_skills_dir=create_missing_active_skills_dir,
             only_agent=only_agent,
             extension_id=manifest.id,
-            author=manifest.data["extension"].get("author") or "github-spec-kit",
+            author=manifest.data["extension"].get("author"),
         )
 
     def unregister_commands(

@@ -402,7 +402,7 @@ class CommandRegistrar:
         source_file: str,
         project_root: Path,
         extension_id: Optional[str] = None,
-        author: str = "github-spec-kit",
+        author: object = "github-spec-kit",
     ) -> str:
         """Render a command override as a SKILL.md file.
 
@@ -443,15 +443,18 @@ class CommandRegistrar:
         skill_name: str,
         description: str,
         source: str,
-        author: str = "github-spec-kit",
+        author: object = "github-spec-kit",
     ) -> dict:
         """Build consistent SKILL.md frontmatter across all skill generators."""
+        normalized_author = (
+            "github-spec-kit" if author is None or author == "" else str(author)
+        )
         skill_frontmatter = {
             "name": skill_name,
             "description": description,
             "compatibility": "Requires spec-kit project structure with .specify/ directory",
             "metadata": {
-                "author": author,
+                "author": normalized_author,
                 "source": source,
             },
         }
@@ -621,7 +624,7 @@ class CommandRegistrar:
         _resolved_dir: Optional[Path] = None,
         link_outputs: bool = False,
         extension_id: Optional[str] = None,
-        author: str = "github-spec-kit",
+        author: object = "github-spec-kit",
     ) -> List[str]:
         """Register commands for a specific agent.
 
@@ -1068,7 +1071,7 @@ class CommandRegistrar:
         create_missing_active_skills_dir: bool = False,
         extension_id: Optional[str] = None,
         only_agent: Optional[str] = None,
-        author: str = "github-spec-kit",
+        author: object = "github-spec-kit",
     ) -> Dict[str, List[str]]:
         """Register commands for all detected agents in the project.
 

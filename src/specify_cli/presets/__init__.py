@@ -2894,7 +2894,7 @@ class PresetManager:
                     "command_name": cmd_name,
                     "source_file": source_file,
                     "source": f"extension:{manifest.id}",
-                    "author": manifest.data["extension"].get("author") or "github-spec-kit",
+                    "author": manifest.data["extension"].get("author"),
                     "extension_id": manifest.id,
                     "extension_dir": ext_root,
                 }
