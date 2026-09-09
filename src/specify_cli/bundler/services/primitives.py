@@ -188,8 +188,8 @@ class _PresetKindManager:
         if not self._allow_network:
             raise BundlerError(
                 f"Preset '{component.id}' is not bundled and network access is "
-                f"disabled; re-run without --offline or install it first with "
-                f"'specify preset add {component.id}'."
+                "disabled. Installing or refreshing this component requires "
+                "network access; re-run without --offline."
             )
 
         from ...presets import PresetCatalog
@@ -272,8 +272,8 @@ class _ExtensionKindManager:
         if not self._allow_network:
             raise BundlerError(
                 f"Extension '{component.id}' is not bundled and network access is "
-                f"disabled; re-run without --offline or install it first with "
-                f"'specify extension add {component.id}'."
+                "disabled. Installing or refreshing this component requires "
+                "network access; re-run without --offline."
             )
 
         from ...extensions import ExtensionCatalog
@@ -330,8 +330,8 @@ class _WorkflowKindManager:
         if not self._allow_network and not self._is_bundled(component.id):
             raise BundlerError(
                 f"Workflow '{component.id}' installs from a catalog and network "
-                f"access is disabled; re-run without --offline or install it first "
-                f"with 'specify workflow add {component.id}'."
+                "access is disabled. Installing or refreshing this component "
+                "requires network access; re-run without --offline."
             )
         self._assert_pinned_version(component)
         from ... import workflow_add
@@ -396,8 +396,8 @@ class _StepKindManager:
         if not self._allow_network:
             raise BundlerError(
                 f"Step '{component.id}' installs from a catalog and network access "
-                f"is disabled; re-run without --offline or install it first with "
-                f"'specify workflow step add {component.id}'."
+                "is disabled. Installing or refreshing this component requires "
+                "network access; re-run without --offline."
             )
         from ... import workflow_step_add
 

@@ -382,3 +382,89 @@ def test_local_install_refresh_updates_owned_components(
     record = load_records(project)[0]
     assert record.version == "2.0.0"
     assert {(c.kind, c.id): c.version for c in record.contributed_components} == expected
+
+
+@pytest.mark.parametrize("source_kind", ["manifest", "directory", "zip"])
+def test_local_refresh_catalog_extension_requires_network(
+    tmp_path: Path, monkeypatch, source_kind: str,
+):
+    """Use the real installer; replace only catalog I/O with local artifacts."""
+    from specify_cli.bundler.models.records import load_records, records_path
+    from specify_cli.extensions import ExtensionCatalog
+
+    project = make_project(tmp_path / "project")
+    monkeypatch.chdir(project)
+    monkeypatch.setattr("specify_cli.commands.bundle._bundle_overlaps", lambda *a, **kw: [])
+    monkeypatch.setattr("specify_cli._assets._locate_bundled_extension", lambda cid: None)
+    version = "1.0.0"
+    downloads = []
+
+    def download_extension(self, extension_id):
+        downloads.append((extension_id, version))
+        artifact = tmp_path / "extension.zip"
+        extension = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": extension_id, "name": "Catalog extension",
+                "version": version, "description": "Refresh regression",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": [
+                {"name": "speckit.catalog-ext.hello", "file": "commands/hello.md"},
+            ]},
+        }
+        with zipfile.ZipFile(artifact, "w") as archive:
+            archive.writestr("extension.yml", yaml.safe_dump(extension))
+            archive.writestr("commands/hello.md", f"---\ndescription: Test\n---\n{version}\n")
+        return artifact
+
+    monkeypatch.setattr(
+        ExtensionCatalog, "get_extension_info",
+        lambda self, cid: {"id": cid, "version": version, "_install_allowed": True},
+    )
+    monkeypatch.setattr(ExtensionCatalog, "download_extension", download_extension)
+    data = valid_manifest_dict(provides={"extensions": [{"id": "catalog-ext", "version": version}]})
+    manifest_path = write_manifest(tmp_path / "local bundle", data)
+    runner = CliRunner()
+    first = runner.invoke(app, ["bundle", "install", str(manifest_path)])
+    assert first.exit_code == 0, first.output
+    installed_dir = project / ".specify" / "extensions" / "catalog-ext"
+    payload = installed_dir / "commands" / "hello.md"
+    original_payload = payload.read_bytes()
+    original_manifest = (installed_dir / "extension.yml").read_bytes()
+    original_record = records_path(project).read_bytes()
+
+    version = "2.0.0"
+    data["bundle"]["version"] = version
+    data["provides"]["extensions"][0]["version"] = version
+    write_manifest(manifest_path.parent, data)
+    if source_kind == "manifest":
+        source = manifest_path
+    elif source_kind == "directory":
+        source = manifest_path.parent
+    else:
+        source = tmp_path / "local bundle.zip"
+        with zipfile.ZipFile(source, "w") as archive:
+            archive.write(manifest_path, "bundle.yml")
+
+    offline = runner.invoke(app, ["bundle", "install", str(source), "--refresh", "--offline"])
+    assert offline.exit_code == 1, offline.output
+    output = " ".join(offline.output.split())
+    assert "catalog-ext" in output
+    assert "refreshing this component requires network access" in output
+    assert "re-run without --offline" in output
+    assert "install it first" not in output
+    assert downloads == [("catalog-ext", "1.0.0")]
+    assert records_path(project).read_bytes() == original_record
+    assert payload.read_bytes() == original_payload
+    assert (installed_dir / "extension.yml").read_bytes() == original_manifest
+
+    refreshed = runner.invoke(app, ["bundle", "install", str(source), "--refresh"])
+    assert refreshed.exit_code == 0, refreshed.output
+    assert "1 refreshed" in refreshed.output
+    assert downloads == [("catalog-ext", "1.0.0"), ("catalog-ext", "2.0.0")]
+    assert payload.read_text(encoding="utf-8").endswith("2.0.0\n")
+    assert yaml.safe_load((installed_dir / "extension.yml").read_text(encoding="utf-8"))["extension"]["version"] == version
+    record = load_records(project)[0]
+    assert record.version == version
+    assert record.contributed_components[0].version == version

@@ -49,10 +49,12 @@ If the current directory is not yet a Spec Kit project, `install` initializes on
 A normal install rejects a change to an already-recorded bundle's version. To upgrade a local bundle without adding it to a catalog, pass the newer source with `--refresh`:
 
 ```bash
-specify bundle install ./new-release/bundle.yml --refresh --offline
+specify bundle install ./new-release/bundle.yml --refresh
 ```
 
 The source may also be a bundle directory or `.zip` artifact. Refresh uses the same primitive update path as `bundle update`, re-applies components owned by a bundle, and removes previously owned components omitted from the new manifest unless another bundle still needs them. Components installed independently remain untouched and are not adopted. The success summary includes refreshed and removed counts. The bundle record advances only after the operation succeeds; as with `bundle update`, already-installed components modified during a failed refresh are not rolled back.
+
+A local bundle source supplies the manifest, not its component payloads. Components resolved through catalogs still require network access to refresh, even when already installed. Add `--offline` only when the components being installed or refreshed ship with Spec Kit; otherwise the command reports which component needs network access. Re-run without `--offline` to fetch that component through its catalog.
 
 ## Update Bundles
 
