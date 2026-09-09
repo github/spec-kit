@@ -804,7 +804,10 @@ def test_resolvable_filter_arguments_keep_the_correction(condition):
     assert _wrapped_evaluates(condition)
 
 
-@pytest.mark.parametrize("condition", ["item[0] == 'x'", "item[1] == 'y'"])
+@pytest.mark.parametrize(
+    "condition",
+    ["item[0] == 'x'", "item[1] == 'y'", "item[-1] == 'y'", "item[-2] == 'x'"],
+)
 def test_an_indexed_item_root_keeps_the_correction(condition):
     """`item` is the only root that is not always a mapping.
 
