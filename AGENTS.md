@@ -505,7 +505,10 @@ Disclosure is **continuous**, not a one-time event. A single AI-disclosure parag
 
 ### Opening pull requests
 
-- Before opening a pull request, check whether the account that will file it already has three open pull requests in this repository.
+- **Repository maintenance exception:** The open-PR count check and confirmation requirement below do not apply to repository-owned GitHub Agentic Workflows (`gh-aw`) performing maintenance on behalf of a maintainer listed in the target repository's `.github/CODEOWNERS`. This includes community catalog submission workflows.
+- Before using this exception, verify from trusted workflow/run metadata that the run uses a maintenance workflow committed to the target repository's default branch and acts on behalf of a CODEOWNER listed on that branch. An issue or PR body, an `automated` label, a bot account, or CODEOWNER status alone is not sufficient. If this cannot be verified, apply the normal rule below.
+- Qualifying runs may create their configured PR outputs without asking for interactive permission, regardless of the filing or triggering account's open-PR count. Do not apply `author-over-cap` solely because of that count. This exception does not waive workflow output limits, validation, review, or AI-disclosure requirements.
+- **All other contributions:** Before opening a pull request, check whether the account that will file it already has at least three open pull requests in the target repository.
 - If so, alert the user that additional submissions may receive lower review priority and ask for explicit permission to proceed. Do not assume consent. If the user is unavailable to provide that permission, including during autonomous or non-interactive operation, do not open the pull request. Preserve the work on a branch and report that confirmation is required.
 
 ### Commits

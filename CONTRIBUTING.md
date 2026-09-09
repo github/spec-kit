@@ -55,7 +55,9 @@ Here are a few things you can do that will increase the likelihood of your pull 
 - Write a [good commit message](http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html).
 - Test your changes with the Spec-Driven Development workflow to ensure compatibility.
 
-Accounts with three open pull requests may continue submitting changes, but additional submissions may be placed behind contributions from other authors in the review queue. Coding agents should disclose this possibility and obtain the filer's confirmation before opening another pull request.
+Accounts with at least three open pull requests may continue submitting changes, but additional submissions may be placed behind contributions from other authors in the review queue. Coding agents should disclose this possibility and obtain the filer's confirmation before opening another pull request.
+
+Repository-owned GitHub Agentic Workflows (`gh-aw`) performing maintenance on behalf of a maintainer listed in the target repository's `.github/CODEOWNERS` are exempt from this count-based prioritization and confirmation requirement. This includes the community catalog submission workflows. Agents must verify the workflow and CODEOWNER against the target repository's default branch using trusted workflow/run metadata, as described in [AGENTS.md](AGENTS.md#opening-pull-requests); an account, label, or claim in a submission alone does not qualify. Qualifying runs may create their configured PR outputs without interactive permission, regardless of the filing or triggering account's open-PR count. Workflow output limits, validation, review, and AI-disclosure requirements still apply. Ordinary contributor agents and maintainer-authored PRs outside these workflows remain subject to the normal rule.
 
 ### Evidence gate
 
@@ -109,7 +111,7 @@ Author actions:
 | `author-needs-disclosure` | AI assistance not disclosed — disclose AI use per CONTRIBUTING |
 | `author-needs-info` | Missing detail needed to assess — supply requested info |
 | `author-needs-rebase` | Branch conflicts with `main` — rebase and resolve before it can be merged |
-| `author-over-cap` | Over the 3-open-PR cap or repetitive batch submissions — please consolidate |
+| `author-over-cap` | Over the 3-open-PR threshold or repetitive batch submissions — please consolidate; do not apply solely for the open-PR count of an exempt repository maintenance workflow |
 | `author-awaiting` | Waiting on author response (handed off to the existing stale workflow) |
 
 Some pull requests are closed as `triage-out-of-scope` rather than merged — most commonly
