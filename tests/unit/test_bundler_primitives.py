@@ -433,3 +433,75 @@ def _plan(manifest):
         effective_integration=None,
         components=components,
     )
+
+
+def test_step_refresh_restores_registry_entry_when_reinstall_fails(
+    tmp_path: Path, monkeypatch
+):
+    """A failed step refresh must leave the registry entry restored.
+
+    ``refresh`` keeps a backup and restores it "if the remove+reinstall path
+    fails", but the registry half of that rollback was unreachable:
+    ``StepRegistry`` snapshots the file once in ``__init__`` and
+    ``is_installed`` reads only that snapshot, so after ``self.remove()``
+    deleted the entry from disk the stale snapshot still reported it as
+    installed and ``not ...is_installed(...)`` was always False.
+
+    The step package came back but stayed unregistered — ``workflow step
+    list`` stopped showing it, and ``workflow step add`` then refused with
+    "Step directory already exists".
+    """
+    import json
+
+    import specify_cli
+    from specify_cli.workflows.catalog import StepRegistry
+
+    steps_dir = tmp_path / ".specify" / "workflows" / "steps"
+    (steps_dir / "my-step").mkdir(parents=True)
+    (steps_dir / "my-step" / "step.yml").write_text(
+        "step:\n  type_key: my-step\n", encoding="utf-8"
+    )
+    (steps_dir / "my-step" / "__init__.py").write_text("", encoding="utf-8")
+    (steps_dir / StepRegistry.REGISTRY_FILE).write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "steps": {
+                    "my-step": {
+                        "name": "My Step",
+                        "version": "1.0.0",
+                        "type_key": "my-step",
+                        # Distinctive past timestamps: a rollback must put the
+                        # entry back verbatim, and ``StepRegistry.add()`` would
+                        # silently replace both of these with ``now``.
+                        "installed_at": "2020-01-01T00:00:00+00:00",
+                        "updated_at": "2020-02-02T00:00:00+00:00",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    seeded = StepRegistry(tmp_path).get("my-step")
+    assert StepRegistry(tmp_path).is_installed("my-step")
+
+    # Removal succeeds (real code path); only the re-install fails, which is
+    # what a catalog 404 / size-limit / type_key mismatch produces.
+    def _boom(step_id, *args, **kwargs):
+        raise BundlerError(f"Failed to install step '{step_id}'.")
+
+    monkeypatch.setattr(specify_cli, "workflow_step_add", _boom)
+
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    with pytest.raises(BundlerError):
+        manager.refresh(_component("steps", "my-step"))
+
+    # Read the registry fresh from disk — the point of the fix.
+    restored = StepRegistry(tmp_path)
+    assert restored.is_installed("my-step"), (
+        steps_dir / StepRegistry.REGISTRY_FILE
+    ).read_text(encoding="utf-8")
+    # A rollback must be a rollback: the entry comes back byte-for-byte, not
+    # re-registered with fresh ``installed_at`` / ``updated_at`` stamps.
+    assert restored.get("my-step") == seeded
