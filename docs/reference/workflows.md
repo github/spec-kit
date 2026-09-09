@@ -431,14 +431,19 @@ schema_version: "1.0"
 workflow:
   id: "speckit"
   name: "Full SDD Cycle"
-  version: "1.0.0"
+  version: "1.0.1"
   author: "GitHub"
   description: "Runs specify → plan → tasks → implement with review gates"
 
 requires:
-  speckit_version: ">=0.7.2"
+  speckit_version: ">=0.8.5"
   integrations:
-    any: ["copilot", "claude", "gemini"]
+    any:
+      - "alquimia"
+      - "claude"
+      - "copilot"
+      - "gemini"
+      - "opencode"
 
 inputs:
   spec:
@@ -447,8 +452,8 @@ inputs:
     prompt: "Describe what you want to build"
   integration:
     type: string
-    default: "copilot"
-    prompt: "Integration to use (e.g. claude, copilot, gemini)"
+    default: "auto"
+    prompt: "Integration to use (e.g. claude, copilot, gemini; 'auto' uses the project's initialized integration)"
 
 steps:
   - id: specify

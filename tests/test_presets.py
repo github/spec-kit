@@ -4057,6 +4057,18 @@ class TestPresetCatalogMultiCatalog:
         with pytest.raises(PresetValidationError, match="must be a list"):
             catalog._load_catalog_config(config_path)
 
+    @pytest.mark.parametrize("body", ["catalogs: {}\n", "catalogs: ''\n", "catalogs: 0\n", "catalogs: false\n"])
+    def test_load_catalog_config_rejects_falsy_non_list_catalogs(self, project_dir, body):
+        """A FALSY non-list ``catalogs:`` value must raise, like a truthy one
+        (``catalogs: "not-a-list"``) already does. The shape check sat behind
+        the emptiness check, so these were silently swallowed as "no catalogs"."""
+        config_path = project_dir / ".specify" / "preset-catalogs.yml"
+        config_path.write_text(body, encoding="utf-8")
+
+        catalog = PresetCatalog(project_dir)
+        with pytest.raises(PresetValidationError, match="must be a list"):
+            catalog._load_catalog_config(config_path)
+
     def test_load_catalog_config_invalid_entry(self, project_dir):
         """Test that non-dict entry raises error."""
         config_path = project_dir / ".specify" / "preset-catalogs.yml"
