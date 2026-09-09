@@ -1746,6 +1746,7 @@ class TestExtensionManager:
             create_missing_active_skills_dir=False,
             extension_id=None,
             only_agent=None,
+            author="github-spec-kit",
         ):
             captured["create_missing_active_skills_dir"] = (
                 create_missing_active_skills_dir
