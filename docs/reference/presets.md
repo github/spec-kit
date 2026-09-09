@@ -87,9 +87,13 @@ installed presets. Do not edit the registry to point at either directory.
 Inspect both manifests before taking action:
 
 ```bash
-find .specify/presets -maxdepth 1 \
-  \( -name '<preset_id>' -o -name '.*.update-*.bak' -o -name '.*.update-*.staging' \) \
-  -print
+for path in \
+  .specify/presets/<preset_id> \
+  .specify/presets/.*.update-*.bak \
+  .specify/presets/.*.update-*.staging
+do
+  [ -e "$path" ] && printf '%s\n' "$path"
+done
 sed -n '1,120p' .specify/presets/<preset_id>/preset.yml
 sed -n '1,120p' .specify/presets/.<preset_id>.update-*.bak/preset.yml
 sed -n '1,120p' .specify/presets/.<preset_id>.update-*.staging/preset.yml

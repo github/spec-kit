@@ -1420,7 +1420,9 @@ def preset_enable(
                     ]
                 manager.registry.update(preset_id, {"registered_skills": merged_skills})
         elif isinstance(resolved_agent, str):
-            manager.register_enabled_presets_for_agent(resolved_agent)
+            manager.register_enabled_presets_for_agent(
+                resolved_agent, strict_pack_id=preset_id
+            )
 
         # Group identical tracked-name sets so historical agents stay scoped
         # without repeating the helper's active-agent reconciliation per key.
@@ -1582,9 +1584,10 @@ def preset_enable(
         manager.registry.restore(preset_id, registry_before)
         console.print(
             f"[red]Error:[/red] Failed to enable '{preset_id}': "
-            f"{_escape_markup(str(e))}. The preset has been restored to its "
-            f"previous disabled state; resolve the underlying issue and "
-            f"re-run 'specify preset enable {preset_id}'."
+            f"{_escape_markup(str(e))}. The registry entry has been restored "
+            f"to disabled. Generated command and skill files may reflect the "
+            f"new version; resolve the underlying issue and re-run "
+            f"'specify preset enable {preset_id}' to complete the refresh."
         )
         raise typer.Exit(1) from e
 

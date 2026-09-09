@@ -11638,7 +11638,12 @@ class TestPresetEnableDisable:
             )
 
         assert result.exit_code != 0
-        assert "restored" in result.output.lower() or "previous disabled state" in result.output.lower()
+        normalized_output = " ".join(result.output.lower().split())
+        assert "registry entry has been restored to disabled" in normalized_output
+        assert (
+            "generated command and skill files may reflect the new version"
+            in normalized_output
+        )
 
         # Reload registry fresh from disk: it must still show disabled,
         # not a half-completed "enabled" state.
@@ -11646,6 +11651,83 @@ class TestPresetEnableDisable:
         metadata_after = manager2.registry.get("rollback-preset")
         assert metadata_after["enabled"] is False
         assert metadata_after["version"] == "2.0.0"
+
+    @pytest.mark.parametrize(
+        ("failing_method", "failure_message"),
+        [
+            ("_register_skills", "simulated target registration failure"),
+            (
+                "_reconcile_composed_commands",
+                "simulated active-agent reconciliation failure",
+            ),
+        ],
+    )
+    def test_enable_fails_when_active_agent_refresh_fails(
+        self,
+        project_dir,
+        temp_dir,
+        failing_method,
+        failure_message,
+    ):
+        """Deferred active-agent refresh failures must reach enable's rollback."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(
+            json.dumps({"ai": "gemini", "ai_skills": False}),
+            encoding="utf-8",
+        )
+        (project_dir / ".gemini" / "commands").mkdir(parents=True)
+
+        preset_dir = temp_dir / "strict-refresh-preset"
+        (preset_dir / "commands").mkdir(parents=True)
+        (preset_dir / "commands" / "speckit.specify.md").write_text(
+            "---\ndescription: Strict refresh\n---\n\nStrict refresh body\n",
+            encoding="utf-8",
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.safe_dump({
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "strict-refresh-preset",
+                    "name": "Strict refresh preset",
+                    "version": "1.0.0",
+                    "description": "Test",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "templates": [{
+                        "type": "command",
+                        "name": "speckit.specify",
+                        "file": "commands/speckit.specify.md",
+                    }]
+                },
+            }),
+            encoding="utf-8",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        manager.registry.update("strict-refresh-preset", {"enabled": False})
+
+        with patch.object(
+            PresetManager,
+            failing_method,
+            side_effect=RuntimeError(failure_message),
+        ), patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "enable", "strict-refresh-preset"]
+            )
+
+        assert result.exit_code != 0
+        assert failure_message in result.output
+        assert "Preset 'strict-refresh-preset' enabled" not in result.output
+        metadata_after = PresetManager(project_dir).registry.get(
+            "strict-refresh-preset"
+        )
+        assert metadata_after["enabled"] is False
 
     def test_enable_reconciles_surviving_lower_priority_preset_skill_for_historical_agent(
         self, project_dir, temp_dir

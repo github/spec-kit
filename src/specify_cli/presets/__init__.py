@@ -1395,7 +1395,9 @@ class PresetManager:
             only_agent=active_agent,
         )
 
-    def register_enabled_presets_for_agent(self, agent_name: str) -> None:
+    def register_enabled_presets_for_agent(
+        self, agent_name: str, *, strict_pack_id: Optional[str] = None
+    ) -> None:
         """Re-register enabled presets' command overrides and skills for ``agent_name``.
 
         Mirrors ``ExtensionManager.register_enabled_extensions_for_agent`` for
@@ -1413,6 +1415,12 @@ class PresetManager:
         writing the highest-precedence preset last is what makes it win when
         two enabled presets override the same command — matching the
         priority stack documented for ``list_by_priority()``.
+
+        ``strict_pack_id`` is used by ``preset enable`` when a disabled
+        preset's deferred artifacts must be refreshed before the operation
+        can report success. Failures for that preset, or in the final
+        active-agent reconciliation, are raised after best-effort repair.
+        Other callers retain the existing warning-only behaviour.
         """
         if not agent_name:
             return
@@ -1488,6 +1496,7 @@ class PresetManager:
             ]
         ] = []
         successful_command_replacements: set[tuple[str, str]] = set()
+        strict_error: Optional[tuple[str, Exception]] = None
         for pack_id, metadata in reversed(presets_by_priority):
             pack_dir = self.presets_dir / pack_id
             manifest = resolver._get_manifest(pack_dir)
@@ -1693,6 +1702,14 @@ class PresetManager:
                         )
                     )
             except Exception as pack_err:
+                if pack_id == strict_pack_id:
+                    strict_error = (
+                        f"Failed to register preset artifacts for '{pack_id}': "
+                        f"{pack_err}",
+                        pack_err,
+                    )
+                    continue
+
                 from .. import _print_cli_warning
 
                 _print_cli_warning(
@@ -1719,15 +1736,22 @@ class PresetManager:
                     list(affected_cmd_names), target_agent=agent_name
                 )
             except Exception as exc:
-                import warnings
+                if strict_pack_id is not None:
+                    strict_error = (
+                        f"Post-rescaffold reconciliation failed for "
+                        f"'{agent_name}': {exc}",
+                        exc,
+                    )
+                else:
+                    import warnings
 
-                warnings.warn(
-                    f"Post-rescaffold reconciliation failed for '{agent_name}': "
-                    f"{exc}. Agent command files may be stale; re-run "
-                    f"'specify integration use {agent_name}' or reinstall "
-                    f"affected presets to refresh.",
-                    stacklevel=2,
-                )
+                    warnings.warn(
+                        f"Post-rescaffold reconciliation failed for "
+                        f"'{agent_name}': {exc}. Agent command files may be "
+                        f"stale; re-run 'specify integration use {agent_name}' "
+                        f"or reinstall affected presets to refresh.",
+                        stacklevel=2,
+                    )
 
         successfully_replaced_winners = {
             command_name
@@ -1834,6 +1858,10 @@ class PresetManager:
             self.registry.update(
                 pack_id, {"registered_skills": merged_skills}
             )
+
+        if strict_error is not None:
+            message, cause = strict_error
+            raise PresetError(message) from cause
 
     def unregister_agent_artifacts(self, agent_name: str) -> None:
         """Remove ``agent_name``'s tracked preset command/skill artifacts.
