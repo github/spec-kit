@@ -36,7 +36,7 @@ specify extension enable github
 | ------------------------------ | -------------------------------------------------------------------- |
 | `speckit.github.taskstoissues` | Convert tasks from `tasks.md` into dependency-ordered GitHub issues. |
 
-> NOTE: The command ID above is canonical. Invoke it using the syntax for your integration: `/speckit.github.taskstoissues` for dot-command integrations; `/speckit-github-taskstoissues` for hyphen/skills integrations (including Forge and Cline); `$speckit-github-taskstoissues` for Codex or ZCode in skills mode; or `/skill:speckit-github-taskstoissues` for Kimi.
+> NOTE: The command ID above is canonical. Invoke it using the syntax for your integration: `/speckit.github.taskstoissues` for dot-command integrations; `/speckit-github-taskstoissues` for hyphen/skills integrations (including Forge and Cline); `$speckit-github-taskstoissues` for Codex, ZCode, or Command Code in skills mode; or `/skill:speckit-github-taskstoissues` for Kimi.
 
 ### What the command does
 
