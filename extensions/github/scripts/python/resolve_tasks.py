@@ -30,6 +30,25 @@ EXAMPLES:
 """
 
 
+def _status_marker() -> str:
+    """Return the status glyph, downgraded to ASCII when stdout cannot encode it.
+
+    On Windows sys.stdout falls back to the ANSI code page whenever it is not a
+    console - a pipe or a file redirect, which is how agents and workflow steps
+    invoke these scripts - and U+2713 is unencodable in cp1252, so printing it
+    raises UnicodeEncodeError and aborts the report right after
+    "AVAILABLE_DOCS:". Mirrors core's _status_marker in
+    scripts/python/check_prerequisites.py; "[OK]" is also what this script's
+    PowerShell twin emits.
+    """
+    glyph = "✓"
+    try:
+        glyph.encode(getattr(sys.stdout, "encoding", None) or "utf-8")
+    except (LookupError, UnicodeEncodeError):
+        return "[OK]"
+    return glyph
+
+
 def _die(*lines: str) -> "None":
     for line in lines:
         print(line, file=sys.stderr)
@@ -175,8 +194,9 @@ def main(argv: list[str]) -> int:
         print(f"FEATURE_DIR:{feature_dir}")
         print(f"TASKS:{tasks}")
         print("AVAILABLE_DOCS:")
+        marker = _status_marker()
         for doc in docs:
-            print(f"  \u2713 {doc}")
+            print(f"  {marker} {doc}")
 
     return 0
 

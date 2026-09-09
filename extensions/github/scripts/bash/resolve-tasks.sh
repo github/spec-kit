@@ -53,14 +53,32 @@ HELP
 done
 
 # Escape a string for safe embedding in a JSON value (RFC 8259).
+# Kept byte-for-byte in step with core's json_escape (scripts/bash/common.sh)
+# rather than sourcing it, so this script stays self-contained.
 json_escape() {
     local s="$1"
-    s="${s//\/\\}"
+    s="${s//\\/\\\\}"
     s="${s//\"/\\\"}"
-    s="${s//$'\n'/\n}"
-    s="${s//$'\r'/\r}"
-    s="${s//$'\t'/\t}"
-    printf '%s' "$s"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\t'/\\t}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\b'/\\b}"
+    s="${s//$'\f'/\\f}"
+    # Escape any remaining U+0001-U+001F control characters as \uXXXX.
+    # (U+0000/NUL cannot appear in bash strings and is excluded.)
+    # LC_ALL=C ensures ${#s} counts bytes and ${s:$i:1} yields single bytes,
+    # so multi-byte UTF-8 sequences (first byte >= 0xC0) pass through intact.
+    local LC_ALL=C
+    local i char code
+    for (( i=0; i<${#s}; i++ )); do
+        char="${s:$i:1}"
+        printf -v code '%d' "'$char" 2>/dev/null || code=256
+        if (( code >= 1 && code <= 31 )); then
+            printf '\\u%04x' "$code"
+        else
+            printf '%s' "$char"
+        fi
+    done
 }
 
 # Find the project root by searching upward for the .specify marker directory.

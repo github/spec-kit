@@ -15,6 +15,7 @@ Validates:
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tomllib
@@ -391,6 +392,32 @@ class TestCommandBody:
             "MATCH THE REMOTE URL" in body
         )
 
+    def test_readme_lists_every_dollar_skills_agent(self):
+        """The invocation guide must name all `$speckit-` agents, not some.
+
+        Regression: Command Code was omitted, so its users were pointed at a
+        syntax their agent does not use.
+        """
+        from specify_cli._invocation_style import DOLLAR_SKILLS_AGENTS
+
+        readme = (EXT_DIR / "README.md").read_text(encoding="utf-8")
+        note = next(
+            line for line in readme.splitlines() if "$speckit-github-taskstoissues" in line
+        )
+
+        display_names = {
+            "codex": "Codex",
+            "zcode": "ZCode",
+            "command-code": "Command Code",
+        }
+        # If a new dollar-skills agent appears, this fails until it is named.
+        assert set(display_names) == set(DOLLAR_SKILLS_AGENTS), (
+            "DOLLAR_SKILLS_AGENTS changed; update the README invocation note "
+            f"and this mapping: {sorted(DOLLAR_SKILLS_AGENTS)}"
+        )
+        for agent, display in display_names.items():
+            assert display in note, f"README omits {display} ({agent}): {note}"
+
     def test_preserves_deduplication_and_pagination(self):
         body = COMMAND_FILE.read_text(encoding="utf-8")
         assert "list_issues" in body
@@ -487,6 +514,50 @@ class TestResolveTasksPython:
         assert result.returncode == 1
         assert "tasks.md not found" in result.stderr
 
+    def test_text_mode_survives_a_cp1252_stdout(self, tmp_path: Path):
+        """Regression: U+2713 is unencodable in cp1252.
+
+        On Windows stdout falls back to the ANSI code page whenever it is not
+        a console — a pipe or a redirect, which is exactly how agents invoke
+        these scripts — so printing the glyph raised UnicodeEncodeError and
+        aborted the report right after ``AVAILABLE_DOCS:``.
+        """
+        project = _make_feature_project(tmp_path)
+        env = {**os.environ, "PYTHONIOENCODING": "cp1252"}
+        result = subprocess.run(
+            [sys.executable, str(PY_SCRIPT)],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert "UnicodeEncodeError" not in result.stderr
+        # The docs section must be complete, not truncated at the first marker.
+        assert "AVAILABLE_DOCS:" in result.stdout
+        assert "research.md" in result.stdout
+        assert "tasks.md" in result.stdout
+        # ASCII fallback, matching core and the PowerShell twin.
+        assert "[OK] tasks.md" in result.stdout
+
+    def test_text_mode_uses_the_glyph_when_stdout_can_encode_it(
+        self, tmp_path: Path
+    ):
+        project = _make_feature_project(tmp_path)
+        env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+        result = subprocess.run(
+            [sys.executable, str(PY_SCRIPT)],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=env,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert "✓ tasks.md" in result.stdout
+
     def test_does_not_write_feature_json(self, tmp_path: Path):
         """Resolution is read-only; it must not dirty the working tree."""
         project = _make_feature_project(tmp_path)
@@ -497,6 +568,97 @@ class TestResolveTasksPython:
 
         assert result.returncode == 0, result.stderr
         assert feature_json.read_bytes() == before
+
+
+@requires_bash
+class TestResolveTasksBashJsonEscape:
+    """``json_escape`` must emit valid JSON, matching core's implementation.
+
+    Regression: the escape table silently lost a level of backslash quoting,
+    so backslashes passed through unescaped and ``\\n``/``\\t`` collapsed to
+    the bare letters ``n``/``t``. A Windows feature path would have produced
+    invalid JSON that the agent then failed to parse.
+    """
+
+    CASES = {
+        "backslash": "a\\b",
+        "windows_path": "C:\\Users\\dev\\specs",
+        "quote": 'a"b',
+        "newline": "a\nb",
+        "tab": "a\tb",
+        "carriage_return": "a\rb",
+        "control": "a\x01b",
+    }
+
+    @staticmethod
+    def _escape(script: Path, tmp_path: Path, value: str) -> str:
+        """Run the script's own ``json_escape`` over *value*, byte-exactly."""
+        import re
+
+        body = re.search(
+            r"(json_escape\(\) \{.*?\n\})",
+            script.read_text(encoding="utf-8"),
+            re.S,
+        )
+        assert body, f"no json_escape found in {script}"
+
+        payload = tmp_path / "value.txt"
+        payload.write_text(value, encoding="utf-8", newline="")
+        harness = tmp_path / "harness.sh"
+        # Read the raw value from a file so the harness itself needs no quoting.
+        harness.write_text(
+            body.group(1) + '\nvalue="$(cat "$1")"\njson_escape "$value"\n',
+            encoding="utf-8",
+            newline="\n",
+        )
+        return subprocess.run(
+            ["bash", str(harness), str(payload)],
+            capture_output=True,
+            check=True,
+        ).stdout.decode("utf-8")
+
+    @pytest.mark.parametrize("name", sorted(CASES))
+    def test_escaping_round_trips_through_json(self, tmp_path: Path, name: str):
+        value = self.CASES[name]
+        escaped = self._escape(SH_SCRIPT, tmp_path, value)
+
+        # The escaped text must be a valid JSON string body that decodes back
+        # to exactly what went in.
+        assert json.loads(f'"{escaped}"') == value, escaped
+
+    @pytest.mark.parametrize("name", sorted(CASES))
+    def test_matches_core_json_escape(self, tmp_path: Path, name: str):
+        """Kept in step with core rather than diverging quietly."""
+        core_common = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
+        value = self.CASES[name]
+
+        ours = self._escape(SH_SCRIPT, tmp_path / "ours", value)
+        theirs = self._escape(core_common, tmp_path / "theirs", value)
+
+        assert ours == theirs
+
+    def test_json_output_parses_for_a_path_with_a_backslash(self, tmp_path: Path):
+        """End to end: a feature directory containing a backslash.
+
+        POSIX allows a backslash in a filename, so this exercises the real
+        emit path rather than the helper in isolation.
+        """
+        project = _make_feature_project(tmp_path)
+        odd = project / "specs" / "we\\ird"
+        try:
+            odd.mkdir()
+        except OSError:
+            pytest.skip("filesystem rejects backslash in a path component")
+        (odd / "tasks.md").write_text("- [ ] T001 x\n", encoding="utf-8")
+        (project / ".specify" / "feature.json").write_text(
+            json.dumps({"feature_directory": "specs/we\\ird"}), encoding="utf-8"
+        )
+
+        result = _run(["bash", str(SH_SCRIPT), "--json"], project)
+
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout)  # would raise on invalid escaping
+        assert payload["FEATURE_DIR"].endswith("we\\ird")
 
 
 @requires_bash
