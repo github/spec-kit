@@ -353,12 +353,16 @@ def bundle_install(
     ),
     integration: str = typer.Option(None, "--integration", help="Override integration"),
     offline: bool = typer.Option(False, "--offline", help="Do not access the network"),
+    refresh: bool = typer.Option(
+        False, "--refresh", help="Refresh owned components from this bundle source",
+    ),
 ) -> None:
     """Install a bundle's full component set through each primitive's machinery.
 
     ``bundle_id`` may be a catalog bundle id, or a local path to a built
     artifact (``.zip``), a bundle directory, or a ``bundle.yml`` file. Local
-    sources install directly without consulting the catalog stack.
+    sources install directly without consulting the catalog stack. Use
+    ``--refresh`` to update owned components from a newer local source.
     """
     try:
         from ...bundler.lib.project import find_project_root
@@ -428,14 +432,20 @@ def bundle_install(
             plan,
             DefaultPrimitiveInstaller(allow_network=not offline),
             manifest=manifest,
+            refresh=refresh,
         )
     except BundlerError as exc:
         _fail(str(exc))
         return
 
+    refresh_summary = (
+        f", {len(result.refreshed)} refreshed, {len(result.uninstalled)} removed"
+        if refresh else ""
+    )
     console.print(
         f"[green]✓[/green] Installed '{_escape_markup(str(result.bundle_id))}' "
-        f"({len(result.installed)} added, {len(result.skipped)} already present)."
+        f"({len(result.installed)} added, {len(result.skipped)} already present"
+        f"{refresh_summary})."
     )
 
 

@@ -104,8 +104,9 @@ def install_bundle(
         raise BundlerError(
             f"Bundle '{plan.bundle_id}' is already installed at version "
             f"{existing.version}, but version {plan.version} was requested. "
-            "Use 'specify bundle update' to refresh its components before "
-            "advancing the installed record."
+            "Use 'specify bundle update <id>' for a catalog bundle, or "
+            "'specify bundle install <path> --refresh' for a local source, "
+            "to refresh owned components before advancing the installed record."
         )
 
     prior_ours = {

@@ -18,7 +18,7 @@ from typer.testing import CliRunner
 from specify_cli import app
 from specify_cli.bundler import BundlerError
 from specify_cli.commands.bundle import _local_manifest_source
-from tests.bundler_helpers import make_project, valid_manifest_dict, write_manifest
+from tests.bundler_helpers import FakeInstaller, make_project, valid_manifest_dict, write_manifest
 
 
 def test_local_source_none_for_non_path():
@@ -309,3 +309,76 @@ def test_incompatible_local_manifest_is_rejected_before_project_init(
     assert result.exit_code == 1
     assert "requires Spec Kit >=999.0.0" in result.output
     run_init.assert_not_called()
+
+
+@pytest.mark.parametrize("source_kind", ["manifest", "directory", "zip"])
+def test_local_install_refresh_updates_owned_components(
+    tmp_path: Path, monkeypatch, source_kind: str,
+):
+    """Local upgrades refresh owned pins before advancing the bundle record."""
+    from specify_cli.bundler.models.records import load_records, records_path
+
+    project = make_project(tmp_path / "proj")
+    monkeypatch.chdir(project)
+    versions = {}
+
+    class VersionedInstaller(FakeInstaller):
+        def install(self, root, component):
+            super().install(root, component)
+            versions[(component.kind, component.id)] = component.version
+
+        def refresh(self, root, component):
+            assert load_records(root)[0].version == "1.2.0"
+            super().refresh(root, component)
+            versions[(component.kind, component.id)] = component.version
+
+    installer = VersionedInstaller()
+    monkeypatch.setattr(
+        "specify_cli.bundler.services.adapters.DefaultPrimitiveInstaller",
+        lambda **kwargs: installer,
+    )
+    data = valid_manifest_dict()
+    manifest_path = write_manifest(tmp_path / "local bundle", data)
+    runner = CliRunner()
+    first = runner.invoke(app, ["bundle", "install", str(manifest_path), "--offline"])
+    assert first.exit_code == 0, first.output
+    original_record = records_path(project).read_bytes()
+    original_versions = dict(versions)
+
+    data["bundle"]["version"] = "2.0.0"
+    data["provides"]["extensions"][0]["version"] = "2.0.0"
+    data["provides"]["presets"][0]["version"] = "3.0.0"
+    data["provides"]["workflows"][0]["version"] = "0.4.0"
+    write_manifest(manifest_path.parent, data)
+    if source_kind == "manifest":
+        source = manifest_path
+    elif source_kind == "directory":
+        source = manifest_path.parent
+    else:
+        source = tmp_path / "local bundle.zip"
+        with zipfile.ZipFile(source, "w") as archive:
+            archive.write(manifest_path, "bundle.yml")
+
+    rejected = runner.invoke(app, ["bundle", "install", str(source), "--offline"])
+    assert rejected.exit_code == 1, rejected.output
+    assert records_path(project).read_bytes() == original_record
+    assert versions == original_versions
+    assert installer.refresh_calls == []
+
+    refreshed = runner.invoke(
+        app, ["bundle", "install", str(source), "--offline", "--refresh"],
+    )
+    assert refreshed.exit_code == 0, refreshed.output
+    assert "--refresh" in rejected.output
+    assert "4 refreshed" in refreshed.output
+    expected = {
+        ("extensions", "ext-a"): "2.0.0",
+        ("presets", "preset-a"): "3.0.0",
+        ("steps", "step-a"): None,
+        ("workflows", "wf-a"): "0.4.0",
+    }
+    assert versions == expected
+    assert set(installer.refresh_calls) == set(expected)
+    record = load_records(project)[0]
+    assert record.version == "2.0.0"
+    assert {(c.kind, c.id): c.version for c in record.contributed_components} == expected
