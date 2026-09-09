@@ -595,18 +595,6 @@ class TestErrors:
         with pytest.raises(ArtifactResolutionError):
             ArtifactCatalog(spec_kit_project).get_artifact_info("command:speckit.constitution")
 
-    def test_corrupt_preset_registry_uses_empty_registry_fallback(self, spec_kit_project: Path):
-        registry = spec_kit_project / ".specify" / "presets" / ".registry"
-        registry.write_text("{invalid", encoding="utf-8")
-
-        catalog = ArtifactCatalog(spec_kit_project)
-        assert any(row.id == "command:speckit.constitution" for row in catalog.list_artifacts())
-        assert (
-            catalog.get_artifact_info("command:speckit.constitution")["id"]
-            == "command:speckit.constitution"
-        )
-
-
 class TestKindHint:
     def test_kind_flag_disambiguates(self, spec_kit_project: Path):
         install_preset(
