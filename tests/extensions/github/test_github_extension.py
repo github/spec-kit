@@ -42,6 +42,16 @@ SCRIPT_TWINS = {
 }
 
 
+def _supported_agents() -> list[str]:
+    """Every integration Spec Kit can register commands for."""
+    from specify_cli.agents import CommandRegistrar
+
+    return sorted(CommandRegistrar().AGENT_CONFIGS)
+
+
+SUPPORTED_AGENTS = _supported_agents()
+
+
 def _manifest_dict() -> dict:
     return yaml.safe_load((EXT_DIR / "extension.yml").read_text(encoding="utf-8"))
 
@@ -255,6 +265,63 @@ class TestScriptPathResolution:
         # And it must not have been rewritten into the core script tree.
         assert ".specify/scripts/" not in content
 
+    @pytest.mark.parametrize("agent", SUPPORTED_AGENTS)
+    def test_every_supported_integration_renders_the_command(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, agent: str
+    ):
+        """Acceptance criterion: the command works for *every* integration.
+
+        Covers both layouts in one sweep — command-file agents, skills-mode
+        agents, and Hermes, which installs to ``~/.hermes/skills`` rather than
+        a project-local directory (hence the redirected home).
+        """
+        from specify_cli.extensions import CommandRegistrar, ExtensionManager
+
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+
+        project = tmp_path / "project"
+        (project / ".specify").mkdir(parents=True)
+        (project / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": agent, "script": "sh"}), encoding="utf-8"
+        )
+
+        manager = ExtensionManager(project)
+        manifest = manager.install_from_directory(
+            EXT_DIR, "0.9.0", register_commands=False
+        )
+        CommandRegistrar().register_commands_for_agent(
+            agent, manifest, project / ".specify" / "extensions" / "github", project
+        )
+
+        installed = project / ".specify" / "extensions"
+        artifacts = [
+            p
+            for root in (project, home)
+            for p in root.rglob("*")
+            if p.is_file()
+            and installed not in p.parents
+            and "taskstoissues" in p.as_posix().lower()
+        ]
+        assert artifacts, f"{agent} produced no command artifact"
+
+        expected = f".specify/extensions/github/{SCRIPT_TWINS['sh']}"
+        bodies = [p.read_text(encoding="utf-8") for p in artifacts]
+
+        # No artifact may leak an unresolved placeholder...
+        for artifact, content in zip(artifacts, bodies):
+            assert "{SCRIPT}" not in content, artifact
+        # ...and the command body must carry the resolved extension-local path.
+        # Some integrations also emit a thin companion file (e.g. Copilot's
+        # prompt shim, which only points at the agent), so this is "at least
+        # one" rather than "all".
+        assert any(expected in content for content in bodies), (
+            f"{agent}: no artifact references {expected} "
+            f"(wrote {[p.name for p in artifacts]})"
+        )
+
     def test_rendered_skill_points_at_a_script_that_ships(self, tmp_path: Path):
         """Skills-mode layouts resolve ``{SCRIPT}`` the same way."""
         from specify_cli.extensions import CommandRegistrar, ExtensionManager
@@ -315,12 +382,59 @@ class TestCommandBody:
         assert "github/github-mcp-server/list_issues" in tools
         assert "github/github-mcp-server/issue_write" in tools
 
-    def test_preserves_remote_validation_and_deduplication_instructions(self):
+    def test_preserves_remote_validation(self):
         body = COMMAND_FILE.read_text(encoding="utf-8")
         assert "git config --get remote.origin.url" in body
         assert "ONLY PROCEED TO NEXT STEPS IF THE REMOTE IS A GITHUB URL" in body
-        assert r"\bT\d{3,}\b" in body
+        assert (
+            "UNDER NO CIRCUMSTANCES EVER CREATE ISSUES IN REPOSITORIES THAT DO NOT "
+            "MATCH THE REMOTE URL" in body
+        )
+
+    def test_preserves_deduplication_and_pagination(self):
+        body = COMMAND_FILE.read_text(encoding="utf-8")
         assert "list_issues" in body
+        # Both open and closed issues: the tool returns both when `state` is omitted.
+        assert "Do not pass a `state` value" in body
+        # Cursor-based pagination, and the early exit that bounds the call count.
+        assert "perPage: 100" in body
+        assert "`after` parameter" in body
+        assert "endCursor" in body
+        assert "Stop paginating as soon as every task ID has been matched" in body
+        # Four-digit and longer task IDs must still match.
+        assert r"\bT\d{3,}\b" in body
+
+    def test_body_differs_from_core_only_in_the_script_invocation(self):
+        """Behaviour parity, enforced as a diff rather than as spot checks.
+
+        Everything except the ``scripts:`` frontmatter and the two lines that
+        read the new ``TASKS`` value must match the core command verbatim, so
+        the two cannot silently drift while both exist.
+        """
+        import difflib
+
+        core = CORE_COMMAND.read_text(encoding="utf-8").splitlines()
+        ext = COMMAND_FILE.read_text(encoding="utf-8").splitlines()
+        changed = [
+            line
+            for line in difflib.unified_diff(core, ext, n=0)
+            if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
+        ]
+
+        # 3 script lines + 2 outline lines, each as one removal and one addition.
+        assert len(changed) == 10, "\n".join(changed)
+
+        markers = (
+            "check-prerequisites",
+            "check_prerequisites",
+            "resolve-tasks",
+            "resolve_tasks",
+            "AVAILABLE_DOCS",
+            "path to **tasks**",
+        )
+        assert all(
+            any(marker in line for marker in markers) for line in changed
+        ), "\n".join(changed)
 
     def test_uses_the_portable_command_reference_token(self):
         """A literal invocation would be correct for exactly one agent."""
