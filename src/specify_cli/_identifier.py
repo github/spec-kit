@@ -59,6 +59,13 @@ class IdentifierComponentError(ValueError):
     """Raised when a manifest component would break identifier grammar."""
 
 
+def _source_id_matches_layer(layer: str, source_id: str) -> bool:
+    """Return whether ``source_id`` satisfies the layer sentinel contract."""
+    if layer == PROJECT_OVERRIDE_LAYER:
+        return source_id == "_"
+    return layer in {"preset", "extension"} and source_id != "_"
+
+
 def validate_component(value: Any, field_label: str) -> str:
     """Return ``value`` unchanged if it is a non-empty ``:``-free string.
 
@@ -113,11 +120,15 @@ def derive_named_id(layer: str, source_id: str, kind: str, name: str) -> str:
     if kind not in _NAMED_CONTRIBUTION_KINDS:
         raise IdentifierComponentError(f"Invalid named contribution kind '{kind}'")
     validate_component(name, "name")
-    if layer == PROJECT_OVERRIDE_LAYER and source_id != "_":
+    if layer == PROJECT_OVERRIDE_LAYER and not _source_id_matches_layer(
+        layer, source_id
+    ):
         raise IdentifierComponentError(
             f"Invalid sourceId '{source_id}': project layer requires '_'"
         )
-    if layer in {"preset", "extension"} and source_id == "_":
+    if layer in {"preset", "extension"} and not _source_id_matches_layer(
+        layer, source_id
+    ):
         raise IdentifierComponentError(
             "Invalid sourceId '_': reserved for project layer"
         )
@@ -161,6 +172,8 @@ def layer_kind_from_lookup_id(lookup_id: str) -> str | None:
         return None
     layer = parts[0]
     if layer not in _LAYER_KINDS:
+        return None
+    if not _source_id_matches_layer(layer, parts[1]):
         return None
     if parts[2] not in _CONTRIBUTION_KINDS:
         return None
@@ -217,6 +230,10 @@ def derive_hook_id(
     validate_component(source_id, "sourceId")
     if layer not in _HOOK_LAYERS:
         raise IdentifierComponentError(f"Invalid layer '{layer}'")
+    if not _source_id_matches_layer(layer, source_id):
+        raise IdentifierComponentError(
+            "Invalid sourceId '_': reserved for project layer"
+        )
     validate_component(event_name, "eventName")
     validate_component(command, "command")
     return f"{layer}:{source_id}:hook:{event_name}:{command}"

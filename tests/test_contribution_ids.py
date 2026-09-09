@@ -553,6 +553,9 @@ class TestSourceIdFromLookupId:
             ("preset:foo", None),
             ("unknown:foo:command:bar", None),
             ("project:_:hook:evt:cmd", None),
+            ("project:foo:command:bar", None),
+            ("preset:_:command:bar", None),
+            ("extension:_:hook:before_plan:speckit.plan", None),
         ],
     )
     def test_extracts_source_id_or_none(self, lookup_id, expected):
@@ -577,6 +580,10 @@ class TestDeriveNamedIdSentinel:
             derive_named_id(PROJECT_OVERRIDE_LAYER, "_", "command", "n")
             == f"{PROJECT_OVERRIDE_LAYER}:_:command:n"
         )
+
+    def test_hook_rejects_project_source_sentinel(self):
+        with pytest.raises(IdentifierComponentError):
+            derive_hook_id("extension", "_", "before_plan", "speckit.plan")
 
 
 # ---------------------------------------------------------------------------
