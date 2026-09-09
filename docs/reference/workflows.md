@@ -563,6 +563,11 @@ its single positional argument as the agent configuration reference and accepts
 `agent` and `safety` as named integration options. Configure its model through
 the command step's top-level `model` field.
 
+When Docker Agent `integration_args` supplies an agent reference for a command
+step, it takes precedence over `SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS`;
+the entire legacy environment value is ignored for that step. Without a per-step
+agent reference, the legacy environment behavior is unchanged.
+
 Resolved runtime configuration is recorded in workflow run state. When a failed
 or paused command is resumed, the complete dispatch configuration is re-resolved
 from the current inputs, so values supplied with `workflow resume --input` take

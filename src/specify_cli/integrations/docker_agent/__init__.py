@@ -103,7 +103,9 @@ class DockerAgentIntegration(SkillsIntegration):
         # The reference may be a local file or a registry reference, so its
         # existence and validity are intentionally left to Docker Agent.
         legacy_args: list[str] = []
-        if extra_args:
+        # Per-step arguments are authoritative; ignore the entire legacy value,
+        # including malformed quoting, when an agent reference is supplied.
+        if not runtime_args:
             try:
                 legacy_args = shlex.split(extra_args)
             except ValueError as exc:
@@ -112,14 +114,6 @@ class DockerAgentIntegration(SkillsIntegration):
                     f"command line (value: {extra_args!r})."
                 ) from exc
 
-        if runtime_args and legacy_args and not legacy_args[0].startswith("-"):
-            # Before per-step configuration existed, a valid legacy value had
-            # to start with the agent reference. The per-step reference is now
-            # authoritative; retain only the legacy flags so an existing
-            # environment does not turn its old config into a second message.
-            legacy_args = legacy_args[1:]
-
-        if not runtime_args:
             if not legacy_args:
                 raise ValueError(
                     f"{extra_env_name} must start with an agent configuration "
@@ -134,14 +128,7 @@ class DockerAgentIntegration(SkillsIntegration):
 
         args = [*self._agent_command(), "--exec"]
 
-        # Per-step positional arguments come first. For Docker Agent the sole
-        # positional value is the local/registry/alias agent reference.
-        args.extend(runtime_args)
-
-        # Preserve flags from the legacy process-wide configuration. When a
-        # per-step agent reference is present, the legacy reference above has
-        # already been removed to prevent a second positional message.
-        args.extend(legacy_args)
+        args.extend(runtime_args or legacy_args)
 
         for option, value in (integration_options or {}).items():
             args.extend([self._RUNTIME_OPTION_FLAGS[option], value])

@@ -79,7 +79,7 @@ def test_per_step_runtime_config_builds_ordered_argv(monkeypatch):
     ]
 
 
-def test_per_step_args_precede_legacy_extra_flags(monkeypatch):
+def test_per_step_args_ignore_legacy_extra_flags(monkeypatch):
     monkeypatch.setenv(
         "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", "--hide-tool-results"
     )
@@ -96,16 +96,16 @@ def test_per_step_args_precede_legacy_extra_flags(monkeypatch):
         "run",
         "--exec",
         "./agent.yaml",
-        "--hide-tool-results",
         "--",
         "prompt",
     ]
 
 
-def test_per_step_agent_replaces_legacy_agent_but_preserves_flags(monkeypatch):
+@pytest.mark.parametrize("legacy_value", ["./global.yaml --hide-tool-results", '"broken'])
+def test_per_step_args_override_legacy_extra_args(monkeypatch, legacy_value):
     monkeypatch.setenv(
         "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS",
-        "./global.yaml --hide-tool-results",
+        legacy_value,
     )
     monkeypatch.setattr("shutil.which", lambda name: None)
 
@@ -120,7 +120,6 @@ def test_per_step_agent_replaces_legacy_agent_but_preserves_flags(monkeypatch):
         "run",
         "--exec",
         "./step.yaml",
-        "--hide-tool-results",
         "--",
         "prompt",
     ]

@@ -128,6 +128,11 @@ and recovery. On resume, the complete dispatch configuration (`integration`,
 `model`, `integration_args`, and `integration_options`) is re-resolved from the
 current workflow inputs; without updated inputs this reproduces the prior values.
 
+When Docker Agent `integration_args` supplies an agent reference for a command
+step, it takes precedence over `SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS`;
+the entire legacy environment value is ignored for that step. Without a per-step
+agent reference, the legacy environment behavior is unchanged.
+
 ### Prompt Steps
 
 Send an arbitrary inline prompt to an integration CLI (no command file needed):
