@@ -30,6 +30,11 @@ jobs:
             // This pull_request_target job deliberately has no checkout. The
             // only durable operation is removal of these fixed labels.
             const pr = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+            const eventHeadSha = context.payload.pull_request.head.sha;
+            if (context.payload.action === 'synchronize' && pr.data.head.sha !== eventHeadSha) {
+              core.info('A newer head is present; skip this stale cleanup event.');
+              return;
+            }
             for (const label of labels) {
               if (!pr.data.labels.some((item) => item.name === label)) continue;
               await github.rest.issues.removeLabel({

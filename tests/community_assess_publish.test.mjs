@@ -109,8 +109,25 @@ test('retrigger removes the previous outcome before applying the new one', async
   assert.deepEqual(calls.added, ['community-assessment-needs-clarification']);
 });
 
-test('mechanical cleanup has no agent-output dependency', () => {
+async function runCleanup({ currentSha, eventSha, action = 'synchronize', labels = [] }) {
+  const { github, calls } = fakeGitHub({ sha: currentSha, labels });
+  const context = {
+    payload: { action, pull_request: { number: 7, head: { sha: eventSha } } },
+    repo: { owner: 'github', repo: 'spec-kit' },
+  };
+  const core = { info() {} };
+  const run = new Function('context', 'github', 'core', `return (async () => {\n${cleanupScript}\n})();`);
+  await run(context, github, core);
+  return calls;
+}
+
+test('mechanical cleanup removes fixed labels and skips stale synchronize events', async () => {
   assert.match(cleanupScript, /pulls\.get/);
   assert.match(cleanupScript, /removeLabel/);
   assert.doesNotMatch(cleanupScript, /GH_AW_AGENT_OUTPUT|agent_output/);
+  const sha = '1'.repeat(40);
+  const removed = await runCleanup({ currentSha: sha, eventSha: sha, labels: ['community-assessment-fits', 'community-assessment-invalid'] });
+  assert.deepEqual(removed.removed, ['community-assessment-fits', 'community-assessment-invalid']);
+  const stale = await runCleanup({ currentSha: '2'.repeat(40), eventSha: '3'.repeat(40), labels: ['community-assessment-fits'] });
+  assert.deepEqual(stale.removed, []);
 });
