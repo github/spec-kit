@@ -103,13 +103,36 @@ Author actions:
 
 | Label | Meaning |
 |---|---|
+| `author-needs-proof` | The problem isn't demonstrated yet — supply a reproduction or a test that fails on `main` and passes with the change |
 | `author-needs-tests` | Real change but missing a regression test — add one that fails before / passes after |
 | `author-needs-disclosure` | AI assistance not disclosed — disclose AI use per CONTRIBUTING |
 | `author-needs-info` | Missing detail needed to assess — supply requested info |
+| `author-needs-rebase` | Branch conflicts with `main` — rebase and resolve before it can be merged |
 | `author-over-cap` | Over the 3-open-PR cap or repetitive batch submissions — please consolidate |
-| `author-awaiting` | Waiting on author response (hands off to the existing stale workflow) |
+| `author-awaiting` | Waiting on author response (handed off to the existing stale workflow) |
+
+Some pull requests are closed as `triage-out-of-scope` rather than merged — most commonly
+when the same change is already in `main`, when a request is better served as a community
+extension, when an existing feature already covers it, or when a catalog change came in as
+a direct edit instead of a submission issue. A close always comes with a comment explaining
+why and, where relevant, where to go instead.
 
 For further reading on the thinking behind this gate, see [one maintainer's perspective on AI-source contributions](https://blog.manorrock.com/blog/2026/09/08/spec_kit_ai_source.html). That piece is a personal viewpoint, not project policy — the policy is what's documented here.
+
+### Community catalog submissions
+
+To add or update a community extension, preset, or bundle in the catalog, **open an
+`[Extension]` / `[Preset]` / `[Bundle]` submission issue** — do not edit
+`extensions/catalog.community.json` (or the preset/bundle catalogs) directly in a pull
+request. The submission issue triggers an automated workflow that validates the release,
+verifies the pinned `download_url` and digests, and generates the catalog PR for you.
+A hand-edited catalog PR bypasses that validation and will be closed with a pointer back
+to the issue flow.
+
+This applies to **new entries, version updates, and repairs alike** — a version bump or a
+fix to a broken entry is still an update and needs the same validation. Always pin
+`download_url` to a release tag (e.g. `.../releases/download/<tag>/...` or
+`.../archive/refs/tags/<tag>.zip`); never use `releases/latest/`.
 
 ### Branch naming
 
