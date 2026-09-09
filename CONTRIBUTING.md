@@ -118,7 +118,7 @@ extension, when an existing feature already covers it, or when a catalog change 
 a direct edit instead of a submission issue. A close always comes with a comment explaining
 why and, where relevant, where to go instead.
 
-For further reading on the thinking behind this gate, see [one maintainer's perspective on AI-source contributions](https://blog.manorrock.com/blog/2026/09/08/spec_kit_ai_source.html). That piece is a personal viewpoint, not project policy — the policy is what's documented here.
+For further reading on the thinking behind this gate, see [one maintainer's perspective on AI-sourced contributions](https://blog.manorrock.com/blog/2026/09/08/spec_kit_ai_source.html). That piece is a personal viewpoint, not project policy — the policy is what's documented here.
 
 ### Community catalog submissions
 
