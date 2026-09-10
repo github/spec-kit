@@ -88,6 +88,9 @@ class _KindManager(Protocol):
     def is_installed(self, component: ComponentRef) -> bool:
         pass
 
+    def snapshot(self, component: ComponentRef) -> ComponentRef | None:
+        pass
+
     def install(self, component: ComponentRef) -> None:
         pass
 
@@ -142,6 +145,29 @@ def _delegate_command(action: str, label: str, call) -> None:
             raise BundlerError(f"Failed to {action} {label}.") from exc
 
 
+def _snapshot_ref(
+    component: ComponentRef,
+    *,
+    version: object,
+    metadata: dict[str, object] | None = None,
+) -> ComponentRef:
+    metadata = metadata or {}
+    actual_version = version.strip() if isinstance(version, str) else None
+    source = metadata.get("source")
+    priority = metadata.get("priority")
+    return ComponentRef(
+        kind=component.kind,
+        id=component.id,
+        version=actual_version or None,
+        source=source if isinstance(source, str) else None,
+        priority=(
+            priority
+            if isinstance(priority, int) and not isinstance(priority, bool)
+            else None
+        ),
+    )
+
+
 class _PresetKindManager:
     def __init__(self, project_root: Path, allow_network: bool) -> None:
         from ...presets import PresetManager
@@ -155,6 +181,21 @@ class _PresetKindManager:
             return self._manager.get_pack(component.id) is not None
         except Exception:  # noqa: BLE001
             return False
+
+    def snapshot(self, component: ComponentRef) -> ComponentRef | None:
+        metadata = self._manager.registry.get(component.id)
+        manifest = self._manager.get_pack(component.id)
+        if metadata is None and manifest is None:
+            return None
+        return _snapshot_ref(
+            component,
+            version=(
+                metadata.get("version")
+                if metadata is not None
+                else manifest.version
+            ),
+            metadata=metadata,
+        )
 
     def install(self, component: ComponentRef) -> None:
         self._do_install(component, force=False)
@@ -238,6 +279,16 @@ class _ExtensionKindManager:
             return self._manager.registry.is_installed(component.id)
         except Exception:  # noqa: BLE001
             return False
+
+    def snapshot(self, component: ComponentRef) -> ComponentRef | None:
+        metadata = self._manager.registry.get(component.id)
+        if metadata is None:
+            return None
+        return _snapshot_ref(
+            component,
+            version=metadata.get("version"),
+            metadata=metadata,
+        )
 
     def install(self, component: ComponentRef) -> None:
         self._do_install(component, force=False)
@@ -326,6 +377,14 @@ class _WorkflowKindManager:
         except Exception:  # noqa: BLE001
             return False
 
+    def snapshot(self, component: ComponentRef) -> ComponentRef | None:
+        metadata = self._registry.get(component.id)
+        if metadata is None:
+            return None
+        return _snapshot_ref(
+            component, version=metadata.get("version"), metadata=metadata
+        )
+
     def install(self, component: ComponentRef) -> None:
         if not self._allow_network and not self._is_bundled(component.id):
             raise BundlerError(
@@ -391,6 +450,14 @@ class _StepKindManager:
             return self._registry.is_installed(component.id)
         except Exception:  # noqa: BLE001
             return False
+
+    def snapshot(self, component: ComponentRef) -> ComponentRef | None:
+        metadata = self._registry.get(component.id)
+        if metadata is None:
+            return None
+        return _snapshot_ref(
+            component, version=metadata.get("version"), metadata=metadata
+        )
 
     def install(self, component: ComponentRef) -> None:
         if not self._allow_network:

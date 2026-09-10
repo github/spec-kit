@@ -470,6 +470,29 @@ def test_default_installer_refresh_dispatches_to_kind_manager(tmp_path: Path, mo
     assert force_values == [True], "DefaultPrimitiveInstaller.refresh() must use force=True"
 
 
+def test_default_installer_snapshots_installed_step(tmp_path: Path):
+    from specify_cli.workflows.catalog import StepRegistry
+
+    registry = StepRegistry(tmp_path)
+    registry.add(
+        "my-step",
+        {
+            "name": "My Step",
+            "version": "1.2.3",
+            "type_key": "my-step",
+        },
+    )
+
+    installer = DefaultPrimitiveInstaller(allow_network=False)
+    snapshot = installer.snapshot(
+        tmp_path, _component("steps", "my-step")
+    )
+
+    assert snapshot == ComponentRef(
+        kind="steps", id="my-step", version="1.2.3"
+    )
+
+
 def test_refresh_succeeds_and_passes_force_true(tmp_path: Path, monkeypatch):
     """Regression: bundle update (refresh=True) of an already-installed extension
     must succeed and pass force=True to install_from_directory."""

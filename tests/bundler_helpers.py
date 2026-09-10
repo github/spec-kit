@@ -8,6 +8,7 @@ Import what you need explicitly, e.g.::
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import yaml
@@ -97,6 +98,7 @@ class FakeInstaller:
 
     def __init__(self, *, fail_on: str | None = None) -> None:
         self.installed: set[tuple[str, str]] = set()
+        self.components: dict[tuple[str, str], ComponentRef] = {}
         self.install_calls: list[tuple[str, str]] = []
         self.remove_calls: list[tuple[str, str]] = []
         self.refresh_calls: list[tuple[str, str]] = []
@@ -115,11 +117,23 @@ class FakeInstaller:
         if self._fail_on is not None and component.id == self._fail_on:
             raise BundlerError(f"Simulated failure installing {component.id}")
         self.installed.add(self._key(component))
+        self.components[self._key(component)] = replace(
+            component, version=component.version or "test-installed"
+        )
 
     def remove(self, project_root: Path, component: ComponentRef) -> None:
         self.remove_calls.append(self._key(component))
         self.installed.discard(self._key(component))
+        self.components.pop(self._key(component), None)
 
     def refresh(self, project_root: Path, component: ComponentRef) -> None:
         self.refresh_calls.append(self._key(component))
         self.installed.add(self._key(component))
+        self.components[self._key(component)] = replace(
+            component, version=component.version or "test-installed"
+        )
+
+    def snapshot(
+        self, project_root: Path, component: ComponentRef
+    ) -> ComponentRef | None:
+        return self.components.get(self._key(component))

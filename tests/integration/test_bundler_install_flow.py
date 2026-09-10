@@ -568,6 +568,84 @@ def test_update_record_save_failure_restores_refreshed_and_dropped_components(
     assert records_path(tmp_path).read_bytes() == original_record
 
 
+def test_update_rollback_uses_installed_snapshot_not_shared_bundle_pin(
+    tmp_path: Path, monkeypatch
+):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+
+    man_a = _bundle("a", ["ext-a"], version="1.0.0")
+    install_bundle(tmp_path, _plan(man_a), installer, manifest=man_a)
+
+    man_b_v2 = _bundle("b", ["ext-a", "ext-b"], version="2.0.0")
+    install_bundle(tmp_path, _plan(man_b_v2), installer, manifest=man_b_v2)
+    original_record = records_path(tmp_path).read_bytes()
+
+    assert installer.components[("extensions", "ext-a")].version == "1.0.0"
+    assert next(
+        record for record in load_records(tmp_path) if record.bundle_id == "b"
+    ).contributed_components[0].version == "2.0.0"
+
+    man_b_v3 = _bundle("b", ["ext-a"], version="3.0.0")
+
+    def fail_save(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(
+        "specify_cli.bundler.services.installer.save_records", fail_save
+    )
+
+    with pytest.raises(BundlerError, match="disk full"):
+        install_bundle(
+            tmp_path,
+            _plan(man_b_v3),
+            installer,
+            manifest=man_b_v3,
+            refresh=True,
+        )
+
+    assert installer.components[("extensions", "ext-a")].version == "1.0.0"
+    assert installer.components[("extensions", "ext-b")].version == "2.0.0"
+    assert records_path(tmp_path).read_bytes() == original_record
+
+
+def test_bundler_error_reports_incomplete_rollback(tmp_path: Path, monkeypatch):
+    make_project(tmp_path)
+
+    class FailingRollbackInstaller(FakeInstaller):
+        def refresh(self, project_root, component):
+            if component.version == "1.0.0":
+                raise BundlerError("old artifact unavailable")
+            super().refresh(project_root, component)
+
+    installer = FailingRollbackInstaller()
+    man_v1 = _bundle("demo", ["ext-a"], version="1.0.0")
+    install_bundle(tmp_path, _plan(man_v1), installer, manifest=man_v1)
+
+    def fail_save(*_args, **_kwargs):
+        raise BundlerError("record write failed")
+
+    monkeypatch.setattr(
+        "specify_cli.bundler.services.installer.save_records", fail_save
+    )
+
+    man_v2 = _bundle("demo", ["ext-a"], version="2.0.0")
+    with pytest.raises(
+        BundlerError,
+        match=(
+            "record write failed.*Rollback was incomplete.*"
+            "project may be inconsistent"
+        ),
+    ):
+        install_bundle(
+            tmp_path,
+            _plan(man_v2),
+            installer,
+            manifest=man_v2,
+            refresh=True,
+        )
+
+
 def test_install_result_changed_reports_uninstalled():
     # A `bundle update` that only DROPS components (new manifest reduces
     # provides) populates uninstalled with nothing installed/refreshed; that is

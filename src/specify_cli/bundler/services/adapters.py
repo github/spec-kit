@@ -223,6 +223,12 @@ class DefaultPrimitiveInstaller:
         manager = self._manager_for(component, project_root)
         return manager.is_installed(component)
 
+    def snapshot(
+        self, project_root: Path, component: ComponentRef
+    ) -> ComponentRef | None:
+        manager = self._manager_for(component, project_root)
+        return manager.snapshot(component)
+
     def install(self, project_root: Path, component: ComponentRef) -> None:
         manager = self._manager_for(component, project_root)
         manager.install(component)
