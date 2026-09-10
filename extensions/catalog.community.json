@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-09T00:00:00Z",
+  "updated_at": "2026-09-10T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -3678,6 +3678,47 @@
       "stars": 0,
       "created_at": "2026-08-17T00:00:00Z",
       "updated_at": "2026-09-08T00:00:00Z"
+    },
+    "pdac": {
+      "name": "Product Definition as Code (PDaC)",
+      "id": "pdac",
+      "description": "Ground Spec Kit features in an accepted product definition: fetch a cited context projection before specifying, then verify citations after specify, plan and tasks. Never writes the product model.",
+      "author": "Juan G. Carmona (@juangcarmona)",
+      "version": "0.2.1",
+      "download_url": "https://github.com/juangcarmona/productshape/releases/download/speckit-pdac-v0.2.1/speckit-pdac.zip",
+      "repository": "https://github.com/juangcarmona/productshape",
+      "homepage": "https://pdac.dev",
+      "documentation": "https://github.com/juangcarmona/productshape/blob/main/extensions/speckit-pdac/README.md",
+      "changelog": "https://github.com/juangcarmona/productshape/blob/main/extensions/speckit-pdac/CHANGELOG.md",
+      "license": "Apache-2.0",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.7.2",
+        "tools": [
+          {
+            "name": "prodshape",
+            "version": ">=0.16.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 3
+      },
+      "tags": [
+        "product",
+        "citations",
+        "pdac",
+        "traceability",
+        "governance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-10T00:00:00Z",
+      "updated_at": "2026-09-10T00:00:00Z"
     },
     "pdac-product": {
       "name": "ProductShape PRODUCT workflows",
