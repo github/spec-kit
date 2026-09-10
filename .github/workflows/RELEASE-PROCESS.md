@@ -199,12 +199,18 @@ Choose a new version if the existing tag or PyPI publication is valid. Only cons
 
 ### Recovering an Incomplete Release
 
+Verify the release branch/tag, GitHub Release, wheel (`.whl`), and source distribution (`.tar.gz`) separately. A PyPI version page alone does not confirm that both distributions were uploaded.
+
 | State | Recovery |
 |---|---|
+| Tag exists, release branch development bump or PR is incomplete | Keep the tag unchanged. Inspect `chore/release-vX.Y.Z` and any existing PR; restore the branch from the release commit if missing, apply the next patch development bump if needed, and open or reuse the PR into `main`. Merge after publication is complete. Do not rerun Release Trigger for the existing tag. |
 | Tag exists, GitHub Release is missing | Confirm that the tag points to the intended release commit, then create the GitHub Release from that existing tag with the same notes format used by `release.yml`. |
-| GitHub Release exists, PyPI version is missing | Run **Publish to PyPI** manually with the exact release tag. |
+| Valid tag exists, neither wheel nor sdist is published to PyPI | Run **Publish to PyPI** manually with the exact release tag, independently of GitHub Release creation. |
 | PyPI version exists, GitHub Release is missing | Keep the existing tag unchanged and create the GitHub Release from it. |
-| PyPI contains only some expected distributions | Inspect the files already published before retrying. Previously used filenames cannot be replaced or reused. |
+| Wheel is published, sdist is missing | Verify the published wheel and recover the matching sdist from the original run's `dist` artifact. Use an authorized publishing path to upload only the missing sdist; do not replace the wheel. |
+| Sdist is published, wheel is missing | Verify the published sdist and recover the matching wheel from the original run's `dist` artifact. Use an authorized publishing path to upload only the missing wheel; do not replace the sdist. |
+
+For partial PyPI uploads, inspect the original run and published files before retrying. The current workflow rebuilds and publishes all of `dist/`; it is not a missing-file-only recovery command. If the original artifact is unavailable, investigate how to reproduce the matching distribution before publishing. Previously used filenames cannot be replaced or reused.
 
 ### Release Workflow Didn't Trigger
 
@@ -216,10 +222,11 @@ Check that:
 
 ### Version Mismatch
 
-If `pyproject.toml` doesn't match the latest tag:
+After a release PR is merged, `pyproject.toml` on `main` is expected to differ from the latest release tag. The tag `vX.Y.Z` points to a commit whose package version is exactly `X.Y.Z`; the release branch is subsequently bumped to the next patch development version (for example, `1.2.3` → `1.2.4.dev0`). Do not sync `main` back to the released version.
 
-- Run the release trigger workflow to sync versions
-- Or manually update `pyproject.toml` and push changes before running the release trigger
+The **Publish to PyPI** workflow checks out the release tag and verifies that its version, without the `v` prefix, exactly matches `pyproject.toml` at that commit. A mismatch at the tagged commit is an error; the next development version on `main` is expected.
+
+If that check fails, inspect the tag, GitHub Release, and PyPI publication state before choosing a recovery path (see **Tag Already Exists** and **Recovering an Incomplete Release** above). Do not move or recreate a published tag.
 
 ## Legacy Behavior (Pre-v0.1.10)
 
