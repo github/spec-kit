@@ -122,25 +122,9 @@ Execution steps:
    - TODO markers / unresolved decisions
    - Ambiguous adjectives ("robust", "intuitive") lacking quantification
 
-   Stage gate (spec vs plan). For every unchecked checklist item and every
-   Partial/Missing taxonomy category, classify before considering deferral:
-   1. Match the item against the spec-oriented taxonomy above.
-   2. A hit on any taxonomy category is a question candidate for THIS stage.
-      Do not defer NFRs, acceptance/DoD testability, edge cases, UX empty
-      states, domain constraints, or external-dependency failure modes.
-   3. Defer to planning ONLY when the item is specifically about
-      implementation method, tech-stack comparison, or task breakdown.
-   4. Mixed items (spec decision plus plan detail): split them and handle
-      the spec part now.
-
-   If more than 60% of unresolved items would be marked Defer, pause, report
-   the ratio, and re-check each against the taxonomy before continuing.
-
    For each category with Partial or Missing status, add a candidate question opportunity unless:
    - Clarification would not materially change implementation or validation strategy
-   - The item failed the stage gate above (implementation method, tech-stack
-     comparison, or task breakdown). Note internally; do not use a vague
-     "better deferred to planning" catch-all.
+   - The item is specifically about implementation method, tech-stack comparison, or task breakdown (note internally)
 
 4. Generate (internally) a prioritized queue of candidate clarification questions (maximum 5). Do NOT output them all at once. Apply these constraints:
     - Maximum of 5 total questions across the whole session.
@@ -251,10 +235,6 @@ Behavior rules:
 - Respect user early termination signals ("stop", "done", "proceed").
 - If no questions asked due to full coverage, output a compact coverage summary (all categories Clear) then suggest advancing.
 - If quota reached with unresolved high-impact categories remaining, explicitly flag them under Deferred with rationale.
-- MUST NOT defer spec-taxonomy items to Plan. Concurrent-user volume, NFR
-  quantification, acceptance-criteria testability, empty-state UX, and
-  external-dependency failure modes are spec questions. "How we implement
-  pagination" can wait; "whether the API paginates" cannot.
 
 Context for prioritization: {ARGS}
 
