@@ -10888,6 +10888,7 @@ class TestWorkflowStepAddCLI:
             ("1.0.0", None, True),
             ("release-a", " release-a ", True),
             ("1.0.0", None, False),
+            ("None", None, False),
         ],
     )
     def test_add_rejects_step_yml_version_mismatch(

@@ -3413,12 +3413,19 @@ def workflow_step_add(
         if "version" in info:
             from packaging import version as pkg_version
 
-            try:
-                versions_match = pkg_version.Version(
-                    str(downloaded_version)
-                ) == pkg_version.Version(str(catalog_version))
-            except pkg_version.InvalidVersion:
-                versions_match = str(downloaded_version) == str(catalog_version)
+            versions_match = False
+            if (
+                isinstance(downloaded_version, str)
+                and downloaded_version.strip()
+                and isinstance(catalog_version, str)
+                and catalog_version.strip()
+            ):
+                try:
+                    versions_match = pkg_version.Version(
+                        downloaded_version
+                    ) == pkg_version.Version(catalog_version)
+                except pkg_version.InvalidVersion:
+                    versions_match = downloaded_version == catalog_version
             if not versions_match:
                 console.print(
                     f"[red]Error:[/red] step.yml version "
