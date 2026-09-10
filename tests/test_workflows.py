@@ -10878,32 +10878,20 @@ class TestWorkflowStepRichMarkup:
 
 
 class TestWorkflowStepAddCLI:
-    @pytest.mark.parametrize(
-        ("catalog_version", "downloaded_version", "include_downloaded_version"),
-        [
-            ("1.0.0", "2.0.0", True),
-            ("1.0.0", 0, True),
-            ("1.0.0", False, True),
-            ("1.0.0", "", True),
-            ("1.0.0", None, True),
-            ("release-a", " release-a ", True),
-            ("1.0.0", None, False),
-            ("None", None, False),
-        ],
-    )
-    def test_add_rejects_step_yml_version_mismatch(
-        self,
+    @staticmethod
+    def _invoke_step_add(
         project_dir,
         monkeypatch,
+        *,
         catalog_version,
         downloaded_version,
-        include_downloaded_version,
+        include_downloaded_version=True,
     ):
         from typer.testing import CliRunner
 
         from specify_cli import app
         from specify_cli.authentication import http as auth_http
-        from specify_cli.workflows.catalog import StepCatalog, StepRegistry
+        from specify_cli.workflows.catalog import StepCatalog
 
         monkeypatch.chdir(project_dir)
         monkeypatch.setattr(
@@ -10959,8 +10947,39 @@ class TestWorkflowStepAddCLI:
             lambda url, timeout=30, redirect_validator=None: _FakeResponse(url),
         )
 
-        result = CliRunner().invoke(
+        return CliRunner().invoke(
             app, ["workflow", "step", "add", "my-step"]
+        )
+
+    @pytest.mark.parametrize(
+        ("catalog_version", "downloaded_version", "include_downloaded_version"),
+        [
+            ("1.0.0", "2.0.0", True),
+            ("1.0.0", 0, True),
+            ("1.0.0", False, True),
+            ("1.0.0", "", True),
+            ("1.0.0", None, True),
+            ("release-a", " release-a ", True),
+            ("1.0.0", None, False),
+            ("None", None, False),
+        ],
+    )
+    def test_add_rejects_step_yml_version_mismatch(
+        self,
+        project_dir,
+        monkeypatch,
+        catalog_version,
+        downloaded_version,
+        include_downloaded_version,
+    ):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        result = self._invoke_step_add(
+            project_dir,
+            monkeypatch,
+            catalog_version=catalog_version,
+            downloaded_version=downloaded_version,
+            include_downloaded_version=include_downloaded_version,
         )
 
         assert result.exit_code != 0
@@ -10969,6 +10988,31 @@ class TestWorkflowStepAddCLI:
         assert not (
             project_dir / ".specify" / "workflows" / "steps" / "my-step"
         ).exists()
+
+    @pytest.mark.parametrize(
+        ("catalog_version", "downloaded_version"),
+        [
+            ("1.0.0", "1.0.0"),
+            ("1.0.0", "v1.0.0"),
+        ],
+    )
+    def test_add_accepts_matching_step_yml_version(
+        self, project_dir, monkeypatch, catalog_version, downloaded_version
+    ):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        result = self._invoke_step_add(
+            project_dir,
+            monkeypatch,
+            catalog_version=catalog_version,
+            downloaded_version=downloaded_version,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert StepRegistry(project_dir).is_installed("my-step")
+        assert (
+            project_dir / ".specify" / "workflows" / "steps" / "my-step"
+        ).is_dir()
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_add_rejects_symlinked_steps_base_dir(self, project_dir, monkeypatch):

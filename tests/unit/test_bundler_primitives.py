@@ -140,6 +140,31 @@ def test_step_version_mismatch_refuses(tmp_path: Path, monkeypatch):
     assert calls == []
 
 
+@pytest.mark.parametrize("catalog_version", ["0.3.0", "v0.3.0"])
+def test_step_version_match_installs(
+    tmp_path: Path, monkeypatch, catalog_version
+):
+    import specify_cli
+    from specify_cli.workflows.catalog import StepCatalog
+
+    monkeypatch.setattr(
+        StepCatalog,
+        "get_step_info",
+        lambda self, sid: {"version": catalog_version},
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(
+        specify_cli, "workflow_step_add", lambda sid: calls.append(sid)
+    )
+
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    manager.install(
+        ComponentRef(kind="steps", id="step-a", version="0.3.0")
+    )
+
+    assert calls == ["step-a"]
+
+
 @pytest.mark.parametrize(
     "catalog_info",
     [

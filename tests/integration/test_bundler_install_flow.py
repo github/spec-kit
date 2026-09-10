@@ -512,6 +512,62 @@ def test_update_keeps_component_still_needed_by_sibling_bundle(tmp_path: Path):
     }
 
 
+def test_update_record_save_failure_restores_refreshed_and_dropped_components(
+    tmp_path: Path, monkeypatch
+):
+    make_project(tmp_path)
+
+    class VersionedInstaller(FakeInstaller):
+        def __init__(self):
+            super().__init__()
+            self.versions: dict[tuple[str, str], str | None] = {}
+
+        def install(self, project_root, component):
+            super().install(project_root, component)
+            self.versions[self._key(component)] = component.version
+
+        def refresh(self, project_root, component):
+            super().refresh(project_root, component)
+            self.versions[self._key(component)] = component.version
+
+        def remove(self, project_root, component):
+            super().remove(project_root, component)
+            self.versions.pop(self._key(component), None)
+
+    installer = VersionedInstaller()
+    man_v1 = _bundle("demo", ["ext-a", "ext-b"])
+    install_bundle(tmp_path, _plan(man_v1), installer, manifest=man_v1)
+    original_record = records_path(tmp_path).read_bytes()
+
+    man_v2 = _bundle("demo", ["ext-a"], version="2.0.0")
+
+    def fail_save(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(
+        "specify_cli.bundler.services.installer.save_records", fail_save
+    )
+
+    with pytest.raises(BundlerError, match="disk full"):
+        install_bundle(
+            tmp_path,
+            _plan(man_v2),
+            installer,
+            manifest=man_v2,
+            refresh=True,
+        )
+
+    assert installer.installed == {
+        ("extensions", "ext-a"),
+        ("extensions", "ext-b"),
+    }
+    assert installer.versions == {
+        ("extensions", "ext-a"): "1.0.0",
+        ("extensions", "ext-b"): "1.0.0",
+    }
+    assert records_path(tmp_path).read_bytes() == original_record
+
+
 def test_install_result_changed_reports_uninstalled():
     # A `bundle update` that only DROPS components (new manifest reduces
     # provides) populates uninstalled with nothing installed/refreshed; that is

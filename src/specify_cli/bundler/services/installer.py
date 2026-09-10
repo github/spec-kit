@@ -65,11 +65,9 @@ def install_bundle(
 ) -> InstallResult:
     """Execute *plan*, recording provenance. Idempotent, with bounded rollback.
 
-    Atomicity is scoped, not global: on failure only the components newly
-    installed during *this* call are rolled back, and the provenance record is
-    written solely on full success (a failure records nothing). Components that
-    were already installed beforehand — including those re-applied when *refresh*
-    is True — are never rolled back.
+    Atomicity is scoped, not global: completed component mutations are reversed
+    on failure, and the provenance record is written solely on full success.
+    Rollback is best-effort because primitive restoration can itself fail.
 
     When *refresh* is True (used by ``specify bundle update``), components that
     are already installed are re-applied through the primitive machinery so they
@@ -108,9 +106,22 @@ def install_bundle(
         if r.bundle_id != plan.bundle_id
         for c in r.contributed_components
     }
+    prior_components = {
+        (c.kind, c.id): c
+        for r in records
+        if r.bundle_id != plan.bundle_id
+        for c in r.contributed_components
+    }
+    if existing is not None:
+        prior_components.update(
+            {
+                (component.kind, component.id): component
+                for component in existing.contributed_components
+            }
+        )
 
     contributed: list[ComponentRef] = []
-    done: list[ComponentRef] = []
+    rollback_actions: list[tuple[str, ComponentRef]] = []
     try:
         for component in plan.components:
             key = (component.kind, component.id)
@@ -123,6 +134,9 @@ def install_bundle(
                 owned = key in prior_ours or key in other_tracked
                 if refresh and owned:
                     _refresh_component(project_root, installer, component)
+                    rollback_actions.append(
+                        ("refresh", prior_components[key])
+                    )
                     result.refreshed.append(component)
                 else:
                     result.skipped.append(component)
@@ -130,7 +144,7 @@ def install_bundle(
                     contributed.append(component)
                 continue
             installer.install(project_root, component)
-            done.append(component)
+            rollback_actions.append(("remove", component))
             result.installed.append(component)
             contributed.append(component)
 
@@ -154,6 +168,7 @@ def install_bundle(
                     continue
                 if installer.is_installed(project_root, component):
                     installer.remove(project_root, component)
+                    rollback_actions.append(("install", component))
                     result.uninstalled.append(component)
 
         record = InstalledBundleRecord.create(
@@ -166,13 +181,20 @@ def install_bundle(
         )
         save_records(project_root, upsert_record(records, record))
     except BundlerError:
-        _rollback(project_root, installer, done)
+        _rollback(project_root, installer, rollback_actions)
         raise
     except Exception as exc:  # noqa: BLE001
-        _rollback(project_root, installer, done)
+        rollback_complete = _rollback(
+            project_root, installer, rollback_actions
+        )
+        detail = (
+            "Completed changes were rolled back and no provenance record was written."
+            if rollback_complete
+            else "Rollback was incomplete and no provenance record was written; "
+            "the project may be inconsistent."
+        )
         raise BundlerError(
-            f"Failed to install bundle '{plan.bundle_id}': {exc}. "
-            "No changes were recorded."
+            f"Failed to install bundle '{plan.bundle_id}': {exc}. {detail}"
         ) from exc
 
     return result
@@ -249,10 +271,17 @@ def _refresh_component(
 def _rollback(
     project_root: Path,
     installer: PrimitiveInstaller,
-    done: list[ComponentRef],
-) -> None:
-    for component in reversed(done):
+    actions: list[tuple[str, ComponentRef]],
+) -> bool:
+    complete = True
+    for operation, component in reversed(actions):
         try:
-            installer.remove(project_root, component)
+            if operation == "remove":
+                installer.remove(project_root, component)
+            elif operation == "install":
+                installer.install(project_root, component)
+            else:
+                _refresh_component(project_root, installer, component)
         except Exception:  # noqa: BLE001 - best-effort rollback
-            continue
+            complete = False
+    return complete
