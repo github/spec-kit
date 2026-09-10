@@ -327,7 +327,38 @@ class _WorkflowKindManager:
             return False
 
     def install(self, component: ComponentRef) -> None:
-        if not self._allow_network and not self._is_bundled(component.id):
+        from ..._assets import _locate_bundled_workflow
+
+        bundled = _locate_bundled_workflow(component.id)
+        if bundled is not None:
+            workflow_file = bundled / "workflow.yml"
+            try:
+                from ...workflows.engine import WorkflowDefinition
+
+                definition = WorkflowDefinition.from_yaml(workflow_file)
+            except (OSError, ValueError) as exc:
+                raise BundlerError(
+                    f"Failed to load bundled workflow '{component.id}': {exc}"
+                ) from exc
+            if definition.id != component.id:
+                raise BundlerError(
+                    f"Bundled workflow at {workflow_file} declares ID "
+                    f"'{definition.id}', expected '{component.id}'."
+                )
+            _assert_pinned_version(
+                "Workflow", component.id, component.version, definition.version
+            )
+            from ... import workflow_add
+
+            with _chdir(self._root):
+                _delegate_command(
+                    "install",
+                    f"workflow '{component.id}'",
+                    lambda: workflow_add(str(workflow_file), dev=True, from_url=None),
+                )
+            return
+
+        if not self._allow_network:
             raise BundlerError(
                 f"Workflow '{component.id}' installs from a catalog and network "
                 f"access is disabled; re-run without --offline or install it first "
@@ -360,13 +391,6 @@ class _WorkflowKindManager:
             _assert_pinned_version(
                 "Workflow", component.id, component.version, info.get("version")
             )
-
-    @staticmethod
-    def _is_bundled(workflow_id: str) -> bool:
-        # A workflow that ships with Spec Kit installs fully offline.
-        from ..._assets import _locate_bundled_workflow
-
-        return _locate_bundled_workflow(workflow_id) is not None
 
     def remove(self, component: ComponentRef) -> None:
         from ... import workflow_remove

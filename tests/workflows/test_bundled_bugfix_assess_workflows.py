@@ -24,8 +24,25 @@ def test_bundled_workflow_validates_cleanly(workflow_id: str) -> None:
 
 def test_bugfix_workflow_has_expected_steps() -> None:
     definition = _load_workflow("bugfix")
-    step_ids = [step["id"] for step in definition.steps]
-    assert step_ids == ["assess", "review-assessment", "fix", "test"]
+    assert [step["id"] for step in definition.steps] == [
+        "assess",
+        "review-assessment",
+        "fix",
+        "test",
+    ]
+
+    expected_commands = {
+        "assess": ("speckit.bug.assess", "{{ inputs.report }} slug={{ inputs.slug }}"),
+        "fix": ("speckit.bug.fix", "slug={{ inputs.slug }}"),
+        "test": ("speckit.bug.test", "slug={{ inputs.slug }}"),
+    }
+    for step in definition.steps:
+        if step["id"] not in expected_commands:
+            continue
+        command, args = expected_commands[step["id"]]
+        assert step["command"] == command
+        assert step["integration"] == "{{ inputs.integration }}"
+        assert step["input"]["args"] == args
 
     gate = definition.steps[1]
     assert gate.get("type") == "gate"
@@ -35,8 +52,7 @@ def test_bugfix_workflow_has_expected_steps() -> None:
 
 def test_assess_workflow_has_expected_steps() -> None:
     definition = _load_workflow("assess")
-    step_ids = [step["id"] for step in definition.steps]
-    assert step_ids == [
+    assert [step["id"] for step in definition.steps] == [
         "intake",
         "research",
         "define",
@@ -45,16 +61,35 @@ def test_assess_workflow_has_expected_steps() -> None:
         "review-verdict",
     ]
 
+    expected_commands = {
+        "intake": ("speckit.assess.intake", "{{ inputs.idea }} slug={{ inputs.slug }}"),
+        "research": ("speckit.assess.research", "slug={{ inputs.slug }}"),
+        "define": ("speckit.assess.define", "slug={{ inputs.slug }}"),
+        "shape": ("speckit.assess.shape", "slug={{ inputs.slug }}"),
+        "decide": ("speckit.assess.decide", "slug={{ inputs.slug }}"),
+    }
+    for step in definition.steps:
+        if step["id"] not in expected_commands:
+            continue
+        command, args = expected_commands[step["id"]]
+        assert step["command"] == command
+        assert step["integration"] == "{{ inputs.integration }}"
+        assert step["input"]["args"] == args
+
     final_gate = definition.steps[-1]
     assert final_gate.get("type") == "gate"
     assert final_gate.get("options") == ["approve", "reject"]
     assert final_gate.get("on_reject") == "abort"
 
 
-@pytest.mark.parametrize("workflow_id", ["bugfix", "assess"])
-def test_bundled_workflow_has_required_inputs(workflow_id: str) -> None:
+@pytest.mark.parametrize(
+    ("workflow_id", "required_inputs"),
+    [("bugfix", ("report", "slug")), ("assess", ("idea", "slug"))],
+)
+def test_bundled_workflow_has_required_inputs(
+    workflow_id: str, required_inputs: tuple[str, ...]
+) -> None:
     definition = _load_workflow(workflow_id)
-    assert "report" in definition.inputs or "idea" in definition.inputs
-    assert "slug" in definition.inputs
-    assert definition.inputs["slug"].get("required") is True
+    for input_id in required_inputs:
+        assert definition.inputs[input_id].get("required") is True
     assert definition.inputs.get("integration", {}).get("default") == "auto"

@@ -20,7 +20,7 @@ specify bundle install bugfix
 specify bundle add assess
 ```
 
-The first-party catalog is fetched from the repository online and falls back to the packaged wheel snapshot offline so discovery works without network access. The bundle manifest itself still resolves from its `download_url`, so installing a first-party bundle requires network today; fully offline bundle installation is tracked as follow-up work.
+The first-party catalog is fetched from the repository online and falls back to the packaged wheel snapshot offline so discovery works without network access. A local bundle manifest can install bundled extensions and workflows with `--offline`. Catalog-discovered bundle manifests still resolve from their `download_url`, so `specify bundle add <id>` requires network today; fully offline catalog installation is tracked as follow-up work.
 
 ## Search Available Bundles
 
