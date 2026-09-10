@@ -20,6 +20,7 @@ Deprecation cycle:
 from __future__ import annotations
 
 import warnings
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -318,6 +319,8 @@ class BobIntegration(IntegrationBase):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> list[str] | None:
         """Non-interactive dispatch through ``bob run``.
 
@@ -328,6 +331,7 @@ class BobIntegration(IntegrationBase):
         *model* is ignored: ``run`` exposes no model flag; model choice comes
         from ``session.model`` in Bob's settings.
         """
+        self.validate_runtime_config(integration_args, integration_options)
         args = [
             self._resolve_executable(),
             "run",
