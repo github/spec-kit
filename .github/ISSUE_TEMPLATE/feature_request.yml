@@ -124,3 +124,16 @@ body:
       label: Additional Context
       description: Add any other context, screenshots, or examples
       placeholder: Links to similar features, mockups, related discussions, etc.
+
+  - type: textarea
+    id: ai-disclosure
+    attributes:
+      label: AI Disclosure
+      description: >-
+        Per our [Contributing guidelines](https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md#ai-contributions-in-spec-kit),
+        any AI assistance used to create this issue must be disclosed. If you used AI, name the agent/tool, model(s),
+        settings/mode (reasoning effort; autonomous vs. human-supervised), and extent. Otherwise leave this as "N/A".
+        This does not change how your issue is handled — it just gives maintainers visibility into model/agent usage.
+      value: "N/A"
+    validations:
+      required: true
