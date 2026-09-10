@@ -402,6 +402,7 @@ class CommandRegistrar:
         source_file: str,
         project_root: Path,
         extension_id: Optional[str] = None,
+        author: object = "github-spec-kit",
     ) -> str:
         """Render a command override as a SKILL.md file.
 
@@ -432,6 +433,7 @@ class CommandRegistrar:
             skill_name,
             description,
             f"{source_id}:{source_file}",
+            author=author,
         )
         return self.render_frontmatter(skill_frontmatter) + "\n" + body
 
@@ -441,14 +443,18 @@ class CommandRegistrar:
         skill_name: str,
         description: str,
         source: str,
+        author: object = "github-spec-kit",
     ) -> dict:
         """Build consistent SKILL.md frontmatter across all skill generators."""
+        normalized_author = (
+            "github-spec-kit" if author is None or author == "" else str(author)
+        )
         skill_frontmatter = {
             "name": skill_name,
             "description": description,
             "compatibility": "Requires spec-kit project structure with .specify/ directory",
             "metadata": {
-                "author": "github-spec-kit",
+                "author": normalized_author,
                 "source": source,
             },
         }
@@ -618,6 +624,7 @@ class CommandRegistrar:
         _resolved_dir: Optional[Path] = None,
         link_outputs: bool = False,
         extension_id: Optional[str] = None,
+        author: object = "github-spec-kit",
     ) -> List[str]:
         """Register commands for a specific agent.
 
@@ -636,6 +643,7 @@ class CommandRegistrar:
                 dev cache and symlink the agent command file to it. Falls back
                 to a normal file write when symlinks are unavailable.
             extension_id: Extension id when rendering extension-owned commands.
+            author: Author attributed in generated skill metadata.
 
         Returns:
             List of registered command names
@@ -802,6 +810,7 @@ class CommandRegistrar:
                     cmd_file,
                     project_root,
                     extension_id=extension_id,
+                    author=author,
                 )
             elif agent_config["format"] == "markdown":
                 body = self.resolve_skill_placeholders(
@@ -888,6 +897,7 @@ class CommandRegistrar:
                             cmd_file,
                             project_root,
                             extension_id=extension_id,
+                            author=author,
                         )
                     elif agent_config["format"] == "markdown":
                         alias_output = self.render_markdown_command(
@@ -921,6 +931,7 @@ class CommandRegistrar:
                             cmd_file,
                             project_root,
                             extension_id=extension_id,
+                            author=author,
                         )
 
                 alias_file = (
@@ -1060,6 +1071,7 @@ class CommandRegistrar:
         create_missing_active_skills_dir: bool = False,
         extension_id: Optional[str] = None,
         only_agent: Optional[str] = None,
+        author: object = "github-spec-kit",
     ) -> Dict[str, List[str]]:
         """Register commands for all detected agents in the project.
 
@@ -1077,6 +1089,7 @@ class CommandRegistrar:
                 skills directory) and is skipped when safe resolution or
                 creation fails.
             extension_id: Extension id when rendering extension-owned commands.
+            author: Author attributed in generated skill metadata.
             only_agent: If set, restrict registration to this single agent
                 while keeping all detection and recovery safeguards (#2948).
 
@@ -1184,6 +1197,7 @@ class CommandRegistrar:
                         _resolved_dir=agent_dir,
                         link_outputs=link_outputs,
                         extension_id=extension_id,
+                        author=author,
                     )
                     if registered:
                         results[agent_name] = registered

@@ -57,6 +57,84 @@ Here are a few things you can do that will increase the likelihood of your pull 
 
 Accounts with three open pull requests may continue submitting changes, but additional submissions may be placed behind contributions from other authors in the review queue. Coding agents should disclose this possibility and obtain the filer's confirmation before opening another pull request.
 
+### Evidence gate
+
+A contribution is evaluated on the evidence it carries, not on how plausible its reasoning sounds. The same bar applies to everyone — human and AI-assisted contributions are judged identically.
+
+A valid, in-scope change that arrives without evidence is not rejected outright. It may be labeled [`triage-can-wait`](#triage-and-author-labels) and held behind proven work until evidence is added, at which point it can be reprioritized.
+
+What counts as evidence:
+
+- **A reproduction or a linked real-world report** — a failing case, a stack trace, or a link to an issue where the problem actually occurred. "This could theoretically fail" reasoning on its own does not clear the gate.
+- **A regression test that fails on `main` and passes with your change** — this proves both that the problem is real and that your change fixes it.
+- **Scope discipline** — one concern per pull request. Split unrelated changes into separate PRs (see the [focused-change guidance](#submitting-a-pull-request) above); sprawling batch diffs are hard to review and slow to land.
+- **Disclosed AI assistance** — if any AI tooling was involved, disclose it and its extent per [AI contributions in Spec Kit](#ai-contributions-in-spec-kit).
+
+Speculative hardening is welcome, but it sits behind proven, evidence-backed work. If you can attach a reproduction and a failing test, your change moves to the front; if you can't yet, say so, and it will be queued rather than closed.
+
+### Review rubric
+
+Triaged items are weighed across seven dimensions, each scored `0`–`2` (`0` absent, `1` partial, `2` clearly demonstrated), for a maximum of 14. The score guides **prioritization** — it is not a hard pass/fail gate. The one firm rule is the [evidence gate](#evidence-gate) above: theoretical-only changes with no evidence are deprioritized.
+
+| Dimension | What it measures |
+|---|---|
+| D1 — Real-world evidence | A reproduction or linked report, versus theory alone |
+| D2 — Reachability / severity | Whether the issue can actually be hit, and how bad it is |
+| D3 — Scope discipline | One focused concern per PR, no unrelated changes |
+| D4 — Test evidence | A regression test that fails on `main` and passes with the change |
+| D5 — Disclosure / understanding | AI use disclosed, and the author understands the change |
+| D6 — Cost vs. benefit | Value delivered against added complexity and maintenance cost |
+| D7 — Roadmap alignment | Fit with Spec Kit's goals and direction |
+
+### Triage and author labels
+
+Every triaged item receives one **verdict** label recording where it stands. **Author** labels signal the specific action needed to move an item forward.
+
+Verdict (one per item):
+
+| Label | Meaning |
+|---|---|
+| `triage-must-have` | Verdict: high-value, important work for Spec Kit — do first |
+| `triage-nice-to-have` | Verdict: evidence-backed fix or greenlit feature — land after review |
+| `triage-can-wait` | Verdict: valid and in-scope but deprioritized; held behind the evidence gate |
+| `triage-out-of-scope` | Verdict: won't land in core — invalid, duplicate, off-mission, or redirected to an extension |
+
+Author actions:
+
+| Label | Meaning |
+|---|---|
+| `author-needs-proof` | The problem isn't demonstrated yet — supply a reproduction or a test that fails on `main` and passes with the change |
+| `author-needs-tests` | Real change but missing a regression test — add one that fails before / passes after |
+| `author-needs-rescope` | Sprawling or batched diff — split into one focused, single-concern PR |
+| `author-needs-disclosure` | AI assistance not disclosed — disclose AI use per CONTRIBUTING |
+| `author-needs-info` | Missing detail needed to assess — supply requested info |
+| `author-needs-rebase` | Branch conflicts with `main` — rebase and resolve before it can be merged |
+| `author-over-cap` | Over the 3-open-PR cap or repetitive batch submissions — please consolidate |
+| `author-awaiting` | Waiting on author response (handed off to the existing stale workflow) |
+
+Some pull requests are closed as `triage-out-of-scope` rather than merged — most commonly
+when the same change is already in `main`, when a request is better served as a community
+extension, when an existing feature already covers it, or when a catalog change came in as
+a direct edit instead of a submission issue. A close always comes with a comment explaining
+why and, where relevant, where to go instead.
+
+For further reading on the thinking behind this gate, see [one maintainer's perspective on AI-sourced contributions](https://blog.manorrock.com/blog/2026/09/08/spec_kit_ai_source.html). That piece is a personal viewpoint, not project policy — the policy is what's documented here.
+
+### Community catalog submissions
+
+To add or update a community extension, preset, or bundle in the catalog, **open an
+`[Extension]` / `[Preset]` / `[Bundle]` submission issue** — do not edit
+`extensions/catalog.community.json` (or the preset/bundle catalogs) directly in a pull
+request. The submission issue triggers an automated workflow that validates the release,
+verifies the pinned `download_url` and digests, and generates the catalog PR for you.
+A hand-edited catalog PR bypasses that validation and will be closed with a pointer back
+to the issue flow.
+
+This applies to **new entries, version updates, and repairs alike** — a version bump or a
+fix to a broken entry is still an update and needs the same validation. Always pin
+`download_url` to a release tag (e.g. `.../releases/download/<tag>/...` or
+`.../archive/refs/tags/<tag>.zip`); never use `releases/latest/`.
+
 ### Branch naming
 
 We recommend naming branches as `<type>/<number>-<short-slug>`, where `<number>` is the issue or PR number (whichever comes first) and `<type>` is one of:

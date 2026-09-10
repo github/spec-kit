@@ -6328,6 +6328,7 @@ class TestPresetSkills:
             "extension": {
                 "id": "fakeext",
                 "name": "Fake Extension",
+                "author": "acme-corp",
                 "version": "1.0.0",
                 "description": "Test",
             },
@@ -6393,6 +6394,8 @@ class TestPresetSkills:
         assert ".specify/extensions/fakeext/agents/control/commander.md" in content
         assert "Read agents/control" not in content
         assert "# Fakeext Cmd Skill" in content
+
+        assert yaml.safe_load(content.split("---", 2)[1])["metadata"]["author"] == "acme-corp"
 
     def test_skill_composed_over_extension_base_rewrites_subdir_paths(
         self, project_dir, temp_dir

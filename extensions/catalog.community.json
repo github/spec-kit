@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-03T00:00:00Z",
+  "updated_at": "2026-09-09T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -906,20 +906,27 @@
       "id": "brownkit",
       "description": "Evidence-driven capability discovery, security and QA risk assessment for existing codebases.",
       "author": "Maksim Shautsou",
-      "version": "1.0.1",
-      "download_url": "https://github.com/MaksimShevtsov/BrownKit/archive/refs/tags/v1.0.1.zip",
+      "version": "1.2.0",
+      "download_url": "https://github.com/MaksimShevtsov/BrownKit/archive/refs/tags/v1.2.0.zip",
       "repository": "https://github.com/MaksimShevtsov/BrownKit",
-      "homepage": "https://github.com/MaksimShevtsov/BrownKit",
-      "documentation": "https://github.com/MaksimShevtsov/BrownKit/blob/main/README.md",
+      "homepage": "https://github.com/MaksimShevtsov/BrownKit/blob/main/README.md",
+      "documentation": "https://github.com/MaksimShevtsov/BrownKit/blob/main/docs/methodology.md",
       "changelog": "https://github.com/MaksimShevtsov/BrownKit/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "python",
+            "version": ">=3.9",
+            "required": false
+          }
+        ]
       },
       "provides": {
-        "commands": 10,
+        "commands": 11,
         "hooks": 5
       },
       "tags": [
@@ -933,7 +940,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-10T00:00:00Z",
-      "updated_at": "2026-05-10T00:00:00Z"
+      "updated_at": "2026-09-08T00:00:00Z"
     },
     "bugfix": {
       "name": "Bugfix Workflow",
@@ -1911,16 +1918,16 @@
     "figma-starter": {
       "name": "Figma Starter",
       "id": "figma-starter",
-      "description": "Turns a Figma section's screens into per-screen spec.md files, an app-level user-stories.md, and a build-order.md, then hands off to /speckit.specify.",
+      "description": "Turns a Figma section's screens into Figma-derived specs — per-screen spec.md files, app-level user-stories.md, and a build-order.md — and turns an OpenAPI/Swagger document into an entity model plus per-page UI-to-API bindings, then hands off to /speckit.specify.",
       "author": "WaveMaker",
-      "version": "1.0.0",
-      "download_url": "https://github.com/wavemaker/spec-kit-figma-starter/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/wavemaker/spec-kit-figma-starter",
-      "homepage": "https://github.com/wavemaker/spec-kit-figma-starter",
-      "documentation": "https://github.com/wavemaker/spec-kit-figma-starter/blob/main/README.md",
-      "changelog": "https://github.com/wavemaker/spec-kit-figma-starter/blob/main/CHANGELOG.md",
+      "version": "1.1.0",
+      "download_url": "https://github.com/OmneWave/spec-kit-figma-starter/archive/refs/tags/v1.1.0.zip",
+      "repository": "https://github.com/OmneWave/spec-kit-figma-starter",
+      "homepage": "https://github.com/OmneWave/spec-kit-figma-starter",
+      "documentation": "https://github.com/OmneWave/spec-kit-figma-starter/blob/main/README.md",
+      "changelog": "https://github.com/OmneWave/spec-kit-figma-starter/blob/main/CHANGELOG.md",
       "license": "MIT",
-      "category": "integration",
+      "category": "docs",
       "effect": "read-write",
       "requires": {
         "speckit_version": ">=0.1.0",
@@ -1933,7 +1940,7 @@
         ]
       },
       "provides": {
-        "commands": 1,
+        "commands": 2,
         "hooks": 1
       },
       "tags": [
@@ -1941,13 +1948,16 @@
         "design",
         "design-to-spec",
         "ui",
-        "frontend"
+        "frontend",
+        "openapi",
+        "swagger",
+        "api"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-15T00:00:00Z",
-      "updated_at": "2026-07-15T00:00:00Z"
+      "updated_at": "2026-09-09T00:00:00Z"
     },
     "fix-findings": {
       "name": "Fix Findings",
@@ -3412,19 +3422,34 @@
     "okf": {
       "name": "OKF Knowledge Bundle Generator",
       "id": "okf",
-      "description": "Generates and maintains an Open Knowledge Format (OKF v0.1) knowledge bundle from a source-code repository, mining git history for significance and rationale, and resolving open questions with the user.",
+      "description": "Generates and maintains an Open Knowledge Format (OKF v0.1) knowledge bundle from a source-code repository, mining git history for rationale and parking what it cannot verify as open questions.",
       "author": "Alex Punnen",
-      "version": "0.3.0",
-      "download_url": "https://github.com/alexcpn/speckit_ofk/archive/refs/tags/v0.3.0.zip",
-      "repository": "https://github.com/alexcpn/speckit_ofk",
-      "homepage": "https://github.com/alexcpn/speckit_ofk",
-      "documentation": "https://github.com/alexcpn/speckit_ofk/blob/main/README.md",
-      "changelog": "https://github.com/alexcpn/speckit_ofk/blob/main/CHANGELOG.md",
+      "version": "0.5.0",
+      "download_url": "https://github.com/alexcpn/speckit_okf/archive/refs/tags/v0.5.0.zip",
+      "repository": "https://github.com/alexcpn/speckit_okf",
+      "homepage": "https://github.com/alexcpn/speckit_okf",
+      "documentation": "https://github.com/alexcpn/speckit_okf/blob/main/README.md",
+      "changelog": "https://github.com/alexcpn/speckit_okf/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "docs",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.12.0"
+        "speckit_version": ">=0.12.0",
+        "tools": [
+          {
+            "name": "bash",
+            "required": true
+          },
+          {
+            "name": "python3",
+            "version": ">=3.9",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": false
+          }
+        ]
       },
       "provides": {
         "commands": 4,
@@ -3441,7 +3466,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-17T00:00:00Z",
-      "updated_at": "2026-07-21T00:00:00Z"
+      "updated_at": "2026-09-08T00:00:00Z"
     },
     "onboard": {
       "name": "Onboard",
@@ -3622,10 +3647,10 @@
     "pay-x402": {
       "name": "AgentPay x402 — Spend Controls for Spec Kit Agents",
       "id": "pay-x402",
-      "description": "Set USDC spending caps and execute x402 payments to paid APIs during spec implementation. Zero platform fee on Base L2.",
+      "description": "Set USDC spending caps, check a counterparty's credit before paying it, and pay x402-enabled APIs during spec implementation. Settles on Base or Solana.",
       "author": "AgentPay Team",
-      "version": "1.0.0",
-      "download_url": "https://github.com/shawnhvac/spec-kit-pay-x402/archive/refs/tags/v1.0.0.zip",
+      "version": "1.1.0",
+      "download_url": "https://github.com/shawnhvac/spec-kit-pay-x402/archive/refs/tags/v1.1.0.zip",
       "repository": "https://github.com/shawnhvac/spec-kit-pay-x402",
       "homepage": "https://x402-agent-pay.com",
       "documentation": "https://github.com/shawnhvac/spec-kit-pay-x402#readme",
@@ -3637,7 +3662,7 @@
         "speckit_version": ">=0.1.0"
       },
       "provides": {
-        "commands": 2,
+        "commands": 3,
         "hooks": 1
       },
       "tags": [
@@ -3645,13 +3670,54 @@
         "x402",
         "budget",
         "usdc",
-        "api"
+        "api",
+        "solana"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-17T00:00:00Z",
-      "updated_at": "2026-08-17T00:00:00Z"
+      "updated_at": "2026-09-08T00:00:00Z"
+    },
+    "pdac-product": {
+      "name": "ProductShape PRODUCT workflows",
+      "id": "pdac-product",
+      "description": "Author, refine, validate, apply, archive and recover ProductShape product meaning in a separate Spec Kit lane.",
+      "author": "Juan G. Carmona (@juangcarmona)",
+      "version": "0.1.0",
+      "download_url": "https://github.com/juangcarmona/productshape/releases/download/speckit-pdac-product-v0.1.0/speckit-pdac-product.zip",
+      "repository": "https://github.com/juangcarmona/productshape",
+      "homepage": "https://pdac.dev",
+      "documentation": "https://github.com/juangcarmona/productshape/blob/main/extensions/speckit-pdac-product/README.md",
+      "changelog": "https://github.com/juangcarmona/productshape/blob/main/extensions/speckit-pdac-product/CHANGELOG.md",
+      "license": "Apache-2.0",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.4",
+        "tools": [
+          {
+            "name": "prodshape",
+            "version": ">=0.19.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 6,
+        "hooks": 0
+      },
+      "tags": [
+        "product",
+        "product-change",
+        "recovery",
+        "pdac"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-08T00:00:00Z",
+      "updated_at": "2026-09-08T00:00:00Z"
     },
     "plan-review-gate": {
       "name": "Plan Review Gate",
@@ -4415,38 +4481,49 @@
       "updated_at": "2026-06-24T00:00:00Z"
     },
     "schedule": {
-      "name": "Spec Kit Schedule — CP-SAT Agent Orchestrator",
+      "name": "Spec Kit Schedule — parallel subagent rounds",
       "id": "schedule",
-      "description": "Optimal multi-agent task scheduling via CP-SAT solver with DAG precedence, hallucination-aware caps, file-conflict avoidance, stochastic durations, replanning, and interactive HTML output",
+      "description": "Zero-config planner that turns tasks.md into optimal parallel rounds for subagents (CP-SAT, critical-path aware, file-conflict safe) and runs them round by round.",
       "author": "Julio César Franco Ardila",
-      "version": "0.6.2",
-      "download_url": "https://github.com/jfranc38/spec-kit-schedule/archive/refs/tags/v0.6.2.zip",
+      "version": "0.7.4",
+      "download_url": "https://github.com/jfranc38/spec-kit-schedule/archive/refs/tags/v0.7.4.zip",
       "repository": "https://github.com/jfranc38/spec-kit-schedule",
       "homepage": "https://github.com/jfranc38/spec-kit-schedule",
-      "documentation": "https://github.com/jfranc38/spec-kit-schedule/blob/main/README.md",
-      "changelog": "https://github.com/jfranc38/spec-kit-schedule/blob/main/CHANGELOG.md",
+      "documentation": "https://github.com/jfranc38/spec-kit-schedule/blob/master/README.md",
+      "changelog": "https://github.com/jfranc38/spec-kit-schedule/blob/master/CHANGELOG.md",
       "license": "MIT",
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.4.0"
+        "speckit_version": ">=0.4.0",
+        "tools": [
+          {
+            "name": "python3",
+            "version": ">=3.10,<3.13",
+            "required": true
+          },
+          {
+            "name": "uv",
+            "required": false
+          }
+        ]
       },
       "provides": {
-        "commands": 5,
-        "hooks": 1
+        "commands": 3,
+        "hooks": 2
       },
       "tags": [
         "scheduling",
-        "optimization",
         "multi-agent",
+        "subagents",
         "cp-sat",
-        "operations-research"
+        "orchestration"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-06T22:35:00Z",
-      "updated_at": "2026-05-07T17:25:00Z"
+      "updated_at": "2026-09-09T00:00:00Z"
     },
     "scope": {
       "name": "Spec Scope",
@@ -4790,9 +4867,9 @@
       "id": "speckit-inventory",
       "description": "Read-only inventory of live requirement and task IDs, with focused per-task context packs instead of whole-file dumps.",
       "author": "Yash Chindam",
-      "version": "0.1.0",
-      "download_url": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/releases/download/v0.1.0/speckit-inventory.zip",
-      "sha256": "9ebf004ef6494323f6dccfab2554a04898c9e92bc7f25e0638b5aee916566e7f",
+      "version": "0.1.1",
+      "download_url": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/releases/download/v0.1.1/speckit-inventory.zip",
+      "sha256": "df735fe7c7ca7afe1ac279ffe5768061a29710a9d61956f90ee2cf2d66da04be",
       "repository": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment",
       "homepage": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment",
       "documentation": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/blob/main/speckit-inventory/README.md",
@@ -4818,7 +4895,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-20T00:00:00Z",
-      "updated_at": "2026-08-20T00:00:00Z"
+      "updated_at": "2026-09-09T00:00:00Z"
     },
     "speckit-superpowers-bridge": {
       "name": "Superpowers Implementation Bridge",

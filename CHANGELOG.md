@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.0.5] - 2026-09-08
+
+### Changed
+
+- Update OKF Knowledge Bundle Generator to v0.5.0 (#4475)
+- Update BrownKit extension to v1.2.0 (#4474)
+- chore(deps): bump the codeql-action group with 2 updates (#4436)
+- fix(tasks): require field constraints from data-model.md in generated tasks (#4430)
+- fix(workflows): reject falsy non-mapping step.yml in step add (#4321)
+- fix(cline): stop unrelated prose from suppressing the hook command note (#4150)
+- Add the August 2026 newsletter (#4442)
+- Update Linear Integration extension to v0.8.0 (#4428)
+- fix(presets): reject falsy non-mapping catalog config shapes (#4320)
+- docs(workflows): sync the reference copy with the shipped workflow (#4424)
+- fix(scripts): name setup-plan's feature directory key FEATURE_DIR (#4397)
+- fix(workflows): require a 'steps' body on while and do-while loops (#4149)
+- Add Evaluator Contract extension to community catalog (#4420)
+- fix: remove unused scope input from bundled speckit workflow (#4401)
+- feat(integrations): add Muse Code (muse) agent integration (#4413)
+- feat(workflows): add workflow slots (#4352)
+- fix(scripts): make bash branch-name sanitizing match the Python and PowerShell twins (#4286)
+- allow hyphen in command ref token names (#4356)
+- [extension] Add Axi Extension to community catalog (#4412)
+- chore: release 1.0.4, begin 1.0.5.dev0 development (#4411)
+
 ## [1.0.4] - 2026-09-02
 
 ### Changed
