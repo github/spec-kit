@@ -312,8 +312,9 @@ def test_incompatible_local_manifest_is_rejected_before_project_init(
 
 
 @pytest.mark.parametrize("source_kind", ["manifest", "directory", "zip"])
+@pytest.mark.parametrize("bundle_version", ["1.2.0", "2.0.0"])
 def test_local_install_refresh_updates_owned_components(
-    tmp_path: Path, monkeypatch, source_kind: str,
+    tmp_path: Path, monkeypatch, source_kind: str, bundle_version: str,
 ):
     """Local upgrades refresh owned pins before advancing the bundle record."""
     from specify_cli.bundler.models.records import load_records, records_path
@@ -345,7 +346,7 @@ def test_local_install_refresh_updates_owned_components(
     original_record = records_path(project).read_bytes()
     original_versions = dict(versions)
 
-    data["bundle"]["version"] = "2.0.0"
+    data["bundle"]["version"] = bundle_version
     data["provides"]["extensions"][0]["version"] = "2.0.0"
     data["provides"]["presets"][0]["version"] = "3.0.0"
     data["provides"]["workflows"][0]["version"] = "0.4.0"
@@ -380,13 +381,14 @@ def test_local_install_refresh_updates_owned_components(
     assert versions == expected
     assert set(installer.refresh_calls) == set(expected)
     record = load_records(project)[0]
-    assert record.version == "2.0.0"
+    assert record.version == bundle_version
     assert {(c.kind, c.id): c.version for c in record.contributed_components} == expected
 
 
 @pytest.mark.parametrize("source_kind", ["manifest", "directory", "zip"])
+@pytest.mark.parametrize("bundle_version", ["1.2.0", "2.0.0"])
 def test_local_refresh_catalog_extension_requires_network(
-    tmp_path: Path, monkeypatch, source_kind: str,
+    tmp_path: Path, monkeypatch, source_kind: str, bundle_version: str,
 ):
     """Use the real installer; replace only catalog I/O with local artifacts."""
     from specify_cli.bundler.models.records import load_records, records_path
@@ -435,7 +437,7 @@ def test_local_refresh_catalog_extension_requires_network(
     original_record = records_path(project).read_bytes()
 
     version = "2.0.0"
-    data["bundle"]["version"] = version
+    data["bundle"]["version"] = bundle_version
     data["provides"]["extensions"][0]["version"] = version
     write_manifest(manifest_path.parent, data)
     if source_kind == "manifest":
@@ -446,6 +448,14 @@ def test_local_refresh_catalog_extension_requires_network(
         source = tmp_path / "local bundle.zip"
         with zipfile.ZipFile(source, "w") as archive:
             archive.write(manifest_path, "bundle.yml")
+
+    rejected = runner.invoke(app, ["bundle", "install", str(source), "--offline"])
+    assert rejected.exit_code == 1, rejected.output
+    assert "--refresh" in rejected.output
+    assert downloads == [("catalog-ext", "1.0.0")]
+    assert records_path(project).read_bytes() == original_record
+    assert payload.read_bytes() == original_payload
+    assert (installed_dir / "extension.yml").read_bytes() == original_manifest
 
     offline = runner.invoke(app, ["bundle", "install", str(source), "--refresh", "--offline"])
     assert offline.exit_code == 1, offline.output
@@ -466,5 +476,5 @@ def test_local_refresh_catalog_extension_requires_network(
     assert payload.read_text(encoding="utf-8").endswith("2.0.0\n")
     assert yaml.safe_load((installed_dir / "extension.yml").read_text(encoding="utf-8"))["extension"]["version"] == version
     record = load_records(project)[0]
-    assert record.version == version
+    assert record.version == bundle_version
     assert record.contributed_components[0].version == version

@@ -80,9 +80,9 @@ def install_bundle(
     Version-pin enforcement is install-time only. The primitive ``is_installed``
     checks are id-based (they do not compare versions), so when a component is
     already present and *refresh* is False it is skipped without verifying that
-    the on-disk version matches the manifest pin. A recorded bundle whose
-    resolved version changes is rejected unless *refresh* is True, preventing
-    the record from advancing past stale components. Pins are therefore only
+    the on-disk version matches the manifest pin. Changes to a recorded bundle's
+    version or owned component metadata, including removals, are rejected unless
+    *refresh* is True, preventing stale or orphaned components. Pins are only
     guaranteed to be applied when the bundler actually performs an install or a
     refresh; running ``specify bundle update`` re-applies every owned component
     at its pinned version.
@@ -99,11 +99,15 @@ def install_bundle(
     if (
         existing is not None
         and not refresh
-        and existing.version != plan.version
+        and (
+            existing.version != plan.version
+            or not set(existing.contributed_components).issubset(plan.components)
+        )
     ):
         raise BundlerError(
             f"Bundle '{plan.bundle_id}' is already installed at version "
-            f"{existing.version}, but version {plan.version} was requested. "
+            f"{existing.version}, but the requested manifest changes the bundle "
+            "version or changes/removes owned components. "
             "Use 'specify bundle update <id>' for a catalog bundle, or "
             "'specify bundle install <path> --refresh' for a local source, "
             "to refresh owned components before advancing the installed record."
