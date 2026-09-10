@@ -47,6 +47,8 @@ COMMUNITY_SUBMISSION_WORKFLOWS = (
         "Do not modify any other files",
     ),
 )
+COMMUNITY_ASSESS_WORKFLOW = WORKFLOWS_DIR / "community-assess.md"
+COMMUNITY_ASSESS_COMPILED = WORKFLOWS_DIR / "community-assess.lock.yml"
 
 
 def _publish_workflow_steps() -> dict[str, dict[str, object]]:
@@ -277,6 +279,44 @@ def test_community_submission_allowed_files_do_not_include_other_catalogs_or_doc
                 f"{workflow} and {other_workflow} share allowed files: "
                 f"{sorted(overlapping_files)}"
             )
+
+
+def test_community_assessment_pilot_is_read_only_and_sha_qualified():
+    source = COMMUNITY_ASSESS_WORKFLOW.read_text(encoding="utf-8")
+    frontmatter = source.split("---", 2)[1]
+
+    assert "  pull_request:" in source
+    assert "    types: [labeled]" in source
+    assert "    names: [community-review]" in source
+    assert '    forks: ["*"]' in source
+    assert "  pull-requests: read" in source
+    assert "  checks: read" in source
+    assert "  actions: read" in source
+    assert "expected_head_sha" in source
+    assert "speckit.community-assess.assess" in source
+    assert "extensions/community-assess/commands/speckit.community-assess.assess.md" in source
+    assert "differs at any check" in source
+    assert "safe-outputs:" in source
+    assert "community-assess-publish:" in source
+    assert "community-assess-cleanup:" not in source
+    assert "intentionally inert" in frontmatter
+    assert not COMMUNITY_ASSESS_COMPILED.exists()
+    assert not (WORKFLOWS_DIR / "community-assess-cleanup.yml").exists()
+    assert "No cleanup workflow is active" in source
+    assert "pull_request_target" in source  # documented as the removed proposal
+    assert "type: choice" in source
+    assert "options: [fits-project, needs-clarification, out-of-scope, invalid]" in source
+    assert "at most one top-level PR comment" in source
+    assert "fixed namespaced assessment labels" in source
+
+    # The agent must not receive built-in GitHub mutation tools. The custom
+    # publisher is the only declared write path if this proposal is approved.
+    assert "add-comment:" not in source
+    assert "add-labels:" not in source
+    assert "remove-labels:" not in source
+    assert "create-pull-request" not in source
+
+    assert "GH_AW_AGENT_OUTPUT=$output" in source
 
 
 def test_bug_test_workflow_provisions_python_dependencies():

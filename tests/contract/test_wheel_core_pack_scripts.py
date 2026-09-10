@@ -14,6 +14,22 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parents[2]
 
 
+def _script_variants() -> list[str]:
+    """Return source script variants, excluding interpreter caches."""
+
+    return sorted(
+        path.name
+        for path in (REPO_ROOT / "scripts").iterdir()
+        if path.is_dir()
+        and path.name != "__pycache__"
+        and any(
+            candidate.is_file()
+            for pattern in ("*.sh", "*.ps1", "*.py")
+            for candidate in path.glob(pattern)
+        )
+    )
+
+
 def _force_include() -> dict[str, str]:
     with (REPO_ROOT / "pyproject.toml").open("rb") as pyproject_file:
         pyproject = tomllib.load(pyproject_file)
@@ -22,9 +38,7 @@ def _force_include() -> dict[str, str]:
 
 def test_every_script_variant_is_bundled_into_core_pack():
     force_include = _force_include()
-    variants = sorted(
-        path.name for path in (REPO_ROOT / "scripts").iterdir() if path.is_dir()
-    )
+    variants = _script_variants()
 
     assert variants, "expected at least one script variant under scripts/"
     for variant in variants:
@@ -38,3 +52,20 @@ def test_python_script_variant_is_bundled():
     # invoked python3 .specify/scripts/python/*.py while the wheel bundled
     # only the bash and PowerShell variants.
     assert _force_include()["scripts/python"] == "specify_cli/core_pack/scripts/python"
+
+
+def test_script_variants_require_source_files(tmp_path, monkeypatch):
+    scripts = tmp_path / "scripts"
+    for name in ("bash", "powershell", "python", "empty", "docs", "__pycache__"):
+        (scripts / name).mkdir(parents=True)
+    for variant, filename in (
+        ("bash", "run.sh"),
+        ("powershell", "run.ps1"),
+        ("python", "run.py"),
+        ("docs", "README.md"),
+        ("__pycache__", "cached.py"),
+    ):
+        (scripts / variant / filename).write_text("", encoding="utf-8")
+    monkeypatch.setitem(_script_variants.__globals__, "REPO_ROOT", tmp_path)
+
+    assert _script_variants() == ["bash", "powershell", "python"]

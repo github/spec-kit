@@ -1,0 +1,27 @@
+schema_version: "1.0"
+
+extension:
+  id: community-assess
+  name: "Community Contribution Assessment"
+  version: "1.0.0"
+  description: "Produce a read-only, SHA-qualified fit and evidence assessment for a community pull request without making a review or acceptance decision"
+  category: "process"
+  effect: "read-write"
+  author: spec-kit-core
+  repository: https://github.com/github/spec-kit
+  license: MIT
+
+requires:
+  speckit_version: ">=0.9.0"
+
+provides:
+  commands:
+    - name: speckit.community-assess.assess
+      file: commands/speckit.community-assess.assess.md
+      description: "Assess a community pull request's project-fit evidence and policy readiness at a captured head SHA"
+
+tags:
+  - "assessment"
+  - "contribution"
+  - "pull-request"
+  - "workflow"
