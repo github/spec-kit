@@ -430,7 +430,21 @@ class _DelegatedYAML:
                     "import sys, json, yaml\n"
                     "def _default(value):\n"
                     f"    return {{'{_NON_NATIVE_MARKER_KEY}': True}}\n"
-                    "json.dump(yaml.safe_load(sys.stdin.read()), sys.stdout, default=_default)",
+                    "def _stringify_keys(obj):\n"
+                    "    if isinstance(obj, dict):\n"
+                    "        return {\n"
+                    "            (k if isinstance(k, (str, int, float, bool)) or k is None else str(k)): _stringify_keys(v)\n"
+                    "            for k, v in obj.items()\n"
+                    "        }\n"
+                    "    if isinstance(obj, list):\n"
+                    "        return [_stringify_keys(v) for v in obj]\n"
+                    "    return obj\n"
+                    "try:\n"
+                    "    data = yaml.safe_load(sys.stdin.read())\n"
+                    "except yaml.YAMLError as exc:\n"
+                    "    print(str(exc), file=sys.stderr)\n"
+                    "    sys.exit(1)\n"
+                    "json.dump(_stringify_keys(data), sys.stdout, default=_default)",
                 ],
                 input=text,
                 capture_output=True,

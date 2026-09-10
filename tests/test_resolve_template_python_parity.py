@@ -748,20 +748,32 @@ def test_all_variants_fall_back_when_speckit_python_lacks_pyyaml(
 def test_bash_honors_speckit_python_path_containing_spaces(tmp_path: Path) -> None:
     """SPECKIT_PYTHON may be an absolute path containing spaces (e.g. a venv
     named "tool env"); callers must treat it as one argv element rather than
-    splitting it on whitespace (#4445)."""
+    splitting it on whitespace (#4445).
+
+    A symlink to `sys.executable` guarantees the spaced path actually has
+    PyYAML (rather than relying on `--system-site-packages` inheritance,
+    which does not reach a calling venv's own site-packages). PATH's
+    `python3` is a PyYAML-less venv, so success is only possible if
+    `_python3_command` selects the spaced override intact.
+    """
     repo, expected = _setup_repo(tmp_path)
 
-    spaced_venv = tmp_path / "tool env"
+    spaced_dir = tmp_path / "tool env"
+    spaced_dir.mkdir()
+    spaced_exe = spaced_dir / Path(sys.executable).name
+    spaced_exe.symlink_to(sys.executable)
+
+    no_yaml_python = tmp_path / "no-yaml-venv"
     subprocess.run(
-        [sys.executable, "-m", "venv", "--system-site-packages", str(spaced_venv)],
+        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
         check=True,
         capture_output=True,
     )
-    spaced_exe = venv_python3_exe(spaced_venv)
-    assert spaced_exe.is_file()
+    no_yaml_bin = venv_python3_exe(no_yaml_python).parent
 
     env = clean_env()
     env["SPECKIT_PYTHON"] = str(spaced_exe)
+    env["PATH"] = f"{no_yaml_bin}{os.pathsep}{env.get('PATH', '')}"
 
     result = run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env)
 
@@ -889,6 +901,78 @@ def test_python_variant_delegates_manifest_with_non_ascii_metadata_under_ascii_l
         "TEMPLATE_NAME": TEMPLATE,
         "TEMPLATE_CONTENT": expected,
     }
+
+
+@requires_bash
+def test_python_variant_delegates_manifest_with_non_json_native_mapping_key(
+    tmp_path: Path,
+) -> None:
+    """An otherwise-ignored mapping whose key PyYAML parses into a
+    non-JSON-native type (e.g. an unquoted date) must not break delegation:
+    `json.dump`'s `default` hook only applies to values, never to keys, so
+    such a key must be stringified before serialization instead of raising
+    `TypeError` (#4445)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "metadata:\n  2026-09-08: value\n" + manifest.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    no_yaml_python = tmp_path / "no-yaml-venv"
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
+        check=True,
+        capture_output=True,
+    )
+    no_yaml_exe = venv_python3_exe(no_yaml_python)
+    assert no_yaml_exe.is_file()
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
+@requires_bash
+def test_python_variant_reports_concise_error_for_malformed_delegated_manifest(
+    tmp_path: Path,
+) -> None:
+    """A syntactically invalid manifest parsed via delegation must fail with
+    a concise message, matching the in-process parser, instead of leaking
+    the child interpreter's raw Python traceback into the user-facing
+    error (#4445)."""
+    repo, _ = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text("provides: [\n", encoding="utf-8")
+
+    no_yaml_python = tmp_path / "no-yaml-venv"
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
+        check=True,
+        capture_output=True,
+    )
+    no_yaml_exe = venv_python3_exe(no_yaml_python)
+    assert no_yaml_exe.is_file()
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert "Traceback" not in result.stderr
 
 
 @requires_bash
