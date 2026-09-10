@@ -1,8 +1,11 @@
 """A string condition with no ``{{ }}`` block is never evaluated (always true)."""
 
+import re
+
 import pytest
 import yaml
 
+from specify_cli.workflows import expressions
 from specify_cli.workflows.base import StepContext
 from specify_cli.workflows.expressions import (
     condition_has_malformed_expression_block,
@@ -15,8 +18,9 @@ from specify_cli.workflows.expressions import (
     _has_unbalanced_bracket,
     _has_incomplete_operand,
     _unresolvable_term,
+    _collect_leaves,
+    _leaf_sink,
     _evaluator_rejects,
-    _is_literal,
     _strip_stray_delimiters,
     _COMPARISON_OPERATORS,
     _WORD_OPERATORS,
@@ -676,26 +680,36 @@ def test_filter_wiring_errors_are_still_rejections(condition):
 
 
 @pytest.mark.parametrize(
-    "condition,literal",
+    "condition,resolvable",
     [
         ("42", True),
         ("3.14", True),
         ("-7", True),
         # `1e3` has no "." so the evaluator calls int() on it, which fails; it then
-        # falls through to a path lookup. float() alone accepted it here.
+        # falls through to a path lookup and resolves to None. The gate used to
+        # decide this for itself with a float() test that accepted `1e3`, and the
+        # correction turned a truthy condition false. Now the evaluator reaches the
+        # dot-path resolution with `1e3` and reports it, so the two cannot disagree.
         ("1e3", False),
         ("'one'", True),
         ('"one"', True),
         # Two literals, not one: the evaluator requires the opening quote's match to
         # be the final character, which first/last-character equality does not.
         ("'a' 'b'", False),
-        ("'a' == 'b'", False),
+        ("'a' == 'b'", True),
         ("true", True),
-        ("inputs.name", False),
+        ("inputs.name", True),
+        ("bogus", False),
     ],
 )
-def test_literal_test_mirrors_the_evaluator(condition, literal):
-    assert _is_literal(condition) is literal
+def test_literal_handling_comes_from_the_evaluator(condition, resolvable):
+    """What `_is_literal` used to assert, asserted through the gate instead.
+
+    The helper existed only to restate the evaluator's literal tests, and its test
+    could pass while the two had drifted. Asking whether the gate accepts the
+    condition tests the property that actually matters.
+    """
+    assert (_unresolvable_term(condition) is None) is resolvable
 
 
 @pytest.mark.parametrize(
@@ -827,3 +841,142 @@ def test_indexing_an_always_mapping_root_still_loses_the_correction(condition):
     ctx = StepContext(inputs={"a": 1}, item=["x", "y"])
     assert CORRECTION_OFFERED not in format_condition_remediation(condition)
     assert evaluate_condition("{{ " + condition + " }}", ctx) is False
+
+
+# --- what the leaf sink rests on ----------------------------------------------
+
+
+def test_the_sink_is_off_outside_a_probe():
+    """A normal evaluation must not pay for, or be observed by, the gate."""
+    assert _leaf_sink.get() is None
+
+    evaluate_expression("{{ inputs.name }}", StepContext(inputs={"name": "x"}))
+
+    assert _leaf_sink.get() is None
+
+
+def test_the_sink_is_cleared_even_when_the_probe_raises():
+    """`_collect_leaves` swallows probe errors; it must still reset the var."""
+    _collect_leaves("inputs.tags | nosuchfilter")
+
+    assert _leaf_sink.get() is None
+
+
+def test_both_sides_of_a_boolean_are_reported():
+    """The load-bearing property: `_evaluate_simple_expression` evaluates both
+    operands of `and`/`or` and only then combines them. If it ever
+    short-circuits, the gate would stop seeing the right-hand operand and go
+    quietly blind -- so assert it here rather than rely on it silently.
+    """
+    assert _collect_leaves("inputs.a or bogus") == ["inputs.a", "bogus"]
+    assert _collect_leaves("false and bogus") == ["bogus"]
+    assert _unresolvable_term("false and bogus") is not None
+
+
+def test_leaves_seen_before_a_probe_error_are_kept():
+    """The probe hands `join` a placeholder and it raises. The leaves reached
+    before that are real, so discarding them would lose `bogus` -- the filter
+    argument case an earlier round of #4230 had to add by hand.
+    """
+    assert "bogus" in _collect_leaves("inputs.tags | join(bogus)")
+    assert _unresolvable_term("inputs.tags | join(bogus)") is not None
+
+
+def test_a_probe_error_does_not_end_the_filter_chain():
+    """Keeping the leaves seen so far is not enough -- the walk has to go on.
+
+    `from_json` receives the probe's placeholder mapping and raises. Stopping
+    there loses every leaf further along the chain, which is the one thing this
+    collection exists to report, and it is a step *backwards* from the
+    hand-written walk this refactor replaces: that walk read `bogus` straight
+    out of its own grammar rules and reported it.
+    """
+    expr = "inputs.blob | from_json | contains(bogus)"
+
+    assert _collect_leaves(expr) == ["inputs.blob", "bogus"]
+    assert _unresolvable_term(expr) is not None
+
+
+def test_every_later_link_of_a_chain_is_still_walked():
+    """Not merely the next link: two failing filters must not hide the third."""
+    expr = "inputs.blob | from_json | map(bogus) | join(alsobogus)"
+
+    leaves = _collect_leaves(expr)
+
+    assert "bogus" in leaves
+    assert "alsobogus" in leaves
+    assert _unresolvable_term(expr) is not None
+
+
+def test_only_the_probe_carries_on_past_a_filter_error():
+    """The continue-on-error is armed by the sink and nothing else.
+
+    A real evaluation must still fail loudly: `_apply_filter` raises rather than
+    return the unfiltered value precisely so a mis-wired filter cannot become a
+    quietly wrong answer, and the probe must not soften that.
+    """
+    context = StepContext(inputs={"blob": "not json", "tags": ["a"]})
+
+    with pytest.raises(ValueError, match="invalid JSON"):
+        evaluate_expression("{{ inputs.blob | from_json | contains('x') }}", context)
+
+    with pytest.raises(ValueError, match="unknown filter"):
+        evaluate_expression("{{ inputs.tags | nosuchfilter }}", context)
+
+    # And the rejection probe, which runs without the sink, still reports it.
+    assert _evaluator_rejects("inputs.tags | nosuchfilter") is not None
+
+
+def test_a_literal_never_reaches_the_resolver():
+    """Why the gate needs no literal test of its own any more."""
+    assert _collect_leaves("'a literal'") == []
+    assert _collect_leaves("42") == []
+    assert _collect_leaves("true") == []
+
+
+# --- The gate reads the evaluator's definitions, it does not restate them ---
+#
+# The point of this refactor is that widening what the evaluator accepts reaches
+# the validation gate for free. That is easy to claim and easy to lose: a second
+# copy of the grammar in the gate keeps every existing test green while silently
+# reintroducing the drift. These two pin the wiring by moving the evaluator's own
+# definitions and asserting the gate follows.
+
+
+def test_gate_reads_the_shared_indexed_segment_definition(monkeypatch):
+    """Widening `_INDEXED_SEGMENT` alone must reach the gate.
+
+    `steps.…​.task_list[-1]` is rejected today because `_INDEXED_SEGMENT` — the
+    one place `_resolve_dot_path` says what an index looks like — accepts digits
+    only. Widening it there and nowhere else must be enough; if the gate keeps
+    its own copy of the shape (as `_PATH_SEGMENT` used to), this fails.
+    """
+    path = "steps.tasks.output.task_list[-1].file"
+    assert expressions._unresolvable_term(path) is not None
+
+    monkeypatch.setattr(
+        expressions, "_INDEXED_SEGMENT", re.compile(r"^([\w-]+)\[(-?\d+)\]$")
+    )
+    assert expressions._unresolvable_term(path) is None
+
+
+def test_gate_reports_the_leaves_the_evaluator_actually_reached(monkeypatch):
+    """The gate's operands come from the evaluator's own walk, not a second parse.
+
+    If `_evaluate_simple_expression` stops treating something as a leaf — which
+    is what unwrapping a parenthesised group does — the gate stops checking it,
+    with no change to the gate itself.
+    """
+    grouped = "(inputs.a or inputs.b) and inputs.c"
+    assert expressions._unresolvable_term(grouped) is not None
+
+    real = expressions._evaluate_simple_expression
+
+    def unwrapping(expr, namespace):
+        stripped = expr.strip()
+        if stripped.startswith("(") and stripped.endswith(")"):
+            return unwrapping(stripped[1:-1], namespace)
+        return real(expr, namespace)
+
+    monkeypatch.setattr(expressions, "_evaluate_simple_expression", unwrapping)
+    assert expressions._unresolvable_term(grouped) is None
