@@ -179,7 +179,11 @@ def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_ve
 
     zip_path = catalog.download_extension(resolved_id)
     try:
-        manifest = manager.install_from_zip(zip_path, speckit_version)
+        manifest = manager.install_from_zip(
+            zip_path,
+            speckit_version,
+            catalog_name=ext_info.get("_catalog_name"),
+        )
     finally:
         zip_path.unlink(missing_ok=True)
     return f"{manifest.name} v{manifest.version} installed"
@@ -862,7 +866,9 @@ def register(app: typer.Typer) -> None:
                                     try:
                                         zip_path = preset_catalog.download_pack(preset)
                                         preset_manager.install_from_zip(
-                                            zip_path, speckit_ver
+                                            zip_path,
+                                            speckit_ver,
+                                            catalog_name=pack_info.get("_catalog_name"),
                                         )
                                     except PresetError as preset_err:
                                         _print_cli_warning(
