@@ -462,16 +462,28 @@ class _StepKindManager:
     def _assert_pinned_version(self, component: ComponentRef) -> None:
         if not component.version:
             return
-        try:
-            from ...workflows.catalog import StepCatalog
+        from ...workflows.catalog import StepCatalog, StepCatalogError
 
+        try:
             info = StepCatalog(self._root).get_step_info(component.id)
-        except Exception:  # noqa: BLE001 - catalog unreachable: cannot enforce
-            return
-        if info:
-            _assert_pinned_version(
-                "Step", component.id, component.version, info.get("version")
+        except StepCatalogError as exc:
+            raise BundlerError(
+                f"Cannot verify pinned version for step '{component.id}': {exc}"
+            ) from exc
+        if not info:
+            raise BundlerError(
+                f"Cannot verify pinned version for step '{component.id}': "
+                "the step was not found in the catalog."
             )
+        advertised = info.get("version")
+        if advertised is None or not str(advertised).strip():
+            raise BundlerError(
+                f"Cannot verify pinned version for step '{component.id}': "
+                "the catalog does not advertise a version."
+            )
+        _assert_pinned_version(
+            "Step", component.id, component.version, advertised
+        )
 
     def remove(self, component: ComponentRef) -> None:
         from ... import workflow_step_remove

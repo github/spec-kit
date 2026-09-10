@@ -10879,18 +10879,24 @@ class TestWorkflowStepRichMarkup:
 
 class TestWorkflowStepAddCLI:
     @pytest.mark.parametrize(
-        ("catalog_version", "downloaded_version"),
+        ("catalog_version", "downloaded_version", "include_downloaded_version"),
         [
-            ("1.0.0", "2.0.0"),
-            ("1.0.0", 0),
-            ("1.0.0", False),
-            ("1.0.0", ""),
-            ("1.0.0", None),
-            ("release-a", " release-a "),
+            ("1.0.0", "2.0.0", True),
+            ("1.0.0", 0, True),
+            ("1.0.0", False, True),
+            ("1.0.0", "", True),
+            ("1.0.0", None, True),
+            ("release-a", " release-a ", True),
+            ("1.0.0", None, False),
         ],
     )
     def test_add_rejects_step_yml_version_mismatch(
-        self, project_dir, monkeypatch, catalog_version, downloaded_version
+        self,
+        project_dir,
+        monkeypatch,
+        catalog_version,
+        downloaded_version,
+        include_downloaded_version,
     ):
         from typer.testing import CliRunner
 
@@ -10911,14 +10917,12 @@ class TestWorkflowStepAddCLI:
                 "_install_allowed": True,
             },
         )
+        step_metadata = {"type_key": "my-step"}
+        if include_downloaded_version:
+            step_metadata["version"] = downloaded_version
         bodies = {
             "https://example.com/step.yml": yaml.safe_dump(
-                {
-                    "step": {
-                        "type_key": "my-step",
-                        "version": downloaded_version,
-                    }
-                }
+                {"step": step_metadata}
             ).encode(),
             "https://example.com/__init__.py": b"# custom step\n",
         }

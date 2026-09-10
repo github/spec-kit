@@ -3410,7 +3410,7 @@ def workflow_step_add(
 
         catalog_version = info.get("version")
         downloaded_version = step_meta.get("version")
-        if "version" in info and "version" in step_meta:
+        if "version" in info:
             from packaging import version as pkg_version
 
             try:

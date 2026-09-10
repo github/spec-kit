@@ -140,6 +140,58 @@ def test_step_version_mismatch_refuses(tmp_path: Path, monkeypatch):
     assert calls == []
 
 
+@pytest.mark.parametrize(
+    "catalog_info",
+    [
+        None,
+        {},
+        {"version": None},
+        {"version": ""},
+    ],
+)
+def test_step_pin_requires_catalog_version(
+    tmp_path: Path, monkeypatch, catalog_info
+):
+    import specify_cli
+    from specify_cli.workflows.catalog import StepCatalog
+
+    monkeypatch.setattr(
+        StepCatalog, "get_step_info", lambda self, sid: catalog_info
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(
+        specify_cli, "workflow_step_add", lambda sid: calls.append(sid)
+    )
+
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    component = ComponentRef(kind="steps", id="step-a", version="0.3.0")
+
+    with pytest.raises(BundlerError, match="Cannot verify pinned version"):
+        manager.install(component)
+    assert calls == []
+
+
+def test_step_pin_refuses_catalog_lookup_failure(tmp_path: Path, monkeypatch):
+    import specify_cli
+    from specify_cli.workflows.catalog import StepCatalog, StepCatalogError
+
+    def fail_lookup(_self, _step_id):
+        raise StepCatalogError("catalog unavailable")
+
+    monkeypatch.setattr(StepCatalog, "get_step_info", fail_lookup)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        specify_cli, "workflow_step_add", lambda sid: calls.append(sid)
+    )
+
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    component = ComponentRef(kind="steps", id="step-a", version="0.3.0")
+
+    with pytest.raises(BundlerError, match="catalog unavailable"):
+        manager.install(component)
+    assert calls == []
+
+
 def test_preset_install_preserves_explicit_zero_priority(tmp_path: Path, monkeypatch):
     import specify_cli._assets as assets
 
