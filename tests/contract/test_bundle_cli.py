@@ -649,7 +649,11 @@ def test_search_json_offline(project: Path):
     config = {
         "schema_version": "1.0",
         "catalogs": [
-            {"id": "c", "url": str(catalog), "priority": 1,
+            # Priority 0 wins over the built-in first-party catalog so the demo
+            # entry is resolved from this project catalog, while the offline
+            # packaged first-party catalog (bugfix / assess) still appears in
+            # search results alongside it.
+            {"id": "c", "url": str(catalog), "priority": 0,
              "install_policy": "install-allowed"}
         ],
     }
@@ -659,10 +663,11 @@ def test_search_json_offline(project: Path):
     result = runner.invoke(app, ["bundle", "search", "--offline", "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload[0]["id"] == "demo"
+    by_id = {entry["id"]: entry for entry in payload}
+    assert "demo" in by_id
     # Trust indicator is exposed on the discovery surface (FR-010 / FR-027).
-    assert payload[0]["verified"] is True
-    assert payload[0]["trust"] == "verified"
+    assert by_id["demo"]["verified"] is True
+    assert by_id["demo"]["trust"] == "verified"
 
 
 def test_search_text_shows_trust(project: Path):
@@ -727,14 +732,19 @@ class FakeBundleResponse(io.BytesIO):
 
 
 def _make_catalog_config(catalog_path: Path, project: Path) -> None:
-    """Write a bundle-catalogs.yml pointing at *catalog_path* in *project*."""
+    """Write a bundle-catalogs.yml pointing at *catalog_path* in *project*.
+
+    Uses priority 0 so the test catalog wins over the built-in first-party
+    ``builtin://default`` catalog and the command under test does not need to
+    fetch the repository catalog from the network.
+    """
     config = {
         "schema_version": "1.0",
         "catalogs": [
             {
                 "id": "test",
                 "url": str(catalog_path),
-                "priority": 1,
+                "priority": 0,
                 "install_policy": "install-allowed",
             }
         ],

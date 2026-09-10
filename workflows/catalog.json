@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-03T00:00:00Z",
+  "updated_at": "2026-09-10T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/workflows/catalog.json",
   "workflows": {
     "speckit": {
@@ -10,7 +10,28 @@
       "author": "GitHub",
       "version": "1.0.1",
       "url": "https://raw.githubusercontent.com/github/spec-kit/main/workflows/speckit/workflow.yml",
-      "tags": ["sdd", "full-cycle"]
+      "tags": ["sdd", "full-cycle"],
+      "bundled": true
+    },
+    "bugfix": {
+      "id": "bugfix",
+      "name": "Guided Bug Fix",
+      "description": "Runs bug assess → human review gate → bug fix → bug test on a bug report",
+      "author": "GitHub",
+      "version": "1.0.0",
+      "url": "https://raw.githubusercontent.com/github/spec-kit/main/workflows/bugfix/workflow.yml",
+      "tags": ["bug", "triage", "workflow", "qa"],
+      "bundled": true
+    },
+    "assess": {
+      "id": "assess",
+      "name": "Idea Assessment Pipeline",
+      "description": "Runs intake → research → define → shape → decide with a verdict review gate before a manual specify handoff",
+      "author": "GitHub",
+      "version": "1.0.0",
+      "url": "https://raw.githubusercontent.com/github/spec-kit/main/workflows/assess/workflow.yml",
+      "tags": ["assessment", "discovery", "triage", "product"],
+      "bundled": true
     }
   }
 }

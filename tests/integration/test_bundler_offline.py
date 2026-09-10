@@ -24,11 +24,21 @@ def _src(source_id, url, priority=1, policy="install-allowed"):
     )
 
 
-def test_builtin_catalog_resolves_offline():
+def test_builtin_default_catalog_resolves_first_party_bundles_offline():
     fetcher = make_catalog_fetcher(allow_network=False)
     stack = CatalogStack([_src("default", "builtin://default")], fetcher)
-    # Built-in default ships empty; search works without network and returns [].
-    assert stack.search() == []
+    # Built-in default now ships the first-party bundles bugfix and assess.
+    results = {r.entry.id: r for r in stack.search()}
+    assert set(results) == {"bugfix", "assess"}
+    assert all(r.source.id == "default" and r.install_allowed for r in results.values())
+
+    resolved = stack.resolve("bugfix")
+    assert resolved.entry.id == "bugfix"
+    assert resolved.install_allowed is True
+
+    resolved = stack.resolve("assess")
+    assert resolved.entry.id == "assess"
+    assert resolved.install_allowed is True
 
 
 def test_builtin_community_catalog_resolves_from_packaged_snapshot_offline():

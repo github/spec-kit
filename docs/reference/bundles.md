@@ -4,6 +4,24 @@ Bundles compose existing Spec Kit components — extensions, presets, workflows,
 
 A bundle is described by a `bundle.yml` manifest and is discovered through the same catalog stack as other components. Installing a bundle resolves its declared components against pinned versions, checks for the single cross-bundle conflict point (the active integration), and applies each component idempotently with full provenance tracking so it can be cleanly removed or refreshed later.
 
+## First-party Bundles
+
+Spec Kit ships a first-party bundle catalog in `bundles/catalog.json`. These bundles are curated, marked `verified: true`, and resolve through the built-in `builtin://default` catalog source.
+
+| Bundle    | Role        | Components                                            | Use case                                |
+| --------- | ----------- | ----------------------------------------------------- | --------------------------------------- |
+| `bugfix`  | `developer` | `bug` extension + `bugfix` workflow                   | Guided assess → gate → fix → test       |
+| `assess`  | `developer` | `assess` extension + `assess` workflow                | Idea triage before Spec-Driven Development |
+
+Install a first-party bundle the same way you install any bundle (`add` is an alias for `install`):
+
+```bash
+specify bundle install bugfix
+specify bundle add assess
+```
+
+The first-party catalog is fetched from the repository online and falls back to the packaged wheel snapshot offline so discovery works without network access. The bundle manifest itself still resolves from its `download_url`, so installing a first-party bundle requires network today; fully offline bundle installation is tracked as follow-up work.
+
 ## Search Available Bundles
 
 ```bash
@@ -128,7 +146,10 @@ If your bundle references components from non-default catalogs, document those c
 
 ## Manage Catalog Sources
 
-Bundles are discovered through a priority-ordered stack of catalog sources (project, user, and built-in scopes).
+Bundles are discovered through a priority-ordered stack of catalog sources (project, user, and built-in scopes). The built-in sources are:
+
+- `builtin://default` — first-party bundles shipped in `bundles/catalog.json` (`bugfix`, `assess`, ...), install-allowed.
+- `builtin://community` — community submissions in `bundles/catalog.community.json`, discovery-only.
 
 ### List the Catalog Stack
 

@@ -26,16 +26,22 @@ COMMUNITY_CATALOG_URL = (
     "https://raw.githubusercontent.com/github/spec-kit/main/"
     "bundles/catalog.community.json"
 )
+FIRSTPARTY_CATALOG_URL = (
+    "https://raw.githubusercontent.com/github/spec-kit/main/"
+    "bundles/catalog.json"
+)
 
-# The default catalog is reserved for first-party bundles. The community
-# catalog is loaded from the repository online and from the packaged snapshot
-# offline so discovery remains useful without network access.
-_BUILTIN_CATALOGS: dict[str, dict] = {
-    "builtin://default": {
-        "schema_version": "1.0",
-        "catalog_url": "builtin://default",
-        "bundles": {},
-    },
+# Built-in catalogs are resolved directly by URL. ``builtin://default`` is the
+# repository-shipped first-party bundle catalog; ``builtin://community`` is the
+# community catalog. Both are fetched from the repository online and fall back
+# to the packaged wheel snapshot offline so discovery works without network.
+_BUILTIN_REPOSITORY_URLS: dict[str, str] = {
+    "builtin://default": FIRSTPARTY_CATALOG_URL,
+    "builtin://community": COMMUNITY_CATALOG_URL,
+}
+_BUILTIN_PACKAGED_SNAPSHOTS: dict[str, str] = {
+    "builtin://default": "catalog.json",
+    "builtin://community": "catalog.community.json",
 }
 
 HTTP_TIMEOUT_SECONDS = 10
@@ -99,15 +105,16 @@ def _validate_remote_url(source_id: str, url: str) -> None:
         )
 
 
-def _load_packaged_community_catalog() -> dict:
+def _load_packaged_catalog(filename: str) -> dict:
+    """Load a packaged bundle catalog snapshot from the wheel or repo root."""
     core_pack = _locate_core_pack()
     path = (
-        core_pack / "bundles" / "catalog.community.json"
+        core_pack / "bundles" / filename
         if core_pack is not None
-        else _repo_root() / "bundles" / "catalog.community.json"
+        else _repo_root() / "bundles" / filename
     )
     if not path.is_file():
-        raise BundlerError(f"Bundled community catalog not found: {path}")
+        raise BundlerError(f"Bundled catalog not found: {path}")
     return loads_json(path.read_text(encoding="utf-8"), origin=str(path))
 
 
@@ -132,14 +139,12 @@ def make_catalog_fetcher(*, allow_network: bool = True):
         scheme = parsed.scheme.lower()
 
         if scheme == "builtin":
-            if url == "builtin://community":
-                if allow_network:
-                    return _http_get_json(source.id, COMMUNITY_CATALOG_URL)
-                return _load_packaged_community_catalog()
-            payload = _BUILTIN_CATALOGS.get(url)
-            if payload is None:
+            repository_url = _BUILTIN_REPOSITORY_URLS.get(url)
+            if repository_url is None:
                 raise BundlerError(f"Unknown built-in catalog '{url}'.")
-            return payload
+            if allow_network:
+                return _http_get_json(source.id, repository_url)
+            return _load_packaged_catalog(_BUILTIN_PACKAGED_SNAPSHOTS[url])
 
         if scheme == "file":
             path = _file_url_to_path(parsed)

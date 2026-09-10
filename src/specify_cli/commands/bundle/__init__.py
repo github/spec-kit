@@ -439,6 +439,20 @@ def bundle_install(
     )
 
 
+@bundle_app.command("add")
+def bundle_add(
+    bundle_id: str = typer.Argument(
+        ...,
+        help="Bundle id (from the catalog stack) or a local path to a .zip "
+        "artifact, bundle directory, or bundle.yml",
+    ),
+    integration: str = typer.Option(None, "--integration", help="Override integration"),
+    offline: bool = typer.Option(False, "--offline", help="Do not access the network"),
+) -> None:
+    """Install a bundle's full component set (alias for install)."""
+    return bundle_install(bundle_id=bundle_id, integration=integration, offline=offline)
+
+
 @bundle_app.command("update")
 def bundle_update(
     bundle_id: str = typer.Argument(None, help="Bundle id, or omit with --all"),

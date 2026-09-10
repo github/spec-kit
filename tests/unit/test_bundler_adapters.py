@@ -116,6 +116,46 @@ def test_local_catalog_decode_errors_are_wrapped(tmp_path, use_file_url):
         fetcher(_source(url))
 
 
+def test_builtin_default_catalog_fetches_repository_catalog_online(monkeypatch):
+    captured: dict = {}
+
+    def fake_http_get_json(source_id, url):
+        captured["source_id"] = source_id
+        captured["url"] = url
+        return {"schema_version": "1.0", "bundles": {}}
+
+    monkeypatch.setattr(adapters, "_http_get_json", fake_http_get_json)
+
+    fetcher = adapters.make_catalog_fetcher(allow_network=True)
+    result = fetcher(_source("builtin://default"))
+
+    assert result["bundles"] == {}
+    assert captured == {
+        "source_id": "team",
+        "url": adapters.FIRSTPARTY_CATALOG_URL,
+    }
+
+
+def test_builtin_default_catalog_uses_core_pack_snapshot_offline(monkeypatch, tmp_path):
+    catalog_path = tmp_path / "bundles" / "catalog.json"
+    catalog_path.parent.mkdir()
+    catalog_path.write_text(
+        '{"schema_version":"1.0","bundles":{"packaged":{'
+        '"id":"packaged","name":"Packaged","version":"1.0.0",'
+        '"role":"developer","description":"Packaged catalog entry.",'
+        '"author":"Spec Kit","license":"MIT","download_url":"",'
+        '"requires":{"speckit_version":">=0.1.0"},'
+        '"provides":{},"verified":false}}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(adapters, "_locate_core_pack", lambda: tmp_path)
+
+    fetcher = adapters.make_catalog_fetcher(allow_network=False)
+    result = fetcher(_source("builtin://default"))
+
+    assert "packaged" in result["bundles"]
+
+
 def test_builtin_community_catalog_fetches_repository_catalog_online(monkeypatch):
     captured: dict = {}
 
