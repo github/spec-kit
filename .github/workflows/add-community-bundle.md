@@ -131,11 +131,13 @@ Run every check and collect all failures before deciding the outcome.
   Accept `vX.Y.Z`, `X.Y.Z`, and scoped tags whose version suffix matches
   (for example `aide-v1.0.0` for version `1.0.0`). Reject a tag whose
   embedded semver does not equal the submitted version.
-- `sha256` is optional. If the submission includes it, verify it matches the
-  downloaded archive. Requiring `sha256` on every catalog entry is follow-up
-  work and MUST NOT fail this check when the field is absent.
-- Only after the pinning checks pass: confirm the release exists, the exact ZIP
-  asset is attached to that release, and the download URL returns HTTP 200.
+- Only after all pinning checks pass, fetch the download URL and perform the
+  remaining artifact checks:
+  - Verify the URL returns HTTP 200.
+  - If `sha256` is included, verify it matches the downloaded archive. Requiring
+    `sha256` on every catalog entry is follow-up work and MUST NOT fail this
+    check when the field is absent.
+  - Confirm the release exists and the exact ZIP asset is attached to it.
 - Confirm the asset name is versioned and consistent with the submitted bundle
   ID and version.
 

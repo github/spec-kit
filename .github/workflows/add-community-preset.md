@@ -176,11 +176,13 @@ preset** — not just any file named `README.md`, and not a product/framework pi
   Accept `vX.Y.Z`, `X.Y.Z`, and scoped tags whose version suffix matches
   (for example `aide-v1.0.0` for version `1.0.0`). Reject a tag whose
   embedded semver does not equal the submitted version.
-- `sha256` is optional. If the submission includes it, verify it matches the
-  downloaded archive. Requiring `sha256` on every catalog entry is follow-up
-  work and MUST NOT fail this check when the field is absent.
-- Only after the pinning checks pass: verify a GitHub release exists for that
-  tag, and that the download URL returns HTTP 200.
+- Only after all pinning checks pass, fetch the download URL and perform the
+  remaining artifact checks:
+  - Verify the URL returns HTTP 200.
+  - If `sha256` is included, verify it matches the downloaded archive. Requiring
+    `sha256` on every catalog entry is follow-up work and MUST NOT fail this
+    check when the field is absent.
+  - Verify a GitHub release exists for that tag.
 
 ### 2f. Submission checklists
 - Confirm that all required checkboxes in the Testing Checklist and Submission

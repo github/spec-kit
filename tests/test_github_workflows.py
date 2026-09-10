@@ -132,9 +132,12 @@ _CATALOG_DOWNLOAD_URL_CLAUSES = (
         "  embedded semver does not equal the submitted version."
     ),
     (
-        "`sha256` is optional. If the submission includes it, verify it matches the\n"
-        "  downloaded archive. Requiring `sha256` on every catalog entry is follow-up\n"
-        "  work and MUST NOT fail this check when the field is absent."
+        "Only after all pinning checks pass, fetch the download URL and perform the\n"
+        "  remaining artifact checks:\n"
+        "  - Verify the URL returns HTTP 200.\n"
+        "  - If `sha256` is included, verify it matches the downloaded archive. Requiring\n"
+        "    `sha256` on every catalog entry is follow-up work and MUST NOT fail this\n"
+        "    check when the field is absent."
     ),
 )
 
