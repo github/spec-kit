@@ -882,6 +882,51 @@ def test_leaves_seen_before_a_probe_error_are_kept():
     assert _unresolvable_term("inputs.tags | join(bogus)") is not None
 
 
+def test_a_probe_error_does_not_end_the_filter_chain():
+    """Keeping the leaves seen so far is not enough -- the walk has to go on.
+
+    `from_json` receives the probe's placeholder mapping and raises. Stopping
+    there loses every leaf further along the chain, which is the one thing this
+    collection exists to report, and it is a step *backwards* from the
+    hand-written walk this refactor replaces: that walk read `bogus` straight
+    out of its own grammar rules and reported it.
+    """
+    expr = "inputs.blob | from_json | contains(bogus)"
+
+    assert _collect_leaves(expr) == ["inputs.blob", "bogus"]
+    assert _unresolvable_term(expr) is not None
+
+
+def test_every_later_link_of_a_chain_is_still_walked():
+    """Not merely the next link: two failing filters must not hide the third."""
+    expr = "inputs.blob | from_json | map(bogus) | join(alsobogus)"
+
+    leaves = _collect_leaves(expr)
+
+    assert "bogus" in leaves
+    assert "alsobogus" in leaves
+    assert _unresolvable_term(expr) is not None
+
+
+def test_only_the_probe_carries_on_past_a_filter_error():
+    """The continue-on-error is armed by the sink and nothing else.
+
+    A real evaluation must still fail loudly: `_apply_filter` raises rather than
+    return the unfiltered value precisely so a mis-wired filter cannot become a
+    quietly wrong answer, and the probe must not soften that.
+    """
+    context = StepContext(inputs={"blob": "not json", "tags": ["a"]})
+
+    with pytest.raises(ValueError, match="invalid JSON"):
+        evaluate_expression("{{ inputs.blob | from_json | contains('x') }}", context)
+
+    with pytest.raises(ValueError, match="unknown filter"):
+        evaluate_expression("{{ inputs.tags | nosuchfilter }}", context)
+
+    # And the rejection probe, which runs without the sink, still reports it.
+    assert _evaluator_rejects("inputs.tags | nosuchfilter") is not None
+
+
 def test_a_literal_never_reaches_the_resolver():
     """Why the gate needs no literal test of its own any more."""
     assert _collect_leaves("'a literal'") == []

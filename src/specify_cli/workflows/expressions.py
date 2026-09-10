@@ -560,8 +560,27 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
                 f"operand in its own expression instead."
             )
         value = _evaluate_simple_expression(head, namespace)
+        sink = _leaf_sink.get()
         for segment in segments[1:]:
-            value = _apply_filter(value, segment.strip(), namespace)
+            if sink is None:
+                value = _apply_filter(value, segment.strip(), namespace)
+                continue
+            # Probing. A filter handed a placeholder can raise on it -- from_json
+            # on a mapping is the common one -- and letting that end the walk
+            # hides every leaf further along the chain, which is the one thing
+            # this collection exists to report: `inputs.blob | from_json |
+            # contains(bogus)` recorded `inputs.blob` and stopped, so `bogus`
+            # was never offered to _unresolvable_leaf. _apply_filter evaluates a
+            # filter's argument before it can raise on the value, so the leaves
+            # of the failing segment are already recorded when we get here.
+            # Carry a fresh placeholder so the next filter sees the same kind of
+            # unknown the namespace hands out. Real evaluation is untouched: the
+            # sink is armed only by _collect_leaves, and _evaluator_rejects runs
+            # its own probe without it, so a mis-wired filter is still reported.
+            try:
+                value = _apply_filter(value, segment.strip(), namespace)
+            except Exception:  # noqa: BLE001 - probe values, not the author's text
+                value = _ProbeNamespace()
         return value
 
     # Boolean operators — parse 'or' first (lower precedence) so that
