@@ -1,8 +1,6 @@
 #!/usr/bin/env pwsh
 # Common PowerShell functions analogous to common.sh
 
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$OutputEncoding = [System.Text.Encoding]::UTF8
 
 # Find repository root by searching upward for .specify directory
 # This is the primary marker for spec-kit projects
