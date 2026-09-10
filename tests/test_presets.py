@@ -14730,3 +14730,69 @@ class TestConstitutionSyncPreset:
         assert "## Constitution Template Sync" in content
         assert "supersedes the \"Scope Guard\" above" in content
         assert "plan-template.md" in content
+
+
+class TestClarifySpecGatePreset:
+    """Bundled opt-in wrap of ``/speckit.clarify`` (#1717).
+
+    Core already lists the spec taxonomy. This preset adds the stage-gate
+    procedure, defer-ratio audit, and MUST-NOT block so teams can opt in
+    without imposing that methodology on every install.
+    """
+
+    PRESET_DIR = Path(__file__).parent.parent / "presets" / "clarify-spec-gate"
+
+    def test_manifest_provides_wrap_of_clarify(self):
+        manifest = yaml.safe_load((self.PRESET_DIR / "preset.yml").read_text())
+        assert manifest["preset"]["id"] == "clarify-spec-gate"
+        entries = manifest["provides"]["templates"]
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["type"] == "command"
+        assert entry["name"] == "speckit.clarify"
+        assert entry["strategy"] == "wrap"
+
+    def test_wrapper_uses_core_template_and_stage_gate(self):
+        text = (self.PRESET_DIR / "commands" / "speckit.clarify.md").read_text()
+        assert text.startswith("---\n")
+        _, frontmatter_block, body = text.split("---", 2)
+        frontmatter = yaml.safe_load(frontmatter_block)
+        assert frontmatter["strategy"] == "wrap"
+        assert "{CORE_TEMPLATE}" in body
+        assert "strategy: wrap" not in body
+        assert "Spec-vs-plan stage gate" in body
+        assert "60%" in body
+        assert "MUST NOT defer spec-taxonomy items to Plan" in body
+
+    def test_catalog_lists_bundled_preset(self):
+        manifest = yaml.safe_load((self.PRESET_DIR / "preset.yml").read_text())
+        catalog = json.loads((self.PRESET_DIR.parent / "catalog.json").read_text())
+        entry = catalog["presets"]["clarify-spec-gate"]
+        assert entry["bundled"] is True
+        assert entry["version"] == manifest["preset"]["version"]
+        assert entry["provides"]["commands"] == 1
+        assert entry["provides"]["templates"] == 0
+
+    def test_wrap_composes_over_core_clarify(self, project_dir):
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(self.PRESET_DIR, "0.15.0")
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("speckit.clarify", "command")
+        assert len(layers) >= 2, "expected preset wrap layer plus a core base"
+        assert layers[0]["strategy"] == "wrap"
+        assert any("clarify-spec-gate" in str(layer["path"]) for layer in layers)
+        assert layers[-1]["source"] == "core (bundled)"
+
+    def test_resolved_content_embeds_core_and_gate(self, project_dir):
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(self.PRESET_DIR, "0.15.0")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("speckit.clarify", "command")
+        assert content is not None
+        assert "{CORE_TEMPLATE}" not in content
+        assert "## Outline" in content
+        assert "Functional Scope & Behavior" in content
+        assert "## Spec-vs-plan stage gate" in content
+        assert "MUST NOT defer spec-taxonomy items to Plan" in content

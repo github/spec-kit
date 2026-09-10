@@ -1,0 +1,26 @@
+schema_version: "1.0"
+
+preset:
+  id: "clarify-spec-gate"
+  name: "Clarify spec-stage gate"
+  version: "1.0.0"
+  description: "Opt-in: wrap /speckit.clarify so spec-taxonomy items stay in the spec stage. Defer only implementation method, tech-stack comparison, or task breakdown."
+  author: "github"
+  repository: "https://github.com/github/spec-kit"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.14.4"
+
+provides:
+  templates:
+    - type: "command"
+      name: "speckit.clarify"
+      file: "commands/speckit.clarify.md"
+      description: "Wrap /speckit.clarify with a spec-vs-plan stage gate and defer-ratio audit"
+      strategy: "wrap"
+
+tags:
+  - "clarify"
+  - "spec"
+  - "methodology"

@@ -50,6 +50,7 @@ packages = ["src/specify_cli"]
 # Bundled presets (installable via `specify preset add <name>` or `specify init --preset <name>`)
 "presets/lean" = "specify_cli/core_pack/presets/lean"
 "presets/constitution-sync" = "specify_cli/core_pack/presets/constitution-sync"
+"presets/clarify-spec-gate" = "specify_cli/core_pack/presets/clarify-spec-gate"
 # Community bundle catalog snapshot (used for offline discovery)
 "bundles/catalog.community.json" = "specify_cli/core_pack/bundles/catalog.community.json"
 
