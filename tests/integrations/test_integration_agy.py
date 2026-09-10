@@ -122,6 +122,21 @@ class TestAgyBuildExecArgs:
         assert add_dir_idx < print_idx, "--add-dir must come before --print"
         assert result[add_dir_idx + 1] == str(tmp_path)
 
+    def test_build_exec_args_relative_project_root(self):
+        """Relative project_root must be resolved to an absolute path.
+        
+        Passing a relative path to --add-dir breaks agy when the subprocess
+        also changes cwd to that same relative path.
+        """
+        from specify_cli.integrations import get_integration
+        from pathlib import Path
+        i = get_integration("agy")
+        rel_path = Path("my_relative_dir")
+        result = i.build_exec_args("my prompt", project_root=rel_path)
+        assert "--add-dir" in result
+        add_dir_idx = result.index("--add-dir")
+        assert result[add_dir_idx + 1] == str(rel_path.resolve())
+
     def test_build_exec_args_no_add_dir_when_project_root_is_none(self):
         """When project_root is None, --add-dir must not appear."""
         from specify_cli.integrations import get_integration

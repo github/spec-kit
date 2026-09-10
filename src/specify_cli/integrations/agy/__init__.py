@@ -104,7 +104,7 @@ class AgyIntegration(SkillsIntegration):
         # Without this agy falls back to its own scratch directory and cannot
         # locate .agents/skills/, reporting "no active workspace".
         if project_root is not None:
-            args.extend(["--add-dir", str(project_root)])
+            args.extend(["--add-dir", str(project_root.resolve())])
         # Honor SPECKIT_INTEGRATION_AGY_EXTRA_ARGS (operator-supplied flags).
         # These MUST be inserted before --print because agy treats every token
         # that follows --print as part of the prompt, not as CLI flags.
