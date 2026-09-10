@@ -68,18 +68,7 @@ with `[Bundle]:`. If it does not, stop without commenting.
 
 ## Step 1 - Read and Parse the Issue
 
-The sanitized snapshot of the triggering issue (title and body, captured from
-the event that started this run) is provided below. Treat this snapshot as the
-authoritative submission input and parse the issue-form fields from it. Do not
-re-fetch the live issue body with the GitHub tools — the issue may change after
-the maintainer applies the label, and validating anything other than this
-snapshot makes the result impossible to tie back to the triggering submission.
-
-<issue-snapshot>
-${{ steps.sanitized.outputs.text }}
-</issue-snapshot>
-
-Extract these issue-form fields from the snapshot above:
+Read issue #${{ github.event.issue.number }} and extract these issue-form fields:
 
 | Field | Issue Form ID | Required |
 |-------|---------------|----------|
