@@ -930,6 +930,18 @@ class TestBobPostProcessSkillContent:
 class TestBobCliDispatch:
     """Headless dispatch through ``bob run``."""
 
+    @staticmethod
+    def _skills_project(tmp_path):
+        (tmp_path / ".bob" / "skills" / "speckit-specify").mkdir(parents=True)
+        return tmp_path
+
+    @staticmethod
+    def _legacy_project(tmp_path):
+        cmds = tmp_path / ".bob" / "commands"
+        cmds.mkdir(parents=True)
+        (cmds / "speckit.specify.md").write_text("x", encoding="utf-8")
+        return tmp_path
+
     def test_requires_cli_is_false_for_ide_first_flow(self):
         """``requires_cli`` must stay False so the IDE-only flow keeps working.
 
@@ -976,3 +988,119 @@ class TestBobCliDispatch:
     def test_command_invocation_accepts_bare_stem(self):
         bob = get_integration("bob")
         assert bob.build_command_invocation("specify") == "/speckit-specify"
+
+    def test_command_invocation_flattens_dots_in_skills_mode(self, tmp_path):
+        """Extension commands install as ``.bob/skills/speckit-git-commit/``.
+
+        ``SkillsIntegration`` derives the skill directory with
+        ``stem.replace(".", "-")``, so the invocation must flatten every dot,
+        not just the ``speckit.`` prefix.
+        """
+        bob = get_integration("bob")
+        root = self._skills_project(tmp_path)
+        assert (
+            bob.build_command_invocation("speckit.git.commit", project_root=root)
+            == "/speckit-git-commit"
+        )
+        assert (
+            bob.build_command_invocation("git.commit", project_root=root)
+            == "/speckit-git-commit"
+        )
+        # Three segments: distinguishes "flatten every dot" from "flatten the
+        # first one".  A two-segment stem cannot tell those apart.
+        assert (
+            bob.build_command_invocation("speckit.a.b.c", project_root=root)
+            == "/speckit-a-b-c"
+        )
+
+    def test_command_invocation_legacy_project_keeps_dots(self, tmp_path):
+        """A legacy project installs ``.bob/commands/speckit.<cmd>.md``.
+
+        The Bob 1.x invocation is ``/speckit.<cmd>`` with dots preserved --
+        the skills flattening must not leak into this layout.
+        """
+        bob = get_integration("bob")
+        root = self._legacy_project(tmp_path)
+        assert (
+            bob.build_command_invocation("speckit.specify", project_root=root)
+            == "/speckit.specify"
+        )
+        assert (
+            bob.build_command_invocation("speckit.git.commit", project_root=root)
+            == "/speckit.git.commit"
+        )
+        assert (
+            bob.build_command_invocation("speckit.specify", "arg", project_root=root)
+            == "/speckit.specify arg"
+        )
+
+    def test_command_invocation_without_project_root_uses_skills_default(self):
+        """No *project_root* -> Bob's documented skills default.
+
+        ``is_skills_mode`` rule 4 makes a project with no detectable layout
+        skills-mode, and ``effective_invoke_separator()`` answers ``-`` in
+        that state, so the invocation must agree rather than falling back to
+        the Bob 1.x spelling.  No production caller reaches this method
+        without a root today; the assertion locks the documented default so a
+        future caller cannot silently inherit the wrong layout.
+        """
+        bob = get_integration("bob")
+        assert bob.build_command_invocation("speckit.specify") == "/speckit-specify"
+        assert (
+            bob.build_command_invocation("speckit.git.commit")
+            == "/speckit-git-commit"
+        )
+
+    def test_dispatch_without_project_root_uses_cwd_layout(self, tmp_path, monkeypatch):
+        """No explicit root -> resolve the layout from the cwd.
+
+        ``dispatch_command`` runs ``bob`` with ``cwd = project_root or <the
+        current directory>``, so with no root the cwd is the project being
+        dispatched into.  A *legacy* cwd is the discriminating case: skills is
+        the layout-unknown default, so only a legacy project proves the cwd
+        was inspected at all.
+        """
+        import subprocess
+
+        captured = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.chdir(self._legacy_project(tmp_path))
+
+        get_integration("bob").dispatch_command("speckit.git.commit")
+        assert captured["cmd"][-1] == "/speckit.git.commit"
+
+    def test_dispatch_resolves_layout_from_project_root(self, tmp_path, monkeypatch):
+        """Dispatch knows the project, so it must render for that layout.
+
+        This is the seam that carries *project_root* from ``dispatch_command``
+        into invocation building; without it a legacy install is dispatched
+        with the skills spelling and the command is never found.
+        """
+        import subprocess
+
+        captured = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        bob = get_integration("bob")
+
+        bob.dispatch_command(
+            "speckit.specify",
+            args="my feature",
+            project_root=self._legacy_project(tmp_path),
+        )
+        assert captured["cmd"][-1] == "/speckit.specify my feature"
+
+        skills_root = tmp_path / "skills-proj"
+        bob.dispatch_command(
+            "speckit.git.commit", project_root=self._skills_project(skills_root)
+        )
+        assert captured["cmd"][-1] == "/speckit-git-commit"

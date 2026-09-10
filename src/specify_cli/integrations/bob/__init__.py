@@ -254,19 +254,63 @@ class BobIntegration(IntegrationBase):
         """
         return "-" if skills_enabled else "."
 
-    def build_command_invocation(self, command_name: str, args: str = "") -> str:
+    def build_command_invocation(
+        self,
+        command_name: str,
+        args: str = "",
+        *,
+        project_root: Path | None = None,
+    ) -> str:
         """Render ``/speckit-<cmd>`` for skills mode, ``/speckit.<cmd>`` legacy.
 
         ``IntegrationBase`` hardcodes ``.``; Bob's skills live at
         ``.bob/skills/speckit-<cmd>/SKILL.md``, so the base rendering names a
-        command that does not exist in a skills-mode project.
+        command that does not exist in a skills-mode project.  The two layouts
+        differ in the *separator* and in how a dotted extension command is
+        spelled: skills flatten every dot (``speckit.git.commit`` ->
+        ``/speckit-git-commit``, matching the installed
+        ``.bob/skills/speckit-git-commit/`` directory), while legacy commands
+        keep them (``/speckit.git.commit``).
+
+        *project_root* is keyword-only so this stays a superset of the base
+        signature that every other integration implements.  It is resolved
+        through :meth:`is_skills_mode`, so a ``None`` root falls back to the
+        same skills default that :meth:`effective_invoke_separator` and
+        ``is_skills_mode`` rule 4 already apply -- the class answers
+        "unknown project" consistently, whichever hook is asked.
         """
+        if not self.is_skills_mode(None, project_root):
+            return super().build_command_invocation(command_name, args)
+
         stem = command_name
         if stem.startswith("speckit."):
             stem = stem[len("speckit."):]
-        sep = self.effective_invoke_separator()
-        invocation = f"/speckit{sep}{stem}"
+        invocation = "/speckit-" + stem.replace(".", "-")
         return f"{invocation} {args}" if args else invocation
+
+    def _build_dispatch_prompt(
+        self,
+        command_name: str,
+        args: str,
+        project_root: Path | None,
+    ) -> str:
+        """Resolve the layout from *project_root* at dispatch time.
+
+        Dispatch is the one caller that knows the target project, so it is
+        where a legacy install can be detected and given ``/speckit.<cmd>``
+        instead of the skills default.
+
+        A ``None`` root resolves to the working directory rather than being
+        passed through: ``dispatch_command`` runs ``bob`` with
+        ``cwd = project_root or <the current directory>``, so when no root is
+        given the cwd *is* the project being dispatched into.  Detecting its
+        layout beats falling back to the layout-unknown default, which would
+        send a legacy install the skills spelling.
+        """
+        root = project_root if project_root is not None else Path.cwd()
+        return self.build_command_invocation(
+            command_name, args, project_root=root
+        )
 
     def build_exec_args(
         self,
