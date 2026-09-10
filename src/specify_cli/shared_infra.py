@@ -145,6 +145,28 @@ def shared_templates_source(
     return repo_root / "templates"
 
 
+def shared_commands_source(
+    *,
+    core_pack: Path | None,
+    repo_root: Path,
+) -> Path:
+    """Return the bundled/source core command templates directory.
+
+    Wheel installs force-include ``templates/commands`` as
+    ``core_pack/commands`` (not nested under ``core_pack/templates``), so
+    ``shared_templates_source()`` cannot see that tree. Source checkouts
+    keep the files at ``repo_root/templates/commands``.
+    """
+    if core_pack:
+        wheel_commands = core_pack / "commands"
+        if wheel_commands.is_dir():
+            return wheel_commands
+        nested = core_pack / "templates" / "commands"
+        if nested.is_dir():
+            return nested
+    return repo_root / "templates" / "commands"
+
+
 def shared_scripts_source(
     *,
     core_pack: Path | None,
@@ -354,7 +376,8 @@ def refresh_shared_templates(
 ) -> None:
     """Refresh default-sensitive shared templates without touching scripts."""
     templates_src = shared_templates_source(core_pack=core_pack, repo_root=repo_root)
-    if not templates_src.is_dir():
+    commands_src = shared_commands_source(core_pack=core_pack, repo_root=repo_root)
+    if not templates_src.is_dir() and not commands_src.is_dir():
         return
 
     manifest = load_speckit_manifest(project_path, version=version, console=console)
@@ -365,26 +388,38 @@ def refresh_shared_templates(
 
     dest_templates = project_path / ".specify" / "templates"
     _ensure_safe_shared_directory(project_path, dest_templates)
-    for src in templates_src.iterdir():
-        if not src.is_file() or src.name == "vscode-settings.json" or src.name.startswith("."):
-            continue
 
-        dst = dest_templates / src.name
-        _ensure_safe_shared_destination(project_path, dst)
-        rel = dst.relative_to(project_path).as_posix()
-        if dst.exists() and not force:
-            if rel not in tracked_files or rel in modified or manifest.is_recovered(rel):
-                # Never overwrite a recovered (pre-existing user) file without
-                # --force, matching install_shared_infra's is_recovered gate
-                # (#2918). Without this, refresh clobbers user content.
-                skipped_files.append(rel)
+    def _plan_refresh_markdown(src_dir: Path, dest_dir: Path, *, skip_names: set[str]) -> None:
+        if not src_dir.is_dir():
+            return
+        _ensure_safe_shared_directory(project_path, dest_dir)
+        for src in src_dir.iterdir():
+            if not src.is_file() or src.name in skip_names or src.name.startswith("."):
                 continue
 
-        content = src.read_text(encoding="utf-8")
-        content = IntegrationBase.resolve_command_refs(
-            content, invoke_separator, invoke_prefix
-        )
-        planned_updates.append((dst, rel, content))
+            dst = dest_dir / src.name
+            _ensure_safe_shared_destination(project_path, dst)
+            rel = dst.relative_to(project_path).as_posix()
+            if dst.exists() and not force:
+                if rel not in tracked_files or rel in modified or manifest.is_recovered(rel):
+                    # Never overwrite a recovered (pre-existing user) file without
+                    # --force, matching install_shared_infra's is_recovered gate
+                    # (#2918). Without this, refresh clobbers user content.
+                    skipped_files.append(rel)
+                    continue
+
+            content = src.read_text(encoding="utf-8")
+            content = IntegrationBase.resolve_command_refs(
+                content, invoke_separator, invoke_prefix
+            )
+            planned_updates.append((dst, rel, content))
+
+    _plan_refresh_markdown(
+        templates_src, dest_templates, skip_names={"vscode-settings.json"}
+    )
+    _plan_refresh_markdown(
+        commands_src, dest_templates / "commands", skip_names=set()
+    )
 
     for dst, rel, content in planned_updates:
         _write_shared_text(project_path, dst, content)
@@ -612,6 +647,45 @@ def install_shared_infra(
                                 # Tolerate races / permission issues / non-file
                                 # collisions so one weird path does not abort
                                 # the whole install.
+                                console.print(
+                                    f"[yellow]⚠[/yellow]  could not record {rel} in manifest: {exc}"
+                                )
+                    continue
+
+                content = src.read_text(encoding="utf-8")
+                content = IntegrationBase.resolve_command_refs(
+                    content, invoke_separator, invoke_prefix
+                )
+                planned_templates.append((dst, rel, content))
+
+    # Core command templates live in ``templates/commands/`` (source) or
+    # ``core_pack/commands`` (wheel). The loop above only copies top-level
+    # files, so wrap composition had no base layer after ``specify init``
+    # (#3086). Copy them into ``.specify/templates/commands/`` with the
+    # same overwrite / manifest policy as the other shared templates.
+    commands_src = shared_commands_source(core_pack=core_pack, repo_root=repo_root)
+    if commands_src.is_dir():
+        dest_commands = project_path / ".specify" / "templates" / "commands"
+        if _ensure_or_bucket_dir(dest_commands):
+            for src in commands_src.iterdir():
+                if not src.is_file() or src.name.startswith("."):
+                    continue
+
+                dst = dest_commands / src.name
+                rel = dst.relative_to(project_path).as_posix()
+                seen_rels.add(rel)
+                if not _safe_dest_or_bucket(dst, rel):
+                    continue
+                write, bucket = _decide_overwrite(rel, dst)
+                if not write:
+                    if bucket == "preserved":
+                        preserved_user_files.append(rel)
+                    else:
+                        skipped_files.append(rel)
+                        if dst.is_file() and rel not in prior_hashes:
+                            try:
+                                manifest.record_existing(rel, recovered=True)
+                            except (OSError, ValueError) as exc:
                                 console.print(
                                     f"[yellow]⚠[/yellow]  could not record {rel} in manifest: {exc}"
                                 )
