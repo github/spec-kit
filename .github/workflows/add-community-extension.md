@@ -26,6 +26,8 @@ checkout:
 safe-outputs:
   noop:
     report-as-issue: false
+  threat-detection:
+    continue-on-error: false
   create-pull-request:
     title-prefix: "[extension] "
     labels: [extension-submission, automated]
@@ -62,9 +64,18 @@ If it does not, stop without commenting.
 
 ## Step 1 — Read and Parse the Issue
 
-Read issue #${{ github.event.issue.number }}.
+The sanitized snapshot of the triggering issue (title and body, captured from
+the event that started this run) is provided below. Treat this snapshot as the
+authoritative submission input. Do not re-fetch the live issue body with the
+GitHub tools — the issue may change after the maintainer applies the label, and
+validating anything other than this snapshot makes the result impossible to tie
+back to the triggering submission.
 
-Extract the following fields from the structured issue body (GitHub issue form
+<issue-snapshot>
+${{ steps.sanitized.outputs.text }}
+</issue-snapshot>
+
+Extract the following fields from the snapshot above (GitHub issue form
 fields):
 
 | Field | Issue Form ID | Required |
