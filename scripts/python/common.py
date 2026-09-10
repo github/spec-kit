@@ -385,6 +385,28 @@ class _DelegatedYAMLError(Exception):
     """Raised when a SPECKIT_PYTHON-delegated manifest parse fails."""
 
 
+class _NonNativeYAMLValue:
+    """Marker for a YAML value with no native JSON equivalent (e.g. a date).
+
+    Preserves the fact that native ``yaml.safe_load`` would not have produced
+    a string/int/etc. here, so callers validating field types (e.g. that
+    ``file`` is a string) reject it the same way the in-process parser would,
+    instead of silently accepting a stringified value.
+    """
+
+    def __repr__(self) -> str:
+        return "<non-native YAML value>"
+
+
+_NON_NATIVE_MARKER_KEY = "$speckit_non_native"
+
+
+def _delegated_yaml_object_hook(obj: dict) -> object:
+    if len(obj) == 1 and obj.get(_NON_NATIVE_MARKER_KEY) is True:
+        return _NonNativeYAMLValue()
+    return obj
+
+
 class _DelegatedYAML:
     """``yaml.safe_load`` proxy that shells out to SPECKIT_PYTHON.
 
@@ -399,17 +421,21 @@ class _DelegatedYAML:
         self._python_exe = python_exe
 
     def safe_load(self, text: str) -> object:
+        child_env = dict(os.environ, PYTHONIOENCODING="utf-8")
         try:
             proc = subprocess.run(
                 [
                     self._python_exe,
                     "-c",
-                    "import sys, json, yaml; "
-                    "json.dump(yaml.safe_load(sys.stdin.read()), sys.stdout, default=str)",
+                    "import sys, json, yaml\n"
+                    "def _default(value):\n"
+                    f"    return {{'{_NON_NATIVE_MARKER_KEY}': True}}\n"
+                    "json.dump(yaml.safe_load(sys.stdin.read()), sys.stdout, default=_default)",
                 ],
                 input=text,
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
+                env=child_env,
                 timeout=10,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
@@ -421,7 +447,7 @@ class _DelegatedYAML:
                 proc.stderr.strip() or "SPECKIT_PYTHON could not parse the manifest"
             )
         try:
-            return json.loads(proc.stdout)
+            return json.loads(proc.stdout, object_hook=_delegated_yaml_object_hook)
         except json.JSONDecodeError as exc:
             raise _DelegatedYAMLError(
                 f"SPECKIT_PYTHON returned invalid JSON: {exc}"

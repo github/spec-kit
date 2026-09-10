@@ -810,6 +810,111 @@ def test_python_variant_delegates_manifest_with_non_json_native_yaml_value(
 
 
 @requires_bash
+def test_python_variant_rejects_delegated_manifest_with_non_string_validated_field(
+    tmp_path: Path,
+) -> None:
+    """A validated field (``file``) holding a value PyYAML parses into a
+    non-JSON-native type (e.g. an unquoted date) must be rejected via
+    delegation exactly as the in-process parser rejects it, not silently
+    coerced to a string that passes the ``isinstance(str)`` check (#4445)."""
+    repo, _ = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "provides:\n"
+        "  templates:\n"
+        "    - type: template\n"
+        f"      name: {TEMPLATE}\n"
+        "      file: 2026-09-08\n"
+        "      strategy: wrap\n",
+        encoding="utf-8",
+    )
+
+    no_yaml_python = tmp_path / "no-yaml-venv"
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
+        check=True,
+        capture_output=True,
+    )
+    no_yaml_exe = venv_python3_exe(no_yaml_python)
+    assert no_yaml_exe.is_file()
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+
+
+@requires_bash
+def test_python_variant_delegates_manifest_with_non_ascii_metadata_under_ascii_locale(
+    tmp_path: Path,
+) -> None:
+    """Delegated manifest parsing must force UTF-8 on the subprocess pipe and
+    the child's own stdio, not the process locale, so non-ASCII metadata in a
+    manifest still resolves when this interpreter lacks PyYAML and the
+    process is running under a forced ASCII locale (#4445)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8") + '      description: "Café ✓"\n',
+        encoding="utf-8",
+    )
+
+    no_yaml_python = tmp_path / "no-yaml-venv"
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
+        check=True,
+        capture_output=True,
+    )
+    no_yaml_exe = venv_python3_exe(no_yaml_python)
+    assert no_yaml_exe.is_file()
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+    env["PYTHONUTF8"] = "0"
+    env["PYTHONCOERCECLOCALE"] = "0"
+    env["LC_ALL"] = "C"
+    env["LANG"] = "C"
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
+@requires_bash
+def test_bash_resolves_composed_template_without_bash4_mapfile_builtin(
+    tmp_path: Path,
+) -> None:
+    """`resolve_template_content` must not rely on `mapfile`, a Bash 4+
+    builtin unavailable on macOS's system Bash 3.2 (#4445). Disabling the
+    builtin for this process reproduces that environment without requiring
+    an actual Bash 3.2 install."""
+    repo, expected = _setup_repo(tmp_path)
+
+    script = repo / ".specify" / "scripts" / "bash" / f"{SCRIPT}.sh"
+    result = run(
+        ["bash", "-c", 'enable -n mapfile; source "$0" "$@"', str(script), TEMPLATE, "--json"],
+        repo,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
+@requires_bash
 def test_bash_fails_when_override_read_fails(tmp_path: Path) -> None:
     repo = make_repo(tmp_path)
     install_scripts(repo, SCRIPT)

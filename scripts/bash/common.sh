@@ -420,7 +420,10 @@ _python3_command() {
 _sorted_extension_ids() {
     local ext_dir="$1"
     local -a python_cmd=()
-    mapfile -t python_cmd < <(_python3_command)
+    local _python_cmd_line
+    while IFS= read -r _python_cmd_line; do
+        python_cmd+=("$_python_cmd_line")
+    done < <(_python3_command)
     if [ "${#python_cmd[@]}" -gt 0 ]; then
         local py_stderr sorted_ids
         py_stderr=$(mktemp)
@@ -517,7 +520,10 @@ resolve_template() {
     if [ -d "$presets_dir" ]; then
         local registry_file="$presets_dir/.registry"
         local -a python_cmd=()
-        mapfile -t python_cmd < <(_python3_command)
+        local _python_cmd_line
+        while IFS= read -r _python_cmd_line; do
+            python_cmd+=("$_python_cmd_line")
+        done < <(_python3_command)
         if [ -f "$registry_file" ] && [ "${#python_cmd[@]}" -gt 0 ]; then
             # Read preset IDs sorted by priority (lower number = higher precedence).
             # The python3 call is wrapped in an if-condition so that set -e does not
@@ -637,7 +643,10 @@ resolve_template_content() {
         local sorted_presets=""
         local registry_parsed=false
         local -a python_cmd=()
-        mapfile -t python_cmd < <(_python3_command)
+        local _python_cmd_line
+        while IFS= read -r _python_cmd_line; do
+            python_cmd+=("$_python_cmd_line")
+        done < <(_python3_command)
         if [ -f "$registry_file" ] && [ "${#python_cmd[@]}" -gt 0 ]; then
             if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" "${python_cmd[@]}" -c "
 import json, re, sys, os
