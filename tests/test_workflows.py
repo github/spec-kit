@@ -917,6 +917,33 @@ class TestExpressions:
         assert evaluate_expression("{{ true }}", ctx) is True
         assert evaluate_expression("{{ false }}", ctx) is False
 
+    def test_parenthesised_grouping(self):
+        """A parenthesised group is evaluated, not read as a dot path.
+
+        The operator scans skip bracketed text so an operator inside an
+        operand is not split on. Nothing unwrapped a group spanning the whole
+        expression, so ``(a or b) and c`` split at the top-level ``and`` and
+        then looked up ``(a or b)`` as a key, got ``None``, and read false --
+        adding parentheses to make precedence explicit silently inverted the
+        result.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"a": True, "b": False, "c": True, "n": 5})
+
+        assert evaluate_expression("{{ (inputs.a or inputs.b) and inputs.c }}", ctx) is True
+        assert evaluate_expression("{{ (inputs.b or inputs.b) and inputs.c }}", ctx) is False
+        assert evaluate_expression("{{ (inputs.n) }}", ctx) == 5
+        assert evaluate_expression("{{ (inputs.n > 1) }}", ctx) is True
+        assert evaluate_expression("{{ ((inputs.n)) }}", ctx) == 5
+        # A group is still only unwrapped when it spans the whole expression.
+        assert evaluate_expression("{{ (inputs.a) and (inputs.b) }}", ctx) is False
+        assert evaluate_expression("{{ (inputs.n) | default(9) }}", ctx) == 5
+        # A parenthesis inside a string literal is not a group.
+        assert evaluate_expression("{{ 'a(b' }}", ctx) == "a(b"
+        assert evaluate_expression("{{ ('(') }}", ctx) == "("
+
     def test_list_indexing(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext

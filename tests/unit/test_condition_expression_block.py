@@ -804,6 +804,36 @@ def test_resolvable_filter_arguments_keep_the_correction(condition):
     assert _wrapped_evaluates(condition)
 
 
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "(inputs.a or inputs.b) and inputs.c",
+        "(inputs.a)",
+        "((inputs.a))",
+        "(inputs.a) and (inputs.c)",
+    ],
+)
+def test_a_grouped_bare_condition_keeps_the_correction(condition):
+    """Remediation tracks the evaluator, which now unwraps a parenthesised group.
+
+    Before the evaluator learned to unwrap, a grouped operand reached the path
+    check as literal text, so a condition that wrapping would have fixed was
+    reported unresolvable and the correction was withheld.
+    """
+    ctx = StepContext(inputs={"a": True, "b": False, "c": True})
+    assert CORRECTION_OFFERED in format_condition_remediation(condition)
+    assert evaluate_condition("{{ " + condition + " }}", ctx) is True
+
+
+@pytest.mark.parametrize(
+    "condition",
+    ["(bogus or inputs.b) and inputs.c", "(inputs.a or bogus)"],
+)
+def test_an_unresolvable_name_inside_a_group_still_refuses(condition):
+    """The unwrap must not become a blanket pass for anything parenthesised."""
+    assert CORRECTION_OFFERED not in format_condition_remediation(condition)
+
+
 @pytest.mark.parametrize("condition", ["item[0] == 'x'", "item[1] == 'y'"])
 def test_an_indexed_item_root_keeps_the_correction(condition):
     """`item` is the only root that is not always a mapping.

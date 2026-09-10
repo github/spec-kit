@@ -480,6 +480,31 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
 _COMPARISON_OPERATORS = ("!=", "==", ">=", "<=", ">", "<", " not in ", " in ")
 
 
+def _is_wrapped_in_parens(text: str) -> bool:
+    """True when *text* is one parenthesised group, brackets and all.
+
+    ``(a or b)`` is; ``(a) and (b)`` is not, because the opening paren closes
+    before the end. Quote-aware, so ``('(')`` does not count its own literal.
+    """
+    if not (text.startswith("(") and text.endswith(")")):
+        return False
+    quote: str | None = None
+    depth = 0
+    for index, ch in enumerate(text):
+        if quote is not None:
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return index == len(text) - 1
+    return False
+
+
 def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     """Evaluate a simple expression against the namespace.
 
@@ -500,6 +525,16 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     # strings containing `|` or operator keywords are not mis-parsed downstream.
     if expr[:1] in ("'", '"') and expr.find(expr[0], 1) == len(expr) - 1:
         return expr[1:-1]
+
+    # A parenthesised group. The operator scans below deliberately skip over
+    # bracketed text so an operator inside a quoted or nested operand is not
+    # split on -- which also means nothing ever looked inside a group that
+    # wraps the WHOLE expression. `(a or b) and c` split at the top-level
+    # `and`, then evaluated `(a or b)` as a dot path, found no such key, and
+    # returned None: the `or` was never evaluated and the whole thing read
+    # false. Unwrap here so grouping means what it says.
+    if _is_wrapped_in_parens(expr):
+        return _evaluate_simple_expression(expr[1:-1], namespace)
 
     # Handle pipe filters. Detect the pipe at the top level only, so a literal
     # '|' inside a quoted operand (e.g. `inputs.x == 'a|b'`) or nested brackets is
@@ -1143,6 +1178,13 @@ def _unresolvable_term(text: str) -> str | None:
     stripped = text.strip()
     if not stripped:
         return "an operand is empty"
+
+    # Mirror the evaluator's group unwrapping. Without this a grouped operand
+    # reached the path check as literal text, so `(inputs.a or inputs.b) and
+    # inputs.c` -- which the evaluator resolves -- was reported unresolvable and
+    # the wrap correction was withheld from a condition that would have worked.
+    if _is_wrapped_in_parens(stripped):
+        return _unresolvable_term(stripped[1:-1])
 
     if _find_top_level(stripped, "|") != -1:
         segments = _split_top_level(stripped, "|")
