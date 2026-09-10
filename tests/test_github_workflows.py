@@ -220,6 +220,48 @@ def test_community_submission_allowed_files_do_not_include_other_catalogs_or_doc
             )
 
 
+def _frontmatter(source_text: str) -> dict:
+    if not source_text.startswith("---"):
+        raise AssertionError("workflow source is missing YAML frontmatter")
+    _, frontmatter, _ = source_text.split("---", 2)
+    return yaml.safe_load(frontmatter)
+
+
+def test_community_submission_threat_detection_is_fail_closed():
+    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+        source = WORKFLOWS_DIR / f"add-community-{workflow}.md"
+        compiled = WORKFLOWS_DIR / f"add-community-{workflow}.lock.yml"
+
+        assert source.is_file()
+        assert compiled.is_file()
+
+        safe_outputs = _frontmatter(source.read_text(encoding="utf-8")).get(
+            "safe-outputs", {}
+        )
+        threat_detection = safe_outputs.get("threat-detection")
+        assert threat_detection is not None, (
+            f"add-community-{workflow}.md must configure "
+            "safe-outputs.threat-detection"
+        )
+        assert threat_detection.get("continue-on-error") is False, (
+            f"add-community-{workflow}.md must set threat-detection "
+            "continue-on-error: false so detections block safe outputs"
+        )
+
+        compiled_text = compiled.read_text(encoding="utf-8")
+        assert 'GH_AW_DETECTION_CONTINUE_ON_ERROR: "false"' in compiled_text, (
+            f"add-community-{workflow}.lock.yml must compile threat detection "
+            "in fail-closed mode"
+        )
+        assert (
+            "process.env.GH_AW_DETECTION_CONTINUE_ON_ERROR !== 'false'"
+            in compiled_text
+        ), (
+            f"add-community-{workflow}.lock.yml is missing the detection "
+            "continue-on-error gate"
+        )
+
+
 def test_bug_test_workflow_provisions_python_dependencies():
     source = WORKFLOWS_DIR / "bug-test.md"
     compiled = WORKFLOWS_DIR / "bug-test.lock.yml"
