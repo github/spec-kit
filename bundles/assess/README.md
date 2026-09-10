@@ -35,4 +35,4 @@ You will be prompted for an idea and a slug. The slug is used as the working dir
 specify bundle remove assess
 ```
 
-Removing the bundle uninstalls both the workflow and the extension only if no other installed bundle still depends on them (FR-022).
+Removing the bundle uninstalls the workflow and the extension it contributed, unless they are still depended on by another installed bundle (FR-022). Components you installed independently are not attributed to this bundle and survive removal.

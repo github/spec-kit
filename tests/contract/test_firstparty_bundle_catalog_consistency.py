@@ -104,8 +104,10 @@ def test_firstparty_workflow_catalog_entries_match_shipped_yamls():
         assert entry["url"] == (
             "https://raw.githubusercontent.com/github/spec-kit/main/"
             f"workflows/{workflow_id}/workflow.yml"
-        ), f"catalog URL for workflow '{workflow_id}' does not point at the "
-        "shipped workflow.yml on the repository default branch"
+        ), (
+            f"catalog URL for workflow '{workflow_id}' does not point at the "
+            "shipped workflow.yml on the repository default branch"
+        )
 
 
 def test_firstparty_manifest_pins_match_shipped_versions():

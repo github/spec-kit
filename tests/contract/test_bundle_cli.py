@@ -16,6 +16,7 @@ import yaml
 from typer.testing import CliRunner
 
 from specify_cli import app
+from specify_cli.bundler.services.adapters import FIRSTPARTY_CATALOG_URL
 from specify_cli.bundler.services.packager import build_bundle
 from tests.conftest import strip_ansi
 from tests.bundler_helpers import (
@@ -428,6 +429,70 @@ def test_local_firstparty_bundle_installs_bundled_components_offline(
         )
     )
     assert registry["workflows"][bundle_id]["version"] == "1.0.0"
+
+
+@pytest.mark.parametrize(
+    ("bundle_id", "extension_id"),
+    [("bugfix", "bug"), ("assess", "assess")],
+)
+def test_bundle_add_by_id_initializes_empty_project_from_firstparty_catalog(
+    tmp_path: Path, monkeypatch, bundle_id: str, extension_id: str
+):
+    """``bundle add <id>`` from an empty directory resolves ``builtin://default``.
+
+    The command fetches the first-party catalog and bundle manifest over the
+    network (both mocked here), initializes a new Spec Kit project, and installs
+    the bundled extension and workflow without further network access.
+    """
+    project = tmp_path / "fresh"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    catalog_bytes = (REPO_ROOT / "bundles" / "catalog.json").read_bytes()
+    manifest_bytes = (REPO_ROOT / "bundles" / bundle_id / "bundle.yml").read_bytes()
+    expected_manifest_url = (
+        "https://raw.githubusercontent.com/github/spec-kit/main/"
+        f"bundles/{bundle_id}/bundle.yml"
+    )
+    captured_urls: list[str] = []
+
+    def fake_open_url(
+        url: str,
+        timeout: int | None = None,
+        extra_headers: dict[str, str] | None = None,
+        redirect_validator=None,
+    ):
+        captured_urls.append(url)
+        if url == FIRSTPARTY_CATALOG_URL:
+            return FakeBundleResponse(catalog_bytes, url=url)
+        if url == expected_manifest_url:
+            return FakeBundleResponse(manifest_bytes, url=url)
+        raise AssertionError(
+            f"Unexpected network request in by-ID bundle test: {url}"
+        )
+
+    with patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+        result = runner.invoke(
+            app, ["bundle", "add", bundle_id, "--integration", "copilot"]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "No Spec Kit project here" in result.output
+    assert (project / ".specify").is_dir()
+    assert (
+        project / ".specify" / "extensions" / extension_id / "extension.yml"
+    ).is_file()
+    assert (
+        project / ".specify" / "workflows" / bundle_id / "workflow.yml"
+    ).is_file()
+    registry = json.loads(
+        (project / ".specify" / "workflows" / "workflow-registry.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert registry["workflows"][bundle_id]["version"] == "1.0.0"
+    assert FIRSTPARTY_CATALOG_URL in captured_urls
+    assert expected_manifest_url in captured_urls
 
 
 def test_local_bundle_rejects_mismatched_bundled_workflow_pin_offline(project: Path):
