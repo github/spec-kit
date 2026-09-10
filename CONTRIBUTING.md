@@ -55,7 +55,7 @@ Here are a few things you can do that will increase the likelihood of your pull 
 - Write a [good commit message](http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html).
 - Test your changes with the Spec-Driven Development workflow to ensure compatibility.
 
-Accounts with three open pull requests may continue submitting changes, but additional submissions may be placed behind contributions from other authors in the review queue. Coding agents should disclose this possibility and obtain the filer's confirmation before opening another pull request.
+Accounts with three open pull requests may continue submitting changes, but additional submissions may be placed behind contributions from other authors in the review queue. Coding agents should disclose this possibility and obtain the filer's confirmation before opening another pull request. Repository-owned `gh-aw` maintenance workflows do not require this confirmation.
 
 ### Evidence gate
 
