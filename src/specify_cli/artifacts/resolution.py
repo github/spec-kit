@@ -512,4 +512,3 @@ def _build_stack(
             )
         )
     return rows
-
