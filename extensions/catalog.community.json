@@ -885,7 +885,7 @@
         "speckit_version": ">=0.4.0"
       },
       "provides": {
-        "commands": 4,
+        "commands": 5,
         "hooks": 1
       },
       "tags": [
@@ -2884,10 +2884,10 @@
     "maqa": {
       "name": "MAQA — Multi-Agent & Quality Assurance",
       "id": "maqa",
-      "description": "Coordinator → feature → QA agent workflow with parallel worktree-based implementation. Language-agnostic. Auto-detects installed board plugins (Trello, Linear, GitHub Projects, Jira, Azure DevOps). Optional CI gate.",
+      "description": "Idempotent, agent-neutral coordinator → feature → QA workflow with GitHub Issues as the source of truth. Uses Spec Kit taskstoissues for missing issues and supports parallel or sequential dispatch.",
       "author": "GenieRobot",
-      "version": "0.1.6",
-      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-ext/releases/download/maqa-v0.1.6/maqa.zip",
+      "version": "0.3.1",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-ext/releases/download/maqa-v0.3.1/maqa.zip",
       "repository": "https://github.com/GenieRobot/spec-kit-maqa-ext",
       "homepage": "https://github.com/GenieRobot/spec-kit-maqa-ext",
       "documentation": "https://github.com/GenieRobot/spec-kit-maqa-ext/blob/main/README.md",
@@ -2899,26 +2899,25 @@
         "speckit_version": ">=0.3.0",
         "tools": [
           { "name": "git", "required": true },
-          { "name": "python3", "required": true }
+          { "name": "gh", "required": true }
         ]
       },
       "provides": {
-        "commands": 4,
+        "commands": 5,
         "hooks": 1
       },
       "tags": [
         "multi-agent",
-        "orchestration",
         "quality-assurance",
-        "workflow",
-        "parallel",
-        "tdd"
+        "github-issues",
+        "idempotent",
+        "agent-neutral"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-26T00:00:00Z",
-      "updated_at": "2026-08-20T00:00:00Z"
+      "updated_at": "2026-09-11T00:00:00Z"
     },
     "maqa-azure-devops": {
       "name": "MAQA Azure DevOps Integration",
