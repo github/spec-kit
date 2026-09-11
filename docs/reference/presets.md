@@ -41,7 +41,7 @@ Replaces an already-installed preset by running the normal `preset remove`
 operation first and then the normal `preset add` operation. `--from`, `--dev`,
 and `--priority` are forwarded to `preset add`; `--from` and `--dev` cannot be
 combined. Without an explicit source, add resolves the preset through its usual
-bundled and catalogue lookup.
+bundled and catalog lookup.
 
 Update is deliberately destructive. If removal succeeds but replacement
 installation fails, the previous preset has already been removed. The command
