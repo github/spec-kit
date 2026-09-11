@@ -26,8 +26,8 @@ from specify_cli.artifacts import (
     ArtifactNotFoundError,
     ArtifactResolutionError,
     NotASpecKitProjectError,
-    _preset_display_name,
 )
+from specify_cli.artifacts.resolution import _preset_display_name
 from specify_cli.extensions import CORE_COMMAND_NAMES, ExtensionRegistry
 from specify_cli.presets import PresetRegistry, PresetResolver
 from tests.conftest import install_preset
@@ -165,7 +165,7 @@ class TestListArtifactsContract:
         )
 
         monkeypatch.setattr(
-            "specify_cli.artifacts._locate_shared_asset_dir",
+            "specify_cli.artifacts.catalog._locate_shared_asset_dir",
             lambda subdir: {
                 "commands": commands_dir,
                 "scripts": scripts_dir,
