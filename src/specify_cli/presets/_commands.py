@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 from pathlib import Path
 
 import typer
@@ -451,6 +452,77 @@ def preset_remove(
         console.print(f"[green]✓[/green] Preset '{preset_id}' removed successfully")
     else:
         console.print(f"[red]Error:[/red] Failed to remove preset '{preset_id}'")
+        raise typer.Exit(1)
+
+
+@preset_app.command("update")
+def preset_update(
+    preset_id: str = typer.Argument(..., help="Installed preset ID to replace"),
+    from_url: str = typer.Option(
+        None,
+        "--from",
+        help="Install the replacement from a .zip, .tar.gz, or .tgz URL",
+    ),
+    dev: str = typer.Option(
+        None,
+        "--dev",
+        help="Install the replacement from a local directory (development mode)",
+    ),
+    priority: int = typer.Option(
+        10,
+        "--priority",
+        help="Resolution priority for the replacement (default 10)",
+    ),
+):
+    """Replace an installed preset using the normal remove and add flows."""
+    from .. import _require_specify_project
+    from . import PresetManager
+
+    if from_url and dev:
+        console.print("[red]Error:[/red] --from and --dev are mutually exclusive")
+        raise typer.Exit(1)
+
+    project_root = _require_specify_project()
+    manager = PresetManager(project_root)
+    if not manager.registry.is_installed(preset_id):
+        console.print(f"[red]Error:[/red] Preset '{preset_id}' is not installed")
+        raise typer.Exit(1)
+
+    # Keep update deliberately destructive: remove performs its complete normal
+    # reconciliation before add resolves and installs the replacement.
+    preset_remove(preset_id)
+
+    retry_args = ["specify", "preset", "add", preset_id]
+    if from_url:
+        retry_args.extend(["--from", from_url])
+    if dev:
+        retry_args.extend(["--dev", dev])
+    retry_args.extend(["--priority", str(priority)])
+
+    def report_add_failure() -> None:
+        console.print(
+            "[red]Error:[/red] Preset update failed; the previous preset was removed."
+        )
+        console.print(
+            "Retry with: [cyan]"
+            f"{_escape_markup(shlex.join(retry_args))}"
+            "[/cyan]",
+            soft_wrap=True,
+        )
+
+    try:
+        preset_add(
+            preset_id=preset_id,
+            from_url=from_url,
+            dev=dev,
+            priority=priority,
+        )
+    except typer.Exit as error:
+        report_add_failure()
+        raise typer.Exit(error.exit_code or 1)
+    except Exception as error:
+        console.print(f"[red]Error:[/red] {_escape_markup(str(error))}")
+        report_add_failure()
         raise typer.Exit(1)
 
 
