@@ -244,6 +244,10 @@ def test_feature_assess_upgrade_preserves_negative_guards():
 
     agent = compiled["jobs"]["agent"]
     assert agent["permissions"] == {"contents": "read", "issues": "read"}
+    assert compiled["jobs"]["safe_outputs"]["permissions"] == {
+        "issues": "write",
+        "pull-requests": "write",
+    }
 
     safe_outputs_step = _workflow_step(
         compiled["jobs"]["safe_outputs"]["steps"], "Process Safe Outputs"
