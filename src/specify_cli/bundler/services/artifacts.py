@@ -1,4 +1,4 @@
-"""Component-scoped preimages of generated integration outputs."""
+"""Component-scoped preimages of manager-generated outputs and backups."""
 from __future__ import annotations
 
 import os
@@ -84,6 +84,7 @@ def snapshot_generated_artifacts(
                     )
             active_skills = manager._resolve_agent_skills_dir(active) if active else None
         else:
+            paths.add(manager.extensions_dir / ".backup" / snapshot.component.id)
             paths.update(manager._find_extension_skill_dirs(
                 skills, snapshot.component.id, create_skills_dir=False
             ))

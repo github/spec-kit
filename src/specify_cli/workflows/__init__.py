@@ -189,6 +189,10 @@ def _load_custom_steps(project_root: Path, registry: dict[str, StepBase]) -> Non
                     raise OSError(f"Refusing symlinked bytecode cache: {cache_dir}")
                 if cache_dir.is_dir():
                     _shutil.rmtree(cache_dir)
+            # PYTHONPYCACHEPREFIX can place caches outside the step package.
+            for source_file in step_dir.rglob("*.py"):
+                cache_file = Path(_importlib_util.cache_from_source(str(source_file)))
+                cache_file.unlink(missing_ok=True)
             _importlib.invalidate_caches()
 
             # Treat the step directory as a proper package so that relative

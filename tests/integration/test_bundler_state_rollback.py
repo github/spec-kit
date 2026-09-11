@@ -137,6 +137,102 @@ def test_save_failure_restores_complete_installed_state(
         assert HookExecutor(project).get_project_config()["hooks"] == original_hooks
 
 
+@pytest.mark.parametrize("installed_components", ["extensions"], indirect=True)
+@pytest.mark.parametrize("backup_state", ["absent", "empty", "contents"])
+@pytest.mark.parametrize("operation", ["refresh", "drop", "remove"])
+def test_save_failure_restores_extension_backup_preimage(
+    installed_components, monkeypatch, backup_state, operation,
+):
+    from specify_cli import _assets
+
+    project, _, manager_type, installer, plan, metadata = installed_components
+    backup_root = project / ".specify/extensions/.backup"
+    if backup_state != "absent":
+        owned_backup = backup_root / "owned"
+        owned_backup.mkdir(parents=True)
+        unrelated = backup_root / "unrelated"
+        unrelated.mkdir()
+        (unrelated / "saved-config.yml").write_text("unrelated\n", encoding="utf-8")
+        if backup_state == "contents":
+            (owned_backup / "owned-config.yml").write_text(
+                "setting: previous backup\n", encoding="utf-8"
+            )
+            (owned_backup / "notes").mkdir()
+            (owned_backup / "notes/context.txt").write_text(
+                "retained backup context\n", encoding="utf-8"
+            )
+
+    def backup_tree():
+        if not backup_root.exists():
+            return None
+        return {
+            str(path.relative_to(backup_root)): path.read_bytes() if path.is_file() else None
+            for path in backup_root.rglob("*")
+        }
+
+    before = backup_tree()
+    original_record = records_path(project).read_bytes()
+    source = _assets._locate_bundled_extension("owned")
+    (source / "replacement-config.yml").write_text("new defaults\n", encoding="utf-8")
+
+    def fail_save(*_args):
+        raise OSError("provenance write refused")
+
+    monkeypatch.setattr("specify_cli.bundler.services.installer.save_records", fail_save)
+    with pytest.raises(BundlerError, match="provenance write refused"):
+        if operation == "remove":
+            remove_bundle(project, "demo-bundle", installer)
+        else:
+            install_bundle(
+                project,
+                plan(["owned", "keeper"] if operation == "refresh" else ["keeper"]),
+                installer, refresh=True,
+            )
+    assert backup_tree() == before
+    assert manager_type(project).registry.get("owned") == metadata
+    assert records_path(project).read_bytes() == original_record
+    assert not (project / ".specify/extensions/owned/replacement-config.yml").exists()
+
+
+@pytest.mark.parametrize("installed_components", ["extensions"], indirect=True)
+@pytest.mark.parametrize("failure", ["snapshot", "restore"])
+def test_extension_backup_io_failure_is_reported(
+    installed_components, monkeypatch, failure,
+):
+    import shutil
+    from pathlib import Path
+
+    project, _, manager_type, installer, _, metadata = installed_components
+    backup = project / ".specify/extensions/.backup/owned"
+    backup.mkdir(parents=True)
+    original = backup / "owned-config.yml"
+    original.write_text("prior backup\n", encoding="utf-8")
+    original_record = records_path(project).read_bytes()
+    copy_tree = shutil.copytree
+
+    def fail_copy(source, destination, *args, **kwargs):
+        attempted = source if failure == "snapshot" else destination
+        if Path(attempted) == backup:
+            raise PermissionError("backup I/O denied")
+        return copy_tree(source, destination, *args, **kwargs)
+
+    def fail_save(*_args):
+        raise OSError("provenance write refused")
+
+    monkeypatch.setattr("specify_cli.bundler.services.artifacts.shutil.copytree", fail_copy)
+    if failure == "restore":
+        monkeypatch.setattr("specify_cli.bundler.services.installer.save_records", fail_save)
+    message = "backup I/O denied" if failure == "snapshot" else "Rollback was incomplete"
+    with pytest.raises(BundlerError, match=message):
+        remove_bundle(project, "demo-bundle", installer)
+    assert manager_type(project).registry.get("owned") == metadata
+    assert records_path(project).read_bytes() == original_record
+    if failure == "snapshot":
+        assert original.read_text(encoding="utf-8") == "prior backup\n"
+    else:
+        assert not backup.exists()
+
+
 @pytest.mark.parametrize("kind", ["steps", "workflows"])
 def test_dropped_component_restores_local_payload_and_exact_registry(
     tmp_path, monkeypatch, kind

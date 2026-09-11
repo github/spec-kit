@@ -198,3 +198,60 @@ def test_symlinked_cache_is_not_used_when_it_cannot_be_invalidated(projects):
     assert load_custom_steps(project_a) == []
     assert "shared" not in STEP_REGISTRY
     assert external.is_dir()
+
+
+@pytest.fixture
+def external_bytecode_cache(projects, monkeypatch):
+    import sys
+
+    project_a, _ = projects
+    prefix = project_a.parent / "bytecode"
+    monkeypatch.setattr(sys, "pycache_prefix", str(prefix))
+    package = project_a / ".specify/workflows/steps/shared"
+    assert load_custom_steps(project_a) == ["shared"]
+    assert STEP_REGISTRY["shared"].execute({}, None).output["project"] == "project-a"
+    for name in ("__init__.py", "helper.py"):
+        cache = Path(importlib.util.cache_from_source(str(package / name)))
+        assert cache.is_relative_to(prefix)
+        assert cache.is_file()
+    assert not (package / "__pycache__").exists()
+    return project_a, package, prefix
+
+
+def test_external_caches_are_invalidated_for_package_and_delayed_imports(
+    external_bytecode_cache,
+):
+    project, package, prefix = external_bytecode_cache
+    unrelated = prefix / "unrelated.pyc"
+    unrelated.write_bytes(b"unrelated cache")
+    for name in ("__init__.py", "helper.py"):
+        source = package / name
+        stat = source.stat()
+        original = source.read_text(encoding="utf-8")
+        updated = original.replace("project-a", "project-b")
+        assert updated != original and len(updated) == len(original)
+        source.write_text(updated, encoding="utf-8")
+        os.utime(source, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+
+    assert load_custom_steps(project) == ["shared"]
+    assert STEP_REGISTRY["shared"].project_marker == "project-b"
+    assert STEP_REGISTRY["shared"].execute({}, None).output["project"] == "project-b"
+    assert unrelated.read_bytes() == b"unrelated cache"
+
+
+@pytest.mark.parametrize("source_name", ["__init__.py", "helper.py"])
+def test_failed_external_cache_deletion_skips_package(
+    external_bytecode_cache, monkeypatch, source_name,
+):
+    project, package, _ = external_bytecode_cache
+    cache = Path(importlib.util.cache_from_source(str(package / source_name)))
+    unlink = Path.unlink
+
+    def deny_cache_removal(path, *args, **kwargs):
+        if path == cache:
+            raise PermissionError("external cache deletion denied")
+        return unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", deny_cache_removal)
+    assert load_custom_steps(project) == []
+    assert "shared" not in STEP_REGISTRY
