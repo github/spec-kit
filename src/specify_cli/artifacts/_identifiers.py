@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-
 PROJECT_OVERRIDE_LAYER = "project"
 _ARTIFACT_KINDS = frozenset({"command", "template", "script"})
 _LAYER_KINDS = frozenset({PROJECT_OVERRIDE_LAYER, "preset", "extension"})
+_HOOK_LAYERS = frozenset({"preset", "extension"})
 
 
 class IdentifierComponentError(ValueError):
@@ -59,3 +59,27 @@ def derive_lookup_id(layer: str, source_id: str, kind: str, name: str) -> str:
             "Invalid sourceId '_': reserved for project layer"
         )
     return f"{layer}:{source_id}:{kind}:{name}"
+
+
+def derive_hook_public_id(event_name: str, command: str) -> str:
+    """Build the source-agnostic identifier for a hook artifact."""
+    validate_component(event_name, "eventName")
+    validate_component(command, "command")
+    return f"hook:{event_name}:{command}"
+
+
+def derive_hook_lookup_id(
+    layer: str, source_id: str, event_name: str, command: str
+) -> str:
+    """Build the artifact-private lookup identifier for a hook declaration."""
+    validate_component(layer, "layer")
+    validate_component(source_id, "sourceId")
+    validate_component(event_name, "eventName")
+    validate_component(command, "command")
+    if layer not in _HOOK_LAYERS:
+        raise IdentifierComponentError(f"Invalid hook layer '{layer}'")
+    if source_id == "_":
+        raise IdentifierComponentError(
+            "Invalid sourceId '_': hooks require a preset or extension source"
+        )
+    return f"{layer}:{source_id}:hook:{event_name}:{command}"

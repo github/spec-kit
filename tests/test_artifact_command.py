@@ -32,7 +32,6 @@ from specify_cli.extensions import CORE_COMMAND_NAMES, ExtensionRegistry
 from specify_cli.presets import PresetRegistry, PresetResolver
 from tests.conftest import install_preset
 
-
 ERROR_REGEX = re.compile(
     r"^(unknown artifact |ambiguous artifact |artifact resolution failed|not a Spec Kit project)"
 )
@@ -1630,8 +1629,398 @@ provides:
 
 
 # ---------------------------------------------------------------------------
-# Existing module-import placeholder retained for import safety.
+# Hook artifact tests
 # ---------------------------------------------------------------------------
+
+
+def _install_extension_with_hooks(
+    project_root: Path,
+    extension_id: str,
+    hooks: dict,
+    *,
+    priority: int = 10,
+    enabled: bool = True,
+) -> Path:
+    """Create a registered extension whose manifest declares hook contributions."""
+    ext_dir = project_root / ".specify" / "extensions" / extension_id
+    ext_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "schema_version": "1.0",
+        "extension": {
+            "id": extension_id,
+            "name": extension_id,
+            "version": "1.0.0",
+            "description": "Test extension",
+            "author": "test",
+            "repository": "https://example.com",
+            "license": "MIT",
+        },
+        "requires": {"speckit_version": ">=0.2.0"},
+        "provides": {},
+        "hooks": hooks,
+    }
+    (ext_dir / "extension.yml").write_text(
+        yaml.safe_dump(manifest), encoding="utf-8"
+    )
+    ExtensionRegistry(project_root / ".specify" / "extensions").add(
+        extension_id,
+        {"version": "1.0.0", "enabled": enabled, "priority": priority},
+    )
+    return ext_dir
+
+
+def _write_hook_binding(
+    project_root: Path,
+    event_name: str,
+    entries: list[dict],
+) -> None:
+    """Write concrete hook bindings in the runtime extension configuration."""
+    config_path = project_root / ".specify" / "extensions.yml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "installed": [],
+                "settings": {"auto_execute_hooks": True},
+                "hooks": {event_name: entries},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+class TestHookInventory:
+    def test_declared_hook_has_artifact_and_stack_shape(
+        self, spec_kit_project: Path
+    ):
+        from specify_cli.artifacts._identifiers import derive_hook_lookup_id
+
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "compliance",
+            hooks={
+                "before_specify": [
+                    {
+                        "command": "speckit.compliance.pre-check",
+                        "description": "Compliance pre-check",
+                        "priority": 5,
+                        "optional": False,
+                    }
+                ]
+            },
+        )
+
+        rows = ArtifactCatalog(spec_kit_project).list_artifacts_with_stack()
+        row = next(item for item in rows if item["kind"] == "hook")
+        entry = row["stack"][0]
+
+        assert row == {
+            "id": "hook:before_specify:speckit.compliance.pre-check",
+            "kind": "hook",
+            "name": "before_specify:speckit.compliance.pre-check",
+            "description": "Compliance pre-check",
+            "eventName": "before_specify",
+            "targetCommand": "speckit.compliance.pre-check",
+            "registered": False,
+            "stack": [entry],
+        }
+        assert entry == {
+            "id": "hook:before_specify:speckit.compliance.pre-check",
+            "layer": "extension",
+            "sourceId": "compliance",
+            "presetId": None,
+            "presetName": None,
+            "strategy": "additive",
+            "active": False,
+            "hidden": False,
+            "manifestPath": ".specify/extensions/compliance/extension.yml",
+            "lookupId": derive_hook_lookup_id(
+                "extension",
+                "compliance",
+                "before_specify",
+                "speckit.compliance.pre-check",
+            ),
+            "sourcePath": None,
+            "priority": 5,
+            "optional": False,
+        }
+
+    def test_duplicate_declarations_are_additive_and_priority_sorted(
+        self, spec_kit_project: Path
+    ):
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "ext-a",
+            hooks={"before_specify": [{"command": "shared.cmd", "priority": 10}]},
+        )
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "ext-b",
+            hooks={"before_specify": [{"command": "shared.cmd", "priority": 3}]},
+        )
+        _write_hook_binding(
+            spec_kit_project,
+            "before_specify",
+            [
+                {"extension": "ext-a", "command": "shared.cmd", "enabled": True},
+                {"extension": "ext-b", "command": "shared.cmd", "enabled": True},
+            ],
+        )
+
+        rows = ArtifactCatalog(spec_kit_project).list_artifacts_with_stack()
+        row = next(item for item in rows if item["kind"] == "hook")
+
+        assert [entry["sourceId"] for entry in row["stack"]] == ["ext-b", "ext-a"]
+        assert all(entry["strategy"] == "additive" for entry in row["stack"])
+        assert all(entry["active"] is True for entry in row["stack"])
+        assert row["registered"] is True
+
+    def test_duplicate_declarations_within_extension_use_last_value(
+        self, spec_kit_project: Path
+    ):
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "ext",
+            hooks={
+                "before_specify": [
+                    {
+                        "command": "shared.cmd",
+                        "description": "Old declaration",
+                        "priority": 20,
+                        "optional": True,
+                    },
+                    {
+                        "command": "shared.cmd",
+                        "description": "Current declaration",
+                        "priority": 4,
+                        "optional": False,
+                    },
+                ]
+            },
+        )
+
+        rows = ArtifactCatalog(spec_kit_project).list_artifacts_with_stack()
+        row = next(item for item in rows if item["kind"] == "hook")
+
+        assert row["description"] == "Current declaration"
+        assert len(row["stack"]) == 1
+        assert row["stack"][0]["priority"] == 4
+        assert row["stack"][0]["optional"] is False
+
+    def test_disabled_extension_contributions_are_excluded(
+        self, spec_kit_project: Path
+    ):
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "disabled",
+            hooks={"before_specify": [{"command": "disabled.cmd"}]},
+            enabled=False,
+        )
+
+        rows = ArtifactCatalog(spec_kit_project).list_artifacts_with_stack()
+        assert all(row["kind"] != "hook" for row in rows)
+
+    def test_hooks_never_use_builtin_layer(self, spec_kit_project: Path):
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "ext",
+            hooks={"before_specify": [{"command": "cmd.x"}]},
+        )
+
+        rows = ArtifactCatalog(spec_kit_project).list_artifacts_with_stack()
+        hook_entries = [
+            entry
+            for row in rows
+            if row["kind"] == "hook"
+            for entry in row["stack"]
+        ]
+        assert hook_entries
+        assert {entry["layer"] for entry in hook_entries} <= {
+            "preset",
+            "extension",
+        }
+
+
+class TestHookRegistration:
+    @pytest.mark.parametrize(
+        ("binding", "expected"),
+        [
+            (
+                {
+                    "extension": "compliance",
+                    "command": "speckit.compliance.pre-check",
+                    "enabled": True,
+                },
+                True,
+            ),
+            (
+                {
+                    "extension": "compliance",
+                    "command": "speckit.compliance.pre-check",
+                    "enabled": False,
+                },
+                False,
+            ),
+            ({"extension": "compliance", "enabled": True}, False),
+        ],
+    )
+    def test_registration_matches_runtime_binding(
+        self,
+        spec_kit_project: Path,
+        binding: dict,
+        expected: bool,
+    ):
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "compliance",
+            hooks={"before_specify": [{"command": "speckit.compliance.pre-check"}]},
+        )
+        _write_hook_binding(spec_kit_project, "before_specify", [binding])
+
+        rows = ArtifactCatalog(spec_kit_project).list_artifacts_with_stack()
+        row = next(item for item in rows if item["kind"] == "hook")
+
+        assert row["registered"] is expected
+        assert row["stack"][0]["active"] is expected
+
+    def test_binding_only_activates_matching_command(
+        self, spec_kit_project: Path
+    ):
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "compliance",
+            hooks={
+                "before_specify": [
+                    {"command": "speckit.compliance.pre-check"},
+                    {"command": "speckit.compliance.audit"},
+                ]
+            },
+        )
+        _write_hook_binding(
+            spec_kit_project,
+            "before_specify",
+            [
+                {
+                    "extension": "compliance",
+                    "command": "speckit.compliance.pre-check",
+                    "enabled": True,
+                }
+            ],
+        )
+
+        rows = ArtifactCatalog(spec_kit_project).list_artifacts_with_stack()
+        hooks = {
+            row["targetCommand"]: row for row in rows if row["kind"] == "hook"
+        }
+
+        assert hooks["speckit.compliance.pre-check"]["registered"] is True
+        assert hooks["speckit.compliance.audit"]["registered"] is False
+
+    def test_invalid_runtime_config_degrades_to_unregistered(
+        self, spec_kit_project: Path
+    ):
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "compliance",
+            hooks={"before_specify": [{"command": "speckit.compliance.pre-check"}]},
+        )
+        (spec_kit_project / ".specify" / "extensions.yml").write_text(
+            "this is not: valid: yaml: [\n", encoding="utf-8"
+        )
+
+        rows = ArtifactCatalog(spec_kit_project).list_artifacts_with_stack()
+        row = next(item for item in rows if item["kind"] == "hook")
+        assert row["registered"] is False
+
+
+class TestHookInfo:
+    def test_hook_shorthand_round_trips(self, spec_kit_project: Path):
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "compliance",
+            hooks={"before_specify": [{"command": "speckit.compliance.pre-check"}]},
+        )
+
+        payload = ArtifactCatalog(spec_kit_project).get_artifact_info(
+            "hook:before_specify:speckit.compliance.pre-check"
+        )
+
+        assert payload["id"] == "hook:before_specify:speckit.compliance.pre-check"
+        assert payload["eventName"] == "before_specify"
+        assert payload["targetCommand"] == "speckit.compliance.pre-check"
+
+    def test_kind_hint_resolves_hook_name(self, spec_kit_project: Path):
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "ext",
+            hooks={"after_plan": [{"command": "cmd.x"}]},
+        )
+
+        payload = ArtifactCatalog(spec_kit_project).get_artifact_info(
+            "after_plan:cmd.x", kind="hook"
+        )
+        assert payload["kind"] == "hook"
+
+    def test_unknown_hook_uses_unknown_artifact_error(
+        self, spec_kit_project: Path
+    ):
+        with pytest.raises(ArtifactNotFoundError, match="unknown artifact"):
+            ArtifactCatalog(spec_kit_project).get_artifact_info(
+                "hook:nope:missing.cmd"
+            )
+
+
+class TestHookCli:
+    def test_list_and_info_json(self, spec_kit_project: Path, monkeypatch):
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "compliance",
+            hooks={"before_specify": [{"command": "speckit.compliance.pre-check"}]},
+        )
+        monkeypatch.chdir(spec_kit_project)
+        runner = CliRunner()
+
+        list_result = runner.invoke(app, ["artifact", "list", "--json"])
+        info_result = runner.invoke(
+            app,
+            [
+                "artifact",
+                "info",
+                "hook:before_specify:speckit.compliance.pre-check",
+                "--json",
+            ],
+        )
+
+        assert list_result.exit_code == 0, list_result.output
+        assert info_result.exit_code == 0, info_result.output
+        assert any(row["kind"] == "hook" for row in json.loads(list_result.stdout))
+        assert json.loads(info_result.stdout)["kind"] == "hook"
+
+    def test_unknown_hook_json_error_envelope(
+        self, spec_kit_project: Path, monkeypatch
+    ):
+        monkeypatch.chdir(spec_kit_project)
+
+        result = CliRunner().invoke(
+            app,
+            ["artifact", "info", "hook:nope:missing.cmd", "--json"],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert ERROR_REGEX.match(json.loads(result.stderr)["error"])
+
+
+def test_existing_artifact_shapes_do_not_gain_hook_fields(
+    spec_kit_project: Path,
+):
+    rows = ArtifactCatalog(spec_kit_project).list_artifacts_with_stack()
+    for row in rows:
+        if row["kind"] == "hook":
+            continue
+        assert "eventName" not in row
+        assert "targetCommand" not in row
+        assert "registered" not in row
 
 
 def test_module_imports():
