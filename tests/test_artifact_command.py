@@ -1161,6 +1161,81 @@ class TestUTF8NoBOM:
 
 
 class TestStackComposition:
+    @pytest.mark.parametrize(
+        ("strategy", "top_content"),
+        [
+            ("prepend", "top contribution"),
+            ("append", "top contribution"),
+            ("wrap", "before top\n{CORE_TEMPLATE}\nafter top"),
+        ],
+    )
+    def test_composing_stack_keeps_all_contributing_layers_visible(
+        self,
+        spec_kit_project: Path,
+        strategy: str,
+        top_content: str,
+    ):
+        base_content = PresetResolver(spec_kit_project).resolve_content("spec-template")
+        assert base_content is not None
+
+        lower_pack = install_preset(
+            spec_kit_project,
+            "lower-composer",
+            {
+                "templates": [
+                    {
+                        "name": "spec-template",
+                        "strategy": "prepend",
+                    }
+                ]
+            },
+            priority=10,
+        )
+        (lower_pack / "templates").mkdir()
+        (lower_pack / "templates" / "spec-template.md").write_text(
+            "lower contribution", encoding="utf-8"
+        )
+
+        top_pack = install_preset(
+            spec_kit_project,
+            "top-composer",
+            {
+                "templates": [
+                    {
+                        "name": "spec-template",
+                        "strategy": strategy,
+                    }
+                ]
+            },
+            priority=5,
+        )
+        (top_pack / "templates").mkdir()
+        (top_pack / "templates" / "spec-template.md").write_text(
+            top_content, encoding="utf-8"
+        )
+
+        lower_composed = f"lower contribution\n\n{base_content}"
+        if strategy == "prepend":
+            expected = f"{top_content}\n\n{lower_composed}"
+        elif strategy == "append":
+            expected = f"{lower_composed}\n\n{top_content}"
+        else:
+            expected = top_content.replace("{CORE_TEMPLATE}", lower_composed)
+
+        resolved = PresetResolver(spec_kit_project).resolve_content("spec-template")
+        stack = ArtifactCatalog(spec_kit_project).get_artifact_info(
+            "template:spec-template"
+        )["stack"]
+
+        assert resolved == expected
+        assert [row["strategy"] for row in stack] == [
+            strategy,
+            "prepend",
+            "replace",
+        ]
+        assert [row["active"] for row in stack] == [True, False, False]
+        assert [row["hidden"] for row in stack] == [False, False, False]
+
     def test_preset_command_uses_entry_type(self, spec_kit_project: Path):
         pack = install_preset(
             spec_kit_project,
