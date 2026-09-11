@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -971,6 +972,49 @@ class TestOverlayAddDoesNotClobber:
         updated = yaml.safe_load((ov_dir / "lint.yml").read_text(encoding="utf-8"))
         assert updated["id"] == "lint"
         assert updated["priority"] == 10
+
+    def test_add_refuses_a_directory_occupant(self, project_dir, monkeypatch):
+        """A non-regular occupant must be refused, not renamed aside.
+
+        The guard used `Path.is_file()`, which is False for a directory (and on
+        POSIX for a FIFO or socket), so such a destination bypassed it entirely
+        and reached `_commit_workflow_file` -- which renames whatever is there
+        to a `.bak` sibling and discards it on the success path. The command
+        reported success while moving the user's directory away; it survived
+        only because unlinking a directory happens to fail.
+        """
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        ov_dir, incoming = self._setup(project_dir, occupant_id=None)
+        occupant = ov_dir / "lint.yml"
+        occupant.mkdir()
+        (occupant / "precious.txt").write_text("user data", encoding="utf-8")
+
+        result = runner.invoke(app, ["workflow", "overlay", "add", str(incoming)])
+
+        assert result.exit_code == 1, result.output
+        # Rich wraps console output, so normalise whitespace before matching.
+        assert "not a regular file" in " ".join(result.output.split())
+        # Untouched, still a directory, contents intact, nothing renamed aside.
+        assert occupant.is_dir()
+        assert (occupant / "precious.txt").read_text(encoding="utf-8") == "user data"
+        assert [p.name for p in ov_dir.iterdir() if "bak" in p.name] == []
+
+    @pytest.mark.skipif(
+        not hasattr(os, "mkfifo"), reason="FIFOs are POSIX-only"
+    )
+    def test_add_refuses_a_fifo_occupant(self, project_dir, monkeypatch):
+        """A FIFO has no accidental protection: it is renamed aside and deleted."""
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        ov_dir, incoming = self._setup(project_dir, occupant_id=None)
+        occupant = ov_dir / "lint.yml"
+        os.mkfifo(occupant)
+
+        result = runner.invoke(app, ["workflow", "overlay", "add", str(incoming)])
+
+        assert result.exit_code == 1, result.output
+        assert "not a regular file" in " ".join(result.output.split())
+        assert occupant.is_fifo()
+        assert [p.name for p in ov_dir.iterdir() if "bak" in p.name] == []
 
     @pytest.mark.parametrize(
         "raw",

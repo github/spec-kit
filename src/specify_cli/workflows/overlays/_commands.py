@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -212,7 +213,21 @@ def workflow_overlay_add(
         # a DIFFERENT overlay. Committing onto it would destroy that overlay
         # permanently -- the commit renames the victim to a ``.bak`` and the
         # success path then discards that backup -- while reporting success.
-        if target_path.is_file():
+        # ``lexists`` rather than ``is_file``: the latter is False for a
+        # directory, FIFO or socket, so those bypassed this guard entirely and
+        # reached ``_commit_workflow_file``, which renames whatever is there to
+        # a ``.bak`` sibling and then discards it on the success path. A
+        # directory occupant was moved aside and the command still reported
+        # success -- it survived only because unlinking a directory happens to
+        # fail. A FIFO or socket has no such accident and is simply gone.
+        if os.path.lexists(target_path):
+            if target_path.is_symlink() or not target_path.is_file():
+                err_console.print(
+                    f"[red]Error:[/red] {_escape_markup(str(target_path))} exists "
+                    f"and is not a regular file. Rename or remove it before "
+                    f"adding overlay {_escape_markup(repr(overlay.id))}."
+                )
+                return None
             # Fail closed: refuse unless the occupant is provably this same
             # overlay. Reaching here means ``_find_overlay_file`` did not match
             # this path, and it skips exactly the files whose identity cannot be
