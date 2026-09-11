@@ -2116,6 +2116,29 @@ class TestHookInfo:
         )
         assert payload["kind"] == "hook"
 
+    @pytest.mark.parametrize(
+        "event_name", ["command", "template", "script", "hook"]
+    )
+    def test_kind_hint_disambiguates_reserved_event_names(
+        self, spec_kit_project: Path, event_name: str
+    ):
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "ext",
+            hooks={event_name: [{"command": "cmd.x"}]},
+        )
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        row = next(
+            item
+            for item in catalog.list_artifacts_with_stack()
+            if item["kind"] == "hook"
+        )
+
+        assert catalog.get_artifact_info(row["id"]) == row
+        assert catalog.get_artifact_info(row["name"], kind="hook") == row
+        assert row["eventName"] == event_name
+
     def test_unknown_hook_uses_unknown_artifact_error(
         self, spec_kit_project: Path
     ):

@@ -224,6 +224,17 @@ def _resolve_kind_hint(name: str, kind: ArtifactKind | None) -> tuple[str, Artif
     grammar and ``kind`` is also set explicitly, the two must agree — a
     mismatch is treated as an unknown artifact.
     """
+    if kind == "hook":
+        if name.startswith("hook:"):
+            candidate = name.removeprefix("hook:")
+            try:
+                parse_hook_artifact_name(candidate)
+            except IdentifierComponentError:
+                pass
+            else:
+                return candidate, "hook"
+        return name, "hook"
+
     if ":" in name:
         prefix, _, bare = name.partition(":")
         if prefix in ("command", "template", "script"):
