@@ -2005,6 +2005,36 @@ class TestHookRegistration:
         assert hooks["speckit.compliance.pre-check"]["registered"] is True
         assert hooks["speckit.compliance.audit"]["registered"] is False
 
+    def test_duplicate_contributors_activate_independently(
+        self, spec_kit_project: Path
+    ):
+        for extension_id in ("ext-a", "ext-b"):
+            _install_extension_with_hooks(
+                spec_kit_project,
+                extension_id,
+                hooks={"before_specify": [{"command": "shared.cmd"}]},
+            )
+        _write_hook_binding(
+            spec_kit_project,
+            "before_specify",
+            [
+                {
+                    "extension": "ext-b",
+                    "command": "shared.cmd",
+                    "enabled": True,
+                }
+            ],
+        )
+
+        rows = ArtifactCatalog(spec_kit_project).list_artifacts_with_stack()
+        row = next(item for item in rows if item["kind"] == "hook")
+        active_by_source = {
+            entry["sourceId"]: entry["active"] for entry in row["stack"]
+        }
+
+        assert active_by_source == {"ext-a": False, "ext-b": True}
+        assert row["registered"] is True
+
     def test_invalid_runtime_config_degrades_to_unregistered(
         self, spec_kit_project: Path
     ):
