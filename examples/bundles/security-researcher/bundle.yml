@@ -17,7 +17,7 @@ requires:
 provides:
   extensions:
     - id: "agent-context"
-      version: "1.0.0"
+      version: "1.1.0"
   presets:
     - id: "security-compliance"
       version: "1.0.0"
