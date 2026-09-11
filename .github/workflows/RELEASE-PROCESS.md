@@ -91,15 +91,12 @@ The workflow will:
 
 ## What Happens Next
 
-Once the release trigger workflow completes:
+The release trigger pushes a `chore/release-vX.Y.Z` branch with the release version commit, then pushes the tag pointing to that commit. After the tag push, two paths proceed independently:
 
-1. A `chore/release-vX.Y.Z` branch is pushed with the version bump commit
-2. The git tag is pushed, pointing to that release commit
-3. The **Release Workflow** is automatically triggered by the tag push
-4. A GitHub Release is created with generated release notes. No per-agent ZIP assets are built or uploaded; GitHub still provides its standard source archives
-5. The release branch is bumped to the next patch development version
-6. A PR is opened to merge both version commits into `main`
-7. Run the **Publish to PyPI Workflow** manually with the same tag to build and publish the wheel and source distribution
+- The **Release Workflow** creates a GitHub Release with generated release notes. No per-agent ZIP assets are built or uploaded; GitHub still provides its standard source archives.
+- The **Release Trigger Workflow** continues by bumping the release branch to the next patch development version and opening a PR to merge both version commits into `main`.
+
+GitHub Release creation may finish before or after the development bump and PR creation. Run the **Publish to PyPI Workflow** manually with the same tag to build and publish the wheel and source distribution.
 
 > **Note**: The GitHub Release and PyPI workflows do not depend on each other. Waiting for the GitHub Release to complete before publishing to PyPI makes the release state easier to verify. Merge the auto-opened PR after publishing to keep `main` on the next development version.
 
@@ -195,7 +192,7 @@ If you run the release trigger workflow when there are no new commits since the 
 
 If you see "Error: Tag vX.Y.Z already exists!", inspect the existing tag, GitHub Release, and PyPI version before taking action. Do not move or delete a tag for a version that has already been published to PyPI. PyPI does not allow an uploaded distribution filename to be reused, even after deletion.
 
-Choose a new version if the existing tag or PyPI publication is valid. Only consider removing an erroneous tag when you have confirmed that the version was not published to PyPI and that no consumers rely on it.
+If the existing tag identifies the intended release, keep it and recover any missing outputs using the guidance below. Choose a new version when publishing different release contents under a version that is already in use. Only consider removing an erroneous tag when you have confirmed that the version was not published to PyPI and that no consumers rely on it.
 
 ### Recovering an Incomplete Release
 
@@ -203,14 +200,17 @@ Verify the release branch/tag, GitHub Release, wheel (`.whl`), and source distri
 
 | State | Recovery |
 |---|---|
+| Release branch exists, tag is missing | Inspect the failed run and confirm the intended release commit has package version `X.Y.Z`. Create or reuse the local `vX.Y.Z` tag only if it points to that commit, then push it. Do not tag a subsequent `.dev0` commit. Complete any missing development bump or PR as described below. |
 | Tag exists, release branch development bump or PR is incomplete | Keep the tag unchanged. Inspect `chore/release-vX.Y.Z` and any existing PR; restore the branch from the release commit if missing, apply the next patch development bump if needed, and open or reuse the PR into `main`. Merge after publication is complete. Do not rerun Release Trigger for the existing tag. |
 | Tag exists, GitHub Release is missing | Confirm that the tag points to the intended release commit, then create the GitHub Release from that existing tag with the same notes format used by `release.yml`. |
 | Valid tag exists, neither wheel nor sdist is published to PyPI | Run **Publish to PyPI** manually with the exact release tag, independently of GitHub Release creation. |
 | PyPI version exists, GitHub Release is missing | Keep the existing tag unchanged and create the GitHub Release from it. |
-| Wheel is published, sdist is missing | Verify the published wheel and recover the matching sdist from the original run's `dist` artifact. Use an authorized publishing path to upload only the missing sdist; do not replace the wheel. |
-| Sdist is published, wheel is missing | Verify the published sdist and recover the matching wheel from the original run's `dist` artifact. Use an authorized publishing path to upload only the missing wheel; do not replace the sdist. |
+| Wheel is published, sdist is missing | Prefer retrying the failed `publish` job with the original `dist` artifact (see below). `uv publish` skips the identical existing wheel and uploads the missing sdist. |
+| Sdist is published, wheel is missing | Prefer retrying the failed `publish` job with the original `dist` artifact (see below). `uv publish` skips the identical existing sdist and uploads the missing wheel. |
 
-For partial PyPI uploads, inspect the original run and published files before retrying. The current workflow rebuilds and publishes all of `dist/`; it is not a missing-file-only recovery command. If the original artifact is unavailable, investigate how to reproduce the matching distribution before publishing. Previously used filenames cannot be replaced or reused.
+For partial PyPI uploads, inspect the original run and published files before retrying. If only the `publish` job failed and the original `dist` artifact is still available, rerun that failed job to reuse the successful build. With PyPI, [repeating `uv publish` skips existing identical files](https://docs.astral.sh/uv/guides/package/#publishing-your-package) and uploads missing files; existing files must match exactly.
+
+Rerunning the entire workflow also reruns `uv build`. Before retrying publication with rebuilt artifacts, verify that artifacts corresponding to already-published files match those files exactly. The same tag alone does not guarantee identical build output. If they differ, stop and investigate; do not replace published files or move the tag. Previously used distribution filenames cannot be replaced or reused for different contents, even after deletion.
 
 ### Release Workflow Didn't Trigger
 
