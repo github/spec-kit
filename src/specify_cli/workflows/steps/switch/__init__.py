@@ -7,8 +7,8 @@ from typing import Any
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import (
     condition_has_malformed_expression_block,
-    condition_is_never_evaluated,
     evaluate_expression,
+    switch_expression_is_never_evaluated,
 )
 
 
@@ -119,10 +119,13 @@ class SwitchStep(StepBase):
         # `do-while` already reject that shape on their `condition`; this is the same
         # fault on the same evaluator, one step type over.
         #
-        # Only these two checks apply. A switch matches on strings, so a composite key
-        # such as `{{ inputs.a }}-{{ inputs.b }}` is legitimate here even though the
-        # same shape would be a fault in a boolean condition.
-        elif condition_is_never_evaluated(config["expression"]):
+        # A switch matches on strings, which moves both boundaries a condition has. A
+        # braceless literal is a valid case key -- `expression: review` dispatches the
+        # `review:` case -- so only text that opens with a namespace reference is
+        # flagged, not every string without braces. And a composite key such as
+        # `{{ inputs.a }}-{{ inputs.b }}` is legitimate here even though the same
+        # shape would be a fault in a boolean condition.
+        elif switch_expression_is_never_evaluated(config["expression"]):
             errors.append(
                 f"Switch step {config.get('id', '?')!r}: 'expression' "
                 f"{config['expression']!r} has no usable '{{ }}' block, so it is "

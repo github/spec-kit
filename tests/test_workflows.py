@@ -3692,6 +3692,62 @@ class TestSwitchStep:
         assert len(errors) == 1
         assert "never evaluated" in errors[0]
 
+    def test_every_namespace_root_written_without_a_block_is_rejected(self):
+        """Each root `_build_namespace` supplies, walked into without braces."""
+        from specify_cli.workflows.steps.switch import SwitchStep
+
+        cases = {"review": [{"id": "r", "type": "command", "command": "echo"}]}
+        for expression in (
+            "inputs.mode",
+            "steps.check.output.stdout",
+            "item.name",
+            "item[0]",
+            "fan_in.results",
+            "context.run_id",
+            "inputs.mode | default('review')",
+            "inputs.mode == 'review'",
+            "  inputs.mode  ",
+        ):
+            config = {"id": "route", "expression": expression, "cases": cases}
+            errors = [
+                e for e in SwitchStep().validate(config) if "'expression'" in e
+            ]
+            assert len(errors) == 1, expression
+            assert "never evaluated" in errors[0], expression
+
+    def test_a_literal_expression_stays_accepted(self):
+        """A switch matches on strings, and a case key is a literal.
+
+        So a braceless literal is a valid -- if constant -- switch, not a fault:
+        `expression: review` dispatches the `review:` case, and whitespace strips to
+        the `""` key. Only text that walks into a namespace root is flagged.
+        """
+        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        review = [{"id": "r", "type": "command", "command": "echo"}]
+        blank = [{"id": "b", "type": "command", "command": "echo"}]
+        cases = {"review": review, "": blank, "approve me": review, "inputs": review}
+
+        # Ground truth first: each of these really does dispatch a declared case.
+        for expression, matched in (
+            ("review", "review"),
+            ("   ", ""),
+            ("approve me", "approve me"),
+            ("inputs", "inputs"),
+        ):
+            config = {"id": "route", "expression": expression, "cases": cases}
+            result = SwitchStep().execute(config, StepContext(inputs={}))
+            assert result.status == StepStatus.COMPLETED, expression
+            assert result.output["matched_case"] == matched, expression
+            assert [
+                e for e in SwitchStep().validate(config) if "'expression'" in e
+            ] == [], expression
+
+        # A name that merely starts like a root is not a reference into it.
+        config = {"id": "route", "expression": "inputsX.mode", "cases": cases}
+        assert [e for e in SwitchStep().validate(config) if "'expression'" in e] == []
+
     def test_expression_with_an_unclosable_block_is_rejected(self):
         """Different fault, different message: the block is evaluated, but truncated."""
         from specify_cli.workflows.steps.switch import SwitchStep
