@@ -26,6 +26,8 @@ checkout:
 safe-outputs:
   noop:
     report-as-issue: false
+  threat-detection:
+    continue-on-error: false
   create-pull-request:
     title-prefix: "[extension] "
     labels: [extension-submission, automated]
