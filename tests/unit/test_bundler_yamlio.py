@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from specify_cli.bundler import BundlerError
+import specify_cli.bundler.lib.yamlio as yamlio_module
 from specify_cli.bundler.lib.yamlio import dump_yaml, load_json, load_yaml
 
 
@@ -47,6 +48,25 @@ def test_load_json_non_utf8_raises_bundler_error(tmp_path: Path):
     path.write_bytes('{"bundles": []}'.encode("utf-16"))
     with pytest.raises(BundlerError, match="Could not read"):
         load_json(path)
+
+
+def test_load_yaml_toctou_race(tmp_path: Path):
+    """Regression guard: a file that disappears between the old exists() pre-check
+    and read_text() must raise BundlerError, not a raw FileNotFoundError.
+
+    The mocked Path is observable as present (exists() returns True) but
+    read_text() raises FileNotFoundError, simulating a deletion between the two
+    calls — the exact race window the exists() removal eliminates."""
+    from unittest.mock import MagicMock, patch
+
+    path = tmp_path / "gone.yml"
+    mock_path = MagicMock(spec=Path)
+    mock_path.exists.return_value = True
+    mock_path.read_text.side_effect = FileNotFoundError(str(path))
+
+    with patch.object(yamlio_module, "Path", return_value=mock_path):
+        with pytest.raises(BundlerError, match="File not found"):
+            load_yaml(path)
 
 
 def test_load_json_malformed_still_reports_invalid_json(tmp_path: Path):

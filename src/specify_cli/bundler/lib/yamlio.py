@@ -54,10 +54,10 @@ def load_yaml(path: Path) -> Any:
     caller to reject.
     """
     path = Path(path)
-    if not path.exists():
-        raise BundlerError(f"File not found: {path}")
     try:
         text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise BundlerError(f"File not found: {path}") from None
     except (OSError, UnicodeError) as exc:
         # A non-UTF-8 file raises UnicodeDecodeError, which is a ValueError --
         # NOT an OSError -- so it escaped this module's "IO failures degrade
