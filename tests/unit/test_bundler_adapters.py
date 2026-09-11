@@ -1,6 +1,9 @@
 """Unit tests for catalog-fetch adapters (auth + redirect safety)."""
 from __future__ import annotations
 
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from specify_cli.bundler import BundlerError
@@ -201,3 +204,24 @@ def test_validate_remote_url_rejects_malformed_url_cleanly(url):
     caller. Bundler sibling of #3369."""
     with pytest.raises(BundlerError):
         adapters._validate_remote_url("team", url)
+
+
+@pytest.mark.parametrize("use_file_url", [False, True], ids=["path", "file-url"])
+def test_local_catalog_toctou_race(tmp_path, use_file_url):
+    """A missing file at read time must retain the fetcher's BundlerError contract.
+
+    The mocked Path raises FileNotFoundError from read_text(), simulating a
+    deletion immediately before the catalog is opened while verifying that no
+    existence pre-check is needed."""
+    catalog_path = tmp_path / "catalog.json"
+    url = catalog_path.as_uri() if use_file_url else str(catalog_path)
+
+    mock_path = MagicMock(spec=Path)
+    mock_path.exists.return_value = True
+    mock_path.read_text.side_effect = FileNotFoundError(str(catalog_path))
+
+    fetcher = adapters.make_catalog_fetcher(allow_network=False)
+
+    with patch.object(adapters.Path, "__new__", return_value=mock_path):
+        with pytest.raises(BundlerError, match="Catalog file not found"):
+            fetcher(_source(url))
