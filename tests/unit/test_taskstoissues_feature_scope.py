@@ -60,3 +60,33 @@ def test_pre_existing_unscoped_issues_are_still_recognised(template_text: str) -
         "the template no longer says what to do with issues created before the feature "
         "prefix, so an upgrade would duplicate every already-tracked task"
     )
+
+
+def test_a_bare_title_is_never_decided_on_the_agents_own(template_text: str) -> None:
+    """A bare `T001: ...` title names no feature, so nothing in it can settle a match.
+
+    Treating it as this feature's whenever no scoped title exists for the ID brings
+    #4271 straight back on the first run after upgrading: a bare `T001` filed for
+    `001-auth` suppresses `002-billing`'s `T001` because billing has no scoped issue
+    yet. Treating it as another feature's duplicates every task an existing user
+    already tracks. Only the user can say which it is.
+    """
+    legacy_rule = _line_containing(template_text, "before this scoping exists")
+    assert "ask the user" in legacy_rule, (
+        "the rule for pre-prefix issues must hand the ambiguous matches to the user "
+        f"rather than resolve them:\n  {legacy_rule.strip()}"
+    )
+    assert not re.search(r"treat (those|them) as matching", legacy_rule, re.IGNORECASE), (
+        "a bare title is being treated as a match on the agent's own inference, which "
+        f"lets another feature's T001 suppress this one:\n  {legacy_rule.strip()}"
+    )
+    assert re.search(r"before creating anything", legacy_rule, re.IGNORECASE), (
+        "the question has to come before any issue is created, or the answer can no "
+        f"longer prevent a duplicate:\n  {legacy_rule.strip()}"
+    )
+
+
+def test_confirmed_legacy_issues_are_only_retitled_with_consent(template_text: str) -> None:
+    """Retitling is what stops the question recurring, and it edits the user's issues."""
+    legacy_rule = _line_containing(template_text, "before this scoping exists")
+    assert "retitle" in legacy_rule and "agrees" in legacy_rule, legacy_rule.strip()
