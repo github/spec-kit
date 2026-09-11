@@ -1720,6 +1720,42 @@ class TestHookInventory:
             key: value for key, value in enriched.items() if key != "stack"
         }
 
+    @pytest.mark.parametrize(
+        "hooks",
+        [
+            {
+                "before_specify": [{"command": "speckit.healthy.cmd"}],
+                "\ud800": [{"command": "speckit.invalid.cmd"}],
+            },
+            {
+                "before_specify": [
+                    {"command": "speckit.healthy.cmd"},
+                    {"command": "\ud800"},
+                ]
+            },
+        ],
+        ids=["invalid-event", "invalid-command"],
+    )
+    def test_invalid_unicode_hook_is_omitted_without_hiding_healthy_hooks(
+        self, spec_kit_project: Path, hooks: dict
+    ):
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "unicode-hooks",
+            hooks=hooks,
+        )
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        flat_hooks = [row for row in catalog.list_artifacts() if row.kind == "hook"]
+        enriched_hooks = [
+            row for row in catalog.list_artifacts_with_stack() if row["kind"] == "hook"
+        ]
+
+        assert [row.targetCommand for row in flat_hooks] == ["speckit.healthy.cmd"]
+        assert [row["targetCommand"] for row in enriched_hooks] == [
+            "speckit.healthy.cmd"
+        ]
+
     def test_declared_hook_has_artifact_and_stack_shape(
         self, spec_kit_project: Path
     ):

@@ -109,7 +109,12 @@ def _encode_hook_component(value: Any, field_label: str) -> str:
         raise IdentifierComponentError(
             f"Invalid {field_label}: value must not be empty"
         )
-    return quote(value, safe="")
+    try:
+        return quote(value, safe="")
+    except UnicodeEncodeError as exc:
+        raise IdentifierComponentError(
+            f"Invalid {field_label}: value cannot be UTF-8 encoded"
+        ) from exc
 
 
 def _decode_hook_component(value: str, field_label: str) -> str:
