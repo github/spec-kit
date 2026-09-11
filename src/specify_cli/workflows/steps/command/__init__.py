@@ -128,19 +128,43 @@ class CommandStep(StepBase):
             )
         options.update(step_options)
 
-        # Attempt CLI dispatch
-        args_str = str(resolved_input.get("args", ""))
-        dispatch_result = self._try_dispatch(
-            command, integration, model, args_str, context
-        )
+        runtime_config = self._resolve_runtime_config(config, context)
+        if isinstance(runtime_config, str):
+            return StepResult(status=StepStatus.FAILED, error=runtime_config)
+        integration_args, integration_options = runtime_config
 
+        args_str = str(resolved_input.get("args", ""))
         output: dict[str, Any] = {
             "command": command,
             "integration": integration,
             "model": model,
             "options": options,
             "input": resolved_input,
+            "integration_args": integration_args,
+            "integration_options": integration_options,
         }
+
+        # Attempt CLI dispatch. Integration-specific runtime validation occurs
+        # before executable detection so malformed options remain actionable
+        # even when the selected CLI is not installed.
+        try:
+            dispatch_result = self._try_dispatch(
+                command,
+                integration,
+                model,
+                args_str,
+                context,
+                integration_args,
+                integration_options,
+            )
+        except ValueError as exc:
+            output["exit_code"] = 1
+            output["dispatched"] = False
+            return StepResult(
+                status=StepStatus.FAILED,
+                output=output,
+                error=f"Command step {config.get('id', '?')!r}: {exc}",
+            )
 
         if dispatch_result is not None:
             output["exit_code"] = dispatch_result["exit_code"]
@@ -177,6 +201,8 @@ class CommandStep(StepBase):
         model: str | None,
         args: str,
         context: StepContext,
+        integration_args: list[str],
+        integration_options: dict[str, Any],
     ) -> dict[str, Any] | None:
         """Invoke *command* by name through the integration CLI.
 
@@ -205,8 +231,14 @@ class CommandStep(StepBase):
         if impl is None:
             return None
 
+        impl.validate_runtime_config(integration_args, integration_options)
+
         # Build sample args for fallback executable detection when impl.key is not executable.
-        exec_args = impl.build_exec_args("test")
+        exec_args = impl.build_exec_args(
+            "test",
+            integration_args=integration_args,
+            integration_options=integration_options,
+        )
 
         # Check if the CLI tool is actually installed.
         # Try the integration key first (covers most agents), then fall back
@@ -224,9 +256,52 @@ class CommandStep(StepBase):
                 args=args,
                 project_root=project_root,
                 model=model,
+                integration_args=integration_args,
+                integration_options=integration_options,
             )
         except (NotImplementedError, OSError):
             return None
+
+    @staticmethod
+    def _resolve_runtime_config(
+        config: dict[str, Any], context: StepContext
+    ) -> tuple[list[str], dict[str, Any]] | str:
+        """Resolve and validate this step's per-integration runtime config."""
+        step_id = config.get("id", "?")
+
+        raw_args = config.get("integration_args", [])
+        if not isinstance(raw_args, list):
+            return (
+                f"Command step {step_id!r}: 'integration_args' must be a list."
+            )
+
+        resolved_args: list[str] = []
+        for index, value in enumerate(raw_args):
+            resolved = evaluate_expression(value, context)
+            if not isinstance(resolved, str):
+                return (
+                    f"Command step {step_id!r}: 'integration_args[{index}]' "
+                    f"must resolve to a string, got {type(resolved).__name__}."
+                )
+            resolved_args.append(resolved)
+
+        raw_options = config.get("integration_options", {})
+        if not isinstance(raw_options, dict):
+            return (
+                f"Command step {step_id!r}: 'integration_options' must be a "
+                "mapping."
+            )
+        if not all(isinstance(key, str) for key in raw_options):
+            return (
+                f"Command step {step_id!r}: 'integration_options' keys must be "
+                "strings."
+            )
+
+        resolved_options = {
+            key: evaluate_expression(value, context)
+            for key, value in raw_options.items()
+        }
+        return resolved_args, resolved_options
 
     def validate(self, config: dict[str, Any]) -> list[str]:
         errors = super().validate(config)
@@ -256,6 +331,34 @@ class CommandStep(StepBase):
         if "options" in config and not isinstance(config["options"], dict):
             errors.append(
                 f"Command step {config.get('id', '?')!r}: 'options' must be a mapping."
+            )
+        if "integration_args" in config and not isinstance(
+            config["integration_args"], list
+        ):
+            errors.append(
+                f"Command step {config.get('id', '?')!r}: 'integration_args' "
+                "must be a list."
+            )
+        elif isinstance(config.get("integration_args"), list):
+            for index, value in enumerate(config["integration_args"]):
+                if not isinstance(value, str):
+                    errors.append(
+                        f"Command step {config.get('id', '?')!r}: "
+                        f"'integration_args[{index}]' must be a string."
+                    )
+        if "integration_options" in config and not isinstance(
+            config["integration_options"], dict
+        ):
+            errors.append(
+                f"Command step {config.get('id', '?')!r}: "
+                "'integration_options' must be a mapping."
+            )
+        elif isinstance(config.get("integration_options"), dict) and not all(
+            isinstance(key, str) for key in config["integration_options"]
+        ):
+            errors.append(
+                f"Command step {config.get('id', '?')!r}: "
+                "'integration_options' keys must be strings."
             )
         # execute() passes 'integration' to get_integration(), which uses it as a
         # dict key — a non-string (list/dict) raises a raw TypeError (unhashable),
