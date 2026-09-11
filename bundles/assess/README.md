@@ -24,10 +24,12 @@ specify bundle add assess
 ## Run the workflow
 
 ```bash
-specify workflow run assess
+specify workflow run assess \
+  --input idea="Let users work offline and sync when they reconnect" \
+  --input slug="offline-mode"
 ```
 
-You will be prompted for an idea and a slug. The slug is used as the working directory under `.specify/assessments/<slug>/` for all artifacts.
+Inputs omitted from the command line are prompted interactively. The slug is used as the working directory under `.specify/assessments/<slug>/` for all artifacts.
 
 ## Remove
 

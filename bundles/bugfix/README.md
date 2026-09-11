@@ -22,10 +22,12 @@ specify bundle add bugfix
 ## Run the workflow
 
 ```bash
-specify workflow run bugfix
+specify workflow run bugfix \
+  --input report="https://github.com/example/repo/issues/1234" \
+  --input slug="callback-token"
 ```
 
-You will be prompted for a bug report and a slug. The slug is used as the working directory under `.specify/bugs/<slug>/` for all artifacts.
+Inputs omitted from the command line are prompted interactively. The slug is used as the working directory under `.specify/bugs/<slug>/` for all artifacts.
 
 ## Remove
 
