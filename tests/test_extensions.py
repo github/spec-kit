@@ -10625,6 +10625,63 @@ class TestHookExecutorRegistration:
         assert [e["extension"] for e in entries] == ["ext-b"]
 
 
+@pytest.mark.parametrize("agent,skills_path,prefix", [
+    ("codex", ".agents/skills", "$"),
+    ("claude", ".claude/skills", "/"),
+    ("copilot", ".github/skills", "/"),
+    ("kimi", ".kimi-code/skills", "/skill:"),
+])
+@pytest.mark.parametrize("register_commands", [True, False])
+def test_extension_install_normalizes_literal_skill_invocations(
+    extension_dir, project_dir, agent, skills_path, prefix, register_commands
+):
+    """Issue #3451: installed skills must call commands in the agent's syntax."""
+    from specify_cli.agents import CommandRegistrar as SkillRegistrar
+
+    (project_dir / ".specify/init-options.json").write_text(
+        json.dumps({"ai": agent, "ai_skills": True, "script": "py"}),
+        encoding="utf-8",
+    )
+    source = extension_dir / "commands/hello.md"
+    source.write_text(
+        "---\ndescription: Cross-command references\n---\n\n"
+        "Run `/speckit.memory-md.prepare-context` before /speckit.plan.\n"
+        "Then run __SPECKIT_COMMAND_TASKS__.\n"
+        "Keep `speckit.memory-md.prepare-context` as the canonical ID.\n"
+        "Read `commands/speckit.memory-md.prepare-context.md`.\n"
+        "Read `/speckit.plan.md` and `/speckit.plan/assets`.\n"
+        "See https://example.com/speckit.plan and ../speckit.plan.\n",
+        encoding="utf-8",
+    )
+    ExtensionManager(project_dir).install_from_directory(
+        extension_dir, "1.0.6", register_commands=register_commands
+    )
+
+    installed = project_dir / skills_path / "speckit-test-ext-hello/SKILL.md"
+    content = installed.read_text(encoding="utf-8")
+    assert f"Run `{prefix}speckit-memory-md-prepare-context` before {prefix}speckit-plan." in content
+    assert f"Then run {prefix}speckit-tasks." in content
+    assert "`speckit.memory-md.prepare-context` as the canonical ID" in content
+    assert "commands/speckit.memory-md.prepare-context.md" in content
+    assert "`/speckit.plan.md` and `/speckit.plan/assets`" in content
+    assert "https://example.com/speckit.plan and ../speckit.plan." in content
+    assert SkillRegistrar.normalize_skill_invocations(agent, content) == content
+
+
+def test_command_layout_preserves_literal_dotted_invocations(extension_dir, project_dir):
+    """The skill conversion must not affect a non-skill command layout."""
+    (extension_dir / "commands/hello.md").write_text(
+        "---\ndescription: Command reference\n---\n\nRun `/speckit.plan`.\n",
+        encoding="utf-8",
+    )
+    manifest = ExtensionManifest(extension_dir / "extension.yml")
+    CommandRegistrar().register_commands_for_agent(
+        "amp", manifest, extension_dir, project_dir
+    )
+    installed = project_dir / ".agents/commands/speckit.test-ext.hello.md"
+    assert "Run `/speckit.plan`." in installed.read_text(encoding="utf-8")
+
+
 class TestHookInvocationRendering:
     """Test hook invocation formatting for different agent modes."""
 

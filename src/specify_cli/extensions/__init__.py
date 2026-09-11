@@ -1678,6 +1678,7 @@ class ExtensionManager:
                 selected_ai, frontmatter, body, self.project_root, extension_id=manifest.id
             )
             body = _resolve_command_ref_tokens(body)
+            body = registrar.normalize_skill_invocations(selected_ai, body)
 
             original_desc = frontmatter.get("description", "")
             description = original_desc or f"Extension command: {cmd_name}"
