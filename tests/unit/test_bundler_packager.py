@@ -10,6 +10,7 @@ import yaml
 
 from specify_cli.bundler import BundlerError
 from specify_cli.bundler.services.packager import build_bundle
+from specify_cli._download_security import MAX_ZIP_MEMBER_BYTES
 from tests.bundler_helpers import valid_manifest_dict
 
 
@@ -234,3 +235,28 @@ def test_toctou_stat_read_consistency(tmp_path: Path):
     assert content == b"\x00\x01\x02\x03"
     assert modes["assets/data.bin"] == 0o644
     assert modes["README.md"] == 0o644
+
+
+def test_oversized_asset_file_is_rejected(tmp_path: Path):
+    """A single file exceeding MAX_ZIP_MEMBER_BYTES must be refused, not read
+    into memory unbounded."""
+    bundle = _make_bundle(tmp_path / "b")
+    oversized = bundle / "assets" / "huge.bin"
+    oversized.parent.mkdir(parents=True, exist_ok=True)
+    oversized.write_bytes(b"\x00" * (MAX_ZIP_MEMBER_BYTES + 1))
+
+    with pytest.raises(BundlerError, match="exceeds.*byte limit"):
+        build_bundle(bundle, output_dir=tmp_path / "out")
+
+
+def test_asset_at_exact_size_limit_is_accepted(tmp_path: Path):
+    """A file exactly at MAX_ZIP_MEMBER_BYTES must still be packaged."""
+    bundle = _make_bundle(tmp_path / "b")
+    at_limit = bundle / "assets" / "exact.bin"
+    at_limit.parent.mkdir(parents=True, exist_ok=True)
+    at_limit.write_bytes(b"\x00" * MAX_ZIP_MEMBER_BYTES)
+
+    result = build_bundle(bundle, output_dir=tmp_path / "out")
+    with zipfile.ZipFile(result.artifact_path) as archive:
+        content = archive.read("assets/exact.bin")
+    assert len(content) == MAX_ZIP_MEMBER_BYTES
