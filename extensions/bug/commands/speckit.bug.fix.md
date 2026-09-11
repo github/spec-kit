@@ -4,7 +4,7 @@ description: "Apply the remediation from a bug assessment and record what was ch
 
 # Fix Bug
 
-Apply the remediation that was proposed by `__SPECKIT_COMMAND_BUG_ASSESS__` and record the changes in a fix report at `.specify/bugs/<slug>/fix.md`. This command is **only** valid after an assessment exists for the given slug.
+Apply the remediation that was proposed by `__SPECKIT_COMMAND_BUG_ASSESS__` and record the changes in a fix report at `.specify/bugs/<slug>/fix.md`. This command is **only** valid after an assessment exists for the given slug. Pass `--branch` (or `--worktree`) to isolate the fix on its own git branch before editing, mirroring how `__SPECKIT_COMMAND_SPECIFY__` isolates feature work.
 
 ## User Input
 
@@ -16,6 +16,7 @@ The user input should identify the bug to fix. Accept any of:
 
 - `slug=<bug-slug>` or `--slug <bug-slug>` or just a bare slug-like token.
 - A path that contains the slug (e.g. `.specify/bugs/login-timeout/`).
+- **Branch isolation** (optional): `branch` / `--branch` creates a fix branch (`<prefix>/<slug>`) first; `worktree` / `--worktree` creates a git worktree instead. See **Optional — isolate the fix on a branch** below.
 - **Nothing** — fall back to context (see below).
 
 ## Slug Resolution
@@ -43,6 +44,17 @@ Once resolved, set `BUG_SLUG` and `BUG_DIR = .specify/bugs/<BUG_SLUG>`, and brie
    - Restate, in 3–6 bullets, what you are about to change and where, based on the assessment.
    - If the assessment's verdict is `invalid`, stop — there is nothing to fix. Tell the user and exit.
    - If the verdict is `likely valid, needs reproduction` and there are unresolved `[NEEDS CLARIFICATION]` items, flag them and ask the user whether to proceed in interactive mode, or stop in automated mode.
+
+### Optional — isolate the fix on a branch
+
+By default the fix is applied to the current branch. To match how `__SPECKIT_COMMAND_SPECIFY__` isolates feature work, you may ask `bug.fix` to create a dedicated branch (or git worktree) first:
+
+- Parse the user input for `branch` / `--branch` / `worktree` / `--worktree` (or `branch=true` / `worktree=true`). These are mutually exclusive; prefer `--branch` unless the user explicitly asks for a worktree.
+- Determine the branch name `<prefix>/<BUG_SLUG>`, where `<prefix>` comes from `.specify/extensions/bug/bug-config.yml` (`branch_prefix`, default `fix`). Example: `fix/login-timeout`. If a branch with that name already exists, stop and ask the user how to proceed (reuse it, choose another name, or skip isolation).
+- **Branch mode** (`--branch`): run `git checkout -b <prefix>/<BUG_SLUG>` from the current branch (assumed clean or committed).
+- **Worktree mode** (`--worktree`): run `git worktree add ../<repo>-<BUG_SLUG> -b <prefix>/<BUG_SLUG>` so the fix lives in a separate working directory; then continue operations there.
+- If Git is unavailable or the directory is not a Git repository, skip isolation with a warning and apply the fix on the current branch.
+- State which mode was used in your reply; all subsequent edits happen on that branch/worktree.
 
 2. **Apply the remediation**
    - Make the code changes described by the preferred remediation. Stay within the files listed by the assessment unless newly discovered evidence requires expanding scope (in which case, log the expansion explicitly in the report).
@@ -102,7 +114,10 @@ Once resolved, set `BUG_SLUG` and `BUG_DIR = .specify/bugs/<BUG_SLUG>`, and brie
 5. **Report back** with:
    - The slug and `BUG_DIR/fix.md` path.
    - The status (`applied`, `partial`, `not-applied`).
-   - The next suggested step: `__SPECKIT_COMMAND_BUG_TEST__ slug=<BUG_SLUG>`.
+   - Which branch/worktree the fix was applied to (or "current branch" if isolation was not used).
+   - The next suggested step(s), in order:
+     - `__SPECKIT_COMMAND_BUG_PR__ slug=<BUG_SLUG>` (open a PR from the fix branch, linking the issue).
+     - Then: `__SPECKIT_COMMAND_BUG_TEST__ slug=<BUG_SLUG>` (validate the fix).
 
 ## Guardrails
 
