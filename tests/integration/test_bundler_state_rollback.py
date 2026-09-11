@@ -233,6 +233,80 @@ def test_extension_backup_io_failure_is_reported(
         assert not backup.exists()
 
 
+@pytest.mark.parametrize("operation", ["refresh", "remove"])
+@pytest.mark.parametrize(
+    "scenario", ["success", "save-failure", "rollback-failure", "capture-failure"]
+)
+def test_snapshot_cleanup_failure_preserves_transaction_outcome(
+    installed_components, monkeypatch, caplog, operation, scenario,
+):
+    import shutil
+    from pathlib import Path
+    from tempfile import TemporaryDirectory
+
+    project, kind, manager_type, installer, plan, metadata = installed_components
+    original_record = records_path(project).read_bytes()
+    cleanup = TemporaryDirectory.cleanup
+    copy_tree = shutil.copytree
+    attempted = []
+
+    def deny_cleanup(directory):
+        if Path(directory.name).name.startswith("speckit-bundle-rollback-"):
+            attempted.append(directory)
+            raise PermissionError("snapshot cleanup denied")
+        return cleanup(directory)
+
+    def fail_copy(source, destination, *args, **kwargs):
+        if Path(source) == project / ".specify" / kind / "owned":
+            raise PermissionError("snapshot copy refused")
+        return copy_tree(source, destination, *args, **kwargs)
+
+    def fail_save(*_args):
+        raise OSError("provenance write refused")
+
+    def fail_restore(*_args):
+        raise OSError("restoration refused")
+
+    def change():
+        if operation == "remove":
+            return remove_bundle(project, "demo-bundle", installer)
+        return install_bundle(project, plan(["owned", "keeper"]), installer, refresh=True)
+
+    monkeypatch.setattr(TemporaryDirectory, "cleanup", deny_cleanup)
+    if scenario in ("save-failure", "rollback-failure"):
+        monkeypatch.setattr("specify_cli.bundler.services.installer.save_records", fail_save)
+    if scenario == "rollback-failure":
+        monkeypatch.setattr(installer, "restore", fail_restore)
+    if scenario == "capture-failure":
+        monkeypatch.setattr(shutil, "copytree", fail_copy)
+    try:
+        if scenario == "success":
+            assert change().changed
+            assert (manager_type(project).registry.get("owned") is not None) == (
+                operation == "refresh"
+            )
+        else:
+            message = (
+                "snapshot copy refused" if scenario == "capture-failure"
+                else "provenance write refused"
+            )
+            with pytest.raises(BundlerError, match=message) as error:
+                change()
+            assert ("Rollback was incomplete" in str(error.value)) == (
+                scenario == "rollback-failure"
+            )
+            assert records_path(project).read_bytes() == original_record
+            if scenario != "rollback-failure":
+                assert manager_type(project).registry.get("owned") == metadata
+    finally:
+        for directory in attempted:
+            cleanup(directory)
+    assert attempted
+    assert "snapshot cleanup denied" in caplog.text
+    for directory in attempted:
+        assert directory.name in caplog.text
+
+
 @pytest.mark.parametrize("kind", ["steps", "workflows"])
 def test_dropped_component_restores_local_payload_and_exact_registry(
     tmp_path, monkeypatch, kind

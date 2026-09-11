@@ -1,12 +1,15 @@
 """Ephemeral installed-component state, never serialized into bundle records."""
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
 from .manifest import ComponentRef
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -28,4 +31,10 @@ class ComponentSnapshot:
 
     def close(self) -> None:
         if self.backup is not None:
-            self.backup.cleanup()
+            try:
+                self.backup.cleanup()
+            except OSError as exc:
+                logger.warning(
+                    "Could not clean up rollback snapshot at %s; remove it manually: %s",
+                    self.backup.name, exc,
+                )

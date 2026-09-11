@@ -61,6 +61,8 @@ Re-resolves a bundle and **refreshes** its components through each primitive's u
 
 Before refreshing or removing an owned component, the bundler snapshots its installed files and registry metadata. If a component operation or provenance write fails, it attempts to restore those local snapshots, including disabled state, user configuration, extension hook settings and pre-existing configuration backups, and generated command files and skill resources for current and previously active integrations, without downloading an older version. Previously absent outputs and configuration backups are also restored to absence. Custom steps are restored before dependent workflows. Recovery is best-effort and reports incomplete restoration; these temporary snapshots cover failures during the command, not process crashes or unrelated project files.
 
+If temporary snapshot cleanup fails, a warning identifies the path for manual removal without changing the committed result or masking the original rollback error.
+
 > **Pin enforcement is install-time only.** Idempotency checks are id-based, not version-aware: a component that is already present is skipped during `install` without comparing its on-disk version to the manifest pin. Version pins are therefore guaranteed to be applied only when the bundler actually installs a component for the first time or refreshes it. Run `specify bundle update` to re-apply every owned component at its pinned version.
 
 ## Remove a Bundle

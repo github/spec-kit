@@ -181,12 +181,7 @@ def _snapshot_directory(
 ) -> ComponentSnapshot:
     backup = TemporaryDirectory(prefix="speckit-bundle-rollback-")
     destination = Path(backup.name) / component.id
-    try:
-        shutil.copytree(directory, destination, symlinks=True)
-    except OSError:
-        backup.cleanup()
-        raise
-    return ComponentSnapshot(
+    snapshot = ComponentSnapshot(
         component=_snapshot_ref(
             component, version=metadata.get("version"), metadata=metadata
         ),
@@ -194,6 +189,12 @@ def _snapshot_directory(
         directory=destination,
         backup=backup,
     )
+    try:
+        shutil.copytree(directory, destination, symlinks=True)
+    except OSError:
+        snapshot.close()
+        raise
+    return snapshot
 
 
 def _snapshot_source(snapshot: ComponentSnapshot) -> Path:
