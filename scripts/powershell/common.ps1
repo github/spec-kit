@@ -339,7 +339,15 @@ function Test-Python3Command {
     $ErrorActionPreference = 'SilentlyContinue'
     try {
         $versionOutput = & $Executable @Arguments --version 2>&1
-        return (($versionOutput -join ' ') -match 'Python 3')
+        # Capture the exit status IMMEDIATELY, before any other statement can
+        # disturb it. Selection is by execution *success*, so a non-zero status
+        # disqualifies the candidate no matter what it printed: a broken wrapper
+        # that echoes its requested version and then exits non-zero would
+        # otherwise be selected here and fail at the point of use. The bash twin
+        # (_python3_command in scripts/bash/common.sh) gates purely on exit
+        # status, so requiring it here keeps the two in step.
+        $exitCode = $LASTEXITCODE
+        return (($exitCode -eq 0) -and (($versionOutput -join ' ') -match 'Python 3'))
     } catch {
         return $false
     } finally {

@@ -759,21 +759,50 @@ def test_all_variants_fail_for_malformed_preset_manifest(
 
 # -- Get-Python3Command interpreter selection -----------------------------
 
-_STORE_ALIAS_STUB = (
-    "@echo off\r\n"
-    "echo Python was not found; run without arguments to install from the "
-    "Microsoft Store. 1>&2\r\n"
-    "exit /b 9009\r\n"
-)
-_WORKING_PYTHON3 = "@echo off\r\necho Python 3.12.0\r\nexit /b 0\r\n"
-_WORKING_PY_LAUNCHER = (
-    "@echo off\r\n"
-    'if "%1"=="-3" (echo Python 3.12.0 & exit /b 0)\r\n'
-    "exit /b 1\r\n"
-)
+# Fake interpreters, in both shim forms. ``HAS_POWERSHELL`` is true whenever
+# ``pwsh`` is on PATH — including on Linux and macOS — where a ``.cmd`` file is
+# not executable and would never resolve from PATH. So each shim is written as
+# an executable shebang script (the form PowerShell resolves on POSIX) plus a
+# ``.cmd`` on Windows, mirroring ``tests/extensions/test_extension_agent_context.py``.
+_STORE_ALIAS_STUB = {
+    "cmd": (
+        "@echo off\r\n"
+        "echo Python was not found; run without arguments to install from the "
+        "Microsoft Store. 1>&2\r\n"
+        "exit /b 9009\r\n"
+    ),
+    "sh": (
+        "#!/usr/bin/env sh\n"
+        "echo 'Python was not found; run without arguments to install from the "
+        "Microsoft Store.' >&2\n"
+        "exit 9009\n"
+    ),
+}
+_WORKING_PYTHON3 = {
+    "cmd": "@echo off\r\necho Python 3.12.0\r\nexit /b 0\r\n",
+    "sh": "#!/usr/bin/env sh\necho 'Python 3.12.0'\nexit 0\n",
+}
+_WORKING_PY_LAUNCHER = {
+    "cmd": (
+        "@echo off\r\n"
+        'if "%1"=="-3" (echo Python 3.12.0 & exit /b 0)\r\n'
+        "exit /b 1\r\n"
+    ),
+    "sh": (
+        "#!/usr/bin/env sh\n"
+        "if [ \"$1\" = \"-3\" ]; then echo 'Python 3.12.0'; exit 0; fi\n"
+        "exit 1\n"
+    ),
+}
+# Prints a perfectly valid version banner and then fails. Only an exit-status
+# check can reject it.
+_LYING_WRAPPER = {
+    "cmd": "@echo off\r\necho Python 3.12.0\r\nexit /b 1\r\n",
+    "sh": "#!/usr/bin/env sh\necho 'Python 3.12.0'\nexit 1\n",
+}
 
 
-def _run_get_python3_command(tmp_path: Path, shims: dict[str, str]) -> str:
+def _run_get_python3_command(tmp_path: Path, shims: dict[str, dict[str, str]]) -> str:
     """Dot-source common.ps1 with a PATH of *shims* and report the selection.
 
     Returns the selected command joined by spaces, ``""`` when nothing usable
@@ -782,8 +811,12 @@ def _run_get_python3_command(tmp_path: Path, shims: dict[str, str]) -> str:
     """
     shim_dir = tmp_path / "shims"
     shim_dir.mkdir()
-    for name, body in shims.items():
-        (shim_dir / f"{name}.cmd").write_text(body, encoding="ascii")
+    for name, spec in shims.items():
+        posix_shim = shim_dir / name
+        posix_shim.write_text(spec["sh"], encoding="ascii", newline="\n")
+        posix_shim.chmod(0o755)
+        if os.name == "nt":
+            (shim_dir / f"{name}.cmd").write_text(spec["cmd"], encoding="ascii")
 
     common_ps = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
     driver = tmp_path / "probe.ps1"
@@ -853,3 +886,23 @@ def test_get_python3_command_falls_through_to_py_launcher(
         },
     )
     assert selected == "py -3"
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="PowerShell not available")
+def test_get_python3_command_rejects_a_candidate_that_exits_nonzero(
+    tmp_path: Path,
+) -> None:
+    """A candidate that prints a valid version but fails must be rejected.
+
+    Selection is by execution *success*. Matching only on the version banner
+    accepted any process whose output happened to contain "Python 3", so a
+    broken wrapper that echoes its requested version and then exits non-zero
+    was selected here and failed at the point of use instead. The Bash twin
+    (``_python3_command``) gates purely on exit status, so matching output
+    alone also put the two implementations out of step.
+    """
+    selected = _run_get_python3_command(
+        tmp_path,
+        {"python3": _LYING_WRAPPER, "python": _WORKING_PYTHON3},
+    )
+    assert selected == "python"
