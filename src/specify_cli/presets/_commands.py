@@ -48,6 +48,29 @@ preset_catalog_app = typer.Typer(
 preset_app.add_typer(preset_catalog_app, name="catalog")
 
 
+#: Lowest priority a user may request. Lower numbers win resolution, so the
+#: stack is anchored at 1 rather than 0 to leave no unreachable slot above the
+#: highest-precedence preset.
+MINIMUM_PRESET_PRIORITY = 1
+
+
+def _validate_priority(priority: int) -> None:
+    """Reject a non-positive priority before any destructive work begins.
+
+    Shared by add, set-priority, and update so the three commands cannot drift
+    apart on the accepted range or the message they print. update in particular
+    must call this *before* removing the installed preset: validating only
+    inside add would leave the preset removed and print a retry command
+    carrying the same rejected priority.
+    """
+    if priority < MINIMUM_PRESET_PRIORITY:
+        console.print(
+            "[red]Error:[/red] Priority must be a positive integer "
+            f"({MINIMUM_PRESET_PRIORITY} or higher)"
+        )
+        raise typer.Exit(1)
+
+
 def _warn_unmet_extension_dependencies(manager, manifest) -> None:
     """Warn when a preset's declared extension dependencies are unsatisfied.
 
@@ -241,9 +264,7 @@ def preset_add(
 
     project_root = _require_specify_project()
     # Validate priority
-    if priority < 1:
-        console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
-        raise typer.Exit(1)
+    _validate_priority(priority)
 
     manager = PresetManager(project_root)
     speckit_version = get_speckit_version()
@@ -481,6 +502,11 @@ def preset_update(
     if from_url and dev:
         console.print("[red]Error:[/red] --from and --dev are mutually exclusive")
         raise typer.Exit(1)
+
+    # Validate priority before removal. add rejects the same range, but only
+    # after remove has already run, which would leave the preset removed and
+    # the printed retry command carrying the rejected priority.
+    _validate_priority(priority)
 
     project_root = _require_specify_project()
     manager = PresetManager(project_root)
@@ -777,9 +803,7 @@ def preset_set_priority(
 
     project_root = _require_specify_project()
     # Validate priority
-    if priority < 1:
-        console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
-        raise typer.Exit(1)
+    _validate_priority(priority)
 
     manager = PresetManager(project_root)
 

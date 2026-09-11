@@ -11514,7 +11514,7 @@ class TestPresetUpdateCommand:
         monkeypatch.setattr(commands, "preset_add", lambda **_kwargs: calls.append("add"))
 
         with pytest.raises(typer.Exit) as exc_info:
-            preset_update("missing")
+            preset_update("missing", from_url=None, dev=None, priority=10)
 
         assert exc_info.value.exit_code == 1
         assert calls == []
@@ -11522,7 +11522,12 @@ class TestPresetUpdateCommand:
     def test_mutually_exclusive_sources_are_rejected(self, project_dir, monkeypatch):
         self._manager(monkeypatch, project_dir)
         with pytest.raises(typer.Exit) as exc_info:
-            preset_update("test-pack", from_url="https://example.com/preset.zip", dev="./preset")
+            preset_update(
+                "test-pack",
+                from_url="https://example.com/preset.zip",
+                dev="./preset",
+                priority=10,
+            )
         assert exc_info.value.exit_code == 1
 
     def test_remove_failure_prevents_add(self, project_dir, monkeypatch):
@@ -11537,7 +11542,7 @@ class TestPresetUpdateCommand:
         monkeypatch.setattr(commands, "preset_add", lambda **_kwargs: calls.append("add"))
 
         with pytest.raises(typer.Exit) as exc_info:
-            preset_update("test-pack", from_url=None, dev=None)
+            preset_update("test-pack", from_url=None, dev=None, priority=10)
 
         assert exc_info.value.exit_code == 1
         assert calls == ["remove"]
@@ -11610,6 +11615,33 @@ class TestPresetUpdateCommand:
             else shlex.join(retry_args)
         )
         assert expected in output
+
+    def test_invalid_priority_rejected_before_removal(
+        self, project_dir, monkeypatch, capsys
+    ):
+        """--priority 0 must fail without removing the installed preset.
+
+        add rejects the same range, but only after remove has run. Validating
+        late would delete the preset and print a retry command carrying the
+        rejected priority, so the retry could never succeed.
+        """
+        commands = self._manager(monkeypatch, project_dir)
+        calls = []
+        monkeypatch.setattr(
+            commands, "preset_remove", lambda preset_id: calls.append("remove")
+        )
+        monkeypatch.setattr(
+            commands, "preset_add", lambda **_kwargs: calls.append("add")
+        )
+
+        with pytest.raises(typer.Exit) as exc_info:
+            preset_update("test-pack", from_url=None, dev=None, priority=0)
+
+        assert exc_info.value.exit_code == 1
+        assert calls == []
+        output = strip_ansi(capsys.readouterr().out)
+        assert "Priority must be a positive integer" in output
+        assert "previous preset was removed" not in output
 
 
 # ===== Bundled Preset Locator Tests =====

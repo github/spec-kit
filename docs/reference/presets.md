@@ -43,15 +43,18 @@ and `--priority` are forwarded to `preset add`; `--from` and `--dev` cannot be
 combined. Without an explicit source, add resolves the preset through its usual
 bundled and catalog lookup.
 
-Update is deliberately destructive. If removal succeeds but replacement
-installation fails, the previous preset has already been removed. The command
-reports a copy-pastable `specify preset add` retry command, including the
-replacement source and priority. There is no pre-flight validation, version
-comparison, staging, rollback, or automatic recovery. A missing or invalid
-replacement source can therefore leave the preset removed. With `--from` or
-`--dev`, the replacement manifest's `preset.id` is not checked against the
-requested ID before removal; a source declaring a different ID may therefore
-install a different preset after the requested one has been removed.
+Update is deliberately destructive. Arguments are checked before anything is
+removed: `--from` and `--dev` cannot be combined, `--priority` must be 1 or
+higher, and the preset must already be installed. Beyond those checks the
+replacement source itself is not inspected in advance. If removal succeeds but
+replacement installation fails, the previous preset has already been removed.
+The command reports a copy-pastable `specify preset add` retry command,
+including the replacement source and priority. There is no source pre-flight,
+version comparison, staging, rollback, or automatic recovery. A missing or
+invalid replacement source can therefore leave the preset removed. With
+`--from` or `--dev`, the replacement manifest's `preset.id` is not checked
+against the requested ID before removal; a source declaring a different ID may
+therefore install a different preset after the requested one has been removed.
 
 A successful update follows normal remove and add behaviour: it re-enables the
 preset, recreates `installed_at`, removes local modifications tracked by the
