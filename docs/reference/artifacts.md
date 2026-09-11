@@ -164,7 +164,7 @@ specify artifact info hook:before_specify:speckit.compliance.pre-check --json
 specify artifact info before_specify:speckit.compliance.pre-check --kind hook --json
 ```
 
-Hook ID components are percent-encoded only when required to keep the colon-delimited shorthand unambiguous. This encoding is limited to the artifact `id`, `name`, and `lookupId` representation; hook manifests, runtime bindings, `eventName`, and `targetCommand` are unchanged. For example, an event named `custom:after` targeting `/skill:speckit-test-ext-hello` has the artifact ID:
+Hook event and target-command components are UTF-8 percent-encoded using URL quoting: ASCII letters, digits, `-`, `.`, `_`, and `~` remain literal, while all other bytes are encoded. This encoding is limited to the hook components in the artifact `id`, `name`, and `lookupId`; hook manifests, runtime bindings, `eventName`, and `targetCommand` are unchanged. For example, an event named `custom:after` targeting `/skill:speckit-test-ext-hello` has the artifact ID:
 
 ```text
 hook:custom%3Aafter:%2Fskill%3Aspeckit-test-ext-hello
