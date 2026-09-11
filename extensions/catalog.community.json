@@ -2154,7 +2154,7 @@
     "gh-triage": {
       "name": "GitHub Issue Triage",
       "id": "gh-triage",
-      "description": "Fetch open GitHub issues, classify each as bug, feature, or chore, then DELEGATE to the correct extension: bugs → bug.fetch (.specify/bugs/), chores → chore.fetch (.specify/chores/), features → speckit.specify (specs/). Never save bugs or chores as specs.",
+      "description": "Fetch open GitHub issues, classify each as bug, feature, or chore, route it to the bug, chore, or specify workflow, and apply the matching triage labels (on by default).",
       "author": "arrrrny",
       "version": "1.1.1",
       "download_url": "https://github.com/arrrrny/speckit-extensions/releases/download/gh-triage-v1.1.1/gh-triage.zip",
