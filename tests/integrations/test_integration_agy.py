@@ -126,7 +126,7 @@ class TestAgyBuildExecArgs:
 
     def test_build_exec_args_relative_project_root(self):
         """Relative project_root must be resolved to an absolute path.
-        
+
         Passing a relative path to --add-dir breaks agy when the subprocess
         also changes cwd to that same relative path.
         """
