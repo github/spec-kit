@@ -35,7 +35,7 @@ from ..presets import PresetError
 
 artifact_app = typer.Typer(
     name="artifact",
-    help="Introspect commands, templates, and scripts SpecKit exposes.",
+    help="Introspect commands, templates, and scripts Spec Kit exposes.",
     no_args_is_help=True,
 )
 
@@ -100,7 +100,7 @@ def artifact_list(
         help="Emit the inventory as a JSON array on stdout.",
     ),
 ) -> None:
-    """List every command, template, and script SpecKit exposes."""
+    """List every command, template, and script Spec Kit exposes."""
     _require_json_flag(json_flag)
     try:
         root = _resolve_project_root()

@@ -107,7 +107,7 @@ def _extract_frontmatter_description(text: str) -> str:
 def _extract_script_description(text: str) -> str:
     """Return the first docstring/comment line of a script, else ``""``.
 
-    Supports the three script runtimes SpecKit ships:
+    Supports the three script runtimes Spec Kit ships:
 
     * Python (``.py``): the first line of the module docstring.
     * Bash (``.sh``): the first ``#``-prefixed comment line following the
@@ -226,7 +226,7 @@ class ArtifactCatalog:
 
     # ------------------------------------------------------------------ list
     def list_artifacts(self) -> list[Artifact]:
-        """Return every artifact SpecKit exposes for this project, deduped.
+        """Return every artifact Spec Kit exposes for this project, deduped.
 
         Sort order is deterministic — first by ``kind`` in the fixed
         ``["command", "template", "script"]`` order, then by ``name``.
