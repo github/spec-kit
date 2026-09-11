@@ -13,6 +13,9 @@ Tests cover:
 import pytest
 import io
 import json
+import os
+import shlex
+import subprocess
 import tempfile
 import tarfile
 import shutil
@@ -11591,7 +11594,22 @@ class TestPresetUpdateCommand:
         assert exc_info.value.exit_code == 1
         output = strip_ansi(capsys.readouterr().out)
         assert "previous preset was removed" in output
-        assert "specify preset add test-pack --dev '/tmp/replacement preset' --priority 6" in output
+        retry_args = [
+            "specify",
+            "preset",
+            "add",
+            "test-pack",
+            "--dev",
+            "/tmp/replacement preset",
+            "--priority",
+            "6",
+        ]
+        expected = (
+            subprocess.list2cmdline(retry_args)
+            if os.name == "nt"
+            else shlex.join(retry_args)
+        )
+        assert expected in output
 
 
 # ===== Bundled Preset Locator Tests =====
