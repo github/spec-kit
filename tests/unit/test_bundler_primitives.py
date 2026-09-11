@@ -70,6 +70,18 @@ def test_default_installer_threads_allow_network(tmp_path: Path):
         installer.install(tmp_path, _component("workflows"))
 
 
+@pytest.mark.parametrize("kind", ["presets", "extensions", "workflows", "steps"])
+def test_offline_refresh_explains_component_needs_network(tmp_path: Path, kind: str):
+    installer = DefaultPrimitiveInstaller(allow_network=False)
+    with pytest.raises(BundlerError) as exc:
+        installer.refresh(tmp_path, _component(kind, "definitely-not-bundled"))
+    message = str(exc.value)
+    assert "definitely-not-bundled" in message
+    assert "refreshing this component requires network access" in message
+    assert "re-run without --offline" in message
+    assert "install it first" not in message
+
+
 def test_offline_workflow_allows_bundled(tmp_path: Path, monkeypatch):
     # A workflow that ships with Spec Kit must install even with --offline.
     import specify_cli
