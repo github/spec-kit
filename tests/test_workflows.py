@@ -9838,14 +9838,9 @@ class TestLoadCustomSteps:
     """Test dynamic loading of custom step types from the filesystem."""
 
     def test_loading_another_project_replaces_custom_step_modules(self, tmp_path):
-        import hashlib
-        import sys
-
         from specify_cli.workflows import STEP_REGISTRY, load_custom_steps
 
         type_key = "project-scoped-step"
-        key_hash = hashlib.sha256(type_key.encode()).hexdigest()[:8]
-        module_name = f"_speckit_custom_step_project_scoped_step_{key_hash}"
 
         def write_step(project_root, marker):
             step_dir = (
@@ -9890,19 +9885,13 @@ class ProjectScopedStep(StepBase):
             assert STEP_REGISTRY[type_key].marker == "project-b"
         finally:
             STEP_REGISTRY.pop(type_key, None)
-            sys.modules.pop(module_name, None)
-            sys.modules.pop(f"{module_name}.helper", None)
 
     def test_reloading_same_project_ignores_stale_bytecode(self, tmp_path):
-        import hashlib
         import os
-        import sys
 
         from specify_cli.workflows import STEP_REGISTRY, load_custom_steps
 
         type_key = "reload-step"
-        key_hash = hashlib.sha256(type_key.encode()).hexdigest()[:8]
-        module_name = f"_speckit_custom_step_reload_step_{key_hash}"
         step_dir = (
             tmp_path / ".specify" / "workflows" / "steps" / type_key
         )
@@ -9941,8 +9930,6 @@ class ReloadStep(StepBase):
             assert STEP_REGISTRY[type_key].marker == "version-b"
         finally:
             STEP_REGISTRY.pop(type_key, None)
-            sys.modules.pop(module_name, None)
-            sys.modules.pop(f"{module_name}.helper", None)
 
     def test_empty_steps_dir(self, project_dir):
         from specify_cli.workflows import load_custom_steps
@@ -10064,7 +10051,6 @@ class TestCustomStep(StepBase):
 
     def test_module_name_sanitized_for_hyphenated_type_key(self, project_dir):
         """type_key values with hyphens produce valid Python module identifiers."""
-        import hashlib
         import sys
         from specify_cli.workflows import load_custom_steps, STEP_REGISTRY
 
@@ -10089,15 +10075,12 @@ class HyphenStep(StepBase):
         loaded = load_custom_steps(project_dir)
         assert "my-hyphen-step" in loaded
         assert "my-hyphen-step" in STEP_REGISTRY
-        # Synthetic module name must be a valid identifier (hyphens → underscores)
-        # and include a collision-resistant hash suffix.
-        key_hash = hashlib.sha256(b"my-hyphen-step").hexdigest()[:8]
-        module_name = f"_speckit_custom_step_my_hyphen_step_{key_hash}"
+        module_name = type(STEP_REGISTRY["my-hyphen-step"]).__module__
+        assert module_name.isidentifier()
         assert module_name in sys.modules
 
     def test_package_relative_import(self, project_dir):
         """Steps can use relative imports to access sibling modules."""
-        import hashlib
         import sys
         from specify_cli.workflows import load_custom_steps, STEP_REGISTRY
 
@@ -10127,26 +10110,31 @@ class PkgStep(StepBase):
         loaded = load_custom_steps(project_dir)
         assert "pkg-step" in loaded
         assert "pkg-step" in STEP_REGISTRY
-        # Verify the relative import actually resolved; module name includes hash suffix.
-        key_hash = hashlib.sha256(b"pkg-step").hexdigest()[:8]
-        module_name = f"_speckit_custom_step_pkg_step_{key_hash}"
+        module_name = type(STEP_REGISTRY["pkg-step"]).__module__
         assert module_name in sys.modules
         assert sys.modules[module_name].PkgStep.helper == "hello"
 
     def test_module_name_collision_resistance(self, project_dir):
         """'a-b' and 'a_b' produce different module names despite the same sanitized form."""
-        import hashlib
+        from specify_cli.workflows import STEP_REGISTRY, load_custom_steps
 
-        # Simulate the module name generation for two type_keys that sanitize the same way
-        def make_module_name(type_key: str) -> str:
-            import re
-            safe_key = re.sub(r"[^A-Za-z0-9_]", "_", type_key)
-            key_hash = hashlib.sha256(type_key.encode()).hexdigest()[:8]
-            return f"_speckit_custom_step_{safe_key}_{key_hash}"
-
-        name_a = make_module_name("a-b")
-        name_b = make_module_name("a_b")
-        assert name_a != name_b, "Module names for 'a-b' and 'a_b' must differ"
+        for key in ("a-b", "a_b"):
+            package = project_dir / ".specify/workflows/steps" / key
+            package.mkdir(parents=True)
+            (package / "step.yml").write_text(
+                f"step:\n  type_key: {key}\n", encoding="utf-8"
+            )
+            (package / "__init__.py").write_text(
+                "from specify_cli.workflows.base import StepBase, StepResult\n"
+                "class Custom(StepBase):\n"
+                f"    type_key = {key!r}\n"
+                "    def execute(self, config, context): return StepResult()\n",
+                encoding="utf-8",
+            )
+        assert set(load_custom_steps(project_dir)) == {"a-b", "a_b"}
+        first = type(STEP_REGISTRY["a-b"]).__module__
+        second = type(STEP_REGISTRY["a_b"]).__module__
+        assert first != second
 
 
 # ===== CLI Step Remove Tests =====

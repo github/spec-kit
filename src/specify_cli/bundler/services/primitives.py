@@ -30,6 +30,7 @@ from typing import Any, Protocol
 from .. import BundlerError
 from ..models.manifest import ComponentRef
 from ..models.snapshot import ComponentSnapshot
+from .artifacts import restore_generated_artifacts, snapshot_generated_artifacts
 
 DEFAULT_PRIORITY = 10
 
@@ -221,8 +222,11 @@ class _PresetKindManager:
         metadata = self._manager.registry.get(component.id)
         if metadata is None:
             return None
-        return _snapshot_directory(
-            component, metadata, self._manager.presets_dir / component.id
+        return snapshot_generated_artifacts(
+            _snapshot_directory(
+                component, metadata, self._manager.presets_dir / component.id
+            ),
+            self._root, self._manager,
         )
 
     def restore(self, snapshot: ComponentSnapshot) -> None:
@@ -239,6 +243,7 @@ class _PresetKindManager:
         )
         self._manager.registry.restore(component.id, snapshot.metadata)
         self._manager._reconcile_constitution()
+        restore_generated_artifacts(snapshot)
 
     def install(self, component: ComponentRef) -> None:
         self._do_install(component, force=False)
@@ -346,7 +351,7 @@ class _ExtensionKindManager:
             for name, entries in hooks.items()
             if any(hook.get("extension") == component.id for hook in entries)
         }
-        return snapshot
+        return snapshot_generated_artifacts(snapshot, self._root, self._manager)
 
     def restore(self, snapshot: ComponentSnapshot) -> None:
         from ... import get_speckit_version
@@ -381,6 +386,7 @@ class _ExtensionKindManager:
                 hooks.pop(name, None)
         executor.save_project_config(config)
         refresh_integration_events(self._root)
+        restore_generated_artifacts(snapshot)
 
     def install(self, component: ComponentRef) -> None:
         self._do_install(component, force=False)
