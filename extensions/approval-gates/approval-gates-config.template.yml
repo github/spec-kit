@@ -1,0 +1,42 @@
+# Approval Gates Configuration
+# Copy this file to .specify/extensions/approval-gates/approval-gates-config.yml
+# Then customize for your team's approval workflow
+
+# Define approval requirements for each phase
+# Each phase can be enabled/disabled independently
+
+specify:
+  enabled: true
+  requires: [product_lead, architect]
+  min_approvals: 1
+  description: "Functional specification approval"
+
+plan:
+  enabled: true
+  requires: [architect, tech_lead]
+  min_approvals: 2
+  description: "Technical specification and architecture approval"
+
+tasks:
+  enabled: true
+  requires: [tech_lead]
+  min_approvals: 1
+  description: "Task breakdown and planning approval"
+
+implement:
+  enabled: false
+  requires: [tech_lead]
+  min_approvals: 1
+  description: "Implementation gate (optional)"
+
+constitution:
+  enabled: false
+  requires: [owner]
+  min_approvals: 1
+  description: "Project constitution approval"
+
+# Future: GitHub Actions integration for automated checks
+github_actions:
+  enabled: false
+  # repository: "your-org/your-repo"
+  # branch: "main"
