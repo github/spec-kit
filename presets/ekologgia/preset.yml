@@ -1,0 +1,46 @@
+schema_version: "1.0"
+
+preset:
+  id: "ekologgia"
+  name: "Ekologgia Engineering Standards"
+  version: "1.0.0"
+  description: "Standards d'ingénierie Ekologgia — documentation FR canonique + miroir EN, ADR obligatoires, intégrations fail-closed, périmètre monorepo explicite."
+  author: "Ekologgia"
+  repository: "https://github.com/ehoudet/spec-kit"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.14.0"
+
+provides:
+  templates:
+    - type: "template"
+      name: "spec-template"
+      file: "templates/spec-addendum.md"
+      description: "Ajoute le périmètre monorepo et les impacts documentaires à la spec"
+      strategy: "append"
+
+    - type: "template"
+      name: "plan-template"
+      file: "templates/plan-addendum.md"
+      description: "Ajoute la revue ADR, fail-closed, modèle partagé et sécurité au plan"
+      strategy: "append"
+
+    - type: "template"
+      name: "tasks-template"
+      file: "templates/tasks-addendum.md"
+      description: "Ajoute la phase de clôture documentaire obligatoire aux tâches"
+      strategy: "append"
+
+    - type: "command"
+      name: "speckit.implement"
+      file: "commands/implement-addendum.md"
+      description: "Ajoute la définition de terminé Ekologgia à l'exécution"
+      strategy: "append"
+
+tags:
+  - "ekologgia"
+  - "documentation"
+  - "adr"
+  - "monorepo"
+  - "french"
