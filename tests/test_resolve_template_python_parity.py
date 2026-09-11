@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts.python import common as python_common
 from tests.conftest import requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
@@ -750,9 +751,13 @@ def test_bash_honors_speckit_python_path_containing_spaces(tmp_path: Path) -> No
     named "tool env"); callers must treat it as one argv element rather than
     splitting it on whitespace (#4445).
 
-    A symlink to `sys.executable` guarantees the spaced path actually has
-    PyYAML (rather than relying on `--system-site-packages` inheritance,
-    which does not reach a calling venv's own site-packages). PATH's
+    A shim script that execs `sys.executable` guarantees the spaced path
+    actually has PyYAML: a symlink would not do, since `sys.executable` may
+    itself be a venv-relative symlink (e.g. under `uv run`), and invoking it
+    through a second symlink placed outside that venv's directory tree
+    breaks Python's `pyvenv.cfg` discovery, silently hiding the venv's
+    site-packages (and PyYAML with it). Exec'ing the real path from a shim
+    keeps `argv[0]` at its original, correctly-resolvable location. PATH's
     `python3` is a PyYAML-less venv, so success is only possible if
     `_python3_command` selects the spaced override intact.
     """
@@ -761,7 +766,8 @@ def test_bash_honors_speckit_python_path_containing_spaces(tmp_path: Path) -> No
     spaced_dir = tmp_path / "tool env"
     spaced_dir.mkdir()
     spaced_exe = spaced_dir / Path(sys.executable).name
-    spaced_exe.symlink_to(sys.executable)
+    spaced_exe.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
+    spaced_exe.chmod(0o755)
 
     no_yaml_python = tmp_path / "no-yaml-venv"
     subprocess.run(
@@ -940,6 +946,66 @@ def test_python_variant_delegates_manifest_with_non_json_native_mapping_key(
         "TEMPLATE_NAME": TEMPLATE,
         "TEMPLATE_CONTENT": expected,
     }
+
+
+@requires_bash
+def test_python_variant_delegates_manifest_with_recursive_yaml_alias(
+    tmp_path: Path,
+) -> None:
+    """An ignored `metadata` mapping containing a self-referential YAML alias
+    (`&m {self: *m}`) must not break delegation: `yaml.safe_load` supports
+    this via a shared reference, so naive recursive serialization of the
+    same object forever revisits it and raises `RecursionError` instead of
+    ignoring the unused field the way the in-process parser does (#4445)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "metadata: &m\n  self: *m\n" + manifest.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    no_yaml_python = tmp_path / "no-yaml-venv"
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
+        check=True,
+        capture_output=True,
+    )
+    no_yaml_exe = venv_python3_exe(no_yaml_python)
+    assert no_yaml_exe.is_file()
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
+def test_python_variant_rejects_speckit_python_override_without_python_3(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A `SPECKIT_PYTHON` override that can `import yaml` but is not a
+    Python 3 interpreter (e.g. Python 2 with PyYAML installed) must not be
+    accepted: probing only `import yaml` lets it through, and the later
+    delegated subprocess then fails with syntax/runtime errors instead of
+    falling back to a working interpreter (#4445)."""
+    monkeypatch.setitem(sys.modules, "yaml", None)
+    monkeypatch.setenv("SPECKIT_PYTHON", "/fake/python2")
+
+    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+        code = cmd[2]
+        returncode = 1 if "version_info" in code else 0
+        return subprocess.CompletedProcess(cmd, returncode)
+
+    monkeypatch.setattr(python_common.subprocess, "run", fake_run)
+
+    assert python_common._import_yaml() is None
 
 
 @requires_bash

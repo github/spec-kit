@@ -430,14 +430,20 @@ class _DelegatedYAML:
                     "import sys, json, yaml\n"
                     "def _default(value):\n"
                     f"    return {{'{_NON_NATIVE_MARKER_KEY}': True}}\n"
-                    "def _stringify_keys(obj):\n"
+                    "def _stringify_keys(obj, seen=None):\n"
+                    "    if seen is None:\n"
+                    "        seen = set()\n"
+                    "    if isinstance(obj, (dict, list)):\n"
+                    "        if id(obj) in seen:\n"
+                    f"            return {{'{_NON_NATIVE_MARKER_KEY}': True}}\n"
+                    "        seen.add(id(obj))\n"
                     "    if isinstance(obj, dict):\n"
                     "        return {\n"
-                    "            (k if isinstance(k, (str, int, float, bool)) or k is None else str(k)): _stringify_keys(v)\n"
+                    "            (k if isinstance(k, (str, int, float, bool)) or k is None else str(k)): _stringify_keys(v, seen)\n"
                     "            for k, v in obj.items()\n"
                     "        }\n"
                     "    if isinstance(obj, list):\n"
-                    "        return [_stringify_keys(v) for v in obj]\n"
+                    "        return [_stringify_keys(v, seen) for v in obj]\n"
                     "    return obj\n"
                     "try:\n"
                     "    data = yaml.safe_load(sys.stdin.read())\n"
@@ -482,7 +488,13 @@ def _import_yaml() -> object | None:
         return None
     try:
         probe = subprocess.run(
-            [python_override, "-c", "import yaml"], capture_output=True, timeout=10
+            [
+                python_override,
+                "-c",
+                "import sys, yaml\nraise SystemExit(sys.version_info.major != 3)",
+            ],
+            capture_output=True,
+            timeout=10,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
