@@ -1199,8 +1199,7 @@ def _iter_convention_contributions(
     """Yield ``(kind, name, path)`` for files exposed by convention.
 
     Templates are also accepted at the pack root for legacy compatibility,
-    matching the resolver's ``templates/``-then-root lookup order. README files
-    are packaging metadata rather than artifacts and are excluded consistently.
+    matching the resolver's ``templates/``-then-root lookup order.
     """
     for subdir, kind, suffix in _CONVENTION_SUBDIRS:
         candidate_dir = pack_dir / subdir
@@ -1215,7 +1214,6 @@ def _iter_convention_contributions(
         if (
             entry.is_file()
             and entry.suffix == _TEMPLATE_SUFFIX
-            and entry.stem.lower() != "readme"
             and ":" not in entry.stem
         ):
             yield "template", entry.stem, entry

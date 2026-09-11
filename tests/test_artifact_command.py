@@ -266,7 +266,7 @@ class TestListArtifactsContract:
             assert layer["lookupId"] is None
             assert layer["sourcePath"] is None
 
-    def test_includes_root_level_pack_template_but_excludes_readme(
+    def test_includes_root_level_pack_templates(
         self, spec_kit_project: Path
     ):
         extension_dir = spec_kit_project / ".specify" / "extensions" / "legacy"
@@ -281,7 +281,7 @@ class TestListArtifactsContract:
         names = {row.name for row in catalog.list_artifacts()}
 
         assert "legacy-root" in names
-        assert "README" not in names
+        assert "README" in names
         assert next(
             row for row in catalog.list_artifacts() if row.name == "legacy-root"
         ).description == "Legacy root template"
@@ -1139,13 +1139,18 @@ class TestConventionDiscovery:
         assert "command:speckit.legacy" in ids
         assert "script:legacy-script" in ids
 
-    def test_extension_readme_is_not_listed_as_template(self, spec_kit_project: Path):
+    def test_extension_readme_matches_resolver_inventory(self, spec_kit_project: Path):
         ext_dir = spec_kit_project / ".specify" / "extensions" / "legacy"
         ext_dir.mkdir(parents=True)
         (ext_dir / "README.md").write_text("docs", encoding="utf-8")
 
-        ids = {row.id for row in ArtifactCatalog(spec_kit_project).list_artifacts()}
-        assert "template:README" not in ids
+        catalog = ArtifactCatalog(spec_kit_project)
+        artifacts = {row.id: row for row in catalog.list_artifacts()}
+
+        assert "template:README" in artifacts
+        assert catalog.get_artifact_info("README")["stack"][0]["sourcePath"] == (
+            ".specify/extensions/legacy/README.md"
+        )
 
     def test_disabled_extension_convention_file_is_excluded(self, spec_kit_project: Path):
         extensions_dir = spec_kit_project / ".specify" / "extensions"
