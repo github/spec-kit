@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 import shlex
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Iterable, Literal
 
 import yaml
@@ -36,6 +36,30 @@ from .resolution import _build_stack, _layer_provenance
 
 _TEMPLATE_SUFFIX = ".md"
 _SCRIPT_SUFFIX = ".sh"
+
+
+def _resolve_script_reference(script_root: Path, token: str) -> Path | None:
+    """Resolve a command script reference that remains inside *script_root*."""
+    posix_path = PurePosixPath(token)
+    windows_path = PureWindowsPath(token)
+    if posix_path.anchor or windows_path.anchor:
+        return None
+    if ".." in posix_path.parts or ".." in windows_path.parts:
+        return None
+
+    relative = Path(token)
+    if relative.parts and relative.parts[0] == "scripts":
+        relative = Path(*relative.parts[1:])
+    if not relative.parts:
+        return None
+
+    try:
+        resolved_root = script_root.resolve()
+        candidate = (resolved_root / relative).resolve()
+        candidate.relative_to(resolved_root)
+    except (OSError, ValueError):
+        return None
+    return candidate if candidate.is_file() else None
 
 
 def _locate_shared_asset_dir(subdir: str) -> Path | None:
@@ -659,17 +683,11 @@ class ArtifactCatalog:
                 if not tokens:
                     continue
 
-                relative = Path(tokens[0])
-                if relative.parts and relative.parts[0] == "scripts":
-                    relative = Path(*relative.parts[1:])
-                path = next(
-                    (
-                        script_dir / relative
-                        for script_dir in script_dirs
-                        if (script_dir / relative).is_file()
-                    ),
-                    None,
-                )
+                path = None
+                for script_dir in script_dirs:
+                    path = _resolve_script_reference(script_dir, tokens[0])
+                    if path is not None:
+                        break
                 if path is None:
                     continue
                 name = path.stem.replace("_", "-") if variant == "py" else path.stem

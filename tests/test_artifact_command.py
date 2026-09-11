@@ -177,6 +177,88 @@ class TestListArtifactsContract:
             "demo": script
         }
 
+    @pytest.mark.parametrize(
+        "reference_kind",
+        [
+            "absolute",
+            "windows-drive",
+            "unc",
+            "traversal",
+        ],
+    )
+    def test_core_scripts_reject_unsafe_references(
+        self,
+        spec_kit_project: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        reference_kind: str,
+    ):
+        commands_dir = tmp_path / "commands"
+        scripts_dir = tmp_path / "scripts"
+        commands_dir.mkdir()
+        (scripts_dir / "bash").mkdir(parents=True)
+        outside = tmp_path / "outside.sh"
+        outside.write_text(
+            "#!/bin/sh\n# Must not be read\n", encoding="utf-8"
+        )
+        script_reference = {
+            "absolute": outside.resolve().as_posix(),
+            "windows-drive": "C:/outside/demo.sh",
+            "unc": "//server/share/demo.sh",
+            "traversal": "scripts/bash/../../outside.sh",
+        }[reference_kind]
+        (commands_dir / "demo.md").write_text(
+            "---\n"
+            "scripts:\n"
+            f"  sh: {script_reference}\n"
+            "---\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "specify_cli.artifacts.catalog._locate_shared_asset_dir",
+            lambda subdir: {
+                "commands": commands_dir,
+                "scripts": scripts_dir,
+                "templates": None,
+            }[subdir],
+        )
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        assert catalog._selected_core_script_paths() == {}
+        assert all(row.id != "script:outside" for row in catalog.list_artifacts())
+
+    def test_core_scripts_reject_symlinks_escaping_script_root(
+        self, spec_kit_project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        commands_dir = tmp_path / "commands"
+        scripts_dir = tmp_path / "scripts"
+        commands_dir.mkdir()
+        (scripts_dir / "bash").mkdir(parents=True)
+        outside = tmp_path / "outside.sh"
+        outside.write_text("#!/bin/sh\n# Must not be read\n", encoding="utf-8")
+        link = scripts_dir / "bash" / "demo.sh"
+        try:
+            link.symlink_to(outside)
+        except OSError:
+            pytest.skip("symlink creation is not available")
+        (commands_dir / "demo.md").write_text(
+            "---\n"
+            "scripts:\n"
+            "  sh: scripts/bash/demo.sh\n"
+            "---\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "specify_cli.artifacts.catalog._locate_shared_asset_dir",
+            lambda subdir: {
+                "commands": commands_dir,
+                "scripts": scripts_dir,
+                "templates": None,
+            }[subdir],
+        )
+
+        assert ArtifactCatalog(spec_kit_project)._selected_core_script_paths() == {}
+
     def test_excludes_disabled_and_unusable_manifest_contributions(
         self, spec_kit_project: Path
     ):
