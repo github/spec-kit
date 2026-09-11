@@ -34,6 +34,7 @@ class TestAgyInitFlow:
     def test_integration_agy_creates_skills(self, tmp_path):
         """--integration agy should create skills directory."""
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         runner = CliRunner()
@@ -46,6 +47,7 @@ class TestAgyInitFlow:
     def test_agy_setup_warning(self, tmp_path):
         """Agy integration should print a warning about v1.20.5 requirement during setup."""
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         # Click >= 8.2 separates stdout and stderr natively
@@ -128,8 +130,9 @@ class TestAgyBuildExecArgs:
         Passing a relative path to --add-dir breaks agy when the subprocess
         also changes cwd to that same relative path.
         """
-        from specify_cli.integrations import get_integration
         from pathlib import Path
+
+        from specify_cli.integrations import get_integration
         i = get_integration("agy")
         rel_path = Path("my_relative_dir")
         result = i.build_exec_args("my prompt", project_root=rel_path)
@@ -169,7 +172,8 @@ class TestAgyBuildExecArgs:
 
     def test_dispatch_command_forwards_project_root_as_add_dir(self, tmp_path):
         """dispatch_command must pass project_root to build_exec_args so --add-dir is included."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         from specify_cli.integrations import get_integration
 
         i = get_integration("agy")
