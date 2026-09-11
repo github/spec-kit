@@ -25,7 +25,10 @@ import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
-from specify_cli.commands.init import _shell_quote_arg
+from specify_cli.commands.init import (
+    _install_extension_during_init,
+    _shell_quote_arg,
+)
 
 from tests.conftest import requires_bash
 
@@ -174,3 +177,24 @@ def test_shell_quote_arg_is_host_appropriate():
         assert quoted == '"my project"'
     else:
         assert quoted == "'my project'"
+
+
+def test_install_extension_during_init_reports_malformed_url_cleanly(tmp_path: Path):
+    """A malformed extension URL must raise a clean ValueError, not leak the
+    raw urllib message.
+
+    An unterminated/invalid bracketed IPv6 authority (e.g.
+    "https://[not-an-ip]/x.zip") makes ``urlparse()`` itself raise
+    ``ValueError`` (this became eager in Python 3.14; it was previously lazy,
+    raised only on ``.hostname`` access). ``_install_extension_during_init``
+    parsed the spec unguarded, so `specify init --extension <bad-url>` showed
+    "failed: 'not-an-ip' does not appear to be an IPv4 or IPv6 address"
+    instead of an actionable message. Every sibling URL entry point
+    (extensions/__init__.py, presets/__init__.py, workflows/catalog.py,
+    extensions/_commands.py) already guards this exact case.
+    """
+    (tmp_path / ".specify").mkdir()
+    with pytest.raises(ValueError, match="Malformed extension URL"):
+        _install_extension_during_init(
+            tmp_path, "https://[not-an-ip]/ext.zip", "1.0.0"
+        )

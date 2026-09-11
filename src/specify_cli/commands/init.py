@@ -118,7 +118,19 @@ def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_ve
     manager = ExtensionManager(project_path)
 
     # --- URL ---
-    parsed = urlparse(ext_spec)
+    # A malformed authority (e.g. an unterminated IPv6 bracket
+    # "https://[not-an-ip]/x.zip") makes urlparse raise ValueError. This
+    # function's contract is to raise a clean ValueError the caller can
+    # display as a tracker error; without this guard, the raw urllib message
+    # (e.g. "'not-an-ip' does not appear to be an IPv4 or IPv6 address")
+    # leaked through instead. Mirrors the guard every other URL-accepting
+    # extension/preset/workflow entry point already has (#3435 lineage).
+    try:
+        parsed = urlparse(ext_spec)
+        _ = parsed.hostname
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError(f"Malformed extension URL: {ext_spec}") from exc
     if parsed.scheme in ("http", "https"):
         try:
             manifest = install_extension_from_url(
