@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -11,7 +12,6 @@ from pathlib import Path
 import yaml
 
 from tests.conftest import requires_bash
-
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
@@ -24,6 +24,14 @@ PUBLISH_VALIDATION_STEPS = (
     "Verify tag format",
     "Verify tag matches package version",
 )
+FEATURE_ASSESS_WORKFLOW = WORKFLOWS_DIR / "feature-assess.md"
+FEATURE_ASSESS_COMPILED_WORKFLOW = WORKFLOWS_DIR / "feature-assess.lock.yml"
+FEATURE_ASSESS_LABELS = {
+    "feature-go",
+    "feature-needs-clarification",
+    "feature-kill",
+    "feature-invalid",
+}
 COMMUNITY_SUBMISSION_WORKFLOWS = (
     (
         "bundle",
@@ -97,6 +105,22 @@ def _create_pull_request_allowed_files(source_text: str) -> list[str]:
     ]
 
 
+def _workflow_frontmatter(source_text: str) -> dict[str, object]:
+    _, frontmatter, _ = source_text.split("---", maxsplit=2)
+    return yaml.safe_load(frontmatter)
+
+
+def _gh_aw_metadata(compiled_text: str) -> dict[str, object]:
+    metadata_prefix = "# gh-aw-metadata: "
+    first_line = compiled_text.splitlines()[0]
+    assert first_line.startswith(metadata_prefix)
+    return json.loads(first_line.removeprefix(metadata_prefix))
+
+
+def _workflow_step(steps: list[dict[str, object]], name: str) -> dict[str, object]:
+    return next(step for step in steps if step.get("name") == name)
+
+
 def test_github_actions_are_pinned_to_full_commit_shas():
     unpinned_refs = []
 
@@ -168,6 +192,85 @@ def test_pinned_action_ref_accepts_uppercase_hex_sha():
     assert PINNED_SHA_RE.search(
         "actions/example@0123456789ABCDEF0123456789ABCDEF01234567"
     )
+
+
+def test_feature_assess_upgrade_preserves_positive_execution_path():
+    source_text = FEATURE_ASSESS_WORKFLOW.read_text(encoding="utf-8")
+    compiled_text = FEATURE_ASSESS_COMPILED_WORKFLOW.read_text(encoding="utf-8")
+    source = _workflow_frontmatter(source_text)
+    compiled = yaml.safe_load(compiled_text)
+
+    metadata = _gh_aw_metadata(compiled_text)
+    assert metadata["compiler_version"] == "v0.88.7"
+    assert metadata["engine_versions"] == {"copilot": "1.0.80"}
+
+    source_steps = source["steps"]
+    compiled_steps = compiled["jobs"]["agent"]["steps"]
+    expected_step_names = [
+        "Setup uv",
+        "Set up Python",
+        "Install Spec Kit CLI",
+        "Initialize Spec Kit and install the assess extension",
+    ]
+    compiled_step_names = [step.get("name") for step in compiled_steps]
+    assert [
+        compiled_step_names.index(step_name) for step_name in expected_step_names
+    ] == sorted(compiled_step_names.index(step_name) for step_name in expected_step_names)
+
+    for source_step in source_steps:
+        compiled_step = _workflow_step(compiled_steps, source_step["name"])
+        for field in ("continue-on-error", "uses", "with", "working-directory", "run"):
+            if field in source_step:
+                assert compiled_step[field] == source_step[field]
+
+    install_step = _workflow_step(compiled_steps, "Install Spec Kit CLI")
+    assert 'PIP_SUBCOMMAND=pip' in install_step["run"]
+    assert '"$UV_BIN" "$PIP_SUBCOMMAND" install --system .' in install_step["run"]
+
+
+def test_feature_assess_upgrade_preserves_negative_guards():
+    source_text = FEATURE_ASSESS_WORKFLOW.read_text(encoding="utf-8")
+    compiled_text = FEATURE_ASSESS_COMPILED_WORKFLOW.read_text(encoding="utf-8")
+    compiled = yaml.safe_load(compiled_text)
+
+    activation_condition = compiled["jobs"]["activation"]["if"]
+    pre_activation = compiled["jobs"]["pre_activation"]
+    assert "github.event.label.name == 'feature-assess'" in activation_condition
+    assert "github.event.label.name == 'feature-assess'" in pre_activation["if"]
+    assert pre_activation["steps"][-1]["env"]["GH_AW_SKIP_BOTS"] == (
+        "github-actions,copilot-swe-agent,Copilot,copilot,"
+        "@app/copilot-swe-agent,dependabot"
+    )
+
+    agent = compiled["jobs"]["agent"]
+    assert agent["permissions"] == {"contents": "read", "issues": "read"}
+
+    safe_outputs_step = _workflow_step(
+        compiled["jobs"]["safe_outputs"]["steps"], "Process Safe Outputs"
+    )
+    safe_outputs = json.loads(
+        safe_outputs_step["env"]["GH_AW_SAFE_OUTPUTS_HANDLER_CONFIG"]
+    )
+    assert safe_outputs["add_comment"] == {"max": 5}
+    assert safe_outputs["add_labels"]["max"] == 1
+    assert set(safe_outputs["add_labels"]["allowed"]) == FEATURE_ASSESS_LABELS
+    assert set(safe_outputs["remove_labels"]["allowed"]) == FEATURE_ASSESS_LABELS
+    assert not {
+        "create_issue",
+        "create_pull_request",
+        "push_to_pull_request",
+    } & safe_outputs.keys()
+
+    assert re.search(r"without applying any verdict\s+label", source_text)
+    assert "never stage,\n  commit, or push" in source_text
+
+    unpinned_refs = [
+        match.group("ref")
+        for match in USES_RE.finditer(compiled_text)
+        if not match.group("ref").startswith(("./", "../"))
+        and not PINNED_SHA_RE.search(match.group("ref"))
+    ]
+    assert unpinned_refs == []
 
 
 def test_community_submission_automation_is_wired_to_allowed_files():
