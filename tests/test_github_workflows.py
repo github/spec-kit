@@ -231,12 +231,27 @@ def test_feature_assess_upgrade_preserves_positive_execution_path():
 def test_feature_assess_upgrade_preserves_negative_guards():
     source_text = FEATURE_ASSESS_WORKFLOW.read_text(encoding="utf-8")
     compiled_text = FEATURE_ASSESS_COMPILED_WORKFLOW.read_text(encoding="utf-8")
+    source = _workflow_frontmatter(source_text)
     compiled = yaml.safe_load(compiled_text)
+
+    assert (source.get("on") or source[True]) == {
+        "issues": {"types": ["labeled"], "names": ["feature-assess"]},
+        "skip-bots": ["github-actions", "copilot", "dependabot"],
+    }
+    assert (compiled.get("on") or compiled[True]) == {
+        "issues": {"types": ["labeled"]},
+    }
 
     activation_condition = compiled["jobs"]["activation"]["if"]
     pre_activation = compiled["jobs"]["pre_activation"]
-    assert "github.event.label.name == 'feature-assess'" in activation_condition
-    assert "github.event.label.name == 'feature-assess'" in pre_activation["if"]
+    expected_guard = (
+        "github.event_name != 'issues' || github.event.action != 'labeled' || "
+        "github.event.label.name == 'feature-assess'"
+    )
+    assert " ".join(pre_activation["if"].split()) == expected_guard
+    assert " ".join(activation_condition.split()) == (
+        f"needs.pre_activation.outputs.activated == 'true' && ({expected_guard})"
+    )
     assert pre_activation["steps"][-1]["env"]["GH_AW_SKIP_BOTS"] == (
         "github-actions,copilot-swe-agent,Copilot,copilot,"
         "@app/copilot-swe-agent,dependabot"
