@@ -211,6 +211,40 @@ def test_catalog_add_and_remove(project: Path):
     assert removed.exit_code == 0
 
 
+def test_catalog_add_duplicate_is_idempotent(project: Path):
+    catalog = project / "local-catalog.json"
+    write_catalog_file(catalog, {"demo": catalog_entry_dict("demo")})
+
+    first = runner.invoke(
+        app,
+        ["bundle", "catalog", "add", str(catalog), "--id", "local", "--priority", "10"],
+    )
+    assert first.exit_code == 0, first.output
+    second = runner.invoke(
+        app,
+        ["bundle", "catalog", "add", str(catalog), "--id", "local", "--priority", "10"],
+    )
+    assert second.exit_code == 0, second.output
+    assert "already" in second.output
+
+
+def test_catalog_add_duplicate_different_settings_conflicts(project: Path):
+    catalog = project / "local-catalog.json"
+    write_catalog_file(catalog, {"demo": catalog_entry_dict("demo")})
+
+    first = runner.invoke(
+        app,
+        ["bundle", "catalog", "add", str(catalog), "--id", "local", "--priority", "10"],
+    )
+    assert first.exit_code == 0, first.output
+    second = runner.invoke(
+        app,
+        ["bundle", "catalog", "add", str(catalog), "--id", "local", "--priority", "20"],
+    )
+    assert second.exit_code == 1
+    assert "different settings" in second.output
+
+
 def test_catalog_remove_builtin_is_refused(project: Path):
     result = runner.invoke(app, ["bundle", "catalog", "remove", "default"])
     assert result.exit_code == 1

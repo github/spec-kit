@@ -1168,12 +1168,23 @@ class TestCatalogSourceManagement:
         entries = data["catalogs"]
         assert [e["name"] for e in entries] == ["mine", "catalog-2"]
 
-    def test_add_catalog_rejects_duplicate_url(self, tmp_path, monkeypatch):
+    def test_add_catalog_duplicate_url_is_idempotent_noop(self, tmp_path, monkeypatch):
+        """Re-adding the same URL (no explicit name) is a successful no-op (#4505)."""
         self._isolate(tmp_path, monkeypatch)
         cat = IntegrationCatalog(tmp_path)
-        cat.add_catalog("https://dup.example.com/catalog.json")
-        with pytest.raises(IntegrationValidationError, match="already configured"):
-            cat.add_catalog("https://dup.example.com/catalog.json")
+        assert cat.add_catalog("https://dup.example.com/catalog.json") == "added"
+        assert cat.add_catalog("https://dup.example.com/catalog.json") == "unchanged"
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        assert len(data["catalogs"]) == 1
+
+    def test_add_catalog_duplicate_url_different_name_conflicts(self, tmp_path, monkeypatch):
+        """Re-adding the same URL with a different name is rejected as a conflict (#4505)."""
+        self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        cat.add_catalog("https://dup.example.com/catalog.json", name="first")
+        with pytest.raises(IntegrationValidationError, match="different name"):
+            cat.add_catalog("https://dup.example.com/catalog.json", name="second")
 
     def test_add_catalog_rejects_invalid_url(self, tmp_path, monkeypatch):
         self._isolate(tmp_path, monkeypatch)
@@ -1502,13 +1513,15 @@ class TestCatalogSourceManagement:
         data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
         assert data["catalogs"][0]["url"] == "https://a.example.com/catalog.json"
 
-    def test_add_catalog_rejects_whitespace_only_duplicate(self, tmp_path, monkeypatch):
-        """A second add with only whitespace differences must be rejected as a duplicate."""
+    def test_add_catalog_whitespace_only_duplicate_is_noop(self, tmp_path, monkeypatch):
+        """A second add differing only by whitespace (no new name) is an idempotent no-op."""
         self._isolate(tmp_path, monkeypatch)
         cat = IntegrationCatalog(tmp_path)
         cat.add_catalog("https://a.example.com/catalog.json", name="a")
-        with pytest.raises(IntegrationValidationError, match="already configured"):
-            cat.add_catalog("  https://a.example.com/catalog.json  ")
+        assert cat.add_catalog("  https://a.example.com/catalog.json  ") == "unchanged"
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        assert len(data["catalogs"]) == 1
 
     def test_remove_catalog_wraps_unlink_oserror(self, tmp_path, monkeypatch):
         """An OSError from `Path.unlink` surfaces as IntegrationValidationError."""

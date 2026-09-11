@@ -2539,7 +2539,7 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert result.exit_code == 1
         assert "HTTPS" in result.output
 
-    def test_catalog_add_rejects_duplicate(self, tmp_path, monkeypatch):
+    def test_catalog_add_duplicate_is_idempotent(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)
         url = "https://dup.example.com/catalog.json"
         first = self._invoke(
@@ -2549,8 +2549,21 @@ class TestIntegrationCatalogDiscoveryCLI:
         second = self._invoke(
             ["integration", "catalog", "add", url], project
         )
-        assert second.exit_code == 1
+        assert second.exit_code == 0, second.output
         assert "already configured" in second.output
+
+    def test_catalog_add_duplicate_different_name_conflicts(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        url = "https://dup.example.com/catalog.json"
+        first = self._invoke(
+            ["integration", "catalog", "add", url, "--name", "first"], project
+        )
+        assert first.exit_code == 0, first.output
+        second = self._invoke(
+            ["integration", "catalog", "add", url, "--name", "second"], project
+        )
+        assert second.exit_code == 1
+        assert "different name" in second.output
 
     def test_catalog_remove_out_of_range(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)

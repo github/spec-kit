@@ -139,7 +139,7 @@ def add_source(
     policy: str,
     priority: int,
     source_id: str | None = None,
-) -> CatalogSource:
+) -> tuple[CatalogSource, str]:
     url = url.strip()
     if not url:
         raise BundlerError("A catalog url is required.")
@@ -186,21 +186,32 @@ def add_source(
     resolved_id = (source_id or _derive_id(url)).strip()
 
     catalogs = _read(project_root)
-    for existing in catalogs:
-        if existing.get("id") == resolved_id or existing.get("url") == url:
-            raise BundlerError(
-                f"Catalog source '{resolved_id}' (or url) already exists in this project."
-            )
-
-    entry = {
+    desired = {
         "id": resolved_id,
         "url": url,
         "priority": int(priority),
         "install_policy": install_policy.value,
     }
-    catalogs.append(entry)
+    for existing in catalogs:
+        if existing.get("id") == resolved_id or existing.get("url") == url:
+            # Idempotent add (#4505): identity is the source id or url. A rerun
+            # requesting the same settings is a successful no-op; differing
+            # settings are a conflict rather than a silent overwrite.
+            if (
+                existing.get("id") == resolved_id
+                and existing.get("url") == url
+                and int(existing.get("priority", 0)) == desired["priority"]
+                and str(existing.get("install_policy", "")) == desired["install_policy"]
+            ):
+                return CatalogSource.from_dict(dict(existing), Scope.PROJECT), "unchanged"
+            raise BundlerError(
+                f"Catalog source '{resolved_id}' (or url) already exists in this "
+                "project with different settings. Remove it first to change it."
+            )
+
+    catalogs.append(desired)
     _write(project_root, catalogs)
-    return CatalogSource.from_dict(entry, Scope.PROJECT)
+    return CatalogSource.from_dict(desired, Scope.PROJECT), "added"
 
 
 def remove_source(project_root: Path, id_or_url: str) -> str:
