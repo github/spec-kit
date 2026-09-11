@@ -20,12 +20,16 @@ Routing strategy per kind:
 from __future__ import annotations
 
 import contextlib
+import copy
 import os
+import shutil
 from pathlib import Path
-from typing import Protocol
+from tempfile import TemporaryDirectory
+from typing import Any, Protocol
 
 from .. import BundlerError
 from ..models.manifest import ComponentRef
+from ..models.snapshot import ComponentSnapshot
 
 DEFAULT_PRIORITY = 10
 
@@ -88,7 +92,10 @@ class _KindManager(Protocol):
     def is_installed(self, component: ComponentRef) -> bool:
         pass
 
-    def snapshot(self, component: ComponentRef) -> ComponentRef | None:
+    def snapshot(self, component: ComponentRef) -> ComponentSnapshot | None:
+        pass
+
+    def restore(self, snapshot: ComponentSnapshot) -> None:
         pass
 
     def install(self, component: ComponentRef) -> None:
@@ -168,6 +175,34 @@ def _snapshot_ref(
     )
 
 
+def _snapshot_directory(
+    component: ComponentRef, metadata: dict[str, Any], directory: Path
+) -> ComponentSnapshot:
+    backup = TemporaryDirectory(prefix="speckit-bundle-rollback-")
+    destination = Path(backup.name) / component.id
+    try:
+        shutil.copytree(directory, destination, symlinks=True)
+    except OSError:
+        backup.cleanup()
+        raise
+    return ComponentSnapshot(
+        component=_snapshot_ref(
+            component, version=metadata.get("version"), metadata=metadata
+        ),
+        metadata=copy.deepcopy(metadata),
+        directory=destination,
+        backup=backup,
+    )
+
+
+def _snapshot_source(snapshot: ComponentSnapshot) -> Path:
+    if snapshot.directory is None:
+        raise BundlerError(
+            f"Cannot restore {snapshot.component.label()}: missing payload snapshot."
+        )
+    return snapshot.directory
+
+
 class _PresetKindManager:
     def __init__(self, project_root: Path, allow_network: bool) -> None:
         from ...presets import PresetManager
@@ -182,20 +217,28 @@ class _PresetKindManager:
         except Exception:  # noqa: BLE001
             return False
 
-    def snapshot(self, component: ComponentRef) -> ComponentRef | None:
+    def snapshot(self, component: ComponentRef) -> ComponentSnapshot | None:
         metadata = self._manager.registry.get(component.id)
-        manifest = self._manager.get_pack(component.id)
-        if metadata is None and manifest is None:
+        if metadata is None:
             return None
-        return _snapshot_ref(
-            component,
-            version=(
-                metadata.get("version")
-                if metadata is not None
-                else manifest.version
-            ),
-            metadata=metadata,
+        return _snapshot_directory(
+            component, metadata, self._manager.presets_dir / component.id
         )
+
+    def restore(self, snapshot: ComponentSnapshot) -> None:
+        from ... import get_speckit_version
+
+        source = _snapshot_source(snapshot)
+        component = snapshot.component
+        if self.is_installed(component):
+            self.remove(component)
+        self._manager.install_from_directory(
+            source,
+            get_speckit_version(),
+            DEFAULT_PRIORITY if component.priority is None else component.priority,
+        )
+        self._manager.registry.restore(component.id, snapshot.metadata)
+        self._manager._reconcile_constitution()
 
     def install(self, component: ComponentRef) -> None:
         self._do_install(component, force=False)
@@ -280,15 +323,60 @@ class _ExtensionKindManager:
         except Exception:  # noqa: BLE001
             return False
 
-    def snapshot(self, component: ComponentRef) -> ComponentRef | None:
+    def snapshot(self, component: ComponentRef) -> ComponentSnapshot | None:
+        from ...extensions import HookExecutor
+
         metadata = self._manager.registry.get(component.id)
         if metadata is None:
             return None
-        return _snapshot_ref(
-            component,
-            version=metadata.get("version"),
-            metadata=metadata,
+        hooks = HookExecutor(self._root).get_project_config().get("hooks", {})
+        snapshot = _snapshot_directory(
+            component, metadata, self._manager.extensions_dir / component.id
         )
+        snapshot.hooks = {
+            name: [
+                (index, copy.deepcopy(hook))
+                for index, hook in enumerate(entries)
+                if hook.get("extension") == component.id
+            ]
+            for name, entries in hooks.items()
+            if any(hook.get("extension") == component.id for hook in entries)
+        }
+        return snapshot
+
+    def restore(self, snapshot: ComponentSnapshot) -> None:
+        from ... import get_speckit_version
+        from ...events import refresh_integration_events
+        from ...extensions import HookExecutor
+
+        source = _snapshot_source(snapshot)
+        component = snapshot.component
+        if self.is_installed(component):
+            self.remove(component)
+        self._manager.install_from_directory(
+            source,
+            get_speckit_version(),
+            priority=(
+                DEFAULT_PRIORITY if component.priority is None else component.priority
+            ),
+        )
+        self._manager.registry.restore(component.id, snapshot.metadata)
+        executor = HookExecutor(self._root)
+        config = executor.get_project_config()
+        hooks = config.setdefault("hooks", {})
+        for name in set(hooks) | set(snapshot.hooks):
+            entries = [
+                hook for hook in hooks.get(name, [])
+                if hook.get("extension") != component.id
+            ]
+            for index, hook in snapshot.hooks.get(name, []):
+                entries.insert(index, copy.deepcopy(hook))
+            if entries:
+                hooks[name] = entries
+            else:
+                hooks.pop(name, None)
+        executor.save_project_config(config)
+        refresh_integration_events(self._root)
 
     def install(self, component: ComponentRef) -> None:
         self._do_install(component, force=False)
@@ -377,13 +465,31 @@ class _WorkflowKindManager:
         except Exception:  # noqa: BLE001
             return False
 
-    def snapshot(self, component: ComponentRef) -> ComponentRef | None:
+    def snapshot(self, component: ComponentRef) -> ComponentSnapshot | None:
         metadata = self._registry.get(component.id)
         if metadata is None:
             return None
-        return _snapshot_ref(
-            component, version=metadata.get("version"), metadata=metadata
+        return _snapshot_directory(
+            component, metadata,
+            self._root / ".specify" / "workflows" / component.id,
         )
+
+    def restore(self, snapshot: ComponentSnapshot) -> None:
+        from ... import workflow_add
+        from ...workflows.catalog import WorkflowRegistry
+
+        source = _snapshot_source(snapshot)
+        component = snapshot.component
+        if self.is_installed(component):
+            self.remove(component)
+        with _chdir(self._root):
+            _delegate_command(
+                "restore", f"workflow '{component.id}'",
+                lambda: workflow_add(str(source), dev=False, from_url=None),
+            )
+        registry = WorkflowRegistry(self._root)
+        registry.data["workflows"][component.id] = copy.deepcopy(snapshot.metadata)
+        registry.save()
 
     def install(self, component: ComponentRef) -> None:
         if not self._allow_network and not self._is_bundled(component.id):
@@ -451,13 +557,25 @@ class _StepKindManager:
         except Exception:  # noqa: BLE001
             return False
 
-    def snapshot(self, component: ComponentRef) -> ComponentRef | None:
+    def snapshot(self, component: ComponentRef) -> ComponentSnapshot | None:
         metadata = self._registry.get(component.id)
         if metadata is None:
             return None
-        return _snapshot_ref(
-            component, version=metadata.get("version"), metadata=metadata
+        return _snapshot_directory(
+            component, metadata, self._registry.steps_dir / component.id
         )
+
+    def restore(self, snapshot: ComponentSnapshot) -> None:
+        from ...workflows.catalog import StepRegistry
+
+        source = _snapshot_source(snapshot)
+        component = snapshot.component
+        if self.is_installed(component):
+            self.remove(component)
+        shutil.copytree(source, self._registry.steps_dir / component.id, symlinks=True)
+        registry = StepRegistry(self._root)
+        registry.data["steps"][component.id] = copy.deepcopy(snapshot.metadata)
+        registry.save()
 
     def install(self, component: ComponentRef) -> None:
         if not self._allow_network:
@@ -466,14 +584,19 @@ class _StepKindManager:
                 f"is disabled; re-run without --offline or install it first with "
                 f"'specify workflow step add {component.id}'."
             )
-        self._assert_pinned_version(component)
-        from ... import workflow_step_add
+        from ...workflows._commands import _install_step_from_catalog
+        from ...workflows.catalog import StepValidationError
 
-        with _chdir(self._root):
-            _delegate_command(
-                "install", f"step '{component.id}'",
-                lambda: workflow_step_add(component.id),
-            )
+        try:
+            with _chdir(self._root):
+                _delegate_command(
+                    "install", f"step '{component.id}'",
+                    lambda: _install_step_from_catalog(
+                        self._root, component.id, expected_version=component.version
+                    ),
+                )
+        except StepValidationError as exc:
+            raise BundlerError(str(exc)) from exc
 
     def refresh(self, component: ComponentRef) -> None:
         # Preserve an existing step until we've validated we can perform refresh.
@@ -525,32 +648,6 @@ class _StepKindManager:
                 raise
         finally:
             shutil.rmtree(backup_dir.parent, ignore_errors=True)
-
-    def _assert_pinned_version(self, component: ComponentRef) -> None:
-        if not component.version:
-            return
-        from ...workflows.catalog import StepCatalog, StepCatalogError
-
-        try:
-            info = StepCatalog(self._root).get_step_info(component.id)
-        except StepCatalogError as exc:
-            raise BundlerError(
-                f"Cannot verify pinned version for step '{component.id}': {exc}"
-            ) from exc
-        if not info:
-            raise BundlerError(
-                f"Cannot verify pinned version for step '{component.id}': "
-                "the step was not found in the catalog."
-            )
-        advertised = info.get("version")
-        if advertised is None or not str(advertised).strip():
-            raise BundlerError(
-                f"Cannot verify pinned version for step '{component.id}': "
-                "the catalog does not advertise a version."
-            )
-        _assert_pinned_version(
-            "Step", component.id, component.version, advertised
-        )
 
     def remove(self, component: ComponentRef) -> None:
         from ... import workflow_step_remove

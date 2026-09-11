@@ -14,6 +14,7 @@ from pathlib import Path
 import yaml
 
 from specify_cli.bundler.models.manifest import ComponentRef
+from specify_cli.bundler.models.snapshot import ComponentSnapshot
 
 
 def valid_manifest_dict(**overrides) -> dict:
@@ -135,5 +136,13 @@ class FakeInstaller:
 
     def snapshot(
         self, project_root: Path, component: ComponentRef
-    ) -> ComponentRef | None:
-        return self.components.get(self._key(component))
+    ) -> ComponentSnapshot | None:
+        installed = self.components.get(self._key(component))
+        return ComponentSnapshot(installed, {}) if installed is not None else None
+
+    def restore(self, project_root: Path, snapshot: ComponentSnapshot) -> None:
+        component = snapshot.component
+        if self.is_installed(project_root, component):
+            self.refresh(project_root, component)
+        else:
+            self.install(project_root, component)

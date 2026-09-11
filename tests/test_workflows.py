@@ -9695,6 +9695,145 @@ class TestStepCatalog:
 
 # ===== Load Custom Steps Tests =====
 
+@pytest.fixture
+def scoped_step_projects(tmp_path):
+    from specify_cli.workflows import load_custom_steps
+
+    roots = [tmp_path / "project-a", tmp_path / "project-b"]
+    for root in roots:
+        step_dir = root / ".specify" / "workflows" / "steps" / "my-step"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: my-step\n  version: '1.0.0'\n",
+            encoding="utf-8",
+        )
+        (step_dir / "__init__.py").write_text(
+            "from specify_cli.workflows.base import StepBase, StepResult, StepStatus\n"
+            "class ScopedStep(StepBase):\n"
+            "    type_key = 'my-step'\n"
+            "    def execute(self, config, context):\n"
+            "        status = StepStatus.COMPLETED\n"
+            "        if config.get('pause') and not context.is_resume:\n"
+            "            status = StepStatus.PAUSED\n"
+            f"        return StepResult(status=status, output={{'project': {root.name!r}}})\n",
+            encoding="utf-8",
+        )
+    load_custom_steps(roots[0])
+    yield roots
+    load_custom_steps(tmp_path / "empty")
+
+
+class TestProjectScopedStepConsumers:
+    @pytest.mark.parametrize("package", [False, True])
+    def test_workflow_install_rejects_another_projects_step(
+        self, scoped_step_projects, monkeypatch, package
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        _, project_b = scoped_step_projects
+        shutil.rmtree(project_b / ".specify" / "workflows" / "steps" / "my-step")
+        source_dir = project_b.parent / "workflow-package"
+        source_dir.mkdir()
+        source = source_dir / "workflow.yml"
+        source.write_text(yaml.safe_dump({
+            "schema_version": "1.0",
+            "workflow": {"id": "scoped", "name": "Scoped", "version": "1.0.0"},
+            "steps": [{"id": "custom", "type": "my-step"}],
+        }), encoding="utf-8")
+        monkeypatch.chdir(project_b)
+        result = CliRunner().invoke(
+            app, ["workflow", "add", str(source_dir if package else source)]
+        )
+        assert result.exit_code == 1, result.output
+        assert "invalid type 'my-step'" in result.output
+        assert not WorkflowRegistry(project_b).is_installed("scoped")
+
+    @pytest.mark.parametrize("command", ["list", "info", "add"])
+    def test_cli_does_not_treat_another_projects_step_as_builtin(
+        self, scoped_step_projects, monkeypatch, command
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepCatalog, StepRegistry
+
+        _, project_b = scoped_step_projects
+        shutil.rmtree(project_b / ".specify" / "workflows" / "steps" / "my-step")
+        monkeypatch.chdir(project_b)
+        if command == "add":
+            result = TestWorkflowStepAddCLI._invoke_step_add(
+                project_b,
+                monkeypatch,
+                catalog_version="1.0.0",
+                downloaded_version="1.0.0",
+            )
+            assert result.exit_code == 0, result.output
+            assert StepRegistry(project_b).is_installed("my-step")
+        else:
+            monkeypatch.setattr(StepCatalog, "get_step_info", lambda *_: None)
+            args = ["workflow", "step", command]
+            if command == "info":
+                args.append("my-step")
+            result = CliRunner().invoke(app, args)
+            if command == "info":
+                assert result.exit_code == 1, result.output
+                assert "not found" in result.output
+            else:
+                assert result.exit_code == 0, result.output
+                assert "my-step" not in result.output
+                assert "command" in result.output
+
+    @pytest.mark.parametrize("installed", [False, True])
+    def test_engine_validation_uses_its_project(
+        self, scoped_step_projects, installed
+    ):
+        from specify_cli.workflows import load_custom_steps
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        project_a, project_b = scoped_step_projects
+        if installed:
+            shutil.rmtree(project_a / ".specify" / "workflows" / "steps" / "my-step")
+            load_custom_steps(project_a)
+        else:
+            shutil.rmtree(project_b / ".specify" / "workflows" / "steps" / "my-step")
+        definition = WorkflowDefinition({
+            "schema_version": "1.0",
+            "workflow": {"id": "scoped", "name": "Scoped", "version": "1.0.0"},
+            "steps": [{"id": "custom", "type": "my-step"}],
+        })
+        errors = WorkflowEngine(project_b).validate(definition)
+        if installed:
+            assert errors == []
+        else:
+            assert any("invalid type 'my-step'" in error for error in errors)
+
+    @pytest.mark.parametrize("resume", [False, True])
+    def test_engine_execution_uses_its_project(
+        self, scoped_step_projects, resume
+    ):
+        from specify_cli.workflows import load_custom_steps
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        project_a, project_b = scoped_step_projects
+        engine = WorkflowEngine(project_b)
+        definition = WorkflowDefinition({
+            "schema_version": "1.0",
+            "workflow": {"id": "scoped", "name": "Scoped", "version": "1.0.0"},
+            "steps": [{"id": "custom", "type": "my-step", "pause": resume}],
+        })
+        if resume:
+            load_custom_steps(project_b)
+            paused = engine.execute(definition)
+            load_custom_steps(project_a)
+            state = engine.resume(paused.run_id)
+        else:
+            state = engine.execute(definition)
+        assert state.step_results["custom"]["output"]["project"] == "project-b"
+
+
 class TestLoadCustomSteps:
     """Test dynamic loading of custom step types from the filesystem."""
 

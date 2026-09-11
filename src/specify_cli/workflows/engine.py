@@ -178,11 +178,18 @@ def _dispatch_default_errors(definition: WorkflowDefinition) -> list[str]:
     return errors
 
 
-def validate_workflow(definition: WorkflowDefinition) -> list[str]:
+def validate_workflow(
+    definition: WorkflowDefinition, *, project_root: Path | None = None
+) -> list[str]:
     """Validate a workflow definition and return a list of error messages.
 
-    An empty list means the workflow is valid.
+    An empty list means the workflow is valid. A project root refreshes custom
+    step types from that project; otherwise use the explicitly loaded registry.
     """
+    if project_root is not None:
+        from . import load_custom_steps
+
+        load_custom_steps(project_root)
     errors: list[str] = []
 
     # -- Schema version ---------------------------------------------------
@@ -966,7 +973,7 @@ class WorkflowEngine:
 
     def validate(self, definition: WorkflowDefinition) -> list[str]:
         """Validate a workflow definition."""
-        return validate_workflow(definition)
+        return validate_workflow(definition, project_root=self.project_root)
 
     def execute(
         self,
@@ -1001,7 +1008,10 @@ class WorkflowEngine:
         if dispatch_default_errors:
             raise ValueError(" ".join(dispatch_default_errors))
 
-        from . import STEP_REGISTRY
+        from . import STEP_REGISTRY, load_custom_steps
+
+        load_custom_steps(self.project_root)
+        step_registry = dict(STEP_REGISTRY)
 
         effective_run_id = run_id
         if effective_run_id is None:
@@ -1055,7 +1065,7 @@ class WorkflowEngine:
 
         # Execute steps
         try:
-            self._execute_steps(definition.steps, context, state, STEP_REGISTRY)
+            self._execute_steps(definition.steps, context, state, step_registry)
         except KeyboardInterrupt:
             state.status = RunStatus.PAUSED
             state.append_log({"event": "workflow_interrupted"})
@@ -1125,7 +1135,10 @@ class WorkflowEngine:
             workflow_dir=state.workflow_dir,
         )
 
-        from . import STEP_REGISTRY
+        from . import STEP_REGISTRY, load_custom_steps
+
+        load_custom_steps(self.project_root)
+        step_registry = dict(STEP_REGISTRY)
 
         state.error = None
         state.status = RunStatus.RUNNING
@@ -1138,7 +1151,7 @@ class WorkflowEngine:
 
         try:
             self._execute_steps(
-                remaining_steps, context, state, STEP_REGISTRY,
+                remaining_steps, context, state, step_registry,
                 step_offset=step_offset,
             )
         except KeyboardInterrupt:
