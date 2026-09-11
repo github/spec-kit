@@ -42,13 +42,13 @@ Prints the full inventory of every visible artifact — one row per `(kind, name
     ]
   },
   {
-    "id": "script:create-new-feature",
-    "name": "create-new-feature",
+    "id": "script:setup-plan",
+    "name": "setup-plan",
     "kind": "script",
-    "description": "Create a new feature branch and spec directory.",
+    "description": "Setup implementation plan for a feature.",
     "stack": [
       {
-        "id": "script:create-new-feature",
+        "id": "script:setup-plan",
         "layer": null,
         "sourceId": null,
         "presetId": null,

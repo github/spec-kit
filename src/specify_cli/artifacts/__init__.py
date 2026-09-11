@@ -12,6 +12,7 @@ Everything else in this module is internal machinery. Callers outside
 from __future__ import annotations
 
 import re
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Literal
@@ -28,7 +29,6 @@ from .._identifier import (
     source_id_from_lookup_id,
     validate_component,
 )
-from .._script_variants import canonical_script_name
 
 # ---------------------------------------------------------------------------
 # Public data classes
@@ -846,14 +846,28 @@ class ArtifactCatalog:
 
         resolver = PresetResolver(self.project_root)
         layers_cache: dict[tuple[ArtifactKind, str], list[dict[str, Any]]] = {}
+        core_script_paths = self._selected_core_script_paths()
 
         def _layers_for(kind: ArtifactKind, name: str) -> list[dict[str, Any]]:
             key = (kind, name)
             if key not in layers_cache:
                 try:
-                    layers_cache[key] = resolver.collect_all_layers(name, kind)
+                    layers = resolver.collect_all_layers(name, kind)
                 except (OSError, PresetError) as exc:
                     raise ArtifactResolutionError() from exc
+                core_script = core_script_paths.get(name) if kind == "script" else None
+                if core_script is not None and not any(
+                    layer.get("source") in {"core", "core (bundled)"}
+                    for layer in layers
+                ):
+                    layers.append(
+                        {
+                            "path": core_script,
+                            "source": "core",
+                            "strategy": "replace",
+                        }
+                    )
+                layers_cache[key] = layers
             return layers_cache[key]
 
         def _has_any_replace_layer(layers: list[dict[str, Any]]) -> bool:
@@ -861,7 +875,9 @@ class ArtifactCatalog:
 
         names: set[tuple[ArtifactKind, str]] = set()
         try:
-            for kind, name in self._iter_candidate_artifacts(resolver):
+            for kind, name in self._iter_candidate_artifacts(
+                resolver, core_script_paths
+            ):
                 key = (kind, name)
                 if not _is_valid_artifact_name_component(name, kind):
                     continue
@@ -901,6 +917,7 @@ class ArtifactCatalog:
     def _iter_candidate_artifacts(
         self,
         resolver: Any,
+        core_script_paths: dict[str, Path],
     ) -> Iterable[tuple[ArtifactKind, str]]:
         """Yield candidate ``(kind, name)`` pairs from every resolver tier.
 
@@ -957,7 +974,7 @@ class ArtifactCatalog:
             yield from self._iter_pack_candidates(manifest, ext_dir)
 
         yield from self._iter_project_override_candidates(resolver)
-        yield from self._iter_core_candidates()
+        yield from self._iter_core_candidates(core_script_paths)
 
     @staticmethod
     def _iter_pack_candidates(
@@ -1025,7 +1042,9 @@ class ArtifactCatalog:
                     continue
                 yield "script", entry.stem
 
-    def _iter_core_candidates(self) -> Iterable[tuple[ArtifactKind, str]]:
+    def _iter_core_candidates(
+        self, core_script_paths: dict[str, Path]
+    ) -> Iterable[tuple[ArtifactKind, str]]:
         """Yield candidate names from resolver-compatible core asset paths."""
         from ..extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
         from ..presets import PresetResolver
@@ -1066,7 +1085,6 @@ class ArtifactCatalog:
                     seen_templates.add(entry.stem)
                     yield "template", entry.stem
 
-        seen_scripts: set[str] = set()
         for directory in (
             _project_core_asset_root(self.project_root, "scripts"),
             _locate_shared_asset_dir("scripts"),
@@ -1074,19 +1092,78 @@ class ArtifactCatalog:
             if directory is None:
                 continue
             for entry in sorted(directory.glob(f"*{_SCRIPT_SUFFIX}"), key=lambda p: p.name):
-                if entry.stem not in seen_scripts:
-                    seen_scripts.add(entry.stem)
-                    yield "script", entry.stem
-            for runtime_dir in sorted(directory.iterdir(), key=lambda p: p.name):
-                if not runtime_dir.is_dir():
+                yield "script", entry.stem
+        yield from (("script", name) for name in sorted(core_script_paths))
+
+    def _selected_core_script_paths(self) -> dict[str, Path]:
+        """Return built-in scripts selected by the project's existing runtime policy."""
+        from .._init_options import load_init_options
+        from ..agents import CommandRegistrar
+        from ..integrations.base import IntegrationBase
+
+        command_dirs = tuple(
+            directory
+            for directory in (
+                _project_core_asset_root(self.project_root, "commands"),
+                _locate_shared_asset_dir("commands"),
+            )
+            if directory is not None
+        )
+        script_dirs = tuple(
+            directory
+            for directory in (
+                _project_core_asset_root(self.project_root, "scripts"),
+                _locate_shared_asset_dir("scripts"),
+            )
+            if directory is not None
+        )
+        requested = load_init_options(self.project_root).get("script")
+        selected: dict[str, Path] = {}
+
+        for command_dir in command_dirs:
+            for template_path in sorted(command_dir.glob("*.md"), key=lambda p: p.name):
+                try:
+                    content = template_path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
                     continue
-                for entry in sorted(runtime_dir.iterdir(), key=lambda p: p.name):
-                    if not entry.is_file():
-                        continue
-                    name = canonical_script_name(entry)
-                    if name is not None and name not in seen_scripts:
-                        seen_scripts.add(name)
-                        yield "script", name
+                frontmatter, _body = CommandRegistrar.parse_frontmatter(content)
+                scripts = frontmatter.get("scripts", {})
+                if not isinstance(scripts, dict):
+                    continue
+                script_commands = {
+                    key: value
+                    for key, value in scripts.items()
+                    if isinstance(key, str) and isinstance(value, str) and value.strip()
+                }
+                if not script_commands:
+                    continue
+                try:
+                    variant = IntegrationBase.select_script_variant(
+                        requested, script_commands
+                    )
+                    tokens = shlex.split(script_commands[variant], posix=True)
+                except (KeyError, ValueError):
+                    continue
+                if not tokens:
+                    continue
+
+                relative = Path(tokens[0])
+                if relative.parts and relative.parts[0] == "scripts":
+                    relative = Path(*relative.parts[1:])
+                path = next(
+                    (
+                        script_dir / relative
+                        for script_dir in script_dirs
+                        if (script_dir / relative).is_file()
+                    ),
+                    None,
+                )
+                if path is None:
+                    continue
+                name = path.stem.replace("_", "-") if variant == "py" else path.stem
+                selected.setdefault(name, path)
+
+        return selected
 
     def _describe_layer(
         self,

@@ -99,26 +99,69 @@ class TestListArtifactsContract:
         ids = [r.id for r in rows]
         assert len(ids) == len(set(ids))
 
-    def test_core_script_variants_have_one_resolvable_logical_name(
-        self, spec_kit_project: Path
+    @pytest.mark.parametrize(
+        ("requested", "runtime_dir"),
+        [("sh", "bash"), ("ps", "powershell"), ("py", "python")],
+    )
+    def test_core_scripts_follow_existing_project_runtime_selection(
+        self, spec_kit_project: Path, requested: str, runtime_dir: str
     ):
+        (spec_kit_project / ".specify" / "init-options.json").write_text(
+            json.dumps({"script": requested}),
+            encoding="utf-8",
+        )
         catalog = ArtifactCatalog(spec_kit_project)
         scripts = [row for row in catalog.list_artifacts() if row.kind == "script"]
 
         assert {row.name for row in scripts} == {
             "check-prerequisites",
-            "common",
-            "create-new-feature",
             "resolve-template",
             "setup-plan",
             "setup-tasks",
         }
+        selected_paths = catalog._selected_core_script_paths()
+        assert set(selected_paths) == {row.name for row in scripts}
+        assert all(path.parent.name == runtime_dir for path in selected_paths.values())
         for script in scripts:
             info = catalog.get_artifact_info(script.id)
             assert info["stack"][-1]["layer"] is None
             assert info["stack"][-1]["sourceId"] is None
             assert info["stack"][-1]["lookupId"] is None
             assert info["stack"][-1]["sourcePath"] is None
+
+    def test_core_scripts_reuse_existing_runtime_fallback(
+        self, spec_kit_project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        commands_dir = tmp_path / "commands"
+        scripts_dir = tmp_path / "scripts"
+        commands_dir.mkdir()
+        (scripts_dir / "bash").mkdir(parents=True)
+        (commands_dir / "demo.md").write_text(
+            "---\n"
+            "scripts:\n"
+            "  sh: scripts/bash/demo.sh\n"
+            "---\n",
+            encoding="utf-8",
+        )
+        script = scripts_dir / "bash" / "demo.sh"
+        script.write_text("#!/bin/sh\n", encoding="utf-8")
+        (spec_kit_project / ".specify" / "init-options.json").write_text(
+            json.dumps({"script": "ps"}),
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(
+            "specify_cli.artifacts._locate_shared_asset_dir",
+            lambda subdir: {
+                "commands": commands_dir,
+                "scripts": scripts_dir,
+                "templates": None,
+            }[subdir],
+        )
+
+        assert ArtifactCatalog(spec_kit_project)._selected_core_script_paths() == {
+            "demo": script
+        }
 
     def test_excludes_disabled_and_unusable_manifest_contributions(
         self, spec_kit_project: Path

@@ -42,7 +42,6 @@ from .._identifier import (
     PROJECT_OVERRIDE_LAYER,
     derive_named_id,
 )
-from .._script_variants import script_variant_paths
 from .._init_options import (
     MISSING_INIT_OPTIONS_FILE,
     is_ai_skills_enabled,
@@ -5698,11 +5697,8 @@ class PresetResolver:
                 if core.exists():
                     return core
         elif template_type == "script":
-            core = next(
-                (path for path in script_variant_paths(self.templates_dir / "scripts", template_name) if path.exists()),
-                None,
-            )
-            if core is not None:
+            core = self.templates_dir / "scripts" / f"{template_name}{ext}"
+            if core.exists():
                 return core
 
         # Priority 5: Bundled core_pack (wheel install) or repo-root templates
@@ -6058,11 +6054,8 @@ class PresetResolver:
                     if c.exists():
                         core = c
         elif template_type == "script":
-            c = next(
-                (path for path in script_variant_paths(self.templates_dir / "scripts", template_name) if path.exists()),
-                None,
-            )
-            if c is not None:
+            c = self.templates_dir / "scripts" / f"{template_name}{ext}"
+            if c.exists():
                 core = c
         if core:
             layers.append({
@@ -6095,12 +6088,28 @@ class PresetResolver:
         ``collect_all_layers()`` can locate base layers even when
         ``.specify/templates/`` doesn't contain the core file.
 
-        Directory resolution is delegated to the shared
-        ``_locate_shared_asset_dir`` resolver — the same one the artifact
-        command's core-baseline enumeration and the extensions module's
-        core-command-name discovery use — so all three code paths agree on
-        what "core" means on this machine.
+        Command and template directory resolution is delegated to the shared
+        ``_locate_shared_asset_dir`` resolver. Script lookup preserves the
+        resolver's pre-existing flat ``<name>.sh`` wheel-or-source behavior.
         """
+        if template_type == "script":
+            try:
+                from specify_cli import _locate_core_pack, _repo_root
+            except ImportError:
+                return None
+
+            core_pack = _locate_core_pack()
+            base = (
+                core_pack / "scripts"
+                if core_pack is not None
+                else _repo_root() / "scripts"
+            )
+            for name in self.name_candidates(template_name):
+                candidate = base / f"{name}{ext}"
+                if candidate.exists():
+                    return candidate
+            return None
+
         try:
             from specify_cli._assets import _locate_shared_asset_dir
         except ImportError:
@@ -6110,8 +6119,6 @@ class PresetResolver:
             base = _locate_shared_asset_dir("templates")
         elif template_type == "command":
             base = _locate_shared_asset_dir("commands")
-        elif template_type == "script":
-            base = _locate_shared_asset_dir("scripts")
         else:
             base = None
 
@@ -6119,14 +6126,8 @@ class PresetResolver:
             return None
 
         for name in self.name_candidates(template_name):
-            if template_type == "script":
-                c = next(
-                    (path for path in script_variant_paths(base, name) if path.exists()),
-                    None,
-                )
-            else:
-                c = base / f"{name}.md"
-            if c is not None and c.exists():
+            c = base / f"{name}.md"
+            if c.exists():
                 return c
         return None
 
