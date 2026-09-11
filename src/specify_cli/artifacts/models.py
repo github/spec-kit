@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable, Literal
+from typing import Any, Literal
 
-ArtifactKind = Literal["command", "template", "script"]
+ArtifactKind = Literal["command", "template", "script", "hook"]
 LayerName = Literal["project", "preset", "extension"]
 Strategy = Literal["replace", "wrap", "prepend", "append"]
+HookLayerName = Literal["preset", "extension"]
 
 
 @dataclass(frozen=True)
@@ -65,6 +67,66 @@ class StackLayer:
         }
 
 
+@dataclass(frozen=True)
+class HookArtifact:
+    """One hook row keyed by its event and target command."""
+
+    id: str
+    name: str
+    kind: Literal["hook"]
+    description: str
+    eventName: str
+    targetCommand: str
+    registered: bool
+
+    def to_json_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "kind": self.kind,
+            "description": self.description,
+            "eventName": self.eventName,
+            "targetCommand": self.targetCommand,
+            "registered": self.registered,
+        }
+
+
+@dataclass(frozen=True)
+class HookStackEntry:
+    """One additive hook declaration in a hook artifact stack."""
+
+    id: str
+    layer: HookLayerName
+    sourceId: str
+    presetId: str | None
+    presetName: str | None
+    strategy: Literal["additive"]
+    active: bool
+    hidden: bool
+    manifestPath: str
+    lookupId: str
+    sourcePath: None
+    priority: int
+    optional: bool
+
+    def to_json_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "layer": self.layer,
+            "sourceId": self.sourceId,
+            "presetId": self.presetId,
+            "presetName": self.presetName,
+            "strategy": self.strategy,
+            "active": self.active,
+            "hidden": self.hidden,
+            "manifestPath": self.manifestPath,
+            "lookupId": self.lookupId,
+            "sourcePath": self.sourcePath,
+            "priority": self.priority,
+            "optional": self.optional,
+        }
+
+
 class ArtifactError(Exception):
     """Base class for artifact command errors with stable messages."""
 
@@ -103,6 +165,9 @@ __all__ = [
     "ArtifactKind",
     "ArtifactNotFoundError",
     "ArtifactResolutionError",
+    "HookArtifact",
+    "HookLayerName",
+    "HookStackEntry",
     "LayerName",
     "NotASpecKitProjectError",
     "StackLayer",
