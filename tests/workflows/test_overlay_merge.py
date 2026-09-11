@@ -591,6 +591,40 @@ class TestMergeStepsAncestorConflicts:
         with pytest.raises(ValueError, match="ancestor"):
             merge_steps(base, [_layer(overlay, "project:ov")])
 
+    @pytest.mark.parametrize(
+        "insert_op", ["insert_after", "insert_before"], ids=["after", "before"]
+    )
+    def test_replace_parent_with_trailing_insert_still_conflicts(self, insert_op):
+        """A rescued parent `replace` must still be seen by the conflict guard.
+
+        The guard reads the anchor's fate through `_winning_fate_edit`, the same
+        rule `_traverse_and_apply` uses. Were it to read `anchor_edits[-1]`
+        instead, the trailing insert would be the parent's apparent fate --
+        and `_check_anchor_conflicts` skips inserts, because they leave the
+        ancestor intact -- so this replace-plus-descendant conflict would go
+        undetected and the subtree would be replaced out from under the
+        descendant edit.
+
+        Every other conflict test ends the parent's edits with `replace` or
+        `remove`, so they pass under either rule; only a trailing insert tells
+        the two apart.
+        """
+        parent_id = "if-step"
+        child_id = "then-child"
+        base = [self._if_step(parent_id, child_id)]
+        overlay = Overlay(
+            id="ov",
+            extends="wf",
+            priority=10,
+            edits=[
+                OverlayEdit("replace", parent_id, _step("new-parent")),
+                OverlayEdit(insert_op, parent_id, _step("beside-parent")),
+                OverlayEdit("remove", child_id),
+            ],
+        )
+        with pytest.raises(ValueError, match="ancestor"):
+            merge_steps(base, [_layer(overlay, "project:ov")])
+
     def test_conflict_across_multiple_overlays_raises(self):
         """Conflict is detected even when conflicting anchors come from different overlays."""
         parent_id = "if-step"
@@ -751,7 +785,23 @@ class TestMergeStepsSameOverlayFateEdits:
     `test_replace_and_remove_with_trailing_insert_is_unchanged` pin.
     """
 
-    def test_replace_then_insert_after_same_overlay_keeps_replacement(self):
+    @pytest.mark.parametrize(
+        "insert_op,expected_ids",
+        [
+            ("insert_after", ["implement", "lint", "tail"]),
+            ("insert_before", ["lint", "implement", "tail"]),
+        ],
+        ids=["after", "before"],
+    )
+    def test_replace_then_insert_same_overlay_keeps_replacement(
+        self, insert_op, expected_ids
+    ):
+        """The rescue covers both insert operations, not just `insert_after`.
+
+        `_winning_fate_edit` treats `insert_after` and `insert_before` alike, so
+        both are pinned here; the pre-existing `insert_before` tests use
+        separate layers and never reach this same-overlay branch.
+        """
         base = [_step("implement"), _step("tail")]
         overlay = Overlay(
             id="ov",
@@ -762,15 +812,15 @@ class TestMergeStepsSameOverlayFateEdits:
                     "replace", "implement",
                     {**_step("implement"), "command": "custom.impl"},
                 ),
-                OverlayEdit("insert_after", "implement", _step("lint")),
+                OverlayEdit(insert_op, "implement", _step("lint")),
             ],
         )
 
         steps, _ = merge_steps(base, [_layer(overlay, "project:ov")])
 
+        assert [s["id"] for s in steps] == expected_ids
         by_id = {s["id"]: s for s in steps}
         assert by_id["implement"]["command"] == "custom.impl"
-        assert "lint" in by_id
 
     def test_replace_and_insert_order_inside_one_overlay_is_irrelevant(self):
         """Both declaration orders must produce the same result."""
