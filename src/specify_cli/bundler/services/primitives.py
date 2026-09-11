@@ -293,7 +293,11 @@ class _PresetKindManager:
         zip_path = catalog.download_pack(component.id)
         try:
             self._manager.install_from_zip(
-                zip_path, speckit_version, priority, **({"force": True} if force else {})
+                zip_path,
+                speckit_version,
+                priority,
+                catalog_name=info.get("_catalog_name"),
+                **({"force": True} if force else {}),
             )
         finally:
             with contextlib.suppress(Exception):
@@ -434,7 +438,11 @@ class _ExtensionKindManager:
         zip_path = catalog.download_extension(component.id)
         try:
             manifest = self._manager.install_from_zip(
-                zip_path, speckit_version, priority=priority, force=force
+                zip_path,
+                speckit_version,
+                priority=priority,
+                force=force,
+                catalog_name=info.get("_catalog_name"),
             )
             self._manager.scaffold_config(manifest.id)
         finally:
