@@ -21,6 +21,7 @@ from .. import BundlerError
 from ..lib.yamlio import load_json, loads_json
 from ..models.catalog import CatalogSource
 from ..models.manifest import ComponentRef
+from ..models.snapshot import ComponentSnapshot
 
 COMMUNITY_CATALOG_URL = (
     "https://raw.githubusercontent.com/github/spec-kit/main/"
@@ -222,6 +223,16 @@ class DefaultPrimitiveInstaller:
     def is_installed(self, project_root: Path, component: ComponentRef) -> bool:
         manager = self._manager_for(component, project_root)
         return manager.is_installed(component)
+
+    def snapshot(
+        self, project_root: Path, component: ComponentRef
+    ) -> ComponentSnapshot | None:
+        manager = self._manager_for(component, project_root)
+        return manager.snapshot(component)
+
+    def restore(self, project_root: Path, snapshot: ComponentSnapshot) -> None:
+        manager = self._manager_for(snapshot.component, project_root)
+        manager.restore(snapshot)
 
     def install(self, project_root: Path, component: ComponentRef) -> None:
         manager = self._manager_for(component, project_root)

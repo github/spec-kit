@@ -989,7 +989,7 @@ def _install_workflow_package(
         )
         raise typer.Exit(1)
 
-    errors = validate_workflow(definition)
+    errors = validate_workflow(definition, project_root=project_root)
     if errors:
         console.print("[red]Error:[/red] Workflow validation failed:")
         for error in errors:
@@ -1318,7 +1318,6 @@ def workflow_run(
     ),
 ):
     """Run a workflow from an installed ID or local YAML path."""
-    from . import load_custom_steps
     from .engine import WorkflowEngine
 
     source_path = Path(source).expanduser()
@@ -1334,7 +1333,6 @@ def workflow_run(
     else:
         project_root = _require_specify_project()
 
-    load_custom_steps(project_root)
     engine = WorkflowEngine(project_root)
     if not json_output:
         # Escape the literal bracket (\[) so Rich renders `[<step id>]` instead
@@ -1467,11 +1465,9 @@ def workflow_resume(
     ),
 ):
     """Resume a paused or failed workflow run."""
-    from . import load_custom_steps
     from .engine import RunState, WorkflowEngine
 
     project_root = _require_specify_project()
-    load_custom_steps(project_root)
     engine = WorkflowEngine(project_root)
     if not json_output:
         # Escape the literal bracket (\[) so Rich renders `[<step id>]` instead
@@ -1781,7 +1777,7 @@ def workflow_add(
             raise typer.Exit(1)
 
         from .engine import validate_workflow
-        errors = validate_workflow(definition)
+        errors = validate_workflow(definition, project_root=project_root)
         if errors:
             console.print("[red]Error:[/red] Workflow validation failed:")
             for err in errors:
@@ -2411,7 +2407,7 @@ def _install_workflow_from_catalog(
         raise typer.Exit(1)
 
     from .engine import validate_workflow
-    errors = validate_workflow(definition)
+    errors = validate_workflow(definition, project_root=project_root)
     if errors:
         _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
         console.print("[red]Error:[/red] Downloaded workflow validation failed:")
@@ -3054,7 +3050,7 @@ def workflow_catalog_remove(
 @workflow_step_app.command("list")
 def workflow_step_list():
     """List installed step types (built-in and custom)."""
-    from . import STEP_REGISTRY
+    from . import BUILTIN_STEP_TYPES
     from .catalog import StepRegistry
 
     project_root = _require_specify_project()
@@ -3068,7 +3064,7 @@ def workflow_step_list():
 
     console.print("\n[bold cyan]Installed Step Types:[/bold cyan]\n")
 
-    built_in = sorted(k for k in STEP_REGISTRY if k not in installed)
+    built_in = sorted(k for k in BUILTIN_STEP_TYPES if k not in installed)
     if built_in:
         console.print("  [bold]Built-in:[/bold]")
         for key in built_in:
@@ -3178,16 +3174,52 @@ def workflow_step_add(
     step_id: str = typer.Argument(..., help="Step type ID from catalog"),
 ):
     """Install a custom step type from the step catalog."""
-    from .catalog import StepCatalog, StepCatalogError, StepRegistry, StepValidationError
+    _install_step_from_catalog(_require_specify_project(), step_id)
 
-    project_root = _require_specify_project()
+
+def _step_versions_match(actual: object, expected: object) -> bool:
+    from packaging.version import InvalidVersion, Version
+
+    if not (
+        isinstance(actual, str) and actual.strip()
+        and isinstance(expected, str) and expected.strip()
+    ):
+        return False
+    try:
+        return Version(actual) == Version(expected)
+    except InvalidVersion:
+        return actual == expected
+
+
+def _install_step_from_catalog(
+    project_root: Path, step_id: str, *, expected_version: str | None = None
+) -> None:
+    """Resolve, download, and validate a step in one optionally pinned operation."""
+    from .catalog import StepCatalog, StepCatalogError, StepRegistry, StepValidationError
 
     catalog = StepCatalog(project_root)
     try:
         info = catalog.get_step_info(step_id)
     except StepCatalogError as exc:
+        if expected_version is not None:
+            raise StepValidationError(
+                f"Cannot verify pinned version for step '{step_id}': {exc}"
+            ) from exc
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
+
+    if expected_version is not None:
+        advertised = info.get("version") if info else None
+        if not isinstance(advertised, str) or not advertised.strip():
+            raise StepValidationError(
+                f"Cannot verify pinned version for step '{step_id}': "
+                "the catalog does not advertise a usable version."
+            )
+        if not _step_versions_match(advertised, expected_version):
+            raise StepValidationError(
+                f"Step '{step_id}' is pinned to version {expected_version} "
+                f"in the bundle manifest, but the resolved version is {advertised}."
+            )
 
     if not info:
         console.print(f"[red]Error:[/red] Step type '{step_id}' not found in catalog")
@@ -3201,8 +3233,8 @@ def workflow_step_add(
         raise typer.Exit(1)
 
     # Reject step IDs that collide with built-in step types
-    from . import STEP_REGISTRY as _step_reg
-    if step_id in _step_reg:
+    from . import BUILTIN_STEP_TYPES
+    if step_id in BUILTIN_STEP_TYPES:
         console.print(
             f"[red]Error:[/red] Step type '{step_id}' conflicts with a built-in step type"
         )
@@ -3407,6 +3439,26 @@ def workflow_step_add(
                 f"catalog ID ({step_id!r})"
             )
             raise typer.Exit(1)
+
+        catalog_version = info.get("version")
+        downloaded_version = step_meta.get("version")
+        if "version" in info:
+            if not _step_versions_match(downloaded_version, catalog_version):
+                console.print(
+                    f"[red]Error:[/red] step.yml version "
+                    f"({_escape_markup(repr(downloaded_version))}) does not match "
+                    f"the catalog version ({_escape_markup(repr(catalog_version))}). "
+                    "The catalog entry may be stale or misconfigured."
+                )
+                raise typer.Exit(1)
+
+        if expected_version is not None and not _step_versions_match(
+            downloaded_version, expected_version
+        ):
+            raise StepValidationError(
+                f"Step '{step_id}' is pinned to version {expected_version} "
+                f"in the bundle manifest, but the downloaded version is {downloaded_version!r}."
+            )
 
         # Write the two required files.
         try:
@@ -3662,7 +3714,7 @@ def workflow_step_info(
     step_id: str = typer.Argument(..., help="Step type ID"),
 ):
     """Show details for a step type."""
-    from . import STEP_REGISTRY
+    from . import BUILTIN_STEP_TYPES
     from .catalog import StepCatalog, StepCatalogError, StepRegistry
 
     project_root = _require_specify_project()
@@ -3672,8 +3724,7 @@ def workflow_step_info(
     installed_meta = registry.get(step_id)
 
     # Check if it's a built-in
-    builtin_step = STEP_REGISTRY.get(step_id)
-    is_builtin = builtin_step is not None and not installed_meta
+    is_builtin = step_id in BUILTIN_STEP_TYPES and not installed_meta
 
     if is_builtin:
         console.print(f"\n[bold cyan]{safe_step_id}[/bold cyan] [dim](built-in)[/dim]")

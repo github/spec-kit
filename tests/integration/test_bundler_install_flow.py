@@ -64,6 +64,25 @@ def test_partial_failure_rolls_back_and_records_nothing(tmp_path: Path):
     assert load_records(tmp_path) == []
 
 
+def test_record_save_failure_rolls_back_new_components(tmp_path: Path, monkeypatch):
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+
+    def fail_save(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(
+        "specify_cli.bundler.services.installer.save_records", fail_save
+    )
+
+    with pytest.raises(BundlerError, match="disk full"):
+        install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    assert installer.installed == set()
+    assert load_records(tmp_path) == []
+
+
 def test_remove_is_non_collateral(tmp_path: Path):
     make_project(tmp_path)
     installer = FakeInstaller()
@@ -153,20 +172,15 @@ def test_remove_partial_failure_message_reflects_partial_state(tmp_path: Path):
     assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
 
 
-def test_remove_bundler_error_from_installer_after_partial_removal_reports_partial_state(
+def test_remove_bundler_error_restores_completed_removals(
     tmp_path: Path,
 ):
-    """If the primitive installer itself raises BundlerError (not a raw/
-    unexpected exception) after an earlier component in the same bundle was
-    already removed, the surfaced message must still carry the same
-    partial-removal detail as the generic-exception path -- a bare
-    ``except BundlerError: raise`` would re-raise the installer's original
-    message verbatim with no mention that the project may now be partially
-    uninstalled."""
+    """Expected primitive errors must restore earlier removals too."""
     make_project(tmp_path)
     manifest = BundleManifest.from_dict(valid_manifest_dict())
     installer = FakeInstaller()
     install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+    original_components = dict(installer.components)
 
     real_remove = installer.remove
     calls = {"n": 0}
@@ -185,7 +199,8 @@ def test_remove_bundler_error_from_installer_after_partial_removal_reports_parti
     message = str(exc_info.value)
     assert "no changes were recorded" not in message.lower()
     assert "kind manager refused removal" in message
-    assert "partially uninstalled" in message.lower()
+    assert "rolled back" in message.lower()
+    assert installer.components == original_components
     assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
 
 
@@ -215,25 +230,19 @@ def test_remove_bundler_error_from_installer_with_zero_removed_reports_no_change
     assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
 
 
-def test_remove_zero_completed_removals_still_cautions_about_partial_changes(
+def test_remove_restores_partially_removed_first_component(
     tmp_path: Path,
 ):
-    """`result.uninstalled` only records a component after its `remove()`
-    call returns successfully. If the very first `remove()` call itself
-    raises after already deleting some files, zero completed removals are
-    recorded even though the project may already be partially uninstalled --
-    the zero-count message must not claim "No components were removed" as
-    an unqualified fact; it must caution that the failing component may
-    have made partial changes before raising."""
+    """An attempted removal is recoverable even if it raises after mutation."""
     make_project(tmp_path)
     manifest = BundleManifest.from_dict(valid_manifest_dict())
     installer = FakeInstaller()
     install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+    original_components = dict(installer.components)
+    remove = installer.remove
 
     def boom(project_root, component):
-        # Simulates a remove() that deletes some files before raising --
-        # from the caller's perspective this component was never recorded
-        # as completed, but disk state may already be partially changed.
+        remove(project_root, component)
         raise OSError("disk full partway through removal")
 
     with pytest.MonkeyPatch.context() as mp:
@@ -242,17 +251,17 @@ def test_remove_zero_completed_removals_still_cautions_about_partial_changes(
             remove_bundle(tmp_path, "demo-bundle", installer)
 
     message = str(exc_info.value)
-    assert "no components were removed" in message.lower()
-    assert "partial" in message.lower()
-    assert "partially uninstalled" in message.lower()
+    assert "rolled back" in message.lower()
+    assert installer.components == original_components
     assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
 
 
-def test_remove_record_save_failure_reports_partial_state(tmp_path: Path):
+def test_remove_record_save_failure_restores_removed_components(tmp_path: Path):
     make_project(tmp_path)
     manifest = BundleManifest.from_dict(valid_manifest_dict())
     installer = FakeInstaller()
     install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+    original_components = dict(installer.components)
     record_file = records_path(tmp_path)
     original_record = record_file.read_bytes()
 
@@ -271,10 +280,42 @@ def test_remove_record_save_failure_reports_partial_state(tmp_path: Path):
 
     message = str(exc_info.value)
     assert "disk full" in message
-    assert "partially uninstalled" in message.lower()
-    assert installer.installed == set()
+    assert "rolled back" in message.lower()
+    assert installer.components == original_components
     assert record_file.read_bytes() == original_record
     assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
+
+
+def test_remove_reports_incomplete_recovery_and_restores_other_components(
+    tmp_path, monkeypatch
+):
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+    original_components = dict(installer.components)
+    original_record = records_path(tmp_path).read_bytes()
+    restore = installer.restore
+
+    def fail_one_restore(project, snapshot):
+        if snapshot.component.id == "preset-a":
+            raise OSError("restoration denied")
+        restore(project, snapshot)
+
+    def fail_save(*_args):
+        raise BundlerError("record write failed")
+
+    monkeypatch.setattr(installer, "restore", fail_one_restore)
+    monkeypatch.setattr(
+        "specify_cli.bundler.services.installer.save_records", fail_save
+    )
+    with pytest.raises(
+        BundlerError, match="record write failed.*Rollback was incomplete"
+    ):
+        remove_bundle(tmp_path, "demo-bundle", installer)
+    original_components.pop(("presets", "preset-a"))
+    assert installer.components == original_components
+    assert records_path(tmp_path).read_bytes() == original_record
 
 
 def test_remove_record_save_failure_without_remove_attempt_is_not_partial(
@@ -491,6 +532,140 @@ def test_update_keeps_component_still_needed_by_sibling_bundle(tmp_path: Path):
     assert ("extensions", "ext-b") not in {
         (c.kind, c.id) for c in rec.contributed_components
     }
+
+
+def test_update_record_save_failure_restores_refreshed_and_dropped_components(
+    tmp_path: Path, monkeypatch
+):
+    make_project(tmp_path)
+
+    class VersionedInstaller(FakeInstaller):
+        def __init__(self):
+            super().__init__()
+            self.versions: dict[tuple[str, str], str | None] = {}
+
+        def install(self, project_root, component):
+            super().install(project_root, component)
+            self.versions[self._key(component)] = component.version
+
+        def refresh(self, project_root, component):
+            super().refresh(project_root, component)
+            self.versions[self._key(component)] = component.version
+
+        def remove(self, project_root, component):
+            super().remove(project_root, component)
+            self.versions.pop(self._key(component), None)
+
+    installer = VersionedInstaller()
+    man_v1 = _bundle("demo", ["ext-a", "ext-b"])
+    install_bundle(tmp_path, _plan(man_v1), installer, manifest=man_v1)
+    original_record = records_path(tmp_path).read_bytes()
+
+    man_v2 = _bundle("demo", ["ext-a"], version="2.0.0")
+
+    def fail_save(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(
+        "specify_cli.bundler.services.installer.save_records", fail_save
+    )
+
+    with pytest.raises(BundlerError, match="disk full"):
+        install_bundle(
+            tmp_path,
+            _plan(man_v2),
+            installer,
+            manifest=man_v2,
+            refresh=True,
+        )
+
+    assert installer.installed == {
+        ("extensions", "ext-a"),
+        ("extensions", "ext-b"),
+    }
+    assert installer.versions == {
+        ("extensions", "ext-a"): "1.0.0",
+        ("extensions", "ext-b"): "1.0.0",
+    }
+    assert records_path(tmp_path).read_bytes() == original_record
+
+
+def test_update_rollback_uses_installed_snapshot_not_shared_bundle_pin(
+    tmp_path: Path, monkeypatch
+):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+
+    man_a = _bundle("a", ["ext-a"], version="1.0.0")
+    install_bundle(tmp_path, _plan(man_a), installer, manifest=man_a)
+
+    man_b_v2 = _bundle("b", ["ext-a", "ext-b"], version="2.0.0")
+    install_bundle(tmp_path, _plan(man_b_v2), installer, manifest=man_b_v2)
+    original_record = records_path(tmp_path).read_bytes()
+
+    assert installer.components[("extensions", "ext-a")].version == "1.0.0"
+    assert next(
+        record for record in load_records(tmp_path) if record.bundle_id == "b"
+    ).contributed_components[0].version == "2.0.0"
+
+    man_b_v3 = _bundle("b", ["ext-a"], version="3.0.0")
+
+    def fail_save(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(
+        "specify_cli.bundler.services.installer.save_records", fail_save
+    )
+
+    with pytest.raises(BundlerError, match="disk full"):
+        install_bundle(
+            tmp_path,
+            _plan(man_b_v3),
+            installer,
+            manifest=man_b_v3,
+            refresh=True,
+        )
+
+    assert installer.components[("extensions", "ext-a")].version == "1.0.0"
+    assert installer.components[("extensions", "ext-b")].version == "2.0.0"
+    assert records_path(tmp_path).read_bytes() == original_record
+
+
+def test_bundler_error_reports_incomplete_rollback(tmp_path: Path, monkeypatch):
+    make_project(tmp_path)
+
+    class FailingRollbackInstaller(FakeInstaller):
+        def refresh(self, project_root, component):
+            if component.version == "1.0.0":
+                raise BundlerError("old artifact unavailable")
+            super().refresh(project_root, component)
+
+    installer = FailingRollbackInstaller()
+    man_v1 = _bundle("demo", ["ext-a"], version="1.0.0")
+    install_bundle(tmp_path, _plan(man_v1), installer, manifest=man_v1)
+
+    def fail_save(*_args, **_kwargs):
+        raise BundlerError("record write failed")
+
+    monkeypatch.setattr(
+        "specify_cli.bundler.services.installer.save_records", fail_save
+    )
+
+    man_v2 = _bundle("demo", ["ext-a"], version="2.0.0")
+    with pytest.raises(
+        BundlerError,
+        match=(
+            "record write failed.*Rollback was incomplete.*"
+            "project may be inconsistent"
+        ),
+    ):
+        install_bundle(
+            tmp_path,
+            _plan(man_v2),
+            installer,
+            manifest=man_v2,
+            refresh=True,
+        )
 
 
 def test_install_result_changed_reports_uninstalled():

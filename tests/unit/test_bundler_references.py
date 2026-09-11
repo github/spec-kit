@@ -49,11 +49,11 @@ def test_builtin_step_type_resolves(tmp_path: Path):
 def test_community_step_is_not_treated_as_bundled(tmp_path: Path):
     """A community step loaded for one project must not resolve for another.
 
-    `load_custom_steps` adds project-installed ids to the process-global
-    `STEP_REGISTRY` and never removes them, so checking `STEP_REGISTRY` here
-    would accept project A's community step as "bundled" while validating
-    project B. `BUILTIN_STEP_TYPES` is snapshotted before any custom step can
-    load, which is why the check uses it instead.
+    `load_custom_steps` adds the most recently scanned project's ids to the
+    process-global `STEP_REGISTRY`, so checking `STEP_REGISTRY` here could
+    accept another project's community step as "bundled".
+    `BUILTIN_STEP_TYPES` is snapshotted before any custom step can load, which
+    is why the check uses it instead.
     """
     from specify_cli.workflows import (
         BUILTIN_STEP_TYPES,

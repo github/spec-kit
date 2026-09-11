@@ -1293,15 +1293,13 @@ class CommandRegistrar:
                     continue
         return results
 
-    def unregister_commands(
+    def iter_command_artifacts(
         self, registered_commands: Dict[str, List[str]], project_root: Path
-    ) -> None:
-        """Remove previously registered command files from agent directories.
+    ) -> Iterable[tuple[Path, Path]]:
+        """Yield command artifact paths and their output roots, including absent files.
 
-        When a ``legacy_dir`` is configured, files are removed from
-        *both* the canonical and the legacy directory so that orphaned
-        commands left behind after an ``integration upgrade`` are
-        cleaned up as well.
+        Canonical and existing legacy locations are both yielded so backup
+        and removal use the same path mapping and containment checks.
 
         Args:
             registered_commands: Dict mapping agent names to command name lists
@@ -1344,25 +1342,32 @@ class CommandRegistrar:
                             self._ensure_inside(cmd_file, target_dir)
                         except ValueError:
                             continue
-                        if cmd_file.exists() or cmd_file.is_symlink():
-                            cmd_file.unlink()
-                            # For SKILL.md agents each command lives in its own
-                            # subdirectory (e.g. .agents/skills/speckit-ext-cmd/
-                            # SKILL.md).  Remove the parent dir when it becomes
-                            # empty to avoid orphaned directories.
-                            parent = cmd_file.parent
-                            if parent != target_dir and parent.exists():
-                                try:
-                                    parent.rmdir()
-                                except OSError:
-                                    pass
+                        yield cmd_file, target_dir
 
                 if agent_name == "copilot":
-                    prompt_file = (
-                        project_root / ".github" / "prompts" / f"{cmd_name}.prompt.md"
-                    )
-                    if prompt_file.exists():
-                        prompt_file.unlink()
+                    prompts_dir = project_root / ".github" / "prompts"
+                    prompt_file = prompts_dir / f"{cmd_name}.prompt.md"
+                    try:
+                        self._ensure_inside(prompt_file, prompts_dir)
+                    except ValueError:
+                        continue
+                    yield prompt_file, prompts_dir
+
+    def unregister_commands(
+        self, registered_commands: Dict[str, List[str]], project_root: Path
+    ) -> None:
+        """Remove recorded command outputs from canonical and legacy locations."""
+        for cmd_file, target_dir in self.iter_command_artifacts(
+            registered_commands, project_root
+        ):
+            if cmd_file.exists() or cmd_file.is_symlink():
+                cmd_file.unlink()
+                parent = cmd_file.parent
+                if parent != target_dir and parent.exists():
+                    try:
+                        parent.rmdir()
+                    except OSError:
+                        pass
 
 
 # Populate AGENT_CONFIGS after class definition.

@@ -11,12 +11,16 @@ write (FR-018, SC partial-failure-stop).
 """
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Protocol
 
 from .. import BundlerError
 from ..models.manifest import BundleManifest, ComponentRef
+from ..models.snapshot import ComponentSnapshot
 from ..models.records import (
     InstalledBundleRecord,
     components_still_needed,
@@ -35,9 +39,21 @@ class PrimitiveInstaller(Protocol):
 
     def is_installed(self, project_root: Path, component: ComponentRef) -> bool: ...
 
+    def snapshot(
+        self, project_root: Path, component: ComponentRef
+    ) -> ComponentSnapshot | None: ...
+
+    def restore(self, project_root: Path, snapshot: ComponentSnapshot) -> None: ...
+
     def install(self, project_root: Path, component: ComponentRef) -> None: ...
 
     def remove(self, project_root: Path, component: ComponentRef) -> None: ...
+
+
+@dataclass
+class _RollbackAction:
+    undo: Callable[[], None]
+    restore_kind: str | None = None
 
 
 @dataclass
@@ -65,11 +81,9 @@ def install_bundle(
 ) -> InstallResult:
     """Execute *plan*, recording provenance. Idempotent, with bounded rollback.
 
-    Atomicity is scoped, not global: on failure only the components newly
-    installed during *this* call are rolled back, and the provenance record is
-    written solely on full success (a failure records nothing). Components that
-    were already installed beforehand — including those re-applied when *refresh*
-    is True — are never rolled back.
+    Atomicity is scoped, not global: completed component mutations are reversed
+    on failure, and the provenance record is written solely on full success.
+    Rollback is best-effort because primitive restoration can itself fail.
 
     When *refresh* is True (used by ``specify bundle update``), components that
     are already installed are re-applied through the primitive machinery so they
@@ -108,9 +122,9 @@ def install_bundle(
         if r.bundle_id != plan.bundle_id
         for c in r.contributed_components
     }
-
     contributed: list[ComponentRef] = []
-    done: list[ComponentRef] = []
+    rollback_actions: list[_RollbackAction] = []
+    snapshots = ExitStack()
     try:
         for component in plan.components:
             key = (component.kind, component.id)
@@ -122,6 +136,15 @@ def install_bundle(
                 # does not own (FR-022).
                 owned = key in prior_ours or key in other_tracked
                 if refresh and owned:
+                    prior_state = _snapshot_component(
+                        project_root, installer, component, snapshots
+                    )
+                    rollback_actions.append(
+                        _RollbackAction(
+                            partial(installer.restore, project_root, prior_state),
+                            component.kind,
+                        )
+                    )
                     _refresh_component(project_root, installer, component)
                     result.refreshed.append(component)
                 else:
@@ -130,7 +153,9 @@ def install_bundle(
                     contributed.append(component)
                 continue
             installer.install(project_root, component)
-            done.append(component)
+            rollback_actions.append(
+                _RollbackAction(partial(installer.remove, project_root, component))
+            )
             result.installed.append(component)
             contributed.append(component)
 
@@ -153,27 +178,46 @@ def install_bundle(
                 if key in still_needed:
                     continue
                 if installer.is_installed(project_root, component):
+                    prior_state = _snapshot_component(
+                        project_root, installer, component, snapshots
+                    )
+                    rollback_actions.append(
+                        _RollbackAction(
+                            partial(installer.restore, project_root, prior_state),
+                            component.kind,
+                        )
+                    )
                     installer.remove(project_root, component)
                     result.uninstalled.append(component)
-    except BundlerError:
-        _rollback(project_root, installer, done)
-        raise
-    except Exception as exc:  # noqa: BLE001
-        _rollback(project_root, installer, done)
-        raise BundlerError(
-            f"Failed to install bundle '{plan.bundle_id}': {exc}. "
-            "No changes were recorded."
-        ) from exc
 
-    record = InstalledBundleRecord.create(
-        bundle_id=plan.bundle_id,
-        version=plan.version,
-        components=contributed,
-        # Preserve the original install time across refresh/update so
-        # ``bundle list`` keeps reporting when the bundle was first installed.
-        installed_at=existing.installed_at if existing is not None else None,
-    )
-    save_records(project_root, upsert_record(records, record))
+        record = InstalledBundleRecord.create(
+            bundle_id=plan.bundle_id,
+            version=plan.version,
+            components=contributed,
+            # Preserve the original install time across refresh/update so
+            # ``bundle list`` keeps reporting when the bundle was first installed.
+            installed_at=existing.installed_at if existing is not None else None,
+        )
+        save_records(project_root, upsert_record(records, record))
+    except Exception as exc:  # noqa: BLE001
+        rollback_complete = _rollback(rollback_actions)
+        if isinstance(exc, BundlerError) and rollback_complete:
+            raise
+        detail = (
+            "Completed changes were rolled back and no provenance record was written."
+            if rollback_complete
+            else "Rollback was incomplete and no provenance record was written; "
+            "the project may be inconsistent."
+        )
+        message = (
+            str(exc)
+            if isinstance(exc, BundlerError)
+            else f"Failed to install bundle '{plan.bundle_id}': {exc}"
+        )
+        raise BundlerError(f"{message}. {detail}") from exc
+    finally:
+        snapshots.close()
+
     return result
 
 
@@ -190,7 +234,8 @@ def remove_bundle(
 
     still_needed = components_still_needed(records, exclude_bundle_id=bundle_id)
     result = InstallResult(bundle_id=bundle_id)
-    remove_attempted = False
+    rollback_actions: list[_RollbackAction] = []
+    snapshots = ExitStack()
 
     try:
         for component in target.contributed_components:
@@ -199,22 +244,29 @@ def remove_bundle(
                 result.skipped.append(component)
                 continue
             if installer.is_installed(project_root, component):
-                remove_attempted = True
+                prior_state = _snapshot_component(
+                    project_root, installer, component, snapshots
+                )
+                # A primitive may fail after deleting only part of its payload.
+                rollback_actions.append(
+                    _RollbackAction(
+                        partial(installer.restore, project_root, prior_state),
+                        component.kind,
+                    )
+                )
                 installer.remove(project_root, component)
                 result.uninstalled.append(component)
         save_records(project_root, remove_record(records, bundle_id))
     except Exception as exc:  # noqa: BLE001
-        if result.uninstalled:
+        rollback_complete = _rollback(rollback_actions)
+        if not rollback_complete:
             detail = (
-                f"{len(result.uninstalled)} component(s) were already removed "
-                "before this failure; the bundle record was left unchanged, "
-                "so the project may be partially uninstalled."
+                "Rollback was incomplete; the bundle record was left unchanged, "
+                "so the project may be inconsistent or partially uninstalled."
             )
-        elif remove_attempted:
+        elif rollback_actions:
             detail = (
-                "No components were removed, but the failing component may "
-                "have made partial changes before raising, so the project "
-                "may be partially uninstalled."
+                "Removal changes were rolled back; the bundle record was left unchanged."
             )
         else:
             detail = (
@@ -224,6 +276,8 @@ def remove_bundle(
         raise BundlerError(
             f"Failed to remove bundle '{bundle_id}': {exc}. {detail}"
         ) from exc
+    finally:
+        snapshots.close()
 
     return result
 
@@ -245,13 +299,53 @@ def _refresh_component(
         installer.install(project_root, component)
 
 
-def _rollback(
+def _snapshot_component(
     project_root: Path,
     installer: PrimitiveInstaller,
-    done: list[ComponentRef],
-) -> None:
-    for component in reversed(done):
+    component: ComponentRef,
+    snapshots: ExitStack,
+) -> ComponentSnapshot:
+    """Capture installed files and metadata before a destructive update."""
+    try:
+        snapshot = installer.snapshot(project_root, component)
+    except BundlerError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise BundlerError(
+            f"Cannot safely update {component.label()}: failed to snapshot "
+            f"the installed component: {exc}"
+        ) from exc
+
+    if snapshot is None:
+        raise BundlerError(
+            f"Cannot safely update {component.label()}: installed state "
+            "could not be snapshotted."
+        )
+    snapshots.callback(snapshot.close)
+    captured = snapshot.component
+    if (captured.kind, captured.id) != (component.kind, component.id):
+        raise BundlerError(
+            f"Cannot safely update {component.label()}: snapshot returned "
+            f"the wrong component ({captured.label()})."
+        )
+    if not isinstance(captured.version, str) or not captured.version.strip():
+        raise BundlerError(
+            f"Cannot safely update {component.label()}: installed version "
+            "could not be determined for rollback."
+        )
+    return snapshot
+
+
+def _rollback(actions: list[_RollbackAction]) -> bool:
+    complete = True
+    # Workflow reinstallation validates custom step types. Restore those
+    # providers first, retaining reverse mutation order within each group.
+    ordered = sorted(
+        reversed(actions), key=lambda action: action.restore_kind == "workflows"
+    )
+    for action in ordered:
         try:
-            installer.remove(project_root, component)
+            action.undo()
         except Exception:  # noqa: BLE001 - best-effort rollback
-            continue
+            complete = False
+    return complete

@@ -43,7 +43,7 @@ specify bundle install <bundle_id | path>
 
 Installs a bundle's full component set through each primitive's machinery. The argument may be a catalog bundle id, or a local path to a built `.zip` artifact, a bundle directory, or a `bundle.yml` file; local sources install directly without consulting the catalog stack.
 
-If the current directory is not yet a Spec Kit project, `install` initializes one first so a fresh checkout reaches a working state in a single command. `--integration` selects the integration when initializing a new project, and confirms the target when a bundle pins a specific integration but the project's active integration can't be determined (missing or unreadable `.specify/integration.json`). It does **not** override an already-initialized project's active integration: if a bundle targets a different integration than the project's, install aborts with no changes. Integration-agnostic bundles inherit the project's active integration. Installation is idempotent — components already present are skipped. On failure, no provenance record is written (a failed install records nothing), and the components installed during that run are removed on a best-effort basis — removal errors are swallowed, so partial on-disk state may remain.
+If the current directory is not yet a Spec Kit project, `install` initializes one first so a fresh checkout reaches a working state in a single command. `--integration` selects the integration when initializing a new project, and confirms the target when a bundle pins a specific integration but the project's active integration can't be determined (missing or unreadable `.specify/integration.json`). It does **not** override an already-initialized project's active integration: if a bundle targets a different integration than the project's, install aborts with no changes. Integration-agnostic bundles inherit the project's active integration. Installation is idempotent — components already present are skipped. On failure, no provenance record is written, and completed new installations are removed on a best-effort basis. Incomplete rollback is reported explicitly; partial on-disk state may remain if a primitive fails or recovery itself fails.
 
 ## Update Bundles
 
@@ -59,6 +59,10 @@ specify bundle update [<bundle_id>]
 
 Re-resolves a bundle and **refreshes** its components through each primitive's update path, bringing already-installed components up to the bundle's newly pinned versions while preserving primitive-level overrides (such as preset priority). Provide a bundle id, or use `--all` to update everything installed.
 
+Before refreshing or removing an owned component, the bundler snapshots its installed files and registry metadata. If a component operation or provenance write fails, it attempts to restore those local snapshots, including disabled state, user configuration, extension hook settings and pre-existing configuration backups, and generated command files and skill resources for current and previously active integrations, without downloading an older version. Previously absent outputs and configuration backups are also restored to absence. Custom steps are restored before dependent workflows. Recovery is best-effort and reports incomplete restoration; these temporary snapshots cover failures during the command, not process crashes or unrelated project files.
+
+If temporary snapshot cleanup fails, a warning identifies the path for manual removal without changing the committed result or masking the original rollback error.
+
 > **Pin enforcement is install-time only.** Idempotency checks are id-based, not version-aware: a component that is already present is skipped during `install` without comparing its on-disk version to the manifest pin. Version pins are therefore guaranteed to be applied only when the bundler actually installs a component for the first time or refreshes it. Run `specify bundle update` to re-apply every owned component at its pinned version.
 
 ## Remove a Bundle
@@ -68,6 +72,8 @@ specify bundle remove <bundle_id>
 ```
 
 Uninstalls only the components this bundle contributed, leaving any component that another installed bundle still needs in place (no collateral removals).
+
+If removal or the final provenance write fails, the bundler attempts to restore removed components from local snapshots and leaves the bundle record unchanged. An incomplete recovery is reported explicitly.
 
 ## List Installed Bundles
 

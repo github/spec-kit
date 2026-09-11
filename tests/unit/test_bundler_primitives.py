@@ -120,6 +120,169 @@ def test_workflow_version_mismatch_refuses(tmp_path: Path, monkeypatch):
         manager.install(component)
 
 
+@pytest.fixture
+def step_package(tmp_path, monkeypatch):
+    import io
+    import yaml
+
+    from specify_cli.authentication import http
+    from specify_cli.workflows.catalog import StepCatalog
+    from tests.bundler_helpers import make_project
+
+    make_project(tmp_path)
+    state = {
+        "catalog": {
+            "id": "step-a",
+            "name": "Step A",
+            "version": "0.3.0",
+            "url": "https://example.com/step.yml",
+            "init_url": "https://example.com/__init__.py",
+        },
+        "downloaded_version": "0.3.0",
+    }
+    monkeypatch.setattr(
+        StepCatalog, "get_step_info", lambda *_: state["catalog"]
+    )
+
+    class Response(io.BytesIO):
+        def __init__(self, url, body):
+            super().__init__(body)
+            self.url = url
+
+        def geturl(self):
+            return self.url
+
+        def getheader(self, name):
+            return None
+
+    def download(url, **kwargs):
+        bodies = {
+            "https://example.com/step.yml": yaml.safe_dump({
+                "step": {
+                    "type_key": "step-a",
+                    "version": state["downloaded_version"],
+                },
+            }).encode(),
+            "https://example.com/__init__.py": b"# step package\n",
+        }
+        return Response(url, bodies[url])
+
+    monkeypatch.setattr(http, "open_url", download)
+    return state
+
+
+def test_step_pin_cannot_be_bypassed_by_catalog_reresolution(
+    tmp_path, monkeypatch, step_package
+):
+    from specify_cli.workflows.catalog import StepCatalog, StepRegistry
+
+    original = dict(step_package["catalog"])
+    changed = {**original, "version": "9.9.9"}
+    resolutions = iter([original, changed])
+    monkeypatch.setattr(
+        StepCatalog, "get_step_info", lambda *_: next(resolutions)
+    )
+    step_package["downloaded_version"] = "9.9.9"
+    manager = primitive_manager("steps", tmp_path)
+    with pytest.raises(BundlerError):
+        manager.install(ComponentRef(kind="steps", id="step-a", version="0.3.0"))
+    assert not StepRegistry(tmp_path).is_installed("step-a")
+    assert not (tmp_path / ".specify/workflows/steps/step-a").exists()
+
+
+def test_step_pin_is_checked_against_downloaded_package(
+    tmp_path, monkeypatch, step_package
+):
+    from specify_cli.authentication import http
+    from specify_cli.workflows.catalog import StepRegistry
+
+    download = http.open_url
+    step_package["downloaded_version"] = "9.9.9"
+
+    def change_catalog_during_download(url, **kwargs):
+        step_package["catalog"]["version"] = "9.9.9"
+        return download(url, **kwargs)
+
+    monkeypatch.setattr(http, "open_url", change_catalog_during_download)
+    manager = primitive_manager("steps", tmp_path)
+    with pytest.raises(BundlerError):
+        manager.install(ComponentRef(kind="steps", id="step-a", version="0.3.0"))
+    assert not StepRegistry(tmp_path).is_installed("step-a")
+    assert not (tmp_path / ".specify/workflows/steps/step-a").exists()
+
+
+def test_step_version_mismatch_refuses(tmp_path: Path, step_package):
+    from specify_cli.workflows.catalog import StepRegistry
+
+    step_package["catalog"]["version"] = "9.9.9"
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    component = ComponentRef(kind="steps", id="step-a", version="0.3.0")
+
+    with pytest.raises(BundlerError, match="pinned to version 0.3.0"):
+        manager.install(component)
+    assert not StepRegistry(tmp_path).is_installed("step-a")
+
+
+@pytest.mark.parametrize(
+    ("catalog_version", "pinned_version"),
+    [("0.3.0", "0.3.0"), ("v0.3.0", "0.3.0"), ("release-a", "release-a")],
+)
+def test_step_version_match_installs(
+    tmp_path: Path, step_package, catalog_version, pinned_version
+):
+    from specify_cli.workflows.catalog import StepRegistry
+
+    step_package["catalog"]["version"] = catalog_version
+    step_package["downloaded_version"] = pinned_version
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    manager.install(
+        ComponentRef(kind="steps", id="step-a", version=pinned_version)
+    )
+
+    assert StepRegistry(tmp_path).get("step-a")["version"] == catalog_version
+    assert (tmp_path / ".specify/workflows/steps/step-a/step.yml").is_file()
+
+
+@pytest.mark.parametrize(
+    "catalog_info",
+    [
+        None,
+        {},
+        {"version": None},
+        {"version": ""},
+        {"version": False},
+        {"version": 0},
+    ],
+)
+def test_step_pin_requires_catalog_version(
+    tmp_path: Path, step_package, catalog_info
+):
+    from specify_cli.workflows.catalog import StepRegistry
+
+    step_package["catalog"] = catalog_info
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    component = ComponentRef(kind="steps", id="step-a", version="0.3.0")
+
+    with pytest.raises(BundlerError, match="Cannot verify pinned version"):
+        manager.install(component)
+    assert not StepRegistry(tmp_path).is_installed("step-a")
+
+
+def test_step_pin_refuses_catalog_lookup_failure(tmp_path: Path, monkeypatch, step_package):
+    from specify_cli.workflows.catalog import StepCatalog, StepCatalogError, StepRegistry
+
+    def fail_lookup(_self, _step_id):
+        raise StepCatalogError("catalog unavailable")
+
+    monkeypatch.setattr(StepCatalog, "get_step_info", fail_lookup)
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    component = ComponentRef(kind="steps", id="step-a", version="0.3.0")
+
+    with pytest.raises(BundlerError, match="catalog unavailable"):
+        manager.install(component)
+    assert not StepRegistry(tmp_path).is_installed("step-a")
+
+
 def test_preset_install_preserves_explicit_zero_priority(tmp_path: Path, monkeypatch):
     import specify_cli._assets as assets
 
@@ -463,6 +626,42 @@ def test_default_installer_refresh_dispatches_to_kind_manager(tmp_path: Path, mo
     assert force_values == [True], "DefaultPrimitiveInstaller.refresh() must use force=True"
 
 
+def test_default_installer_snapshots_installed_step(tmp_path: Path):
+    from specify_cli.workflows.catalog import StepRegistry
+
+    registry = StepRegistry(tmp_path)
+    registry.add(
+        "my-step",
+        {
+            "name": "My Step",
+            "version": "1.2.3",
+            "type_key": "my-step",
+        },
+    )
+    installed = registry.steps_dir / "my-step"
+    installed.mkdir()
+    (installed / "step.yml").write_text(
+        "step:\n  type_key: my-step\n  version: '1.2.3'\n", encoding="utf-8"
+    )
+
+    installer = DefaultPrimitiveInstaller(allow_network=False)
+    snapshot = installer.snapshot(
+        tmp_path, _component("steps", "my-step")
+    )
+
+    try:
+        assert snapshot.component == ComponentRef(
+            kind="steps", id="my-step", version="1.2.3"
+        )
+        assert snapshot.metadata == registry.get("my-step")
+        assert (snapshot.directory / "step.yml").read_bytes() == (
+            installed / "step.yml"
+        ).read_bytes()
+    finally:
+        snapshot.close()
+    assert not snapshot.directory.exists()
+
+
 def test_refresh_succeeds_and_passes_force_true(tmp_path: Path, monkeypatch):
     """Regression: bundle update (refresh=True) of an already-installed extension
     must succeed and pass force=True to install_from_directory."""
@@ -471,14 +670,15 @@ def test_refresh_succeeds_and_passes_force_true(tmp_path: Path, monkeypatch):
     import specify_cli._assets as assets
     from specify_cli.extensions import ExtensionManager
 
-    bundled = _write_manifest(tmp_path / "ext", "extension", "1.0.0")
+    bundled = tmp_path / "ext"
+    _write_extension_with_config(bundled)
     monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: bundled)
-    # Simulate refresh succeeding (force=True removes the duplicate-install guard)
     force_seen: list = []
+    install_from_directory = ExtensionManager.install_from_directory
+
     def _fake_install_from_directory(self, *a, **k):
         force_seen.append(k.get("force", False))
-        self.registry.add("my-ext", {"version": "1.0.0"})
-        return SimpleNamespace(id="my-ext")
+        return install_from_directory(self, *a, **k)
 
     monkeypatch.setattr(
         ExtensionManager, "install_from_directory", _fake_install_from_directory
@@ -543,7 +743,7 @@ def test_step_refresh_restores_registry_entry_when_reinstall_fails(
     """
     import json
 
-    import specify_cli
+    from specify_cli.workflows import _commands
     from specify_cli.workflows.catalog import StepRegistry
 
     steps_dir = tmp_path / ".specify" / "workflows" / "steps"
@@ -578,10 +778,10 @@ def test_step_refresh_restores_registry_entry_when_reinstall_fails(
 
     # Removal succeeds (real code path); only the re-install fails, which is
     # what a catalog 404 / size-limit / type_key mismatch produces.
-    def _boom(step_id, *args, **kwargs):
+    def _boom(project_root, step_id, **kwargs):
         raise BundlerError(f"Failed to install step '{step_id}'.")
 
-    monkeypatch.setattr(specify_cli, "workflow_step_add", _boom)
+    monkeypatch.setattr(_commands, "_install_step_from_catalog", _boom)
 
     manager = primitive_manager("steps", tmp_path, allow_network=True)
     with pytest.raises(BundlerError):

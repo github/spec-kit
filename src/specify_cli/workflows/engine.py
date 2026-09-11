@@ -28,7 +28,7 @@ from ..integration_state import (
     default_integration_key,
     try_read_integration_json,
 )
-from .base import RunStatus, StepContext, StepResult, StepStatus
+from .base import RunStatus, StepBase, StepContext, StepResult, StepStatus
 
 
 # -- Workflow Definition --------------------------------------------------
@@ -133,11 +133,14 @@ _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$")
 _RECOGNIZED_REQUIRES_KEYS = frozenset({"speckit_version", "integrations"})
 
 # Valid step types (matching STEP_REGISTRY keys)
-def _get_valid_step_types() -> set[str]:
+def _get_valid_step_types(registry: dict[str, StepBase] | None = None) -> set[str]:
     """Return valid step types from the registry, with a built-in fallback."""
-    from . import STEP_REGISTRY
-    if STEP_REGISTRY:
-        return set(STEP_REGISTRY.keys())
+    if registry is None:
+        from . import get_step_registry
+
+        registry = get_step_registry()
+    if registry:
+        return set(registry)
     return {
         "command", "shell", "prompt", "gate", "if", "init", "slot",
         "switch", "while", "do-while", "fan-out", "fan-in",
@@ -178,11 +181,17 @@ def _dispatch_default_errors(definition: WorkflowDefinition) -> list[str]:
     return errors
 
 
-def validate_workflow(definition: WorkflowDefinition) -> list[str]:
+def validate_workflow(
+    definition: WorkflowDefinition, *, project_root: Path | None = None
+) -> list[str]:
     """Validate a workflow definition and return a list of error messages.
 
-    An empty list means the workflow is valid.
+    An empty list means the workflow is valid. A project root refreshes custom
+    step types from that project; otherwise use the explicitly loaded registry.
     """
+    from . import get_step_registry
+
+    step_registry = get_step_registry(project_root)
     errors: list[str] = []
 
     # -- Schema version ---------------------------------------------------
@@ -360,7 +369,9 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
     input_defs: dict[str, Any] | None = (
         dict(definition.inputs) if isinstance(definition.inputs, dict) else None
     )
-    _validate_steps(definition.steps, seen_ids, errors, input_defs)
+    _validate_steps(
+        definition.steps, seen_ids, errors, input_defs, step_registry=step_registry
+    )
 
     return errors
 
@@ -371,6 +382,7 @@ def _validate_steps(
     errors: list[str],
     input_defs: dict[str, Any] | None = None,
     inside_fan_out: bool = False,
+    step_registry: dict[str, StepBase] | None = None,
 ) -> None:
     """Recursively validate a list of steps.
 
@@ -379,7 +391,11 @@ def _validate_steps(
     threaded through nested control-flow steps so gate verdict bindings can be
     rejected anywhere inside a fan-out template.
     """
-    from . import STEP_REGISTRY
+    if step_registry is None:
+        from . import get_step_registry
+
+        step_registry = get_step_registry()
+    valid_step_types = _get_valid_step_types(step_registry)
 
     for step_config in steps:
         if not isinstance(step_config, dict):
@@ -420,14 +436,14 @@ def _validate_steps(
                 f"{type(step_type).__name__} ({step_type!r})."
             )
             continue
-        if step_type not in _get_valid_step_types():
+        if step_type not in valid_step_types:
             errors.append(
                 f"Step {step_id!r} has invalid type {step_type!r}."
             )
             continue
 
         # Delegate to step-specific validation
-        step_impl = STEP_REGISTRY.get(step_type)
+        step_impl = step_registry.get(step_type)
         if step_impl:
             step_errors = step_impl.validate(step_config)
             errors.extend(step_errors)
@@ -546,6 +562,7 @@ def _validate_steps(
                     errors,
                     input_defs,
                     inside_fan_out=inside_fan_out,
+                    step_registry=step_registry,
                 )
 
         # Validate switch cases
@@ -559,6 +576,7 @@ def _validate_steps(
                         errors,
                         input_defs,
                         inside_fan_out=inside_fan_out,
+                        step_registry=step_registry,
                     )
 
         # Validate switch default
@@ -570,6 +588,7 @@ def _validate_steps(
                 errors,
                 input_defs,
                 inside_fan_out=inside_fan_out,
+                step_registry=step_registry,
             )
 
         # Validate fan-out nested step (template — not added to seen_ids
@@ -583,6 +602,7 @@ def _validate_steps(
                 fan_errors,
                 input_defs,
                 inside_fan_out=True,
+                step_registry=step_registry,
             )
             errors.extend(fan_errors)
 
@@ -966,7 +986,7 @@ class WorkflowEngine:
 
     def validate(self, definition: WorkflowDefinition) -> list[str]:
         """Validate a workflow definition."""
-        return validate_workflow(definition)
+        return validate_workflow(definition, project_root=self.project_root)
 
     def execute(
         self,
@@ -1001,7 +1021,9 @@ class WorkflowEngine:
         if dispatch_default_errors:
             raise ValueError(" ".join(dispatch_default_errors))
 
-        from . import STEP_REGISTRY
+        from . import get_step_registry
+
+        step_registry = get_step_registry(self.project_root)
 
         effective_run_id = run_id
         if effective_run_id is None:
@@ -1055,7 +1077,7 @@ class WorkflowEngine:
 
         # Execute steps
         try:
-            self._execute_steps(definition.steps, context, state, STEP_REGISTRY)
+            self._execute_steps(definition.steps, context, state, step_registry)
         except KeyboardInterrupt:
             state.status = RunStatus.PAUSED
             state.append_log({"event": "workflow_interrupted"})
@@ -1125,7 +1147,9 @@ class WorkflowEngine:
             workflow_dir=state.workflow_dir,
         )
 
-        from . import STEP_REGISTRY
+        from . import get_step_registry
+
+        step_registry = get_step_registry(self.project_root)
 
         state.error = None
         state.status = RunStatus.RUNNING
@@ -1138,7 +1162,7 @@ class WorkflowEngine:
 
         try:
             self._execute_steps(
-                remaining_steps, context, state, STEP_REGISTRY,
+                remaining_steps, context, state, step_registry,
                 step_offset=step_offset,
             )
         except KeyboardInterrupt:

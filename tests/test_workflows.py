@@ -9695,8 +9695,241 @@ class TestStepCatalog:
 
 # ===== Load Custom Steps Tests =====
 
+@pytest.fixture
+def scoped_step_projects(tmp_path):
+    from specify_cli.workflows import load_custom_steps
+
+    roots = [tmp_path / "project-a", tmp_path / "project-b"]
+    for root in roots:
+        step_dir = root / ".specify" / "workflows" / "steps" / "my-step"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: my-step\n  version: '1.0.0'\n",
+            encoding="utf-8",
+        )
+        (step_dir / "__init__.py").write_text(
+            "from specify_cli.workflows.base import StepBase, StepResult, StepStatus\n"
+            "class ScopedStep(StepBase):\n"
+            "    type_key = 'my-step'\n"
+            "    def execute(self, config, context):\n"
+            "        status = StepStatus.COMPLETED\n"
+            "        if config.get('pause') and not context.is_resume:\n"
+            "            status = StepStatus.PAUSED\n"
+            f"        return StepResult(status=status, output={{'project': {root.name!r}}})\n",
+            encoding="utf-8",
+        )
+    load_custom_steps(roots[0])
+    yield roots
+    load_custom_steps(tmp_path / "empty")
+
+
+class TestProjectScopedStepConsumers:
+    @pytest.mark.parametrize("package", [False, True])
+    def test_workflow_install_rejects_another_projects_step(
+        self, scoped_step_projects, monkeypatch, package
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        _, project_b = scoped_step_projects
+        shutil.rmtree(project_b / ".specify" / "workflows" / "steps" / "my-step")
+        source_dir = project_b.parent / "workflow-package"
+        source_dir.mkdir()
+        source = source_dir / "workflow.yml"
+        source.write_text(yaml.safe_dump({
+            "schema_version": "1.0",
+            "workflow": {"id": "scoped", "name": "Scoped", "version": "1.0.0"},
+            "steps": [{"id": "custom", "type": "my-step"}],
+        }), encoding="utf-8")
+        monkeypatch.chdir(project_b)
+        result = CliRunner().invoke(
+            app, ["workflow", "add", str(source_dir if package else source)]
+        )
+        assert result.exit_code == 1, result.output
+        assert "invalid type 'my-step'" in result.output
+        assert not WorkflowRegistry(project_b).is_installed("scoped")
+
+    @pytest.mark.parametrize("command", ["list", "info", "add"])
+    def test_cli_does_not_treat_another_projects_step_as_builtin(
+        self, scoped_step_projects, monkeypatch, command
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepCatalog, StepRegistry
+
+        _, project_b = scoped_step_projects
+        shutil.rmtree(project_b / ".specify" / "workflows" / "steps" / "my-step")
+        monkeypatch.chdir(project_b)
+        if command == "add":
+            result = TestWorkflowStepAddCLI._invoke_step_add(
+                project_b,
+                monkeypatch,
+                catalog_version="1.0.0",
+                downloaded_version="1.0.0",
+            )
+            assert result.exit_code == 0, result.output
+            assert StepRegistry(project_b).is_installed("my-step")
+        else:
+            monkeypatch.setattr(StepCatalog, "get_step_info", lambda *_: None)
+            args = ["workflow", "step", command]
+            if command == "info":
+                args.append("my-step")
+            result = CliRunner().invoke(app, args)
+            if command == "info":
+                assert result.exit_code == 1, result.output
+                assert "not found" in result.output
+            else:
+                assert result.exit_code == 0, result.output
+                assert "my-step" not in result.output
+                assert "command" in result.output
+
+    @pytest.mark.parametrize("installed", [False, True])
+    def test_engine_validation_uses_its_project(
+        self, scoped_step_projects, installed
+    ):
+        from specify_cli.workflows import load_custom_steps
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        project_a, project_b = scoped_step_projects
+        if installed:
+            shutil.rmtree(project_a / ".specify" / "workflows" / "steps" / "my-step")
+            load_custom_steps(project_a)
+        else:
+            shutil.rmtree(project_b / ".specify" / "workflows" / "steps" / "my-step")
+        definition = WorkflowDefinition({
+            "schema_version": "1.0",
+            "workflow": {"id": "scoped", "name": "Scoped", "version": "1.0.0"},
+            "steps": [{"id": "custom", "type": "my-step"}],
+        })
+        errors = WorkflowEngine(project_b).validate(definition)
+        if installed:
+            assert errors == []
+        else:
+            assert any("invalid type 'my-step'" in error for error in errors)
+
+    @pytest.mark.parametrize("resume", [False, True])
+    def test_engine_execution_uses_its_project(
+        self, scoped_step_projects, resume
+    ):
+        from specify_cli.workflows import load_custom_steps
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        project_a, project_b = scoped_step_projects
+        engine = WorkflowEngine(project_b)
+        definition = WorkflowDefinition({
+            "schema_version": "1.0",
+            "workflow": {"id": "scoped", "name": "Scoped", "version": "1.0.0"},
+            "steps": [{"id": "custom", "type": "my-step", "pause": resume}],
+        })
+        if resume:
+            load_custom_steps(project_b)
+            paused = engine.execute(definition)
+            load_custom_steps(project_a)
+            state = engine.resume(paused.run_id)
+        else:
+            state = engine.execute(definition)
+        assert state.step_results["custom"]["output"]["project"] == "project-b"
+
+
 class TestLoadCustomSteps:
     """Test dynamic loading of custom step types from the filesystem."""
+
+    def test_loading_another_project_replaces_custom_step_modules(self, tmp_path):
+        from specify_cli.workflows import STEP_REGISTRY, load_custom_steps
+
+        type_key = "project-scoped-step"
+
+        def write_step(project_root, marker):
+            step_dir = (
+                project_root
+                / ".specify"
+                / "workflows"
+                / "steps"
+                / type_key
+            )
+            step_dir.mkdir(parents=True)
+            (step_dir / "step.yml").write_text(
+                f"step:\n  type_key: {type_key}\n", encoding="utf-8"
+            )
+            (step_dir / "helper.py").write_text(
+                f"MARKER = {marker!r}\n", encoding="utf-8"
+            )
+            (step_dir / "__init__.py").write_text(
+                f"""
+from specify_cli.workflows.base import StepBase, StepResult
+from .helper import MARKER
+
+class ProjectScopedStep(StepBase):
+    type_key = {type_key!r}
+    marker = MARKER
+
+    def execute(self, config, context):
+        return StepResult()
+""",
+                encoding="utf-8",
+            )
+
+        project_a = tmp_path / "project-a"
+        project_b = tmp_path / "project-b"
+        write_step(project_a, "project-a")
+        write_step(project_b, "project-b")
+
+        try:
+            assert load_custom_steps(project_a) == [type_key]
+            assert STEP_REGISTRY[type_key].marker == "project-a"
+
+            assert load_custom_steps(project_b) == [type_key]
+            assert STEP_REGISTRY[type_key].marker == "project-b"
+        finally:
+            STEP_REGISTRY.pop(type_key, None)
+
+    def test_reloading_same_project_ignores_stale_bytecode(self, tmp_path):
+        import os
+
+        from specify_cli.workflows import STEP_REGISTRY, load_custom_steps
+
+        type_key = "reload-step"
+        step_dir = (
+            tmp_path / ".specify" / "workflows" / "steps" / type_key
+        )
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            f"step:\n  type_key: {type_key}\n", encoding="utf-8"
+        )
+        helper = step_dir / "helper.py"
+        helper.write_text("MARKER = 'version-a'\n", encoding="utf-8")
+        (step_dir / "__init__.py").write_text(
+            f"""
+from specify_cli.workflows.base import StepBase, StepResult
+from .helper import MARKER
+
+class ReloadStep(StepBase):
+    type_key = {type_key!r}
+    marker = MARKER
+
+    def execute(self, config, context):
+        return StepResult()
+""",
+            encoding="utf-8",
+        )
+
+        try:
+            assert load_custom_steps(tmp_path) == [type_key]
+            assert STEP_REGISTRY[type_key].marker == "version-a"
+            original_stat = helper.stat()
+            helper.write_text("MARKER = 'version-b'\n", encoding="utf-8")
+            os.utime(
+                helper,
+                ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
+            )
+
+            assert load_custom_steps(tmp_path) == [type_key]
+            assert STEP_REGISTRY[type_key].marker == "version-b"
+        finally:
+            STEP_REGISTRY.pop(type_key, None)
 
     def test_empty_steps_dir(self, project_dir):
         from specify_cli.workflows import load_custom_steps
@@ -9818,7 +10051,6 @@ class TestCustomStep(StepBase):
 
     def test_module_name_sanitized_for_hyphenated_type_key(self, project_dir):
         """type_key values with hyphens produce valid Python module identifiers."""
-        import hashlib
         import sys
         from specify_cli.workflows import load_custom_steps, STEP_REGISTRY
 
@@ -9843,15 +10075,12 @@ class HyphenStep(StepBase):
         loaded = load_custom_steps(project_dir)
         assert "my-hyphen-step" in loaded
         assert "my-hyphen-step" in STEP_REGISTRY
-        # Synthetic module name must be a valid identifier (hyphens → underscores)
-        # and include a collision-resistant hash suffix.
-        key_hash = hashlib.sha256(b"my-hyphen-step").hexdigest()[:8]
-        module_name = f"_speckit_custom_step_my_hyphen_step_{key_hash}"
+        module_name = type(STEP_REGISTRY["my-hyphen-step"]).__module__
+        assert module_name.isidentifier()
         assert module_name in sys.modules
 
     def test_package_relative_import(self, project_dir):
         """Steps can use relative imports to access sibling modules."""
-        import hashlib
         import sys
         from specify_cli.workflows import load_custom_steps, STEP_REGISTRY
 
@@ -9881,26 +10110,31 @@ class PkgStep(StepBase):
         loaded = load_custom_steps(project_dir)
         assert "pkg-step" in loaded
         assert "pkg-step" in STEP_REGISTRY
-        # Verify the relative import actually resolved; module name includes hash suffix.
-        key_hash = hashlib.sha256(b"pkg-step").hexdigest()[:8]
-        module_name = f"_speckit_custom_step_pkg_step_{key_hash}"
+        module_name = type(STEP_REGISTRY["pkg-step"]).__module__
         assert module_name in sys.modules
         assert sys.modules[module_name].PkgStep.helper == "hello"
 
     def test_module_name_collision_resistance(self, project_dir):
         """'a-b' and 'a_b' produce different module names despite the same sanitized form."""
-        import hashlib
+        from specify_cli.workflows import STEP_REGISTRY, load_custom_steps
 
-        # Simulate the module name generation for two type_keys that sanitize the same way
-        def make_module_name(type_key: str) -> str:
-            import re
-            safe_key = re.sub(r"[^A-Za-z0-9_]", "_", type_key)
-            key_hash = hashlib.sha256(type_key.encode()).hexdigest()[:8]
-            return f"_speckit_custom_step_{safe_key}_{key_hash}"
-
-        name_a = make_module_name("a-b")
-        name_b = make_module_name("a_b")
-        assert name_a != name_b, "Module names for 'a-b' and 'a_b' must differ"
+        for key in ("a-b", "a_b"):
+            package = project_dir / ".specify/workflows/steps" / key
+            package.mkdir(parents=True)
+            (package / "step.yml").write_text(
+                f"step:\n  type_key: {key}\n", encoding="utf-8"
+            )
+            (package / "__init__.py").write_text(
+                "from specify_cli.workflows.base import StepBase, StepResult\n"
+                "class Custom(StepBase):\n"
+                f"    type_key = {key!r}\n"
+                "    def execute(self, config, context): return StepResult()\n",
+                encoding="utf-8",
+            )
+        assert set(load_custom_steps(project_dir)) == {"a-b", "a_b"}
+        first = type(STEP_REGISTRY["a-b"]).__module__
+        second = type(STEP_REGISTRY["a_b"]).__module__
+        assert first != second
 
 
 # ===== CLI Step Remove Tests =====
@@ -10771,6 +11005,142 @@ class TestWorkflowStepRichMarkup:
 
 
 class TestWorkflowStepAddCLI:
+    @staticmethod
+    def _invoke_step_add(
+        project_dir,
+        monkeypatch,
+        *,
+        catalog_version,
+        downloaded_version,
+        include_downloaded_version=True,
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.authentication import http as auth_http
+        from specify_cli.workflows.catalog import StepCatalog
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(
+            StepCatalog,
+            "get_step_info",
+            lambda self, step_id: {
+                "id": step_id,
+                "name": "Test Step",
+                "version": catalog_version,
+                "url": "https://example.com/step.yml",
+                "init_url": "https://example.com/__init__.py",
+                "_install_allowed": True,
+            },
+        )
+        step_metadata = {"type_key": "my-step"}
+        if include_downloaded_version:
+            step_metadata["version"] = downloaded_version
+        bodies = {
+            "https://example.com/step.yml": yaml.safe_dump(
+                {"step": step_metadata}
+            ).encode(),
+            "https://example.com/__init__.py": b"# custom step\n",
+        }
+
+        class _FakeResponse:
+            def __init__(self, url):
+                self.url = url
+                self.body = bodies[url]
+                self.offset = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def getheader(self, name):
+                return None
+
+            def geturl(self):
+                return self.url
+
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self.body) - self.offset
+                chunk = self.body[self.offset : self.offset + size]
+                self.offset += len(chunk)
+                return chunk
+
+        monkeypatch.setattr(
+            auth_http,
+            "open_url",
+            lambda url, timeout=30, redirect_validator=None: _FakeResponse(url),
+        )
+
+        return CliRunner().invoke(
+            app, ["workflow", "step", "add", "my-step"]
+        )
+
+    @pytest.mark.parametrize(
+        ("catalog_version", "downloaded_version", "include_downloaded_version"),
+        [
+            ("1.0.0", "2.0.0", True),
+            ("1.0.0", 0, True),
+            ("1.0.0", False, True),
+            ("1.0.0", "", True),
+            ("1.0.0", None, True),
+            ("release-a", " release-a ", True),
+            ("1.0.0", None, False),
+            ("None", None, False),
+        ],
+    )
+    def test_add_rejects_step_yml_version_mismatch(
+        self,
+        project_dir,
+        monkeypatch,
+        catalog_version,
+        downloaded_version,
+        include_downloaded_version,
+    ):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        result = self._invoke_step_add(
+            project_dir,
+            monkeypatch,
+            catalog_version=catalog_version,
+            downloaded_version=downloaded_version,
+            include_downloaded_version=include_downloaded_version,
+        )
+
+        assert result.exit_code != 0
+        assert "does not match the catalog version" in result.output
+        assert not StepRegistry(project_dir).is_installed("my-step")
+        assert not (
+            project_dir / ".specify" / "workflows" / "steps" / "my-step"
+        ).exists()
+
+    @pytest.mark.parametrize(
+        ("catalog_version", "downloaded_version"),
+        [
+            ("1.0.0", "1.0.0"),
+            ("1.0.0", "v1.0.0"),
+        ],
+    )
+    def test_add_accepts_matching_step_yml_version(
+        self, project_dir, monkeypatch, catalog_version, downloaded_version
+    ):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        result = self._invoke_step_add(
+            project_dir,
+            monkeypatch,
+            catalog_version=catalog_version,
+            downloaded_version=downloaded_version,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert StepRegistry(project_dir).is_installed("my-step")
+        assert (
+            project_dir / ".specify" / "workflows" / "steps" / "my-step"
+        ).is_dir()
+
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_add_rejects_symlinked_steps_base_dir(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
