@@ -276,10 +276,9 @@ class TestExtensionManifest:
 
         The fallback set happens to equal the real command stems today, so an
         equality check against the live tree cannot tell a working loader apart
-        from a dead one. Point the shared ``_locate_shared_asset_dir`` resolver
-        at a temp tree with *different* command names: the old off-by-one path
-        math read nothing and returned the baked-in fallback; the fixed loader
-        returns the temp stems.
+        from a dead one. Point ``_repo_root`` at a temp tree with *different*
+        command names: the old off-by-one path math read nothing and returned
+        the baked-in fallback; the fixed loader returns the temp stems.
         """
         from specify_cli.extensions import (
             _load_core_command_names,
@@ -295,16 +294,33 @@ class TestExtensionManifest:
             (commands / "notacommand.txt").write_text("skip me", encoding="utf-8")
 
             # No wheel bundle in this scenario; force the source-checkout path.
-            monkeypatch.setattr(
-                ext,
-                "_locate_shared_asset_dir",
-                lambda subdir: commands if subdir == "commands" else None,
-            )
+            monkeypatch.setattr(ext, "_locate_core_pack", lambda: None)
+            monkeypatch.setattr(ext, "_repo_root", lambda: Path(tmp))
 
             result = _load_core_command_names()
 
         assert result == {"widget", "gadget"}
         assert result != _FALLBACK_CORE_COMMAND_NAMES
+
+    def test_load_core_command_names_prefers_wheel_core_pack(self, monkeypatch):
+        """When a wheel ``core_pack`` bundle exists, discovery reads
+        ``core_pack/commands`` (the force-include target) ahead of the source
+        tree (#3274)."""
+        from specify_cli.extensions import _load_core_command_names
+        import specify_cli.extensions as ext
+
+        with tempfile.TemporaryDirectory() as tmp:
+            core_pack = Path(tmp) / "core_pack"
+            (core_pack / "commands").mkdir(parents=True)
+            (core_pack / "commands" / "sprocket.md").write_text("# sprocket", encoding="utf-8")
+
+            monkeypatch.setattr(ext, "_locate_core_pack", lambda: core_pack)
+            # Source fallback should be ignored while the bundle resolves.
+            monkeypatch.setattr(ext, "_repo_root", lambda: Path(tmp) / "nonexistent")
+
+            result = _load_core_command_names()
+
+        assert result == {"sprocket"}
 
     def test_load_core_command_names_falls_back_when_nothing_found(self, monkeypatch):
         """With neither a bundle nor a source tree, discovery returns the
@@ -315,9 +331,11 @@ class TestExtensionManifest:
         )
         import specify_cli.extensions as ext
 
-        monkeypatch.setattr(ext, "_locate_shared_asset_dir", lambda subdir: None)
+        with tempfile.TemporaryDirectory() as tmp:
+            monkeypatch.setattr(ext, "_locate_core_pack", lambda: None)
+            monkeypatch.setattr(ext, "_repo_root", lambda: Path(tmp) / "nonexistent")
 
-        assert _load_core_command_names() == _FALLBACK_CORE_COMMAND_NAMES
+            assert _load_core_command_names() == _FALLBACK_CORE_COMMAND_NAMES
 
     def test_missing_required_field(self, temp_dir):
         """Test manifest missing required field."""
@@ -944,30 +962,6 @@ provides:
         lifted = [w for w in manifest.warnings if "updated to canonical form" in w]
         assert len(lifted) == 2
 
-    def test_duplicate_hook_entries_allowed_after_command_normalization(
-        self,
-        temp_dir,
-        valid_manifest_data,
-    ):
-        """Equivalent hook entries are accepted after command refs canonicalize."""
-        import yaml
-
-        valid_manifest_data["provides"]["commands"][0]["name"] = "speckit.hello"
-        valid_manifest_data["hooks"]["after_tasks"] = [
-            {"command": "speckit.hello", "optional": True},
-            {"command": "speckit.test-ext.hello", "optional": True},
-        ]
-
-        manifest_path = temp_dir / "extension.yml"
-        with open(manifest_path, 'w', encoding="utf-8") as f:
-            yaml.dump(valid_manifest_data, f)
-
-        manifest = ExtensionManifest(manifest_path)
-        assert [entry["command"] for entry in manifest.hooks["after_tasks"]] == [
-            "speckit.test-ext.hello",
-            "speckit.test-ext.hello",
-        ]
-
     def test_hook_empty_list_rejected(self, temp_dir, valid_manifest_data):
         """An empty list for a hook event is rejected rather than silently
         registering nothing."""
@@ -981,6 +975,23 @@ provides:
 
         with pytest.raises(ValidationError, match="must contain at least one entry"):
             ExtensionManifest(manifest_path)
+
+    def test_hook_colons_remain_accepted(self, temp_dir, valid_manifest_data):
+        """Artifact identifiers must not narrow the existing hook manifest contract."""
+        import yaml
+
+        valid_manifest_data["hooks"] = {
+            "custom:after": {"command": "/skill:speckit-test-ext-hello"}
+        }
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.hooks["custom:after"]["command"] == (
+            "/skill:speckit-test-ext-hello"
+        )
 
     def test_hook_priority_field_validation(self, temp_dir, valid_manifest_data):
         """Hook entry ``priority`` must be a positive integer when provided."""

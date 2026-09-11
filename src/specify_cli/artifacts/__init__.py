@@ -19,14 +19,12 @@ from typing import Any, Iterable, Literal
 
 import yaml
 
-from .._assets import _locate_shared_asset_dir
-from .._identifier import (
+from ._identifiers import (
     PROJECT_OVERRIDE_LAYER,
     IdentifierComponentError,
+    derive_lookup_id,
     derive_public_id,
     is_dotted_command_name,
-    layer_kind_from_lookup_id,
-    source_id_from_lookup_id,
     validate_component,
 )
 
@@ -144,6 +142,26 @@ _TEMPLATE_SUFFIX = ".md"
 _SCRIPT_SUFFIX = ".sh"
 
 
+def _locate_shared_asset_dir(subdir: str) -> Path | None:
+    """Locate a core asset directory without changing shared asset behavior."""
+    if subdir not in {"commands", "scripts", "templates"}:
+        return None
+
+    from .._assets import _locate_core_pack, _repo_root
+
+    core_pack = _locate_core_pack()
+    bundled = core_pack / subdir if core_pack is not None else None
+    source = (
+        _repo_root() / "templates" / "commands"
+        if subdir == "commands"
+        else _repo_root() / subdir
+    )
+    for candidate in (bundled, source):
+        if candidate is not None and candidate.is_dir():
+            return candidate
+    return None
+
+
 def _project_core_asset_root(project_root: Path | None, subdir: str) -> Path | None:
     """Return the project-local built-in-tier directory for an asset family, if present."""
     if project_root is None:
@@ -246,78 +264,165 @@ def _describe_artifact_file(path: Path, kind: ArtifactKind) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _public_layer_shape(
+@dataclass(frozen=True)
+class _LayerProvenance:
+    """Artifact-only metadata derived from an unchanged resolver layer."""
+
+    layer: LayerName | None
+    source_id: str | None
+    disk_id: str | None
+    pack_dir: Path | None
+    manifest: Any | None
+    manifest_entry: dict[str, Any] | None
+
+    def lookup_id(self, kind: ArtifactKind, name: str) -> str | None:
+        if self.layer is None or self.source_id is None:
+            return None
+        try:
+            return derive_lookup_id(self.layer, self.source_id, kind, name)
+        except IdentifierComponentError:
+            return None
+
+
+def _same_file(left: Path | None, right: Any) -> bool:
+    """Compare paths without requiring either path to exist at comparison time."""
+    return isinstance(right, Path) and left is not None and left.resolve() == right.resolve()
+
+
+def _manifest_entry_for_path(
+    manifest: Any,
+    layer: Literal["preset", "extension"],
+    pack_dir: Path,
+    kind: ArtifactKind,
+    name: str,
+    path: Path,
+) -> dict[str, Any] | None:
+    """Return the existing manifest declaration that resolved to *path*."""
+    if manifest is None:
+        return None
+    if layer == "preset":
+        entries = (
+            entry
+            for entry in manifest.templates
+            if isinstance(entry, dict) and entry.get("type") == kind
+        )
+    else:
+        entries = {
+            "command": manifest.commands,
+            "template": manifest.templates,
+            "script": manifest.scripts,
+        }[kind]
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get("name") != name:
+            continue
+        relative_file = entry.get("file")
+        if isinstance(relative_file, str) and _same_file(
+            pack_dir / relative_file, path
+        ):
+            return entry
+    return None
+
+
+def _layer_provenance(
+    resolver: Any,
     resolver_layer: dict[str, Any],
-) -> tuple[LayerName | None, str | None, str | None]:
-    """Translate resolver provenance into the public layer identity triple.
+    kind: ArtifactKind,
+    name: str,
+    manifest_cache: dict[Path, Any | None],
+) -> _LayerProvenance:
+    """Derive artifact provenance from the resolver's established layer shape."""
+    source = resolver_layer.get("source")
+    path = resolver_layer.get("path")
 
-    Layers without a lookup identifier have no public provenance. Preset,
-    extension, and project override identities are retained unchanged.
-    """
-    lookup_id = resolver_layer.get("lookupId")
-    if lookup_id is None:
-        return None, None, None
-    if not isinstance(lookup_id, str):
+    if source == "project override":
+        return _LayerProvenance("project", "_", None, None, None, None)
+    if source in {"core", "core (bundled)"}:
+        return _LayerProvenance(None, None, None, None, None, None)
+    if not isinstance(path, Path) or not isinstance(source, str):
         raise ArtifactResolutionError()
-    layer_kind = layer_kind_from_lookup_id(lookup_id)
-    if layer_kind not in ("project", "preset", "extension"):
+
+    if source.startswith("extension:"):
+        extension_id = resolver_layer.get("extension_id")
+        extension_dir = resolver_layer.get("extension_dir")
+        if not isinstance(extension_id, str) or not isinstance(extension_dir, Path):
+            raise ArtifactResolutionError()
+        manifest_path = extension_dir / "extension.yml"
+        if manifest_path not in manifest_cache:
+            try:
+                from ..extensions import ExtensionManifest, ValidationError
+
+                manifest_cache[manifest_path] = (
+                    ExtensionManifest(manifest_path) if manifest_path.is_file() else None
+                )
+            except (
+                ValidationError,
+                yaml.YAMLError,
+                OSError,
+                TypeError,
+                AttributeError,
+            ):
+                manifest_cache[manifest_path] = None
+        manifest = manifest_cache[manifest_path]
+        declared = _manifest_entry_for_path(
+            manifest, "extension", extension_dir, kind, name, path
+        )
+        source_id = (
+            manifest.id
+            if declared is not None
+            and manifest is not None
+            and isinstance(manifest.id, str)
+            and manifest.id
+            else extension_id
+        )
+        return _LayerProvenance(
+            "extension",
+            source_id,
+            extension_id,
+            extension_dir,
+            manifest,
+            declared,
+        )
+
+    try:
+        relative = path.relative_to(resolver.presets_dir)
+    except ValueError as exc:
+        raise ArtifactResolutionError() from exc
+    if not relative.parts:
         raise ArtifactResolutionError()
-    source_id = source_id_from_lookup_id(lookup_id)
-    if source_id is None:
-        raise ArtifactResolutionError()
-    return layer_kind, source_id, lookup_id
+    pack_id = relative.parts[0]
+    pack_dir = resolver.presets_dir / pack_id
+    manifest = resolver._get_manifest(pack_dir)
+    declared = _manifest_entry_for_path(
+        manifest, "preset", pack_dir, kind, name, path
+    )
+    source_id = (
+        manifest.id
+        if declared is not None
+        and manifest is not None
+        and isinstance(manifest.id, str)
+        and manifest.id
+        else pack_id
+    )
+    return _LayerProvenance(
+        "preset",
+        source_id,
+        pack_id,
+        pack_dir,
+        manifest,
+        declared,
+    )
 
 
-def _derive_manifest_path(layer: dict[str, Any], project_root: Path) -> str | None:
-    """Return a repo-relative POSIX path to the manifest declaring this layer.
-
-    ``layer`` is one dict entry from ``PresetResolver.collect_all_layers()``.
-    Only ``preset`` and ``extension`` layers have an on-disk manifest — core
-    and project-override layers return ``None``.
-
-    The resolver may set the ``lookupId``'s ``sourceId`` component to the
-    manifest-declared ``id:`` (which can differ from the on-disk directory
-    name for renamed packs), so ``lookupId`` is never parsed for the on-disk
-    directory here. The on-disk directory identity is read exclusively from
-    the layer's explicit provenance keys — ``preset_id`` / ``pack_dir`` for
-    preset layers, ``extension_id`` / ``extension_dir`` for extension
-    layers — which ``collect_all_layers()`` always sets alongside
-    ``lookupId``. Missing provenance keys mean no manifest path is available.
-
-    Convention-only contributions are surfaced by the resolver even when the
-    pack's manifest does not declare them — the manifest file exists on disk
-    but does not list the artifact in ``provides``. Reporting the manifest
-    path in that case would be a false positive: consumers joining on the
-    reported path would find no matching contribution. ``collect_all_layers``
-    sets ``manifest_declared=True`` on layers that came from a manifest
-    ``provides`` entry, so those layers alone report a manifest path; a layer
-    without that flag falls through to ``None`` even when the manifest file
-    exists on disk.
-
-    Uses ``as_posix()`` so the string is stable across Windows and POSIX — a
-    caller comparing snapshots between operating systems gets the same value
-    on both.
-    """
-    if not layer.get("manifest_declared"):
+def _derive_manifest_path(
+    provenance: _LayerProvenance, project_root: Path
+) -> str | None:
+    """Return the declaring manifest path for an artifact layer."""
+    if provenance.manifest_entry is None or provenance.pack_dir is None:
         return None
-    lookup_id = layer.get("lookupId", "")
-    layer_kind = layer_kind_from_lookup_id(lookup_id)
-    if layer_kind == "preset":
-        pack_dir = layer.get("pack_dir")
-        pack_id = layer.get("preset_id")
-        tier_dir, manifest_name = "presets", "preset.yml"
-    elif layer_kind == "extension":
-        pack_dir = layer.get("extension_dir")
-        pack_id = layer.get("extension_id")
-        tier_dir, manifest_name = "extensions", "extension.yml"
-    else:
-        return None
-    if isinstance(pack_dir, Path):
-        manifest_path = pack_dir / manifest_name
-    elif pack_id:
-        manifest_path = project_root / ".specify" / tier_dir / pack_id / manifest_name
-    else:
-        return None
+    manifest_name = (
+        "preset.yml" if provenance.layer == "preset" else "extension.yml"
+    )
+    manifest_path = provenance.pack_dir / manifest_name
     if not manifest_path.is_file():
         return None
     try:
@@ -361,6 +466,7 @@ def _materialized_command_source_path(
         return None
 
     registrar = CommandRegistrar()
+    registrar._ensure_configs()
 
     registered_commands = metadata.get("registered_commands")
     if isinstance(registered_commands, dict):
@@ -373,11 +479,13 @@ def _materialized_command_source_path(
             agent_config = registrar.AGENT_CONFIGS.get(agent_name)
             if agent_config is None:
                 continue
-            command_path = registrar.resolve_command_output_path(
-                agent_name, name, project_root
+            output_name = registrar._compute_output_name(
+                agent_name, name, agent_config
             )
-            if command_path is None:
-                continue
+            command_path = (
+                registrar._resolve_agent_dir(agent_name, agent_config, project_root)
+                / f"{output_name}{agent_config['extension']}"
+            )
             rel = _repo_relative_existing_file(project_root, command_path)
             if rel is not None:
                 return rel
@@ -421,12 +529,12 @@ def _materialized_command_source_path(
             agent_config = registrar.AGENT_CONFIGS.get(agent_name)
             if agent_config is None:
                 continue
-            if registrar.uses_skill_output(agent_name):
-                skills_dir = registrar.resolve_agent_dir(agent_name, project_root)
+            if agent_config.get("extension") == "/SKILL.md":
+                skills_dir = registrar._resolve_agent_dir(
+                    agent_name, agent_config, project_root
+                )
             else:
                 skills_dir = _project_skills_dir(project_root, agent_name)
-            if skills_dir is None:
-                continue
             for skill_name in sorted(
                 n for n in skill_names if isinstance(n, str) and _is_safe_path_component(n)
             ):
@@ -441,6 +549,7 @@ def _materialized_command_source_path(
 
 
 def _derive_source_path(
+    provenance: _LayerProvenance,
     layer: dict[str, Any],
     project_root: Path,
     kind: ArtifactKind,
@@ -450,39 +559,33 @@ def _derive_source_path(
 ) -> str | None:
     """Return the repo-relative concrete file backing a preset/extension layer.
 
-    ``layer`` is one raw ``PresetResolver.collect_all_layers()`` row. Preset
-    and extension rows carry explicit on-disk provenance keys
-    (``preset_id``/``pack_dir`` or ``extension_id``/``extension_dir``)
-    alongside ``lookupId``; core and project rows intentionally do not produce
-    a source path here.
-
     The tracked materialized agent output is shared by every stack row that
     contributed the same command name, so it only reflects the winning
     (``active``) row's content. Lower ``replace``/``merge`` rows must report
     their own installed pack file instead of that shared output.
     """
-    lookup_id = layer.get("lookupId", "")
-    layer_kind = layer_kind_from_lookup_id(lookup_id)
-    if layer_kind == "preset":
-        pack_id = layer.get("preset_id")
-        if not isinstance(pack_id, str) or not pack_id:
+    if provenance.layer == "preset":
+        if provenance.disk_id is None:
             return None
         from ..presets import PresetRegistry
 
-        metadata = PresetRegistry(project_root / ".specify" / "presets").get(pack_id)
+        metadata = PresetRegistry(project_root / ".specify" / "presets").get(
+            provenance.disk_id
+        )
         if kind == "command" and active:
             materialized = _materialized_command_source_path(
                 project_root, metadata, name, source="preset"
             )
             if materialized is not None:
                 return materialized
-    elif layer_kind == "extension":
-        extension_id = layer.get("extension_id")
-        if not isinstance(extension_id, str) or not extension_id:
+    elif provenance.layer == "extension":
+        if provenance.disk_id is None:
             return None
         from ..extensions import ExtensionRegistry
 
-        metadata = ExtensionRegistry(project_root / ".specify" / "extensions").get(extension_id)
+        metadata = ExtensionRegistry(project_root / ".specify" / "extensions").get(
+            provenance.disk_id
+        )
         if kind == "command" and active:
             materialized = _materialized_command_source_path(
                 project_root, metadata, name, source="extension"
@@ -490,8 +593,6 @@ def _derive_source_path(
             if materialized is not None:
                 return materialized
     else:
-        # Core and project-override rows are built-in/synthetic from the public
-        # artifact contract's perspective, so their sourcePath stays null.
         return None
 
     # Non-active command layers, non-command preset/extension layers, and
@@ -529,6 +630,8 @@ def _build_stack(
     kind: ArtifactKind,
     name: str,
     raw_layers: list[dict[str, Any]] | None = None,
+    resolver: Any | None = None,
+    manifest_cache: dict[Path, Any | None] | None = None,
 ) -> list[StackLayer]:
     """Build the ordered stack for a single artifact.
 
@@ -543,8 +646,8 @@ def _build_stack(
     from ..presets import PresetError, PresetResolver  # lazy: avoids circular import
 
     template_type = kind
+    resolver = resolver or PresetResolver(project_root)
     if raw_layers is None:
-        resolver = PresetResolver(project_root)
         try:
             raw = resolver.collect_all_layers(name, template_type)
         except (OSError, PresetError) as exc:
@@ -553,6 +656,7 @@ def _build_stack(
         raw = raw_layers
     if not raw:
         return []
+    manifest_cache = manifest_cache if manifest_cache is not None else {}
 
     first_replace_idx = next(
         (i for i, layer in enumerate(raw) if layer["strategy"] == "replace"),
@@ -570,15 +674,20 @@ def _build_stack(
         else:
             hidden = idx > first_replace_idx
 
-        layer_kind, source_id, lookup_id = _public_layer_shape(layer)
-        source_path = _derive_source_path(layer, project_root, kind, name, active=active)
+        provenance = _layer_provenance(
+            resolver, layer, kind, name, manifest_cache
+        )
+        lookup_id = provenance.lookup_id(kind, name)
+        source_path = _derive_source_path(
+            provenance, layer, project_root, kind, name, active=active
+        )
 
-        if layer_kind == PROJECT_OVERRIDE_LAYER:
+        if provenance.layer == PROJECT_OVERRIDE_LAYER:
             rows.append(
                 StackLayer(
                     id=public_id,
                     layer="project",
-                    sourceId=source_id,
+                    sourceId=provenance.source_id,
                     presetId=None,
                     presetName=None,
                     strategy=strategy,
@@ -591,13 +700,13 @@ def _build_stack(
             )
             continue
 
-        if layer_kind == "extension":
-            manifest_path = _derive_manifest_path(layer, project_root)
+        if provenance.layer == "extension":
+            manifest_path = _derive_manifest_path(provenance, project_root)
             rows.append(
                 StackLayer(
                     id=public_id,
                     layer="extension",
-                    sourceId=source_id,
+                    sourceId=provenance.source_id,
                     presetId=None,
                     presetName=None,
                     strategy=strategy,
@@ -610,7 +719,7 @@ def _build_stack(
             )
             continue
 
-        if layer_kind is None:
+        if provenance.layer is None:
             rows.append(
                 StackLayer(
                     id=public_id,
@@ -628,25 +737,17 @@ def _build_stack(
             )
             continue
 
-        # Preset layers carry the on-disk directory identity separately from
-        # ``lookupId`` (which may use the manifest-declared ``id:``): use the
-        # explicit ``preset_id`` / ``pack_dir`` keys ``collect_all_layers()``
-        # always sets, never ``lookupId`` parsing, so a renamed pack still
-        # resolves to the right on-disk directory for display-name and
-        # manifest-path lookup.
-        pack_id = layer.get("preset_id") or ""
-        pack_dir_layer = layer.get("pack_dir")
-        if isinstance(pack_dir_layer, Path):
-            pack_dir = pack_dir_layer
-        else:
-            pack_dir = project_root / ".specify" / "presets" / pack_id
+        pack_id = provenance.disk_id or ""
+        pack_dir = provenance.pack_dir or (
+            project_root / ".specify" / "presets" / pack_id
+        )
         display = _preset_display_name(pack_dir, pack_id) if pack_id else pack_id
-        manifest_path = _derive_manifest_path(layer, project_root)
+        manifest_path = _derive_manifest_path(provenance, project_root)
         rows.append(
             StackLayer(
                 id=public_id,
                 layer="preset",
-                sourceId=source_id,
+                sourceId=provenance.source_id,
                 presetId=pack_id or None,
                 presetName=display or None,
                 strategy=strategy,
@@ -749,12 +850,12 @@ class ArtifactCatalog:
         is decided by :meth:`PresetResolver.collect_all_layers`'s own
         ordering (index 0 = winner), not by enumeration order here.
         """
-        artifacts, _layers_cache = self._collect_inventory()
+        artifacts, _layers_cache, _resolver, _manifest_cache = self._collect_inventory()
         return artifacts
 
     def list_artifacts_with_stack(self) -> list[dict[str, Any]]:
         """Return list rows enriched with each artifact's full composition stack."""
-        artifacts, layers_cache = self._collect_inventory()
+        artifacts, layers_cache, resolver, manifest_cache = self._collect_inventory()
         rows: list[dict[str, Any]] = []
         for artifact in artifacts:
             stack = _build_stack(
@@ -762,6 +863,8 @@ class ArtifactCatalog:
                 artifact.kind,
                 artifact.name,
                 raw_layers=layers_cache.get((artifact.kind, artifact.name)),
+                resolver=resolver,
+                manifest_cache=manifest_cache,
             )
             row = artifact.to_json_dict()
             row["stack"] = [layer.to_json_dict() for layer in stack]
@@ -791,7 +894,7 @@ class ArtifactCatalog:
         # ``_collect_inventory`` below — the same chokepoint ``list_artifacts``
         # uses — so both public methods fail closed identically instead of
         # each re-implementing the checks.
-        inventory, layers_cache = self._collect_inventory()
+        inventory, layers_cache, resolver, manifest_cache = self._collect_inventory()
         if resolved_kind is None:
             matches = [
                 (artifact.kind, artifact.name)
@@ -820,6 +923,8 @@ class ArtifactCatalog:
             resolved_kind,
             validated_name,
             raw_layers=layers_cache.get((resolved_kind, validated_name)),
+            resolver=resolver,
+            manifest_cache=manifest_cache,
         )
         if not stack:
             raise ArtifactNotFoundError(name)
@@ -838,6 +943,8 @@ class ArtifactCatalog:
     ) -> tuple[
         list[Artifact],
         dict[tuple[ArtifactKind, str], list[dict[str, Any]]],
+        Any,
+        dict[Path, Any | None],
     ]:
         _validate_project(self.project_root)
         _validate_extension_registry(self.project_root)
@@ -892,12 +999,11 @@ class ArtifactCatalog:
 
         artifacts: list[Artifact] = []
         manifest_cache: dict[Path, Any | None] = {}
-        manifest_description_cache: dict[Path, dict[tuple[str, str, str], str]] = {}
         for kind, name in names:
             description = ""
             for layer in _layers_for(kind, name):
                 candidate = self._describe_layer(
-                    layer, kind, name, manifest_cache, manifest_description_cache
+                    resolver, layer, kind, name, manifest_cache
                 )
                 if candidate:
                     description = candidate
@@ -912,7 +1018,12 @@ class ArtifactCatalog:
             )
 
         kind_order = {"command": 0, "template": 1, "script": 2}
-        return sorted(artifacts, key=lambda a: (kind_order[a.kind], a.name)), layers_cache
+        return (
+            sorted(artifacts, key=lambda a: (kind_order[a.kind], a.name)),
+            layers_cache,
+            resolver,
+            manifest_cache,
+        )
 
     def _iter_candidate_artifacts(
         self,
@@ -924,14 +1035,13 @@ class ArtifactCatalog:
         Covers the ways a pack can contribute an artifact:
 
         * manifest-declared entries (``preset.yml`` / ``extension.yml``), read
-          via each manifest class's own ``iter_contributions()`` rather than
-          re-parsing ``provides`` by hand, and
+          through each manifest class's existing normalized properties, and
         * convention-placed extension files (``commands/``, ``templates/``,
           ``scripts/``) that the resolver picks up even without a manifest.
 
-        Presets and extensions are enumerated through the resolver's public
-        ``iter_*_by_priority()`` helpers, so the candidate set follows the same
-        install/enable/priority rules as resolution. Project overrides and
+        Presets and extensions are enumerated through the resolver's existing
+        priority helpers, so the candidate set follows the same install,
+        enable, and priority rules as resolution. Project overrides and
         resolver-compatible core asset paths are included only as candidate
         names; :meth:`PresetResolver.collect_all_layers` remains the source of
         truth for which candidates are actually present and which layer wins.
@@ -950,16 +1060,14 @@ class ArtifactCatalog:
 
         # -- Presets: the registry is authoritative, no unregistered fallback.
         preset_manager = PresetManager(self.project_root)
-        for pack_id, _metadata in resolver.iter_presets_by_priority():
+        for pack_id, _metadata in resolver._get_all_presets_by_priority():
             pack_dir = preset_manager.presets_dir / pack_id
             manifest = preset_manager.get_pack(pack_id)
-            yield from self._iter_pack_candidates(manifest, pack_dir)
+            yield from self._iter_pack_candidates(manifest, pack_dir, "preset")
 
-        # -- Extensions: use the resolver's own extension enumeration order and
-        # identity (directory name), including safe-id and corrupt-registry
-        # handling from PresetResolver.iter_extensions_by_priority().
+        # -- Extensions: use the resolver's own extension enumeration order.
         ext_manager = ExtensionManager(self.project_root)
-        for _priority, ext_id, metadata in resolver.iter_extensions_by_priority():
+        for _priority, ext_id, metadata in resolver._get_all_extensions_by_priority():
             ext_dir = resolver.extensions_dir / ext_id
             if metadata is not None:
                 manifest = ext_manager.get_extension(ext_id)
@@ -971,7 +1079,7 @@ class ArtifactCatalog:
                         manifest = ExtensionManifest(manifest_path)
                     except (ValidationError, OSError, TypeError, AttributeError):
                         manifest = None
-            yield from self._iter_pack_candidates(manifest, ext_dir)
+            yield from self._iter_pack_candidates(manifest, ext_dir, "extension")
 
         yield from self._iter_project_override_candidates(resolver)
         yield from self._iter_core_candidates(core_script_paths)
@@ -980,11 +1088,28 @@ class ArtifactCatalog:
     def _iter_pack_candidates(
         manifest: Any,
         pack_dir: Path,
+        layer: Literal["preset", "extension"],
     ) -> Iterable[tuple[ArtifactKind, str]]:
         """Yield manifest-declared and convention-based candidate names."""
         if manifest is not None:
-            for contribution in manifest.iter_contributions():
-                kind = contribution.get("kind")
+            if layer == "preset":
+                declarations = (
+                    (entry.get("type"), entry)
+                    for entry in manifest.templates
+                    if isinstance(entry, dict)
+                )
+            else:
+                declarations = (
+                    (kind, entry)
+                    for kind, entries in (
+                        ("command", manifest.commands),
+                        ("template", manifest.templates),
+                        ("script", manifest.scripts),
+                    )
+                    for entry in entries
+                    if isinstance(entry, dict)
+                )
+            for kind, contribution in declarations:
                 name = contribution.get("name")
                 if (
                     kind in ("command", "template", "script")
@@ -1024,8 +1149,7 @@ class ArtifactCatalog:
             for kind in ("command", "template"):
                 layers = resolver.collect_all_layers(name, kind)
                 if any(
-                    layer_kind_from_lookup_id(str(layer.get("lookupId", "")))
-                    != PROJECT_OVERRIDE_LAYER
+                    layer.get("source") != "project override"
                     for layer in layers
                 ):
                     backed_kinds.append(kind)
@@ -1065,7 +1189,15 @@ class ArtifactCatalog:
             if any(
                 (directory / f"{candidate}.md").is_file()
                 for directory in command_dirs
-                for candidate in PresetResolver.name_candidates(name)
+                for candidate in (
+                    name,
+                    *(
+                        (PresetResolver._core_stem(name),)
+                        if PresetResolver._core_stem(name)
+                        else ()
+                    ),
+                )
+                if candidate is not None
             ):
                 yield "command", name
 
@@ -1167,15 +1299,15 @@ class ArtifactCatalog:
 
     def _describe_layer(
         self,
+        resolver: Any,
         layer: dict[str, Any],
         kind: ArtifactKind,
         name: str,
         manifest_cache: dict[Path, Any | None],
-        manifest_description_cache: dict[Path, dict[tuple[str, str, str], str]],
     ) -> str:
         """Return manifest metadata or on-disk metadata for one resolver layer."""
         manifest_description = self._manifest_description_for_layer(
-            layer, kind, name, manifest_cache, manifest_description_cache
+            resolver, layer, kind, name, manifest_cache
         )
         if manifest_description:
             return manifest_description
@@ -1186,81 +1318,20 @@ class ArtifactCatalog:
 
     def _manifest_description_for_layer(
         self,
+        resolver: Any,
         layer: dict[str, Any],
         kind: ArtifactKind,
         name: str,
         manifest_cache: dict[Path, Any | None],
-        manifest_description_cache: dict[Path, dict[tuple[str, str, str], str]],
     ) -> str:
-        lookup_id = layer.get("lookupId", "")
-        layer_kind = layer_kind_from_lookup_id(lookup_id)
-        manifest = None
-        if layer_kind == "preset":
-            pack_dir = layer.get("pack_dir")
-            if not isinstance(pack_dir, Path):
-                preset_id = layer.get("preset_id")
-                if not preset_id:
-                    return ""
-                pack_dir = self.project_root / ".specify" / "presets" / preset_id
-            manifest_path = pack_dir / "preset.yml"
-            if manifest_path.is_file():
-                if manifest_path not in manifest_cache:
-                    try:
-                        from ..presets import PresetManifest, PresetValidationError
-
-                        manifest_cache[manifest_path] = PresetManifest(manifest_path)
-                    except (
-                        PresetValidationError,
-                        yaml.YAMLError,
-                        OSError,
-                        TypeError,
-                        AttributeError,
-                    ):
-                        manifest_cache[manifest_path] = None
-                manifest = manifest_cache[manifest_path]
-        elif layer_kind == "extension":
-            ext_dir = layer.get("extension_dir")
-            if not isinstance(ext_dir, Path):
-                extension_id = layer.get("extension_id")
-                if not extension_id:
-                    return ""
-                ext_dir = self.project_root / ".specify" / "extensions" / extension_id
-            manifest_path = ext_dir / "extension.yml"
-            if manifest_path.is_file():
-                if manifest_path not in manifest_cache:
-                    try:
-                        from ..extensions import ExtensionManifest, ValidationError
-
-                        manifest_cache[manifest_path] = ExtensionManifest(manifest_path)
-                    except (
-                        ValidationError,
-                        yaml.YAMLError,
-                        OSError,
-                        TypeError,
-                        AttributeError,
-                    ):
-                        manifest_cache[manifest_path] = None
-                manifest = manifest_cache[manifest_path]
-        if manifest is None:
+        provenance = _layer_provenance(
+            resolver, layer, kind, name, manifest_cache
+        )
+        entry = provenance.manifest_entry
+        if entry is None:
             return ""
-        if manifest_path not in manifest_description_cache:
-            descriptions: dict[tuple[str, str, str], str] = {}
-            for contribution in manifest.iter_contributions():
-                contribution_id = contribution.get("id")
-                contribution_kind = contribution.get("kind")
-                contribution_name = contribution.get("name")
-                description = contribution.get("description", "")
-                if (
-                    isinstance(contribution_id, str)
-                    and isinstance(contribution_kind, str)
-                    and isinstance(contribution_name, str)
-                    and isinstance(description, str)
-                ):
-                    descriptions[
-                        (contribution_kind, contribution_name, contribution_id)
-                    ] = description
-            manifest_description_cache[manifest_path] = descriptions
-        return manifest_description_cache[manifest_path].get((kind, name, lookup_id), "")
+        description = entry.get("description", "")
+        return description if isinstance(description, str) else ""
 
 
 _CONVENTION_SUBDIRS: tuple[tuple[str, ArtifactKind, str], ...] = (

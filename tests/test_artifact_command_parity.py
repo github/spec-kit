@@ -96,17 +96,15 @@ class TestResolverParity:
         )
 
         assert winner == "body-from-renamed-preset"
-        # Manifest-declared entries use the manifest's validated id, so the
-        # ``lookupId`` joins directly to ``PresetManifest.iter_contributions()``
-        # regardless of the installed directory name.
+        # Artifact projection uses the manifest's validated id regardless of
+        # the installed directory name.
         assert active["lookupId"] == (
             "preset:original-preset:command:speckit.preset-renamed.hello"
         )
-        assert (
-            PresetResolver(spec_kit_project)
-            .collect_all_layers("speckit.preset-renamed.hello", "command")[0]["lookupId"]
-            == "preset:original-preset:command:speckit.preset-renamed.hello"
-        )
+        resolver_layer = PresetResolver(spec_kit_project).collect_all_layers(
+            "speckit.preset-renamed.hello", "command"
+        )[0]
+        assert "lookupId" not in resolver_layer
         # The stack row's presetId / manifestPath must still reflect the
         # actual on-disk directory (``renamed-preset``), not the manifest id
         # embedded in ``lookupId`` — otherwise the display and manifest path

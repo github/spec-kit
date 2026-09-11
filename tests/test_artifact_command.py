@@ -26,11 +26,9 @@ from specify_cli.artifacts import (
     ArtifactNotFoundError,
     ArtifactResolutionError,
     NotASpecKitProjectError,
-    _derive_manifest_path,
     _preset_display_name,
-    _public_layer_shape,
 )
-from specify_cli.extensions import ExtensionRegistry
+from specify_cli.extensions import CORE_COMMAND_NAMES, ExtensionRegistry
 from specify_cli.presets import PresetRegistry, PresetResolver
 from tests.conftest import install_preset
 
@@ -98,6 +96,22 @@ class TestListArtifactsContract:
         rows = ArtifactCatalog(spec_kit_project).list_artifacts()
         ids = [r.id for r in rows]
         assert len(ids) == len(set(ids))
+
+    def test_every_core_command_is_listed_and_resolvable(
+        self, spec_kit_project: Path
+    ):
+        catalog = ArtifactCatalog(spec_kit_project)
+        listed = {
+            row.name for row in catalog.list_artifacts() if row.kind == "command"
+        }
+        expected = {f"speckit.{name}" for name in CORE_COMMAND_NAMES}
+
+        assert expected <= listed
+        for name in expected:
+            info = catalog.get_artifact_info(f"command:{name}")
+            assert info["id"] == f"command:{name}"
+            assert info["kind"] == "command"
+            assert info["stack"]
 
     @pytest.mark.parametrize(
         ("requested", "runtime_dir"),
@@ -230,6 +244,10 @@ class TestListArtifactsContract:
             "---\ndescription: Manifest identity wins\n---\nbody\n",
             encoding="utf-8",
         )
+        (ext_dir / "commands" / "speckit.renamed.convention.md").write_text(
+            "---\ndescription: Convention identity uses directory\n---\nbody\n",
+            encoding="utf-8",
+        )
         (ext_dir / "extension.yml").write_text(
             yaml.safe_dump(
                 {
@@ -263,15 +281,13 @@ class TestListArtifactsContract:
             row.id for row in catalog.list_artifacts()
         }
         info = catalog.get_artifact_info("speckit.original.hello")
-        # Manifest-declared entries use ``extension.id`` for the ``lookupId``
-        # so the join to ``ExtensionManifest.iter_contributions()`` stays
-        # direct even when the installed directory (``renamed``) was renamed.
+        # Artifact projection uses the manifest id without changing the
+        # resolver's established layer shape.
         assert info["stack"][0]["lookupId"] == "extension:original:command:speckit.original.hello"
-        assert (
-            PresetResolver(spec_kit_project)
-            .collect_all_layers("speckit.original.hello", "command")[0]["lookupId"]
-            == "extension:original:command:speckit.original.hello"
-        )
+        resolver_layer = PresetResolver(spec_kit_project).collect_all_layers(
+            "speckit.original.hello", "command"
+        )[0]
+        assert "lookupId" not in resolver_layer
         # The stack row's manifestPath must still reflect the actual on-disk
         # extension directory (``renamed``), not the manifest id embedded in
         # ``lookupId``.
@@ -279,6 +295,14 @@ class TestListArtifactsContract:
             info["stack"][0]["manifestPath"]
             == ".specify/extensions/renamed/extension.yml"
         )
+        convention = catalog.get_artifact_info("speckit.renamed.convention")[
+            "stack"
+        ][0]
+        assert convention["sourceId"] == "renamed"
+        assert convention["lookupId"] == (
+            "extension:renamed:command:speckit.renamed.convention"
+        )
+        assert convention["manifestPath"] is None
 
     def test_includes_project_local_core_assets(self, spec_kit_project: Path):
         templates_dir = spec_kit_project / ".specify" / "templates"
@@ -329,14 +353,13 @@ class TestListArtifactsContract:
             row for row in catalog.list_artifacts() if row.name == "legacy-root"
         ).description == "Legacy root template"
 
-    def test_extension_registry_missing_collection_key_is_corrupt(
+    def test_extension_registry_missing_collection_key_uses_existing_normalization(
         self, spec_kit_project: Path
     ):
         registry_path = spec_kit_project / ".specify" / "extensions" / ".registry"
         registry_path.write_text('{"schema_version": "1.0"}', encoding="utf-8")
 
-        with pytest.raises(ArtifactResolutionError):
-            ArtifactCatalog(spec_kit_project).list_artifacts()
+        assert ArtifactCatalog(spec_kit_project).list_artifacts()
 
     @pytest.mark.skipif(os.name == "nt", reason="':' filenames are unsupported on Windows")
     def test_skips_invalid_colon_names_in_project_local_inventory(self, spec_kit_project: Path):
@@ -515,7 +538,7 @@ class TestInfoContract:
         resolver_layer = PresetResolver(spec_kit_project).collect_all_layers(
             "speckit.constitution", "command"
         )[-1]
-        assert resolver_layer["source"] == "core"
+        assert resolver_layer["source"] == "core (bundled)"
         assert "lookupId" not in resolver_layer
 
         info = ArtifactCatalog(spec_kit_project).get_artifact_info("speckit.constitution")
@@ -528,14 +551,6 @@ class TestInfoContract:
         assert builtin["strategy"] == "replace"
         assert builtin["lookupId"] is None
         assert builtin["sourcePath"] is None
-
-    def test_public_layer_shape_preserves_non_core_identity(self):
-        assert _public_layer_shape(
-            {
-                "source": "preset:foo v1",
-                "lookupId": "preset:foo:template:spec-template",
-            }
-        ) == ("preset", "foo", "preset:foo:template:spec-template")
 
     def test_project_override_row_shape(self, spec_kit_project: Path):
         overrides = spec_kit_project / ".specify" / "templates" / "overrides"
@@ -1170,6 +1185,51 @@ class TestConventionDiscovery:
         assert any(row.id == "template:legacy-template" for row in catalog.list_artifacts())
         info = catalog.get_artifact_info("legacy-template")
         assert info["stack"][0]["lookupId"] == "extension:legacy:template:legacy-template"
+        assert info["stack"][0]["manifestPath"] is None
+
+    def test_convention_only_extension_does_not_claim_manifest(
+        self, spec_kit_project: Path
+    ):
+        ext_dir = spec_kit_project / ".specify" / "extensions" / "legacy"
+        (ext_dir / "templates").mkdir(parents=True)
+        (ext_dir / "templates" / "legacy-template.md").write_text(
+            "body", encoding="utf-8"
+        )
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "commands" / "other.md").write_text("body", encoding="utf-8")
+        (ext_dir / "extension.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "extension": {
+                        "id": "legacy",
+                        "name": "Legacy",
+                        "version": "1.0.0",
+                        "description": "test",
+                        "author": "test",
+                        "repository": "https://example.com",
+                        "license": "MIT",
+                    },
+                    "requires": {"speckit_version": ">=0.2.0"},
+                    "provides": {
+                        "commands": [
+                            {
+                                "name": "speckit.legacy.other",
+                                "file": "commands/other.md",
+                            }
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        layer = ArtifactCatalog(spec_kit_project).get_artifact_info(
+            "legacy-template"
+        )["stack"][0]
+
+        assert layer["lookupId"] == "extension:legacy:template:legacy-template"
+        assert layer["manifestPath"] is None
 
     def test_convention_command_and_script_are_listed(self, spec_kit_project: Path):
         ext_dir = spec_kit_project / ".specify" / "extensions" / "legacy"
@@ -1357,132 +1417,6 @@ class TestConventionDiscovery:
         assert "command:speckit.legacy" in ids
         assert "template:speckit.legacy" not in ids
         assert catalog.get_artifact_info("speckit.legacy")["kind"] == "command"
-
-
-class TestManifestPathPortability:
-    """`_derive_manifest_path` must never leak an absolute host path."""
-
-    def test_preset_manifest_path_is_repo_relative(self, tmp_path: Path):
-        project_root = tmp_path / "proj"
-        pack_dir = project_root / ".specify" / "presets" / "my-pack"
-        pack_dir.mkdir(parents=True)
-        (pack_dir / "preset.yml").write_text("id: my-pack\n", encoding="utf-8")
-
-        layer = {
-            "lookupId": "preset:my-pack:template:spec-template",
-            "path": pack_dir / "spec-template.md",
-            "preset_id": "my-pack",
-            "pack_dir": pack_dir,
-            "manifest_declared": True,
-        }
-        assert (
-            _derive_manifest_path(layer, project_root)
-            == ".specify/presets/my-pack/preset.yml"
-        )
-
-    def test_extension_manifest_path_is_repo_relative(self, tmp_path: Path):
-        project_root = tmp_path / "proj"
-        ext_dir = project_root / ".specify" / "extensions" / "my-ext"
-        ext_dir.mkdir(parents=True)
-        (ext_dir / "extension.yml").write_text("id: my-ext\n", encoding="utf-8")
-
-        layer = {
-            "lookupId": "extension:my-ext:command:speckit.my-ext.go",
-            "path": ext_dir / "commands" / "speckit.my-ext.go.md",
-            "extension_id": "my-ext",
-            "extension_dir": ext_dir,
-            "manifest_declared": True,
-        }
-        assert (
-            _derive_manifest_path(layer, project_root)
-            == ".specify/extensions/my-ext/extension.yml"
-        )
-
-    def test_renamed_pack_directory_wins_over_lookup_id_source(self, tmp_path: Path):
-        """The manifest path must track the on-disk directory, never a stale
-        directory guessed from ``lookupId``'s manifest-declared ``sourceId``."""
-        project_root = tmp_path / "proj"
-        pack_dir = project_root / ".specify" / "presets" / "renamed-on-disk"
-        pack_dir.mkdir(parents=True)
-        (pack_dir / "preset.yml").write_text("id: original-manifest-id\n", encoding="utf-8")
-        # A stale directory matching the manifest id must not exist, so a
-        # lookupId-based guess would resolve to a nonexistent manifest.
-        stale_dir = project_root / ".specify" / "presets" / "original-manifest-id"
-        assert not stale_dir.exists()
-
-        layer = {
-            "lookupId": "preset:original-manifest-id:template:spec-template",
-            "path": pack_dir / "spec-template.md",
-            "preset_id": "renamed-on-disk",
-            "pack_dir": pack_dir,
-            "manifest_declared": True,
-        }
-        assert (
-            _derive_manifest_path(layer, project_root)
-            == ".specify/presets/renamed-on-disk/preset.yml"
-        )
-
-    def test_missing_manifest_file_is_none(self, tmp_path: Path):
-        project_root = tmp_path / "proj"
-        pack_dir = project_root / ".specify" / "presets" / "my-pack"
-        pack_dir.mkdir(parents=True)
-
-        layer = {
-            "lookupId": "preset:my-pack:template:spec-template",
-            "path": pack_dir / "spec-template.md",
-            "preset_id": "my-pack",
-            "pack_dir": pack_dir,
-            "manifest_declared": True,
-        }
-        assert _derive_manifest_path(layer, project_root) is None
-
-    def test_missing_provenance_keys_is_none(self, tmp_path: Path):
-        """Without explicit ``preset_id``/``pack_dir``, no path is guessed from
-        ``lookupId`` — the caller gets ``None`` instead of a wrong path."""
-        project_root = tmp_path / "proj"
-        pack_dir = project_root / ".specify" / "presets" / "my-pack"
-        pack_dir.mkdir(parents=True)
-        (pack_dir / "preset.yml").write_text("id: my-pack\n", encoding="utf-8")
-
-        layer = {
-            "lookupId": "preset:my-pack:template:spec-template",
-            "path": pack_dir / "spec-template.md",
-            "manifest_declared": True,
-        }
-        assert _derive_manifest_path(layer, project_root) is None
-
-    def test_builtin_and_project_layers_have_no_manifest(self, tmp_path: Path):
-        project_root = tmp_path / "proj"
-        project_root.mkdir()
-
-        builtin_layer = {}
-        project_layer = {"lookupId": "project:_:template:spec-template"}
-        assert _derive_manifest_path(builtin_layer, project_root) is None
-        assert _derive_manifest_path(project_layer, project_root) is None
-
-    def test_convention_only_extension_layer_reports_no_manifest_path(
-        self, tmp_path: Path
-    ):
-        """A contribution the manifest does not declare in ``provides`` — a
-        "convention-only" contribution — must NOT report the manifest as its
-        source, even when the manifest file exists on disk. Joining on the
-        reported path would find no matching contribution. One extension test
-        covers both the preset and extension branches: ``_derive_manifest_path``
-        gates on the layer's ``manifest_declared`` flag before dispatching by
-        layer kind."""
-        project_root = tmp_path / "proj"
-        ext_dir = project_root / ".specify" / "extensions" / "foo"
-        ext_dir.mkdir(parents=True)
-        (ext_dir / "extension.yml").write_text("id: foo\n", encoding="utf-8")
-
-        layer = {
-            "lookupId": "extension:foo:command:speckit.baz",
-            "path": ext_dir / "commands" / "baz.md",
-            "extension_id": "foo",
-            "extension_dir": ext_dir,
-            "manifest_declared": False,
-        }
-        assert _derive_manifest_path(layer, project_root) is None
 
 
 class TestPresetDisplayName:

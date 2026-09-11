@@ -37,11 +37,6 @@ from .._download_security import (
     safe_extract_archive,
 )
 from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
-from .._identifier import (
-    IdentifierComponentError,
-    PROJECT_OVERRIDE_LAYER,
-    derive_named_id,
-)
 from .._init_options import (
     MISSING_INIT_OPTIONS_FILE,
     is_ai_skills_enabled,
@@ -675,38 +670,6 @@ class PresetManifest:
     def tags(self) -> List[str]:
         """Get preset tags."""
         return self.data.get("tags", [])
-
-    def iter_contributions(self) -> List[Dict[str, Any]]:
-        """Return an enriched, ordered list of every contribution this preset declares.
-
-        Each dict is a shallow copy of the underlying ``provides.templates[]``
-        entry with four derived keys added: ``layer`` (always ``"preset"``),
-        ``sourceId`` (this preset's ``id``), ``kind`` (mirrors the entry's
-        ``type`` — one of ``"command"`` / ``"template"`` / ``"script"``), and
-        ``id`` (the deterministic identifier). The underlying manifest data is
-        not mutated.
-        """
-        source_id = self.id
-        contributions: List[Dict[str, Any]] = []
-        for entry in self.templates:
-            kind = entry.get("type", "")
-            name = entry.get("name", "")
-            enriched = dict(entry)
-            enriched.update(
-                layer="preset",
-                sourceId=source_id,
-                kind=kind,
-                id=derive_named_id("preset", source_id, kind, name),
-            )
-            contributions.append(enriched)
-        return contributions
-
-    def contribution_id(self, kind: str, name: str) -> Optional[str]:
-        """Return the computed identifier for a single contribution, if declared."""
-        for entry in self.iter_contributions():
-            if entry["kind"] == kind and entry.get("name") == name:
-                return entry["id"]
-        return None
 
     def get_hash(self) -> str:
         """Calculate SHA256 hash of manifest file."""
@@ -2104,7 +2067,7 @@ class PresetManager:
                 if not registered:
                     # Top layer is a non-preset source (extension, core, or
                     # project override). Register directly from the layer path.
-                    source = layers[0].get("source") or ""
+                    source = layers[0]["source"]
                     extension_id = None
                     written: Dict[str, List[str]] = {}
                     if source.startswith("extension:"):
@@ -2228,7 +2191,7 @@ class PresetManager:
                     shared_composed.mkdir(parents=True, exist_ok=True)
                     composed_file = shared_composed / f"{cmd_name}.md"
                     composed_file.write_text(composed, encoding="utf-8")
-                    source = layers[0].get("source") or ""
+                    source = layers[0]["source"]
                     if source.startswith("extension:"):
                         source_id = source.split(":", 1)[1].split(" ", 1)[0]
                     else:
@@ -3739,11 +3702,13 @@ class PresetManager:
                 and restore_from_bundled_core
                 and extension_restore is None
             ):
-                from .._assets import _locate_shared_asset_dir
+                from .. import _locate_core_pack, _repo_root
 
-                commands_dir = _locate_shared_asset_dir("commands")
-                if commands_dir is not None:
-                    core_file = commands_dir / f"{short_name}.md"
+                _core_pack = _locate_core_pack()
+                if _core_pack is not None:
+                    core_file = _core_pack / "commands" / f"{short_name}.md"
+                else:
+                    core_file = _repo_root() / "templates" / "commands" / f"{short_name}.md"
             if not core_file.exists():
                 core_file = None
 
@@ -5372,19 +5337,6 @@ class PresetResolver:
             if self._is_safe_registry_id(pack_id)
         ]
 
-    def iter_presets_by_priority(self) -> List[tuple[str, dict]]:
-        """Return preset directories in resolver lookup order.
-
-        Each entry is ``(pack_id, metadata)`` where ``pack_id`` is the registry
-        key / on-disk directory name. That key identifies *where* the pack
-        lives — it is used for lookup and provenance, and as the ``sourceId``
-        of convention-only contribution IDs. Manifest-declared layers instead
-        take their ``lookupId`` ``sourceId`` from ``PresetManifest.id`` so the
-        ID joins directly to the manifest's own contributions even when the
-        installed directory was renamed.
-        """
-        return self._get_all_presets_by_priority()
-
     def _manifest_declared_template(
         self, pack_dir: Path, template_name: str, template_type: str
     ) -> tuple[dict | None, Path | None]:
@@ -5420,20 +5372,16 @@ class PresetResolver:
 
     def _extension_manifest_declared_template(
         self, ext_dir: Path, template_name: str, template_type: str
-    ) -> tuple[dict | None, Path | None, str | None]:
+    ) -> tuple[dict | None, Path | None]:
         """Resolve an extension's manifest-declared command/template/script entry and usable file.
 
-        Mirrors ``_manifest_declared_template`` (for presets): returns
-        ``(entry, candidate, manifest_id)`` where ``entry`` is the matching
-        ``provides.<type>`` mapping, or ``None`` if the extension has no
-        (valid) manifest or doesn't declare this ``(name, type)``.
-        ``candidate`` is the declared ``file:`` resolved under ``ext_dir`` IFF
-        it is a regular file that stays within ``ext_dir`` (guards against path
-        traversal via a malformed manifest, mirroring
-        ``resolve_extension_command_via_manifest``); ``None`` otherwise.
-        ``manifest_id`` comes from the same successful parse that produced
-        ``entry``, so callers never need a second fallible read to derive the
-        contribution identity.
+        Mirrors ``_manifest_declared_template`` (for presets): returns ``(entry, candidate)``
+        where ``entry`` is the matching ``provides.<type>`` mapping, or ``None`` if the
+        extension has no (valid) manifest or doesn't declare this ``(name, type)``.
+        ``candidate`` is the declared ``file:`` resolved under ``ext_dir`` IFF it is a
+        regular file that stays within ``ext_dir`` (guards against path traversal via a
+        malformed manifest, mirroring ``resolve_extension_command_via_manifest``);
+        ``None`` otherwise.
 
         The manifest is authoritative: when ``entry`` is not ``None`` but ``candidate`` is
         ``None``, callers must NOT fall back to convention-based lookup — that would mask
@@ -5442,16 +5390,16 @@ class PresetResolver:
         diverge (the divergence flagged in review on #4012).
         """
         if template_type not in ("command", "template", "script"):
-            return None, None, None
+            return None, None
         ext_manifest_path = ext_dir / "extension.yml"
         if not ext_manifest_path.exists():
-            return None, None, None
+            return None, None
         from ..extensions import ExtensionManifest, ValidationError as ExtValidationError
 
         try:
             ext_manifest = ExtensionManifest(ext_manifest_path)
         except (ExtValidationError, yaml.YAMLError, OSError, TypeError, AttributeError):
-            return None, None, None
+            return None, None
         if template_type == "command":
             entries = ext_manifest.commands
         elif template_type == "template":
@@ -5463,10 +5411,10 @@ class PresetResolver:
                 continue
             file_rel = entry.get("file")
             if not file_rel:
-                return entry, None, ext_manifest.id
+                return entry, None
             rel_path = Path(file_rel)
             if rel_path.is_absolute():
-                return entry, None, ext_manifest.id
+                return entry, None
             candidate = ext_dir / rel_path
             try:
                 # Resolve only for the containment check, not for the
@@ -5476,13 +5424,9 @@ class PresetResolver:
                 # lookup returns for the same directory.
                 candidate.resolve().relative_to(ext_dir.resolve())  # raises ValueError if outside
             except (OSError, ValueError):
-                return entry, None, ext_manifest.id
-            return (
-                entry,
-                candidate if candidate.is_file() else None,
-                ext_manifest.id,
-            )
-        return None, None, None
+                return entry, None
+            return entry, (candidate if candidate.is_file() else None)
+        return None, None
 
     def _get_all_extensions_by_priority(self) -> list[tuple[int, str, dict | None]]:
         """Build unified list of registered and unregistered extensions sorted by priority.
@@ -5538,19 +5482,6 @@ class PresetResolver:
         all_extensions.sort(key=lambda x: (x[0], x[1]))
         return all_extensions
 
-    def iter_extensions_by_priority(self) -> list[tuple[int, str, dict | None]]:
-        """Return extension directories in resolver lookup order.
-
-        Each entry is ``(priority, ext_id, metadata_or_none)`` where ``ext_id``
-        is always the on-disk directory name. That name identifies *where* the
-        extension lives — it is used for lookup and provenance, and as the
-        ``sourceId`` of convention-only contribution IDs. Manifest-declared
-        layers instead take their ``lookupId`` ``sourceId`` from
-        ``ExtensionManifest.id`` so the ID joins directly to the manifest's own
-        contributions even when the installed directory was renamed.
-        """
-        return self._get_all_extensions_by_priority()
-
     @staticmethod
     def _core_stem(template_name: str) -> Optional[str]:
         """Extract the stem for core command lookup.
@@ -5563,23 +5494,6 @@ class PresetResolver:
         if template_name.startswith("speckit."):
             return template_name[len("speckit."):]
         return None
-
-    @classmethod
-    def name_candidates(cls, logical_name: str) -> list[str]:
-        """Return exact-first filename candidates for a ``speckit.<stem>`` logical name.
-
-        Given a logical name like ``speckit.plan``, returns
-        ``["speckit.plan", "plan"]`` so callers can try the fully-qualified
-        filename first and then fall back to the bare stem.
-
-        Names that do not follow the ``speckit.<stem>`` convention return a
-        single-element list containing the original name.
-        """
-        names = [logical_name]
-        stem = cls._core_stem(logical_name)
-        if stem and stem != logical_name:
-            names.append(stem)
-        return names
 
     def resolve(
         self,
@@ -5664,10 +5578,8 @@ class PresetResolver:
             # The extension manifest is authoritative, same as preset manifests
             # above: check it before convention-based lookup so a declared entry
             # at a non-conventional path wins over a stale conventional file.
-            entry, manifest_candidate, _manifest_id = (
-                self._extension_manifest_declared_template(
-                    ext_dir, template_name, template_type
-                )
+            entry, manifest_candidate = self._extension_manifest_declared_template(
+                ext_dir, template_name, template_type
             )
             if manifest_candidate is not None:
                 return manifest_candidate
@@ -5704,13 +5616,42 @@ class PresetResolver:
         # Priority 5: Bundled core_pack (wheel install) or repo-root templates
         # (source-checkout / editable install).  This is the canonical home for
         # speckit's built-in command/template files and must always be checked
-        # so that strategy:wrap presets can locate {CORE_TEMPLATE}.  Delegated
-        # to the shared core asset resolver via ``_find_bundled_core`` so this
-        # tier and ``collect_all_layers()`` never disagree about what "core"
-        # means on this machine.
-        bundled = self._find_bundled_core(template_name, template_type, ext)
-        if bundled is not None:
-            return bundled
+        # so that strategy:wrap presets can locate {CORE_TEMPLATE}.
+        from specify_cli import _locate_core_pack, _repo_root  # local import to avoid cycles
+        _core_pack = _locate_core_pack()
+        if _core_pack is not None:
+            # Wheel install path
+            if template_type == "template":
+                candidate = _core_pack / "templates" / f"{template_name}.md"
+            elif template_type == "command":
+                candidate = _core_pack / "commands" / f"{template_name}.md"
+                if not candidate.exists():
+                    stem = self._core_stem(template_name)
+                    if stem:
+                        candidate = _core_pack / "commands" / f"{stem}.md"
+            elif template_type == "script":
+                candidate = _core_pack / "scripts" / f"{template_name}{ext}"
+            else:
+                candidate = _core_pack / f"{template_name}.md"
+            if candidate.exists():
+                return candidate
+        else:
+            # Source-checkout / editable install: templates live at repo root
+            repo_root = _repo_root()
+            if template_type == "template":
+                candidate = repo_root / "templates" / f"{template_name}.md"
+            elif template_type == "command":
+                candidate = repo_root / "templates" / "commands" / f"{template_name}.md"
+                if not candidate.exists():
+                    stem = self._core_stem(template_name)
+                    if stem:
+                        candidate = repo_root / "templates" / "commands" / f"{stem}.md"
+            elif template_type == "script":
+                candidate = repo_root / "scripts" / f"{template_name}{ext}"
+            else:
+                candidate = repo_root / f"{template_name}.md"
+            if candidate.exists():
+                return candidate
 
         return None
 
@@ -5851,9 +5792,6 @@ class PresetResolver:
 
         Returns:
             List of layer dicts ordered highest-to-lowest priority.
-            Filesystem-derived legacy layers whose names cannot be represented
-            by the contribution-ID grammar are preserved with ``lookupId=None``.
-            Manifest-declared layers remain subject to strict ID validation.
         """
         if template_type == "template":
             subdirs = ["templates", ""]
@@ -5869,12 +5807,6 @@ class PresetResolver:
             ext = ".sh"
 
         layers: List[Dict[str, Any]] = []
-
-        def _filesystem_lookup_id(layer: str, source_id: str) -> Optional[str]:
-            try:
-                return derive_named_id(layer, source_id, template_type, template_name)
-            except IdentifierComponentError:
-                return None
 
         def _find_in_subdirs(base_dir: Path) -> Optional[Path]:
             for subdir in subdirs:
@@ -5896,7 +5828,6 @@ class PresetResolver:
                 "path": override,
                 "source": "project override",
                 "strategy": "replace",
-                "lookupId": _filesystem_lookup_id(PROJECT_OVERRIDE_LAYER, "_"),
             })
 
         # Priority 2: Installed presets (sorted by priority — lower number = higher precedence)
@@ -5949,39 +5880,10 @@ class PresetResolver:
                             # strategy ("replace") when content is unreadable/invalid.
                             pass
                     version = metadata.get("version", "?") if metadata else "?"
-                    # Manifest-declared entries derive their sourceId from the
-                    # manifest's validated ``id:``, so ``lookupId`` joins
-                    # directly to ``PresetManifest.iter_contributions()``'s
-                    # ``id`` even when the installed directory (``pack_id``)
-                    # was renamed. Convention-only contributions have no
-                    # manifest to consult, so they fall back to the directory
-                    # / registry key. The directory identity is still carried
-                    # separately via ``preset_id`` / ``pack_dir`` / ``source``
-                    # for on-disk path lookup and provenance display.
-                    source_id_for_lookup = pack_id
-                    if entry is not None:
-                        manifest = self._get_manifest(pack_dir)
-                        if manifest is not None and isinstance(manifest.id, str) and manifest.id:
-                            source_id_for_lookup = manifest.id
                     layers.append({
                         "path": candidate,
                         "source": f"{pack_id} v{version}",
                         "strategy": strategy,
-                        "preset_id": pack_id,
-                        "pack_dir": pack_dir,
-                        "manifest_declared": entry is not None,
-                        "lookupId": (
-                            derive_named_id(
-                                "preset",
-                                source_id_for_lookup,
-                                template_type,
-                                template_name,
-                            )
-                            if entry is not None
-                            else _filesystem_lookup_id(
-                                "preset", source_id_for_lookup
-                            )
-                        ),
                     })
 
         # Priority 3: Extension-provided templates (always "replace")
@@ -5993,7 +5895,7 @@ class PresetResolver:
             # above: check it before convention-based lookup so a declared entry
             # at a non-conventional path wins over a stale conventional file, and
             # a declared-but-missing file isn't silently masked by convention.
-            entry, candidate, manifest_id = self._extension_manifest_declared_template(
+            entry, candidate = self._extension_manifest_declared_template(
                 ext_dir, template_name, template_type
             )
             if entry is None:
@@ -6004,36 +5906,12 @@ class PresetResolver:
                     source = f"extension:{ext_id} v{version}"
                 else:
                     source = f"extension:{ext_id} (unregistered)"
-                # Manifest-declared entries use the manifest's validated ``id:``
-                # for the lookupId's sourceId, so ``lookupId`` joins directly to
-                # ``ExtensionManifest.iter_contributions()``'s ``id`` even when
-                # the installed directory (``ext_id``) was renamed. Convention-
-                # only contributions have no manifest to consult and fall back
-                # to the directory identity. The directory identity is retained
-                # separately via ``extension_id`` / ``extension_dir`` for path
-                # / provenance lookup.
-                source_id_for_lookup = ext_id
-                if entry is not None and manifest_id is not None:
-                    source_id_for_lookup = manifest_id
                 layers.append({
                     "path": candidate,
                     "source": source,
                     "strategy": "replace",
                     "extension_id": ext_id,
                     "extension_dir": ext_dir,
-                    "manifest_declared": entry is not None,
-                    "lookupId": (
-                        derive_named_id(
-                            "extension",
-                            source_id_for_lookup,
-                            template_type,
-                            template_name,
-                        )
-                        if entry is not None
-                        else _filesystem_lookup_id(
-                            "extension", source_id_for_lookup
-                        )
-                    ),
                 })
 
         # Priority 4: Core templates (always "replace")
@@ -6070,7 +5948,7 @@ class PresetResolver:
             if bundled:
                 layers.append({
                     "path": bundled,
-                    "source": "core",
+                    "source": "core (bundled)",
                     "strategy": "replace",
                 })
 
@@ -6087,48 +5965,43 @@ class PresetResolver:
         Mirrors the tier-5 fallback logic in ``resolve()`` so that
         ``collect_all_layers()`` can locate base layers even when
         ``.specify/templates/`` doesn't contain the core file.
-
-        Command and template directory resolution is delegated to the shared
-        ``_locate_shared_asset_dir`` resolver. Script lookup preserves the
-        resolver's pre-existing flat ``<name>.sh`` wheel-or-source behavior.
         """
-        if template_type == "script":
-            try:
-                from specify_cli import _locate_core_pack, _repo_root
-            except ImportError:
-                return None
-
-            core_pack = _locate_core_pack()
-            base = (
-                core_pack / "scripts"
-                if core_pack is not None
-                else _repo_root() / "scripts"
-            )
-            for name in self.name_candidates(template_name):
-                candidate = base / f"{name}{ext}"
-                if candidate.exists():
-                    return candidate
-            return None
-
         try:
-            from specify_cli._assets import _locate_shared_asset_dir
+            from specify_cli import _locate_core_pack, _repo_root
         except ImportError:
             return None
 
-        if template_type == "template":
-            base = _locate_shared_asset_dir("templates")
-        elif template_type == "command":
-            base = _locate_shared_asset_dir("commands")
+        stem = self._core_stem(template_name)
+        names = [template_name]
+        if stem and stem != template_name:
+            names.append(stem)
+
+        core_pack = _locate_core_pack()
+        if core_pack is not None:
+            for name in names:
+                if template_type == "template":
+                    c = core_pack / "templates" / f"{name}.md"
+                elif template_type == "command":
+                    c = core_pack / "commands" / f"{name}.md"
+                elif template_type == "script":
+                    c = core_pack / "scripts" / f"{name}{ext}"
+                else:
+                    c = core_pack / f"{name}.md"
+                if c.exists():
+                    return c
         else:
-            base = None
-
-        if base is None:
-            return None
-
-        for name in self.name_candidates(template_name):
-            c = base / f"{name}.md"
-            if c.exists():
-                return c
+            repo_root = _repo_root()
+            for name in names:
+                if template_type == "template":
+                    c = repo_root / "templates" / f"{name}.md"
+                elif template_type == "command":
+                    c = repo_root / "templates" / "commands" / f"{name}.md"
+                elif template_type == "script":
+                    c = repo_root / "scripts" / f"{name}{ext}"
+                else:
+                    c = repo_root / f"{name}.md"
+                if c.exists():
+                    return c
         return None
 
     def resolve_content(
