@@ -59,17 +59,3 @@ def derive_lookup_id(layer: str, source_id: str, kind: str, name: str) -> str:
             "Invalid sourceId '_': reserved for project layer"
         )
     return f"{layer}:{source_id}:{kind}:{name}"
-
-
-def is_dotted_command_name(value: str) -> bool:
-    """Return whether *value* follows the dotted command-name convention."""
-    if "." not in value:
-        return False
-    return all(
-        segment
-        and all(
-            ("0" <= char <= "9") or ("a" <= char <= "z") or char == "-"
-            for char in segment
-        )
-        for segment in value.split(".")
-    )

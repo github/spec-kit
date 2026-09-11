@@ -557,7 +557,9 @@ class TestInfoContract:
         overrides.mkdir()
         (overrides / "speckit.constitution.md").write_text("override", encoding="utf-8")
 
-        info = ArtifactCatalog(spec_kit_project).get_artifact_info("speckit.constitution")
+        info = ArtifactCatalog(spec_kit_project).get_artifact_info(
+            "command:speckit.constitution"
+        )
 
         project = next(layer for layer in info["stack"] if layer["layer"] == "project")
         assert project["presetId"] is None
@@ -595,7 +597,9 @@ class TestInfoContract:
         overrides.mkdir()
         (overrides / "speckit.constitution.md").write_text("override", encoding="utf-8")
 
-        info = ArtifactCatalog(spec_kit_project).get_artifact_info("speckit.constitution")
+        info = ArtifactCatalog(spec_kit_project).get_artifact_info(
+            "command:speckit.constitution"
+        )
         assert len(info["stack"]) >= 2
         for layer in info["stack"]:
             assert layer["id"] == "command:speckit.constitution"
@@ -1281,10 +1285,14 @@ class TestConventionDiscovery:
 
         catalog = ArtifactCatalog(spec_kit_project)
         ids = {row.id for row in catalog.list_artifacts()}
+        assert "command:local-template" in ids
         assert "template:local-template" in ids
         assert "script:local-script" in ids
-        info = catalog.get_artifact_info("local-template")
-        assert info["stack"][0]["layer"] == "project"
+        for kind in ("command", "template"):
+            info = catalog.get_artifact_info(f"{kind}:local-template")
+            assert info["stack"][0]["layer"] == "project"
+        with pytest.raises(AmbiguousArtifactError):
+            catalog.get_artifact_info("local-template")
 
     def test_project_override_reports_its_own_description(self, spec_kit_project: Path):
         """An override's frontmatter/comment metadata wins over the hidden layer."""
@@ -1339,32 +1347,31 @@ class TestConventionDiscovery:
         assert rows["command:shared"] == "Shared override"
         assert rows["template:shared"] == "Shared override"
 
-    def test_dotted_override_only_artifact_is_a_command(self, spec_kit_project: Path):
-        overrides = spec_kit_project / ".specify" / "templates" / "overrides"
-        overrides.mkdir(parents=True)
-        (overrides / "speckit.local.md").write_text("body", encoding="utf-8")
-
-        catalog = ArtifactCatalog(spec_kit_project)
-        ids = {row.id for row in catalog.list_artifacts()}
-        assert "command:speckit.local" in ids
-        assert "template:speckit.local" not in ids
-        with pytest.raises(ArtifactNotFoundError):
-            catalog.get_artifact_info("template:speckit.local")
-        info = catalog.get_artifact_info("command:speckit.local")
-        assert info["kind"] == "command"
-        assert info["stack"][0]["layer"] == "project"
-
-    def test_malformed_dotted_override_is_not_forced_to_command(
-        self, spec_kit_project: Path
+    @pytest.mark.parametrize("name", ["local", "speckit.local"])
+    def test_override_only_artifact_exposes_both_resolvable_kinds(
+        self, spec_kit_project: Path, name: str
     ):
         overrides = spec_kit_project / ".specify" / "templates" / "overrides"
         overrides.mkdir(parents=True)
-        (overrides / "speckit..local.md").write_text("body", encoding="utf-8")
+        override = overrides / f"{name}.md"
+        override.write_text("body", encoding="utf-8")
 
         catalog = ArtifactCatalog(spec_kit_project)
         ids = {row.id for row in catalog.list_artifacts()}
-        assert "template:speckit..local" in ids
-        assert "command:speckit..local" not in ids
+        assert f"command:{name}" in ids
+        assert f"template:{name}" in ids
+
+        resolver = PresetResolver(spec_kit_project)
+        for kind in ("command", "template"):
+            layers = resolver.collect_all_layers(name, kind)
+            assert layers[0]["path"] == override
+
+            info = catalog.get_artifact_info(f"{kind}:{name}")
+            assert info["kind"] == kind
+            assert info["stack"][0]["layer"] == "project"
+
+        with pytest.raises(AmbiguousArtifactError):
+            catalog.get_artifact_info(name)
 
     def test_unregistered_preset_template_without_manifest(self, spec_kit_project: Path):
         pack_dir = spec_kit_project / ".specify" / "presets" / "legacy-preset"
@@ -1404,7 +1411,9 @@ class TestConventionDiscovery:
         ids = {row.id for row in catalog.list_artifacts()}
         assert not any("removed-preset" in artifact_id for artifact_id in ids)
 
-    def test_command_override_is_not_duplicated_as_template(self, spec_kit_project: Path):
+    def test_command_backed_override_also_exposes_resolvable_template(
+        self, spec_kit_project: Path
+    ):
         ext_dir = spec_kit_project / ".specify" / "extensions" / "legacy" / "commands"
         ext_dir.mkdir(parents=True)
         (ext_dir / "speckit.legacy.md").write_text("body", encoding="utf-8")
@@ -1415,8 +1424,11 @@ class TestConventionDiscovery:
         catalog = ArtifactCatalog(spec_kit_project)
         ids = {row.id for row in catalog.list_artifacts()}
         assert "command:speckit.legacy" in ids
-        assert "template:speckit.legacy" not in ids
-        assert catalog.get_artifact_info("speckit.legacy")["kind"] == "command"
+        assert "template:speckit.legacy" in ids
+        assert catalog.get_artifact_info("command:speckit.legacy")["kind"] == "command"
+        assert catalog.get_artifact_info("template:speckit.legacy")["kind"] == "template"
+        with pytest.raises(AmbiguousArtifactError):
+            catalog.get_artifact_info("speckit.legacy")
 
 
 class TestPresetDisplayName:
