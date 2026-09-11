@@ -410,7 +410,14 @@ class CopilotIntegration(IntegrationBase):
                     cli_args,
                     text=True,
                     cwd=cwd,
+                    timeout=timeout,
                 )
+            except subprocess.TimeoutExpired:
+                return {
+                    "exit_code": 124,
+                    "stdout": "",
+                    "stderr": "",
+                }
             except KeyboardInterrupt:
                 return {
                     "exit_code": 130,

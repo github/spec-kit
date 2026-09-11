@@ -361,6 +361,44 @@ class TestCopilotCommandsMode:
             f"Extra: {sorted(set(actual) - set(expected))}"
         )
 
+    def test_streaming_dispatch_passes_timeout_to_subprocess(self):
+        """Regression: streaming subprocess.run() must receive the timeout parameter."""
+        import subprocess
+        import unittest.mock as mock
+        from specify_cli.integrations.copilot import CopilotIntegration
+
+        copilot = CopilotIntegration()
+        copilot._skills_mode = False
+
+        with mock.patch("subprocess.run") as mock_run:
+            mock_run.return_value = mock.Mock(returncode=0)
+            copilot.dispatch_command("plan", "my args", timeout=120, stream=True)
+
+            mock_run.assert_called_once()
+            call_kwargs = mock_run.call_args[1]
+            assert call_kwargs.get("timeout") == 120, (
+                f"Expected timeout=120 but got {call_kwargs.get('timeout')}"
+            )
+
+    def test_streaming_dispatch_converts_timeout_expired_to_exit_124(self):
+        """Regression: subprocess.TimeoutExpired in streaming must return exit code 124."""
+        import subprocess
+        import unittest.mock as mock
+        from specify_cli.integrations.copilot import CopilotIntegration
+
+        copilot = CopilotIntegration()
+        copilot._skills_mode = False
+
+        with mock.patch("subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.TimeoutExpired(cmd="copilot", timeout=60)
+            result = copilot.dispatch_command("plan", "my args", stream=True)
+
+            assert result["exit_code"] == 124, (
+                f"Expected exit code 124 for TimeoutExpired but got {result['exit_code']}"
+            )
+            assert result["stdout"] == ""
+            assert result["stderr"] == ""
+
 class TestCopilotSkillsMode:
     """Tests for Copilot's default skills mode."""
 
