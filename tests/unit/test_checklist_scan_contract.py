@@ -22,8 +22,10 @@ COMMAND_DIRS = [
 ]
 
 # The instruction that tells the agent which lines are checkbox markers. Written to catch
-# the phrasing both commands use rather than one exact sentence.
-SCAN_INSTRUCTION = re.compile(r"lines matching\s+`- \[ \]`", re.IGNORECASE)
+# the phrasing both commands use rather than one exact sentence. The first marker may be
+# checked or unchecked: `/speckit-implement` defines its checked count on `- [X]` alone,
+# and that definition needs the same exclusion as the other two.
+SCAN_INSTRUCTION = re.compile(r"lines matching\s+`- \[[ xX]\]`", re.IGNORECASE)
 FENCE_EXCLUSION = re.compile(r"outside\s+(?:of\s+)?code\s+fences", re.IGNORECASE)
 
 
