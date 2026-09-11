@@ -662,15 +662,21 @@ def catalog_add(
         project_root = require_project_root()
         from ...bundler.commands_impl.catalog_config import add_source
 
-        source = add_source(project_root, url, policy=policy, priority=priority, source_id=source_id)
+        source, status = add_source(project_root, url, policy=policy, priority=priority, source_id=source_id)
     except BundlerError as exc:
         _fail(str(exc))
         return
 
-    console.print(
-        f"[green]✓[/green] Added catalog '{_escape_markup(str(source.id))}' "
-        f"(priority {source.priority}, {source.install_policy.value})."
-    )
+    if status == "unchanged":
+        console.print(
+            f"[green]✓[/green] Catalog '{_escape_markup(str(source.id))}' is already "
+            f"configured (priority {source.priority}, {source.install_policy.value})."
+        )
+    else:
+        console.print(
+            f"[green]✓[/green] Added catalog '{_escape_markup(str(source.id))}' "
+            f"(priority {source.priority}, {source.install_policy.value})."
+        )
 
 
 @bundle_catalog_app.command("remove")

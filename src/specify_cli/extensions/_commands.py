@@ -613,10 +613,28 @@ def catalog_add(
     safe_name = _escape_markup(name)
     safe_url = _escape_markup(url)
 
-    # Check for duplicate name
+    # Idempotent add (#4505): a rerun that requests an identical entry is a
+    # successful no-op so the same `catalog add` can live in a re-runnable
+    # workflow without failing. A same-name entry whose settings differ is
+    # still a conflict — we refuse to silently change priority/install
+    # permissions and ask the user to remove it first.
     for existing in catalogs:
         if isinstance(existing, dict) and existing.get("name") == name:
-            console.print(f"[yellow]Warning:[/yellow] A catalog named '{safe_name}' already exists.")
+            if (
+                str(existing.get("url", "")) == url
+                and existing.get("priority") == priority
+                and bool(existing.get("install_allowed", False)) == install_allowed
+                and str(existing.get("description", "")) == description
+            ):
+                console.print(
+                    f"[green]✓[/green] Catalog '[bold]{safe_name}[/bold]' is already "
+                    "configured with these settings; nothing to do."
+                )
+                return
+            console.print(
+                f"[red]Error:[/red] A catalog named '{safe_name}' already exists with "
+                "different settings."
+            )
             console.print("Use 'specify extension catalog remove' first, or choose a different name.")
             raise typer.Exit(1)
 

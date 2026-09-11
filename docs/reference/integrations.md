@@ -213,6 +213,8 @@ specify integration catalog add <url>
 
 Adds a custom catalog URL to the project's `.specify/integration-catalogs.yml`. The URL must use HTTPS (except `http://localhost`, `http://127.0.0.1`, or `http://[::1]` for local testing).
 
+Adding a catalog is idempotent (identity is the catalog **URL**): re-running `catalog add` with the same URL and the same (or no) `--name` is a successful no-op (exit code 0), so it is safe to include in a re-runnable workflow. Re-adding the same URL with a *different* `--name` is rejected as a conflict rather than silently overwriting the existing entry — remove it first to change it.
+
 ### Remove a Catalog
 
 ```bash
