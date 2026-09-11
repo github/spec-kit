@@ -1774,6 +1774,33 @@ class TestHookInventory:
         assert all(entry["active"] is True for entry in row["stack"])
         assert row["registered"] is True
 
+    def test_equal_priorities_preserve_deterministic_resolver_order(
+        self, spec_kit_project: Path
+    ):
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "ext-a",
+            hooks={"before_specify": [{"command": "shared.cmd", "priority": 5}]},
+            priority=5,
+        )
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "ext-b",
+            hooks={"before_specify": [{"command": "shared.cmd", "priority": 5}]},
+            priority=10,
+        )
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        observed_orders = []
+        for _ in range(2):
+            rows = catalog.list_artifacts_with_stack()
+            row = next(item for item in rows if item["kind"] == "hook")
+            observed_orders.append(
+                [entry["sourceId"] for entry in row["stack"]]
+            )
+
+        assert observed_orders == [["ext-a", "ext-b"], ["ext-a", "ext-b"]]
+
     def test_duplicate_declarations_within_extension_use_last_value(
         self, spec_kit_project: Path
     ):
