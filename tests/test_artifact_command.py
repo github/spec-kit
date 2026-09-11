@@ -2189,6 +2189,25 @@ class TestHookCli:
         assert result.stdout == ""
         assert ERROR_REGEX.match(json.loads(result.stderr)["error"])
 
+    @pytest.mark.parametrize(
+        "identifier",
+        ["hook:event:bad%escape", "hook:event:%FF"],
+    )
+    def test_malformed_hook_id_json_error_envelope(
+        self, spec_kit_project: Path, monkeypatch, identifier: str
+    ):
+        monkeypatch.chdir(spec_kit_project)
+
+        result = CliRunner().invoke(
+            app,
+            ["artifact", "info", identifier, "--json"],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert ERROR_REGEX.match(json.loads(result.stderr)["error"])
+
 
 def test_existing_artifact_shapes_do_not_gain_hook_fields(
     spec_kit_project: Path,
