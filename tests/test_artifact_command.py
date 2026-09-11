@@ -1877,6 +1877,38 @@ class TestHookInventory:
         rows = ArtifactCatalog(spec_kit_project).list_artifacts_with_stack()
         assert all(row["kind"] != "hook" for row in rows)
 
+    @pytest.mark.parametrize("registered", [True, False])
+    def test_malformed_manifest_is_omitted_without_hiding_healthy_hooks(
+        self, spec_kit_project: Path, registered: bool
+    ):
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "healthy",
+            hooks={"before_specify": [{"command": "speckit.healthy.cmd"}]},
+        )
+        broken_dir = (
+            spec_kit_project / ".specify" / "extensions" / "broken"
+        )
+        broken_dir.mkdir()
+        (broken_dir / "extension.yml").write_text(
+            "schema_version: [\n", encoding="utf-8"
+        )
+        if registered:
+            ExtensionRegistry(
+                spec_kit_project / ".specify" / "extensions"
+            ).add(
+                "broken",
+                {"version": "1.0.0", "enabled": True, "priority": 10},
+            )
+
+        rows = ArtifactCatalog(spec_kit_project).list_artifacts_with_stack()
+        hook_rows = [row for row in rows if row["kind"] == "hook"]
+
+        assert [row["targetCommand"] for row in hook_rows] == [
+            "speckit.healthy.cmd"
+        ]
+        assert hook_rows[0]["stack"][0]["sourceId"] == "healthy"
+
     def test_hooks_never_use_builtin_layer(self, spec_kit_project: Path):
         _install_extension_with_hooks(
             spec_kit_project,
