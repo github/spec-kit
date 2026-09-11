@@ -24,6 +24,7 @@ from ._identifiers import (
     derive_hook_lookup_id,
     derive_hook_public_id,
     derive_public_id,
+    parse_hook_artifact_name,
     validate_component,
 )
 from .models import (
@@ -240,11 +241,8 @@ def _resolve_kind_hint(name: str, kind: ArtifactKind | None) -> tuple[str, Artif
 def _validate_artifact_name(name: str, kind: ArtifactKind) -> str:
     """Validate the structural identifier component constraints for ``name``."""
     if kind == "hook":
-        event_name, separator, command = name.partition(":")
-        if not separator:
-            raise ArtifactNotFoundError(name)
         try:
-            derive_hook_public_id(event_name, command)
+            parse_hook_artifact_name(name)
         except IdentifierComponentError as exc:
             raise ArtifactNotFoundError(name) from exc
         return name
@@ -403,7 +401,7 @@ class ArtifactCatalog:
     ) -> dict[str, Any]:
         """Return one hook row and its additive declaration stack."""
         _validate_artifact_name(bare_name, "hook")
-        event_name, _, command = bare_name.partition(":")
+        event_name, command = parse_hook_artifact_name(bare_name)
         hook_rows, stack_cache = self._collect_hook_inventory(resolver)
         for row in hook_rows:
             if row.eventName != event_name or row.targetCommand != command:
@@ -473,23 +471,29 @@ class ArtifactCatalog:
                 source_id = manifest.id
 
                 for event_name, hook_config in (manifest.hooks or {}).items():
-                    entries_by_command: dict[str, dict[str, Any]] = {}
+                    entries_by_command: dict[
+                        str, tuple[dict[str, Any], str, str]
+                    ] = {}
                     for entry in coerce_hook_entries(hook_config):
                         if not isinstance(entry, dict):
                             continue
                         command = entry.get("command")
                         try:
-                            validate_component(command, "command")
+                            public_id = derive_hook_public_id(event_name, command)
+                            lookup_id = derive_hook_lookup_id(
+                                "extension", source_id, event_name, command
+                            )
                         except IdentifierComponentError:
                             continue
                         entries_by_command.pop(command, None)
-                        entries_by_command[command] = entry
-
-                    for command, entry in entries_by_command.items():
-                        public_id = derive_hook_public_id(event_name, command)
-                        lookup_id = derive_hook_lookup_id(
-                            "extension", source_id, event_name, command
+                        entries_by_command[command] = (
+                            entry,
+                            public_id,
+                            lookup_id,
                         )
+
+                    for command, entry_data in entries_by_command.items():
+                        entry, public_id, lookup_id = entry_data
                         insertion_index += 1
                         declaration = {
                             "id": public_id,
@@ -560,10 +564,11 @@ class ArtifactCatalog:
                 ),
                 "",
             )
+            public_id = derive_hook_public_id(event_name, command)
             rows.append(
                 HookArtifact(
-                    id=derive_hook_public_id(event_name, command),
-                    name=f"{event_name}:{command}",
+                    id=public_id,
+                    name=public_id.removeprefix("hook:"),
                     kind="hook",
                     description=description,
                     eventName=event_name,

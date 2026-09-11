@@ -1948,6 +1948,42 @@ class TestHookInfo:
         assert payload["eventName"] == "before_specify"
         assert payload["targetCommand"] == "speckit.compliance.pre-check"
 
+    def test_colon_containing_values_round_trip_through_encoded_id(
+        self, spec_kit_project: Path
+    ):
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "ext",
+            hooks={
+                "custom:after": [
+                    {
+                        "command": "/skill:speckit-test-ext-hello",
+                        "description": "Colon-compatible hook",
+                    }
+                ]
+            },
+        )
+
+        rows = ArtifactCatalog(spec_kit_project).list_artifacts_with_stack()
+        row = next(item for item in rows if item["kind"] == "hook")
+
+        assert (
+            row["id"]
+            == "hook:custom%3Aafter:%2Fskill%3Aspeckit-test-ext-hello"
+        )
+        assert row["name"] == (
+            "custom%3Aafter:%2Fskill%3Aspeckit-test-ext-hello"
+        )
+        assert row["eventName"] == "custom:after"
+        assert row["targetCommand"] == "/skill:speckit-test-ext-hello"
+        assert row["stack"][0]["lookupId"] == (
+            "extension:ext:hook:custom%3Aafter:"
+            "%2Fskill%3Aspeckit-test-ext-hello"
+        )
+
+        info = ArtifactCatalog(spec_kit_project).get_artifact_info(row["id"])
+        assert info == row
+
     def test_kind_hint_resolves_hook_name(self, spec_kit_project: Path):
         _install_extension_with_hooks(
             spec_kit_project,

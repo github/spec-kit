@@ -154,7 +154,7 @@ Lookup IDs are derived by the artifact command from the resolved layer and its e
 Hook rows project hook declarations from extensions included by the standard preset and extension resolver. The round-trip shorthand is:
 
 ```text
-hook:{eventName}:{targetCommand}
+hook:{encodedEventName}:{encodedTargetCommand}
 ```
 
 For example, both of these select the same hook artifact:
@@ -162,6 +162,12 @@ For example, both of these select the same hook artifact:
 ```bash
 specify artifact info hook:before_specify:speckit.compliance.pre-check --json
 specify artifact info before_specify:speckit.compliance.pre-check --kind hook --json
+```
+
+Hook ID components are percent-encoded only when required to keep the colon-delimited shorthand unambiguous. This encoding is limited to the artifact `id`, `name`, and `lookupId` representation; hook manifests, runtime bindings, `eventName`, and `targetCommand` are unchanged. For example, an event named `custom:after` targeting `/skill:speckit-test-ext-hello` has the artifact ID:
+
+```text
+hook:custom%3Aafter:%2Fskill%3Aspeckit-test-ext-hello
 ```
 
 Hook rows add three top-level fields:
@@ -178,7 +184,7 @@ For hooks, `active` reports registration state from `.specify/extensions.yml`, n
 
 Declared-but-unregistered hooks remain visible when their extension is included by the normal resolver. Registry-disabled extensions are excluded entirely, consistently with their other contributions. Invalid individual extension manifests are also omitted by the existing resolver and remain diagnosable through extension inspection and validation commands.
 
-Hook lookup IDs use the artifact-private `{layer}:{sourceId}:hook:{eventName}:{targetCommand}` grammar. Hook provenance is restricted to `preset` and `extension` layers; hooks never receive a built-in/core layer. The current manifest API exposes extension hook declarations, so current rows use the `extension` layer. The `preset` layer remains reserved by the hook identifier grammar for preset-provided hooks without requiring artifact IDs to be added to preset or extension manifest APIs.
+Hook lookup IDs use the artifact-private `{layer}:{sourceId}:hook:{encodedEventName}:{encodedTargetCommand}` grammar. Hook provenance is restricted to `preset` and `extension` layers; hooks never receive a built-in/core layer. The current manifest API exposes extension hook declarations, so current rows use the `extension` layer. The `preset` layer remains reserved by the hook identifier grammar for preset-provided hooks without requiring artifact IDs to be added to preset or extension manifest APIs.
 
 ## JSON Errors
 
