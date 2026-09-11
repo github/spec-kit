@@ -147,7 +147,12 @@ class ProjectOverlaySource:
                 workflow_overlay_dir, [f"Cannot enumerate overlays: {exc}"]
             ) from exc
         for path in entries:
-            if not path.is_file() or path.suffix not in (".yml", ".yaml"):
+            # Match the extension case-insensitively. A hand-placed overlay
+            # named ``<id>.YML`` or ``<id>.Yaml`` was skipped here and never
+            # applied, with nothing reported to say the file had been ignored.
+            # Every other YAML discovery path in the package already lowercases
+            # before matching (engine.py:941, _commands.py:1325/1894/2128).
+            if not path.is_file() or path.suffix.lower() not in (".yml", ".yaml"):
                 continue
             if path.is_symlink():
                 raise OverlayLoadError(path, ["Symlinked overlay files are not allowed"])
