@@ -25,6 +25,7 @@ from specify_cli.artifacts import (
     ArtifactKind,
     ArtifactNotFoundError,
     ArtifactResolutionError,
+    HookArtifact,
     NotASpecKitProjectError,
 )
 from specify_cli.artifacts.resolution import _preset_display_name
@@ -70,7 +71,7 @@ def non_project(tmp_path: Path) -> Path:
 class TestListArtifactsContract:
     def test_returns_list_of_artifact(self, spec_kit_project: Path):
         rows = ArtifactCatalog(spec_kit_project).list_artifacts()
-        assert all(isinstance(r, Artifact) for r in rows)
+        assert all(isinstance(r, (Artifact, HookArtifact)) for r in rows)
 
     def test_every_row_has_required_fields(self, spec_kit_project: Path):
         for row in ArtifactCatalog(spec_kit_project).list_artifacts():
@@ -79,17 +80,20 @@ class TestListArtifactsContract:
             assert isinstance(d["description"], str)  # never None; empty string OK
 
     def test_id_grammar(self, spec_kit_project: Path):
-        pattern = re.compile(r"^(command|template|script):[^:]+$")
+        pattern = re.compile(
+            r"^(?:(?:command|template|script):[^:]+|hook:[^:]+:[^:]+)$"
+        )
         for row in ArtifactCatalog(spec_kit_project).list_artifacts():
             assert pattern.match(row.id), f"bad id: {row.id!r}"
 
     def test_name_never_contains_colon(self, spec_kit_project: Path):
         for row in ArtifactCatalog(spec_kit_project).list_artifacts():
-            assert ":" not in row.name
+            if row.kind != "hook":
+                assert ":" not in row.name
 
     def test_kind_is_from_fixed_enum(self, spec_kit_project: Path):
         for row in ArtifactCatalog(spec_kit_project).list_artifacts():
-            assert row.kind in ("command", "template", "script")
+            assert row.kind in ("command", "template", "script", "hook")
 
     def test_rows_are_unique(self, spec_kit_project: Path):
         rows = ArtifactCatalog(spec_kit_project).list_artifacts()
@@ -563,13 +567,16 @@ class TestListArtifactsContract:
 
 
 class TestListSorting:
-    """Deterministic ordering: kind first (command/template/script), then name."""
+    """Deterministic ordering for the flat inventory."""
 
     def test_kind_grouping(self, spec_kit_project: Path):
         rows = ArtifactCatalog(spec_kit_project).list_artifacts()
         kinds_seen = [r.kind for r in rows]
         # kinds must appear as contiguous groups in the fixed order
-        first_idx = {k: next((i for i, x in enumerate(kinds_seen) if x == k), None) for k in ("command", "template", "script")}
+        first_idx = {
+            k: next((i for i, x in enumerate(kinds_seen) if x == k), None)
+            for k in ("command", "template", "script", "hook")
+        }
         indices = [v for v in first_idx.values() if v is not None]
         assert indices == sorted(indices)
 
@@ -577,6 +584,8 @@ class TestListSorting:
         rows = ArtifactCatalog(spec_kit_project).list_artifacts()
         by_kind: dict[str, list[str]] = {}
         for r in rows:
+            if r.kind == "hook":
+                continue
             by_kind.setdefault(r.kind, []).append(r.name)
         for _, names in by_kind.items():
             assert names == sorted(names)
@@ -1689,6 +1698,28 @@ def _write_hook_binding(
 
 
 class TestHookInventory:
+    def test_flat_and_stack_listings_include_the_same_hook(
+        self, spec_kit_project: Path
+    ):
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "compliance",
+            hooks={"before_specify": [{"command": "speckit.compliance.pre-check"}]},
+        )
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        flat = next(row for row in catalog.list_artifacts() if row.kind == "hook")
+        enriched = next(
+            row
+            for row in catalog.list_artifacts_with_stack()
+            if row["kind"] == "hook"
+        )
+
+        assert isinstance(flat, HookArtifact)
+        assert flat.to_json_dict() == {
+            key: value for key, value in enriched.items() if key != "stack"
+        }
+
     def test_declared_hook_has_artifact_and_stack_shape(
         self, spec_kit_project: Path
     ):

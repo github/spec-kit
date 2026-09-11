@@ -268,11 +268,11 @@ class ArtifactCatalog:
         self.project_root = project_root
 
     # ------------------------------------------------------------------ list
-    def list_artifacts(self) -> list[Artifact]:
+    def list_artifacts(self) -> list[Artifact | HookArtifact]:
         """Return every artifact Spec Kit exposes for this project, deduped.
 
-        Sort order is deterministic — first by ``kind`` in the fixed
-        ``["command", "template", "script"]`` order, then by ``name``.
+        Named artifacts are sorted by kind and name. Hook artifacts follow in
+        their deterministic event, priority, and declaration order.
         Returns an empty list when no artifacts are found rather than raising;
         a fresh install with no presets, no extensions, and no built-in assets is
         still a valid Spec Kit project.
@@ -287,8 +287,9 @@ class ArtifactCatalog:
         is decided by :meth:`PresetResolver.collect_all_layers`'s own
         ordering (index 0 = winner), not by enumeration order here.
         """
-        artifacts, _layers_cache, _resolver, _manifest_cache = self._collect_inventory()
-        return artifacts
+        artifacts, _layers_cache, resolver, _manifest_cache = self._collect_inventory()
+        hooks, _hook_stack_cache = self._collect_hook_inventory(resolver)
+        return [*artifacts, *hooks]
 
     def list_artifacts_with_stack(self) -> list[dict[str, Any]]:
         """Return list rows enriched with each artifact's full composition stack."""
