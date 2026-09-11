@@ -47,6 +47,7 @@ from .._invocation_style import get_invocation_prefix
 from ..integrations.base import IntegrationBase
 from .._utils import dump_frontmatter, version_satisfies
 from ..shared_infra import (
+    SymlinkedSharedPathError,
     _ensure_safe_shared_destination,
     _ensure_safe_shared_directory,
     _write_shared_bytes,
@@ -2601,7 +2602,7 @@ class PresetManager:
                         )
                     ):
                         reconciled_skill_commands.add(cmd_name)
-                except Exception:
+                except (OSError, SymlinkedSharedPathError):
                     pass  # best-effort override skill restoration
 
             # Register skills only for the specific commands being
