@@ -48,7 +48,10 @@ installation fails, the previous preset has already been removed. The command
 reports a copy-pastable `specify preset add` retry command, including the
 replacement source and priority. There is no pre-flight validation, version
 comparison, staging, rollback, or automatic recovery. A missing or invalid
-replacement source can therefore leave the preset removed.
+replacement source can therefore leave the preset removed. With `--from` or
+`--dev`, the replacement manifest's `preset.id` is not checked against the
+requested ID before removal; a source declaring a different ID may therefore
+install a different preset after the requested one has been removed.
 
 A successful update follows normal remove and add behaviour: it re-enables the
 preset, recreates `installed_at`, removes local modifications tracked by the
