@@ -560,6 +560,13 @@ from .presets._commands import register as _register_preset_cmds  # noqa: E402
 _register_preset_cmds(app)
 
 
+# ===== Artifact Commands =====
+
+# Read-only introspection over the composed inventory (commands/templates/scripts).
+from .artifacts._commands import register as _register_artifact_cmds  # noqa: E402
+_register_artifact_cmds(app)
+
+
 # ===== Bundle Commands =====
 
 # Bundler subcommand group (specify bundle ...) — see commands/bundle/.

@@ -976,6 +976,23 @@ provides:
         with pytest.raises(ValidationError, match="must contain at least one entry"):
             ExtensionManifest(manifest_path)
 
+    def test_hook_colons_remain_accepted(self, temp_dir, valid_manifest_data):
+        """Artifact identifiers must not narrow the existing hook manifest contract."""
+        import yaml
+
+        valid_manifest_data["hooks"] = {
+            "custom:after": {"command": "/skill:speckit-test-ext-hello"}
+        }
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.hooks["custom:after"]["command"] == (
+            "/skill:speckit-test-ext-hello"
+        )
+
     def test_hook_priority_field_validation(self, temp_dir, valid_manifest_data):
         """Hook entry ``priority`` must be a positive integer when provided."""
         import yaml
