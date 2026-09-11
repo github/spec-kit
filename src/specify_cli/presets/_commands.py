@@ -500,12 +500,19 @@ def preset_update(
     retry_args.extend(["--priority", str(priority)])
 
     def report_add_failure() -> None:
+        import subprocess
+
+        rendered_args = (
+            subprocess.list2cmdline(retry_args)
+            if os.name == "nt"
+            else shlex.join(retry_args)
+        )
         console.print(
             "[red]Error:[/red] Preset update failed; the previous preset was removed."
         )
         console.print(
             "Retry with: [cyan]"
-            f"{_escape_markup(shlex.join(retry_args))}"
+            f"{_escape_markup(rendered_args)}"
             "[/cyan]",
             soft_wrap=True,
         )
