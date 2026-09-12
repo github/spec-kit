@@ -14,8 +14,21 @@ from typing import Any
 
 import yaml
 
-from ..base import IntegrationOption, MarkdownIntegration, yaml_quote
+from ..base import IntegrationOption, MarkdownIntegration, SkillsIntegration, yaml_quote
 from ..manifest import IntegrationManifest
+
+
+class _GenericSkillsHelper(SkillsIntegration):
+    """Internal helper supplying skills-mode post-processing for
+    ``GenericIntegration`` (e.g. the dot-to-hyphen hook invocation note).
+
+    Not registered in the integration registry — ``GenericIntegration``
+    itself renders skills content directly in ``_build_skill_content()``
+    and only delegates to this helper's ``post_process_skill_content()``,
+    mirroring the pattern ``CopilotIntegration`` uses for its skills mode.
+    """
+
+    key = "generic"
 
 
 class GenericIntegration(MarkdownIntegration):
@@ -156,6 +169,7 @@ class GenericIntegration(MarkdownIntegration):
             f"---\n"
             f"{processed_body}"
         )
+        skill_content = _GenericSkillsHelper().post_process_skill_content(skill_content)
         return skill_name, skill_content
 
     def commands_dest(self, project_root: Path) -> Path:

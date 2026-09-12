@@ -253,6 +253,26 @@ class TestGenericIntegration:
         assert "__AGENT__" not in content
         assert "__SPECKIT_COMMAND_" not in content
 
+    def test_skill_content_has_hook_command_note(self, tmp_path):
+        """SKILL.md bodies get the shared dot-to-hyphen hook invocation
+        note, matching what SkillsIntegration.setup() produces for other
+        skills-format agents (e.g. Claude)."""
+        i = get_integration("generic")
+        m = IntegrationManifest("generic", tmp_path)
+        i.setup(
+            tmp_path, m,
+            parsed_options={"commands_dir": ".myagent/skills", "skills": True},
+        )
+        constitution_skill = (
+            tmp_path / ".myagent" / "skills" / "speckit-constitution" / "SKILL.md"
+        )
+        assert constitution_skill.exists()
+        content = constitution_skill.read_text(encoding="utf-8")
+        assert (
+            "replace dots (`.`) with hyphens (`-`)" in content
+        ), "generic --skills output is missing the hook-invocation note"
+        assert "`speckit.git.commit` → `/speckit-git-commit`" in content
+
     def test_skills_flag_false_keeps_flat_markdown(self, tmp_path):
         """Without --skills, behavior is unchanged: flat speckit.<name>.md files."""
         i = get_integration("generic")
