@@ -25,6 +25,7 @@ from ._identifiers import (
     derive_hook_public_id,
     derive_public_id,
     parse_hook_artifact_name,
+    parse_lookup_id,
     validate_component,
 )
 from .models import (
@@ -33,6 +34,7 @@ from .models import (
     ArtifactKind,
     ArtifactNotFoundError,
     ArtifactResolutionError,
+    ContributionNotFoundError,
     HookArtifact,
     HookStackEntry,
     NotASpecKitProjectError,
@@ -404,6 +406,153 @@ class ArtifactCatalog:
             "description": artifact.description,
             "stack": [layer.to_json_dict() for layer in stack],
         }
+
+    def get_contribution_info(self, lookup_id: str) -> dict[str, Any]:
+        """Resolve a stack ``lookupId`` to its originating manifest entry."""
+        _validate_project(self.project_root)
+        _validate_extension_registry(self.project_root)
+        try:
+            layer, source_id, kind, name = parse_lookup_id(lookup_id)
+        except IdentifierComponentError as exc:
+            raise ContributionNotFoundError(lookup_id) from exc
+        if layer == "project":
+            raise ContributionNotFoundError(lookup_id)
+
+        from ..presets import PresetError, PresetResolver
+
+        resolver = PresetResolver(self.project_root)
+        try:
+            if layer == "preset":
+                resolved = self._find_preset_contribution(
+                    resolver, source_id, kind, name
+                )
+            else:
+                resolved = self._find_extension_contribution(
+                    resolver, source_id, kind, name
+                )
+        except (OSError, PresetError) as exc:
+            raise ArtifactResolutionError() from exc
+        if resolved is None:
+            raise ContributionNotFoundError(lookup_id)
+
+        contribution, manifest_path, source_path = resolved
+        return {
+            "id": lookup_id,
+            "layer": layer,
+            "sourceId": source_id,
+            "kind": kind,
+            "name": name,
+            "manifestPath": manifest_path,
+            "sourcePath": source_path,
+            "contribution": contribution,
+        }
+
+    def _find_preset_contribution(
+        self,
+        resolver: Any,
+        source_id: str,
+        kind: str,
+        name: str,
+    ) -> tuple[dict[str, Any], str, str | None] | None:
+        for pack_id, _metadata in resolver._get_all_presets_by_priority():
+            pack_dir = resolver.presets_dir / pack_id
+            manifest = resolver._get_manifest(pack_dir)
+            if manifest is None or manifest.id != source_id:
+                continue
+            for entry in manifest.templates:
+                if (
+                    isinstance(entry, dict)
+                    and entry.get("type") == kind
+                    and entry.get("name") == name
+                ):
+                    return self._contribution_result(
+                        entry, pack_dir, manifest.path
+                    )
+        return None
+
+    def _find_extension_contribution(
+        self,
+        resolver: Any,
+        source_id: str,
+        kind: str,
+        name: str,
+    ) -> tuple[dict[str, Any], str, str | None] | None:
+        from ..extensions import (
+            ExtensionManifest,
+            ValidationError,
+            coerce_hook_entries,
+        )
+
+        for _priority, extension_id, _metadata in resolver._get_all_extensions_by_priority():
+            extension_dir = resolver.extensions_dir / extension_id
+            manifest_path = extension_dir / "extension.yml"
+            try:
+                manifest = ExtensionManifest(manifest_path)
+            except (ValidationError, OSError, TypeError, AttributeError):
+                continue
+            if manifest.id != source_id:
+                continue
+            if kind == "hook":
+                event_name, command = parse_hook_artifact_name(name)
+                matching: dict[str, Any] | None = None
+                hook_config = (manifest.hooks or {}).get(event_name)
+                for entry in coerce_hook_entries(hook_config):
+                    if isinstance(entry, dict) and entry.get("command") == command:
+                        matching = entry
+                if matching is None:
+                    return None
+                relative_manifest = _repo_relative_existing_file(
+                    self.project_root, manifest.path
+                )
+                if relative_manifest is None:
+                    raise ArtifactResolutionError()
+                return (
+                    {"eventName": event_name, **matching},
+                    relative_manifest,
+                    None,
+                )
+
+            entries = {
+                "command": manifest.commands,
+                "template": manifest.templates,
+                "script": manifest.scripts,
+            }[kind]
+            for entry in entries:
+                if isinstance(entry, dict) and entry.get("name") == name:
+                    return self._contribution_result(
+                        entry, extension_dir, manifest.path
+                    )
+        return None
+
+    def _contribution_result(
+        self,
+        entry: dict[str, Any],
+        pack_dir: Path,
+        manifest_path: Path,
+    ) -> tuple[dict[str, Any], str, str | None]:
+        relative_manifest = _repo_relative_existing_file(
+            self.project_root, manifest_path
+        )
+        if relative_manifest is None:
+            raise ArtifactResolutionError()
+        relative_file = entry.get("file")
+        source_path = None
+        if isinstance(relative_file, str):
+            try:
+                resolved_pack = pack_dir.resolve()
+                candidate = (pack_dir / relative_file).resolve()
+                candidate.relative_to(resolved_pack)
+            except (OSError, ValueError):
+                pass
+            else:
+                source_path = _repo_relative_existing_file(
+                    self.project_root, candidate
+                )
+        return (
+            dict(entry),
+            relative_manifest,
+            source_path,
+        )
 
     def _get_hook_info(
         self,

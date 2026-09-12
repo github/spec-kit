@@ -158,6 +158,31 @@ def artifact_info(
     sys.stdout.write("\n")
 
 
+@artifact_app.command("lookup")
+def artifact_lookup(
+    lookup_id: str = typer.Argument(..., help="Contribution lookupId from an artifact stack."),
+    json_flag: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the originating manifest contribution as JSON.",
+    ),
+) -> None:
+    """Resolve a stack lookupId to its preset or extension contribution."""
+    _require_json_flag(json_flag)
+    try:
+        root = _resolve_project_root()
+        payload = ArtifactCatalog(root).get_contribution_info(lookup_id)
+    except ArtifactError as exc:
+        _emit_error_and_exit(exc)
+        return  # pragma: no cover
+    except (OSError, PresetError):
+        _emit_error_and_exit(ArtifactResolutionError())
+        return  # pragma: no cover
+
+    sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
+    sys.stdout.write("\n")
+
+
 def register(app: typer.Typer) -> None:
     """Attach the artifact command group to the root Typer app."""
     app.add_typer(artifact_app, name="artifact")

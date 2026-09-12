@@ -4,7 +4,7 @@ An **artifact** is any command, template, script, or hook Spec Kit exposes in a 
 
 The `specify artifact` command group is the read-only introspection surface for that inventory. `specify preset resolve <name>` answers "which file wins for this preset-managed name?"; `specify artifact` answers "what exists at all, and what is the full composition stack behind it?" — including built-in artifacts that no preset touches.
 
-Both subcommands currently require `--json`. Omitting it exits with code `2` and prints a usage message on stderr; no stdout is produced. Text rendering is deliberately deferred so the JSON shapes below are the only contract, and adding a default text renderer later stays a non-breaking, additive change.
+All subcommands currently require `--json`. Omitting it exits with code `2` and prints a usage message on stderr; no stdout is produced. Text rendering is deliberately deferred so the JSON shapes below are the only contract, and adding a default text renderer later stays a non-breaking, additive change.
 
 ## List Artifacts
 
@@ -147,7 +147,24 @@ For command, template, and script artifacts, `stack` is ordered by resolution pr
 
 `active` and `hidden` are independent labels, not opposites. For command, template, and script artifacts, `active` identifies the highest-precedence layer selected by the existing Spec Kit layer-resolution order; it does not validate that the layer content can be read or composed. This preserves the diagnostic behavior of `specify preset resolve`, which reports the discovered layer chain even when content composition later produces a warning. Composing strategies (`wrap`, `prepend`, `append`) keep lower layers in the composed output, so an inactive layer is not necessarily hidden: only layers below the first `replace` layer are marked `hidden`. Built-in rows have no provenance: `layer`, `sourceId`, and `lookupId` are `null` — but `id` is always populated, even on built-in rows. `id` is the round-trip key: `specify artifact info` accepts it as input (for example, `specify artifact info command:speckit.specify --json`), and it resolves the same artifact whether the caller passes the bare name or the `id`.
 
-Lookup IDs are supplied by the resolver for contribution layers and reused by the artifact command. Manifest-declared layers use the manifest's `id`; convention-only layers use the installed preset or extension directory id. Project-local overrides carry a synthetic `project:_:{kind}:{name}` ID, while built-in layers have no `lookupId`. These values are artifact-stack provenance, not the round-trip key — use `id` for that. `sourcePath` is populated only when the layer maps to a concrete installed preset/extension file or a tracked agent materialization; core, project-override, and other synthetic rows report `null`.
+Lookup IDs are derived by the artifact command from the resolved layer and its existing preset or extension manifest. Manifest-declared layers use the manifest's `id`; convention-only layers use the installed preset or extension directory id. Project-local overrides carry a synthetic `project:_:{kind}:{name}` ID, while built-in layers have no `lookupId`. These values are artifact-stack provenance, not the round-trip key — use `id` for that. `sourcePath` is populated only when the layer maps to a concrete installed preset/extension file or a tracked agent materialization; core, project-override, and other synthetic rows report `null`.
+
+## Contribution Lookup
+
+```bash
+specify artifact lookup <lookupId> --json
+```
+
+Resolves a manifest-backed stack `lookupId` to the exact preset or extension
+declaration that produced it. This keeps cross-reference behavior inside the
+artifact command: preset and extension commands, manifests, and resolver return
+shapes are unchanged.
+
+The response includes the stable lookup ID, provider coordinates, manifest and
+source paths, and the original declaration under `contribution`. Convention-only
+contributions and project overrides have no originating manifest declaration,
+so lookup returns `{"error": "unknown contribution <lookupId>"}` with exit code
+`1`. Built-in rows never have a `lookupId`.
 
 ### Hook artifacts
 

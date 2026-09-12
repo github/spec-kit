@@ -25,6 +25,7 @@ from specify_cli.artifacts import (
     ArtifactKind,
     ArtifactNotFoundError,
     ArtifactResolutionError,
+    ContributionNotFoundError,
     HookArtifact,
     NotASpecKitProjectError,
 )
@@ -34,7 +35,8 @@ from specify_cli.presets import PresetRegistry, PresetResolver
 from tests.conftest import install_preset
 
 ERROR_REGEX = re.compile(
-    r"^(unknown artifact |ambiguous artifact |artifact resolution failed|not a Spec Kit project)"
+    r"^(unknown artifact |unknown contribution |ambiguous artifact |"
+    r"artifact resolution failed|not a Spec Kit project)"
 )
 
 
@@ -372,7 +374,7 @@ class TestListArtifactsContract:
         resolver_layer = PresetResolver(spec_kit_project).collect_all_layers(
             "speckit.original.hello", "command"
         )[0]
-        assert resolver_layer["lookupId"] == info["stack"][0]["lookupId"]
+        assert "lookupId" not in resolver_layer
         # The stack row's manifestPath must still reflect the actual on-disk
         # extension directory (``renamed``), not the manifest id embedded in
         # ``lookupId``.
@@ -380,18 +382,26 @@ class TestListArtifactsContract:
             info["stack"][0]["manifestPath"]
             == ".specify/extensions/renamed/extension.yml"
         )
+        contribution = catalog.get_contribution_info(
+            info["stack"][0]["lookupId"]
+        )
+        assert contribution["id"] == info["stack"][0]["lookupId"]
+        assert contribution["layer"] == "extension"
+        assert contribution["sourceId"] == "original"
+        assert contribution["kind"] == "command"
+        assert contribution["name"] == "speckit.original.hello"
+        assert contribution["contribution"]["file"] == "commands/actual.md"
+
         convention = catalog.get_artifact_info("speckit.renamed.convention")[
             "stack"
         ][0]
-        convention_layer = PresetResolver(spec_kit_project).collect_all_layers(
-            "speckit.renamed.convention", "command"
-        )[0]
         assert convention["sourceId"] == "renamed"
         assert convention["lookupId"] == (
             "extension:renamed:command:speckit.renamed.convention"
         )
-        assert convention_layer["lookupId"] == convention["lookupId"]
         assert convention["manifestPath"] is None
+        with pytest.raises(ContributionNotFoundError):
+            catalog.get_contribution_info(convention["lookupId"])
 
     def test_includes_project_local_core_assets(self, spec_kit_project: Path):
         templates_dir = spec_kit_project / ".specify" / "templates"
@@ -663,10 +673,6 @@ class TestInfoContract:
         assert project["strategy"] == "replace"
         assert project["sourceId"] == "_"
         assert re.match(r"^project:_:(command|template|script):[^:]+$", project["lookupId"])
-        resolver_layer = PresetResolver(spec_kit_project).collect_all_layers(
-            "speckit.constitution", "command"
-        )[0]
-        assert resolver_layer["lookupId"] == project["lookupId"]
 
     def test_lookup_id_grammar(self, spec_kit_project: Path):
         info = ArtifactCatalog(spec_kit_project).get_artifact_info("speckit.constitution")
@@ -883,6 +889,86 @@ class TestCLI:
         assert info_result.exit_code == 0, info_result.stderr
         info = json.loads(info_result.stdout)
         assert row["stack"] == info["stack"]
+
+    def test_lookup_json_cross_references_manifest_contribution(
+        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.chdir(spec_kit_project)
+        pack = install_preset(
+            spec_kit_project,
+            "lookup-pack",
+            {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": "lookup-template",
+                        "file": "templates/lookup.md",
+                        "description": "Lookup target",
+                    }
+                ]
+            },
+        )
+        (pack / "templates").mkdir()
+        (pack / "templates" / "lookup.md").write_text("body", encoding="utf-8")
+
+        lookup_id = ArtifactCatalog(spec_kit_project).get_artifact_info(
+            "template:lookup-template"
+        )["stack"][0]["lookupId"]
+        result = CliRunner().invoke(
+            app, ["artifact", "lookup", lookup_id, "--json"]
+        )
+
+        assert result.exit_code == 0, result.stderr
+        payload = json.loads(result.stdout)
+        assert payload["id"] == lookup_id
+        assert payload["contribution"]["description"] == "Lookup target"
+
+    def test_lookup_json_rejects_unknown_contribution(
+        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.chdir(spec_kit_project)
+        lookup_id = "extension:missing:command:speckit.missing.command"
+
+        result = CliRunner().invoke(
+            app, ["artifact", "lookup", lookup_id, "--json"]
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert json.loads(result.stderr) == {
+            "error": f"unknown contribution {lookup_id}"
+        }
+
+    def test_lookup_requires_json_flag(
+        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.chdir(spec_kit_project)
+        result = CliRunner().invoke(
+            app,
+            [
+                "artifact",
+                "lookup",
+                "extension:missing:command:speckit.missing.command",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert result.stdout == ""
+
+    def test_lookup_validates_project_before_lookup_id(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(
+            app,
+            ["artifact", "lookup", "project:_:command:local", "--json"],
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert json.loads(result.stderr) == {
+            "error": "not a Spec Kit project: no .specify/ directory found"
+        }
 
     def test_hidden_command_layer_source_path_is_own_pack_file(
         self, spec_kit_project: Path
@@ -1563,13 +1649,9 @@ class TestConventionDiscovery:
             row.id == "template:legacy-preset-template" for row in catalog.list_artifacts()
         )
         info = catalog.get_artifact_info("legacy-preset-template")
-        resolver_layer = PresetResolver(spec_kit_project).collect_all_layers(
-            "legacy-preset-template", "template"
-        )[0]
         assert info["stack"][0]["lookupId"] == (
             "preset:legacy-preset:template:legacy-preset-template"
         )
-        assert resolver_layer["lookupId"] == info["stack"][0]["lookupId"]
 
     def test_stale_registry_entry_with_missing_pack_dir_is_skipped(
         self, spec_kit_project: Path
@@ -1819,6 +1901,18 @@ class TestHookInventory:
                 "speckit.compliance.pre-check",
             ),
             "sourcePath": None,
+            "priority": 5,
+            "optional": False,
+        }
+        contribution = ArtifactCatalog(spec_kit_project).get_contribution_info(
+            entry["lookupId"]
+        )
+        assert contribution["id"] == entry["lookupId"]
+        assert contribution["kind"] == "hook"
+        assert contribution["contribution"] == {
+            "eventName": "before_specify",
+            "command": "speckit.compliance.pre-check",
+            "description": "Compliance pre-check",
             "priority": 5,
             "optional": False,
         }

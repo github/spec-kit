@@ -101,10 +101,15 @@ class TestResolverParity:
         assert active["lookupId"] == (
             "preset:original-preset:command:speckit.preset-renamed.hello"
         )
+        contribution = catalog.get_contribution_info(active["lookupId"])
+        assert contribution["id"] == active["lookupId"]
+        assert contribution["layer"] == "preset"
+        assert contribution["sourceId"] == "original-preset"
+        assert contribution["contribution"]["file"] == "commands/actual.md"
         resolver_layer = PresetResolver(spec_kit_project).collect_all_layers(
             "speckit.preset-renamed.hello", "command"
         )[0]
-        assert resolver_layer["lookupId"] == active["lookupId"]
+        assert "lookupId" not in resolver_layer
         # The stack row's presetId / manifestPath must still reflect the
         # actual on-disk directory (``renamed-preset``), not the manifest id
         # embedded in ``lookupId`` — otherwise the display and manifest path
