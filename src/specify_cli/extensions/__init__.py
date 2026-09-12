@@ -1185,17 +1185,31 @@ class ExtensionManager:
         return installed_names
 
     def _validate_install_conflicts(self, manifest: ExtensionManifest) -> None:
-        """Reject installs that would shadow core or installed extension commands."""
+        """Reject installs that would shadow core or installed extension commands.
+
+        Primary command names are already namespace-checked against
+        ``CORE_COMMAND_NAMES`` in ``_collect_manifest_command_names``, but
+        aliases are intentionally free-form (see the comment there) and so
+        can only be caught here, by comparing declared names directly
+        against the fully-qualified core command names (``speckit.<name>``)
+        rather than relying on ``_get_installed_command_name_map``, which
+        only knows about installed extensions.
+        """
         declared_names = self._collect_manifest_command_names(manifest)
         installed_names = self._get_installed_command_name_map(
             exclude_extension_id=manifest.id
         )
+        core_command_names = {f"speckit.{name}" for name in CORE_COMMAND_NAMES}
 
-        collisions = [
-            f"{name} (already provided by extension '{installed_names[name]}')"
-            for name in sorted(declared_names)
-            if name in installed_names
-        ]
+        collisions = []
+        for name in sorted(declared_names):
+            if name in installed_names:
+                collisions.append(
+                    f"{name} (already provided by extension '{installed_names[name]}')"
+                )
+            elif name in core_command_names:
+                collisions.append(f"{name} (conflicts with core command)")
+
         if collisions:
             raise ValidationError(
                 "Extension commands conflict with installed extensions:\n- "
