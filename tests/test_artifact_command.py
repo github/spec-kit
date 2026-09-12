@@ -1741,6 +1741,7 @@ def _install_extension_with_hooks(
     extension_id: str,
     hooks: dict,
     *,
+    manifest_id: str | None = None,
     priority: int = 10,
     enabled: bool = True,
 ) -> Path:
@@ -1750,8 +1751,8 @@ def _install_extension_with_hooks(
     manifest = {
         "schema_version": "1.0",
         "extension": {
-            "id": extension_id,
-            "name": extension_id,
+            "id": manifest_id or extension_id,
+            "name": manifest_id or extension_id,
             "version": "1.0.0",
             "description": "Test extension",
             "author": "test",
@@ -1917,6 +1918,45 @@ class TestHookInventory:
             "priority": 5,
             "optional": False,
         }
+
+    def test_hook_lookup_continues_past_same_id_manifest_without_target(
+        self, spec_kit_project: Path
+    ):
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "a-copy",
+            manifest_id="shared-hooks",
+            hooks={"after_plan": [{"command": "unrelated.cmd"}]},
+        )
+        second = _install_extension_with_hooks(
+            spec_kit_project,
+            "b-copy",
+            manifest_id="shared-hooks",
+            hooks={
+                "before_specify": [
+                    {
+                        "command": "target.cmd",
+                        "description": "Second manifest target",
+                    }
+                ]
+            },
+        )
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        hook = next(
+            row
+            for row in catalog.list_artifacts_with_stack()
+            if row["kind"] == "hook" and row["targetCommand"] == "target.cmd"
+        )
+        contribution = catalog.get_contribution_info(
+            hook["stack"][0]["lookupId"]
+        )
+
+        assert contribution["manifestPath"] == (
+            second.relative_to(spec_kit_project).as_posix() + "/extension.yml"
+        )
+        assert contribution["contribution"]["eventName"] == "before_specify"
+        assert contribution["contribution"]["command"] == "target.cmd"
 
     def test_duplicate_declarations_are_additive_and_priority_sorted(
         self, spec_kit_project: Path

@@ -500,7 +500,7 @@ class ArtifactCatalog:
                     if isinstance(entry, dict) and entry.get("command") == command:
                         matching = entry
                 if matching is None:
-                    return None
+                    continue
                 relative_manifest = _repo_relative_existing_file(
                     self.project_root, manifest.path
                 )
