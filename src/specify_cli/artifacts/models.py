@@ -139,6 +139,12 @@ class ArtifactNotFoundError(ArtifactError):
         super().__init__(self.message)
 
 
+class ContributionNotFoundError(ArtifactError):
+    def __init__(self, lookup_id: str) -> None:
+        self.message = f"unknown contribution {lookup_id}"
+        super().__init__(self.message)
+
+
 class AmbiguousArtifactError(ArtifactError):
     def __init__(self, name: str, kinds: Iterable[str]) -> None:
         kinds_list = sorted(kinds)
@@ -165,6 +171,7 @@ __all__ = [
     "ArtifactKind",
     "ArtifactNotFoundError",
     "ArtifactResolutionError",
+    "ContributionNotFoundError",
     "HookArtifact",
     "HookLayerName",
     "HookStackEntry",

@@ -99,6 +99,31 @@ def parse_hook_artifact_name(name: str) -> tuple[str, str]:
     )
 
 
+def parse_lookup_id(value: str) -> tuple[str, str, str, str]:
+    """Parse a contribution lookup ID into layer, source, kind, and name."""
+    if not isinstance(value, str):
+        raise IdentifierComponentError("Invalid lookupId")
+    parts = value.split(":")
+    if len(parts) == 4:
+        layer, source_id, kind, name = parts
+        derive_lookup_id(layer, source_id, kind, name)
+        return layer, source_id, kind, name
+    if len(parts) == 5 and parts[2] == "hook":
+        layer, source_id, kind, encoded_event, encoded_command = parts
+        if layer not in _HOOK_LAYERS or source_id == "_":
+            raise IdentifierComponentError("Invalid hook lookupId")
+        event_name, command = parse_hook_artifact_name(
+            f"{encoded_event}:{encoded_command}"
+        )
+        if (
+            derive_hook_lookup_id(layer, source_id, event_name, command)
+            != value
+        ):
+            raise IdentifierComponentError("Invalid hook lookupId")
+        return layer, source_id, kind, f"{encoded_event}:{encoded_command}"
+    raise IdentifierComponentError("Invalid lookupId")
+
+
 def _encode_hook_component(value: Any, field_label: str) -> str:
     """Encode one hook ID component without narrowing manifest syntax."""
     if not isinstance(value, str):
