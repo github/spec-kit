@@ -111,7 +111,7 @@ Verify each stage works before moving to the next.
 
 ## `/speckit.converge`
 
-Assesses the codebase against the feature's spec, plan, and tasks to confirm nothing was missed. It is **append-only**: it never edits or deletes code, and its only possible write is adding tasks to `tasks.md`. Run it only after `/speckit.implement` has run on the current `tasks.md`.
+Assesses the codebase against the feature's spec, plan, and tasks to confirm nothing was missed. It is **append-only**: it never edits or deletes code, and its only possible write is adding tasks to `tasks.md`. Run it only after `/speckit.implement` has completed every task in `tasks.md`: if any task is still unchecked, converge stops before assessing anything, lists the unchecked tasks, and tells you to run `/speckit.implement` first, leaving `tasks.md` unchanged.
 
 ```text
 /speckit.converge
@@ -120,4 +120,4 @@ Assesses the codebase against the feature's spec, plan, and tasks to confirm not
 It first prints a severity-graded findings summary, then resolves to one of two outcomes:
 
 - **Converged** — no gaps found. `tasks.md` is left byte-for-byte unchanged and you'll see a clean result like `✅ Converged — the implementation satisfies the spec, plan, and tasks.` You're done; proceed to review or open a PR.
-- **Tasks appended** — gaps found. Converge appends them as new tasks under a Convergence section in `tasks.md` and tells you how many. Run `/speckit.implement` again to complete them, then `/speckit.converge` once more. Each pass finds fewer items; repeat until it reports converged.
+- **Tasks appended** — gaps found. Converge appends them as new tasks under a Convergence section in `tasks.md` and tells you how many. Run `/speckit.implement` again to complete them, then `/speckit.converge` once more (until they are checked off, converge stops at its prerequisite check rather than appending them a second time). Each pass finds fewer items; repeat until it reports converged.
