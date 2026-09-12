@@ -3003,6 +3003,79 @@ steps:
         choice = GateStep._prompt("Review the spec.", ["approve", "reject"])
         assert choice == "approve"
 
+    @pytest.mark.parametrize("interrupt", [KeyboardInterrupt, EOFError])
+    @pytest.mark.parametrize(
+        "options",
+        [
+            ["approve", "reject"],
+            ["reject", "approve"],
+            ["approve", "reject", "request-changes"],
+        ],
+        ids=["reject_last", "reject_first", "reject_middle"],
+    )
+    def test_interrupted_prompt_never_approves(
+        self, monkeypatch, options, interrupt
+    ):
+        """Ctrl+C / Ctrl+D at a gate must not resolve to an approving option.
+
+        `_prompt` returned `options[-1]`, assuming the reject option is last.
+        `validate` only requires that *some* option is 'reject'/'abort', never
+        that it is last, so `options: [approve, reject, request-changes]`
+        validates clean and an interrupt returned 'request-changes' — which
+        `execute` does not classify as a rejection, so the gate reported
+        COMPLETED and the run walked past the human review.
+        """
+        from specify_cli.workflows.steps.gate import GateStep
+
+        _force_gate_stdin(monkeypatch, tty=True)
+
+        def _boom(_prompt=""):
+            raise interrupt
+
+        monkeypatch.setattr("builtins.input", _boom)
+
+        assert GateStep._prompt("Approve the plan?", options) == "reject"
+
+    def test_interrupted_prompt_without_a_reject_option_keeps_last(
+        self, monkeypatch
+    ):
+        """With no reject/abort option declared, the last option is still used."""
+        from specify_cli.workflows.steps.gate import GateStep
+
+        _force_gate_stdin(monkeypatch, tty=True)
+
+        def _boom(_prompt=""):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr("builtins.input", _boom)
+
+        assert GateStep._prompt("Pick one.", ["yes", "no"]) == "no"
+
+    def test_interrupted_gate_step_does_not_complete(self, monkeypatch):
+        """The step-level consequence: the gate must not report COMPLETED."""
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        _force_gate_stdin(monkeypatch, tty=True)
+
+        def _boom(_prompt=""):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr("builtins.input", _boom)
+
+        result = GateStep().execute(
+            {
+                "id": "review",
+                "message": "Approve the plan?",
+                "options": ["approve", "reject", "request-changes"],
+                "on_reject": "abort",
+            },
+            StepContext(),
+        )
+
+        assert result.status is StepStatus.FAILED
+        assert result.output["choice"] == "reject"
+
     def test_interactive_prompt_missing_show_file_does_not_crash(
         self, tmp_path, monkeypatch, capsys
     ):

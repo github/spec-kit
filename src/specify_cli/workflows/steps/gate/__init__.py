@@ -248,8 +248,23 @@ class GateStep(StepBase):
             try:
                 raw = input(f"  Choose [1-{len(options)}]: ").strip()
             except (EOFError, KeyboardInterrupt):
+                # An interrupted prompt is not a choice. Returning ``options[-1]``
+                # assumed the reject option is last, but ``validate`` only
+                # requires that *some* option is 'reject'/'abort' -- never that
+                # it is last. So ``options: [approve, reject, request-changes]``
+                # validates clean and an interrupt resolved to
+                # 'request-changes', which ``execute`` does not classify as a
+                # rejection: the gate reported COMPLETED and the run walked past
+                # the human review it exists to enforce.
+                #
+                # Prefer the declared reject/abort option. For the documented
+                # default ``[approve, reject]`` this is byte-for-byte the old
+                # behaviour, since 'reject' is both last and the reject option.
                 print()
-                return options[-1]  # default to last (usually reject)
+                return next(
+                    (o for o in options if o.lower() in ("reject", "abort")),
+                    options[-1],
+                )
             # isdecimal() (not isdigit()): int() accepts exactly the decimal-digit
             # set, whereas isdigit() also returns True for superscripts/subscripts
             # (e.g. "²") that int() then rejects with ValueError — crashing
