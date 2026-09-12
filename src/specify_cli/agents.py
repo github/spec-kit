@@ -424,6 +424,7 @@ class CommandRegistrar:
             body = self.resolve_skill_placeholders(
                 agent_name, frontmatter, body, project_root, extension_id=extension_id
             )
+            body = self.normalize_skill_invocations(agent_name, body)
 
         description = frontmatter.get(
             "description", f"Spec-kit workflow command: {skill_name}"
@@ -528,6 +529,31 @@ class CommandRegistrar:
 
         return CommandRegistrar.rewrite_project_relative_paths(
             body, extension_id=extension_id
+        )
+
+    @staticmethod
+    def normalize_skill_invocations(agent_name: str, body: str) -> str:
+        """Convert literal slash/dot command calls to native skill invocations."""
+        # Older extension commands use literal slash/dot invocations instead
+        # of __SPECKIT_COMMAND_*__ tokens. Normalize those in every skill
+        # rendering path, including the manager and command overrides (#3451).
+        prefix = get_invocation_prefix(agent_name, True)
+
+        def replace_invocation(match: re.Match[str]) -> str:
+            command = match.group(0)
+            # Do not rewrite absolute filenames or directory references that
+            # happen to start with /speckit.; relative paths and URLs are
+            # excluded by the leading boundary in the pattern below.
+            if command.endswith((".md", ".json", ".yml", ".yaml", ".toml")):
+                return command
+            if body[match.end():match.end() + 1] in ("/", "\\"):
+                return command
+            return prefix + command[1:].replace(".", "-")
+
+        return re.sub(
+            r"(?<![\w/\\:.-])/speckit\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*",
+            replace_invocation,
+            body,
         )
 
     def _convert_argument_placeholder(
