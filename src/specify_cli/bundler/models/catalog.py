@@ -13,6 +13,7 @@ from typing import Any
 
 from .. import BundlerError
 from ..lib.yamlio import ensure_within, load_yaml
+from .manifest import _text
 
 CONFIG_FILENAME = "bundle-catalogs.yml"
 # Supported bundle-catalogs.yml schema (major version). Both readers of the
@@ -70,8 +71,14 @@ class CatalogSource:
     def from_dict(cls, data: Any, scope: Scope) -> "CatalogSource":
         if not isinstance(data, dict):
             raise BundlerError("Each catalog source must be a mapping.")
-        source_id = str(data.get("id", "")).strip()
-        url = str(data.get("url", "")).strip()
+        # ``_text`` rather than ``str(...get(k, ""))``: the default only covers a
+        # *missing* key. A key present but null -- how YAML spells an empty field
+        # (``id:`` with nothing after it) -- yields ``None``, and ``str(None)``
+        # is the literal ``"None"``, which is truthy and so sailed straight past
+        # the required-field guards below: a source with ``id: null`` was
+        # accepted and registered under the name ``"None"``.
+        source_id = _text(data.get("id"))
+        url = _text(data.get("url"))
         if not source_id:
             raise BundlerError("A catalog source is missing its 'id'.")
         if not url:
@@ -185,14 +192,16 @@ class CatalogEntry:
             )
         return cls(
             id=entry_id,
-            name=str(data.get("name", "")).strip(),
-            version=str(data.get("version", "")).strip(),
-            role=str(data.get("role", "")).strip(),
-            description=str(data.get("description", "")).strip(),
-            author=str(data.get("author", "")).strip(),
-            license=str(data.get("license", "")).strip(),
-            download_url=str(data.get("download_url", "")).strip(),
-            requires_speckit_version=str(requires.get("speckit_version", "")).strip(),
+            # See the note in ``CatalogSource.from_dict``: an explicitly null
+            # field must read as empty, not as the literal string "None".
+            name=_text(data.get("name")),
+            version=_text(data.get("version")),
+            role=_text(data.get("role")),
+            description=_text(data.get("description")),
+            author=_text(data.get("author")),
+            license=_text(data.get("license")),
+            download_url=_text(data.get("download_url")),
+            requires_speckit_version=_text(requires.get("speckit_version")),
             sha256=(
                 None
                 if data.get("sha256") is None
