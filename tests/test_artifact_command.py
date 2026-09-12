@@ -2286,6 +2286,14 @@ class TestHookInfo:
 
         info = ArtifactCatalog(spec_kit_project).get_artifact_info(row["id"])
         assert info == row
+        contribution = ArtifactCatalog(spec_kit_project).get_contribution_info(
+            row["stack"][0]["lookupId"]
+        )
+        assert contribution["contribution"]["eventName"] == "custom:after"
+        assert (
+            contribution["contribution"]["command"]
+            == "/skill:speckit-test-ext-hello"
+        )
 
     def test_kind_hint_resolves_hook_name(self, spec_kit_project: Path):
         _install_extension_with_hooks(
