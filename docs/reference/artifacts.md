@@ -135,7 +135,7 @@ For command, template, and script artifacts, `stack` is ordered by resolution pr
 | -------------- | -------------------------------------------------------------------------------- |
 | `id`           | `{kind}:{name}` — the source-agnostic round-trip key, identical on every row of the same artifact's stack |
 | `layer`        | `project`, `preset`, or `extension`; `null` for built-in layers                    |
-| `sourceId`     | Source component of `lookupId`, or `null` when the layer has no provenance         |
+| `sourceId`     | Installed preset or extension ID used by the resolver, or `null` when the layer has no provenance |
 | `presetId`     | Preset pack directory id; `null` on built-in, `project`, and `extension` rows       |
 | `presetName`   | Preset display name when its manifest declares one, else the pack id; `null` when `presetId` is `null` |
 | `strategy`     | `replace`, `wrap`, `prepend`, `append`, or `additive`                              |
@@ -147,7 +147,22 @@ For command, template, and script artifacts, `stack` is ordered by resolution pr
 
 `active` and `hidden` are independent labels, not opposites. For command, template, and script artifacts, `active` identifies the highest-precedence layer selected by the existing Spec Kit layer-resolution order; it does not validate that the layer content can be read or composed. This preserves the diagnostic behavior of `specify preset resolve`, which reports the discovered layer chain even when content composition later produces a warning. Composing strategies (`wrap`, `prepend`, `append`) keep lower layers in the composed output, so an inactive layer is not necessarily hidden: only layers below the first `replace` layer are marked `hidden`. Built-in rows have no provenance: `layer`, `sourceId`, and `lookupId` are `null` — but `id` is always populated, even on built-in rows. `id` is the round-trip key: `specify artifact info` accepts it as input (for example, `specify artifact info command:speckit.specify --json`), and it resolves the same artifact whether the caller passes the bare name or the `id`.
 
-Lookup IDs are derived by the artifact command from the resolved layer and its existing preset or extension manifest. Manifest-declared layers use the manifest's `id`; convention-only layers use the installed preset or extension directory id. Project-local overrides carry a synthetic `project:_:{kind}:{name}` ID, while built-in layers have no `lookupId`. These values are artifact-stack provenance, not the round-trip key — use `id` for that. `sourcePath` is populated only when the layer maps to a concrete installed preset/extension file or a tracked agent materialization; core, project-override, and other synthetic rows report `null`.
+Here, **provenance** means the origin of one artifact layer: the installed
+preset or extension that supplied it, the manifest that declared it, and the
+concrete file that backs it. Lookup IDs use the installed preset or extension
+ID, matching the identity and ordering used by the existing resolver. The
+installed ID is the registry/directory name and may differ from the logical
+`id` declared inside the manifest. Using the installed ID keeps separate
+installed directories distinct even when their manifests declare the same
+logical ID.
+
+Project-local overrides carry a synthetic `project:_:{kind}:{name}` ID, while
+built-in layers have no `lookupId`. These values identify artifact-stack
+provenance; they are not the artifact round-trip key — use `id` with
+`artifact info` for that. `manifestPath` identifies the declaring manifest,
+and `sourcePath` identifies the concrete file backing the layer when one
+exists. Core, project-override, and other synthetic rows may report
+`sourcePath: null`.
 
 ## Contribution Lookup
 
@@ -201,7 +216,7 @@ For hooks, `active` reports registration state from `.specify/extensions.yml`, n
 
 Declared-but-unregistered hooks remain visible when their extension is included by the normal resolver. Registry-disabled extensions are excluded entirely, consistently with their other contributions. Invalid individual extension manifests are also omitted by the existing resolver and remain diagnosable through extension inspection and validation commands.
 
-Hook lookup IDs use the artifact-private `{layer}:{sourceId}:hook:{encodedEventName}:{encodedTargetCommand}` grammar. Hook provenance is restricted to `preset` and `extension` layers; hooks never receive a built-in/core layer. The current manifest API exposes extension hook declarations, so current rows use the `extension` layer. The `preset` layer remains reserved by the hook identifier grammar for preset-provided hooks without requiring artifact IDs to be added to preset or extension manifest APIs.
+Hook lookup IDs use the artifact-private `{layer}:{sourceId}:hook:{encodedEventName}:{encodedTargetCommand}` grammar, where `sourceId` is the installed provider ID. Hook provenance is restricted to `preset` and `extension` layers; hooks never receive a built-in/core layer. The current manifest API exposes extension hook declarations, so current rows use the `extension` layer. The `preset` layer remains reserved by the hook identifier grammar for preset-provided hooks without requiring artifact IDs to be added to preset or extension manifest APIs.
 
 ## JSON Errors
 

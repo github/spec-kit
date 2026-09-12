@@ -455,10 +455,12 @@ class ArtifactCatalog:
         name: str,
     ) -> tuple[dict[str, Any], str, str | None] | None:
         for pack_id, _metadata in resolver._get_all_presets_by_priority():
+            if pack_id != source_id:
+                continue
             pack_dir = resolver.presets_dir / pack_id
             manifest = resolver._get_manifest(pack_dir)
-            if manifest is None or manifest.id != source_id:
-                continue
+            if manifest is None:
+                return None
             for entry in manifest.templates:
                 if (
                     isinstance(entry, dict)
@@ -484,14 +486,14 @@ class ArtifactCatalog:
         )
 
         for _priority, extension_id, _metadata in resolver._get_all_extensions_by_priority():
+            if extension_id != source_id:
+                continue
             extension_dir = resolver.extensions_dir / extension_id
             manifest_path = extension_dir / "extension.yml"
             try:
                 manifest = ExtensionManifest(manifest_path)
             except (ValidationError, OSError, TypeError, AttributeError):
-                continue
-            if manifest.id != source_id:
-                continue
+                return None
             if kind == "hook":
                 event_name, command = parse_hook_artifact_name(name)
                 matching: dict[str, Any] | None = None
@@ -500,7 +502,7 @@ class ArtifactCatalog:
                     if isinstance(entry, dict) and entry.get("command") == command:
                         matching = entry
                 if matching is None:
-                    continue
+                    return None
                 relative_manifest = _repo_relative_existing_file(
                     self.project_root, manifest.path
                 )
@@ -629,7 +631,7 @@ class ArtifactCatalog:
                 )
                 if manifest_path is None:
                     raise ArtifactResolutionError()
-                source_id = manifest.id
+                source_id = extension_id
 
                 for event_name, hook_config in (manifest.hooks or {}).items():
                     entries_by_command: dict[

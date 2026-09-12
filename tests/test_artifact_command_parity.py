@@ -62,7 +62,9 @@ class TestResolverParity:
         assert active["layer"] == "preset"
         assert active["lookupId"] == "preset:test-manifest-parity:command:speckit.manifest-declared"
 
-    def test_preset_manifest_id_mismatch_uses_manifest_id(self, spec_kit_project: Path):
+    def test_preset_manifest_id_mismatch_uses_installed_id(
+        self, spec_kit_project: Path
+    ):
         pack = install_preset(
             spec_kit_project,
             "renamed-preset",
@@ -96,26 +98,75 @@ class TestResolverParity:
         )
 
         assert winner == "body-from-renamed-preset"
-        # Artifact projection uses the manifest's validated id regardless of
-        # the installed directory name.
         assert active["lookupId"] == (
-            "preset:original-preset:command:speckit.preset-renamed.hello"
+            "preset:renamed-preset:command:speckit.preset-renamed.hello"
         )
         contribution = catalog.get_contribution_info(active["lookupId"])
         assert contribution["id"] == active["lookupId"]
         assert contribution["layer"] == "preset"
-        assert contribution["sourceId"] == "original-preset"
+        assert contribution["sourceId"] == "renamed-preset"
         assert contribution["contribution"]["file"] == "commands/actual.md"
         resolver_layer = PresetResolver(spec_kit_project).collect_all_layers(
             "speckit.preset-renamed.hello", "command"
         )[0]
         assert "lookupId" not in resolver_layer
-        # The stack row's presetId / manifestPath must still reflect the
-        # actual on-disk directory (``renamed-preset``), not the manifest id
-        # embedded in ``lookupId`` — otherwise the display and manifest path
-        # would point to a non-existent location.
+        assert active["sourceId"] == "renamed-preset"
         assert active["presetId"] == "renamed-preset"
         assert active["manifestPath"] == ".specify/presets/renamed-preset/preset.yml"
+
+    def test_duplicate_preset_manifest_ids_resolve_each_installed_layer(
+        self, spec_kit_project: Path
+    ):
+        for installed_id, description in (
+            ("a-copy", "First declaration"),
+            ("b-copy", "Second declaration"),
+        ):
+            pack = install_preset(
+                spec_kit_project,
+                installed_id,
+                {
+                    "commands": [
+                        {
+                            "name": "speckit.shared.command",
+                            "file": "commands/shared.md",
+                            "description": description,
+                        }
+                    ]
+                },
+            )
+            manifest_path = pack / "preset.yml"
+            manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+            manifest["preset"]["id"] = "shared"
+            manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+            (pack / "commands").mkdir()
+            (pack / "commands" / "shared.md").write_text(
+                description, encoding="utf-8"
+            )
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        stack = catalog.get_artifact_info("speckit.shared.command")["stack"]
+        preset_layers = [layer for layer in stack if layer["layer"] == "preset"]
+
+        assert [layer["sourceId"] for layer in preset_layers] == [
+            "a-copy",
+            "b-copy",
+        ]
+        assert [layer["lookupId"] for layer in preset_layers] == [
+            "preset:a-copy:command:speckit.shared.command",
+            "preset:b-copy:command:speckit.shared.command",
+        ]
+        resolved = [
+            catalog.get_contribution_info(layer["lookupId"])
+            for layer in preset_layers
+        ]
+        assert [
+            contribution["contribution"]["description"]
+            for contribution in resolved
+        ] == ["First declaration", "Second declaration"]
+        assert [contribution["manifestPath"] for contribution in resolved] == [
+            ".specify/presets/a-copy/preset.yml",
+            ".specify/presets/b-copy/preset.yml",
+        ]
 
 
 def test_module_imports():

@@ -323,7 +323,9 @@ class TestListArtifactsContract:
         assert "disabled-template" not in names
         assert "missing-template" not in names
 
-    def test_unregistered_extension_manifest_id_wins_for_lookup(self, spec_kit_project: Path):
+    def test_unregistered_extension_installed_id_identifies_lookup(
+        self, spec_kit_project: Path
+    ):
         ext_dir = spec_kit_project / ".specify" / "extensions" / "renamed"
         ext_dir.mkdir()
         (ext_dir / "commands").mkdir()
@@ -368,16 +370,16 @@ class TestListArtifactsContract:
             row.id for row in catalog.list_artifacts()
         }
         info = catalog.get_artifact_info("speckit.original.hello")
-        # Artifact projection uses the manifest id without changing the
-        # resolver's established layer shape.
-        assert info["stack"][0]["lookupId"] == "extension:original:command:speckit.original.hello"
+        assert info["stack"][0]["sourceId"] == "renamed"
+        assert info["stack"][0]["lookupId"] == (
+            "extension:renamed:command:speckit.original.hello"
+        )
         resolver_layer = PresetResolver(spec_kit_project).collect_all_layers(
             "speckit.original.hello", "command"
         )[0]
         assert "lookupId" not in resolver_layer
-        # The stack row's manifestPath must still reflect the actual on-disk
-        # extension directory (``renamed``), not the manifest id embedded in
-        # ``lookupId``.
+        # Provenance uses the installed directory identity and path even when
+        # the manifest declares a different logical ID.
         assert (
             info["stack"][0]["manifestPath"]
             == ".specify/extensions/renamed/extension.yml"
@@ -387,7 +389,7 @@ class TestListArtifactsContract:
         )
         assert contribution["id"] == info["stack"][0]["lookupId"]
         assert contribution["layer"] == "extension"
-        assert contribution["sourceId"] == "original"
+        assert contribution["sourceId"] == "renamed"
         assert contribution["kind"] == "command"
         assert contribution["name"] == "speckit.original.hello"
         assert contribution["contribution"]["file"] == "commands/actual.md"
@@ -402,6 +404,75 @@ class TestListArtifactsContract:
         assert convention["manifestPath"] is None
         with pytest.raises(ContributionNotFoundError):
             catalog.get_contribution_info(convention["lookupId"])
+
+    def test_duplicate_extension_manifest_ids_resolve_each_installed_layer(
+        self, spec_kit_project: Path
+    ):
+        for installed_id, description in (
+            ("a-copy", "First declaration"),
+            ("b-copy", "Second declaration"),
+        ):
+            ext_dir = (
+                spec_kit_project / ".specify" / "extensions" / installed_id
+            )
+            (ext_dir / "commands").mkdir(parents=True)
+            (ext_dir / "commands" / "shared.md").write_text(
+                description, encoding="utf-8"
+            )
+            (ext_dir / "extension.yml").write_text(
+                yaml.safe_dump(
+                    {
+                        "schema_version": "1.0",
+                        "extension": {
+                            "id": "shared",
+                            "name": "Shared",
+                            "version": "1.0.0",
+                            "description": "test",
+                            "author": "test",
+                            "repository": "https://example.com",
+                            "license": "MIT",
+                        },
+                        "requires": {"speckit_version": ">=0.2.0"},
+                        "provides": {
+                            "commands": [
+                                {
+                                    "name": "speckit.shared.command",
+                                    "file": "commands/shared.md",
+                                    "description": description,
+                                }
+                            ]
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        stack = catalog.get_artifact_info("speckit.shared.command")["stack"]
+        extension_layers = [
+            layer for layer in stack if layer["layer"] == "extension"
+        ]
+
+        assert [layer["sourceId"] for layer in extension_layers] == [
+            "a-copy",
+            "b-copy",
+        ]
+        assert [layer["lookupId"] for layer in extension_layers] == [
+            "extension:a-copy:command:speckit.shared.command",
+            "extension:b-copy:command:speckit.shared.command",
+        ]
+        resolved = [
+            catalog.get_contribution_info(layer["lookupId"])
+            for layer in extension_layers
+        ]
+        assert [
+            contribution["contribution"]["description"]
+            for contribution in resolved
+        ] == ["First declaration", "Second declaration"]
+        assert [contribution["manifestPath"] for contribution in resolved] == [
+            ".specify/extensions/a-copy/extension.yml",
+            ".specify/extensions/b-copy/extension.yml",
+        ]
 
     def test_includes_project_local_core_assets(self, spec_kit_project: Path):
         templates_dir = spec_kit_project / ".specify" / "templates"
@@ -922,6 +993,69 @@ class TestCLI:
         payload = json.loads(result.stdout)
         assert payload["id"] == lookup_id
         assert payload["contribution"]["description"] == "Lookup target"
+        assert payload["sourcePath"] == (
+            ".specify/presets/lookup-pack/templates/lookup.md"
+        )
+
+    def test_lookup_omits_missing_contribution_source(
+        self, spec_kit_project: Path
+    ):
+        install_preset(
+            spec_kit_project,
+            "missing-source",
+            {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": "missing-source",
+                        "file": "templates/missing.md",
+                    }
+                ]
+            },
+        )
+
+        payload = ArtifactCatalog(spec_kit_project).get_contribution_info(
+            "preset:missing-source:template:missing-source"
+        )
+
+        assert payload["manifestPath"] == (
+            ".specify/presets/missing-source/preset.yml"
+        )
+        assert payload["sourcePath"] is None
+
+    def test_lookup_omits_contribution_source_outside_provider(
+        self, spec_kit_project: Path, tmp_path: Path
+    ):
+        pack = install_preset(
+            spec_kit_project,
+            "escaping-source",
+            {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": "escaping-source",
+                        "file": "templates/escape.md",
+                    }
+                ]
+            },
+        )
+        outside = tmp_path / "outside.md"
+        outside.write_text("outside", encoding="utf-8")
+        link = pack / "templates" / "escape.md"
+        link.parent.mkdir()
+        try:
+            link.symlink_to(outside)
+        except OSError as exc:
+            pytest.skip(f"symlink creation unavailable: {exc}")
+
+        payload = ArtifactCatalog(spec_kit_project).get_contribution_info(
+            "preset:escaping-source:template:escaping-source"
+        )
+
+        assert payload["manifestPath"] == (
+            ".specify/presets/escaping-source/preset.yml"
+        )
+        assert payload["sourcePath"] is None
 
     def test_lookup_json_rejects_unknown_contribution(
         self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
@@ -1919,7 +2053,7 @@ class TestHookInventory:
             "optional": False,
         }
 
-    def test_hook_lookup_continues_past_same_id_manifest_without_target(
+    def test_hook_lookup_targets_installed_provider_with_shared_manifest_id(
         self, spec_kit_project: Path
     ):
         _install_extension_with_hooks(
@@ -1957,6 +2091,55 @@ class TestHookInventory:
         )
         assert contribution["contribution"]["eventName"] == "before_specify"
         assert contribution["contribution"]["command"] == "target.cmd"
+
+    def test_same_manifest_id_hook_layers_have_distinct_lookup_ids(
+        self, spec_kit_project: Path
+    ):
+        for installed_id, description in (
+            ("a-copy", "First hook"),
+            ("b-copy", "Second hook"),
+        ):
+            _install_extension_with_hooks(
+                spec_kit_project,
+                installed_id,
+                manifest_id="shared-hooks",
+                hooks={
+                    "before_specify": [
+                        {
+                            "command": "target.cmd",
+                            "description": description,
+                        }
+                    ]
+                },
+            )
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        hook = next(
+            row
+            for row in catalog.list_artifacts_with_stack()
+            if row["kind"] == "hook" and row["targetCommand"] == "target.cmd"
+        )
+
+        assert [entry["sourceId"] for entry in hook["stack"]] == [
+            "a-copy",
+            "b-copy",
+        ]
+        assert [entry["lookupId"] for entry in hook["stack"]] == [
+            "extension:a-copy:hook:before_specify:target.cmd",
+            "extension:b-copy:hook:before_specify:target.cmd",
+        ]
+        resolved = [
+            catalog.get_contribution_info(entry["lookupId"])
+            for entry in hook["stack"]
+        ]
+        assert [
+            contribution["contribution"]["description"]
+            for contribution in resolved
+        ] == ["First hook", "Second hook"]
+        assert [contribution["manifestPath"] for contribution in resolved] == [
+            ".specify/extensions/a-copy/extension.yml",
+            ".specify/extensions/b-copy/extension.yml",
+        ]
 
     def test_duplicate_declarations_are_additive_and_priority_sorted(
         self, spec_kit_project: Path
