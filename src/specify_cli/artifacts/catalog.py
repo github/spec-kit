@@ -11,6 +11,7 @@ Everything else in this module is internal machinery. Callers outside
 
 from __future__ import annotations
 
+import json
 import re
 import shlex
 from collections.abc import Iterable
@@ -436,6 +437,10 @@ class ArtifactCatalog:
             raise ContributionNotFoundError(lookup_id)
 
         contribution, manifest_path, source_path = resolved
+        try:
+            json.dumps(contribution)
+        except (TypeError, ValueError) as exc:
+            raise ArtifactResolutionError() from exc
         return {
             "id": lookup_id,
             "layer": layer,

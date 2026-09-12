@@ -11,6 +11,7 @@ import json
 import os
 import re
 import shutil
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -1062,6 +1063,67 @@ class TestCLI:
     ):
         monkeypatch.chdir(spec_kit_project)
         lookup_id = "extension:missing:command:speckit.missing.command"
+
+        result = CliRunner().invoke(
+            app, ["artifact", "lookup", lookup_id, "--json"]
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert json.loads(result.stderr) == {
+            "error": f"unknown contribution {lookup_id}"
+        }
+
+    def test_lookup_json_rejects_non_json_manifest_value(
+        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.chdir(spec_kit_project)
+        install_preset(
+            spec_kit_project,
+            "dated-contribution",
+            {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": "dated-contribution",
+                        "released": date(2026, 1, 1),
+                    }
+                ]
+            },
+        )
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "artifact",
+                "lookup",
+                "preset:dated-contribution:template:dated-contribution",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert json.loads(result.stderr) == {
+            "error": "artifact resolution failed"
+        }
+
+    @pytest.mark.parametrize(
+        "lookup_id",
+        [
+            "invalid:source:command:name",
+            "extension:source:invalid:name",
+            "extension:source:hook:%FF:command",
+            "extension:source:hook:event:%ZZ",
+        ],
+    )
+    def test_lookup_json_rejects_malformed_lookup_id(
+        self,
+        spec_kit_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        lookup_id: str,
+    ):
+        monkeypatch.chdir(spec_kit_project)
 
         result = CliRunner().invoke(
             app, ["artifact", "lookup", lookup_id, "--json"]
