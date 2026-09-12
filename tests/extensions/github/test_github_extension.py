@@ -602,6 +602,9 @@ class TestResolveTasksBashJsonEscape:
         )
         assert body, f"no json_escape found in {script}"
 
+        # Callers pass a per-script subdirectory so the two harnesses do not
+        # collide; pytest only creates tmp_path itself.
+        tmp_path.mkdir(parents=True, exist_ok=True)
         payload = tmp_path / "value.txt"
         payload.write_text(value, encoding="utf-8", newline="")
         harness = tmp_path / "harness.sh"
