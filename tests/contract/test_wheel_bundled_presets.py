@@ -51,3 +51,10 @@ def test_constitution_sync_is_bundled_and_shipped():
     assert _force_include()["presets/constitution-sync"] == (
         "specify_cli/core_pack/presets/constitution-sync"
     )
+
+
+def test_clarify_spec_gate_is_bundled_and_shipped():
+    assert "clarify-spec-gate" in _bundled_preset_ids()
+    assert _force_include()["presets/clarify-spec-gate"] == (
+        "specify_cli/core_pack/presets/clarify-spec-gate"
+    )

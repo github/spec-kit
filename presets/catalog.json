@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-04T00:00:00Z",
+  "updated_at": "2026-09-10T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.json",
   "presets": {
     "lean": {
@@ -47,6 +47,28 @@
         "governance",
         "templates",
         "compatibility"
+      ]
+    },
+    "clarify-spec-gate": {
+      "name": "Clarify spec-stage gate",
+      "id": "clarify-spec-gate",
+      "version": "1.0.0",
+      "description": "Opt-in: wrap /speckit.clarify so spec-taxonomy items stay in the spec stage. Defer only implementation method, tech-stack comparison, or task breakdown.",
+      "author": "github",
+      "repository": "https://github.com/github/spec-kit",
+      "license": "MIT",
+      "bundled": true,
+      "requires": {
+        "speckit_version": ">=0.14.4"
+      },
+      "provides": {
+        "commands": 1,
+        "templates": 0
+      },
+      "tags": [
+        "clarify",
+        "spec",
+        "methodology"
       ]
     }
   }
