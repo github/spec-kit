@@ -3915,6 +3915,44 @@ class TestPresetCatalogMultiCatalog:
         assert config["catalogs"][0]["name"] == name
         assert config["catalogs"][0]["url"] == url
 
+    def test_catalog_add_duplicate_is_idempotent(self, project_dir):
+        """Re-adding an identical preset catalog is a successful no-op (#4505)."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        args = [
+            "preset", "catalog", "add",
+            "https://example.com/c.json", "--name", "mine",
+        ]
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            first = runner.invoke(app, args)
+            second = runner.invoke(app, args)
+        assert first.exit_code == 0, first.output
+        assert second.exit_code == 0, second.output
+        assert "nothing to do" in second.output
+
+    def test_catalog_add_duplicate_different_settings_conflicts(self, project_dir):
+        """Re-adding a same-named preset catalog with different settings errors (#4505)."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            first = runner.invoke(app, [
+                "preset", "catalog", "add",
+                "https://example.com/c.json", "--name", "mine", "--priority", "10",
+            ])
+            second = runner.invoke(app, [
+                "preset", "catalog", "add",
+                "https://example.com/c.json", "--name", "mine", "--priority", "20",
+            ])
+        assert first.exit_code == 0, first.output
+        assert second.exit_code == 1
+        assert "different settings" in second.output
+
     def test_catalog_remove_escapes_rich_markup(self, project_dir):
         """`preset catalog remove` must not parse the name as Rich markup."""
         from typer.testing import CliRunner

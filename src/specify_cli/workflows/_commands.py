@@ -3023,12 +3023,15 @@ def workflow_catalog_add(
     project_root = _require_specify_project()
     catalog = WorkflowCatalog(project_root)
     try:
-        catalog.add_catalog(url, name)
+        status = catalog.add_catalog(url, name)
     except WorkflowValidationError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
 
-    console.print(f"[green]✓[/green] Catalog source added: {url}")
+    if status == "unchanged":
+        console.print(f"[green]✓[/green] Catalog source already configured: {url}")
+    else:
+        console.print(f"[green]✓[/green] Catalog source added: {url}")
 
 
 @workflow_catalog_app.command("remove")
@@ -3769,12 +3772,15 @@ def workflow_step_catalog_add(
 
     catalog = StepCatalog(project_root)
     try:
-        catalog.add_catalog(url, name)
+        status = catalog.add_catalog(url, name)
     except StepValidationError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
 
-    console.print(f"[green]✓[/green] Step catalog source added: {url}")
+    if status == "unchanged":
+        console.print(f"[green]✓[/green] Step catalog source already configured: {url}")
+    else:
+        console.print(f"[green]✓[/green] Step catalog source added: {url}")
 
 
 @workflow_step_catalog_app.command("remove")

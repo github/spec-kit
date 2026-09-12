@@ -63,8 +63,9 @@ def test_add_source_persists_absolute_local_path(tmp_path: Path, monkeypatch):
     catalog.write_text("{}", encoding="utf-8")
 
     monkeypatch.chdir(project)
-    source = cc.add_source(project, "sub/cat.json", policy="install-allowed", priority=50)
+    source, status = cc.add_source(project, "sub/cat.json", policy="install-allowed", priority=50)
 
+    assert status == "added"
     assert Path(source.url).is_absolute()
     assert Path(source.url) == catalog.resolve()
 
@@ -234,7 +235,7 @@ def test_add_source_allows_local_path_with_colon(tmp_path: Path, monkeypatch):
     (project / ".specify").mkdir(parents=True)
     monkeypatch.chdir(project)
     # A relative path containing ':' but no '://' is still a local path.
-    source = cc.add_source(project, "weird:name.json", policy="install-allowed", priority=50)
+    source, _ = cc.add_source(project, "weird:name.json", policy="install-allowed", priority=50)
     assert source.url.endswith("weird:name.json") or "weird" in source.url
 
 
@@ -248,7 +249,7 @@ def test_add_source_rejects_plain_http_for_non_localhost(tmp_path: Path):
 def test_add_source_allows_http_for_localhost(tmp_path: Path):
     project = tmp_path / "proj"
     (project / ".specify").mkdir(parents=True)
-    source = cc.add_source(project, "http://localhost:8080/c.json", policy="install-allowed", priority=50)
+    source, _ = cc.add_source(project, "http://localhost:8080/c.json", policy="install-allowed", priority=50)
     assert source.url == "http://localhost:8080/c.json"
 
 

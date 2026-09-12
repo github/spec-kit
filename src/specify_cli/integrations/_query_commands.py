@@ -543,14 +543,19 @@ def integration_catalog_add(
     normalized_url = url.strip()
 
     try:
-        catalog.add_catalog(normalized_url, name)
+        status = catalog.add_catalog(normalized_url, name)
     except IntegrationCatalogError as exc:
         # Covers both URL validation (base class) and config-file validation
         # (IntegrationValidationError subclass).
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
 
-    console.print(f"[green]✓[/green] Catalog source added: {normalized_url}")
+    if status == "unchanged":
+        console.print(
+            f"[green]✓[/green] Catalog source already configured: {normalized_url}"
+        )
+    else:
+        console.print(f"[green]✓[/green] Catalog source added: {normalized_url}")
 
 
 @integration_catalog_app.command("remove")

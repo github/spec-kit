@@ -7448,6 +7448,56 @@ class TestExtensionAddCLI:
         assert result.exit_code == 0, result.output
         assert f"URL: {url}" in result.output
 
+    def test_catalog_add_duplicate_is_idempotent(self, tmp_path):
+        """Re-adding an identical catalog is a successful no-op (#4505)."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        args = [
+            "extension", "catalog", "add",
+            "https://example.com/catalog.json", "--name", "community",
+        ]
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            first = runner.invoke(app, args, catch_exceptions=True)
+            second = runner.invoke(app, args, catch_exceptions=True)
+
+        assert first.exit_code == 0, first.output
+        assert second.exit_code == 0, second.output
+        assert "nothing to do" in second.output
+
+    def test_catalog_add_duplicate_different_settings_conflicts(self, tmp_path):
+        """Re-adding a same-named catalog with different settings errors (#4505)."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            first = runner.invoke(app, [
+                "extension", "catalog", "add",
+                "https://example.com/catalog.json", "--name", "community",
+                "--priority", "10",
+            ], catch_exceptions=True)
+            second = runner.invoke(app, [
+                "extension", "catalog", "add",
+                "https://example.com/catalog.json", "--name", "community",
+                "--priority", "20",
+            ], catch_exceptions=True)
+
+        assert first.exit_code == 0, first.output
+        assert second.exit_code == 1
+        assert "different settings" in second.output
+
     def test_catalog_add_escapes_config_saved_path_markup(self, tmp_path):
         """Catalog add's saved-path label should render literally under Rich."""
         from typer.testing import CliRunner
