@@ -547,8 +547,8 @@ class ArtifactCatalog:
         if isinstance(relative_file, str):
             try:
                 resolved_pack = pack_dir.resolve()
-                candidate = (pack_dir / relative_file).resolve()
-                candidate.relative_to(resolved_pack)
+                candidate = pack_dir / relative_file
+                candidate.resolve().relative_to(resolved_pack)
             except (OSError, ValueError):
                 pass
             else:

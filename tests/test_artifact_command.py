@@ -1126,6 +1126,39 @@ class TestCLI:
         )
         assert payload["sourcePath"] is None
 
+    def test_lookup_preserves_source_path_through_symlinked_project_root(
+        self, spec_kit_project: Path, tmp_path: Path
+    ):
+        pack = install_preset(
+            spec_kit_project,
+            "symlinked-project",
+            {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": "symlinked-project",
+                        "file": "templates/source.md",
+                    }
+                ]
+            },
+        )
+        source = pack / "templates" / "source.md"
+        source.parent.mkdir()
+        source.write_text("body", encoding="utf-8")
+        linked_project = tmp_path / "linked-project"
+        try:
+            linked_project.symlink_to(spec_kit_project, target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"directory symlink creation unavailable: {exc}")
+
+        payload = ArtifactCatalog(linked_project).get_contribution_info(
+            "preset:symlinked-project:template:symlinked-project"
+        )
+
+        assert payload["sourcePath"] == (
+            ".specify/presets/symlinked-project/templates/source.md"
+        )
+
     def test_lookup_json_rejects_unknown_contribution(
         self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
     ):
