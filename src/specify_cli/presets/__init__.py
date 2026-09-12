@@ -36,6 +36,7 @@ from .._download_security import (
     read_response_limited,
     safe_extract_archive,
 )
+from .._contribution_ids import IdentifierComponentError, derive_lookup_id
 from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
 from .._init_options import (
     MISSING_INIT_OPTIONS_FILE,
@@ -5822,7 +5823,8 @@ class PresetResolver:
         """Collect all layers in the priority stack for a template.
 
         Returns layers from highest priority (checked first) to lowest priority.
-        Each layer is a dict with 'path', 'source', and 'strategy' keys.
+        Each layer includes the established 'path', 'source', and 'strategy'
+        keys, plus a deterministic 'lookupId' for contribution layers.
 
         Args:
             template_name: Template name (e.g., "spec-template")
@@ -5846,6 +5848,12 @@ class PresetResolver:
 
         layers: List[Dict[str, Any]] = []
 
+        def _lookup_id(layer: str, source_id: str) -> Optional[str]:
+            try:
+                return derive_lookup_id(layer, source_id, template_type, template_name)
+            except IdentifierComponentError:
+                return None
+
         def _find_in_subdirs(base_dir: Path) -> Optional[Path]:
             for subdir in subdirs:
                 if subdir:
@@ -5866,6 +5874,7 @@ class PresetResolver:
                 "path": override,
                 "source": "project override",
                 "strategy": "replace",
+                "lookupId": _lookup_id("project", "_"),
             })
 
         # Priority 2: Installed presets (sorted by priority — lower number = higher precedence)
@@ -5918,10 +5927,15 @@ class PresetResolver:
                             # strategy ("replace") when content is unreadable/invalid.
                             pass
                     version = metadata.get("version", "?") if metadata else "?"
+                    manifest = self._get_manifest(pack_dir)
                     layers.append({
                         "path": candidate,
                         "source": f"{pack_id} v{version}",
                         "strategy": strategy,
+                        "lookupId": _lookup_id(
+                            "preset",
+                            manifest.id if manifest is not None and entry is not None else pack_id,
+                        ),
                     })
 
         # Priority 3: Extension-provided templates (always "replace")
@@ -5944,12 +5958,30 @@ class PresetResolver:
                     source = f"extension:{ext_id} v{version}"
                 else:
                     source = f"extension:{ext_id} (unregistered)"
+                from ..extensions import (
+                    ExtensionManifest,
+                    ValidationError as ExtValidationError,
+                )
+
+                source_id = ext_id
+                try:
+                    if entry is not None:
+                        source_id = ExtensionManifest(ext_dir / "extension.yml").id
+                except (
+                    ExtValidationError,
+                    yaml.YAMLError,
+                    OSError,
+                    TypeError,
+                    AttributeError,
+                ):
+                    pass
                 layers.append({
                     "path": candidate,
                     "source": source,
                     "strategy": "replace",
                     "extension_id": ext_id,
                     "extension_dir": ext_dir,
+                    "lookupId": _lookup_id("extension", source_id),
                 })
 
         # Priority 4: Core templates (always "replace")

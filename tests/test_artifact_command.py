@@ -372,7 +372,7 @@ class TestListArtifactsContract:
         resolver_layer = PresetResolver(spec_kit_project).collect_all_layers(
             "speckit.original.hello", "command"
         )[0]
-        assert "lookupId" not in resolver_layer
+        assert resolver_layer["lookupId"] == info["stack"][0]["lookupId"]
         # The stack row's manifestPath must still reflect the actual on-disk
         # extension directory (``renamed``), not the manifest id embedded in
         # ``lookupId``.
@@ -383,10 +383,14 @@ class TestListArtifactsContract:
         convention = catalog.get_artifact_info("speckit.renamed.convention")[
             "stack"
         ][0]
+        convention_layer = PresetResolver(spec_kit_project).collect_all_layers(
+            "speckit.renamed.convention", "command"
+        )[0]
         assert convention["sourceId"] == "renamed"
         assert convention["lookupId"] == (
             "extension:renamed:command:speckit.renamed.convention"
         )
+        assert convention_layer["lookupId"] == convention["lookupId"]
         assert convention["manifestPath"] is None
 
     def test_includes_project_local_core_assets(self, spec_kit_project: Path):
@@ -659,6 +663,10 @@ class TestInfoContract:
         assert project["strategy"] == "replace"
         assert project["sourceId"] == "_"
         assert re.match(r"^project:_:(command|template|script):[^:]+$", project["lookupId"])
+        resolver_layer = PresetResolver(spec_kit_project).collect_all_layers(
+            "speckit.constitution", "command"
+        )[0]
+        assert resolver_layer["lookupId"] == project["lookupId"]
 
     def test_lookup_id_grammar(self, spec_kit_project: Path):
         info = ArtifactCatalog(spec_kit_project).get_artifact_info("speckit.constitution")
@@ -1555,9 +1563,13 @@ class TestConventionDiscovery:
             row.id == "template:legacy-preset-template" for row in catalog.list_artifacts()
         )
         info = catalog.get_artifact_info("legacy-preset-template")
+        resolver_layer = PresetResolver(spec_kit_project).collect_all_layers(
+            "legacy-preset-template", "template"
+        )[0]
         assert info["stack"][0]["lookupId"] == (
             "preset:legacy-preset:template:legacy-preset-template"
         )
+        assert resolver_layer["lookupId"] == info["stack"][0]["lookupId"]
 
     def test_stale_registry_entry_with_missing_pack_dir_is_skipped(
         self, spec_kit_project: Path

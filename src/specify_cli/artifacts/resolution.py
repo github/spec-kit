@@ -27,8 +27,11 @@ class _LayerProvenance:
     pack_dir: Path | None
     manifest: Any | None
     manifest_entry: dict[str, Any] | None
+    resolver_lookup_id: str | None = None
 
     def lookup_id(self, kind: ArtifactKind, name: str) -> str | None:
+        if self.resolver_lookup_id is not None:
+            return self.resolver_lookup_id
         if self.layer is None or self.source_id is None:
             return None
         try:
@@ -88,9 +91,11 @@ def _layer_provenance(
     path = resolver_layer.get("path")
 
     if source == "project override":
-        return _LayerProvenance("project", "_", None, None, None, None)
+        return _LayerProvenance(
+            "project", "_", None, None, None, None, resolver_layer.get("lookupId")
+        )
     if source in {"core", "core (bundled)"}:
-        return _LayerProvenance(None, None, None, None, None, None)
+        return _LayerProvenance(None, None, None, None, None, None, None)
     if not isinstance(path, Path) or not isinstance(source, str):
         raise ArtifactResolutionError()
 
@@ -134,6 +139,7 @@ def _layer_provenance(
             extension_dir,
             manifest,
             declared,
+            resolver_layer.get("lookupId"),
         )
 
     try:
@@ -163,6 +169,7 @@ def _layer_provenance(
         pack_dir,
         manifest,
         declared,
+        resolver_layer.get("lookupId"),
     )
 
 

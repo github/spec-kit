@@ -104,7 +104,7 @@ class TestResolverParity:
         resolver_layer = PresetResolver(spec_kit_project).collect_all_layers(
             "speckit.preset-renamed.hello", "command"
         )[0]
-        assert "lookupId" not in resolver_layer
+        assert resolver_layer["lookupId"] == active["lookupId"]
         # The stack row's presetId / manifestPath must still reflect the
         # actual on-disk directory (``renamed-preset``), not the manifest id
         # embedded in ``lookupId`` — otherwise the display and manifest path
