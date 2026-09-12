@@ -16,6 +16,7 @@ import yaml
 from typer.testing import CliRunner
 
 from specify_cli import app
+from specify_cli.bundler.services.adapters import FIRSTPARTY_CATALOG_URL
 from specify_cli.bundler.services.packager import build_bundle
 from tests.conftest import strip_ansi
 from tests.bundler_helpers import (
@@ -25,6 +26,7 @@ from tests.bundler_helpers import (
 )
 
 runner = CliRunner()
+REPO_ROOT = Path(__file__).parents[2]
 
 MARKUP_BUNDLE_ID = "[red]markup-id[/red]"
 MARKUP_SOURCE_ID = "[underline]markup-source[/underline]"
@@ -73,8 +75,8 @@ def project(tmp_path: Path, monkeypatch) -> Path:
 def test_bundle_help_lists_all_commands():
     result = runner.invoke(app, ["bundle", "--help"])
     assert result.exit_code == 0
-    for cmd in ("search", "info", "list", "install", "update", "remove",
-                "validate", "build", "init", "catalog"):
+    for cmd in ("search", "info", "list", "install", "add", "update", "remove",
+                 "validate", "build", "init", "catalog"):
         assert cmd in result.output
 
 
@@ -397,6 +399,133 @@ def _mock_manifest_download(monkeypatch, source_path: Path) -> None:
     )
 
 
+def _bundled_workflow_manifest(workflow_id: str, version: str = "1.0.0") -> dict:
+    return valid_manifest_dict(
+        provides={"workflows": [{"id": workflow_id, "version": version}]}
+    )
+
+
+@pytest.mark.parametrize(
+    ("command", "bundle_id", "extension_id"),
+    [("install", "bugfix", "bug"), ("add", "assess", "assess")],
+)
+def test_local_firstparty_bundle_installs_bundled_components_offline(
+    project: Path, command: str, bundle_id: str, extension_id: str
+):
+    bundle_dir = REPO_ROOT / "bundles" / bundle_id
+
+    result = runner.invoke(
+        app, ["bundle", command, str(bundle_dir), "--offline"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (
+        project / ".specify" / "extensions" / extension_id / "extension.yml"
+    ).is_file()
+    assert (project / ".specify" / "workflows" / bundle_id / "workflow.yml").is_file()
+    registry = json.loads(
+        (project / ".specify" / "workflows" / "workflow-registry.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert registry["workflows"][bundle_id]["version"] == "1.0.0"
+
+
+@pytest.mark.parametrize(
+    ("bundle_id", "extension_id"),
+    [("bugfix", "bug"), ("assess", "assess")],
+)
+def test_bundle_add_by_id_initializes_empty_project_from_firstparty_catalog(
+    tmp_path: Path, monkeypatch, bundle_id: str, extension_id: str
+):
+    """``bundle add <id>`` from an empty directory resolves ``builtin://default``.
+
+    The command fetches the first-party catalog and bundle manifest over the
+    network (both mocked here), initializes a new Spec Kit project, and installs
+    the bundled extension and workflow without further network access.
+    """
+    project = tmp_path / "fresh"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    catalog_bytes = (REPO_ROOT / "bundles" / "catalog.json").read_bytes()
+    manifest_bytes = (REPO_ROOT / "bundles" / bundle_id / "bundle.yml").read_bytes()
+    expected_manifest_url = (
+        "https://raw.githubusercontent.com/github/spec-kit/main/"
+        f"bundles/{bundle_id}/bundle.yml"
+    )
+    captured_urls: list[str] = []
+
+    def fake_open_url(
+        url: str,
+        timeout: int | None = None,
+        extra_headers: dict[str, str] | None = None,
+        redirect_validator=None,
+    ):
+        captured_urls.append(url)
+        if url == FIRSTPARTY_CATALOG_URL:
+            return FakeBundleResponse(catalog_bytes, url=url)
+        if url == expected_manifest_url:
+            return FakeBundleResponse(manifest_bytes, url=url)
+        raise AssertionError(
+            f"Unexpected network request in by-ID bundle test: {url}"
+        )
+
+    with patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+        result = runner.invoke(
+            app, ["bundle", "add", bundle_id, "--integration", "copilot"]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "No Spec Kit project here" in result.output
+    assert (project / ".specify").is_dir()
+    assert (
+        project / ".specify" / "extensions" / extension_id / "extension.yml"
+    ).is_file()
+    assert (
+        project / ".specify" / "workflows" / bundle_id / "workflow.yml"
+    ).is_file()
+    registry = json.loads(
+        (project / ".specify" / "workflows" / "workflow-registry.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert registry["workflows"][bundle_id]["version"] == "1.0.0"
+    assert FIRSTPARTY_CATALOG_URL in captured_urls
+    assert expected_manifest_url in captured_urls
+
+
+def test_local_bundle_rejects_mismatched_bundled_workflow_pin_offline(project: Path):
+    bundle_dir = project / "mismatched-workflow-pin"
+    (bundle_dir / "bundle.yml").parent.mkdir()
+    (bundle_dir / "bundle.yml").write_text(
+        yaml.safe_dump(_bundled_workflow_manifest("bugfix", "9.9.9")), encoding="utf-8"
+    )
+
+    result = runner.invoke(
+        app, ["bundle", "install", str(bundle_dir), "--offline"]
+    )
+
+    assert result.exit_code == 1
+    assert "pinned to version 9.9.9" in result.output
+    assert not (project / ".specify" / "workflows" / "bugfix").exists()
+
+
+def test_local_bundle_refuses_unbundled_workflow_offline(project: Path):
+    bundle_dir = project / "unbundled-workflow"
+    (bundle_dir / "bundle.yml").parent.mkdir()
+    (bundle_dir / "bundle.yml").write_text(
+        yaml.safe_dump(_bundled_workflow_manifest("not-bundled")), encoding="utf-8"
+    )
+
+    result = runner.invoke(
+        app, ["bundle", "install", str(bundle_dir), "--offline"]
+    )
+
+    assert result.exit_code == 1
+    assert "network access is disabled" in " ".join(result.output.lower().split())
+
+
 def test_info_expands_full_component_set(project: Path, monkeypatch):
     bundle_dir = project / "src-bundle"
     bundle_dir.mkdir()
@@ -649,7 +778,11 @@ def test_search_json_offline(project: Path):
     config = {
         "schema_version": "1.0",
         "catalogs": [
-            {"id": "c", "url": str(catalog), "priority": 1,
+            # Priority 0 wins over the built-in first-party catalog so the demo
+            # entry is resolved from this project catalog, while the offline
+            # packaged first-party catalog (bugfix / assess) still appears in
+            # search results alongside it.
+            {"id": "c", "url": str(catalog), "priority": 0,
              "install_policy": "install-allowed"}
         ],
     }
@@ -659,10 +792,11 @@ def test_search_json_offline(project: Path):
     result = runner.invoke(app, ["bundle", "search", "--offline", "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload[0]["id"] == "demo"
+    by_id = {entry["id"]: entry for entry in payload}
+    assert "demo" in by_id
     # Trust indicator is exposed on the discovery surface (FR-010 / FR-027).
-    assert payload[0]["verified"] is True
-    assert payload[0]["trust"] == "verified"
+    assert by_id["demo"]["verified"] is True
+    assert by_id["demo"]["trust"] == "verified"
 
 
 def test_search_text_shows_trust(project: Path):
@@ -727,14 +861,19 @@ class FakeBundleResponse(io.BytesIO):
 
 
 def _make_catalog_config(catalog_path: Path, project: Path) -> None:
-    """Write a bundle-catalogs.yml pointing at *catalog_path* in *project*."""
+    """Write a bundle-catalogs.yml pointing at *catalog_path* in *project*.
+
+    Uses priority 0 so the test catalog wins over the built-in first-party
+    ``builtin://default`` catalog and the command under test does not need to
+    fetch the repository catalog from the network.
+    """
     config = {
         "schema_version": "1.0",
         "catalogs": [
             {
                 "id": "test",
                 "url": str(catalog_path),
-                "priority": 1,
+                "priority": 0,
                 "install_policy": "install-allowed",
             }
         ],
