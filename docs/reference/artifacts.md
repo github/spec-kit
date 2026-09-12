@@ -170,16 +170,21 @@ exists. Core, project-override, and other synthetic rows may report
 specify artifact lookup <lookupId> --json
 ```
 
-Resolves a manifest-backed stack `lookupId` to the exact preset or extension
-declaration that produced it. This keeps cross-reference behavior inside the
-artifact command: preset and extension commands, manifests, and resolver return
-shapes are unchanged.
+Resolves a manifest-backed stack `lookupId` to the validated preset or extension
+declaration that Spec Kit uses. The returned declaration reflects normal
+manifest processing, including canonical extension command names, injected
+defaults such as empty alias lists, and lowercase preset strategies. It is not
+a verbatim representation of the authored YAML.
+
+This keeps cross-reference behavior inside the artifact command: preset and
+extension commands, manifests, and resolver return shapes are unchanged.
 
 The response includes the stable lookup ID, provider coordinates, manifest and
-source paths, and the original declaration under `contribution`. Convention-only
-contributions and project overrides have no originating manifest declaration,
-so lookup returns `{"error": "unknown contribution <lookupId>"}` with exit code
-`1`. Built-in rows never have a `lookupId`.
+source paths, and the effective declaration under `contribution`.
+Convention-only contributions and project overrides have no originating
+manifest declaration, so lookup returns
+`{"error": "unknown contribution <lookupId>"}` with exit code `1`. Built-in
+rows never have a `lookupId`.
 
 ### Hook artifacts
 

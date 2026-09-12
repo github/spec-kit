@@ -998,6 +998,74 @@ class TestCLI:
             ".specify/presets/lookup-pack/templates/lookup.md"
         )
 
+    def test_lookup_returns_normalized_preset_declaration(
+        self, spec_kit_project: Path
+    ):
+        install_preset(
+            spec_kit_project,
+            "normalized-preset",
+            {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": "normalized-template",
+                        "strategy": "APPEND",
+                    }
+                ]
+            },
+        )
+
+        payload = ArtifactCatalog(spec_kit_project).get_contribution_info(
+            "preset:normalized-preset:template:normalized-template"
+        )
+
+        assert payload["contribution"]["strategy"] == "append"
+
+    def test_lookup_returns_normalized_extension_declaration(
+        self, spec_kit_project: Path
+    ):
+        extension_dir = (
+            spec_kit_project / ".specify" / "extensions" / "normalized-extension"
+        )
+        extension_dir.mkdir()
+        (extension_dir / "commands").mkdir()
+        (extension_dir / "commands" / "hello.md").write_text(
+            "body", encoding="utf-8"
+        )
+        (extension_dir / "extension.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "extension": {
+                        "id": "normalized-extension",
+                        "name": "Normalized extension",
+                        "version": "1.0.0",
+                        "description": "test",
+                    },
+                    "requires": {"speckit_version": ">=0.2.0"},
+                    "provides": {
+                        "commands": [
+                            {
+                                "name": "speckit.hello",
+                                "file": "commands/hello.md",
+                            }
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        payload = ArtifactCatalog(spec_kit_project).get_contribution_info(
+            "extension:normalized-extension:command:"
+            "speckit.normalized-extension.hello"
+        )
+
+        assert payload["contribution"]["name"] == (
+            "speckit.normalized-extension.hello"
+        )
+        assert payload["contribution"]["aliases"] == []
+
     def test_lookup_omits_missing_contribution_source(
         self, spec_kit_project: Path
     ):
@@ -2474,6 +2542,43 @@ class TestHookRegistration:
         }
 
         assert active_by_source == {"ext-a": False, "ext-b": True}
+        assert row["registered"] is True
+
+    def test_renamed_installation_uses_manifest_id_for_runtime_activation(
+        self, spec_kit_project: Path
+    ):
+        _install_extension_with_hooks(
+            spec_kit_project,
+            "renamed-installation",
+            manifest_id="runtime-id",
+            hooks={
+                "before_specify": [
+                    {"command": "speckit.runtime-id.pre-check"}
+                ]
+            },
+        )
+        _write_hook_binding(
+            spec_kit_project,
+            "before_specify",
+            [
+                {
+                    "extension": "runtime-id",
+                    "command": "speckit.runtime-id.pre-check",
+                    "enabled": True,
+                }
+            ],
+        )
+
+        rows = ArtifactCatalog(spec_kit_project).list_artifacts_with_stack()
+        row = next(item for item in rows if item["kind"] == "hook")
+        entry = row["stack"][0]
+
+        assert entry["sourceId"] == "renamed-installation"
+        assert entry["lookupId"] == (
+            "extension:renamed-installation:hook:"
+            "before_specify:speckit.runtime-id.pre-check"
+        )
+        assert entry["active"] is True
         assert row["registered"] is True
 
     def test_invalid_runtime_config_degrades_to_unregistered(

@@ -409,7 +409,7 @@ class ArtifactCatalog:
         }
 
     def get_contribution_info(self, lookup_id: str) -> dict[str, Any]:
-        """Resolve a stack ``lookupId`` to its originating manifest entry."""
+        """Resolve a stack ``lookupId`` to its validated manifest entry."""
         _validate_project(self.project_root)
         _validate_extension_registry(self.project_root)
         try:
@@ -667,6 +667,7 @@ class ArtifactCatalog:
                             "id": public_id,
                             "layer": "extension",
                             "sourceId": source_id,
+                            "runtimeExtensionId": manifest.id,
                             "presetId": None,
                             "presetName": None,
                             "manifestPath": manifest_path,
@@ -709,7 +710,8 @@ class ArtifactCatalog:
                     presetName=None,
                     strategy="additive",
                     active=any(
-                        binding.get("extension") == declaration["sourceId"]
+                        binding.get("extension")
+                        == declaration["runtimeExtensionId"]
                         and binding.get("command") == command
                         for binding in enabled_bindings
                     ),

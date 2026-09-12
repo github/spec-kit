@@ -164,10 +164,10 @@ def artifact_lookup(
     json_flag: bool = typer.Option(
         False,
         "--json",
-        help="Emit the originating manifest contribution as JSON.",
+        help="Emit the validated manifest contribution used by Spec Kit as JSON.",
     ),
 ) -> None:
-    """Resolve a stack lookupId to its preset or extension contribution."""
+    """Resolve a stack lookupId to its effective preset or extension contribution."""
     _require_json_flag(json_flag)
     try:
         root = _resolve_project_root()
