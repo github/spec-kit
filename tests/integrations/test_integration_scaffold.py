@@ -236,3 +236,56 @@ def test_integration_scaffold_accepts_uppercase_type(tmp_path, monkeypatch):
         root / "src" / "specify_cli" / "integrations" / "my_agent" / "__init__.py"
     ).read_text(encoding="utf-8")
     assert "class MyAgentIntegration(YamlIntegration):" in content
+
+
+@pytest.mark.parametrize("key", ["class", "import", "return", "lambda"])
+def test_scaffold_refuses_a_python_keyword_key(tmp_path, key):
+    """A reserved keyword cannot name an importable package.
+
+    The generated `integrations/<key>/` would be unreachable by any import
+    statement, so the scaffold would emit a package nothing can load.
+    """
+    root = _repo_root(tmp_path)
+
+    with pytest.raises(ValueError, match="Python keyword"):
+        scaffold_integration(root, key, "markdown")
+
+    assert not (root / "src" / "specify_cli" / "integrations" / key).exists()
+
+
+@pytest.mark.parametrize("key", ["base", "catalog", "manifest"])
+def test_scaffold_refuses_a_key_shadowing_an_existing_module(tmp_path, key):
+    """A package shadows a same-named module in the same directory.
+
+    `integrations/base.py` and a scaffolded `integrations/base/` can coexist on
+    disk, and Python resolves the *package* — so `from ..base import ...`, which
+    every integration does, would silently load the empty scaffold instead. The
+    existing-file guard cannot catch this: it only checks `<key>/__init__.py`.
+    """
+    root = _repo_root(tmp_path)
+    (root / "src" / "specify_cli" / "integrations" / f"{key}.py").write_text(
+        "SENTINEL = 1\n", encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="collides with the existing module"):
+        scaffold_integration(root, key, "markdown")
+
+    # The real module is untouched and no package was created beside it.
+    assert (
+        root / "src" / "specify_cli" / "integrations" / f"{key}.py"
+    ).read_text(encoding="utf-8") == "SENTINEL = 1\n"
+    assert not (root / "src" / "specify_cli" / "integrations" / key).exists()
+
+
+@pytest.mark.parametrize("key", ["match", "case", "my-agent"])
+def test_scaffold_still_accepts_soft_keywords_and_ordinary_keys(tmp_path, key):
+    """Soft keywords are contextual — `import match` is valid, so allow them."""
+    root = _repo_root(tmp_path)
+
+    result = scaffold_integration(root, key, "markdown")
+
+    assert result is not None
+    package = key.replace("-", "_")
+    assert (
+        root / "src" / "specify_cli" / "integrations" / package / "__init__.py"
+    ).is_file()
