@@ -826,29 +826,37 @@ class IntegrationBase(ABC):
         6. Rewrite paths: ``scripts/`` → ``.specify/scripts/`` etc.
         7. Replace ``__SPECKIT_COMMAND_<NAME>__`` with invocation strings
         """
-        # 1. Extract script command from frontmatter
+        # 1. Extract script command from frontmatter using structured YAML
         script_commands: dict[str, str] = {}
-        script_pattern = re.compile(r"^\s*([A-Za-z0-9_-]+):\s*(.+)$")
-        # Find the scripts: block
-        in_frontmatter = False
-        in_scripts = False
-        for line in content.splitlines():
-            if line == "---":
-                if in_frontmatter:
-                    break
-                in_frontmatter = True
-                continue
-            if not in_frontmatter:
-                continue
-            if line == "scripts:":
-                in_scripts = True
-                continue
-            if in_scripts and line and not line[0].isspace():
-                break
-            if in_scripts:
-                m = script_pattern.match(line)
-                if m:
-                    script_commands[m.group(1)] = m.group(2).strip()
+        has_frontmatter = False
+        frontmatter_dict: dict[str, Any] = {}
+        body = content
+
+        if content.startswith("---"):
+            lines = content.splitlines(keepends=True)
+            close_idx = next(
+                (
+                    i
+                    for i in range(1, len(lines))
+                    if lines[i].rstrip("\r\n") == "---"
+                ),
+                None,
+            )
+            if close_idx is not None:
+                has_frontmatter = True
+                fm_text = "".join(lines[1:close_idx])
+                body = "".join(lines[close_idx + 1 :])
+                try:
+                    parsed = yaml.safe_load(fm_text)
+                    if isinstance(parsed, dict):
+                        frontmatter_dict = parsed
+                        raw_scripts = frontmatter_dict.get("scripts")
+                        if isinstance(raw_scripts, dict):
+                            for k, v in raw_scripts.items():
+                                if isinstance(v, str):
+                                    script_commands[str(k)] = v.strip()
+                except yaml.YAMLError:
+                    pass
 
         selected_script_type = (
             IntegrationBase.select_script_variant(script_type, script_commands)
@@ -867,35 +875,24 @@ class IntegrationBase(ABC):
                 script_command = IntegrationBase.build_python_invocation(
                     script_command, project_root
                 )
-            content = content.replace("{SCRIPT}", script_command)
+            body = body.replace("{SCRIPT}", script_command)
 
-        # 3. Strip scripts: section from frontmatter
-        lines = content.splitlines(keepends=True)
-        output_lines: list[str] = []
-        in_frontmatter = False
-        skip_section = False
-        dash_count = 0
-        for line in lines:
-            stripped = line.rstrip("\n\r")
-            if stripped == "---":
-                dash_count += 1
-                if dash_count == 1:
-                    in_frontmatter = True
-                else:
-                    in_frontmatter = False
-                skip_section = False
-                output_lines.append(line)
-                continue
-            if in_frontmatter:
-                if stripped == "scripts:":
-                    skip_section = True
-                    continue
-                if skip_section:
-                    if line[0:1].isspace():
-                        continue  # skip indented content under scripts
-                    skip_section = False
-            output_lines.append(line)
-        content = "".join(output_lines)
+        # 3. Strip scripts: section from frontmatter using structured YAML
+        if has_frontmatter:
+            frontmatter_dict.pop("scripts", None)
+            if frontmatter_dict:
+                rendered_fm = yaml.dump(
+                    frontmatter_dict,
+                    default_flow_style=False,
+                    sort_keys=False,
+                    allow_unicode=True,
+                    width=float("inf"),
+                )
+                content = f"---\n{rendered_fm}---\n{body}"
+            else:
+                content = f"---\n---\n{body}"
+        else:
+            content = body
 
         # 4. Replace {ARGS} and $ARGUMENTS
         content = content.replace("{ARGS}", arg_placeholder)
