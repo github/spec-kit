@@ -828,8 +828,6 @@ class CommandRegistrar:
                 body = self.resolve_skill_placeholders(
                     agent_name, frontmatter, body, project_root, extension_id=extension_id
                 )
-                if extension_id:
-                    frontmatter.pop("scripts", None)
                 body = self._convert_argument_placeholder(
                     body, "$ARGUMENTS", agent_config["args"]
                 )
@@ -838,8 +836,6 @@ class CommandRegistrar:
                 body = self.resolve_skill_placeholders(
                     agent_name, frontmatter, body, project_root
                 )
-                if extension_id:
-                    frontmatter.pop("scripts", None)
                 body = self._convert_argument_placeholder(
                     body, "$ARGUMENTS", agent_config["args"]
                 )
