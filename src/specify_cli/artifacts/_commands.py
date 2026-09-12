@@ -179,7 +179,20 @@ def artifact_lookup(
         _emit_error_and_exit(ArtifactResolutionError())
         return  # pragma: no cover
 
-    sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
+    try:
+        rendered = json.dumps(
+            payload,
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        rendered.encode("utf-8")
+    except (TypeError, ValueError, UnicodeEncodeError):
+        _emit_error_and_exit(ArtifactResolutionError())
+        return  # pragma: no cover
+
+    sys.stdout.write(rendered)
     sys.stdout.write("\n")
 
 

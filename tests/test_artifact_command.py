@@ -1182,8 +1182,15 @@ class TestCLI:
             float("nan"),
             float("inf"),
             float("-inf"),
+            "\ud800",
         ],
-        ids=["date", "nan", "positive-infinity", "negative-infinity"],
+        ids=[
+            "date",
+            "nan",
+            "positive-infinity",
+            "negative-infinity",
+            "unpaired-surrogate",
+        ],
     )
     def test_lookup_json_rejects_non_json_manifest_value(
         self,
