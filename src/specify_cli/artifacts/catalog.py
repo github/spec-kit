@@ -507,7 +507,7 @@ class ArtifactCatalog:
                 if relative_manifest is None:
                     raise ArtifactResolutionError()
                 return (
-                    {"eventName": event_name, **matching},
+                    {**matching, "eventName": event_name},
                     relative_manifest,
                     None,
                 )

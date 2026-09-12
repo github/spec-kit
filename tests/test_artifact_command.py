@@ -1862,6 +1862,7 @@ class TestHookInventory:
                 "before_specify": [
                     {
                         "command": "speckit.compliance.pre-check",
+                        "eventName": "after_plan",
                         "description": "Compliance pre-check",
                         "priority": 5,
                         "optional": False,
