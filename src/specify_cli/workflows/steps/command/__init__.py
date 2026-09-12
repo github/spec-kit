@@ -233,11 +233,14 @@ class CommandStep(StepBase):
 
         impl.validate_runtime_config(integration_args, integration_options)
 
+        project_root = Path(context.project_root) if context.project_root else None
+
         # Build sample args for fallback executable detection when impl.key is not executable.
         exec_args = impl.build_exec_args(
             "test",
             integration_args=integration_args,
             integration_options=integration_options,
+            project_root=project_root,
         )
 
         # Check if the CLI tool is actually installed.
@@ -247,8 +250,6 @@ class CommandStep(StepBase):
         fallback_cli_path = shutil.which(exec_args[0]) if exec_args else None
         if cli_path is None and fallback_cli_path is None:
             return None
-
-        project_root = Path(context.project_root) if context.project_root else None
 
         try:
             return impl.dispatch_command(

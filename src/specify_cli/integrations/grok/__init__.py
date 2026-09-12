@@ -6,6 +6,7 @@ Grok Build discovers project skills from ``.grok/skills/speckit-<name>/SKILL.md`
 """
 
 from __future__ import annotations
+from pathlib import Path
 
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -40,6 +41,7 @@ class GrokIntegration(SkillsIntegration):
         output_json: bool = True,
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         """Build CLI arguments for non-interactive ``grok`` execution.
 

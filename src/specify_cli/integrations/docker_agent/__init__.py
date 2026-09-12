@@ -6,6 +6,7 @@ configuration is owned by Docker Agent and is not managed by Spec Kit.
 """
 
 from __future__ import annotations
+from pathlib import Path
 
 import os
 import shlex
@@ -85,6 +86,7 @@ class DockerAgentIntegration(SkillsIntegration):
         output_json: bool = True,
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         """Build a headless Docker Agent invocation with an agent config."""
         self.validate_runtime_config(integration_args, integration_options)
@@ -152,6 +154,7 @@ class DockerAgentIntegration(SkillsIntegration):
         self,
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> None:
         """Validate Docker Agent's per-step agent reference and CLI options."""
         runtime_args = list(integration_args or ())

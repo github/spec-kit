@@ -162,6 +162,11 @@ def _strip_specify_env(monkeypatch):
     that wants an override sets it explicitly via monkeypatch afterwards."""
     for key in [k for k in os.environ if k.startswith("SPECIFY_")]:
         monkeypatch.delenv(key, raising=False)
+    for key in list(os.environ):
+        if key.startswith("SPECKIT_INTEGRATION_") and (
+            key.endswith("_EXTRA_ARGS") or key.endswith("_EXECUTABLE")
+        ):
+            monkeypatch.delenv(key, raising=False)
 
 
 @pytest.fixture

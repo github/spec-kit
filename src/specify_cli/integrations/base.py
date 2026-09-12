@@ -248,6 +248,7 @@ class IntegrationBase(ABC):
         output_json: bool = True,
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         """Build CLI arguments for non-interactive execution.
 
@@ -410,6 +411,7 @@ class IntegrationBase(ABC):
             output_json=not stream,
             integration_args=integration_args,
             integration_options=integration_options,
+            project_root=project_root,
         )
 
         if exec_args is None:
@@ -1067,6 +1069,7 @@ class MarkdownIntegration(IntegrationBase):
         output_json: bool = True,
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         self.validate_runtime_config(integration_args, integration_options)
         if not self.config or not self.config.get("requires_cli"):
@@ -1161,6 +1164,7 @@ class TomlIntegration(IntegrationBase):
         output_json: bool = True,
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         self.validate_runtime_config(integration_args, integration_options)
         if not self.config or not self.config.get("requires_cli"):
@@ -1633,6 +1637,7 @@ class SkillsIntegration(IntegrationBase):
         output_json: bool = True,
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         self.validate_runtime_config(integration_args, integration_options)
         if not self.config or not self.config.get("requires_cli"):

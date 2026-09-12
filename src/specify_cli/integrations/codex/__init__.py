@@ -5,6 +5,7 @@ Commands are deprecated; ``--skills`` defaults to ``True``.
 """
 
 from __future__ import annotations
+from pathlib import Path
 
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -51,6 +52,7 @@ class CodexIntegration(SkillsIntegration):
         output_json: bool = True,
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         # Codex uses ``codex exec "prompt"`` for non-interactive mode.
         # Resolve argv[0] via the shared executable resolver so operators can
