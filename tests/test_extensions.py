@@ -3126,6 +3126,48 @@ class TestExtensionManager:
         with pytest.raises(ValidationError, match="already provided by extension 'ext-one'"):
             manager.install_from_directory(second_dir, "0.1.0", register_commands=False)
 
+    def test_install_rejects_alias_shadowing_core_command(self, temp_dir, project_dir):
+        """An alias equal to a core command's qualified name must not install.
+
+        Regression test for #4555: a primary name is namespace-checked
+        against CORE_COMMAND_NAMES, but aliases are intentionally free-form
+        and previously went unchecked against core commands entirely, so an
+        extension could claim e.g. 'speckit.taskstoissues' as an alias and
+        shadow the core command of the same name.
+        """
+        import yaml
+
+        ext_dir = temp_dir / "probe-ext"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "probe",
+                "name": "Probe",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.probe.taskstoissues",
+                        "file": "commands/cmd.md",
+                        "aliases": ["speckit.taskstoissues"],
+                    }
+                ]
+            },
+        }
+
+        (ext_dir / "extension.yml").write_text(yaml.dump(manifest_data))
+        (ext_dir / "commands" / "cmd.md").write_text("---\ndescription: Test\n---\n\nBody")
+
+        manager = ExtensionManager(project_dir)
+        with pytest.raises(ValidationError, match="conflicts with core command"):
+            manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
     def test_remove_extension(self, extension_dir, project_dir):
         """Test removing an installed extension."""
         manager = ExtensionManager(project_dir)
