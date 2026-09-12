@@ -3079,6 +3079,34 @@ steps:
         assert len(rendered) == GateStep.MAX_SHOW_FILE_LINES + 1
         assert "truncated" in rendered[-1]
 
+    def test_read_show_file_truncates_a_single_enormous_line(self, tmp_path):
+        """The line cap alone does not bound the output.
+
+        A file with no newlines — minified JSON, a lockfile, a base64 blob — is
+        a single line of arbitrary length, so `MAX_SHOW_FILE_LINES` never
+        triggers and the whole file floods the gate prompt, which is exactly
+        what that cap exists to prevent.
+        """
+        from specify_cli.workflows.steps.gate import GateStep
+
+        blob = tmp_path / "min.json"
+        blob.write_text('{"k":"' + "A" * 400_000 + '"}', encoding="utf-8")
+
+        rendered = GateStep._read_show_file(str(blob))
+
+        assert len(rendered) == 1
+        assert len(rendered[0]) < GateStep.MAX_SHOW_FILE_LINE_CHARS + 100
+        assert "line truncated" in rendered[0]
+
+    def test_read_show_file_leaves_short_lines_untouched(self, tmp_path):
+        """Lines within the cap are rendered verbatim, with no notice."""
+        from specify_cli.workflows.steps.gate import GateStep
+
+        path = tmp_path / "short.md"
+        path.write_text("hello\nworld\n", encoding="utf-8")
+
+        assert GateStep._read_show_file(str(path)) == ["hello", "world"]
+
     def test_read_show_file_invalid_path_does_not_raise(self):
         from specify_cli.workflows.steps.gate import GateStep
 
