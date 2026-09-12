@@ -3425,6 +3425,79 @@ Real body starts here.
         assert ".specify/scripts/bash/setup-plan.sh" in rewritten
         assert ".specify/templates/checklist.md" in rewritten
 
+    def test_rewrite_project_relative_paths_idempotency(self):
+        """Repeated applications must produce identical results with no double prefixing."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        samples = [
+            ("Run scripts/bash/setup-plan.sh --json", None, "Run .specify/scripts/bash/setup-plan.sh --json"),
+            ("Run ./scripts/bash/setup-plan.sh --json", None, "Run .specify/scripts/bash/setup-plan.sh --json"),
+            ("Run ../../scripts/bash/setup-plan.sh", None, "Run .specify/scripts/bash/setup-plan.sh"),
+            ("Run ../../../scripts/bash/setup-plan.sh", None, "Run .specify/scripts/bash/setup-plan.sh"),
+            ("Read memory/constitution.md", None, "Read .specify/memory/constitution.md"),
+            ("Read /memory/constitution.md", None, "Read .specify/memory/constitution.md"),
+            ("Read ./memory/constitution.md", None, "Read .specify/memory/constitution.md"),
+            ("Read ../../memory/constitution.md", None, "Read .specify/memory/constitution.md"),
+            ("Read templates/spec.md", None, "Read .specify/templates/spec.md"),
+            ("Read ./templates/spec.md", None, "Read .specify/templates/spec.md"),
+            ("Read ../../templates/spec.md", None, "Read .specify/templates/spec.md"),
+            ("Run .specify/scripts/bash/setup-plan.sh", None, "Run .specify/scripts/bash/setup-plan.sh"),
+            ("Read .specify/memory/constitution.md", None, "Read .specify/memory/constitution.md"),
+            ("Read .specify/templates/spec.md", None, "Read .specify/templates/spec.md"),
+            ("Run scripts/tool.sh", "my-ext", "Run .specify/extensions/my-ext/scripts/tool.sh"),
+            ("Run ./scripts/tool.sh", "my-ext", "Run .specify/extensions/my-ext/scripts/tool.sh"),
+            ("Run ../../scripts/tool.sh", "my-ext", "Run .specify/scripts/tool.sh"),
+            (
+                "Run .specify/extensions/my-ext/scripts/tool.sh",
+                "my-ext",
+                "Run .specify/extensions/my-ext/scripts/tool.sh",
+            ),
+        ]
+
+        for text, ext_id, expected in samples:
+            once = AgentCommandRegistrar.rewrite_project_relative_paths(text, extension_id=ext_id)
+            assert once == expected
+            twice = AgentCommandRegistrar.rewrite_project_relative_paths(once, extension_id=ext_id)
+            assert twice == expected
+            thrice = AgentCommandRegistrar.rewrite_project_relative_paths(twice, extension_id=ext_id)
+            assert thrice == expected
+            assert ".specify/.specify/" not in thrice
+            assert ".specify.specify/" not in thrice
+
+    def test_rewrite_project_relative_paths_various_delimiters(self):
+        """Paths enclosed by backticks, quotes, brackets, and parens should be rewritten."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        body = (
+            "Inline `scripts/bash/run.sh` and \"scripts/bash/run.sh\" and 'scripts/bash/run.sh'\n"
+            "Parens (scripts/bash/run.sh) and brackets [scripts/bash/run.sh]\n"
+            "Braces {scripts/bash/run.sh} and angles <scripts/bash/run.sh>\n"
+            "Start of text: scripts/bash/run.sh\n"
+        )
+        rewritten = AgentCommandRegistrar.rewrite_project_relative_paths(body)
+
+        assert "`.specify/scripts/bash/run.sh`" in rewritten
+        assert "\".specify/scripts/bash/run.sh\"" in rewritten
+        assert "'.specify/scripts/bash/run.sh'" in rewritten
+        assert "(.specify/scripts/bash/run.sh)" in rewritten
+        assert "[.specify/scripts/bash/run.sh]" in rewritten
+        assert "{.specify/scripts/bash/run.sh}" in rewritten
+        assert "<.specify/scripts/bash/run.sh>" in rewritten
+        assert rewritten.splitlines()[-1] == "Start of text: .specify/scripts/bash/run.sh"
+
+        # Verify idempotency on multiline text with diverse delimiters
+        again = AgentCommandRegistrar.rewrite_project_relative_paths(rewritten)
+        assert again == rewritten
+        assert ".specify/.specify/" not in again
+
+    def test_rewrite_project_relative_paths_non_string_or_empty(self):
+        """Non-string and falsy inputs should be returned as-is."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        assert AgentCommandRegistrar.rewrite_project_relative_paths("") == ""
+        assert AgentCommandRegistrar.rewrite_project_relative_paths(None) is None
+        assert AgentCommandRegistrar.rewrite_project_relative_paths(123) == 123
+
     def test_render_toml_command_handles_embedded_triple_double_quotes(self):
         """TOML renderer should stay valid when body includes triple double-quotes."""
         from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
