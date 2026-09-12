@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
+from scripts.python import common as python_common
 from tests.conftest import requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
@@ -20,6 +23,7 @@ from tests.parity_helpers import (
     ps_cmd,
     py_cmd,
     run,
+    venv_python3_exe,
 )
 
 SCRIPT = "resolve-template"
@@ -646,6 +650,418 @@ def test_all_variants_fail_when_yaml_parser_is_unavailable(
 
     assert all(result.returncode != 0 for result in results)
     assert all(result.stdout == "" for result in results)
+
+
+@requires_bash
+def test_all_variants_honor_speckit_python_override_when_yaml_missing(
+    tmp_path: Path,
+) -> None:
+    """SPECKIT_PYTHON can name an interpreter with PyYAML when the default
+    one lacks it, e.g. a `uv tool install` venv invisible to bare `python3`
+    on PATH (#4443)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    no_yaml_python = tmp_path / "no-yaml-venv"
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
+        check=True,
+        capture_output=True,
+    )
+    no_yaml_exe = venv_python3_exe(no_yaml_python)
+    no_yaml_bin = no_yaml_exe.parent
+    assert no_yaml_exe.is_file()
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+
+    baseline_env = clean_env()
+    baseline_env.pop("SPECKIT_PYTHON", None)
+    baseline_env["PATH"] = f"{no_yaml_bin}{os.pathsep}{baseline_env.get('PATH', '')}"
+    baseline_results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, baseline_env),
+        run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, baseline_env),
+    ]
+    if HAS_POWERSHELL:
+        baseline_results.append(
+            run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, baseline_env)
+        )
+    assert all(result.returncode != 0 for result in baseline_results)
+
+    override_env = dict(baseline_env)
+    override_env["SPECKIT_PYTHON"] = sys.executable
+    override_results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, override_env),
+        run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, override_env),
+    ]
+    if HAS_POWERSHELL:
+        override_results.append(
+            run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, override_env)
+        )
+
+    assert all(result.returncode == 0 for result in override_results)
+    assert all(
+        json_stdout(result)
+        == {"TEMPLATE_NAME": TEMPLATE, "TEMPLATE_CONTENT": expected}
+        for result in override_results
+    )
+
+
+@requires_bash
+def test_all_variants_fall_back_when_speckit_python_lacks_pyyaml(
+    tmp_path: Path,
+) -> None:
+    """SPECKIT_PYTHON naming a Python-3 interpreter without PyYAML must not
+    break composition that a PATH interpreter can already serve.
+
+    SPECKIT_PYTHON is an override for *expanding* what's available (#4443),
+    not a way to narrow it: falling through to a working PATH interpreter
+    when the override lacks PyYAML must behave the same as if SPECKIT_PYTHON
+    had never been set.
+    """
+    repo, expected = _setup_repo(tmp_path)
+
+    no_yaml_python = tmp_path / "no-yaml-venv"
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
+        check=True,
+        capture_output=True,
+    )
+    no_yaml_exe = venv_python3_exe(no_yaml_python)
+    assert no_yaml_exe.is_file()
+
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = str(no_yaml_exe)
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, env))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)
+        == {"TEMPLATE_NAME": TEMPLATE, "TEMPLATE_CONTENT": expected}
+        for result in results
+    )
+
+
+@requires_bash
+def test_bash_honors_speckit_python_path_containing_spaces(tmp_path: Path) -> None:
+    """SPECKIT_PYTHON may be an absolute path containing spaces (e.g. a venv
+    named "tool env"); callers must treat it as one argv element rather than
+    splitting it on whitespace (#4445).
+
+    A shim script that execs `sys.executable` guarantees the spaced path
+    actually has PyYAML: a symlink would not do, since `sys.executable` may
+    itself be a venv-relative symlink (e.g. under `uv run`), and invoking it
+    through a second symlink placed outside that venv's directory tree
+    breaks Python's `pyvenv.cfg` discovery, silently hiding the venv's
+    site-packages (and PyYAML with it). Exec'ing the real path from a shim
+    keeps `argv[0]` at its original, correctly-resolvable location. PATH's
+    `python3` is a PyYAML-less venv, so success is only possible if
+    `_python3_command` selects the spaced override intact.
+    """
+    repo, expected = _setup_repo(tmp_path)
+
+    spaced_dir = tmp_path / "tool env"
+    spaced_dir.mkdir()
+    spaced_exe = spaced_dir / Path(sys.executable).name
+    spaced_exe.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
+    spaced_exe.chmod(0o755)
+
+    no_yaml_python = tmp_path / "no-yaml-venv"
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
+        check=True,
+        capture_output=True,
+    )
+    no_yaml_bin = venv_python3_exe(no_yaml_python).parent
+
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = str(spaced_exe)
+    env["PATH"] = f"{no_yaml_bin}{os.pathsep}{env.get('PATH', '')}"
+
+    result = run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
+@requires_bash
+def test_python_variant_delegates_manifest_with_non_json_native_yaml_value(
+    tmp_path: Path,
+) -> None:
+    """A manifest holding a value PyYAML parses into a non-JSON-native type
+    (e.g. an unquoted date) must still resolve when the Python twin delegates
+    parsing to SPECKIT_PYTHON because its own interpreter lacks PyYAML."""
+    repo, expected = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "created_at: 2026-09-08\n" + manifest.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    no_yaml_python = tmp_path / "no-yaml-venv"
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
+        check=True,
+        capture_output=True,
+    )
+    no_yaml_exe = venv_python3_exe(no_yaml_python)
+    assert no_yaml_exe.is_file()
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
+@requires_bash
+def test_python_variant_rejects_delegated_manifest_with_non_string_validated_field(
+    tmp_path: Path,
+) -> None:
+    """A validated field (``file``) holding a value PyYAML parses into a
+    non-JSON-native type (e.g. an unquoted date) must be rejected via
+    delegation exactly as the in-process parser rejects it, not silently
+    coerced to a string that passes the ``isinstance(str)`` check (#4445)."""
+    repo, _ = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "provides:\n"
+        "  templates:\n"
+        "    - type: template\n"
+        f"      name: {TEMPLATE}\n"
+        "      file: 2026-09-08\n"
+        "      strategy: wrap\n",
+        encoding="utf-8",
+    )
+
+    no_yaml_python = tmp_path / "no-yaml-venv"
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
+        check=True,
+        capture_output=True,
+    )
+    no_yaml_exe = venv_python3_exe(no_yaml_python)
+    assert no_yaml_exe.is_file()
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+
+
+@requires_bash
+def test_python_variant_delegates_manifest_with_non_ascii_metadata_under_ascii_locale(
+    tmp_path: Path,
+) -> None:
+    """Delegated manifest parsing must force UTF-8 on the subprocess pipe and
+    the child's own stdio, not the process locale, so non-ASCII metadata in a
+    manifest still resolves when this interpreter lacks PyYAML and the
+    process is running under a forced ASCII locale (#4445)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8") + '      description: "Café ✓"\n',
+        encoding="utf-8",
+    )
+
+    no_yaml_python = tmp_path / "no-yaml-venv"
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
+        check=True,
+        capture_output=True,
+    )
+    no_yaml_exe = venv_python3_exe(no_yaml_python)
+    assert no_yaml_exe.is_file()
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+    env["PYTHONUTF8"] = "0"
+    env["PYTHONCOERCECLOCALE"] = "0"
+    env["LC_ALL"] = "C"
+    env["LANG"] = "C"
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
+@requires_bash
+def test_python_variant_delegates_manifest_with_non_json_native_mapping_key(
+    tmp_path: Path,
+) -> None:
+    """An otherwise-ignored mapping whose key PyYAML parses into a
+    non-JSON-native type (e.g. an unquoted date) must not break delegation:
+    `json.dump`'s `default` hook only applies to values, never to keys, so
+    such a key must be stringified before serialization instead of raising
+    `TypeError` (#4445)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "metadata:\n  2026-09-08: value\n" + manifest.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    no_yaml_python = tmp_path / "no-yaml-venv"
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
+        check=True,
+        capture_output=True,
+    )
+    no_yaml_exe = venv_python3_exe(no_yaml_python)
+    assert no_yaml_exe.is_file()
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
+@requires_bash
+def test_python_variant_delegates_manifest_with_recursive_yaml_alias(
+    tmp_path: Path,
+) -> None:
+    """An ignored `metadata` mapping containing a self-referential YAML alias
+    (`&m {self: *m}`) must not break delegation: `yaml.safe_load` supports
+    this via a shared reference, so naive recursive serialization of the
+    same object forever revisits it and raises `RecursionError` instead of
+    ignoring the unused field the way the in-process parser does (#4445)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "metadata: &m\n  self: *m\n" + manifest.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    no_yaml_python = tmp_path / "no-yaml-venv"
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
+        check=True,
+        capture_output=True,
+    )
+    no_yaml_exe = venv_python3_exe(no_yaml_python)
+    assert no_yaml_exe.is_file()
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
+def test_python_variant_rejects_speckit_python_override_without_python_3(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A `SPECKIT_PYTHON` override that can `import yaml` but is not a
+    Python 3 interpreter (e.g. Python 2 with PyYAML installed) must not be
+    accepted: probing only `import yaml` lets it through, and the later
+    delegated subprocess then fails with syntax/runtime errors instead of
+    falling back to a working interpreter (#4445)."""
+    monkeypatch.setitem(sys.modules, "yaml", None)
+    monkeypatch.setenv("SPECKIT_PYTHON", "/fake/python2")
+
+    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+        code = cmd[2]
+        returncode = 1 if "version_info" in code else 0
+        return subprocess.CompletedProcess(cmd, returncode)
+
+    monkeypatch.setattr(python_common.subprocess, "run", fake_run)
+
+    assert python_common._import_yaml() is None
+
+
+@requires_bash
+def test_python_variant_reports_concise_error_for_malformed_delegated_manifest(
+    tmp_path: Path,
+) -> None:
+    """A syntactically invalid manifest parsed via delegation must fail with
+    a concise message, matching the in-process parser, instead of leaking
+    the child interpreter's raw Python traceback into the user-facing
+    error (#4445)."""
+    repo, _ = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text("provides: [\n", encoding="utf-8")
+
+    no_yaml_python = tmp_path / "no-yaml-venv"
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
+        check=True,
+        capture_output=True,
+    )
+    no_yaml_exe = venv_python3_exe(no_yaml_python)
+    assert no_yaml_exe.is_file()
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert "Traceback" not in result.stderr
+
+
+@requires_bash
+def test_bash_resolves_composed_template_without_bash4_mapfile_builtin(
+    tmp_path: Path,
+) -> None:
+    """`resolve_template_content` must not rely on `mapfile`, a Bash 4+
+    builtin unavailable on macOS's system Bash 3.2 (#4445). Disabling the
+    builtin for this process reproduces that environment without requiring
+    an actual Bash 3.2 install."""
+    repo, expected = _setup_repo(tmp_path)
+
+    script = repo / ".specify" / "scripts" / "bash" / f"{SCRIPT}.sh"
+    result = run(
+        ["bash", "-c", 'enable -n mapfile; source "$0" "$@"', str(script), TEMPLATE, "--json"],
+        repo,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
 
 
 @requires_bash
