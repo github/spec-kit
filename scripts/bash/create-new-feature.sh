@@ -176,6 +176,21 @@ fit_branch_name() {
     printf '%s' "$branch_name"
 }
 
+# After a lost exclusive mkdir, pick the next sequential number.
+rescan_sequential_feature() {
+    local highest
+    highest=$(get_highest_from_specs "$SPECS_DIR")
+    if [ "$highest" -eq "$MAX_FEATURE_NUMBER" ]; then
+        echo "Error: feature number must be between 0 and $MAX_FEATURE_NUMBER, got '9223372036854775808'" >&2
+        exit 1
+    fi
+    BRANCH_NUMBER=$((highest + 1))
+    FEATURE_NUM=$(printf "%03d" "$((10#$BRANCH_NUMBER))")
+    BRANCH_NAME=$(fit_branch_name "$FEATURE_NUM" "$BRANCH_SUFFIX")
+    FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
+    SPEC_FILE="$FEATURE_DIR/spec.md"
+}
+
 # Quote a value for POSIX shell reuse, byte-identical to Python's shlex.quote
 # so the persistence hints match the Python variant exactly (printf %q output
 # differs between bash versions and from shlex.quote for spaces/metachars).
@@ -343,14 +358,32 @@ FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
 SPEC_FILE="$FEATURE_DIR/spec.md"
 
 if [ "$DRY_RUN" != true ]; then
-    if [ -d "$FEATURE_DIR" ] && [ "$ALLOW_EXISTING" != true ]; then
+    # Exclusive create first so a lost race rescans instead of exiting on the
+    # pre-mkdir exists check, and so NEEDS_SPEC is derived for the final
+    # FEATURE_DIR (not a path abandoned after retry).
+    RESERVED_NEW_DIR=false
+    while true; do
+        if [ "$ALLOW_EXISTING" = true ] && [ -d "$FEATURE_DIR" ]; then
+            RESERVED_NEW_DIR=false
+            break
+        fi
+        if mkdir "$FEATURE_DIR" 2>/dev/null; then
+            RESERVED_NEW_DIR=true
+            break
+        fi
+        if [ ! -d "$FEATURE_DIR" ]; then
+            echo "Error: could not create feature directory '$FEATURE_DIR'" >&2
+            exit 1
+        fi
+        if [ "$ALLOW_EXISTING" = true ]; then
+            break
+        fi
         if [ "$USE_TIMESTAMP" = true ]; then
             >&2 echo "Error: Feature directory '$FEATURE_DIR' already exists. Rerun to get a new timestamp or use a different --short-name."
-        else
-            >&2 echo "Error: Feature directory '$FEATURE_DIR' already exists. Please use a different feature name or specify a different number with --number."
+            exit 1
         fi
-        exit 1
-    fi
+        rescan_sequential_feature
+    done
 
     NEEDS_SPEC=false
     SPEC_TEMPLATE_FOUND=false
@@ -363,12 +396,13 @@ if [ "$DRY_RUN" != true ]; then
         else
             resolve_status=$?
             if [ "$resolve_status" -ne 1 ]; then
+                if [ "$RESERVED_NEW_DIR" = true ]; then
+                    rmdir "$FEATURE_DIR" 2>/dev/null || true
+                fi
                 exit "$resolve_status"
             fi
         fi
     fi
-
-    mkdir -p "$FEATURE_DIR"
 
     if [ "$NEEDS_SPEC" = true ]; then
         if [ "$SPEC_TEMPLATE_FOUND" = true ]; then

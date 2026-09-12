@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -1255,3 +1258,274 @@ def test_no_ascii_word_description_matches_across_twins(tmp_path: Path):
         json_stdout(ps)["BRANCH_NAME"],
     }
     assert names == {"001-"}, names
+
+
+def _shared_specs_repos(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """Two project roots that share one specs/ directory via symlink."""
+    repo_a = _setup_repo(tmp_path, "proj-a")
+    repo_b = _setup_repo(tmp_path, "proj-b")
+    shared = tmp_path / "shared-specs"
+    shared.mkdir()
+    try:
+        (repo_a / "specs").symlink_to(shared, target_is_directory=True)
+        (repo_b / "specs").symlink_to(shared, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks are not available in this environment")
+    (repo_a / ".specify" / "templates" / "spec-template.md").write_text(
+        "ALPHA-SPEC\n", encoding="utf-8"
+    )
+    (repo_b / ".specify" / "templates" / "spec-template.md").write_text(
+        "BETA-SPEC\n", encoding="utf-8"
+    )
+    return repo_a, repo_b, shared
+
+
+def _mkdir_barrier_env(tmp_path: Path, n_waiters: int = 2) -> dict[str, str]:
+    """Pause FEATURE_DIR mkdir until n_waiters arrive so the TOCTOU window is forced.
+
+    Two processes that have already scanned the same max spec number then both
+    call mkdir / New-Item on the same specs/NNN-name path. Non-exclusive create
+    lets both succeed and the second write overwrites spec.md.
+
+    Bash is gated via a PATH mkdir wrapper; Python via sitecustomize on
+    os.mkdir; PowerShell via the SPECKIT_MKDIR_BARRIER hook in
+    create-new-feature.ps1.
+    """
+    env = clean_env()
+    barrier = tmp_path / "mkdir-barrier"
+    barrier.mkdir()
+    released = barrier / "released"
+    real_mkdir = shutil.which("mkdir")
+    if real_mkdir is None:
+        pytest.skip("mkdir not available")
+    bin_dir = tmp_path / "mkdir-bin"
+    bin_dir.mkdir()
+    wrapper = bin_dir / "mkdir"
+    wrapper.write_text(
+        f"""#!/bin/sh
+path_last=""
+for arg in "$@"; do
+  path_last="$arg"
+done
+base=$(basename -- "$path_last")
+parent=$(basename -- "$(dirname -- "$path_last")")
+case "$parent/$base" in
+  specs/[0-9]*-*)
+    if [ ! -f "{released}" ]; then
+      i=0
+      while ! mkdir "{barrier}/w-$i" 2>/dev/null; do
+        i=$((i + 1))
+        if [ "$i" -gt 100 ]; then
+          break
+        fi
+      done
+      n=0
+      while [ "$n" -lt 200 ]; do
+        count=$(ls -d "{barrier}"/w-* 2>/dev/null | wc -l)
+        if [ "$count" -ge {n_waiters} ]; then
+          touch "{released}"
+          break
+        fi
+        if [ -f "{released}" ]; then
+          break
+        fi
+        sleep 0.05
+        n=$((n + 1))
+      done
+    fi
+    ;;
+esac
+exec "{real_mkdir}" "$@"
+""",
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
+    env["SPECKIT_MKDIR_BARRIER"] = str(barrier)
+    env["SPECKIT_MKDIR_BARRIER_N"] = str(n_waiters)
+    site = tmp_path / "mkdir-site"
+    site.mkdir()
+    (site / "sitecustomize.py").write_text(
+        """
+import os
+import time
+from pathlib import Path
+
+_orig_mkdir = os.mkdir
+_barrier = Path(os.environ["SPECKIT_MKDIR_BARRIER"])
+_released = _barrier / "released"
+_n_waiters = int(os.environ.get("SPECKIT_MKDIR_BARRIER_N", "2"))
+
+
+def _is_feature_dir(path):
+    p = Path(path)
+    return p.parent.name == "specs" and "-" in p.name and p.name[0:1].isdigit()
+
+
+def _gated_mkdir(path, mode=0o777, *args, **kwargs):
+    if _is_feature_dir(path) and not _released.exists():
+        (_barrier / f"w-py-{os.getpid()}-{time.time_ns()}").mkdir(exist_ok=True)
+        for _ in range(200):
+            if _released.exists():
+                break
+            waiters = list(_barrier.glob("w-*"))
+            if len(waiters) >= _n_waiters:
+                _released.touch()
+                break
+            time.sleep(0.05)
+    return _orig_mkdir(path, mode, *args, **kwargs)
+
+
+os.mkdir = _gated_mkdir
+""",
+        encoding="utf-8",
+    )
+    env["PYTHONPATH"] = f"{site}{os.pathsep}{env.get('PYTHONPATH', '')}"
+    return env
+
+
+def _popen(
+    cmd: list[str], repo: Path, env: dict[str, str]
+) -> subprocess.Popen[str]:
+    return subprocess.Popen(
+        cmd,
+        cwd=repo,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
+def _wait(
+    proc: subprocess.Popen[str], cmd: list[str]
+) -> subprocess.CompletedProcess[str]:
+    stdout, stderr = proc.communicate(timeout=20)
+    return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+
+
+@requires_bash
+@pytest.mark.parametrize(
+    "variant",
+    [
+        "bash",
+        "python",
+        pytest.param(
+            "powershell",
+            marks=pytest.mark.skipif(
+                not HAS_POWERSHELL, reason="no PowerShell available"
+            ),
+        ),
+    ],
+)
+def test_concurrent_reservations_do_not_share_spec_directory(
+    tmp_path: Path, variant: str
+) -> None:
+    """Two concurrent reservations must not land in the same FEATURE_DIR.
+
+    create-new-feature scans max(specs)+1 then reserves FEATURE_DIR with an
+    exclusive mkdir / New-Item (no -Force) / Path.mkdir (no exist_ok). A lost
+    race must rescan to the next number so the second writer cannot overwrite
+    the first spec.md — including the PowerShell New-Item/catch path.
+    """
+    repo_a, repo_b, shared = _shared_specs_repos(tmp_path)
+    env = _mkdir_barrier_env(tmp_path)
+    args = ("--json", "--short-name", "user-auth", "Add user authentication")
+    if variant == "bash":
+        cmd_a = bash_cmd(repo_a, SCRIPT, *args)
+        cmd_b = bash_cmd(repo_b, SCRIPT, *args)
+    elif variant == "powershell":
+        cmd_a = ps_cmd(repo_a, SCRIPT, *args)
+        cmd_b = ps_cmd(repo_b, SCRIPT, *args)
+    else:
+        cmd_a = py_cmd(repo_a, SCRIPT, *args)
+        cmd_b = py_cmd(repo_b, SCRIPT, *args)
+
+    proc_a = _popen(cmd_a, repo_a, env)
+    proc_b = _popen(cmd_b, repo_b, env)
+    result_a = _wait(proc_a, cmd_a)
+    result_b = _wait(proc_b, cmd_b)
+
+    assert result_a.returncode == 0, result_a.stderr
+    assert result_b.returncode == 0, result_b.stderr
+
+    data_a = json_stdout(result_a)
+    data_b = json_stdout(result_b)
+    assert data_a["BRANCH_NAME"] != data_b["BRANCH_NAME"]
+    assert {data_a["FEATURE_NUM"], data_b["FEATURE_NUM"]} == {"001", "002"}
+
+    names = sorted(path.name for path in shared.iterdir() if path.is_dir())
+    assert names == ["001-user-auth", "002-user-auth"]
+    contents = {
+        (shared / name / "spec.md").read_text(encoding="utf-8") for name in names
+    }
+    assert contents == {"ALPHA-SPEC\n", "BETA-SPEC\n"}
+
+
+@pytest.mark.parametrize("variant", ["bash", "python"])
+def test_nondirectory_occupies_feature_path_is_rejected(
+    repo: Path, variant: str
+) -> None:
+    """A regular file at the feature path must not be treated as reusable."""
+    specs = repo / "specs"
+    specs.mkdir(parents=True, exist_ok=True)
+    (specs / "001-user-auth").write_text("not-a-directory\n", encoding="utf-8")
+
+    args = ("--json", "--short-name", "user-auth", "Add user authentication")
+    if variant == "bash":
+        result = run(bash_cmd(repo, SCRIPT, *args), repo)
+    else:
+        result = run(py_cmd(repo, SCRIPT, *args), repo)
+
+    assert result.returncode != 0, result.stdout
+    err = _normalized_error_text(result.stderr, repo)
+    assert "could not create feature directory" in err
+    assert not (specs / "002-user-auth").exists()
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_nondirectory_occupies_feature_path_is_rejected_powershell(repo: Path) -> None:
+    """PowerShell twin rejects a regular file at the feature path."""
+    specs = repo / "specs"
+    specs.mkdir(parents=True, exist_ok=True)
+    (specs / "001-user-auth").write_text("not-a-directory\n", encoding="utf-8")
+
+    result = run(
+        ps_cmd(
+            repo,
+            SCRIPT,
+            "--json",
+            "--short-name",
+            "user-auth",
+            "Add user authentication",
+        ),
+        repo,
+    )
+    assert result.returncode != 0, result.stdout
+    assert not (specs / "002-user-auth").exists()
+
+
+@pytest.mark.parametrize("variant", ["bash", "python"])
+def test_allow_existing_rejects_nondirectory_feature_path(
+    repo: Path, variant: str
+) -> None:
+    """--allow-existing-branch must not treat a regular file as a feature dir."""
+    specs = repo / "specs"
+    specs.mkdir(parents=True, exist_ok=True)
+    (specs / "001-user-auth").write_text("not-a-directory\n", encoding="utf-8")
+
+    args = (
+        "--json",
+        "--allow-existing-branch",
+        "--short-name",
+        "user-auth",
+        "Add user authentication",
+    )
+    if variant == "bash":
+        result = run(bash_cmd(repo, SCRIPT, *args), repo)
+    else:
+        result = run(py_cmd(repo, SCRIPT, *args), repo)
+
+    assert result.returncode != 0, result.stdout
+    err = _normalized_error_text(result.stderr, repo)
+    assert "could not create feature directory" in err
