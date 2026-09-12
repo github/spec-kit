@@ -198,9 +198,17 @@ def add_source(
         "priority": int(priority),
         "install_policy": install_policy.value,
     }
+    # Construct BEFORE writing. ``CatalogSource.from_dict`` already rejects an
+    # empty id, but it used to run after ``_write`` had persisted the entry, so
+    # a whitespace-only ``--id`` (or a url from which no id can be derived)
+    # reported "A catalog source is missing its 'id'" while leaving
+    # ``{"id": "", ...}`` behind in bundle-catalogs.yml. Every later command
+    # that loads the stack then failed with that same error, wedging the
+    # project's catalog config until the file was hand-edited.
+    source = CatalogSource.from_dict(entry, Scope.PROJECT)
     catalogs.append(entry)
     _write(project_root, catalogs)
-    return CatalogSource.from_dict(entry, Scope.PROJECT)
+    return source
 
 
 def remove_source(project_root: Path, id_or_url: str) -> str:
