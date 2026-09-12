@@ -1,6 +1,7 @@
 """Tests for CLI version reporting."""
 
 import json
+import ssl
 from unittest.mock import patch
 
 from typer.testing import CliRunner
@@ -77,3 +78,20 @@ class TestVersionCommand:
 
         assert result.exit_code != 0
         assert "--json requires --features" in result.output
+
+    def test_version_reports_openssl_runtime(self):
+        """specify version reports the OpenSSL runtime the interpreter loaded.
+
+        Regression test for the triage gap in #4433: HTTPS failures on Windows
+        are commonly blamed on a PATH-preceded OpenSSL DLL, but ``specify
+        version`` reported no OpenSSL information at all, so a report had no way
+        to show which runtime was actually in use.
+        """
+        with patch("specify_cli.get_speckit_version", return_value="1.2.3"):
+            result = runner.invoke(app, ["version"])
+
+        assert result.exit_code == 0
+
+        expected = ssl.OPENSSL_VERSION
+        assert expected, "test host reports no ssl.OPENSSL_VERSION to assert against"
+        assert expected in result.output

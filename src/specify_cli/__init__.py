@@ -455,6 +455,7 @@ def version(
 ):
     """Display version and system information."""
     import platform
+    import ssl
 
     cli_version = get_speckit_version()
 
@@ -489,6 +490,12 @@ def version(
     info_table.add_row("Platform", platform.system())
     info_table.add_row("Architecture", platform.machine())
     info_table.add_row("OS Version", platform.version())
+    # The OpenSSL runtime the interpreter actually loaded. HTTPS failure
+    # reports (#4433) hinge on which OpenSSL is in play, and on Windows it is
+    # not obvious from the outside, so surface it here.
+    openssl_version = getattr(ssl, "OPENSSL_VERSION", "")
+    if openssl_version:
+        info_table.add_row("OpenSSL", openssl_version)
 
     panel = Panel(
         info_table,
