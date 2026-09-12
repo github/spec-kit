@@ -8,7 +8,6 @@ dependencies = [
     "typer>=0.24.0",
     "click>=8.2.1",
     "rich",
-    "platformdirs",
     "readchar",
     "pyyaml>=6.0",
     "packaging>=23.0",
