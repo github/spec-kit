@@ -438,7 +438,7 @@ class ArtifactCatalog:
 
         contribution, manifest_path, source_path = resolved
         try:
-            json.dumps(contribution)
+            json.dumps(contribution, allow_nan=False)
         except (TypeError, ValueError) as exc:
             raise ArtifactResolutionError() from exc
         return {

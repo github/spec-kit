@@ -1074,19 +1074,32 @@ class TestCLI:
             "error": f"unknown contribution {lookup_id}"
         }
 
+    @pytest.mark.parametrize(
+        "manifest_value",
+        [
+            date(2026, 1, 1),
+            float("nan"),
+            float("inf"),
+            float("-inf"),
+        ],
+        ids=["date", "nan", "positive-infinity", "negative-infinity"],
+    )
     def test_lookup_json_rejects_non_json_manifest_value(
-        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        spec_kit_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        manifest_value: object,
     ):
         monkeypatch.chdir(spec_kit_project)
         install_preset(
             spec_kit_project,
-            "dated-contribution",
+            "non-json-contribution",
             {
                 "templates": [
                     {
                         "type": "template",
-                        "name": "dated-contribution",
-                        "released": date(2026, 1, 1),
+                        "name": "non-json-contribution",
+                        "extra": manifest_value,
                     }
                 ]
             },
@@ -1097,7 +1110,7 @@ class TestCLI:
             [
                 "artifact",
                 "lookup",
-                "preset:dated-contribution:template:dated-contribution",
+                "preset:non-json-contribution:template:non-json-contribution",
                 "--json",
             ],
         )
