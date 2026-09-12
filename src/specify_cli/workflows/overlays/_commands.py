@@ -424,7 +424,17 @@ def workflow_resolve(project_root: Path, workflow_id: str) -> dict[str, Any] | N
         return None
 
     console.print(f"Resolved workflow '{workflow_id}':")
-    console.print("Layers (highest precedence first):")
+    # The list is sorted by (priority, source) ascending, which puts the
+    # winning layer first only while priorities DIFFER. On a tie the sort is
+    # alphabetical by source while the merge gives the conflict to the LAST id
+    # (docs/reference/workflows.md:126), so the plain "highest precedence
+    # first" label stated the opposite of the outcome printed directly beneath
+    # it in the same output -- in the one command whose job is explaining which
+    # overlay won. Spell the tie-break out rather than reorder the list, which
+    # `test_workflow_resolve_equal_priority_layers_sort_by_source` pins.
+    console.print(
+        "Layers (highest precedence first; on equal priority the last ID wins):"
+    )
     for layer in layers:
         priority = (
             "n/a" if layer.tier == "base" else str(normalize_priority(layer.priority))
