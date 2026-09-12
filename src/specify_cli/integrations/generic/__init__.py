@@ -2,7 +2,9 @@
 
 Requires ``--commands-dir`` to specify the output directory for command
 files.  No longer special-cased in the core CLI — just another
-integration with its own required option.
+integration with its own required option.  ``--skills`` renders the same
+templates as ``speckit-<name>/SKILL.md`` directories under that same
+directory instead of flat ``speckit.<name>.md`` files.
 """
 
 from __future__ import annotations
@@ -10,7 +12,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..base import IntegrationOption, MarkdownIntegration
+import yaml
+
+from ..base import IntegrationOption, MarkdownIntegration, yaml_quote
 from ..manifest import IntegrationManifest
 
 
@@ -39,6 +43,16 @@ class GenericIntegration(MarkdownIntegration):
                 "--commands-dir",
                 required=True,
                 help="Directory for command files (e.g. .myagent/commands/)",
+            ),
+            IntegrationOption(
+                "--skills",
+                is_flag=True,
+                default=False,
+                help=(
+                    "Render commands as speckit-<name>/SKILL.md directories "
+                    "under --commands-dir instead of flat speckit.<name>.md "
+                    "files"
+                ),
             ),
         ]
 
@@ -83,6 +97,66 @@ class GenericIntegration(MarkdownIntegration):
         raise ValueError(
             "--commands-dir is required for the generic integration"
         )
+
+    def _build_skill_content(
+        self, src_file: Path, script_type: str, project_root: Path
+    ) -> tuple[str, str]:
+        """Render *src_file* as a SKILL.md body.
+
+        Returns ``(skill_name, content)``. Mirrors the frontmatter and
+        body shape ``SkillsIntegration.setup()`` produces for other
+        skills-format agents, so ``speckit-<name>/SKILL.md`` files
+        emitted here follow the same `agentskills.io
+        <https://agentskills.io/specification>`_ layout.
+        """
+        raw = src_file.read_text(encoding="utf-8")
+        command_name = src_file.stem
+        skill_name = f"speckit-{command_name.replace('.', '-')}"
+
+        frontmatter: dict[str, Any] = {}
+        if raw.startswith("---"):
+            fm_lines = raw.splitlines(keepends=True)
+            fm_close = next(
+                (i for i in range(1, len(fm_lines)) if fm_lines[i].rstrip() == "---"),
+                None,
+            )
+            if fm_close is not None:
+                try:
+                    fm = yaml.safe_load("".join(fm_lines[1:fm_close]))
+                    if isinstance(fm, dict):
+                        frontmatter = fm
+                except yaml.YAMLError:
+                    pass
+
+        processed_body = self.process_template(
+            raw, self.key, script_type, "$ARGUMENTS",
+            project_root=project_root,
+            invoke_separator="-",
+        )
+        if processed_body.startswith("---"):
+            body_lines = processed_body.splitlines(keepends=True)
+            close_idx = next(
+                (i for i in range(1, len(body_lines)) if body_lines[i].rstrip() == "---"),
+                None,
+            )
+            if close_idx is not None:
+                processed_body = body_lines[close_idx][3:] + "".join(
+                    body_lines[close_idx + 1:]
+                )
+
+        description = frontmatter.get("description") or f"Spec Kit: {command_name} workflow"
+        skill_content = (
+            f"---\n"
+            f"name: {yaml_quote(skill_name)}\n"
+            f"description: {yaml_quote(description)}\n"
+            f"compatibility: {yaml_quote('Requires spec-kit project structure with .specify/ directory')}\n"
+            f"metadata:\n"
+            f"  author: {yaml_quote('github-spec-kit')}\n"
+            f"  source: {yaml_quote('templates/commands/' + src_file.name)}\n"
+            f"---\n"
+            f"{processed_body}"
+        )
+        return skill_name, skill_content
 
     def commands_dest(self, project_root: Path) -> Path:
         """Not supported for GenericIntegration — use setup() directly.
@@ -129,9 +203,21 @@ class GenericIntegration(MarkdownIntegration):
 
         script_type = opts.get("script_type", "sh")
         arg_placeholder = "$ARGUMENTS"
+        skills_enabled = bool((parsed_options or {}).get("skills"))
         created: list[Path] = []
 
         for src_file in templates:
+            if skills_enabled:
+                skill_name, skill_content = self._build_skill_content(
+                    src_file, script_type, project_root
+                )
+                dst_file = self.write_file_and_record(
+                    skill_content, dest / skill_name / "SKILL.md",
+                    project_root, manifest
+                )
+                created.append(dst_file)
+                continue
+
             raw = src_file.read_text(encoding="utf-8")
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
