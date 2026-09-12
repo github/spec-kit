@@ -265,6 +265,9 @@ Essential commands for the Spec-Driven Development workflow:
 | `/speckit.implement`     | `speckit-implement`    | Execute all tasks to build the feature according to the plan               |
 | `/speckit.converge`      | `speckit-converge`     | Assess the codebase against spec/plan/tasks and append remaining work as new tasks |
 
+> [!NOTE]
+> GitHub issue tracking is moving out of core into the bundled, opt-in [`github` extension](./extensions/github/README.md). `/speckit.taskstoissues` still works and is unchanged, but its replacement, `/speckit.github.taskstoissues`, is available today via `specify extension add github`. See the [migration notes](./extensions/github/README.md#migrating-from-the-core-taskstoissues-command).
+
 ### Optional Commands
 
 Additional commands for enhanced quality and validation:

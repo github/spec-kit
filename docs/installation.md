@@ -126,7 +126,8 @@ After initialization, you should see the following commands available in your co
 - `/speckit.checklist` - Generate quality checklists
 - `/speckit.constitution` - Create or update project principles
 - `/speckit.converge` - Assess codebase against artifacts and append remaining tasks
-- `/speckit.taskstoissues` - Convert tasks to issues
+- `/speckit.taskstoissues` - Convert tasks to issues (moving to the bundled `github` extension as
+  `/speckit.github.taskstoissues`; install it with `specify extension add github`)
 
 Scripts are installed into a variant subdirectory matching the chosen script type:
 
