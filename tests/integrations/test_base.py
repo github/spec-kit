@@ -765,3 +765,39 @@ class TestInstallScriptsPython:
         assert sh_file.stat().st_mode & 0o111
         # Negative: a non-script file is not made executable.
         assert not (txt_file.stat().st_mode & 0o111)
+
+
+class TestProcessTemplateStructuredYaml:
+    def test_scripts_with_yaml_comments_and_quotes(self):
+        content = (
+            "---\n"
+            "description: \"Test with quotes and comments\"\n"
+            "scripts:\n"
+            "  # Primary POSIX shell script\n"
+            '  sh: "scripts/bash/check-prerequisites.sh --json"\n'
+            "  # Python alternative\n"
+            "  py: 'scripts/python/check_prerequisites.py --json'\n"
+            "---\n"
+            "Run {SCRIPT} now."
+        )
+        result = IntegrationBase.process_template(content, "agent", "sh")
+        assert ".specify/scripts/bash/check-prerequisites.sh --json" in result
+        assert "scripts:" not in result
+        assert "description:" in result
+        assert "Test with quotes and comments" in result
+
+    def test_folded_yaml_scalar_preserved(self):
+        content = (
+            "---\n"
+            "description: >\n"
+            "  A multi-line folded description\n"
+            "  that spans multiple lines.\n"
+            "scripts:\n"
+            "  sh: scripts/bash/check-prerequisites.sh\n"
+            "---\n"
+            "Run {SCRIPT}."
+        )
+        result = IntegrationBase.process_template(content, "agent", "sh")
+        assert ".specify/scripts/bash/check-prerequisites.sh" in result
+        assert "scripts:" not in result
+        assert "A multi-line folded description" in result
