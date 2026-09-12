@@ -36,10 +36,18 @@ class TestGenericIntegration:
     def test_options_include_commands_dir(self):
         i = get_integration("generic")
         opts = i.options()
-        assert len(opts) == 1
+        assert len(opts) == 2
         assert opts[0].name == "--commands-dir"
         assert opts[0].required is True
         assert opts[0].is_flag is False
+
+    def test_options_include_skills_flag(self):
+        i = get_integration("generic")
+        opts = i.options()
+        skills_opt = next(o for o in opts if o.name == "--skills")
+        assert skills_opt.is_flag is True
+        assert skills_opt.required is False
+        assert skills_opt.default is False
 
     # -- Setup / teardown -------------------------------------------------
 
@@ -210,6 +218,101 @@ class TestGenericIntegration:
             assert expected.is_dir(), f"Dir {expected} not created for {path}"
             cmd_files = [f for f in created if "scripts" not in f.parts]
             assert len(cmd_files) > 0
+
+    # -- Skills mode --------------------------------------------------------
+
+    def test_setup_writes_skill_md_when_skills_flag_set(self, tmp_path):
+        i = get_integration("generic")
+        m = IntegrationManifest("generic", tmp_path)
+        created = i.setup(
+            tmp_path, m,
+            parsed_options={"commands_dir": ".myagent/skills", "skills": True},
+        )
+        skill_files = [f for f in created if "scripts" not in f.parts]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            assert f.name == "SKILL.md"
+            assert f.parent.name.startswith("speckit-")
+            assert f.parent.parent == tmp_path / ".myagent" / "skills"
+
+    def test_skill_content_has_expected_frontmatter(self, tmp_path):
+        i = get_integration("generic")
+        m = IntegrationManifest("generic", tmp_path)
+        i.setup(
+            tmp_path, m,
+            parsed_options={"commands_dir": ".myagent/skills", "skills": True},
+        )
+        plan_skill = tmp_path / ".myagent" / "skills" / "speckit-plan" / "SKILL.md"
+        assert plan_skill.exists()
+        content = plan_skill.read_text(encoding="utf-8")
+        assert content.startswith("---\n")
+        assert 'name: "speckit-plan"' in content
+        assert "description:" in content
+        assert "compatibility:" in content
+        assert "{SCRIPT}" not in content
+        assert "__AGENT__" not in content
+        assert "__SPECKIT_COMMAND_" not in content
+
+    def test_skill_content_has_hook_command_note(self, tmp_path):
+        """SKILL.md bodies get the shared dot-to-hyphen hook invocation
+        note, matching what SkillsIntegration.setup() produces for other
+        skills-format agents (e.g. Claude)."""
+        i = get_integration("generic")
+        m = IntegrationManifest("generic", tmp_path)
+        i.setup(
+            tmp_path, m,
+            parsed_options={"commands_dir": ".myagent/skills", "skills": True},
+        )
+        constitution_skill = (
+            tmp_path / ".myagent" / "skills" / "speckit-constitution" / "SKILL.md"
+        )
+        assert constitution_skill.exists()
+        content = constitution_skill.read_text(encoding="utf-8")
+        assert (
+            "replace dots (`.`) with hyphens (`-`)" in content
+        ), "generic --skills output is missing the hook-invocation note"
+        assert "`speckit.git.commit` → `/speckit-git-commit`" in content
+
+    def test_skills_flag_false_keeps_flat_markdown(self, tmp_path):
+        """Without --skills, behavior is unchanged: flat speckit.<name>.md files."""
+        i = get_integration("generic")
+        m = IntegrationManifest("generic", tmp_path)
+        created = i.setup(
+            tmp_path, m,
+            parsed_options={"commands_dir": ".myagent/commands", "skills": False},
+        )
+        cmd_files = [f for f in created if "scripts" not in f.parts]
+        assert len(cmd_files) > 0
+        for f in cmd_files:
+            assert f.name.endswith(".md")
+            assert f.name.startswith("speckit.")
+            assert f.parent == tmp_path / ".myagent" / "commands"
+
+    def test_skill_files_tracked_in_manifest(self, tmp_path):
+        i = get_integration("generic")
+        m = IntegrationManifest("generic", tmp_path)
+        created = i.setup(
+            tmp_path, m,
+            parsed_options={"commands_dir": ".myagent/skills", "skills": True},
+        )
+        for f in created:
+            rel = f.resolve().relative_to(tmp_path.resolve()).as_posix()
+            assert rel in m.files, f"{rel} not tracked in manifest"
+
+    def test_skills_install_uninstall_roundtrip(self, tmp_path):
+        i = get_integration("generic")
+        m = IntegrationManifest("generic", tmp_path)
+        created = i.install(
+            tmp_path, m,
+            parsed_options={"commands_dir": ".myagent/skills", "skills": True},
+        )
+        assert len(created) > 0
+        m.save()
+        for f in created:
+            assert f.exists()
+        removed, skipped = i.uninstall(tmp_path, m)
+        assert len(removed) == len(created)
+        assert skipped == []
 
     # -- Context section ---------------------------------------------------
 
