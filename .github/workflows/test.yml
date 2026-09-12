@@ -32,6 +32,17 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.13", "3.14"]
+        # pyproject declares requires-python = ">=3.11" and security.yml audits
+        # 3.11-3.14, but the suite itself only ran on the two newest
+        # interpreters — so the older half of the supported range was shipped
+        # untested. Exercise it on Linux rather than tripling the matrix across
+        # all three runners for interpreters whose OS-specific paths are
+        # already covered by 3.13/3.14.
+        include:
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.12"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
