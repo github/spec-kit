@@ -457,6 +457,73 @@ $lines = @($MarkerStart,
 if ($PlanPath) {
     $lines += "at $PlanPath"
 }
+# Always-on instruction blocks contributed by enabled presets (#4200): delegate
+# to the python twin's --emit-preset-blocks so all three twins emit byte-identical
+# block text from a single implementation.
+$pyTwin = Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'python') 'update_agent_context.py'
+$pyForBlocks = $null
+foreach ($candidate in @($env:SPECKIT_PYTHON, 'python3', 'python')) {
+    if (-not $candidate) { continue }
+    if (-not (Get-Command $candidate -ErrorAction SilentlyContinue)) { continue }
+    # Require a real Python 3 that can import PyYAML (the composer imports yaml),
+    # skipping the Windows Store 'python3' alias stub.
+    try {
+        & $candidate -c "import sys, yaml; sys.exit(0 if sys.version_info[0] == 3 else 1)" 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) { $pyForBlocks = $candidate; break }
+    } catch { }
+}
+if (-not $pyForBlocks) {
+    # The base section is written natively, but preset instruction blocks are
+    # composed by the Python twin only. If no Python 3 + PyYAML is available and
+    # presets are installed, warn instead of silently dropping their rules.
+    $presetReg = Join-Path $ProjectRoot '.specify/presets/.registry'
+    if (Test-Path -LiteralPath $presetReg) {
+        try {
+            $preg = Get-Content -LiteralPath $presetReg -Raw -Encoding UTF8 | ConvertFrom-Json
+            $enabled = @($preg.presets.PSObject.Properties | Where-Object { $_.Value.enabled -ne $false })
+            if ($enabled.Count -gt 0) {
+                [Console]::Error.WriteLine("agent-context: Python 3 with PyYAML not found; preset always-on instruction blocks (provides.instructions) were NOT composed. Base context section written.")
+            }
+        } catch { }
+    }
+}
+if ($pyForBlocks) {
+    if (-not (Test-Path -LiteralPath $pyTwin)) {
+        # Python is available but the sibling composer is gone: a partial or
+        # corrupt install. Treat it as a hard failure (like a nonzero composer
+        # exit) so the managed section is not rewritten with existing preset
+        # blocks silently dropped.
+        [Console]::Error.WriteLine("agent-context: preset instruction composer '$pyTwin' is missing (corrupt or partial install); aborting so the managed section is not rewritten with preset blocks dropped.")
+        exit 1
+    }
+    # Windows PowerShell decodes native-command stdout using the console code
+    # page; force UTF-8 so non-ASCII rule text (e.g. em-dashes) survives capture.
+    # Keep stderr (the composer's oversized/marker-colliding/skipped warnings) out
+    # of the captured stdout by routing it to a temp file, then surface it, and
+    # abort on a nonzero exit so a composer failure never rewrites the section
+    # with previously composed preset blocks silently dropped.
+    $errFile = [System.IO.Path]::GetTempFileName()
+    $prevOutEnc = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        $emitted = (& $pyForBlocks $pyTwin --emit-preset-blocks --marker-start $MarkerStart --marker-end $MarkerEnd 2>$errFile | Out-String)
+    } finally {
+        [Console]::OutputEncoding = $prevOutEnc
+    }
+    $emitRc = $LASTEXITCODE
+    $errText = if (Test-Path -LiteralPath $errFile) { Get-Content -LiteralPath $errFile -Raw } else { '' }
+    Remove-Item -LiteralPath $errFile -ErrorAction SilentlyContinue
+    if ($errText) { [Console]::Error.Write($errText) }
+    if ($emitRc -ne 0) {
+        [Console]::Error.WriteLine("agent-context: preset instruction composer failed (exit $emitRc); aborting so the managed section is not rewritten with preset blocks dropped.")
+        exit 1
+    }
+    if ($emitted) {
+        $emitted = ($emitted -replace "`r`n", "`n") -replace "`r", "`n"
+        $emitted = $emitted.TrimEnd("`n")
+        foreach ($bl in ($emitted -split "`n")) { $lines += $bl }
+    }
+}
 $lines += $MarkerEnd
 $Section = ($lines -join "`n") + "`n"
 

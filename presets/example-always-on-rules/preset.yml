@@ -1,0 +1,20 @@
+schema_version: "1.0"
+
+preset:
+  id: "example-always-on-rules"
+  name: "Example Always-On Rules"
+  version: "1.0.0"
+  description: "Example preset that contributes an always-on instruction block. When the preset is enabled and the opt-in agent-context extension is installed, the block is composed into the coding agent's context file (e.g. .github/copilot-instructions.md)."
+  author: "spec-kit"
+
+requires:
+  speckit_version: ">=0.6.0"
+
+provides:
+  instructions:
+    - file: "instructions/best-practices.md"
+      description: "Example always-on engineering rules"
+
+tags:
+  - "example"
+  - "agent-context"
