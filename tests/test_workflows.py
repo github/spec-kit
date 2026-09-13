@@ -6489,6 +6489,77 @@ steps:
         for i in items:
             assert state.step_results[f"fan:second:{i}"]["output"]["seen"] == i
 
+    def test_fan_out_concurrent_sibling_step_resolves_via_expression(self, tmp_path):
+        """A `{{ steps.<id>.output... }}` expression -- the real templating
+        path workflow YAML actually uses -- must resolve inside a
+        concurrent fan-out item, not just a direct `context.steps.get()`
+        Python call.
+
+        `_resolve_dot_path` (which every `{{ }}` expression goes through)
+        only descends through `isinstance(current, dict)`. The concurrent
+        item isolation previously gave each item a `ChainMap` overlay for
+        `context.steps` -- `ChainMap` is not a `dict` subclass, so
+        `_build_namespace`'s `ns["steps"] = context.steps or {}` put a
+        non-dict object at `steps`, and every `steps.*` expression
+        evaluated inside a concurrent fan-out item silently resolved to
+        `None`. A direct `.get()` call (as in
+        `test_fan_out_concurrent_sibling_step_isolated_per_item`) doesn't
+        exercise this, since `ChainMap` supports `.get()` directly.
+        """
+        import threading
+
+        from specify_cli.workflows.base import (
+            RunStatus,
+            StepBase,
+            StepContext,
+            StepResult,
+            StepStatus,
+        )
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.steps.if_then import IfThenStep
+
+        n = 4
+        barrier = threading.Barrier(n, timeout=5)
+
+        class _WriteStep(StepBase):
+            type_key = "write"
+
+            def execute(self, config, context):
+                barrier.wait()
+                return StepResult(
+                    status=StepStatus.COMPLETED, output={"marker": context.item}
+                )
+
+        class _ReadStep(StepBase):
+            type_key = "read"
+
+            def execute(self, config, context):
+                seen = evaluate_expression(
+                    "{{ steps.first.output.marker }}", context
+                )
+                return StepResult(status=StepStatus.COMPLETED, output={"seen": seen})
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        context = StepContext()
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        registry = {"if": IfThenStep(), "write": _WriteStep(), "read": _ReadStep()}
+        template = {
+            "id": "item",
+            "type": "if",
+            "condition": "true",
+            "then": [
+                {"id": "first", "type": "write"},
+                {"id": "second", "type": "read"},
+            ],
+        }
+        items = list(range(n))
+        engine._run_fan_out(items, template, "fan", context, state, registry, n)
+
+        for i in items:
+            assert state.step_results[f"fan:second:{i}"]["output"]["seen"] == i
+
     def test_fan_out_concurrent_alias_never_clobbers_unrelated_step(self, tmp_path):
         """A fan-out template's bare-id convenience alias must never
         overwrite an unrelated, distinctly-authored step's result just

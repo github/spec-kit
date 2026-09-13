@@ -17,7 +17,6 @@ import re
 import tempfile
 import threading
 import uuid
-from collections import ChainMap
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1660,23 +1659,33 @@ class WorkflowEngine:
                 template, step_id, str(idx), default_id=base_id,
             )
             # ``local_only`` (concurrent path): give this item a private
-            # overlay for its ``.steps`` reads/writes. Namespaced results
+            # dict for its ``.steps`` reads/writes, snapshotting the shared
+            # steps dict at the point this item starts. Namespaced results
             # still land in the real ``state.step_results`` (via
             # _record_result's unconditional write — see _execute_steps),
             # but the immediate bare-id alias (see alias_map below) writes
-            # only into this overlay. That lets a later sibling step in
+            # only into this snapshot. That lets a later sibling step in
             # THIS item's template resolve an earlier sibling by its
-            # original id via the overlay, without ever mutating the
+            # original id via the snapshot, without ever mutating the
             # shared steps dict that other concurrently-running items also
             # read from — the actual race Copilot flagged: every worker
             # writing the same bare-id key could otherwise expose another
             # item's value to a sibling read. The caller applies exactly
             # one item's aliases to shared state — deterministically the
             # last item in item order — once every item has finished.
+            #
+            # A plain dict copy, not a ``ChainMap`` overlay: expression
+            # interpolation (``{{ steps.x.output... }}``, via
+            # ``_resolve_dot_path``) only descends through
+            # ``isinstance(current, dict)``, and ``ChainMap`` is not a
+            # ``dict`` subclass — every such expression evaluated inside a
+            # concurrent fan-out item would silently resolve to ``None``.
+            # The snapshot never sees an in-flight sibling item's writes to
+            # the shared dict made after this item started, but fan-out
+            # items were never entitled to see those anyway.
             original_steps = item_ctx.steps
-            local_overlay: dict[str, dict[str, Any]] = {}
-            if local_only:
-                item_ctx.steps = ChainMap(local_overlay, original_steps)
+            item_steps = dict(original_steps) if local_only else original_steps
+            item_ctx.steps = item_steps
             try:
                 self._execute_steps(
                     [item_step], item_ctx, state, registry, step_offset=-1,
@@ -1686,7 +1695,7 @@ class WorkflowEngine:
             finally:
                 item_ctx.steps = original_steps
             alias_records: dict[str, dict[str, Any]] = {}
-            steps_view = local_overlay if local_only else item_ctx.steps
+            steps_view = item_steps if local_only else item_ctx.steps
             for new_id, orig_id in id_map.items():
                 if new_id in steps_view:
                     data = steps_view[new_id]
