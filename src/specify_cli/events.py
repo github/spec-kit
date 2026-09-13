@@ -2129,7 +2129,10 @@ def _merge_toml_fragment(dst: Path, fragment: str) -> bool:
     An unreadable or undecodable pre-existing file aborts the merge instead
     of discarding the user's bytes, mirroring ``_load_user_json`` (#22).
     Returns False when skipped so callers avoid tracking the untouched file
-    (S5).
+    (S5) — including when there is no fragment to add and no owned blocks to
+    remove, so a no-op install doesn't rewrite (and, via text-mode newline
+    translation, mangle the line endings of) an untouched pre-existing file
+    (#4563).
     """
     _ensure_safe_destination(dst)
     existing = ""
@@ -2144,14 +2147,16 @@ def _merge_toml_fragment(dst: Path, fragment: str) -> bool:
             )
             logger.debug("Read error detail: %s", exc)
             return False
-    existing = re.sub(
+    stripped = re.sub(
         r'\[\[hooks\.\w+\]\]\n(?:(?!\[\[hooks\.\w+\]\]).)*?speckit_marker = true\n*',
         "",
         existing,
         flags=re.DOTALL,
     )
+    if not fragment and stripped == existing:
+        return False
     dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_text(existing.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
+    dst.write_text(stripped.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
     return True
 
 

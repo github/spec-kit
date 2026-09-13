@@ -937,6 +937,39 @@ class TestTomlUnreadableConfig:
         assert config_path.read_bytes() == user_bytes
 
 
+class TestTomlNoOpMerge:
+    """#4563: a merge with no fragment to add and no owned blocks to remove
+    must leave a pre-existing config.toml byte-for-byte untouched.
+
+    Previously the merge unconditionally rewrote the file via
+    ``existing.rstrip() + "\\n\\n" + fragment + "\\n"`` even when ``fragment``
+    was empty, which both appended stray blank lines and (through Python's
+    text-mode newline translation on read/write) silently changed the file's
+    line-ending convention — turning a clean install into a spurious git diff
+    with no semantic change.
+    """
+
+    def test_no_handlers_leaves_existing_config_untouched(self, tmp_path):
+        from specify_cli.integrations.codex import CodexIntegration
+
+        integration = CodexIntegration()
+        manifest = _claude_manifest(tmp_path)
+        config_path = tmp_path / ".codex" / "config.toml"
+        config_path.parent.mkdir(parents=True)
+        original_bytes = b"project_doc_max_bytes = 200000"
+        config_path.write_bytes(original_bytes)
+
+        # An event key resolves for Codex but carries no handlers, so there
+        # is no hook fragment to merge in.
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"pre_tool_use": []},
+        )
+
+        assert config_path.read_bytes() == original_bytes
+        manifest.record_existing.assert_not_called()
+
+
 # -- Opencode TS Plugin merging ---------------------------------------------
 
 class TestOpencodePluginMerging:
