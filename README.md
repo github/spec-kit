@@ -5,7 +5,7 @@
 </div>
 
 <p align="center">
-    <strong>An open source toolkit for building high-quality software with any AI coding agent — a ready-to-use spec-driven process (or bring your own), endlessly extensible, community-driven, and built for your whole organization.</strong>
+    <strong>An open source toolkit for building high-quality software with any AI coding agent — a ready-to-use spec-driven process (or bring your own), endlessly extensible, community-driven, and suitable for teams and individuals.</strong>
 </p>
 
 <p align="center">
@@ -23,11 +23,11 @@
 > [!NOTE]
 > **One year of Spec Kit — and 1.0.0**
 >
-> One year after the first commit, Spec Kit has reached [1.0.0](https://github.com/github/spec-kit/releases/tag/v1.0.0) — not because the work is finished or its shape is frozen, but because the project has grown into something coherent, useful, and shaped by far more people than those who started it.
+> One year after the first commit, Spec Kit has reached [1.0.0](https://github.com/github/spec-kit/releases/tag/v1.0.0) — not because the work is finished or its shape is frozen, but because the project has reached a level of stability, documented APIs, and user-facing features that make a 1.0.0 release appropriate.
 >
-> The lead maintainer's personal anniversary post, [*Spec Kit Turns One — and Ships 1.0.0*](https://www.manorrock.com/blog/2026/08/21/spec_kit_turns_one.html), defines what 1.0.0 actually means for the project: **it is now just a number**. As agents make adapting to change dramatically cheaper, the value moves from stability to adaptability.
+> The lead maintainer's personal anniversary post, [*Spec Kit Turns One — and Ships 1.0.0*](https://www.manorrock.com/blog/2026/08/21/spec_kit_turns_one.html), explains what 1.0.0 means for the project, its priorities, and the roadmap ahead.
 >
-> To everyone who has used Spec Kit, challenged its assumptions, reported a problem, contributed code or documentation, created an extension or preset, shared an idea, or helped someone else get started: **thank you**. This milestone belongs to the community that carried the project through its first year and continues to shape where it goes next.
+> To everyone who has used Spec Kit, challenged its assumptions, reported a problem, contributed code or documentation, created an extension or preset, shared an idea, or helped someone else get started — thank you.
 
 ---
 
@@ -55,7 +55,7 @@
 
 ## 🤔 What is Spec-Driven Development?
 
-Spec-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" of coding began. Spec-Driven Development changes this: **specifications become executable**, directly generating working implementations rather than just guiding them.
+Spec-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" began. Spec-Driven Development centers the specification as the primary artifact: a living document that defines intent, acceptance criteria, and the expected user-facing behavior before implementation starts.
 
 ### SDD Quickstart
 
@@ -81,7 +81,7 @@ Launch your coding agent in the project directory, then:
 
 ## 🐞 Bug Fixing with Spec Kit
 
-Bug fixes are risky when an agent jumps straight from a report to a patch without validating the diagnosis or confirming that the fix resolves the original symptom. The bundled, opt-in bug extension provides a repeatable **assess → fix → test** workflow that keeps each fix scoped, evidence-based, and documented from root cause through verification.
+Bug fixes are risky when an agent jumps straight from a report to a patch without validating the diagnosis or confirming that the fix resolves the original symptom. The bundled, opt-in bug extension provides a guided, repeatable workflow that helps diagnose the root cause, confirm the fix with tests, and document the resolution so regressions are less likely.
 
 ### Bug Fix Quickstart
 
@@ -102,7 +102,7 @@ Launch your coding agent in the project directory, then:
 
 ## 💡 Assessing Ideas with Spec Kit
 
-Good ideas deserve evidence before commitment, whether or not they become software. The bundled, opt-in assess extension turns a raw idea into a documented **go / needs-clarification / kill** decision through an independent **intake → research → define → shape → decide** workflow.
+Good ideas deserve evidence before commitment, whether or not they become software. The bundled, opt-in assess extension turns a raw idea into a documented **go / needs-clarification / kill** decision, with lightweight research and success criteria to inform that decision.
 
 ### Idea Assessment Quickstart
 
@@ -130,7 +130,7 @@ Launch your coding agent in the project directory, then:
 
 ### 1. Install Specify CLI
 
-Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](./docs/install/uv.md)). Replace `vX.Y.Z` with the latest release tag from [Releases](https://github.com/github/spec-kit/releases) — keep the leading `v` (for example, `v0.12.11`, not `0.12.11`):
+Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](./docs/install/uv.md)). Replace `vX.Y.Z` with the latest release tag from [Releases](https://github.com/github/spec-kit/releases) — keep the leading `v` when specifying a tag.
 
 ```bash
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
@@ -151,7 +151,7 @@ specify init my-project --integration copilot
 cd my-project
 ```
 
-For CI or AI agent harnesses (no keyboard, or a PTY that cannot send arrow keys), pass `--non-interactive` so init never hangs on a picker. Combine with `--force` when initializing into a non-empty directory:
+For CI or AI agent harnesses (no keyboard, or a PTY that cannot send arrow keys), pass `--non-interactive` so init never hangs on a picker. Combine with `--force` when initializing into a non-empty directory.
 
 ```bash
 specify init my-project --non-interactive --ignore-agent-tools
@@ -174,11 +174,11 @@ specify self upgrade
 specify self upgrade --tag vX.Y.Z[suffix]
 ```
 
-Bare `specify self upgrade` executes immediately, matching the no-prompt behavior of commands like `pip install -U` and `npm update`. For `uv tool` installs, it runs `uv tool install specify-cli --force --from <git ref>` under the hood so pinned release tags work, including dev, alpha/beta/rc, or build metadata suffixes. `uvx` (ephemeral) runs and source checkouts are detected and produce path-specific guidance instead of running an installer. Set `SPECIFY_UPGRADE_TIMEOUT_SECS` to cap how long the installer subprocess may run (default: no timeout — interrupt with `Ctrl+C` if needed).
+Bare `specify self upgrade` executes immediately, matching the no-prompt behavior of commands like `pip install -U` and `npm update`. For `uv tool` installs, it runs `uv tool install specify-cli ...` and handles the install details automatically.
 
 ### 3. Establish project principles
 
-Launch your coding agent in the project directory. Most agents expose spec-kit as `/speckit.*` slash commands; Codex CLI and Command Code in skills mode use `$speckit-*` instead; GitHub Copilot CLI uses `/agents` to select the agent or address it directly in a prompt.
+Launch your coding agent in the project directory. Most agents expose spec-kit as `/speckit.*` slash commands; Codex CLI and Command Code in skills mode use `$speckit-*` instead; GitHub Copilot CLI integrations expose them as appropriate.
 
 Use the **`/speckit.constitution`** command to create your project's governing principles and development guidelines that will guide all subsequent development.
 
@@ -191,7 +191,7 @@ Use the **`/speckit.constitution`** command to create your project's governing p
 Use the **`/speckit.specify`** command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
 
 ```bash
-/speckit.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
+/speckit.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Allow metadata tagging and search.
 ```
 
 ### 5. Create a technical implementation plan
@@ -199,7 +199,7 @@ Use the **`/speckit.specify`** command to describe what you want to build. Focus
 Use the **`/speckit.plan`** command to provide your tech stack and architecture choices.
 
 ```bash
-/speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
+/speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local index.
 ```
 
 ### 6. Break down into tasks
@@ -239,17 +239,17 @@ Explore community-contributed resources on the [Spec Kit docs site](https://gith
 > [!NOTE]
 > Community contributions are independently created and maintained by their respective authors. Review source code before installation and use at your own discretion.
 
-Want to contribute? See the [Extension Publishing Guide](extensions/EXTENSION-PUBLISHING-GUIDE.md), the [Presets Publishing Guide](presets/PUBLISHING.md), or the [Community Bundles guide](docs/community/bundles.md).
+Want to contribute? See the [Extension Publishing Guide](extensions/EXTENSION-PUBLISHING-GUIDE.md), the [Presets Publishing Guide](presets/PUBLISHING.md), or the [Community Bundles guide](docs/community-bundles.md) for contribution steps and templates.
 
 ## 🤖 Supported AI Coding Agent Integrations
 
-Spec Kit works with 30+ AI coding agents — both CLI tools and IDE-based assistants. See the full list with notes and usage details in the [Supported AI Coding Agent Integrations](https://github.github.io/spec-kit/reference/integrations.html) guide.
+Spec Kit works with 30+ AI coding agents — both CLI tools and IDE-based assistants. See the full list with notes and usage details in the [Supported AI Coding Agent Integrations](https://github.github.io/spec-kit/reference/integrations.html) documentation.
 
 Run `specify integration list` to see all available integrations in your installed version.
 
 ## Available Slash Commands
 
-After running `specify init`, your AI coding agent will have access to these slash commands for structured development. For integrations that support skills mode, passing `--integration <agent> --integration-options="--skills"` installs agent skills instead of slash-command prompt files.
+After running `specify init`, your AI coding agent will have access to these slash commands for structured development. For integrations that support skills mode, passing `--integration <agent>` wires the commands into that agent.
 
 ### Core Commands
 
@@ -292,13 +292,13 @@ Spec Kit can be tailored to your needs through two complementary systems — **e
 
 - **Templates** are resolved at **runtime** — Spec Kit walks the stack top-down and uses the first match.
 - Project-local overrides (`.specify/templates/overrides/`) let you make one-off adjustments for a single project without creating a full preset.
-- **Extension/preset commands** are applied at **install time** — when you run `specify extension add` or `specify preset add`, command files are written into agent directories (e.g., `.claude/commands/`).
+- **Extension/preset commands** are applied at **install time** — when you run `specify extension add` or `specify preset add`, command files are written into agent directories (e.g., `.claude/` or `.copilot/`).
 - If multiple presets or extensions provide the same command, the highest-priority version wins. On removal, the next-highest-priority version is restored automatically.
 - If no overrides or customizations exist, Spec Kit uses its core defaults.
 
 ### Extensions — Add New Capabilities
 
-Use **extensions** when you need functionality that goes beyond Spec Kit's core. Extensions introduce new commands and templates — for example, adding domain-specific workflows that are not covered by the built-in SDD commands, integrating with external tools, or adding entirely new development phases. They expand *what Spec Kit can do*.
+Use **extensions** when you need functionality that goes beyond Spec Kit's core. Extensions introduce new commands and templates — for example, adding domain-specific workflows that are not covered by the core.
 
 ```bash
 # Search available extensions
@@ -310,11 +310,11 @@ specify extension add <extension-name>
 
 For example, extensions could add Jira integration, post-implementation code review, V-Model test traceability, or project health diagnostics.
 
-See the [Extensions reference](https://github.github.io/spec-kit/reference/extensions.html) for the full command guide. Browse the [community extensions](https://github.github.io/spec-kit/community/extensions.html) for what's available.
+See the [Extensions reference](https://github.github.io/spec-kit/reference/extensions.html) for the full command guide. Browse the [community extensions](https://github.github.io/spec-kit/community/extensions.html) for community-submitted options.
 
 ### Presets — Customize Existing Workflows
 
-Use **presets** when you want to change *how* Spec Kit works without adding new capabilities. Presets override the templates and commands that ship with the core *and* with installed extensions — for example, enforcing a compliance-oriented spec format, using domain-specific terminology, or applying organizational standards to plans and tasks. They customize the artifacts and instructions that Spec Kit and its extensions produce.
+Use **presets** when you want to change *how* Spec Kit works without adding new capabilities. Presets override the templates and commands that ship with the core *and* with installed extensions.
 
 ```bash
 # Search available presets
@@ -324,7 +324,7 @@ specify preset search
 specify preset add <preset-name>
 ```
 
-For example, presets could restructure spec templates to require regulatory traceability, adapt the workflow to fit the methodology you use (e.g., Agile, Kanban, Waterfall, jobs-to-be-done, or domain-driven design), add mandatory security review gates to plans, enforce test-first task ordering, or localize the entire workflow to a different language. The [pirate-speak demo](https://github.com/mnriem/spec-kit-pirate-speak-preset-demo) shows just how deep the customization can go. Multiple presets can be stacked with priority ordering.
+For example, presets could restructure spec templates to require regulatory traceability, adapt the workflow to fit the methodology you use (e.g., Agile, Kanban, Waterfall, jobs-to-be-done), or enforce internal formatting and metadata conventions.
 
 See the [Presets reference](https://github.github.io/spec-kit/reference/presets.html) for the full command guide, including resolution order and priority stacking.
 
@@ -397,7 +397,7 @@ work **offline** against local or pinned sources.
 
 Spec-Driven Development is a structured process that emphasizes:
 
-- **Intent-driven development** where specifications define the "*what*" before the "*how*"
+- **Intent-driven development** where specifications define the "what" before the "how"
 - **Rich specification creation** using guardrails and organizational principles
 - **Multi-step refinement** rather than one-shot code generation from prompts
 - **Heavy reliance** on advanced AI model capabilities for specification interpretation
@@ -415,8 +415,7 @@ agentic workflows currently operate independently of the Specify CLI.
 
 This does not mean every change goes through the full workflow. Small fixes can
 use the normal issue, pull request, review, and test process. Dogfooding
-scaffolding and artifacts under `.github/agents/`, `.github/prompts/`,
-`.github/copilot-instructions.md`, `.grok/`, `.specify/`, and `specs/` are
+scaffolding and artifacts under `.github/agents/`, `.github/prompts/`, `.github/copilot-instructions.md`, `.grok/`, `.specify/`, and `specs/` are
 intentionally gitignored. The automated assessment workflow is ephemeral and
 neither commits nor pushes its generated Copilot skills, so its output does not
 enter repository history. See the [contributor development
@@ -424,11 +423,11 @@ workflow](./CONTRIBUTING.md#development-workflow) for the validation expectation
 
 ## 🌟 Development Phases
 
-| Phase                                    | Focus                    | Key Activities                                                                                                                                                     |
-| ---------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **0-to-1 Development** ("Greenfield")    | Generate from scratch    | <ul><li>Start with high-level requirements</li><li>Generate specifications</li><li>Plan implementation steps</li><li>Build production-ready applications</li></ul> |
-| **Creative Exploration**                 | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul>                         |
-| **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul>                                                                |
+| Phase                                    | Focus                    | Key Activities                                                                                                             |
+| ---------------------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| **0-to-1 Development** ("Greenfield")    | Generate from scratch    | Start with high-level requirements, generate specifications, plan implementation steps, build artifacts, and iterate quickly |
+| **Creative Exploration**                 | Parallel implementations | Explore diverse solutions, support multiple technology stacks & architectures, experiment with UX patterns and designs      |
+| **Iterative Enhancement** ("Brownfield") | Brownfield modernization | Add features iteratively, modernize legacy systems, adapt processes to existing constraints                                 |
 
 For existing projects, keep Spec Kit tooling updates separate from feature
 artifact evolution: refresh managed project files when upgrading, and update
