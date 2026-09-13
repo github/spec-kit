@@ -922,6 +922,10 @@ def _rename_step_tree_ids(
     fallback, e.g. fan-out's ``template.get("id", "item")``); a validated
     workflow requires an id on every nested step, so nested frames that lack
     one are left unrenamed rather than guessing a name.
+
+    A nested ``while``/``do-while`` step's own id is still renamed, but its
+    ``steps`` body is deliberately left untouched — see the check below —
+    because that body gets its own runtime namespacing each iteration.
     """
     new_step = dict(step)
     id_map: dict[str, str] = {}
@@ -930,6 +934,26 @@ def _rename_step_tree_ids(
         new_id = f"{prefix}:{orig_id}:{suffix}"
         new_step["id"] = new_id
         id_map[new_id] = orig_id
+
+    # A while/do-while step re-namespaces its OWN 'steps' body per iteration
+    # at runtime (see the while/do-while branch in _execute_steps), each
+    # time treating whatever currently sits in each nested step's 'id' as
+    # the canonical original. Recursing into that body here too -- e.g.
+    # because this while step sits inside an outer loop iteration or
+    # fan-out item that is itself being namespaced right now -- would
+    # pre-namespace it once, so the loop's own per-iteration rename would
+    # then treat this already-namespaced id as "original" and alias back
+    # to *that* instead of the workflow author's real bare id: a 'leaf'
+    # step inside a while nested in a fan-out becomes 'fan:leaf:0' here,
+    # then 'fan:while:0:fan:leaf:0:0' there, aliased only back to
+    # 'fan:leaf:0' -- a synthetic id no ``steps.leaf`` reference resolves
+    # to. Rename this step's own id (above) so it still gets a unique id
+    # per outer iteration/item, but leave its body untouched so the loop's
+    # own runtime namespacing renames it against the real original ids
+    # exactly once.
+    if new_step.get("type") in ("while", "do-while"):
+        return new_step, id_map
+
     for key in _NESTED_STEP_LIST_KEYS:
         nested = new_step.get(key)
         if isinstance(nested, list):
@@ -960,6 +984,41 @@ def _rename_step_tree_ids(
                 new_cases[case_key] = case_steps
         new_step["cases"] = new_cases
     return new_step, id_map
+
+
+def _collect_reserved_step_ids(steps: list[dict[str, Any]]) -> frozenset[str]:
+    """Collect every step id declared outside a fan-out template.
+
+    Mirrors ``_validate_steps``'s global ``seen_ids``: walks the same
+    regular control-flow nesting keys (``then``/``else``/``steps``/
+    ``default``/``cases.*``), which validation requires to be globally
+    unique, but deliberately does NOT walk a fan-out's ``step`` template —
+    validation checks that subtree against a fresh, throwaway id set
+    specifically because the engine namespaces it at runtime (see
+    ``_run_fan_out``). The result is the set of ids a fan-out's bare-id
+    aliasing convenience write must never clobber: anything in this set is
+    a real, distinctly-authored step, not an artifact of the exempted
+    template.
+    """
+    ids: set[str] = set()
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        step_id = step.get("id")
+        if isinstance(step_id, str):
+            ids.add(step_id)
+        for key in _NESTED_STEP_LIST_KEYS:
+            nested = step.get(key)
+            if isinstance(nested, list):
+                ids.update(_collect_reserved_step_ids(nested))
+        cases = step.get("cases")
+        if isinstance(cases, dict):
+            for case_steps in cases.values():
+                if isinstance(case_steps, list):
+                    ids.update(_collect_reserved_step_ids(case_steps))
+        # step.get("step") -- a fan-out's own template -- is deliberately
+        # not walked; see docstring.
+    return frozenset(ids)
 
 
 # -- Workflow Engine ------------------------------------------------------
@@ -1115,6 +1174,7 @@ class WorkflowEngine:
             project_root=str(self.project_root),
             run_id=state.run_id,
             workflow_dir=workflow_dir,
+            reserved_step_ids=_collect_reserved_step_ids(definition.steps),
         )
 
         # Execute steps
@@ -1186,6 +1246,7 @@ class WorkflowEngine:
             project_root=str(self.project_root),
             run_id=state.run_id,
             workflow_dir=state.workflow_dir,
+            reserved_step_ids=_collect_reserved_step_ids(definition.steps),
         )
 
         from . import STEP_REGISTRY
@@ -1248,6 +1309,7 @@ class WorkflowEngine:
         step_offset: int = 0,
         alias_map: dict[str, str] | None = None,
         alias_local_only: bool = False,
+        alias_may_collide: bool = False,
     ) -> None:
         """Execute a list of steps sequentially.
 
@@ -1266,6 +1328,20 @@ class WorkflowEngine:
         a private overlay as ``context.steps`` and this flag so concurrently
         running items never race to write the same original id in shared
         state; see ``_run_fan_out``.
+
+        ``alias_may_collide`` marks an ``alias_map`` whose original ids came
+        from inside a fan-out template — ids there are exempt from the
+        workflow's global id-uniqueness validation (see
+        ``_collect_reserved_step_ids``), so unlike a while/do-while loop
+        body's ids (always globally unique), one CAN collide with an
+        unrelated, distinctly-authored step's id. When set, the immediate
+        ``state.step_results`` mirror below is skipped for any original id
+        that is a member of ``context.reserved_step_ids`` — that id belongs
+        to a real step elsewhere in the workflow, and this alias write must
+        never clobber it. Propagated through the recursive calls below so it
+        stays set for descendants (e.g. a while loop nested inside the
+        fan-out template) once a fan-out template is entered; see
+        ``_run_fan_out``.
         """
         for i, step_config in enumerate(steps):
             step_id = step_config.get("id", f"step-{i}")
@@ -1326,7 +1402,9 @@ class WorkflowEngine:
                 if orig_id is not None:
                     if alias_local_only:
                         context.steps[orig_id] = step_data
-                    else:
+                    elif not (
+                        alias_may_collide and orig_id in context.reserved_step_ids
+                    ):
                         self._record_result(context, state, orig_id, step_data)
 
             state.append_log(
@@ -1460,6 +1538,7 @@ class WorkflowEngine:
                                 [ns_copy], context, state, registry,
                                 step_offset=-1, alias_map=id_map,
                                 alias_local_only=alias_local_only,
+                                alias_may_collide=alias_may_collide,
                             )
                             if state.status in (
                                 RunStatus.PAUSED,
@@ -1472,6 +1551,7 @@ class WorkflowEngine:
                         result.next_steps, context, state, registry,
                         step_offset=-1, alias_map=alias_map,
                         alias_local_only=alias_local_only,
+                        alias_may_collide=alias_may_collide,
                     )
                     if state.status in (
                         RunStatus.PAUSED,
@@ -1601,6 +1681,7 @@ class WorkflowEngine:
                 self._execute_steps(
                     [item_step], item_ctx, state, registry, step_offset=-1,
                     alias_map=id_map, alias_local_only=local_only,
+                    alias_may_collide=True,
                 )
             finally:
                 item_ctx.steps = original_steps
@@ -1749,6 +1830,16 @@ class WorkflowEngine:
         last_idx = halt[0] if halt is not None else (collected - 1 if collected else None)
         if last_idx is not None:
             for orig_id, data in alias_slots[last_idx].items():
+                # orig_id came from inside this fan-out's template, which is
+                # exempt from the global id-uniqueness check (see
+                # _collect_reserved_step_ids) -- it can coincide with a real,
+                # distinctly-authored step's id elsewhere in the workflow.
+                # The namespaced entry (written unconditionally above, via
+                # _record_result inside run_item) always survives regardless;
+                # skip only this bare-id convenience alias so it can never
+                # clobber that unrelated step's result.
+                if orig_id in context.reserved_step_ids:
+                    continue
                 self._record_result(context, state, orig_id, data)
 
         if halt is not None:

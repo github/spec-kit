@@ -80,6 +80,15 @@ class StepContext:
     #: Source directory of the workflow definition file.
     workflow_dir: str | None = None
 
+    #: Every step id declared in the workflow OUTSIDE a fan-out template
+    #: (computed once per run from the workflow definition). Fan-out
+    #: templates are deliberately exempt from the global id-uniqueness
+    #: check, so a bare id inside one can collide with a real, distinct
+    #: step id in this set; the engine checks membership here before
+    #: writing a fan-out alias to a bare id, so that write can never
+    #: silently clobber an unrelated step's result.
+    reserved_step_ids: frozenset[str] = field(default_factory=frozenset)
+
 
 @dataclass
 class StepResult:
