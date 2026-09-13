@@ -937,6 +937,54 @@ class TestTomlUnreadableConfig:
         assert config_path.read_bytes() == user_bytes
 
 
+class TestTomlNoOpMerge:
+    """#4563: installing with no resolved events must leave a pre-existing,
+    Specify-unowned config.toml byte-for-byte untouched.
+
+    This is the real ``specify integration install codex`` repro: a project
+    with no Codex-specific event hooks configured resolves to ``events={}``
+    (see ``resolve_events``), which routes through
+    ``install_integration_events``'s empty-map branch into
+    ``_remove_native_event_hooks`` -> ``_remove_toml_entries`` — not through
+    ``_merge_toml_fragment``, which only runs when there is at least one
+    supported, non-empty event to merge. ``_remove_toml_entries`` computed
+    ``cleaned`` via a regex strip and then unconditionally called
+    ``dst.write_text(cleaned, ...)`` even when ``cleaned == existing`` (no
+    Specify-marked blocks present), which (through Python's text-mode
+    newline translation on read/write) silently changed the file's
+    line-ending convention on Windows — turning a clean install into a
+    spurious git diff with no semantic change.
+    """
+
+    def test_no_events_leaves_existing_config_untouched(self, tmp_path):
+        from specify_cli.integrations.codex import CodexIntegration
+
+        integration = CodexIntegration()
+        manifest = _claude_manifest(tmp_path)
+        config_path = tmp_path / ".codex" / "config.toml"
+        config_path.parent.mkdir(parents=True)
+        original_bytes = b"project_doc_max_bytes = 200000"
+        config_path.write_bytes(original_bytes)
+        mtime_before = config_path.stat().st_mtime_ns
+
+        # The real no-extensions-installed shape: resolve_events() returns an
+        # empty map when no built-in defaults, extensions, or overrides
+        # contribute any handlers.
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {},
+        )
+
+        assert config_path.read_bytes() == original_bytes
+        # An unconditional rewrite can reproduce identical bytes on Linux
+        # (text-mode newline translation is a no-op when the platform line
+        # separator is already "\n"), so byte equality alone doesn't catch
+        # the defect here; assert the file was never even opened for
+        # writing, which is what actually mangles line endings on Windows.
+        assert config_path.stat().st_mtime_ns == mtime_before
+        manifest.record_existing.assert_not_called()
+
+
 # -- Opencode TS Plugin merging ---------------------------------------------
 
 class TestOpencodePluginMerging:
