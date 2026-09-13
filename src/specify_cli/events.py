@@ -2200,6 +2200,11 @@ def _remove_toml_entries(dst: Path) -> bool:
     """Remove Specify-marked TOML entries; delete the file if now empty (#14).
 
     Returns True if the file was deleted (no user content remained).
+
+    Leaves the file untouched (no write) when there are no Specify-owned
+    blocks to strip, so a no-op teardown/install doesn't rewrite (and, via
+    text-mode newline translation, mangle the line endings of) an untouched
+    pre-existing file (#4563).
     """
     if not dst.exists():
         return False
@@ -2235,6 +2240,8 @@ def _remove_toml_entries(dst: Path) -> bool:
     if not stripped:
         dst.unlink(missing_ok=True)
         return True
+    if cleaned == existing:
+        return False
     dst.write_text(cleaned, encoding="utf-8")
     return False
 
