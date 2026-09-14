@@ -17,6 +17,7 @@ import shutil
 import sys
 import subprocess
 import platform
+import tempfile
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Any
 
@@ -2113,7 +2114,21 @@ def _merge_toml_fragment(dst: Path, fragment: str) -> bool:
         flags=re.DOTALL,
     )
     dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_text(existing.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
+    fd, tmp = tempfile.mkstemp(
+        dir=str(dst.parent), prefix=f".{dst.name}.", suffix=".tmp"
+    )
+    try:
+        if dst.exists() and hasattr(os, "fchmod"):
+            os.fchmod(fd, dst.stat(follow_symlinks=False).st_mode & 0o7777)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(existing.rstrip() + "\n\n" + fragment + "\n")
+        os.replace(tmp, dst)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
     return True
 
 
@@ -2192,7 +2207,21 @@ def _remove_toml_entries(dst: Path) -> bool:
     if not stripped:
         dst.unlink(missing_ok=True)
         return True
-    dst.write_text(cleaned, encoding="utf-8")
+    fd, tmp = tempfile.mkstemp(
+        dir=str(dst.parent), prefix=f".{dst.name}.", suffix=".tmp"
+    )
+    try:
+        if dst.exists() and hasattr(os, "fchmod"):
+            os.fchmod(fd, dst.stat(follow_symlinks=False).st_mode & 0o7777)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(cleaned)
+        os.replace(tmp, dst)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
     return False
 
 
@@ -2482,10 +2511,25 @@ def _load_user_json(path: Path) -> dict | None:
 
 
 def _safe_write_json(dst: Path, data: dict) -> None:
-    """Write *data* as JSON to *dst* after validating the destination (#12)."""
+    """Write *data* as JSON to *dst* atomically after validating the destination (#12)."""
     _ensure_safe_destination(dst)
     dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    fd, tmp = tempfile.mkstemp(
+        dir=str(dst.parent), prefix=f".{dst.name}.", suffix=".tmp"
+    )
+    try:
+        if dst.exists() and hasattr(os, "fchmod"):
+            os.fchmod(fd, dst.stat(follow_symlinks=False).st_mode & 0o7777)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        os.replace(tmp, dst)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _ensure_safe_destination(dst: Path) -> None:
