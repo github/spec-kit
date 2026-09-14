@@ -987,6 +987,54 @@ def test_python_variant_delegates_manifest_with_recursive_yaml_alias(
     }
 
 
+@requires_bash
+def test_python_variant_delegates_manifest_with_shared_non_recursive_alias(
+    tmp_path: Path,
+) -> None:
+    """A YAML alias shared between two locations (not a self-reference) must
+    not be treated as a cycle: marking a container as seen for the rest of
+    the document -- rather than only while its own subtree is being walked
+    -- makes a second, unrelated reference to the same anchor look like a
+    recursive structure, so delegation replaces `provides.templates` with
+    the non-native marker even though `yaml.safe_load` resolves it to the
+    same plain list the in-process parser accepts (#4445)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "metadata:\n"
+        "  shared_templates: &shared_templates\n"
+        "    - type: template\n"
+        f"      name: {TEMPLATE}\n"
+        f"      file: templates/{TEMPLATE}.md\n"
+        "      strategy: wrap\n"
+        "provides:\n"
+        "  templates: *shared_templates\n",
+        encoding="utf-8",
+    )
+
+    no_yaml_python = tmp_path / "no-yaml-venv"
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
+        check=True,
+        capture_output=True,
+    )
+    no_yaml_exe = venv_python3_exe(no_yaml_python)
+    assert no_yaml_exe.is_file()
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
 def test_python_variant_rejects_speckit_python_override_without_python_3(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
