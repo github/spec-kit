@@ -156,11 +156,46 @@ def test_config_set_preserves_other_settings(tmp_path, monkeypatch):
     assert load_init_options(project) == {**before, "feature_numbering": "timestamp"}
 
 
-def test_config_set_supports_legacy_project_without_options(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "agents",
+    [(), (("gemini", "toml"),), (("gemini", "toml"), ("qwen", "md"))],
+)
+def test_config_set_preserves_legacy_registration(tmp_path, monkeypatch, agents):
     (tmp_path / ".specify").mkdir()
+    for agent, _ in agents:
+        (tmp_path / f".{agent}/commands").mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
 
     result = runner.invoke(app, ["config", "set", "feature-numbering", "timestamp"])
 
+    assert result.exit_code != 0
+    assert "specify integration install" in result.output
+    assert not (tmp_path / ".specify/init-options.json").exists()
+
+    installed = runner.invoke(app, ["config", "extension", "add", "git"])
+
+    assert installed.exit_code == 0, installed.output
+    for agent, extension in agents:
+        command = tmp_path / f".{agent}/commands/speckit.git.feature.{extension}"
+        assert command.is_file()
+        assert "feature_numbering" in command.read_text(encoding="utf-8")
+
+
+def test_config_set_works_after_legacy_integration_install(tmp_path, monkeypatch):
+    (tmp_path / ".specify").mkdir()
+    (tmp_path / ".gemini/commands").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+
+    installed = runner.invoke(app, ["integration", "install", "gemini"])
+    assert installed.exit_code == 0, installed.output
+
+    result = runner.invoke(app, ["config", "set", "feature-numbering", "timestamp"])
+
     assert result.exit_code == 0, result.output
-    assert load_init_options(tmp_path) == {"feature_numbering": "timestamp"}
+    options = load_init_options(tmp_path)
+    assert options["feature_numbering"] == "timestamp"
+    assert options["ai"] == "gemini"
+
+    extension = runner.invoke(app, ["config", "extension", "add", "git"])
+    assert extension.exit_code == 0, extension.output
+    assert (tmp_path / ".gemini/commands/speckit.git.feature.toml").is_file()

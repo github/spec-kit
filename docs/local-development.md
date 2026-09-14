@@ -138,11 +138,18 @@ generated metadata, then add the import and `_register()` call in
 
 ## 8. Run Lint / Basic Checks
 
-CI enforces `ruff check src tests` (see `.github/workflows/test.yml`), so run it locally before pushing:
+Run Ruff from the repository root through `uvx`, matching the version pinned in
+`.github/workflows/test.yml`:
 
 ```bash
-uvx ruff check src tests
+uvx ruff@0.15.0 check src tests
 ```
+
+Ruff does not need to be on `PATH` or installed in `.venv`; `uvx` manages its
+isolated tool environment. Do not report Ruff unavailable just because those
+locations lack the executable. If the tool is already cached, use
+`uvx --offline ruff@0.15.0 check src tests` to run without network access.
+If sandbox permissions block the uv cache, request cache access and retry.
 
 You can also quickly sanity check importability:
 

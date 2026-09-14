@@ -10,7 +10,7 @@ from rich.table import Table
 from rich.text import Text
 
 from .._console import console
-from .._init_options import load_init_options, save_init_options
+from .._init_options import INIT_OPTIONS_FILE, load_init_options, save_init_options
 from ..extensions import ExtensionManager
 from ..extensions._commands import extension_app
 
@@ -153,6 +153,14 @@ def config_set(
         raise typer.BadParameter(f"{normalized_key} is read-only")
     else:
         raise typer.BadParameter(f"Unknown configuration key: {key}")
+
+    # An options file without an active agent disables legacy command registration.
+    if not (project_root / INIT_OPTIONS_FILE).exists():
+        raise typer.BadParameter(
+            "This legacy project has no .specify/init-options.json. "
+            "Run specify integration install <key> first "
+            "(or specify integration use <key> if already installed), then retry."
+        )
 
     save_init_options(project_root, options)
     console.print(f"Updated {normalized_key}")

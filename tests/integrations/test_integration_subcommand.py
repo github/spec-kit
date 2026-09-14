@@ -2883,6 +2883,38 @@ class TestIntegrationSwitch:
 
 
 class TestIntegrationUpgrade:
+    @pytest.mark.parametrize("modified", [False, True])
+    def test_script_upgrade_regenerates_commands_or_preserves_customizations(
+        self, copilot_project, modified
+    ):
+        project = copilot_project
+        command = project / ".github" / "skills" / "speckit-plan" / "SKILL.md"
+        original = command.read_text(encoding="utf-8")
+        assert "scripts/bash/setup-plan.sh" in original
+        if modified:
+            command.write_text(original + "\nUser customization\n", encoding="utf-8")
+        before = command.read_bytes()
+        options_file = project / ".specify" / "init-options.json"
+        options_before = options_file.read_bytes()
+
+        result = _run_in_project(
+            project, ["integration", "upgrade", "copilot", "--script", "py"]
+        )
+
+        if modified:
+            assert result.exit_code != 0, result.output
+            assert "modified" in result.output
+            assert command.read_bytes() == before
+            assert options_file.read_bytes() == options_before
+        else:
+            assert result.exit_code == 0, result.output
+            updated = command.read_text(encoding="utf-8")
+            assert "scripts/python/setup_plan.py" in updated
+            assert "scripts/bash/setup-plan.sh" not in updated
+            setting = _run_in_project(project, ["config", "get", "script"])
+            assert setting.exit_code == 0, setting.output
+            assert setting.output.strip() == "py"
+
     def test_upgrade_invalid_manifest_reports_cli_error(self, tmp_path):
         project = _init_project(tmp_path, "claude")
         _write_invalid_manifest(project, "claude")

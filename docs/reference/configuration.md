@@ -27,6 +27,12 @@ Supported values are:
 | --- | --- |
 | `feature-numbering` | `sequential`, `timestamp` |
 
+Legacy projects without `.specify/init-options.json` must first run
+`specify integration install <key>` (or `specify integration use <key>` for an
+already installed integration). Until then, `config set` refuses to create the
+file because doing so without an active agent would disable legacy extension
+and preset command registration.
+
 Script type, the active integration, and skills layout are owned by
 `specify integration`. Changing a script type requires regenerating installed
 agent files:
