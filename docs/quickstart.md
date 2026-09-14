@@ -1,11 +1,22 @@
-# Quick Start Guide
+<a id="quick-start-guide"></a>
+
+# Spec-Driven Development Quickstart
 
 This guide will help you get started with Spec-Driven Development using Spec Kit. Throughout, we illustrate each step with a running example: **Taskify**, a small team productivity platform.
+
+Use SDD to build a feature or application from a specification. For a repair,
+follow the [bug-fixing quickstart](guides/bugfix.md); to decide whether an idea
+deserves investment, follow the [idea assessment quickstart](guides/assessment.md).
+These are independent processes, not prerequisites for this guide.
 
 > [!NOTE]
 > Automation scripts are provided as Bash (`.sh`), PowerShell (`.ps1`), and Python (`.py`) variants. Interactive `specify init` prompts you to choose one; non-interactive runs (no TTY, or `--non-interactive`) default to a shell variant for your OS. Pass `--script sh|ps|py` to select explicitly.
 
-Commands are shown here in `/speckit.*` form, but the exact invocation depends on your agent. Some skills-based agents use `$speckit-*` (e.g. Codex, ZCode) or `/skill:speckit-*` (e.g. Kimi). Use whichever form your agent exposes — the steps are otherwise identical.
+Commands here use GitHub Copilot's default skills mode (`/speckit-*`).
+For other agents or modes, see
+[Command invocation](reference/integrations.md#command-invocation).
+Run each process command separately inside the coding agent, not in your terminal,
+and review the result before moving to the next step.
 
 ## Recommended Process
 
@@ -14,25 +25,28 @@ Commands are shown here in `/speckit.*` form, but the exact invocation depends o
 
 After installing Spec Kit, each command below is a step in the process. Two paths are common:
 
+Establish a constitution once per project with `/speckit-constitution` before
+starting either path.
+
 **Shorter path** — for smaller features:
 
-1. `/speckit.specify`
-2. `/speckit.plan`
-3. `/speckit.tasks`
-4. `/speckit.implement`
-5. `/speckit.converge`
+1. `/speckit-specify`
+2. `/speckit-plan`
+3. `/speckit-tasks`
+4. `/speckit-implement`
+5. `/speckit-converge`
 
-**Full path** — for production features, adding `/speckit.clarify`, `/speckit.checklist`, and `/speckit.analyze` as quality gates:
+**Full path** — for production features, adding `/speckit-clarify`, `/speckit-checklist`, and `/speckit-analyze` as quality gates:
 
-1. `/speckit.constitution`
-2. `/speckit.specify`
-3. `/speckit.clarify`
-4. `/speckit.plan`
-5. `/speckit.checklist`
-6. `/speckit.tasks`
-7. `/speckit.analyze`
-8. `/speckit.implement`
-9. `/speckit.converge`
+1. `/speckit-constitution` (once per project)
+2. `/speckit-specify`
+3. `/speckit-clarify`
+4. `/speckit-plan`
+5. `/speckit-checklist`
+6. `/speckit-tasks`
+7. `/speckit-analyze`
+8. `/speckit-implement`
+9. `/speckit-converge`
 
 ### Install Specify
 
@@ -40,7 +54,8 @@ After installing Spec Kit, each command below is a step in the process. Two path
 
 ```bash
 uv tool install specify-cli
-specify init taskify   # or: specify init .   to use the current directory
+specify init taskify --integration copilot
+cd taskify
 ```
 
 `init` lets you pick your coding agent interactively, or pass it explicitly with `--integration` (e.g. `--integration copilot`). For CI and AI agent harnesses, add `--non-interactive` so unspecified choices use documented defaults instead of hanging on an arrow-key picker.
@@ -51,76 +66,96 @@ specify init taskify   # or: specify init .   to use the current directory
 > [Adopting Spec Kit in an Existing Project](guides/existing-projects.md) before
 > starting the workflow below.
 
-### Step 1: `/speckit.constitution` — set the ground rules
+Launch your coding agent in the project directory before continuing.
+
+<a id="step-1-speckitconstitution--set-the-ground-rules"></a>
+
+### Step 1: `/speckit-constitution` — set the ground rules
 
 Establishes the project's guiding principles, which every later step is evaluated against. Run it once up front, passing your principles as arguments.
 
 ```text
-/speckit.constitution Taskify is a "Security-First" application. All user inputs must be validated. We use a microservices architecture. Code must be fully documented.
+/speckit-constitution Taskify is a "Security-First" application. All user inputs must be validated. We use a microservices architecture. Code must be fully documented.
 ```
 
-### Step 2: `/speckit.specify` — describe what to build
+<a id="step-2-speckitspecify--describe-what-to-build"></a>
+
+### Step 2: `/speckit-specify` — describe what to build
 
 Creates the feature specification from a natural-language description. Focus on the **what** and **why**, not the tech stack.
 
 ```text
-/speckit.specify Develop Taskify, a team productivity platform where predefined users create projects, assign tasks, comment, and move tasks across Kanban columns (To Do, In Progress, In Review, Done). Five users (one product manager, four engineers), three sample projects, no login for this first phase.
+/speckit-specify Develop Taskify, a team productivity platform where predefined users create projects, assign tasks, comment, and move tasks across Kanban columns (To Do, In Progress, In Review, Done). Five users (one product manager, four engineers), three sample projects, no login for this first phase.
 ```
 
-### Step 3: `/speckit.clarify` — resolve ambiguities
+<a id="step-3-speckitclarify--resolve-ambiguities"></a>
+
+### Step 3: `/speckit-clarify` — resolve ambiguities
 
 Asks targeted questions about anything underspecified and folds your answers back into the spec, so you're not planning on top of ambiguity. Run it before planning, optionally with a focus area.
 
 ```text
-/speckit.clarify Focus on task card behavior — status changes, comment permissions, and user assignment.
+/speckit-clarify Focus on task card behavior — status changes, comment permissions, and user assignment.
 ```
 
-### Step 4: `/speckit.plan` — choose the tech stack
+<a id="step-4-speckitplan--choose-the-tech-stack"></a>
+
+### Step 4: `/speckit-plan` — choose the tech stack
 
 Generates the design artifacts from the spec. This is where implementation detail belongs — provide your tech stack and architecture.
 
 ```text
-/speckit.plan Use .NET Aspire with Postgres. The frontend is Blazor Server with drag-and-drop boards and real-time updates. Expose REST APIs for projects, tasks, and notifications.
+/speckit-plan Use .NET Aspire with Postgres. The frontend is Blazor Server with drag-and-drop boards and real-time updates. Expose REST APIs for projects, tasks, and notifications.
 ```
 
-### Step 5: `/speckit.checklist` — validate the spec
+<a id="step-5-speckitchecklist--validate-the-spec"></a>
+
+### Step 5: `/speckit-checklist` — validate the spec
 
 Generates a custom quality checklist — "unit tests for your requirements" — to confirm the spec is complete, clear, and consistent before you break the work down. These custom checklists are reviewer-owned requirements-quality review artifacts: mark an item `[x]` only when the reviewer determines that requirement-quality criterion is satisfied. Checked custom items do not mean implementation work is complete.
 
 ```text
-/speckit.checklist
+/speckit-checklist
 ```
 
-### Step 6: `/speckit.tasks` — break the work down
+<a id="step-6-speckittasks--break-the-work-down"></a>
+
+### Step 6: `/speckit-tasks` — break the work down
 
 Generates an actionable, dependency-ordered `tasks.md` from the design artifacts.
 
 ```text
-/speckit.tasks
+/speckit-tasks
 ```
 
-### Step 7: `/speckit.analyze` — check consistency
+<a id="step-7-speckitanalyze--check-consistency"></a>
+
+### Step 7: `/speckit-analyze` — check consistency
 
 Reports conflicts, gaps, and ambiguities across `spec.md`, `plan.md`, and `tasks.md`. It's read-only — if it flags issues, fix them at the source and re-run before implementing.
 
 ```text
-/speckit.analyze
+/speckit-analyze
 ```
 
-### Step 8: `/speckit.implement` — build it
+<a id="step-8-speckitimplement--build-it"></a>
 
-Executes the tasks in `tasks.md` in dependency order. Before implementation, it reads checklist checkbox state as a gate and asks before proceeding if any checklist items are unchecked; it does not change any checklist files or markers. The built-in `checklists/requirements.md` checklist is maintained by `/speckit.specify` and `/speckit.clarify`, while custom checklists remain reviewer-owned. Run it once to build everything, or scope it to one phase at a time for large features.
+### Step 8: `/speckit-implement` — build it
+
+Executes the tasks in `tasks.md` in dependency order. Before implementation, it reads checklist checkbox state as a gate and asks before proceeding if any checklist items are unchecked; it does not change any checklist files or markers. The built-in `checklists/requirements.md` checklist is maintained by `/speckit-specify` and `/speckit-clarify`, while custom checklists remain reviewer-owned. Run it once to build everything, or scope it to one phase at a time for large features.
 
 ```text
-/speckit.implement
+/speckit-implement
 ```
 
-### Step 9: `/speckit.converge` — verify completeness
+<a id="step-9-speckitconverge--verify-completeness"></a>
 
-Checks the codebase against the spec, plan, and tasks. If it finds gaps, it appends new tasks to `tasks.md`; run `/speckit.implement` and converge again until it reports converged. Otherwise you're done — proceed to review or open a PR.
+### Step 9: `/speckit-converge` — verify completeness
+
+Checks the codebase against the spec, plan, and tasks. If it finds gaps, it appends new tasks to `tasks.md`; run `/speckit-implement` and converge again until it reports **Converged**. Otherwise you're done — proceed to review or open a PR.
 
 ```text
-/speckit.converge
+/speckit-converge
 ```
 
 > [!TIP]
@@ -137,7 +172,16 @@ Checks the codebase against the spec, plan, and tasks. If it finds gaps, it appe
 ## Next Steps
 
 - See the [Agentic SDD](reference/agentic-sdd.md) reference for full detail on every command
+- Learn how to [customize the process](guides/customization.md) with extensions, presets, workflows, and bundles
 - Read the [complete methodology](https://github.com/github/spec-kit/blob/main/spec-driven.md) for in-depth guidance
 - Compare the [core templates](https://github.com/github/spec-kit/tree/main/templates) with
   [community walkthroughs](community/walkthroughs.md) to see how Spec-Driven Development is used in real projects
 - Explore the [source code on GitHub](https://github.com/github/spec-kit)
+
+## Video Overview
+
+For a visual introduction, watch the
+[Spec Kit video overview](https://www.youtube.com/watch?v=a9eR1xsfvHg).
+Use the commands in this guide for the current workflow and invocation syntax.
+
+[![Spec Kit video overview](https://raw.githubusercontent.com/github/spec-kit/main/media/spec-kit-video-header.jpg)](https://www.youtube.com/watch?v=a9eR1xsfvHg)
