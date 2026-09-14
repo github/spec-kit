@@ -35,6 +35,8 @@
       href: reference/overview.md
     - name: Core Commands
       href: reference/core.md
+    - name: Project Configuration
+      href: reference/configuration.md
     - name: Integrations
       href: reference/integrations.md
     - name: Extensions

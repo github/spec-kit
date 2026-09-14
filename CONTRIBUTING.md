@@ -226,6 +226,10 @@ job until a follow-up cleanup tightens the threshold.
 
 ### Manual testing
 
+This section covers testing slash-command behavior through a coding agent and
+reporting those results in a pull request. For post-initialization configuration,
+run the automated verifier in the [local development guide](docs/local-development.md#4-verify-post-initialization-configuration).
+
 #### Testing setup
 
 ```bash
@@ -257,7 +261,7 @@ Any change that affects a slash command's behavior requires manually testing tha
 
 Paste this into your PR:
 
-~~~markdown
+```markdown
 ## Manual test results
 
 **Agent**: [e.g., GitHub Copilot in VS Code]  |  **OS/Shell**: [e.g., macOS/zsh]
@@ -265,13 +269,13 @@ Paste this into your PR:
 | Command tested | Notes |
 |----------------|-------|
 | `/speckit.command` | |
-~~~
+```
 
 #### Determining which tests to run
 
 Copy this prompt into your agent. Include the agent's response (selected tests plus a brief explanation of the mapping) in your PR.
 
-~~~text
+```text
 Read CONTRIBUTING.md, then run `git diff --name-only main` to get my changed files.
 For each changed file, determine which slash commands it affects by reading
 the command templates in templates/commands/ to understand what each command
@@ -303,7 +307,7 @@ Number each test sequentially (T1, T2, ...). List prerequisite tests first.
 
 - T1: /speckit.command — (reason)
 - T2: /speckit.command — (reason)
-~~~
+```
 
 ## AI contributions in Spec Kit
 
