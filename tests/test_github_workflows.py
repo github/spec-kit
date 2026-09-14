@@ -197,6 +197,65 @@ def test_community_submission_automation_is_wired_to_allowed_files():
         assert label in assignment_text
 
 
+# Full clauses from the catalog download-URL checks (issue #4185). Assert the
+# complete sentences so independent keywords cannot drift apart.
+_CATALOG_DOWNLOAD_URL_CLAUSES = (
+    (
+        "The download URL MUST belong to the submitted repository\n"
+        "  (`https://github.com/<owner>/<repo>/...` with the same `<owner>/<repo>` as\n"
+        "  the Repository URL). Reject URLs for any other GitHub repository."
+    ),
+    (
+        "If the download URL path contains `releases/latest/`, reject with an\n"
+        "  explanation — this URL is floating and not acceptable. Mark this pinning\n"
+        "  check failed and skip the HTTP request for this URL, then continue the\n"
+        "  remaining validations."
+    ),
+    (
+        "The `<tag>` segment in the URL MUST correspond to the submitted version.\n"
+        "  Accept `vX.Y.Z`, `X.Y.Z`, and scoped tags whose version suffix matches\n"
+        "  (for example `aide-v1.0.0` for version `1.0.0`). Reject a tag whose\n"
+        "  embedded semver does not equal the submitted version."
+    ),
+    (
+        "Only after all pinning checks pass, fetch the download URL and perform the\n"
+        "  remaining artifact checks:\n"
+        "  - Verify the URL returns HTTP 200.\n"
+        "  - If `sha256` is included, verify it matches the downloaded archive. Requiring\n"
+        "    `sha256` on every catalog entry is follow-up work and MUST NOT fail this\n"
+        "    check when the field is absent."
+    ),
+)
+
+
+def test_community_submission_workflows_require_tag_pinned_download_urls():
+    """Catalog agents must reject floating releases/latest URLs (issue #4185)."""
+    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+        source_text = (WORKFLOWS_DIR / f"add-community-{workflow}.md").read_text(
+            encoding="utf-8"
+        )
+
+        assert "should follow the pattern" not in source_text.lower()
+        for clause in _CATALOG_DOWNLOAD_URL_CLAUSES:
+            assert clause in source_text, f"missing clause in {workflow}: {clause!r}"
+
+        if workflow == "bundle":
+            assert (
+                "`https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>.zip`."
+                in source_text
+            )
+            assert "archive/refs/tags/" not in source_text
+        else:
+            assert (
+                "`https://github.com/<owner>/<repo>/archive/refs/tags/<tag>.zip`"
+                in source_text
+            )
+            assert (
+                "`https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>.zip`"
+                in source_text
+            )
+
+
 def test_community_submission_allowed_files_do_not_include_other_catalogs_or_docs():
     allowed_by_workflow = {
         workflow: set(
@@ -218,6 +277,48 @@ def test_community_submission_allowed_files_do_not_include_other_catalogs_or_doc
                 f"{workflow} and {other_workflow} share allowed files: "
                 f"{sorted(overlapping_files)}"
             )
+
+
+def _frontmatter(source_text: str) -> dict:
+    if not source_text.startswith("---"):
+        raise AssertionError("workflow source is missing YAML frontmatter")
+    _, frontmatter, _ = source_text.split("---", 2)
+    return yaml.safe_load(frontmatter)
+
+
+def test_community_submission_threat_detection_is_fail_closed():
+    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+        source = WORKFLOWS_DIR / f"add-community-{workflow}.md"
+        compiled = WORKFLOWS_DIR / f"add-community-{workflow}.lock.yml"
+
+        assert source.is_file()
+        assert compiled.is_file()
+
+        safe_outputs = _frontmatter(source.read_text(encoding="utf-8")).get(
+            "safe-outputs", {}
+        )
+        threat_detection = safe_outputs.get("threat-detection")
+        assert threat_detection is not None, (
+            f"add-community-{workflow}.md must configure "
+            "safe-outputs.threat-detection"
+        )
+        assert threat_detection.get("continue-on-error") is False, (
+            f"add-community-{workflow}.md must set threat-detection "
+            "continue-on-error: false so detections block safe outputs"
+        )
+
+        compiled_text = compiled.read_text(encoding="utf-8")
+        assert 'GH_AW_DETECTION_CONTINUE_ON_ERROR: "false"' in compiled_text, (
+            f"add-community-{workflow}.lock.yml must compile threat detection "
+            "in fail-closed mode"
+        )
+        assert (
+            "process.env.GH_AW_DETECTION_CONTINUE_ON_ERROR !== 'false'"
+            in compiled_text
+        ), (
+            f"add-community-{workflow}.lock.yml is missing the detection "
+            "continue-on-error gate"
+        )
 
 
 def test_bug_test_workflow_provisions_python_dependencies():

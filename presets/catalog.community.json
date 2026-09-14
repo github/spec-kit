@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-09T00:00:00Z",
+  "updated_at": "2026-09-10T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -750,6 +750,35 @@
       ],
       "created_at": "2026-04-23T08:00:00Z",
       "updated_at": "2026-04-23T08:00:00Z"
+    },
+    "secure-development-assurance-governance": {
+      "name": "Secure Development Assurance Governance",
+      "id": "secure-development-assurance-governance",
+      "version": "0.1.3",
+      "description": "Validates project-owned secure-development manifests, hashes, checklists, reviews, risks, closure, and image-impact evidence without granting human approvals or certifications.",
+      "author": "Thorsten Hindermann",
+      "repository": "https://github.com/hindermath/spec-kit-preset-secure-development-assurance-governance",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-secure-development-assurance-governance/archive/refs/tags/v0.1.3.zip",
+      "homepage": "https://github.com/hindermath/spec-kit-preset-secure-development-assurance-governance",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-secure-development-assurance-governance/blob/v0.1.3/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.3"
+      },
+      "provides": {
+        "templates": 1,
+        "commands": 2,
+        "scripts": 2
+      },
+      "tags": [
+        "security",
+        "governance",
+        "assurance",
+        "evidence",
+        "cross-platform"
+      ],
+      "created_at": "2026-09-10T00:00:00Z",
+      "updated_at": "2026-09-10T00:00:00Z"
     },
     "security-governance": {
       "name": "Security Governance",
