@@ -63,7 +63,7 @@ state of the code, determine which requirements, acceptance criteria, plan decis
 existing tasks are unmet, incomplete, or only partially satisfied, and **append each piece
 of remaining work as a new, traceable task** at the bottom of `tasks.md` so that
 `__SPECKIT_COMMAND_IMPLEMENT__` can complete it. This command MUST run only after
-`__SPECKIT_COMMAND_IMPLEMENT__` has run on the current `tasks.md`, and after `__SPECKIT_COMMAND_TASKS__` has produced a complete `tasks.md`.
+`__SPECKIT_COMMAND_IMPLEMENT__` has completed every task in the current `tasks.md` (Step 1 checks, and stops if any task is unchecked), and after `__SPECKIT_COMMAND_TASKS__` has produced a complete `tasks.md`.
 
 This is **not** a diff tool and does **not** track changes. It assesses the present state
 of the code relative to the feature's artifacts — no git, no branch comparison, no history.
@@ -100,6 +100,17 @@ Run `{SCRIPT}` once from repo root and parse JSON for FEATURE_DIR and AVAILABLE_
 If `spec.md`, `plan.md`, or `tasks.md` is missing, STOP with a clear, actionable message naming the
 prerequisite command to run (`__SPECKIT_COMMAND_SPECIFY__` for a missing spec, `__SPECKIT_COMMAND_PLAN__` for a missing plan,
 `__SPECKIT_COMMAND_TASKS__` for missing tasks). Do not produce partial output.
+
+**Enforce the implement prerequisite before assessing anything.** Scan `tasks.md` for
+unchecked tasks — lines matching `- [ ]` outside code fences, the rule `__SPECKIT_COMMAND_IMPLEMENT__` counts by —
+and if there are any, STOP: report how many are unchecked and list their task IDs, and tell
+the user to run `__SPECKIT_COMMAND_IMPLEMENT__` to complete them before converging. Leave
+`tasks.md` byte-for-byte unchanged, report no findings, and do not continue to Step 2. This
+is neither outcome of Step 7: an unchecked task is work that is already tracked but not yet
+built, so assessing the code while one is open would report that same work again as a new
+gap, and a run that reached `converged` would claim the implementation is complete while
+tracked work remains. Converge assesses a finished implementation; it does not re-plan an
+unfinished one.
 For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 ### 2. Load Artifacts (Progressive Disclosure)
@@ -137,6 +148,10 @@ Create an internal model (do not echo raw artifacts):
 - **Requirements inventory**: one stable key per FR-### / SC-### / user-story acceptance
   scenario (e.g. `US1/AC2`), plus the plan decisions and constitution principles that
   impose buildable obligations.
+- **Task inventory**: every task in `tasks.md` — all of them checked by this point — with
+  the work it describes and the file paths it names. A task marked done whose work is
+  absent from the code, or only partly there, is a finding like any other, traced to
+  that task's ID.
 - **Code-scope map**: from the file paths named in `plan.md` and `tasks.md`, plus a keyword
   search for the concepts each requirement describes, derive the set of source files and
   components in scope for assessment. Bound the assessment to these — do **not** infer
@@ -210,7 +225,8 @@ Append to the **end** of `tasks.md`, per the append contract:
    ```
 
    `<source-ref>` traces the task to its origin: e.g. `FR-003`, `SC-002`,
-   `US1/AC2`, `plan: storage decision`, `Constitution II`.
+   `US1/AC2`, `plan: storage decision`, `Constitution II`, or a task ID such as `T017`
+   when a task marked done is not reflected in the code.
 
    `<gap-type>` is one of `missing`, `partial`, `contradicts`, `unrequested`.
 
@@ -228,8 +244,9 @@ Append to the **end** of `tasks.md`, per the append contract:
 ### 8. Provide Next Actions (Handoff)
 
 - On `tasks_appended`: state how many tasks were appended under which phase, and recommend
-  running `__SPECKIT_COMMAND_IMPLEMENT__` to complete them; note that a follow-up converge
-  run will find fewer or no remaining items.
+  running `__SPECKIT_COMMAND_IMPLEMENT__` to complete them; note that converge will stop at
+  its prerequisite check until those tasks are checked off, and re-assess everything once
+  they are.
 - On `converged`: recommend proceeding to review / opening a PR. No further implement pass
   is needed for this feature's specified scope.
 
