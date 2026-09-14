@@ -39,7 +39,7 @@ SDD 内置于核心；缺陷修复和想法评估由随工具提供的扩展实�
 
 你需要 **Python 3.11+**、**[uv](https://github.github.io/spec-kit/install/uv.html)**
 以及受支持的 AI 编码助手，可在 Linux、macOS 或 Windows 上使用。
-在**终端**中从 PyPI 安装 CLI 并创建项目：
+**仅 CLI 配置步骤在终端中执行**：从 PyPI 安装 Spec Kit 并创建项目：
 
 ```bash
 uv tool install specify-cli
@@ -60,8 +60,8 @@ CLI 只需安装一次，项目只需初始化一次；以下三种流程共用�
 更新已安装的 CLI 和项目文件见[升级指南](https://github.github.io/spec-kit/upgrade.html)。
 
 现在，在**项目目录中启动编码助手**，选择以下一种流程。
-每条 `/speckit-*` 命令都应在**助手中逐条运行，而不是在终端中运行**，检查结果后再继续。
-其他助手或模式可能采用[不同的命令语法](https://github.github.io/spec-kit/reference/integrations.html#command-invocation)。
+在**助手的聊天界面中逐个调用 `/speckit-*` 技能**，检查结果后再继续。
+这些是助手技能，不是终端命令。其他助手或模式可能采用[不同的调用语法](https://github.github.io/spec-kit/reference/integrations.html#command-invocation)。
 
 <a id="-什么是规范驱动开发"></a>
 <a id="3-确立项目准则"></a>
@@ -76,6 +76,8 @@ CLI 只需安装一次，项目只需初始化一次；以下三种流程共用�
 规范驱动开发（SDD）将需求转化为规范、技术方案和可执行任务，再依据这些制品指导实现。
 
 **每个项目先确立一次准则；每个功能依次完成：规范 → 方案 → 任务 → 实现 → 收敛。**
+
+在助手的聊天界面中调用以下技能：
 
 ```text
 /speckit-constitution Create principles focused on code quality, testing, and maintainability.
@@ -97,13 +99,13 @@ CLI 只需安装一次，项目只需初始化一次；以下三种流程共用�
 将诊断、修复和验证分开，让助手针对评估出的原因修复，并检查最初出现的症状。
 无需先走一遍 SDD 功能开发流程。
 
-在项目目录下的**终端**中安装这个可选扩展：
+**CLI 配置（终端）**：在项目目录下安装这个可选扩展：
 
 ```bash
 specify extension add bug
 ```
 
-然后在编码助手中依次运行 **assess → fix → test**（评估 → 修复 → 测试）：
+然后在助手的聊天界面中依次调用 **assess → fix → test**（评估 → 修复 → 测试）技能：
 
 ```text
 /speckit-bug-assess "Submitting an empty password crashes the login form." slug=login-crash
@@ -122,14 +124,14 @@ specify extension add bug
 在投入之前先收集证据，无论这个想法最终是否会成为软件。
 这是一个独立流程，也适用于非软件类想法，即使项目中没有源代码也能使用。
 
-在项目目录下的**终端**中安装这个可选扩展：
+**CLI 配置（终端）**：在项目目录下安装这个可选扩展：
 
 ```bash
 specify extension add assess
 ```
 
-然后在编码助手中依次运行 **intake → research → define → shape → decide**
-（收集想法 → 调研 → 定义问题 → 形成方案 → 决策）：
+然后在助手的聊天界面中依次调用 **intake → research → define → shape → decide**
+（收集想法 → 调研 → 定义问题 → 形成方案 → 决策）技能：
 
 ```text
 /speckit-assess-intake "Let users work offline and sync when they reconnect." slug=offline-mode

@@ -23,8 +23,9 @@ Then launch your coding agent in that directory. The examples below use
 GitHub Copilot's default skills mode (`--integration copilot`). Other agents
 use their own
 [command invocation syntax](../reference/integrations.md#command-invocation).
-Run each command separately in the agent, not in your terminal, reviewing the
-artifact before moving on.
+Invoke each `/speckit-assess-*` skill separately in your agent's chat, reviewing
+the artifact before moving on. These are agent skills, not terminal commands;
+the terminal command above only installs the extension.
 
 ## 1. Capture the idea
 

@@ -38,7 +38,7 @@ core; bug fixing and assessment are bundled extensions you install when needed.
 
 You need **Python 3.11+**, **[uv](https://github.github.io/spec-kit/install/uv.html)**,
 and a supported AI coding agent on Linux, macOS, or Windows.
-Run this in your **terminal** to install the CLI from PyPI and create a project:
+For **CLI setup only**, run this in your terminal to install Spec Kit and create a project:
 
 ```bash
 uv tool install specify-cli
@@ -59,9 +59,10 @@ For pinned releases, other installers, CI, or troubleshooting, see
 To update an existing installation, see [Upgrade](https://github.github.io/spec-kit/upgrade.html).
 
 Now **launch your coding agent in the project directory** and choose a process
-below. Run each `/speckit-*` command separately **in the agent**, not in your
-terminal, and review the result before continuing. Other agents and modes may
-use [different command syntax](https://github.github.io/spec-kit/reference/integrations.html#command-invocation).
+below. Invoke each `/speckit-*` **skill in your agent's chat**, one at a time,
+and review the result before continuing. These are agent skills, not terminal
+commands. Other agents and modes may use
+[different invocation syntax](https://github.github.io/spec-kit/reference/integrations.html#command-invocation).
 
 <a id="-what-is-spec-driven-development"></a>
 <a id="sdd-quickstart"></a>
@@ -73,6 +74,8 @@ requirements into a specification, a technical plan, and actionable tasks,
 then guides implementation against those artifacts.
 
 **Constitution once per project; specify → plan → tasks → implement → converge per feature.**
+
+Invoke these skills in your agent's chat:
 
 ```text
 /speckit-constitution Create principles focused on code quality, testing, and maintainability.
@@ -98,13 +101,13 @@ quality gates.
 Keep diagnosis, repair, and verification separate so the agent fixes the assessed
 cause and checks the original symptom. No SDD feature workflow is required first.
 
-Install the opt-in extension **in your terminal**, from the project directory:
+**CLI setup (terminal):** install the opt-in extension from the project directory:
 
 ```bash
 specify extension add bug
 ```
 
-Then run **assess → fix → test** in your coding agent:
+Then invoke the **assess → fix → test** skills in your agent's chat:
 
 ```text
 /speckit-bug-assess "Submitting an empty password crashes the login form." slug=login-crash
@@ -126,13 +129,13 @@ The reports live in `.specify/bugs/login-crash/`. Review the final verdict:
 Gather evidence before committing to an idea, whether or not it becomes software.
 This standalone process works even in a project with no source code.
 
-Install the opt-in extension **in your terminal**, from the project directory:
+**CLI setup (terminal):** install the opt-in extension from the project directory:
 
 ```bash
 specify extension add assess
 ```
 
-Then run **intake → research → define → shape → decide** in your coding agent:
+Then invoke the **intake → research → define → shape → decide** skills in your agent's chat:
 
 ```text
 /speckit-assess-intake "Let users work offline and sync when they reconnect." slug=offline-mode

@@ -12,18 +12,19 @@ These are independent processes, not prerequisites for this guide.
 > [!NOTE]
 > Automation scripts are provided as Bash (`.sh`), PowerShell (`.ps1`), and Python (`.py`) variants. Interactive `specify init` prompts you to choose one; non-interactive runs (no TTY, or `--non-interactive`) default to a shell variant for your OS. Pass `--script sh|ps|py` to select explicitly.
 
-Commands here use GitHub Copilot's default skills mode (`/speckit-*`).
+The process steps here use GitHub Copilot's default skills mode (`/speckit-*`).
 For other agents or modes, see
 [Command invocation](reference/integrations.md#command-invocation).
-Run each process command separately inside the coding agent, not in your terminal,
-and review the result before moving to the next step.
+Invoke each `/speckit-*` skill separately in your agent's chat and review the
+result before moving to the next step. These are agent skills, not terminal
+commands; only CLI installation and project setup use the terminal.
 
 ## Recommended Process
 
 > [!TIP]
 > **Context Awareness**: Spec Kit tracks the active feature by the feature directory recorded in `.specify/feature.json` (overridable with the `SPECIFY_FEATURE_DIRECTORY` environment variable). Commands resolve the feature from that state, **not** from the checked-out Git branch — no Git required. The opt-in **git** extension adds numbered feature branches (e.g. `001-feature-name`) for organizing work in version control, but the active feature is still whichever directory that state points to; `git checkout` alone does not change it. To point commands at a different feature, update `.specify/feature.json` (or set `SPECIFY_FEATURE_DIRECTORY`).
 
-After installing Spec Kit, each command below is a step in the process. Two paths are common:
+After installing Spec Kit, each skill below is a step in the process. Two paths are common:
 
 Establish a constitution once per project with `/speckit-constitution` before
 starting either path.
@@ -66,7 +67,8 @@ cd taskify
 > [Adopting Spec Kit in an Existing Project](guides/existing-projects.md) before
 > starting the workflow below.
 
-Launch your coding agent in the project directory before continuing.
+Launch your coding agent in the project directory. Invoke the following skills
+in its chat, one at a time.
 
 <a id="step-1-speckitconstitution--set-the-ground-rules"></a>
 

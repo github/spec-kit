@@ -50,7 +50,9 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 
 ## Command Invocation
 
-Run Spec Kit's process commands inside your coding agent, not in the terminal.
+Invoke Spec Kit's process steps inside your coding agent, not in the terminal.
+In GitHub Copilot's default mode, these are skills you invoke in the agent's
+chat. CLI installation and setup commands are separate terminal operations.
 The steps are the same across integrations, but their spelling depends on the
 agent and its installed mode:
 
