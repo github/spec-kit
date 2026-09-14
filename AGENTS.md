@@ -513,7 +513,7 @@ Disclosure is **continuous**, not a one-time event. A single AI-disclosure parag
 
 - **Every commit you author must carry an `Assisted-by:` trailer** identifying the agent and whether it acted autonomously or under direct human supervision, for example:
 
-  ```
+  ```text
   Assisted-by: GitHub Copilot (model: <name-if-known>, autonomous)
   ```
 

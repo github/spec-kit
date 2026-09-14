@@ -13,6 +13,7 @@ $ARGUMENTS
 1. **Ask the user** for the feature directory path (e.g., `specs/my-feature`). Do not proceed until provided.
 
 2. Create the directory and write `.specify/feature.json`:
+
    ```json
    { "feature_directory": "<feature_directory>" }
    ```

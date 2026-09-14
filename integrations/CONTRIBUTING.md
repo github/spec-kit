@@ -94,22 +94,22 @@ provides:
 1. **Fork** the [spec-kit repository](https://github.com/github/spec-kit)
 2. **Add your entry** under the `integrations` key in `integrations/catalog.community.json`:
 
-```json
-{
-  "schema_version": "1.0",
-  "integrations": {
-    "my-agent": {
-      "id": "my-agent",
-      "name": "My Agent",
-      "version": "1.0.0",
-      "description": "Integration for My Agent",
-      "author": "your-name",
-      "repository": "https://github.com/your-name/speckit-my-agent",
-      "tags": ["cli"]
-    }
-  }
-}
-```
+   ```json
+   {
+     "schema_version": "1.0",
+     "integrations": {
+       "my-agent": {
+         "id": "my-agent",
+         "name": "My Agent",
+         "version": "1.0.0",
+         "description": "Integration for My Agent",
+         "author": "your-name",
+         "repository": "https://github.com/your-name/speckit-my-agent",
+         "tags": ["cli"]
+       }
+     }
+   }
+   ```
 
 3. **Open a pull request** with:
    - Your catalog entry

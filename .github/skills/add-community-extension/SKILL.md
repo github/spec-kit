@@ -19,6 +19,7 @@ Process an extension submission issue and add or update it in the community cata
 ### 1. Fetch the submission issue
 
 Read the GitHub issue to extract all metadata:
+
 - Extension ID, name, version, description, author
 - Repository URL, download URL, homepage, documentation, changelog
 - License, required spec-kit version, optional tool dependencies
@@ -114,7 +115,7 @@ python3 -c "import json; json.load(open('extensions/catalog.community.json')); p
 
 Determine the category and effect from the extension's behavior:
 
-```
+```markdown
 | <Name> | <Description> | `<category>` | <Effect> | [<repo-name>](<repository-url>) |
 ```
 
@@ -158,6 +159,7 @@ git push origin <branch-name>
 ```
 
 Then create a PR to `upstream` (`github/spec-kit`) with:
+
 - **Title:** `Add <Name> extension to community catalog` (or `Update <Name> extension to v<version>`)
 - **Body:** Include validation summary, `Closes #<issue-number>`, and `cc @<issue-author>`
 - **Head:** `<fork-owner>:<branch-name>`

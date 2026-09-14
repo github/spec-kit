@@ -20,6 +20,7 @@ This separation ensures that git tags always point to commits with the correct v
 The CHANGELOG is **automatically generated** from your git commit messages:
 
 1. **During Development**: Write clear, descriptive commit messages:
+
    ```bash
    git commit -m "feat: Add new authentication feature"
    git commit -m "fix: Resolve timeout issue in API client (#123)"
@@ -35,13 +36,15 @@ The CHANGELOG is **automatically generated** from your git commit messages:
 ### Commit Message Best Practices
 
 Good commit messages make good changelogs:
+
 - **Be descriptive**: "Add user authentication" not "Update files"
 - **Reference issues/PRs**: Include `(#123)` for automated linking
 - **Use conventional commits** (optional): `feat:`, `fix:`, `docs:`, `chore:`
 - **Keep it concise**: One line is ideal, details go in commit body
 
 **Example commits that become good changelog entries:**
-```
+
+```text
 fix: prepend YAML frontmatter to Cursor .mdc files (#1699)
 feat: add generic agent support with customizable command directories (#1639)
 docs: document dual-catalog system for extensions (#1689)
@@ -57,6 +60,7 @@ docs: document dual-catalog system for extensions (#1689)
 4. Click **Run workflow**
 
 The workflow will:
+
 - Auto-increment the patch version (e.g., `0.1.10` → `0.1.11`)
 - Update `pyproject.toml`
 - Update `CHANGELOG.md` by adding a new section for the release based on commits since the last tag
@@ -73,6 +77,7 @@ The workflow will:
 4. Click **Run workflow**
 
 The workflow will:
+
 - Use your specified version
 - Update `pyproject.toml`
 - Update `CHANGELOG.md` by adding a new section for the release based on commits since the last tag
@@ -105,6 +110,7 @@ Once the release trigger workflow completes:
 **Permissions Required**: `contents: write`
 
 **Steps**:
+
 1. Checkout repository
 2. Determine version (manual or auto-increment)
 3. Check if tag already exists (prevents duplicates)
@@ -124,6 +130,7 @@ Once the release trigger workflow completes:
 **Permissions Required**: `contents: write`
 
 **Steps**:
+
 1. Checkout repository at tag
 2. Extract version from tag name
 3. Check if release already exists
@@ -155,6 +162,7 @@ Once the release trigger workflow completes:
 ### No Commits Since Last Release
 
 If you run the release trigger workflow when there are no new commits since the last tag:
+
 - The workflow will still succeed
 - The CHANGELOG will show "- Initial release" if it's the first release
 - Or it will be empty if there are no commits
@@ -165,12 +173,14 @@ If you run the release trigger workflow when there are no new commits since the 
 ### Tag Already Exists
 
 If you see "Error: Tag vX.Y.Z already exists!", you need to:
+
 - Choose a different version number, or
 - Delete the existing tag if it was created in error
 
 ### Release Workflow Didn't Trigger
 
 Check that:
+
 - The release trigger workflow completed successfully
 - The tag was pushed (check repository tags)
 - The release workflow is enabled in Actions settings
@@ -178,12 +188,14 @@ Check that:
 ### Version Mismatch
 
 If `pyproject.toml` doesn't match the latest tag:
+
 - Run the release trigger workflow to sync versions
 - Or manually update `pyproject.toml` and push changes before running the release trigger
 
 ## Legacy Behavior (Pre-v0.1.10)
 
 Before this change, the release workflow:
+
 - Created tags automatically on main branch pushes
 - Updated `pyproject.toml` AFTER creating the tag
 - Resulted in tags pointing to commits with outdated versions

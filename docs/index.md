@@ -6,7 +6,7 @@
 
 **Spec-Driven Development or your own process — step by step or as an automated workflow.**
 
-Spec Kit is an extensible, intent-driven harness that pushes any coding agent beyond code, guiding it across your SDLC or any business process. Use it for [Spec-Driven Development](concepts/sdd.md) (SDD), where you describe _what_ to build and refine it through structured phases. Run it step by step, automate it end to end, or shape a process of your own, keeping intent at the center.
+Spec Kit is an extensible, intent-driven harness that pushes any coding agent beyond code, guiding it across your SDLC or any business process. Use it for [Spec-Driven Development](concepts/sdd.md) (SDD), where you describe *what* to build and refine it through structured phases. Run it step by step, automate it end to end, or shape a process of your own, keeping intent at the center.
 
 <a href="installation.md" class="btn btn-primary btn-lg">Install Spec Kit</a>&nbsp;
 <a href="quickstart.md" class="btn btn-outline-primary btn-lg">Quick Start</a>
@@ -19,6 +19,9 @@ Spec Kit is an extensible, intent-driven harness that pushes any coding agent be
 
 <div class="pillar-card">
 
+<!-- Pillar headings stay at h3: docs/template/public/main.css styles
+     `.pillar-card h3`, including the per-card accent colors. -->
+<!-- markdownlint-disable-next-line MD001 -->
 ### Spec-driven by default
 
 The core SDD process ships ready to use: **Spec → Plan → Tasks → Implement**.

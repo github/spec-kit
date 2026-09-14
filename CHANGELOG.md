@@ -462,7 +462,7 @@
 - fix(agent-context): apply default markers when config markers are blank (bash) (#3736)
 - fix: escape Rich markup in catalog list output (#3738)
 - fix(workflows): guard non-mapping 'workflow:' block in WorkflowDefinition (#3694)
-- fix(bundler): reject unsupported schema_version in _merge_config (align readers) (#3711)
+- fix(bundler): reject unsupported schema_version in `_merge_config` (align readers) (#3711)
 - Update Linear Weave extension to v1.0.1 (#3762)
 - Add Intake Sequencing Governance preset to community catalog (#3761)
 - Update Quality Gates (Enforcement Layer) extension to v0.3.3 (#3760)
@@ -577,7 +577,7 @@
 ### Changed
 
 - fix(integrations): escape Rich markup in --integration-options error messages (#3458)
-- docs: document __SPECKIT_COMMAND_ token for portable cross-command references (#3503)
+- docs: document `__SPECKIT_COMMAND_` token for portable cross-command references (#3503)
 - [preset] Add Parallel Autonomous Run Governance preset to community catalog (#3614)
 - docs(workflows): fix stale FanOutStep docstring claiming sequential-only execution (#3639)
 - [bundle] Add SicarioSpec Security & Governance Bundle to community catalog (#3636)
@@ -1154,7 +1154,7 @@
 - docs: document spec persistence models (#2856)
 - chore(catalog): bump Linear Integration to v0.3.0 (repo renamed to spec-kit-linear-sync) (#2893)
 - chore: update DocGuard extension to v0.25.0 (#2707)
-- chore: remove unused open_github_url/_StripAuthOnRedirect from _github_http.py (#2883)
+- chore: remove unused `open_github_url/_StripAuthOnRedirect` from `_github_http.py` (#2883)
 - fix(catalogs): validate extension and preset catalog payload shape (#2621)
 - feat(integration): add status reporting (#2674)
 - chore: release 0.10.0, begin 0.10.1.dev0 development (#2904)
@@ -1291,7 +1291,7 @@
 
 - docs: update landing page stats and branch naming convention (#2727)
 - feat(workflows): expose {{ context.run_id }} template variable (#2664)
-- fix: resolve __SPECKIT_COMMAND_*__ refs in preset skill rendering (#2717) (#2718)
+- fix: resolve `__SPECKIT_COMMAND_*__` refs in preset skill rendering (#2717) (#2718)
 - Add Workflow Preset to community catalog (#2725)
 - fix: paths-only skips branch validation, setup-plan preserves existing plan (#2672)
 - docs: fix broken pipx homepage URLs to point to pipx.pypa.io (#2670)
@@ -1351,7 +1351,7 @@
 - Add Team Assign extension to community catalog (#2642)
 - refactor: migrate extension catalog stack parsing to shared base (#2576)
 - Update Architecture Workflow extension to v1.1.0 (#2588)
--  fix(workflow): support integration: auto to follow project's initialized AI (#2421)
+- fix(workflow): support integration: auto to follow project's initialized AI (#2421)
 - Add Superpowers Implementation Bridge extension to community catalog (#2586)
 - Add Interactive HTML Preview extension to community catalog (#2585)
 - chore: release 0.8.11, begin 0.8.12.dev0 development (#2584)
@@ -1361,7 +1361,7 @@
 
 ### Changed
 
-- refactor: extract _version.py from __init__.py (PR-3/8) (#2550)
+- refactor: extract `_version.py` from `__init__.py` (PR-3/8) (#2550)
 - Add Time Machine extension to community catalog (#2580)
 - fix(powershell): ensure UTF-8 templates are written without BOM (#2280)
 - docs: document high-assurance spec workflow (#2518)
@@ -1381,9 +1381,9 @@
 - Add Agent Governance extension to community catalog (#2559)
 - Add Reqnroll BDD extension to community catalog (#2545)
 - fix(cli): harden extension registration and discovery workflows (#2499)
-- refactor: extract _assets.py and _utils.py from __init__.py (PR-2/8) (#2543)
+- refactor: extract `_assets.py` and `_utils.py` from `__init__.py` (PR-2/8) (#2543)
 - fix(opencode): use commands/ directory (plural) to match OpenCode docs (#2453)
-- refactor: extract _console.py from __init__.py (PR-1/8) (#2474)
+- refactor: extract `_console.py` from `__init__.py` (PR-1/8) (#2474)
 - Fix constitution reference in README (#2491)
 - chore: release 0.8.9, begin 0.8.10.dev0 development (#2532)
 
@@ -2167,15 +2167,15 @@
 - Update CHANGELOG.md
 - Update agent configuration
 - Update scripts/powershell/create-new-feature.ps1
-- Update src/specify_cli/__init__.py
+- Update `src/specify_cli/__init__.py`
 - Create create-release-packages.ps1
 - Script changes
 - Update taskstoissues.md
 - Create taskstoissues.md
-- Update src/specify_cli/__init__.py
+- Update `src/specify_cli/__init__.py`
 - Update CONTRIBUTING.md
 - Potential fix for code scanning alert no. 3: Workflow does not contain permissions
-- Update src/specify_cli/__init__.py
+- Update `src/specify_cli/__init__.py`
 - Update CHANGELOG.md
 - Fixes #970
 - Fixes #975
@@ -2358,13 +2358,13 @@
 
 ### Changed
 
-- Update __init__.py
+- Update `__init__.py`
 - Consolidate Cursor naming
 - Update CHANGELOG.md
 - Git errors are now highlighted.
-- Update __init__.py
+- Update `__init__.py`
 - Refactor agent configuration
-- Update src/specify_cli/__init__.py
+- Update `src/specify_cli/__init__.py`
 - Update scripts/powershell/update-agent-context.ps1
 - Update AGENTS.md
 - Update templates/commands/implement.md
@@ -2428,10 +2428,10 @@
 
 - Update URLs to Contributing and Support Guides in Docs
 - fix: add UTF-8 encoding to file read/write operations in update-agent-context.ps1
-- Update __init__.py
-- Update src/specify_cli/__init__.py
+- Update `__init__.py`
+- Update `src/specify_cli/__init__.py`
 - docs: fix the paths of generated files (moved under a `.specify/` folder)
-- Update src/specify_cli/__init__.py
+- Update `src/specify_cli/__init__.py`
 - feat: support 'specify init .' for current directory initialization
 - feat: Add emacs-style up/down keys
 
@@ -2441,7 +2441,7 @@
 
 - Update CONTRIBUTING.md
 - Refine `plan-template.md` with improved project type detection, clarified structure decision process, and enhanced research task guidance.
-- Update __init__.py
+- Update `__init__.py`
 
 ## [0.0.53] - 2025-09-24
 
@@ -2551,23 +2551,23 @@
 - Update update-agent-context.ps1
 - Update package release
 - Update config
-- Update __init__.py
-- Update __init__.py
+- Update `__init__.py`
+- Update `__init__.py`
 - Remove Codex-specific logic in the initialization script
 - Update version rev
-- Update __init__.py
+- Update `__init__.py`
 - Enhance Codex support by auto-syncing prompt files, allowing spec generation without git, and documenting clearer /specify usage.
 - Consistency tweaks
 - Consistent step coloring
-- Update __init__.py
-- Update __init__.py
+- Update `__init__.py`
+- Update `__init__.py`
 - Quick UI tweak
 - Update package release
 - Limit workspace command seeding to Codex init and update Codex documentation accordingly.
 - Clarify Codex-specific README note with rationale for its different workflow.
 - Bump to 0.0.7 and document Codex support
 - Normalize Codex command templates to the scripts-based schema and auto-upgrade generated commands.
-- Fix remaining merge conflict markers in __init__.py
+- Fix remaining merge conflict markers in `__init__.py`
 - Add Codex CLI support with AGENTS.md and commands bootstrap
 
 ## [0.0.45] - 2025-09-19
@@ -2583,7 +2583,7 @@
 ### Changed
 
 - Update specify.md
-- Update __init__.py
+- Update `__init__.py`
 
 ## [0.0.43] - 2025-09-18
 
@@ -2721,11 +2721,11 @@
 ### Changed
 
 - Update config
-- Update __init__.py
+- Update `__init__.py`
 - Refactor with platform-specific constraints
 - Update README.md
 - Update CLI reference
-- Update __init__.py
+- Update `__init__.py`
 - refactor: extract Claude local path to constant for maintainability
 - fix: support Claude CLI installed via migrate-installer
 

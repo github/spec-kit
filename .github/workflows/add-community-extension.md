@@ -99,19 +99,23 @@ Run **all** of the following validation checks. Collect all results before
 deciding pass/fail:
 
 ### 2a. Extension ID format
+
 - Must match regex: `^[a-z][a-z0-9-]*$`
 - Must be lowercase with hyphens only
 
 ### 2b. Version format
+
 - Must follow semver: `X.Y.Z` (digits only, no `v` prefix)
 
 ### 2c. Repository validation
+
 - Fetch the repository URL — confirm it exists and is publicly accessible
 - Confirm the repository contains an `extension.yml` file
 - Confirm the repository contains a `README.md` file
 - Confirm the repository contains a `LICENSE` file
 
 ### 2d. Release and download URL validation
+
 - The download URL MUST belong to the submitted repository
   (`https://github.com/<owner>/<repo>/...` with the same `<owner>/<repo>` as
   the Repository URL). Reject URLs for any other GitHub repository.
@@ -136,18 +140,21 @@ deciding pass/fail:
   - Verify a GitHub release exists for that tag.
 
 ### 2e. Submission checklists
+
 - Confirm that all required checkboxes in the Testing Checklist and Submission
   Requirements sections are checked (`[x]`)
 
 ### Validation outcome
 
 If **any** validation fails:
+
 1. Add a comment on the issue listing each failed check with a clear explanation
    of what's wrong and how to fix it
 2. Add the `validation-failed` label
 3. **Stop — do not proceed further**
 
 If all validations pass:
+
 1. Add the `validation-passed` label
 2. Continue to Step 3
 
@@ -234,11 +241,12 @@ Extensions table.
 
 Insert a new row in **alphabetical order by extension name**:
 
-```
+```markdown
 | <Name> | <Description> | `<category>` | <Effect> | [<repo-name>](<repository-url>) |
 ```
 
 Determine the category from the extension's behavior:
+
 - `docs` — reads, validates, or generates spec artifacts
 - `code` — reviews, validates, or modifies source code
 - `process` — orchestrates workflow across phases
@@ -246,6 +254,7 @@ Determine the category from the extension's behavior:
 - `visibility` — reports on project health or progress
 
 Determine the effect:
+
 - `Read-only` — produces reports only
 - `Read+Write` — modifies project files
 
@@ -263,7 +272,8 @@ Create a pull request with the changes. Use this branch naming convention:
 ### Commit message
 
 For a new extension:
-```
+
+```text
 Add <Name> extension to community catalog
 
 Add <id> extension submitted by @<issue-author> to:
@@ -274,7 +284,8 @@ Closes #<issue-number>
 ```
 
 For an update:
-```
+
+```text
 Update <Name> extension to v<version>
 
 Update <id> extension submitted by @<issue-author>:
@@ -287,6 +298,7 @@ Closes #<issue-number>
 ### PR description
 
 Include:
+
 - A summary of what changed
 - Validation results (all checks passed)
 - `Closes #${{ github.event.issue.number }}`
