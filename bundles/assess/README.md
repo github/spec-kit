@@ -29,7 +29,7 @@ specify workflow run assess \
   --input slug="offline-mode"
 ```
 
-Inputs omitted from the command line are prompted interactively. The slug is used as the working directory under `.specify/assessments/<slug>/` for all artifacts.
+Required inputs must be supplied with `--input`: `idea` and `slug`. The slug is used as the working directory under `.specify/assessments/<slug>/` for all artifacts.
 
 ## Remove
 

@@ -27,7 +27,7 @@ specify workflow run bugfix \
   --input slug="callback-token"
 ```
 
-Inputs omitted from the command line are prompted interactively. The slug is used as the working directory under `.specify/bugs/<slug>/` for all artifacts.
+Required inputs must be supplied with `--input`: `report` and `slug`. The slug is used as the working directory under `.specify/bugs/<slug>/` for all artifacts.
 
 ## Remove
 
