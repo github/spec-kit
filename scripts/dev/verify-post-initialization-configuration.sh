@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# Developer-only verifier: kept outside the core script discovery paths.
 # Verify the post-initialization configuration workflow in a disposable project.
 set -euo pipefail
 

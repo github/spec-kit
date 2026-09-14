@@ -54,7 +54,7 @@ workflow in a disposable Copilot project. After completing the editable install
 in the previous section, run:
 
 ```bash
-scripts/verify-post-initialization-configuration.sh --specify "$(pwd)/.venv/bin/specify"
+scripts/dev/verify-post-initialization-configuration.sh --specify "$(pwd)/.venv/bin/specify"
 ```
 
 The script verifies configuration reads, script upgrades, mutable settings,

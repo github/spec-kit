@@ -13,7 +13,7 @@ from tests.conftest import requires_bash
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = REPO_ROOT / "scripts" / "verify-post-initialization-configuration.sh"
+SCRIPT = REPO_ROOT / "scripts" / "dev" / "verify-post-initialization-configuration.sh"
 SPECIFY = Path(sysconfig.get_path("scripts")) / ("specify.exe" if os.name == "nt" else "specify")
 pytestmark = requires_bash
 
