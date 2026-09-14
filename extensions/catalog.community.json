@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-25T15:08:04Z",
+  "updated_at": "2026-09-11T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -220,6 +220,57 @@
       "stars": 0,
       "created_at": "2026-08-18T00:00:00Z",
       "updated_at": "2026-08-18T00:00:00Z"
+    },
+    "agentdocx-speckitv2": {
+      "name": "AgentDocx SpecKit V2",
+      "id": "agentdocx-speckitv2",
+      "description": "AgentDocx evolved: same pipeline + far more autonomous Ticket Manager (5 CLI, per-project Kanban, bulk sync, auto-switch, Auditor).",
+      "author": "ahmed200346",
+      "version": "0.0.7",
+      "download_url": "https://github.com/ahmed200346/Extension_GithubSpecKit/archive/refs/tags/v0.0.7.zip",
+      "repository": "https://github.com/ahmed200346/Extension_GithubSpecKit",
+      "homepage": "https://github.com/ahmed200346/Extension_GithubSpecKit",
+      "documentation": "https://github.com/ahmed200346/Extension_GithubSpecKit/blob/main/README.md",
+      "changelog": "https://github.com/ahmed200346/Extension_GithubSpecKit/blob/main/agentdocx-speckit/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "python",
+            "version": ">=3.10",
+            "required": true
+          },
+          {
+            "name": "node",
+            "version": ">=18",
+            "required": true
+          },
+          {
+            "name": "postgresql",
+            "version": ">=12",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 0,
+        "hooks": 0
+      },
+      "tags": [
+        "integration",
+        "kanban",
+        "ticket-management",
+        "vscode-extension",
+        "multi-agent"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-28T00:00:00Z",
+      "updated_at": "2026-08-28T00:00:00Z"
     },
     "analytics": {
       "name": "Analytics",
@@ -563,6 +614,44 @@
       "created_at": "2026-08-13T00:00:00Z",
       "updated_at": "2026-08-19T00:00:00Z"
     },
+    "axi": {
+      "name": "Axi Extension",
+      "id": "axi",
+      "description": "A Spec Kit extension that renders a feature's markdown in a local browser review surface for human annotation, then returns the queued notes to the agent to apply.",
+      "author": "d0whc3r",
+      "version": "1.1.4",
+      "download_url": "https://github.com/d0whc3r/spec-kit-axi/releases/download/v1.1.4/axi-1.1.4.zip",
+      "repository": "https://github.com/d0whc3r/spec-kit-axi",
+      "homepage": "https://d0whc3r.github.io/spec-kit-axi/",
+      "documentation": "https://github.com/d0whc3r/spec-kit-axi/wiki",
+      "changelog": "https://github.com/d0whc3r/spec-kit-axi/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "node",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "axi",
+        "spec-kit",
+        "spec-kit-extension"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-02T00:00:00Z",
+      "updated_at": "2026-09-02T00:00:00Z"
+    },
     "azure-devops": {
       "name": "Azure DevOps Integration",
       "id": "azure-devops",
@@ -817,20 +906,27 @@
       "id": "brownkit",
       "description": "Evidence-driven capability discovery, security and QA risk assessment for existing codebases.",
       "author": "Maksim Shautsou",
-      "version": "1.0.1",
-      "download_url": "https://github.com/MaksimShevtsov/BrownKit/archive/refs/tags/v1.0.1.zip",
+      "version": "1.2.0",
+      "download_url": "https://github.com/MaksimShevtsov/BrownKit/archive/refs/tags/v1.2.0.zip",
       "repository": "https://github.com/MaksimShevtsov/BrownKit",
-      "homepage": "https://github.com/MaksimShevtsov/BrownKit",
-      "documentation": "https://github.com/MaksimShevtsov/BrownKit/blob/main/README.md",
+      "homepage": "https://github.com/MaksimShevtsov/BrownKit/blob/main/README.md",
+      "documentation": "https://github.com/MaksimShevtsov/BrownKit/blob/main/docs/methodology.md",
       "changelog": "https://github.com/MaksimShevtsov/BrownKit/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "python",
+            "version": ">=3.9",
+            "required": false
+          }
+        ]
       },
       "provides": {
-        "commands": 10,
+        "commands": 11,
         "hooks": 5
       },
       "tags": [
@@ -844,7 +940,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-10T00:00:00Z",
-      "updated_at": "2026-05-10T00:00:00Z"
+      "updated_at": "2026-09-08T00:00:00Z"
     },
     "bugfix": {
       "name": "Bugfix Workflow",
@@ -988,13 +1084,13 @@
     "charter": {
       "name": "Charter",
       "id": "charter",
-      "description": "Compose modular project constitutions from shared fragment registries. Centralize governance rules, select per-project fragments, track upstream changes, and keep multi-project setups consistent.",
+      "description": "Compose project constitutions from shared fragment registries",
       "author": "Fyloss",
-      "version": "0.5.1",
-      "download_url": "https://github.com/Fyloss/spec-kit-charter/archive/refs/tags/v0.5.1.zip",
+      "version": "0.6.1",
+      "download_url": "https://github.com/Fyloss/spec-kit-charter/archive/refs/tags/v0.6.1.zip",
       "repository": "https://github.com/Fyloss/spec-kit-charter",
       "homepage": "https://github.com/Fyloss/spec-kit-charter",
-      "documentation": "https://github.com/Fyloss/spec-kit-charter/tree/master/docs",
+      "documentation": "https://github.com/Fyloss/spec-kit-charter/blob/master/README.md",
       "changelog": "https://github.com/Fyloss/spec-kit-charter/blob/master/CHANGELOG.md",
       "license": "MIT",
       "category": "process",
@@ -1015,15 +1111,15 @@
       "tags": [
         "constitution",
         "governance",
-        "modular",
-        "fragments",
-        "registry"
+        "multi-repo",
+        "composition",
+        "fragments"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-06T00:00:00Z",
-      "updated_at": "2026-08-04T00:00:00Z"
+      "updated_at": "2026-09-02T00:00:00Z"
     },
     "ci-guard": {
       "name": "CI Guard",
@@ -1500,8 +1596,8 @@
       "id": "docguard",
       "description": "The only doc-integrity engine with an MCP server, SARIF/JUnit output, and a deterministic zero-LLM core. Validates, scores, and traces documentation against code — 27 validators, stable finding codes, adoption baseline for legacy repos, compliance-evidence reports, GitHub Action with PR annotations, spec-kit hooks. Pure Node.js, one pinned dep.",
       "author": "raccioly",
-      "version": "0.33.0",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.33.0/spec-kit-docguard-v0.33.0.zip",
+      "version": "0.34.9",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.34.9/spec-kit-docguard-v0.34.9.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -1545,7 +1641,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-07-16T00:00:00Z"
+      "updated_at": "2026-09-11T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -1696,6 +1792,40 @@
       "created_at": "2026-07-08T00:00:00Z",
       "updated_at": "2026-07-08T00:00:00Z"
     },
+    "evaluator": {
+      "name": "Evaluator Contract",
+      "id": "evaluator",
+      "description": "Provider-neutral evaluator contract for evidence, provenance, uncertainty, and recovery across Spec-Driven Development phases.",
+      "author": "ElectroHire",
+      "version": "1.0.0",
+      "download_url": "https://github.com/electrohire/spec-kit-evaluator/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/electrohire/spec-kit-evaluator",
+      "homepage": "https://github.com/electrohire/spec-kit-evaluator",
+      "documentation": "https://github.com/electrohire/spec-kit-evaluator/blob/main/README.md",
+      "changelog": "https://github.com/electrohire/spec-kit-evaluator/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 4
+      },
+      "tags": [
+        "evaluator",
+        "evidence",
+        "provenance",
+        "quality",
+        "governance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-03T00:00:00Z",
+      "updated_at": "2026-09-03T00:00:00Z"
+    },
     "extensify": {
       "name": "Extensify",
       "id": "extensify",
@@ -1732,10 +1862,10 @@
     "figma": {
       "name": "Spec Kit Figma",
       "id": "figma",
-      "description": "Agent-agnostic SpecKit extension that grounds spec, plan & task generation in Figma design context — REST + optional MCP, single/mono/multi-repo, macOS/Linux/Windows.",
+      "description": "Grounds SpecKit spec/plan/tasks in Figma design context via REST or MCP, on macOS/Linux/Windows.",
       "author": "Fyloss",
-      "version": "1.6.0",
-      "download_url": "https://github.com/Fyloss/spec-kit-figma/archive/refs/tags/v1.6.0.zip",
+      "version": "3.1.1",
+      "download_url": "https://github.com/Fyloss/spec-kit-figma/archive/refs/tags/v3.1.1.zip",
       "repository": "https://github.com/Fyloss/spec-kit-figma",
       "homepage": "https://github.com/Fyloss/spec-kit-figma",
       "documentation": "https://github.com/Fyloss/spec-kit-figma/blob/main/docs/INSTALL.md",
@@ -1744,7 +1874,7 @@
       "category": "integration",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0",
+        "speckit_version": ">=0.11.2",
         "tools": [
           {
             "name": "git",
@@ -1769,8 +1899,8 @@
         ]
       },
       "provides": {
-        "commands": 5,
-        "hooks": 6
+        "commands": 7,
+        "hooks": 11
       },
       "tags": [
         "figma",
@@ -1783,21 +1913,21 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-08T00:00:00Z",
-      "updated_at": "2026-07-08T00:00:00Z"
+      "updated_at": "2026-08-31T00:00:00Z"
     },
     "figma-starter": {
       "name": "Figma Starter",
       "id": "figma-starter",
-      "description": "Turns a Figma section's screens into per-screen spec.md files, an app-level user-stories.md, and a build-order.md, then hands off to /speckit.specify.",
+      "description": "Turns a Figma section's screens into Figma-derived specs — per-screen spec.md files, app-level user-stories.md, and a build-order.md — and turns an OpenAPI/Swagger document into an entity model plus per-page UI-to-API bindings, then hands off to /speckit.specify.",
       "author": "WaveMaker",
-      "version": "1.0.0",
-      "download_url": "https://github.com/wavemaker/spec-kit-figma-starter/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/wavemaker/spec-kit-figma-starter",
-      "homepage": "https://github.com/wavemaker/spec-kit-figma-starter",
-      "documentation": "https://github.com/wavemaker/spec-kit-figma-starter/blob/main/README.md",
-      "changelog": "https://github.com/wavemaker/spec-kit-figma-starter/blob/main/CHANGELOG.md",
+      "version": "1.1.0",
+      "download_url": "https://github.com/OmneWave/spec-kit-figma-starter/archive/refs/tags/v1.1.0.zip",
+      "repository": "https://github.com/OmneWave/spec-kit-figma-starter",
+      "homepage": "https://github.com/OmneWave/spec-kit-figma-starter",
+      "documentation": "https://github.com/OmneWave/spec-kit-figma-starter/blob/main/README.md",
+      "changelog": "https://github.com/OmneWave/spec-kit-figma-starter/blob/main/CHANGELOG.md",
       "license": "MIT",
-      "category": "integration",
+      "category": "docs",
       "effect": "read-write",
       "requires": {
         "speckit_version": ">=0.1.0",
@@ -1810,7 +1940,7 @@
         ]
       },
       "provides": {
-        "commands": 1,
+        "commands": 2,
         "hooks": 1
       },
       "tags": [
@@ -1818,13 +1948,16 @@
         "design",
         "design-to-spec",
         "ui",
-        "frontend"
+        "frontend",
+        "openapi",
+        "swagger",
+        "api"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-15T00:00:00Z",
-      "updated_at": "2026-07-15T00:00:00Z"
+      "updated_at": "2026-09-09T00:00:00Z"
     },
     "fix-findings": {
       "name": "Fix Findings",
@@ -2017,6 +2150,52 @@
       "stars": 0,
       "created_at": "2026-07-09T00:00:00Z",
       "updated_at": "2026-07-27T00:00:00Z"
+    },
+    "gh-triage": {
+      "name": "GitHub Issue Triage",
+      "id": "gh-triage",
+      "description": "Fetch open GitHub issues, classify each as bug, feature, or chore, route it to the bug, chore, or specify workflow, and apply the matching triage labels (on by default).",
+      "author": "arrrrny",
+      "version": "1.1.1",
+      "download_url": "https://github.com/arrrrny/speckit-extensions/releases/download/gh-triage-v1.1.1/gh-triage.zip",
+      "repository": "https://github.com/arrrrny/speckit-extensions",
+      "homepage": "https://github.com/arrrrny/speckit-extensions",
+      "documentation": "https://github.com/arrrrny/speckit-extensions/blob/master/gh-triage/README.md",
+      "changelog": "https://github.com/arrrrny/speckit-extensions/blob/master/gh-triage/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.9.0",
+        "tools": [
+          {
+            "name": "gh",
+            "required": true
+          },
+          {
+            "name": "jq",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "triage",
+        "github",
+        "workflow",
+        "automation",
+        "bug",
+        "feature",
+        "chore"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-11T00:00:00Z",
+      "updated_at": "2026-09-11T00:00:00Z"
     },
     "github-issues": {
       "name": "GitHub Issues Integration 1",
@@ -2386,6 +2565,46 @@
       "created_at": "2026-03-05T00:00:00Z",
       "updated_at": "2026-03-05T00:00:00Z"
     },
+    "jira-mirror": {
+      "name": "Jira Mirror",
+      "id": "jira-mirror",
+      "description": "Spec Kit ↔ Jira bridge for team-managed and company-managed projects: configurable workflows & hierarchies (Scrum/SAFe), multi-project, idempotent and fail-closed. macOS/Linux/Windows.",
+      "author": "Fyloss",
+      "version": "0.24.0",
+      "download_url": "https://github.com/Fyloss/spec-kit-jira-mirror/releases/download/v0.24.0/spec-kit-jira-mirror-0.24.0.zip",
+      "sha256": "c3fe2f81fc3f47010cf92cdb8c49b612416b4c6aedf91beb579eba871fe1df16",
+      "repository": "https://github.com/Fyloss/spec-kit-jira-mirror",
+      "homepage": "https://github.com/Fyloss/spec-kit-jira-mirror",
+      "documentation": "https://github.com/Fyloss/spec-kit-jira-mirror/tree/main/docs",
+      "changelog": "https://github.com/Fyloss/spec-kit-jira-mirror/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.13.0",
+        "tools": [
+          { "name": "bash", "version": ">=4", "required": false },
+          { "name": "pwsh", "version": ">=7", "required": false },
+          { "name": "curl", "required": false },
+          { "name": "jq", "required": false },
+          { "name": "git", "required": true }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 7
+      },
+      "tags": [
+        "jira",
+        "integration",
+        "sync"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-31T00:00:00Z",
+      "updated_at": "2026-08-31T00:00:00Z"
+    },
     "jira-sync": {
       "name": "Jira Integration (Sync Engine)",
       "id": "jira-sync",
@@ -2517,10 +2736,10 @@
     "linear": {
       "name": "Linear Integration",
       "id": "linear",
-      "description": "Mirror spec-kit feature directories into Linear (filesystem → Linear, reconcile-based, unidirectional).",
+      "description": "Automatically mirror your spec-kit specs into Linear — one issue per spec, a sub-issue per task phase, kept in sync as you work.",
       "author": "Ash Brener",
-      "version": "0.7.0",
-      "download_url": "https://github.com/ashbrener/spec-kit-linear-sync/archive/refs/tags/v0.7.0.zip",
+      "version": "0.8.0",
+      "download_url": "https://github.com/ashbrener/spec-kit-linear-sync/archive/refs/tags/v0.8.0.zip",
       "repository": "https://github.com/ashbrener/spec-kit-linear-sync",
       "homepage": "https://github.com/ashbrener/spec-kit-linear-sync",
       "documentation": "https://github.com/ashbrener/spec-kit-linear-sync/blob/main/README.md",
@@ -2547,7 +2766,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-01T00:00:00Z",
-      "updated_at": "2026-06-22T00:00:00Z"
+      "updated_at": "2026-09-03T00:00:00Z"
     },
     "linear-weave": {
       "name": "Linear Weave",
@@ -2665,10 +2884,10 @@
     "maqa": {
       "name": "MAQA — Multi-Agent & Quality Assurance",
       "id": "maqa",
-      "description": "Coordinator → feature → QA agent workflow with parallel worktree-based implementation. Language-agnostic. Auto-detects installed board plugins (Trello, Linear, GitHub Projects, Jira, Azure DevOps). Optional CI gate.",
+      "description": "Idempotent, agent-neutral coordinator → feature → QA workflow with GitHub Issues as the source of truth. Uses Spec Kit taskstoissues for missing issues and supports parallel or sequential dispatch.",
       "author": "GenieRobot",
-      "version": "0.1.6",
-      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-ext/releases/download/maqa-v0.1.6/maqa.zip",
+      "version": "0.3.1",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-ext/releases/download/maqa-v0.3.1/maqa.zip",
       "repository": "https://github.com/GenieRobot/spec-kit-maqa-ext",
       "homepage": "https://github.com/GenieRobot/spec-kit-maqa-ext",
       "documentation": "https://github.com/GenieRobot/spec-kit-maqa-ext/blob/main/README.md",
@@ -2680,26 +2899,25 @@
         "speckit_version": ">=0.3.0",
         "tools": [
           { "name": "git", "required": true },
-          { "name": "python3", "required": true }
+          { "name": "gh", "required": true }
         ]
       },
       "provides": {
-        "commands": 4,
+        "commands": 5,
         "hooks": 1
       },
       "tags": [
         "multi-agent",
-        "orchestration",
         "quality-assurance",
-        "workflow",
-        "parallel",
-        "tdd"
+        "github-issues",
+        "idempotent",
+        "agent-neutral"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-26T00:00:00Z",
-      "updated_at": "2026-08-20T00:00:00Z"
+      "updated_at": "2026-09-11T00:00:00Z"
     },
     "maqa-azure-devops": {
       "name": "MAQA Azure DevOps Integration",
@@ -3249,19 +3467,34 @@
     "okf": {
       "name": "OKF Knowledge Bundle Generator",
       "id": "okf",
-      "description": "Generates and maintains an Open Knowledge Format (OKF v0.1) knowledge bundle from a source-code repository, mining git history for significance and rationale, and resolving open questions with the user.",
+      "description": "Generates and maintains an Open Knowledge Format (OKF v0.1) knowledge bundle from a source-code repository, mining git history for rationale and parking what it cannot verify as open questions.",
       "author": "Alex Punnen",
-      "version": "0.3.0",
-      "download_url": "https://github.com/alexcpn/speckit_ofk/archive/refs/tags/v0.3.0.zip",
-      "repository": "https://github.com/alexcpn/speckit_ofk",
-      "homepage": "https://github.com/alexcpn/speckit_ofk",
-      "documentation": "https://github.com/alexcpn/speckit_ofk/blob/main/README.md",
-      "changelog": "https://github.com/alexcpn/speckit_ofk/blob/main/CHANGELOG.md",
+      "version": "0.5.0",
+      "download_url": "https://github.com/alexcpn/speckit_okf/archive/refs/tags/v0.5.0.zip",
+      "repository": "https://github.com/alexcpn/speckit_okf",
+      "homepage": "https://github.com/alexcpn/speckit_okf",
+      "documentation": "https://github.com/alexcpn/speckit_okf/blob/main/README.md",
+      "changelog": "https://github.com/alexcpn/speckit_okf/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "docs",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.12.0"
+        "speckit_version": ">=0.12.0",
+        "tools": [
+          {
+            "name": "bash",
+            "required": true
+          },
+          {
+            "name": "python3",
+            "version": ">=3.9",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": false
+          }
+        ]
       },
       "provides": {
         "commands": 4,
@@ -3278,7 +3511,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-17T00:00:00Z",
-      "updated_at": "2026-07-21T00:00:00Z"
+      "updated_at": "2026-09-08T00:00:00Z"
     },
     "onboard": {
       "name": "Onboard",
@@ -3459,10 +3692,10 @@
     "pay-x402": {
       "name": "AgentPay x402 — Spend Controls for Spec Kit Agents",
       "id": "pay-x402",
-      "description": "Set USDC spending caps and execute x402 payments to paid APIs during spec implementation. Zero platform fee on Base L2.",
+      "description": "Set USDC spending caps, check a counterparty's credit before paying it, and pay x402-enabled APIs during spec implementation. Settles on Base or Solana.",
       "author": "AgentPay Team",
-      "version": "1.0.0",
-      "download_url": "https://github.com/shawnhvac/spec-kit-pay-x402/archive/refs/tags/v1.0.0.zip",
+      "version": "1.1.0",
+      "download_url": "https://github.com/shawnhvac/spec-kit-pay-x402/archive/refs/tags/v1.1.0.zip",
       "repository": "https://github.com/shawnhvac/spec-kit-pay-x402",
       "homepage": "https://x402-agent-pay.com",
       "documentation": "https://github.com/shawnhvac/spec-kit-pay-x402#readme",
@@ -3474,7 +3707,7 @@
         "speckit_version": ">=0.1.0"
       },
       "provides": {
-        "commands": 2,
+        "commands": 3,
         "hooks": 1
       },
       "tags": [
@@ -3482,13 +3715,95 @@
         "x402",
         "budget",
         "usdc",
-        "api"
+        "api",
+        "solana"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-17T00:00:00Z",
-      "updated_at": "2026-08-17T00:00:00Z"
+      "updated_at": "2026-09-08T00:00:00Z"
+    },
+    "pdac": {
+      "name": "Product Definition as Code (PDaC)",
+      "id": "pdac",
+      "description": "Ground Spec Kit features in an accepted product definition: fetch a cited context projection before specifying, then verify citations after specify, plan and tasks. Never writes the product model.",
+      "author": "Juan G. Carmona (@juangcarmona)",
+      "version": "0.2.1",
+      "download_url": "https://github.com/juangcarmona/productshape/releases/download/speckit-pdac-v0.2.1/speckit-pdac.zip",
+      "repository": "https://github.com/juangcarmona/productshape",
+      "homepage": "https://pdac.dev",
+      "documentation": "https://github.com/juangcarmona/productshape/blob/main/extensions/speckit-pdac/README.md",
+      "changelog": "https://github.com/juangcarmona/productshape/blob/main/extensions/speckit-pdac/CHANGELOG.md",
+      "license": "Apache-2.0",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.7.2",
+        "tools": [
+          {
+            "name": "prodshape",
+            "version": ">=0.16.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 3
+      },
+      "tags": [
+        "product",
+        "citations",
+        "pdac",
+        "traceability",
+        "governance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-10T00:00:00Z",
+      "updated_at": "2026-09-10T00:00:00Z"
+    },
+    "pdac-product": {
+      "name": "ProductShape PRODUCT workflows",
+      "id": "pdac-product",
+      "description": "Author, refine, validate, apply, archive and recover ProductShape product meaning in a separate Spec Kit lane.",
+      "author": "Juan G. Carmona (@juangcarmona)",
+      "version": "0.1.0",
+      "download_url": "https://github.com/juangcarmona/productshape/releases/download/speckit-pdac-product-v0.1.0/speckit-pdac-product.zip",
+      "repository": "https://github.com/juangcarmona/productshape",
+      "homepage": "https://pdac.dev",
+      "documentation": "https://github.com/juangcarmona/productshape/blob/main/extensions/speckit-pdac-product/README.md",
+      "changelog": "https://github.com/juangcarmona/productshape/blob/main/extensions/speckit-pdac-product/CHANGELOG.md",
+      "license": "Apache-2.0",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.4",
+        "tools": [
+          {
+            "name": "prodshape",
+            "version": ">=0.19.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 6,
+        "hooks": 0
+      },
+      "tags": [
+        "product",
+        "product-change",
+        "recovery",
+        "pdac"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-08T00:00:00Z",
+      "updated_at": "2026-09-08T00:00:00Z"
     },
     "plan-review-gate": {
       "name": "Plan Review Gate",
@@ -3589,6 +3904,40 @@
       "stars": 0,
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-03-18T00:00:00Z"
+    },
+    "prespec": {
+      "name": "Pre-Spec Cards",
+      "id": "prespec",
+      "description": "Card-based pre-spec thinking: paste an idea, get your card plus the paths you'd miss, then play each through — story, snags, trade-offs, difficulty vs payoff — before /speckit.specify.",
+      "author": "bendlikeabamboo",
+      "version": "0.3.0",
+      "download_url": "https://github.com/bendlikeabamboo/pre-spec/archive/refs/tags/v0.3.0.zip",
+      "repository": "https://github.com/bendlikeabamboo/pre-spec",
+      "homepage": "https://github.com/bendlikeabamboo/pre-spec",
+      "documentation": "https://github.com/bendlikeabamboo/pre-spec#readme",
+      "changelog": "https://github.com/bendlikeabamboo/pre-spec/releases",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "discovery",
+        "ideation",
+        "decision-cards",
+        "product",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-28T00:00:00Z",
+      "updated_at": "2026-08-28T00:00:00Z"
     },
     "preview": {
       "name": "Spec Kit Preview",
@@ -4218,38 +4567,49 @@
       "updated_at": "2026-06-24T00:00:00Z"
     },
     "schedule": {
-      "name": "Spec Kit Schedule — CP-SAT Agent Orchestrator",
+      "name": "Spec Kit Schedule — parallel subagent rounds",
       "id": "schedule",
-      "description": "Optimal multi-agent task scheduling via CP-SAT solver with DAG precedence, hallucination-aware caps, file-conflict avoidance, stochastic durations, replanning, and interactive HTML output",
+      "description": "Zero-config planner that turns tasks.md into optimal parallel rounds for subagents (CP-SAT, critical-path aware, file-conflict safe) and runs them round by round.",
       "author": "Julio César Franco Ardila",
-      "version": "0.6.2",
-      "download_url": "https://github.com/jfranc38/spec-kit-schedule/archive/refs/tags/v0.6.2.zip",
+      "version": "0.7.4",
+      "download_url": "https://github.com/jfranc38/spec-kit-schedule/archive/refs/tags/v0.7.4.zip",
       "repository": "https://github.com/jfranc38/spec-kit-schedule",
       "homepage": "https://github.com/jfranc38/spec-kit-schedule",
-      "documentation": "https://github.com/jfranc38/spec-kit-schedule/blob/main/README.md",
-      "changelog": "https://github.com/jfranc38/spec-kit-schedule/blob/main/CHANGELOG.md",
+      "documentation": "https://github.com/jfranc38/spec-kit-schedule/blob/master/README.md",
+      "changelog": "https://github.com/jfranc38/spec-kit-schedule/blob/master/CHANGELOG.md",
       "license": "MIT",
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.4.0"
+        "speckit_version": ">=0.4.0",
+        "tools": [
+          {
+            "name": "python3",
+            "version": ">=3.10,<3.13",
+            "required": true
+          },
+          {
+            "name": "uv",
+            "required": false
+          }
+        ]
       },
       "provides": {
-        "commands": 5,
-        "hooks": 1
+        "commands": 3,
+        "hooks": 2
       },
       "tags": [
         "scheduling",
-        "optimization",
         "multi-agent",
+        "subagents",
         "cp-sat",
-        "operations-research"
+        "orchestration"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-06T22:35:00Z",
-      "updated_at": "2026-05-07T17:25:00Z"
+      "updated_at": "2026-09-09T00:00:00Z"
     },
     "scope": {
       "name": "Spec Scope",
@@ -4593,9 +4953,9 @@
       "id": "speckit-inventory",
       "description": "Read-only inventory of live requirement and task IDs, with focused per-task context packs instead of whole-file dumps.",
       "author": "Yash Chindam",
-      "version": "0.1.0",
-      "download_url": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/releases/download/v0.1.0/speckit-inventory.zip",
-      "sha256": "9ebf004ef6494323f6dccfab2554a04898c9e92bc7f25e0638b5aee916566e7f",
+      "version": "0.1.1",
+      "download_url": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/releases/download/v0.1.1/speckit-inventory.zip",
+      "sha256": "df735fe7c7ca7afe1ac279ffe5768061a29710a9d61956f90ee2cf2d66da04be",
       "repository": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment",
       "homepage": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment",
       "documentation": "https://github.com/Yash-Chindam/spec-kit-inventory-alignment/blob/main/speckit-inventory/README.md",
@@ -4621,7 +4981,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-20T00:00:00Z",
-      "updated_at": "2026-08-20T00:00:00Z"
+      "updated_at": "2026-09-09T00:00:00Z"
     },
     "speckit-superpowers-bridge": {
       "name": "Superpowers Implementation Bridge",
@@ -5670,6 +6030,45 @@
       "stars": 0,
       "created_at": "2026-04-20T00:00:00Z",
       "updated_at": "2026-04-22T21:10:00Z"
+    },
+    "vurnix": {
+      "name": "Vurnix Honest Gate",
+      "id": "vurnix",
+      "description": "Deterministic three-state honest gate for AI-written code: compile + phantom-import + honest test count, executed as code — not agent self-review. PASS/BLOCK/UNPROVEN by exit code.",
+      "author": "shiersa",
+      "version": "0.1.1",
+      "download_url": "https://github.com/shiersa/vurnix-spec-kit/releases/download/v0.1.1/vurnix-0.1.1.zip",
+      "repository": "https://github.com/shiersa/vurnix-spec-kit",
+      "homepage": "https://vurnix.dev",
+      "documentation": "https://github.com/shiersa/vurnix-spec-kit#readme",
+      "changelog": "",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-only",
+      "requires": {
+        "speckit_version": ">=0.16.2",
+        "tools": [
+          { "name": "python3", "version": ">=3.10", "required": true },
+          { "name": "vurnix", "version": ">=0.3.0", "required": true },
+          { "name": "bash", "required": true }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "deterministic",
+        "honest-gate",
+        "test-integrity",
+        "quality",
+        "fail-closed"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-01T00:00:00Z",
+      "updated_at": "2026-09-01T00:00:00Z"
     },
     "whatif": {
       "name": "What-if Analysis",

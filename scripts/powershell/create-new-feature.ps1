@@ -145,11 +145,13 @@ function Get-BranchName {
         # Keep words that are length >= 3 OR appear as uppercase in original (likely acronyms)
         if ($word.Length -ge 3) {
             $meaningfulWords += $word
-        } elseif ($Description -cmatch "\b$($word.ToUpper())\b") {
+        } elseif ($Description -cmatch "(?<![0-9A-Za-z_])$($word.ToUpper())(?![0-9A-Za-z_])") {
             # Keep short words only if they appear as uppercase in original (likely
             # acronyms). Use -cmatch so the comparison is case-sensitive, matching the
             # bash script's case-sensitive grep; -match would be case-insensitive and
-            # would keep every short word.
+            # would keep every short word. The boundaries are spelled out as ASCII
+            # because .NET's \b is Unicode-aware, so an accented letter next to the
+            # acronym would suppress the match that bash's LC_ALL=C grep still makes.
             $meaningfulWords += $word
         }
     }
@@ -162,7 +164,14 @@ function Get-BranchName {
     } else {
         # Fallback to original logic if no meaningful words found
         $result = ConvertTo-CleanBranchName -Name $Description
-        $fallbackWords = ($result -split '-') | Where-Object { $_ } | Select-Object -First 3
+        # @() keeps this an array. ConvertTo-CleanBranchName blanks every
+        # non-[a-z0-9] character, so a description written in a non-Latin script
+        # (or made only of punctuation) leaves nothing for the pipeline to
+        # emit -- it yields $null, and [string]::Join on $null throws
+        # ArgumentNullException. With $ErrorActionPreference = 'Stop' that is
+        # terminating, so the script died with a .NET stack trace and exit 1
+        # where the bash and Python twins both return an empty suffix.
+        $fallbackWords = @(($result -split '-') | Where-Object { $_ } | Select-Object -First 3)
         return [string]::Join('-', $fallbackWords)
     }
 }

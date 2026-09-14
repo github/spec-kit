@@ -188,8 +188,8 @@ class _PresetKindManager:
         if not self._allow_network:
             raise BundlerError(
                 f"Preset '{component.id}' is not bundled and network access is "
-                f"disabled; re-run without --offline or install it first with "
-                f"'specify preset add {component.id}'."
+                "disabled. Installing or refreshing this component requires "
+                "network access; re-run without --offline."
             )
 
         from ...presets import PresetCatalog
@@ -209,7 +209,11 @@ class _PresetKindManager:
         zip_path = catalog.download_pack(component.id)
         try:
             self._manager.install_from_zip(
-                zip_path, speckit_version, priority, **({"force": True} if force else {})
+                zip_path,
+                speckit_version,
+                priority,
+                catalog_name=info.get("_catalog_name"),
+                **({"force": True} if force else {}),
             )
         finally:
             with contextlib.suppress(Exception):
@@ -263,16 +267,17 @@ class _ExtensionKindManager:
                 component.version,
                 _bundled_manifest_version(bundled / "extension.yml", "extension"),
             )
-            self._manager.install_from_directory(
+            manifest = self._manager.install_from_directory(
                 bundled, speckit_version, priority=priority, force=force
             )
+            self._manager.scaffold_config(manifest.id)
             return
 
         if not self._allow_network:
             raise BundlerError(
                 f"Extension '{component.id}' is not bundled and network access is "
-                f"disabled; re-run without --offline or install it first with "
-                f"'specify extension add {component.id}'."
+                "disabled. Installing or refreshing this component requires "
+                "network access; re-run without --offline."
             )
 
         from ...extensions import ExtensionCatalog
@@ -293,9 +298,14 @@ class _ExtensionKindManager:
         )
         zip_path = catalog.download_extension(component.id)
         try:
-            self._manager.install_from_zip(
-                zip_path, speckit_version, priority=priority, force=force
+            manifest = self._manager.install_from_zip(
+                zip_path,
+                speckit_version,
+                priority=priority,
+                force=force,
+                catalog_name=info.get("_catalog_name"),
             )
+            self._manager.scaffold_config(manifest.id)
         finally:
             with contextlib.suppress(Exception):
                 if zip_path.exists():
@@ -328,8 +338,8 @@ class _WorkflowKindManager:
         if not self._allow_network and not self._is_bundled(component.id):
             raise BundlerError(
                 f"Workflow '{component.id}' installs from a catalog and network "
-                f"access is disabled; re-run without --offline or install it first "
-                f"with 'specify workflow add {component.id}'."
+                "access is disabled. Installing or refreshing this component "
+                "requires network access; re-run without --offline."
             )
         self._assert_pinned_version(component)
         from ... import workflow_add
@@ -337,7 +347,7 @@ class _WorkflowKindManager:
         with _chdir(self._root):
             _delegate_command(
                 "install", f"workflow '{component.id}'",
-                lambda: workflow_add(component.id),
+                lambda: workflow_add(component.id, dev=False, from_url=None),
             )
 
     def refresh(self, component: ComponentRef) -> None:
@@ -394,8 +404,8 @@ class _StepKindManager:
         if not self._allow_network:
             raise BundlerError(
                 f"Step '{component.id}' installs from a catalog and network access "
-                f"is disabled; re-run without --offline or install it first with "
-                f"'specify workflow step add {component.id}'."
+                "is disabled. Installing or refreshing this component requires "
+                "network access; re-run without --offline."
             )
         from ... import workflow_step_add
 
@@ -428,8 +438,30 @@ class _StepKindManager:
             except BundlerError:
                 if backup_dir.exists():
                     shutil.copytree(backup_dir, step_dir, dirs_exist_ok=True)
-                if metadata is not None and not self._registry.is_installed(component.id):
-                    self._registry.add(component.id, metadata)
+                # Re-read the registry: ``StepRegistry`` snapshots the file once
+                # in ``__init__`` (``self.data = self._load()``) and
+                # ``is_installed`` only consults that snapshot. ``self.remove()``
+                # above has already deleted the entry from disk, but
+                # ``self._registry``'s snapshot still contains it -- so the
+                # guard was always False here and the restore never ran, in
+                # exactly the failure case it was written for. The step package
+                # came back but stayed unregistered: ``workflow step list``
+                # stopped showing it and ``workflow step add`` then refused with
+                # "Step directory already exists".
+                from ...workflows.catalog import StepRegistry
+
+                current = StepRegistry(self._root)
+                if metadata is not None and not current.is_installed(component.id):
+                    # Restore the saved entry verbatim rather than via ``add()``,
+                    # which would rewrite the metadata it is meant to roll back:
+                    # this registry is freshly constructed *after*
+                    # ``self.remove()`` deleted the entry, so ``add()`` sees no
+                    # existing record and stamps ``installed_at`` with
+                    # ``datetime.now()`` (it also overwrites ``updated_at``
+                    # unconditionally). ``workflow_step_remove`` bypasses
+                    # ``add()`` for exactly this reason.
+                    current.data["steps"][component.id] = metadata
+                    current.save()
                 raise
         finally:
             shutil.rmtree(backup_dir.parent, ignore_errors=True)

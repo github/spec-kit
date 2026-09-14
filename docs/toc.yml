@@ -41,6 +41,8 @@
       href: reference/extensions.md
     - name: Presets
       href: reference/presets.md
+    - name: Artifacts
+      href: reference/artifacts.md
     - name: Workflows
       href: reference/workflows.md
     - name: Bundles

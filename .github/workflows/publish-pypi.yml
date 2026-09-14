@@ -19,8 +19,9 @@ jobs:
       actions: write
     steps:
       - name: Verify tag format
+        env:
+          TAG: ${{ inputs.tag }}
         run: |
-          TAG="${{ inputs.tag }}"
           if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Error: '$TAG' is not a valid release tag (expected vX.Y.Z)"
             exit 1
@@ -40,9 +41,10 @@ jobs:
           python-version: "3.13"
 
       - name: Verify tag matches package version
+        env:
+          TAG: ${{ inputs.tag }}
         run: |
-          TAG_VERSION="${{ inputs.tag }}"
-          TAG_VERSION="${TAG_VERSION#v}"
+          TAG_VERSION="${TAG#v}"
           PROJECT_VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
           if [[ "$TAG_VERSION" != "$PROJECT_VERSION" ]]; then
             echo "Error: Tag version ($TAG_VERSION) does not match pyproject.toml version ($PROJECT_VERSION)"

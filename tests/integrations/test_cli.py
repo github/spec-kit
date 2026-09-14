@@ -2710,6 +2710,82 @@ class TestExtensionFlag:
         normalized = _normalize_cli_output(result.output)
         assert "Install extension: git" in normalized
 
+    def test_catalog_extension_init_forwards_catalog_name(self, tmp_path, monkeypatch):
+        """The init catalog branch keeps the catalog provenance at install time."""
+        from types import SimpleNamespace
+
+        import specify_cli._assets as assets
+        import specify_cli.commands.init as init_module
+        from specify_cli.extensions import ExtensionCatalog, ExtensionManager
+
+        project = tmp_path / "project"
+        project.mkdir()
+        archive = tmp_path / "extension.zip"
+        archive.write_bytes(b"archive")
+        captured = {}
+
+        monkeypatch.setattr(assets, "_locate_bundled_extension", lambda _id: None)
+        monkeypatch.setattr(
+            ExtensionCatalog,
+            "get_extension_info",
+            lambda _self, _id: {
+                "id": "catalog-extension",
+                "_install_allowed": True,
+                "_catalog_name": "init-catalog",
+            },
+        )
+        monkeypatch.setattr(
+            ExtensionCatalog,
+            "download_extension",
+            lambda _self, _id: archive,
+        )
+
+        def fake_install_from_zip(self, _archive, _version, *, catalog_name=None):
+            captured["catalog_name"] = catalog_name
+            return SimpleNamespace(name="Catalog Extension", version="1.0.0")
+
+        monkeypatch.setattr(ExtensionManager, "install_from_zip", fake_install_from_zip)
+
+        result = init_module._install_extension_during_init(
+            project, "catalog-extension", "1.0.0"
+        )
+
+        assert result == "Catalog Extension v1.0.0 installed"
+        assert captured == {"catalog_name": "init-catalog"}
+
+    def test_catalog_preset_init_forwards_catalog_name(self, tmp_path, monkeypatch):
+        """The init preset catalog branch keeps resolved provenance."""
+        import specify_cli._assets as assets
+        from specify_cli.presets import PresetCatalog, PresetManager
+
+        captured = {}
+
+        monkeypatch.setattr(assets, "_locate_bundled_preset", lambda _id: None)
+        monkeypatch.setattr(
+            PresetCatalog,
+            "get_pack_info",
+            lambda _self, _id: {
+                "_install_allowed": True,
+                "_catalog_name": "init-preset-catalog",
+            },
+        )
+        archive = tmp_path / "preset.zip"
+        archive.write_bytes(b"archive")
+        monkeypatch.setattr(PresetCatalog, "download_pack", lambda _self, _id: archive)
+
+        def fake_install_from_zip(self, _archive, _version, *, catalog_name=None):
+            captured["catalog_name"] = catalog_name
+
+        monkeypatch.setattr(PresetManager, "install_from_zip", fake_install_from_zip)
+        _project, result = self._run_init(
+            tmp_path,
+            ["--preset", "catalog-preset"],
+            project_name="preset-catalog",
+        )
+
+        assert result.exit_code == 0, result.output
+        assert captured == {"catalog_name": "init-preset-catalog"}
+
     def test_multiple_extensions_installed(self, tmp_path):
         """--extension can be specified multiple times."""
         project, result = self._run_init(

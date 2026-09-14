@@ -4,7 +4,7 @@ Covers:
 - Step registry & auto-discovery
 - Base classes (StepBase, StepContext, StepResult)
 - Expression engine
-- All 10 built-in step types
+- All 12 built-in step types
 - Workflow definition loading & validation
 - Workflow engine execution & state persistence
 - Workflow catalog & registry
@@ -108,7 +108,7 @@ class TestStepRegistry:
 
         expected = {
             "command", "shell", "prompt", "gate", "if", "switch",
-            "while", "do-while", "fan-out", "fan-in", "init",
+            "while", "do-while", "fan-out", "fan-in", "init", "slot",
         }
         assert expected.issubset(set(STEP_REGISTRY.keys()))
 
@@ -711,6 +711,74 @@ class TestExpressions:
                 StepContext(inputs={"tags": ["a", "b"]}),
             )
 
+    def test_filter_on_a_comparison_operand_is_refused(self):
+        """A filter mixed with a comparison must be reported, not guessed at.
+
+        The pipe is detected before the operators, so
+        `count > limit | default(5)` evaluated `count > limit` first and then
+        applied `default` to the resulting bool — a no-op — silently returning
+        the comparison against the *unfiltered* operand (False, where the author
+        meant `10 > 5` = True).
+
+        This is the mirror of a filter followed by a comparison
+        (`default('7') > '5'`), which this module already refuses rather than
+        guessing at the intended precedence. Both are now refused the same way.
+        """
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"count": 10, "name": "x"})
+        with pytest.raises(ValueError, match="ambiguous filter precedence"):
+            evaluate_expression("{{ inputs.count > inputs.limit | default(5) }}", ctx)
+        with pytest.raises(ValueError, match="ambiguous filter precedence"):
+            evaluate_expression(
+                '{{ inputs.name == inputs.other | default("x") }}', ctx
+            )
+        with pytest.raises(ValueError, match="ambiguous filter precedence"):
+            evaluate_expression("{{ inputs.a and inputs.b | default(1) }}", ctx)
+
+    def test_filter_after_a_unary_not_is_refused(self):
+        """Unary `not` mis-binds the same way and must be caught too.
+
+        `not` is a leading prefix rather than an infix token (the parser tests
+        it with `expr.startswith("not ")`), so it has no surrounding space for
+        the operator scan to match. Without an explicit check,
+        `not inputs.missing | default(1)` evaluated `not inputs.missing` first
+        and applied `default` to that boolean — a no-op — silently returning
+        True where the author meant `not 1` = False.
+        """
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"value": 0, "flag": True})
+        with pytest.raises(ValueError, match="ambiguous filter precedence"):
+            evaluate_expression("{{ not inputs.missing | default(1) }}", ctx)
+        with pytest.raises(ValueError, match="ambiguous filter precedence"):
+            evaluate_expression("{{ not inputs.value | default(1) }}", ctx)
+        # A `not` that follows and/or is already caught by that token.
+        with pytest.raises(ValueError, match="ambiguous filter precedence"):
+            evaluate_expression(
+                "{{ inputs.flag and not inputs.value | default(1) }}", ctx
+            )
+        # Plain unary `not`, with no filter, is untouched.
+        assert evaluate_expression("{{ not inputs.value }}", ctx) is True
+        assert evaluate_expression("{{ not inputs.flag }}", ctx) is False
+
+    def test_plain_filters_and_chains_are_unaffected(self):
+        """Only a filter mixed with an operator is refused."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"items": ["a", "b"], "count": 10, "name": "x"})
+        assert evaluate_expression("{{ inputs.missing | default(5) }}", ctx) == 5
+        assert evaluate_expression('{{ inputs.items | join(", ") }}', ctx) == "a, b"
+        assert evaluate_expression("{{ inputs.items | contains('a') }}", ctx) is True
+        # Operators without a filter, and filters without an operator, both fine.
+        assert evaluate_expression("{{ inputs.count > 5 }}", ctx) is True
+        assert evaluate_expression('{{ inputs.name == "x" }}', ctx) is True
+
     def test_chained_filters_apply_left_to_right(self):
         # Filters chain: each filter's result feeds the next. `map` yields a
         # list and `join` is the only filter that renders a list to a string,
@@ -1029,6 +1097,200 @@ class TestCommandStep:
         assert result.output["command"] == "speckit.specify"
         assert result.output["integration"] == "claude"
         assert result.output["input"]["args"] == "login"
+
+    def test_per_step_integration_config_is_resolved_and_isolated(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.steps.command import CommandStep
+
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append((args, kwargs))
+            return type("Result", (), {"returncode": 0})()
+
+        monkeypatch.delenv(
+            "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
+        )
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: (
+                "/usr/bin/docker-agent"
+                if name in {"docker-agent", "/usr/bin/docker-agent"}
+                else None
+            ),
+        )
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        step = CommandStep()
+        context = StepContext(
+            inputs={"config": "./review.yaml", "agent": "reviewer"},
+            project_root=str(tmp_path),
+        )
+        first = step.execute(
+            {
+                "id": "review",
+                "command": "speckit.plan",
+                "integration": "docker-agent",
+                "integration_args": ["{{ inputs.config }}"],
+                "integration_options": {
+                    "agent": "{{ inputs.agent }}",
+                    "safety": "balanced",
+                },
+            },
+            context,
+        )
+        second = step.execute(
+            {
+                "id": "implement",
+                "command": "speckit.implement",
+                "integration": "docker-agent",
+                "integration_args": ["./implement.yaml"],
+                "integration_options": {"agent": "implementer"},
+            },
+            context,
+        )
+
+        assert first.status is StepStatus.COMPLETED
+        assert second.status is StepStatus.COMPLETED
+        assert first.output["integration_args"] == ["./review.yaml"]
+        assert first.output["integration_options"] == {
+            "agent": "reviewer",
+            "safety": "balanced",
+        }
+        assert calls[0][0] == [
+            "/usr/bin/docker-agent",
+            "run",
+            "--exec",
+            "./review.yaml",
+            "--agent",
+            "reviewer",
+            "--safety",
+            "balanced",
+            "--",
+            "/speckit-plan",
+        ]
+        assert calls[1][0] == [
+            "/usr/bin/docker-agent",
+            "run",
+            "--exec",
+            "./implement.yaml",
+            "--agent",
+            "implementer",
+            "--",
+            "/speckit-implement",
+        ]
+        assert calls[0][1]["cwd"] == str(tmp_path)
+        assert calls[1][1]["cwd"] == str(tmp_path)
+
+    @pytest.mark.parametrize(
+        ("step_model", "default_model", "expected_model"),
+        [
+            ("step/model", "workflow/model", "step/model"),
+            (None, "workflow/model", "workflow/model"),
+        ],
+    )
+    def test_docker_agent_uses_one_effective_model(
+        self,
+        tmp_path,
+        monkeypatch,
+        step_model,
+        default_model,
+        expected_model,
+    ):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.steps.command import CommandStep
+
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append(args)
+            return type("Result", (), {"returncode": 0})()
+
+        monkeypatch.delenv(
+            "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
+        )
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: (
+                "/usr/bin/docker-agent"
+                if name in {"docker-agent", "/usr/bin/docker-agent"}
+                else None
+            ),
+        )
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        config = {
+            "id": "implement",
+            "command": "speckit.implement",
+            "integration": "docker-agent",
+            "integration_args": ["./agent.yaml"],
+        }
+        if step_model is not None:
+            config["model"] = step_model
+
+        result = CommandStep().execute(
+            config,
+            StepContext(
+                default_model=default_model,
+                project_root=str(tmp_path),
+            ),
+        )
+
+        assert result.status is StepStatus.COMPLETED
+        assert calls[0].count("--model") == 1
+        assert calls[0][calls[0].index("--model") + 1] == expected_model
+
+    def test_unsupported_runtime_config_fails_with_actionable_error(self):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.steps.command import CommandStep
+
+        result = CommandStep().execute(
+            {
+                "id": "review",
+                "command": "speckit.plan",
+                "integration": "claude",
+                "integration_options": {"saftey": "balanced"},
+            },
+            StepContext(),
+        )
+
+        assert result.status is StepStatus.FAILED
+        assert result.output["dispatched"] is False
+        assert "does not support per-step 'integration_options'" in (
+            result.error or ""
+        )
+        assert "saftey" in (result.error or "")
+
+    def test_validate_rejects_malformed_runtime_config(self):
+        from specify_cli.workflows.steps.command import CommandStep
+
+        step = CommandStep()
+        errors = step.validate(
+            {
+                "id": "review",
+                "command": "speckit.plan",
+                "integration_args": "./agent.yaml",
+                "integration_options": ["agent", "root"],
+            }
+        )
+
+        assert any("'integration_args' must be a list" in error for error in errors)
+        assert any(
+            "'integration_options' must be a mapping" in error for error in errors
+        )
+
+        errors = step.validate(
+            {
+                "id": "review",
+                "command": "speckit.plan",
+                "integration_args": [42],
+                "integration_options": {1: "root"},
+            }
+        )
+        assert any("'integration_args[0]' must be a string" in error for error in errors)
+        assert any("keys must be strings" in error for error in errors)
 
     def test_try_dispatch_resolves_rovodev_via_acli(self, tmp_path):
         """When acli is installed, rovodev dispatch succeeds via acli."""
@@ -3492,6 +3754,33 @@ class TestWhileStep:
         assert any("missing 'condition'" in e for e in errors)
         # max_iterations is optional (defaults to 10)
 
+    def test_validate_requires_steps_body(self):
+        """A while loop with no body must be rejected, not silently a no-op.
+
+        Without this, ``step:`` written instead of ``steps:`` -- an easy slip,
+        since fan-out's payload key really is the singular ``step:`` -- passed
+        ``specify workflow validate`` with zero errors, and then reported
+        COMPLETED at run time while returning no ``next_steps``, so the loop
+        never ran even once.
+        """
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.steps.while_loop import WhileStep
+
+        step = WhileStep()
+        config = {
+            "id": "retry",
+            "condition": "true",
+            # The mistype: singular 'step' instead of 'steps'.
+            "step": {"id": "x", "type": "command", "command": "echo"},
+        }
+        errors = step.validate(config)
+        assert errors == ["While step 'retry' is missing 'steps' field."], errors
+
+        # Demonstrates why it matters: execution is a silent no-op.
+        result = step.execute(config, StepContext())
+        assert result.status == StepStatus.COMPLETED
+        assert result.next_steps == []
+
     @pytest.mark.parametrize("bad", [["a", "b"], {"k": "v"}, 5, 1.5])
     def test_validate_rejects_non_string_non_bool_condition(self, bad):
         from specify_cli.workflows.steps.while_loop import WhileStep
@@ -3623,6 +3912,25 @@ class TestDoWhileStep:
         errors = step.validate({"id": "test", "steps": []})
         assert any("missing 'condition'" in e for e in errors)
         # max_iterations is optional (defaults to 10)
+
+    def test_validate_requires_steps_body(self):
+        """A do-while with no body must be rejected, not silently a no-op.
+
+        The step's own docstring promises "The first invocation always returns
+        the nested steps for execution" -- with no body it validated clean and
+        then returned none, so the loop never ran even once.
+        """
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.steps.do_while import DoWhileStep
+
+        step = DoWhileStep()
+        config = {"id": "refine", "condition": "true", "max_iterations": 3}
+        errors = step.validate(config)
+        assert errors == ["Do-while step 'refine' is missing 'steps' field."], errors
+
+        result = step.execute(config, StepContext())
+        assert result.status == StepStatus.COMPLETED
+        assert result.next_steps == []
 
     @pytest.mark.parametrize("bad", [["a", "b"], {"k": "v"}, 5, 1.5])
     def test_validate_rejects_non_string_non_bool_condition(self, bad):
@@ -7714,6 +8022,71 @@ steps:
         assert len(runs) == 1
         assert runs[0]["workflow_id"] == "good-run"
 
+    def test_list_skips_invalid_utf8_with_valid_sibling(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        bad_dir = runs_dir / "bad-utf8"
+        bad_dir.mkdir(parents=True)
+        (bad_dir / "state.json").write_bytes(b"\xff\xfe invalid utf8")
+
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "good-run-utf8"
+  name: "Good Run UTF8"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    type: shell
+    run: "echo test"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        engine.execute(definition)
+
+        runs = engine.list_runs()
+        assert len(runs) == 1
+        assert runs[0]["workflow_id"] == "good-run-utf8"
+
+    def test_list_skips_oserror_with_valid_sibling(self, project_dir, monkeypatch):
+        import builtins
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        bad_dir = runs_dir / "bad-oserror"
+        bad_dir.mkdir(parents=True)
+        state_file = bad_dir / "state.json"
+        state_file.write_text('{"run_id": "bad"}', encoding="utf-8")
+
+        original_open = builtins.open
+
+        def _mock_open(path, *args, **kwargs):
+            if str(path).endswith("state.json") and "bad-oserror" in str(path):
+                raise OSError("permission denied")
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", _mock_open)
+
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "good-run-oserror"
+  name: "Good Run OSError"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    type: shell
+    run: "echo test"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        engine.execute(definition)
+
+        runs = engine.list_runs()
+        assert len(runs) == 1
+        assert runs[0]["workflow_id"] == "good-run-oserror"
+
 
 # ===== Workflow Registry Tests =====
 
@@ -8409,6 +8782,18 @@ class TestWorkflowCatalog:
         with pytest.raises(WorkflowValidationError, match="out of range"):
             catalog.remove_catalog(5)
 
+    @pytest.mark.parametrize("bad", [[], False, 0, ""])
+    def test_remove_catalog_rejects_falsy_non_mapping_config(
+        self, project_dir, bad
+    ):
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.write_text(yaml.safe_dump(bad), encoding="utf-8")
+
+        with pytest.raises(WorkflowValidationError, match="expected a mapping"):
+            WorkflowCatalog(project_dir).remove_catalog(0)
+
     def test_get_catalog_configs(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog
 
@@ -9090,6 +9475,23 @@ class TestStepCatalog:
         assert len(data["catalogs"]) == 1
         assert data["catalogs"][0]["url"] == "https://example.com/steps.json"
 
+    @pytest.mark.parametrize("bad", [[], False, 0, ""])
+    def test_add_catalog_rejects_falsy_non_mapping_config(
+        self, project_dir, bad
+    ):
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        original = yaml.safe_dump(bad)
+        config_path.write_text(original, encoding="utf-8")
+
+        with pytest.raises(StepValidationError, match="expected a mapping"):
+            StepCatalog(project_dir).add_catalog(
+                "https://example.com/steps.json", "my-steps"
+            )
+
+        assert config_path.read_text(encoding="utf-8") == original
+
     def test_add_catalog_duplicate_rejected(self, project_dir):
         from specify_cli.workflows.catalog import StepCatalog, StepValidationError
 
@@ -9121,6 +9523,18 @@ class TestStepCatalog:
 
         with pytest.raises(StepValidationError, match="out of range"):
             catalog.remove_catalog(5)
+
+    @pytest.mark.parametrize("bad", [[], False, 0, ""])
+    def test_remove_catalog_rejects_falsy_non_mapping_config(
+        self, project_dir, bad
+    ):
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        config_path.write_text(yaml.safe_dump(bad), encoding="utf-8")
+
+        with pytest.raises(StepValidationError, match="expected a mapping"):
+            StepCatalog(project_dir).remove_catalog(0)
 
     def test_remove_catalog_no_config(self, project_dir):
         from specify_cli.workflows.catalog import StepCatalog, StepValidationError
@@ -10452,6 +10866,79 @@ class TestWorkflowStepAddCLI:
         ).exists()
 
     @pytest.mark.parametrize(
+        "step_yml_body", [b"[]", b"false", b"0", b"''", b"null", b"~", b"NULL"]
+    )
+    def test_add_rejects_falsy_non_mapping_step_yml(
+        self, project_dir, monkeypatch, step_yml_body
+    ):
+        """A FALSY non-mapping step.yml document ([], false, 0, '') must be
+        reported as "step.yml must be a YAML mapping", not silently coerced by
+        ``or {}`` into {} and then misreported as the unrelated "missing
+        'step.type_key'" error — matching how a TRUTHY non-mapping document
+        (e.g. a bare string) already reports the mapping-shape error. An
+        explicit null scalar (null/~/NULL) parses to the same ``None`` as a
+        genuinely empty document, so it must be distinguished (via
+        ``yaml.compose``) and rejected too, rather than defaulting to {}."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.authentication import http as auth_http
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(
+            StepCatalog,
+            "get_step_info",
+            lambda self, step_id: {
+                "id": step_id,
+                "name": "Test Step",
+                "url": "https://example.com/step.yml",
+                "init_url": "https://example.com/__init__.py",
+                "_install_allowed": True,
+            },
+        )
+
+        class _FakeResponse:
+            def __init__(self, url):
+                self.url = url
+                self.body = step_yml_body if url.endswith("step.yml") else b""
+                self.offset = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def getheader(self, name):
+                return None
+
+            def geturl(self):
+                return self.url
+
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self.body) - self.offset
+                chunk = self.body[self.offset : self.offset + size]
+                self.offset += len(chunk)
+                return chunk
+
+        monkeypatch.setattr(
+            auth_http,
+            "open_url",
+            lambda url, timeout=30, redirect_validator=None: _FakeResponse(url),
+        )
+
+        result = CliRunner().invoke(
+            app, ["workflow", "step", "add", "my-step"]
+        )
+
+        assert result.exit_code != 0
+        assert "step.yml must be a YAML mapping" in result.output
+        assert not (
+            project_dir / ".specify" / "workflows" / "steps" / "my-step"
+        ).exists()
+
+    @pytest.mark.parametrize(
         ("catalog_fields", "expected"),
         [
             ({"url": 123}, "malformed step.yml URL"),
@@ -11139,6 +11626,57 @@ steps:
     verdict_input: spec_verdict
 """
 
+    _WF_RUNTIME_CONFIG = """
+schema_version: "1.0"
+workflow:
+  id: "resume-runtime-config-wf"
+  name: "Resume Runtime Config WF"
+  version: "1.0.0"
+inputs:
+  config:
+    type: string
+    default: "./initial-agent.yaml"
+  agent_name:
+    type: string
+    default: "initial-root"
+  model_name:
+    type: string
+    default: "initial/model"
+steps:
+  - id: implement
+    type: command
+    command: speckit.implement
+    integration: docker-agent
+    integration_args:
+      - "{{ inputs.config }}"
+    integration_options:
+      agent: "{{ inputs.agent_name }}"
+      safety: balanced
+    model: "{{ inputs.model_name }}"
+"""
+
+    _WF_DYNAMIC_INTEGRATION = """
+schema_version: "1.0"
+workflow:
+  id: "resume-dynamic-integration-wf"
+  name: "Resume Dynamic Integration WF"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: docker-agent
+  config:
+    type: string
+    default: "./initial-agent.yaml"
+steps:
+  - id: implement
+    type: command
+    command: speckit.implement
+    integration: "{{ inputs.integration }}"
+    integration_args:
+      - "{{ inputs.config }}"
+"""
+
     def _engine(self, project_dir):
         from specify_cli.workflows.engine import WorkflowEngine
         return WorkflowEngine(project_dir)
@@ -11170,6 +11708,102 @@ steps:
         resumed = engine.resume(state.run_id)
         assert resumed.status == RunStatus.FAILED  # still "exit 1"
         assert resumed.inputs["cmd"] == "exit 1"
+
+    def test_resume_re_resolves_complete_integration_config(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import WorkflowDefinition
+
+        calls = []
+        return_codes = iter((1, 0))
+
+        def fake_run(args, **kwargs):
+            calls.append(args)
+            return type("Result", (), {"returncode": next(return_codes)})()
+
+        monkeypatch.delenv(
+            "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
+        )
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: (
+                "/usr/bin/docker-agent"
+                if name in {"docker-agent", "/usr/bin/docker-agent"}
+                else None
+            ),
+        )
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        definition = WorkflowDefinition.from_string(self._WF_RUNTIME_CONFIG)
+        engine = self._engine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status is RunStatus.FAILED
+        assert state.step_results["implement"]["integration_args"] == [
+            "./initial-agent.yaml"
+        ]
+        assert state.step_results["implement"]["integration_options"] == {
+            "agent": "initial-root",
+            "safety": "balanced",
+        }
+
+        resumed = engine.resume(
+            state.run_id,
+            {
+                "config": "./changed-on-resume.yaml",
+                "agent_name": "changed-root",
+                "model_name": "changed/model",
+            },
+        )
+
+        assert resumed.status is RunStatus.COMPLETED
+        assert resumed.inputs["config"] == "./changed-on-resume.yaml"
+        assert len(calls) == 2
+        assert "./initial-agent.yaml" in calls[0]
+        assert "./changed-on-resume.yaml" in calls[1]
+        assert "./initial-agent.yaml" not in calls[1]
+        assert calls[1][calls[1].index("--agent") + 1] == "changed-root"
+        assert calls[1][calls[1].index("--model") + 1] == "changed/model"
+
+    def test_resume_does_not_mix_new_integration_with_old_runtime_config(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import WorkflowDefinition
+
+        monkeypatch.delenv(
+            "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
+        )
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: (
+                "/usr/bin/docker-agent"
+                if name in {"docker-agent", "/usr/bin/docker-agent"}
+                else None
+            ),
+        )
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda *args, **kwargs: type("Result", (), {"returncode": 1})(),
+        )
+
+        definition = WorkflowDefinition.from_string(self._WF_DYNAMIC_INTEGRATION)
+        engine = self._engine(project_dir)
+        state = engine.execute(definition)
+        assert state.status is RunStatus.FAILED
+
+        resumed = engine.resume(
+            state.run_id,
+            {"integration": "claude", "config": "./changed-on-resume.yaml"},
+        )
+
+        assert resumed.status is RunStatus.FAILED
+        step_result = resumed.step_results["implement"]
+        assert step_result["integration"] == "claude"
+        assert step_result["integration_args"] == ["./changed-on-resume.yaml"]
+        assert "Integration 'claude'" in (step_result["error"] or "")
+        assert "./initial-agent.yaml" not in str(step_result)
 
     def test_resume_merges_and_coerces_typed_input(self, project_dir):
         import json as _json

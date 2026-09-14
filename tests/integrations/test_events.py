@@ -188,6 +188,22 @@ class TestCollectExtensionEvents:
 
         assert collect_extension_events(tmp_path) == {}
 
+    def test_unreadable_manifest_skipped(self, tmp_path, monkeypatch):
+        ext_dir = tmp_path / ".specify" / "extensions" / "my-ext"
+        ext_dir.mkdir(parents=True)
+        manifest = ext_dir / "extension.yml"
+        manifest.write_text("events: {}\n", encoding="utf-8")
+        real_read_text = Path.read_text
+
+        def unreadable(path, *args, **kwargs):
+            if path == manifest:
+                raise OSError("simulated read failure")
+            return real_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", unreadable)
+
+        assert collect_extension_events(tmp_path) == {}
+
     def test_event_command_ref_canonicalized_via_manifest(self, tmp_path):
         """R1: events are read from a validated ExtensionManifest, so an
         obsolete command ref (e.g. my-ext.boot) is canonicalized
@@ -1340,6 +1356,37 @@ class TestCommandRunner:
         assert argv[1] == "-File"
         assert PurePath(argv[2]).as_posix().endswith(".specify/scripts/powershell/boot.ps1")
 
+    def test_ps_variant_returns_none_when_no_launcher_available(self, tmp_path, monkeypatch):
+        """When NEITHER pwsh nor powershell is on PATH, the resolver must
+        degrade to "no argv" like every other failure branch in this
+        function — not fall back to a bare "pwsh" string, which would make
+        subprocess.run() raise FileNotFoundError instead of the caller's
+        clean "No script found for event command" warning.
+
+        The generated dispatcher's documented stdlib mirror, `_resolve_argv`,
+        already does this correctly (`if not launcher: return None`).
+        """
+        from specify_cli.events import _resolve_event_command_argv
+        import shutil as _shutil
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "boot.md").write_text(
+            "---\n"
+            "description: \"Boot\"\n"
+            "scripts:\n"
+            "  ps: scripts/powershell/boot.ps1\n"
+            "---\nBody\n",
+            encoding="utf-8",
+        )
+        ps_dir = tmp_path / ".specify" / "scripts" / "powershell"
+        ps_dir.mkdir(parents=True)
+        (ps_dir / "boot.ps1").write_text("exit 0\n", encoding="utf-8")
+
+        monkeypatch.setattr(_shutil, "which", lambda name: None)
+        argv = _resolve_event_command_argv(cmd_dir / "boot.md", tmp_path, None)
+        assert argv is None
+
     def test_run_command_executes_with_project_root_cwd(self, tmp_path):
         """R1: the event command runs with cwd set to the project root, not the
         caller's arbitrary working directory, so project-relative script logic
@@ -1502,6 +1549,198 @@ class TestCommandRunner:
             cwd=str(tmp_path),
         )
         assert not ran.exists(), f"stale package ran; stderr={result.stderr!r}"
+
+    def test_dispatcher_rejects_oversized_stdin(self, tmp_path):
+        """The generated dispatcher — the actual script native hooks invoke —
+        must enforce the same 1 MiB stdin cap as `specify event run`. The
+        #3857 DoS guard previously only applied to the CLI command; the
+        template's own `sys.stdin.read()` had no cap at all."""
+        import subprocess as _sp
+        import sys as _sys
+
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"session_start": [{"command": "speckit.boot"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+
+        oversized = "x" * (1 * 1024 * 1024 + 10)
+        result = _sp.run(
+            [_sys.executable, str(dispatcher), "speckit.boot", "session_start", "60"],
+            input=oversized,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 1, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        assert "1 MiB limit" in result.stderr
+
+    def test_dispatcher_stdin_cap_counts_bytes_not_characters(self, tmp_path):
+        """~300k emoji is ~1.14 MiB of UTF-8 but only 300k *characters* —
+        comfortably under a text-mode `sys.stdin.read(N)` character cap. The
+        dispatcher must still reject it by reading from the binary buffer."""
+        import subprocess as _sp
+        import sys as _sys
+
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"session_start": [{"command": "speckit.boot"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+
+        oversized = "\U0001F600" * 300_000  # 4 bytes each in UTF-8
+        assert len(oversized) < 1 * 1024 * 1024  # under a character-based cap
+        result = _sp.run(
+            [_sys.executable, str(dispatcher), "speckit.boot", "session_start", "60"],
+            input=oversized,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 1, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        assert "1 MiB limit" in result.stderr
+
+    def test_dispatcher_underlimit_stdin_still_runs(self, tmp_path):
+        """A normal, under-the-cap piped payload must still reach the handler
+        byte-for-byte, including non-ASCII content -- verifying the explicit
+        utf-8 decode of stdin and the explicit utf-8 encode of the handler's
+        subprocess input agree end-to-end (regression guard against both an
+        over-eager cap check and a locale-dependent re-encode: without an
+        explicit ``encoding=`` on the inner subprocess.run, ``text=True``
+        falls back to ``locale.getpreferredencoding()`` for the child's
+        stdin, which on Windows is commonly not UTF-8, corrupting non-ASCII
+        payloads even though the dispatcher's own stdin decode is UTF-8).
+
+        Uses a Python handler (unlike the previous POSIX-shell-only version)
+        so this test actually runs on Windows, where that mismatch occurs.
+        """
+        import subprocess as _sp
+        import sys as _sys
+
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"session_start": [{"command": "speckit.boot"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        out_file = tmp_path / "payload.out"
+        (cmd_dir / "boot.md").write_text(
+            "---\ndescription: \"Boot\"\nscripts:\n  py: scripts/boot.py\n---\nBody\n",
+            encoding="utf-8",
+        )
+        script_dir = tmp_path / ".specify" / "scripts"
+        script_dir.mkdir(parents=True)
+        script = script_dir / "boot.py"
+        # Read the handler's own stdin as raw bytes (not text mode) so this
+        # script's own decoding can't mask a mismatch introduced upstream.
+        script.write_text(
+            "import sys\n"
+            f"open({str(out_file)!r}, 'wb').write(sys.stdin.buffer.read())\n",
+            encoding="utf-8",
+        )
+
+        payload = '{"key": "café"}'  # non-ASCII exercises the utf-8 round trip
+        result = _sp.run(
+            [_sys.executable, str(dispatcher), "speckit.boot", "session_start", "60"],
+            input=payload,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        assert out_file.read_bytes() == payload.encode("utf-8")
+
+    def test_dispatcher_inline_fallback_preserves_non_ascii_payload(self, tmp_path):
+        """The self-contained stdlib fallback (``_run_inline`` — used when
+        ``specify_cli`` is not importable, e.g. a one-time ``uvx`` init) must
+        preserve a non-ASCII payload byte-for-byte too, not just the
+        preferred delegated path.
+
+        In a dev environment where ``specify_cli`` IS importable, the
+        dispatcher always delegates to the installed
+        ``resolve_and_run_event_command`` and ``_run_inline`` is never
+        reached, so a bug isolated to ``_run_inline`` alone would not be
+        caught by ``test_dispatcher_underlimit_stdin_still_runs``. This test
+        forces the fallback the same way
+        ``test_dispatcher_ignores_stale_specify_cli_without_confinement``
+        does: a stale shadow package on PYTHONPATH lacking
+        EVENT_SCRIPT_PATH_CONFINEMENT, so the confinement check ImportErrors
+        out of delegation.
+        """
+        import subprocess as _sp
+        import sys as _sys
+
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"session_start": [{"command": "speckit.boot"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        out_file = tmp_path / "payload.out"
+        (cmd_dir / "boot.md").write_text(
+            "---\ndescription: \"Boot\"\nscripts:\n  py: scripts/boot.py\n---\nBody\n",
+            encoding="utf-8",
+        )
+        script_dir = tmp_path / ".specify" / "scripts"
+        script_dir.mkdir(parents=True)
+        script = script_dir / "boot.py"
+        script.write_text(
+            "import sys\n"
+            f"open({str(out_file)!r}, 'wb').write(sys.stdin.buffer.read())\n",
+            encoding="utf-8",
+        )
+
+        fake_dir = tmp_path / "_stale_pkg"
+        pkg = fake_dir / "specify_cli"
+        pkg.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+        (pkg / "events.py").write_text(
+            "def resolve_and_run_event_command(*_a, **_k):\n"
+            "    raise AssertionError('delegated path must not run')\n",
+            encoding="utf-8",
+        )
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(fake_dir)
+
+        payload = '{"key": "café"}'  # non-ASCII exercises the utf-8 round trip
+        result = _sp.run(
+            [_sys.executable, str(dispatcher), "speckit.boot", "session_start", "60"],
+            input=payload,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=env,
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        assert out_file.read_bytes() == payload.encode("utf-8")
 
     def test_dispatcher_threads_per_handler_timeout(self, tmp_path):
         """S4: the generated dispatcher reads an optional 4th timeout arg and

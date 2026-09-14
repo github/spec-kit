@@ -16,6 +16,45 @@ from ._download_security import normalize_zip_member_name
 
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 CLAUDE_NPM_LOCAL_PATH = Path.home() / ".claude" / "local" / "node_modules" / ".bin" / "claude"
+DOCKER_AGENT_CHECK_TIMEOUT = 5
+
+
+def docker_agent_command(executable: str | None = None) -> list[str] | None:
+    """Return a runnable Docker Agent command, or ``None`` if unavailable.
+
+    Docker Agent is distributed either as the standalone ``docker-agent``
+    executable or as the ``docker agent`` Docker CLI plugin. The plugin form
+    is verified with a bounded, read-only version probe so a plain Docker CLI
+    is not mistaken for an installed Docker Agent.
+    """
+    resolved_from_path = executable is None
+    if executable is None:
+        if shutil.which("docker-agent"):
+            return ["docker-agent", "run"]
+        executable = shutil.which("docker")
+        if executable is None:
+            return None
+
+    executable_name = Path(executable).name.lower()
+    if executable_name in {"docker", "docker.exe"}:
+        command = [executable, "agent", "version"]
+        run_command = [executable, "agent", "run"]
+    else:
+        # An explicit non-Docker executable is an operator override. Preserve
+        # the existing override contract without probing a custom binary.
+        return [executable, "run"]
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            check=False,
+            timeout=DOCKER_AGENT_CHECK_TIMEOUT,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    return ["docker", "agent", "run"] if resolved_from_path else run_command
 
 
 def relative_extension_path_violation(value: Any) -> str | None:
@@ -137,6 +176,8 @@ def check_tool(tool: str, tracker=None) -> bool:
         found = shutil.which("kiro-cli") is not None or shutil.which("kiro") is not None
     elif tool == "rovodev":
         found = shutil.which("acli") is not None
+    elif tool == "docker-agent":
+        found = docker_agent_command() is not None
     else:
         found = shutil.which(tool) is not None
 

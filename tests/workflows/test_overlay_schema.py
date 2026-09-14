@@ -124,6 +124,57 @@ class TestShorthandEdits:
         assert overlay is None
         assert any("multiple" in e.lower() for e in errors), errors
 
+    @pytest.mark.parametrize(
+        "first,second",
+        [("remove", "insert_after"), ("insert_after", "remove")],
+        ids=["remove-first", "insert_after-first"],
+    )
+    def test_multiple_operation_keys_reported_in_declaration_order(
+        self, first, second
+    ):
+        """The message must name the keys in the order the user wrote them.
+
+        Collecting the keys by iterating the ``_SHORTHAND_OPERATION_KEYS``
+        frozenset made the order depend on per-process string-hash
+        randomization, so the same overlay file produced a different message on
+        every run. Whatever fixed order a frozenset happens to have in a given
+        process, one of these two parametrizations contradicts it -- so this
+        pair fails deterministically without the fix, in every process.
+        """
+        overlay, errors = validate_overlay_yaml(
+            {
+                "id": "ov",
+                "extends": "wf",
+                "edits": [{first: "a", second: "a"}],
+            }
+        )
+        assert overlay is None
+        assert errors == [
+            f"Edit at index 0 has multiple operation keys: {first!r}, {second!r}."
+        ]
+
+    @pytest.mark.parametrize(
+        "first,second",
+        [("remove", "insert_after"), ("insert_after", "remove")],
+        ids=["remove-first", "insert_after-first"],
+    )
+    def test_shorthand_mixed_with_operation_names_first_declared_key(
+        self, first, second
+    ):
+        """``shorthand_keys[0]`` must be the first key the user declared."""
+        overlay, errors = validate_overlay_yaml(
+            {
+                "id": "ov",
+                "extends": "wf",
+                "edits": [{first: "a", second: "a", "operation": "replace"}],
+            }
+        )
+        assert overlay is None
+        assert errors == [
+            f"Edit at index 0 mixes shorthand operation key ({first!r}) "
+            f"with explicit 'operation' field."
+        ]
+
     def test_invalid_operation_field_rejected(self):
         overlay, errors = validate_overlay_yaml(
             {

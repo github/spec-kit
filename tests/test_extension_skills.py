@@ -445,6 +445,52 @@ class TestExtensionSkillRegistration:
         assert "compatibility:" in content
         assert "Run this to say hello." in content
 
+    @pytest.mark.parametrize("register_commands", [False, True])
+    @pytest.mark.parametrize("link_commands", [False, True])
+    @pytest.mark.parametrize(
+        ("author", "expected_author"),
+        [
+            ("acme-corp", "acme-corp"),
+            ('Acme: "Platform"\nTeam', 'Acme: "Platform"\nTeam'),
+            (None, "github-spec-kit"),
+            ("", "github-spec-kit"),
+            (123, "123"),
+            (0, "0"),
+            (False, "False"),
+        ],
+    )
+    def test_extension_author_preserved(
+        self,
+        skills_project,
+        extension_dir,
+        register_commands,
+        link_commands,
+        author,
+        expected_author,
+    ):
+        """Both skill generators retain attribution, including dev output and aliases."""
+        project_dir, skills_dir = skills_project
+        manifest_path = extension_dir / "extension.yml"
+        data = yaml.safe_load(manifest_path.read_text())
+        if author is not None:
+            data["extension"]["author"] = author
+        data["provides"]["commands"][0]["aliases"] = ["speckit.test-ext.greet"]
+        manifest_path.write_text(yaml.safe_dump(data))
+
+        ExtensionManager(project_dir).install_from_directory(
+            extension_dir, "0.1.0",
+            register_commands=register_commands, link_commands=link_commands,
+        )
+
+        names = ["hello", "world"]
+        if register_commands:
+            names.append("greet")
+        for name in names:
+            content = (skills_dir / f"speckit-test-ext-{name}" / "SKILL.md").read_text()
+            frontmatter = yaml.safe_load(content.split("---", 2)[1])
+            assert frontmatter["metadata"]["author"] == expected_author
+            assert "test-ext" in frontmatter["metadata"]["source"]
+
     def test_skill_md_has_parseable_yaml(self, skills_project, extension_dir):
         """Generated SKILL.md should contain valid, parseable YAML frontmatter."""
         project_dir, skills_dir = skills_project
@@ -1165,6 +1211,52 @@ class TestExtensionSkillRegistration:
         content = (skills_dir / "speckit-command-ref-ext-run" / "SKILL.md").read_text()
         assert "__SPECKIT_COMMAND_PLAN__" not in content
         assert expected_invocation in content
+
+    def test_skill_registration_resolves_hyphenated_command_ref_tokens(
+        self, project_dir, temp_dir
+    ):
+        """Command names containing a hyphen resolve like any other name."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+
+        ext_dir = temp_dir / "hyphen-ref-ext"
+        ext_dir.mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "hyphen-ref-ext",
+                "name": "Hyphen Ref Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.hyphen-ref-ext.run",
+                        "file": "commands/run.md",
+                        "description": "Run command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.safe_dump(manifest_data, f)
+
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Run command\n"
+            "---\n\n"
+            "Use __SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__ before proceeding.\n"
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        content = (skills_dir / "speckit-hyphen-ref-ext-run" / "SKILL.md").read_text()
+        assert "__SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__" not in content
+        assert "/speckit-agent-context-update" in content
 
     def test_skill_registration_does_not_rewrite_literal_speckit_text(
         self, project_dir, temp_dir

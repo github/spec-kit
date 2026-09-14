@@ -26,6 +26,8 @@ checkout:
 safe-outputs:
   noop:
     report-as-issue: false
+  threat-detection:
+    continue-on-error: false
   create-pull-request:
     title-prefix: "[bundle] "
     labels: [bundle-submission, automated]
@@ -118,11 +120,26 @@ Run every check and collect all failures before deciding the outcome.
 
 ### 2c. Release artifact
 
-- The download URL must be an HTTPS GitHub release asset URL under the submitted
-  repository:
+- The download URL MUST belong to the submitted repository
+  (`https://github.com/<owner>/<repo>/...` with the same `<owner>/<repo>` as
+  the Repository URL). Reject URLs for any other GitHub repository.
+- The download URL MUST follow the accepted tag-pinned pattern:
   `https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>.zip`.
-- Confirm the release exists, its tag corresponds to the submitted version
-  (`vX.Y.Z` or `X.Y.Z`), and the exact ZIP asset is attached to that release.
+- If the download URL path contains `releases/latest/`, reject with an
+  explanation — this URL is floating and not acceptable. Mark this pinning
+  check failed and skip the HTTP request for this URL, then continue the
+  remaining validations.
+- The `<tag>` segment in the URL MUST correspond to the submitted version.
+  Accept `vX.Y.Z`, `X.Y.Z`, and scoped tags whose version suffix matches
+  (for example `aide-v1.0.0` for version `1.0.0`). Reject a tag whose
+  embedded semver does not equal the submitted version.
+- Only after all pinning checks pass, fetch the download URL and perform the
+  remaining artifact checks:
+  - Verify the URL returns HTTP 200.
+  - If `sha256` is included, verify it matches the downloaded archive. Requiring
+    `sha256` on every catalog entry is follow-up work and MUST NOT fail this
+    check when the field is absent.
+  - Confirm the release exists and the exact ZIP asset is attached to it.
 - Confirm the asset name is versioned and consistent with the submitted bundle
   ID and version.
 

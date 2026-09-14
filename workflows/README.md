@@ -70,15 +70,22 @@ specify workflow run ./my-workflow.yml --input spec="Build a user authentication
 
 ### Multiple Inputs
 
+When a workflow declares more than one input, pass each with a separate
+`--input` flag. For example, a custom workflow that gates steps on a
+`scope` selector:
+
 ```bash
-specify workflow run speckit \
+specify workflow run ./my-workflow.yml \
   --input spec="Build a user authentication system with OAuth support" \
   --input scope="backend-only"
 ```
 
+The bundled `speckit` workflow only declares `spec` (and optional
+`integration`); it does not take a `scope` input.
+
 ## Step Types
 
-Workflows support 11 built-in step types:
+Workflows support 12 built-in step types:
 
 ### Command Steps (default)
 
@@ -92,6 +99,39 @@ Invoke an installed Spec Kit command by name via the integration CLI:
   integration: claude        # Optional: override workflow default
   model: "claude-sonnet-4-20250514"   # Optional: override model
 ```
+
+CLI integrations can expose per-step positional arguments and named runtime
+options. For example, Docker Agent accepts an agent reference plus validated
+`agent` and `safety` options. Use the command step's top-level `model` field for
+model selection:
+
+```yaml
+- id: specify-with-docker-agent
+  command: speckit.specify
+  integration: docker-agent
+  integration_args:
+    - "{{ inputs.agent_config }}"
+  integration_options:
+    agent: root
+    safety: balanced
+  model: "openai/gpt-5"
+  input:
+    args: "{{ inputs.spec }}"
+```
+
+`integration_args` must be an ordered list of strings. Expressions are resolved
+one element at a time. `integration_options` must be a mapping with string keys;
+its values are likewise expression-resolved and validated by the selected
+integration. Non-empty runtime configuration is rejected when an integration
+does not support it. Resolved values are stored in workflow run state for audit
+and recovery. On resume, the complete dispatch configuration (`integration`,
+`model`, `integration_args`, and `integration_options`) is re-resolved from the
+current workflow inputs; without updated inputs this reproduces the prior values.
+
+When Docker Agent `integration_args` supplies an agent reference for a command
+step, it takes precedence over `SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS`;
+the entire legacy environment value is ignored for that step. Without a per-step
+agent reference, the legacy environment behavior is unchanged.
 
 ### Prompt Steps
 
@@ -145,10 +185,28 @@ and resolves the integration from the step config or the workflow default:
   here: true                 # or: project: my-project
   integration: copilot       # Optional: defaults to workflow integration
   integration_options: "--skills"  # Optional: extra options for the integration
-  script: sh                 # Optional: sh or ps
+  script: sh                 # Optional: sh, ps, or py
   force: true                # Optional: required when target directory already exists
   preset: healthcare-compliance   # Optional preset ID
 ```
+
+### Workflow Slots
+
+Declare a named workflow slot that downstream projects can fill with a
+workflow overlay. The slot is skipped when unfilled; its `id` is the overlay
+anchor and `name` is a required human-readable label:
+
+```yaml
+- id: post-implement
+  type: slot
+  name: "Post-implementation checks"
+```
+
+Use an overlay `replace` edit anchored on `post-implement` to fill the slot.
+Keep the same `id` when downstream expressions or fan-in steps reference it,
+and preserve any output keys they consume. Slot steps are invalid inside
+`fan-out.step` templates because those runtime-multiplied templates cannot be
+targeted by overlays.
 
 ### Gate Steps
 

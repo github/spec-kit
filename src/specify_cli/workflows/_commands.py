@@ -1383,7 +1383,7 @@ def workflow_run(
         err.print(f"[red]Error:[/red] Workflow not found: {source}")
         raise typer.Exit(1)
     except ValueError as exc:
-        err.print(f"[red]Error:[/red] Invalid workflow: {exc}")
+        err.print(f"[red]Error:[/red] Invalid workflow: {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     # Validate
@@ -1424,10 +1424,10 @@ def workflow_run(
                 ),
             )
     except ValueError as exc:
-        err.print(f"[red]Error:[/red] {exc}")
+        err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
     except Exception as exc:
-        err.print(f"[red]Workflow failed:[/red] {exc}")
+        err.print(f"[red]Workflow failed:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     if json_output:
@@ -3364,12 +3364,31 @@ def workflow_step_add(
         try:
             import yaml as _yaml
 
-            meta = _yaml.safe_load(step_yml_content.decode("utf-8")) or {}
+            step_yml_text = step_yml_content.decode("utf-8")
+            # ``safe_load`` returns None for BOTH an empty document and an
+            # explicit null scalar (``null``, ``~``, ``NULL``), so it cannot
+            # tell them apart on its own. ``compose`` yields no node only for
+            # a genuinely empty document.
+            node = _yaml.compose(step_yml_text)
+            meta = _yaml.safe_load(step_yml_text)
+            is_empty_document = node is None or (
+                meta is None
+                and isinstance(node, _yaml.nodes.ScalarNode)
+                and node.value == ""
+                and node.start_mark.index == node.end_mark.index
+            )
         except Exception as exc:
             console.print(f"[red]Error:[/red] Invalid step.yml: {exc}")
             raise typer.Exit(1)
 
-        if not isinstance(meta, dict):
+        # Do NOT coerce with ``or {}`` here: that also turns a FALSY non-mapping
+        # (top-level ``[]``, ``false``, ``0``, ``''``, or an explicit ``null``)
+        # into ``{}`` and silently bypasses this shape check, surfacing the
+        # unrelated "missing 'step.type_key'" error below instead of the real
+        # problem. Only a genuinely empty document defaults to ``{}``.
+        if meta is None and is_empty_document:
+            meta = {}
+        elif not isinstance(meta, dict):
             console.print("[red]Error:[/red] step.yml must be a YAML mapping")
             raise typer.Exit(1)
 

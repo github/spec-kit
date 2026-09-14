@@ -39,6 +39,7 @@ def build_github_request(url: str) -> urllib.request.Request:
         ValueError: If ``url`` is empty or whitespace-only.
         ValueError: If ``url`` does not use the ``http`` or ``https`` scheme.
         ValueError: If ``url`` does not include a hostname.
+        ValueError: If ``url`` includes a malformed explicit port.
     """
     headers: Dict[str, str] = {}
     url = url.strip()
@@ -49,6 +50,8 @@ def build_github_request(url: str) -> urllib.request.Request:
         raise ValueError(f"url must start with http:// or https://, got: {url!r}")
     if not parsed.hostname:
         raise ValueError(f"url must include a hostname, got: {url!r}")
+    # Accessing ``port`` validates any explicit port before request construction.
+    parsed.port
     github_token = (os.environ.get("GITHUB_TOKEN") or "").strip()
     gh_token = (os.environ.get("GH_TOKEN") or "").strip()
     token = github_token or gh_token or None

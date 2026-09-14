@@ -7,6 +7,7 @@ from typing import Any
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import (
     condition_has_malformed_expression_block,
+    condition_is_interpolated_to_text,
     condition_is_never_evaluated,
     format_condition_remediation,
     evaluate_condition,
@@ -130,6 +131,21 @@ class WhileStep(StepBase):
                 "truncated expression instead of the one written. Balance the "
                 "delimiters and quotes."
             )
+        elif condition_is_interpolated_to_text(config["condition"]):
+            # Third fault, third message. The braces are here and they close, but they
+            # do not cover the whole condition, so evaluate_expression takes its text
+            # path rather than the typed one: each block is substituted into the
+            # surrounding string and the result is coerced by bool(). Two blocks joined
+            # by `and` render "False and False", which is true. No paste-ready
+            # correction is offered: there is no single right rewrite, because only the
+            # author knows which grouping the operators were meant to have.
+            errors.append(
+                f"While step {config.get('id', '?')!r}: 'condition' "
+                f"{config['condition']!r} holds more than one '{{{{ }}}}' block, or "
+                "text around one, so it is substituted into a string and coerced by "
+                "bool() instead of being evaluated. Put the whole expression inside a "
+                "single '{{ }}' block."
+            )
         max_iter = config.get("max_iterations")
         if max_iter is not None:
             # bool is a subclass of int, so isinstance(True, int) is True and
@@ -140,6 +156,18 @@ class WhileStep(StepBase):
                     f"While step {config.get('id', '?')!r}: "
                     f"'max_iterations' must be an integer >= 1."
                 )
+        if "steps" not in config:
+            # A loop with no body is never what the author meant, but it used to
+            # validate clean and then report COMPLETED at run time while
+            # returning no next_steps -- so the engine's ``if result.next_steps:``
+            # block never fired and the loop the workflow is built around never
+            # ran once. The mistype is easy: fan-out's payload key is the
+            # singular ``step:``, so writing ``step:`` on a ``while`` produced a
+            # silent no-op. ``if`` already requires ``then`` and fan-out already
+            # requires both ``items`` and ``step``; require a body here too.
+            errors.append(
+                f"While step {config.get('id', '?')!r} is missing 'steps' field."
+            )
         nested = config.get("steps", [])
         if not isinstance(nested, list):
             errors.append(

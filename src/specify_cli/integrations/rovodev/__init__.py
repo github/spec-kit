@@ -8,6 +8,7 @@ under ``.rovodev/prompts/`` and a ``prompts.yml`` manifest.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +64,8 @@ class RovodevIntegration(SkillsIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> list[str] | None:
         """Build non-interactive ACLI args for RovoDev.
 
@@ -79,6 +82,7 @@ class RovodevIntegration(SkillsIntegration):
           - ``SPECKIT_INTEGRATION_ROVODEV_EXTRA_ARGS`` injects extra CLI flags
         """
         _ = model
+        self.validate_runtime_config(integration_args, integration_options)
         args = [self._resolve_executable(), "rovodev", "run", prompt]
         self._apply_extra_args_env_var(args)
         if output_json:
@@ -179,6 +183,17 @@ class RovodevIntegration(SkillsIntegration):
 
         for entry in existing:
             name = entry.get("name", "")
+            # ``prompts.yml`` is user-editable, and ``_read_prompts_yml`` only
+            # filters at the entry level -- it never validates the entry's
+            # ``name``. A YAML sequence or mapping there is unhashable, so this
+            # dict-membership test raised a raw ``TypeError`` out of ``setup()``
+            # and aborted every ``specify init`` / ``integration install`` for
+            # rovodev on that project, leaving prompts.yml unwritten. A
+            # non-string name can never match a generated entry, so treat it
+            # like any other unmatched entry and preserve it verbatim.
+            if not isinstance(name, str):
+                merged.append(entry)
+                continue
             if name in generated_by_name:
                 merged.append(generated_by_name[name])
                 seen.add(name)
