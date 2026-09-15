@@ -23,7 +23,6 @@ A custom preset for Spec Kit. Copy this directory and customize it to create you
 ## Manifest Reference (`preset.yml`)
 
 Required fields:
-
 - `schema_version` — always `"1.0"`
 - `preset.id` — lowercase alphanumeric with hyphens
 - `preset.name` — human-readable name

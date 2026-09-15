@@ -97,16 +97,13 @@ Run **all** of the following validation checks. Collect all results before
 deciding pass/fail:
 
 ### 2a. Preset ID format
-
 - Must match regex: `^[a-z][a-z0-9-]*$`
 - Must be lowercase with hyphens only
 
 ### 2b. Version format
-
 - Must follow semver: `X.Y.Z` (digits only, no `v` prefix)
 
 ### 2c. Repository validation
-
 - Fetch the repository URL — confirm it exists and is publicly accessible
 - Confirm the repository contains a `preset.yml` file
 - Confirm the repository contains a `LICENSE` file
@@ -166,7 +163,6 @@ preset** — not just any file named `README.md`, and not a product/framework pi
   `specify preset add ...` command for this preset; otherwise it fails check 2d above.
 
 ### 2e. Release and download URL validation
-
 - The download URL MUST belong to the submitted repository
   (`https://github.com/<owner>/<repo>/...` with the same `<owner>/<repo>` as
   the Repository URL). Reject URLs for any other GitHub repository.
@@ -191,21 +187,18 @@ preset** — not just any file named `README.md`, and not a product/framework pi
   - Verify a GitHub release exists for that tag.
 
 ### 2f. Submission checklists
-
 - Confirm that all required checkboxes in the Testing Checklist and Submission
   Requirements sections are checked (`[x]`)
 
 ### Validation outcome
 
 If **any** validation fails:
-
 1. Add a comment on the issue listing each failed check with a clear explanation
    of what's wrong and how to fix it
 2. Add the `validation-failed` label
 3. **Stop — do not proceed further**
 
 If all validations pass:
-
 1. Add the `validation-passed` label
 2. Continue to Step 3
 
@@ -274,7 +267,6 @@ Replace only the changed fields (typically `version`, `download_url`,
 ### Counting templates and commands
 
 Parse the "Templates Provided" and "Commands Provided" issue fields:
-
 - Count the number of list items (lines starting with `-`)
 - If the field says "None", the count is 0
 
@@ -300,12 +292,11 @@ Presets table.
 
 Insert a new row in **alphabetical order by preset name**:
 
-```markdown
+```
 | <Name> | <Description> | <N> templates, <N> commands | <Requires> | [<repo-name>](<repository-url>) |
 ```
 
 For the Requires column:
-
 - Use `—` if no extensions are required
 - List required extension names if any (e.g., `AIDE extension`)
 
@@ -325,8 +316,7 @@ Create a pull request with the changes. Use this branch naming convention:
 ### Commit message
 
 For a new preset:
-
-```text
+```
 Add <Name> preset to community catalog
 
 Add <id> preset submitted by @<issue-author> to:
@@ -337,8 +327,7 @@ Closes #<issue-number>
 ```
 
 For an update:
-
-```text
+```
 Update <Name> preset to v<version>
 
 Update <id> preset submitted by @<issue-author>:
@@ -351,7 +340,6 @@ Closes #<issue-number>
 ### PR description
 
 Include:
-
 - A summary of what changed
 - Validation results (all checks passed)
 - `Closes #${{ github.event.issue.number }}`

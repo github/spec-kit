@@ -4,14 +4,31 @@
 
 # GitHub Spec Kit
 
-**Spec-Driven Development or your own process — step by step or as an automated workflow.**
+**Build with a spec, fix a bug, or assess an idea — with your coding agent.**
 
-Spec Kit is an extensible, intent-driven harness that pushes any coding agent beyond code, guiding it across your SDLC or any business process. Use it for [Spec-Driven Development](concepts/sdd.md) (SDD), where you describe *what* to build and refine it through structured phases. Run it step by step, automate it end to end, or shape a process of your own, keeping intent at the center.
+Spec Kit gives your coding agent structured processes that keep intent and evidence ahead of implementation. Start with Spec-Driven Development (SDD), bug fixing, or idea assessment. Run a process step by step, automate it, or [shape one of your own](guides/customization.md) — including processes beyond software development.
 
 <a href="installation.md" class="btn btn-primary btn-lg">Install Spec Kit</a>&nbsp;
-<a href="quickstart.md" class="btn btn-outline-primary btn-lg">Quick Start</a>
+<a href="#choose-your-process" class="btn btn-outline-primary btn-lg">Choose your process</a>
 
 </div>
+
+---
+
+## Choose your process
+
+| What you need | Start here | What you get |
+| --- | --- | --- |
+| Build a feature or application | [Spec-Driven Development](quickstart.md) | A specification carried through planning, implementation, and convergence |
+| Diagnose and repair broken behavior | [Bug fixing](guides/bugfix.md) | An assessed cause, scoped fix, and recorded verification |
+| Decide whether an idea deserves investment | [Idea assessment](guides/assessment.md) | An evidence-backed go, clarify, or stop decision |
+
+These are independent entry points, not mandatory phases. SDD ships in core.
+Bug fixing and assessment are bundled, opt-in extensions. Assessment can stand
+alone; a decision to proceed does not automatically start implementation.
+
+Adding Spec Kit to an established codebase? Start with the
+[existing-project guide](guides/existing-projects.md).
 
 ---
 
@@ -24,7 +41,7 @@ Spec Kit is an extensible, intent-driven harness that pushes any coding agent be
 <!-- markdownlint-disable-next-line MD001 -->
 ### Spec-driven by default
 
-The core SDD process ships ready to use: **Spec → Plan → Tasks → Implement**.
+The core SDD process ships ready to use: **Specify → Plan → Tasks → Implement → Converge**.
 
 Define what to build before building it. Rich templates, quality checklists, and cross-artifact analysis come out of the box. Each phase produces a Markdown artifact that feeds the next — giving your AI coding agent structured context instead of ad-hoc prompts.
 
@@ -126,8 +143,20 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
 
 <div class="nav-cards">
   <a href="quickstart.md" class="nav-card">
-    <strong>Getting Started</strong>
-    <span>Install, configure, and run your first SDD workflow</span>
+    <strong>Spec-Driven Development</strong>
+    <span>Define, plan, implement, and converge on a feature</span>
+  </a>
+  <a href="guides/bugfix.md" class="nav-card">
+    <strong>Bug Fixing</strong>
+    <span>Assess the cause, apply a scoped fix, and verify the result</span>
+  </a>
+  <a href="guides/assessment.md" class="nav-card">
+    <strong>Idea Assessment</strong>
+    <span>Research an idea and decide whether it deserves investment</span>
+  </a>
+  <a href="guides/customization.md" class="nav-card">
+    <strong>Customize Spec Kit</strong>
+    <span>Adapt a process, add capabilities, or package a role-based setup</span>
   </a>
   <a href="guides/existing-projects.md" class="nav-card">
     <strong>Existing Projects</strong>
@@ -168,8 +197,8 @@ uv tool install specify-cli
 specify init my-project --integration copilot
 ```
 
-Ready to start? Follow the [Quick Start Guide](quickstart.md).
+Ready to start? [Choose your process](#choose-your-process).
 
 </div>
 
-<p class="text-end small text-body-secondary">Last updated: August 21, 2026</p>
+<p class="text-end small text-body-secondary">Last updated: September 14, 2026</p>

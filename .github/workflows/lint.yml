@@ -10,6 +10,21 @@ on:
 jobs:
   markdownlint:
     runs-on: ubuntu-latest
+    env:
+      DOC_GLOBS: |
+        docs/**/*.md
+        README.md
+        README.zh-CN.md
+        CHANGELOG.md
+        CODE_OF_CONDUCT.md
+        CONTRIBUTING.md
+        DEVELOPMENT.md
+        SECURITY.md
+        SUPPORT.md
+        spec-driven.md
+        integrations/*.md
+        presets/*.md
+        workflows/*.md
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -36,12 +51,35 @@ jobs:
             git diff --check refs/checks/push-before HEAD
           fi
 
+      # Documentation only. Commands, skills, prompt templates, agent
+      # instructions (AGENTS.md) and .github/ content are inputs to coding
+      # agents rather than prose, and are deliberately left unlinted so a
+      # documentation pass never reformats them. Add new documentation
+      # paths to the DOC_GLOBS list above.
+      - name: Verify the documentation globs match files
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+
+          count=0
+          while IFS= read -r glob; do
+            [ -z "$glob" ] && continue
+            for path in $glob; do
+              [ -f "$path" ] && count=$((count + 1))
+            done
+          done <<< "$DOC_GLOBS"
+
+          echo "documentation files matched: $count"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::markdownlint globs matched no files; the lint job would pass without checking anything (see #4526)"
+            exit 1
+          fi
+
       - name: Run markdownlint-cli2
         uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
         with:
-          globs: |
-            **/*.md
-            !extensions/**/*.md
+          globs: ${{ env.DOC_GLOBS }}
 
   shellcheck:
     runs-on: ubuntu-latest

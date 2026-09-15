@@ -4,6 +4,10 @@ This guide shows how to iterate on the `specify` CLI locally without publishing 
 
 > Scripts are available as Bash (`.sh`), PowerShell (`.ps1`), and Python (`.py`) variants. Interactive `specify init` prompts you to choose one; non-interactive runs (no TTY, or `--non-interactive`) default to a shell variant for your OS. Pass `--script sh|ps|py` to select explicitly.
 
+For how the project uses its own SDD and assessment processes, see
+[Does Spec Kit use Spec Kit?](https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md#does-spec-kit-use-spec-kit)
+in the contributor guide.
+
 ## 1. Clone and Switch Branches
 
 ```bash
