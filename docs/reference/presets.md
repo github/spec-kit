@@ -56,14 +56,14 @@ invalid replacement source can therefore leave the preset removed. With
 against the requested ID before removal; a source declaring a different ID may
 therefore install a different preset after the requested one has been removed.
 
-A successful update follows normal remove and add behaviour: it re-enables the
+A successful update follows normal remove and add behavior: it re-enables the
 preset, recreates `installed_at`, removes local modifications tracked by the
 preset, and treats an explicit `--from` or `--dev` as an intentional source
-change. If constitution synchronisation is enabled, both normal reconciliation
+change. If constitution synchronization is enabled, both normal reconciliation
 passes run. If add fails after removal, a generated constitution may remain
 reconciled against the stack without the removed preset. The generated-file
 guard still protects a hand-edited `.specify/memory/constitution.md`. No
-update-specific constitution optimisation is applied, so the normal remove and
+update-specific constitution optimization is applied, so the normal remove and
 add passes may rewrite the generated constitution even when the final resolved
 content is unchanged.
 
