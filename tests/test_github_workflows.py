@@ -9,6 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 from tests.conftest import requires_bash
@@ -119,6 +120,24 @@ def _gh_aw_metadata(compiled_text: str) -> dict[str, object]:
 
 def _workflow_step(steps: list[dict[str, object]], name: str) -> dict[str, object]:
     return next(step for step in steps if step.get("name") == name)
+
+
+def _bug_workflow(name: str) -> tuple[str, str, dict, dict]:
+    source_text = (WORKFLOWS_DIR / f"{name}.md").read_text(encoding="utf-8")
+    compiled_text = (WORKFLOWS_DIR / f"{name}.lock.yml").read_text(encoding="utf-8")
+    return (
+        source_text,
+        compiled_text,
+        _workflow_frontmatter(source_text),
+        yaml.safe_load(compiled_text),
+    )
+
+
+def _safe_output_config(compiled: dict) -> dict:
+    step = _workflow_step(
+        compiled["jobs"]["safe_outputs"]["steps"], "Process Safe Outputs"
+    )
+    return json.loads(step["env"]["GH_AW_SAFE_OUTPUTS_HANDLER_CONFIG"])
 
 
 def test_github_actions_are_pinned_to_full_commit_shas():
@@ -444,35 +463,276 @@ def test_community_submission_threat_detection_is_fail_closed():
 
 
 def test_bug_test_workflow_provisions_python_dependencies():
-    source = WORKFLOWS_DIR / "bug-test.md"
-    compiled = WORKFLOWS_DIR / "bug-test.lock.yml"
+    _, compiled_text, source, compiled = _bug_workflow("bug-test")
+    steps = compiled["jobs"]["agent"]["steps"]
 
-    assert source.is_file()
-    assert compiled.is_file()
-    source_text = source.read_text(encoding="utf-8")
-    compiled_text = compiled.read_text(encoding="utf-8")
-
-    setup_uv = (
-        "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1"
-    )
-    setup_python = (
-        "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0"
-    )
-
-    assert "    - pypi.org" in source_text
-    assert "    - files.pythonhosted.org" in source_text
-    assert setup_uv in source_text
-    assert setup_python in source_text
-    assert 'run: uv pip install --system -e ".[test]"' in source_text
-
+    assert source["network"] == {
+        "allowed": ["defaults", "pypi.org", "files.pythonhosted.org"]
+    }
     assert '"pypi.org"' in compiled_text
     assert '"files.pythonhosted.org"' in compiled_text
-    checkout_index = compiled_text.index("- name: Checkout repository")
-    uv_index = compiled_text.index("- name: Setup uv")
-    python_index = compiled_text.index("- name: Set up Python")
-    sync_index = compiled_text.index("- name: Install Python test dependencies")
-    agent_index = compiled_text.index("- name: Execute GitHub Copilot CLI")
-    assert checkout_index < uv_index < python_index < sync_index < agent_index
-    assert setup_uv in compiled_text
-    assert setup_python in compiled_text
-    assert 'run: uv pip install --system -e ".[test]"' in compiled_text
+    expected_names = [
+        "Checkout repository",
+        "Setup uv",
+        "Set up Python",
+        "Install Python test dependencies",
+        "Execute GitHub Copilot CLI",
+    ]
+    names = [step.get("name") for step in steps]
+    positions = [names.index(name) for name in expected_names]
+    assert positions == sorted(positions)
+    assert _workflow_step(steps, "Setup uv")["uses"] == (
+        "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d"
+    )
+    python_step = _workflow_step(steps, "Set up Python")
+    assert python_step["uses"] == (
+        "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97"
+    )
+    assert python_step["with"] == {"python-version": "3.14"}
+    assert [step["name"] for step in source["steps"]] == expected_names[1:-1]
+    for source_step in source["steps"]:
+        compiled_step = _workflow_step(steps, source_step["name"])
+        assert not source_step.get("continue-on-error", False)
+        assert not compiled_step.get("continue-on-error", False)
+        for field, value in source_step.items():
+            if field == "run":
+                assert compiled_step[field].rstrip() == value.rstrip()
+            else:
+                assert compiled_step[field] == value
+
+    install = _workflow_step(steps, "Install Python test dependencies")["run"]
+    assert 'UV_BIN="$(command -v uv)"' in install
+    assert "PIP_SUBCOMMAND=pip" in install
+    assert '"$UV_BIN" "$PIP_SUBCOMMAND" install --system -e ".[test]"' in install
+
+
+@pytest.mark.parametrize("name", ["bug-fix", "bug-test"])
+def test_bug_workflow_upgrade_preserves_runtime_and_negative_guards(name):
+    _, compiled_text, source, compiled = _bug_workflow(name)
+    metadata = _gh_aw_metadata(compiled_text)
+    assert metadata["compiler_version"] == "v0.88.7"
+    assert metadata["engine_versions"] == {"copilot": "1.0.80"}
+    assert metadata["strict"] is True
+    assert (source.get("on") or source[True]) == {
+        "issues": {"types": ["labeled"], "names": [name]},
+        "skip-bots": ["github-actions", "copilot", "dependabot"],
+    }
+    assert (compiled.get("on") or compiled[True]) == {
+        "issues": {"types": ["labeled"]}
+    }
+    guard = (
+        "github.event_name != 'issues' || github.event.action != 'labeled' || "
+        f"github.event.label.name == '{name}'"
+    )
+    pre_activation = compiled["jobs"]["pre_activation"]
+    assert " ".join(pre_activation["if"].split()) == guard
+    assert " ".join(compiled["jobs"]["activation"]["if"].split()) == (
+        f"needs.pre_activation.outputs.activated == 'true' && ({guard})"
+    )
+    assert pre_activation["outputs"]["activated"] == (
+        "${{ steps.check_membership.outputs.is_team_member == 'true' && "
+        "steps.check_skip_bots.outputs.skip_bots_ok == 'true' }}"
+    )
+    assert _workflow_step(
+        pre_activation["steps"], "Check team membership for workflow"
+    )["env"]["GH_AW_REQUIRED_ROLES"] == "admin,maintainer,write"
+    assert _workflow_step(pre_activation["steps"], "Check skip-bots")["env"][
+        "GH_AW_SKIP_BOTS"
+    ] == "github-actions,copilot-swe-agent,Copilot,copilot,@app/copilot-swe-agent,dependabot"
+
+    permissions = {"contents": "read", "issues": "read"}
+    output_permissions = {"issues": "write", "pull-requests": "write"}
+    labels = ["needs-assessment", "needs-reproduction", "fix-proposed", "fix-blocked"]
+    toolsets = ["issues", "repos"]
+    if name == "bug-test":
+        permissions["pull-requests"] = "read"
+        labels = ["tests-passing", "tests-failing", "tests-inconclusive"]
+        toolsets.append("pull_requests")
+        assert "edit" not in source["tools"]
+    else:
+        output_permissions["contents"] = "write"
+        assert "edit" in source["tools"]
+    assert source["tools"]["github"] == {
+        "toolsets": toolsets, "min-integrity": "none"
+    }
+    assert source["permissions"] == permissions
+    assert compiled["permissions"] == {}
+    agent = compiled["jobs"]["agent"]
+    assert agent["permissions"] == permissions
+    assert source["checkout"] == {"fetch-depth": 0}
+    assert _workflow_step(agent["steps"], "Checkout repository")["with"] == {
+        "persist-credentials": False, "fetch-depth": 0
+    }
+    assert compiled["jobs"]["safe_outputs"]["permissions"] == output_permissions
+    assert compiled["jobs"]["conclusion"]["permissions"] == {
+        **output_permissions, "actions": "read"
+    }
+
+    outputs = _safe_output_config(compiled)
+    expected_outputs = {
+        "add_comment", "add_labels", "noop", "create_report_incomplete_issue",
+        "missing_data", "missing_tool", "report_incomplete",
+    }
+    expected_source_outputs = {"add-comment", "add-labels", "noop"}
+    if name == "bug-fix":
+        expected_outputs.add("create_pull_request")
+        expected_source_outputs.add("create-pull-request")
+    assert set(outputs) == expected_outputs
+    assert set(source["safe-outputs"]) == expected_source_outputs
+    assert outputs["add_comment"] == source["safe-outputs"]["add-comment"] == {"max": 1}
+    assert outputs["add_labels"] == source["safe-outputs"]["add-labels"] == {
+        "allowed": labels, "max": 1
+    }
+    assert source["safe-outputs"]["noop"] == {"report-as-issue": False}
+    assert outputs["noop"] == {"max": 1, "report-as-issue": "false"}
+
+    refs = {match.group("ref") for match in USES_RE.finditer(compiled_text)}
+    assert refs
+    assert all(PINNED_SHA_RE.search(ref) for ref in refs)
+    expected_actions = {
+        "github/gh-aw-actions/setup@5e508589e03a7757a7e05b26e834292f5445bfb6"
+    }
+    if name == "bug-test":
+        expected_actions.add(
+            "github/gh-aw-actions/setup-cli@5e508589e03a7757a7e05b26e834292f5445bfb6"
+        )
+    assert {
+        ref for ref in refs if ref.startswith("github/gh-aw-actions/")
+    } == expected_actions
+
+
+def test_bug_fix_upgrade_preserves_scoped_draft_pr_contract():
+    source_text, _, source, compiled = _bug_workflow("bug-fix")
+    create_pr = _safe_output_config(compiled)["create_pull_request"]
+    assert source["safe-outputs"]["create-pull-request"] == {
+        "title-prefix": "[bug-fix] ",
+        "labels": ["bug-fix", "automated"],
+        "draft": True,
+        "max": 1,
+        "max-patch-size": 1024,
+        "protected-files": {
+            "policy": "blocked", "exclude": ["README.md", "CHANGELOG.md"]
+        },
+    }
+    assert create_pr["draft"] is True
+    assert create_pr["title_prefix"] == "[bug-fix] "
+    assert create_pr["labels"] == ["bug-fix", "automated"]
+    assert create_pr["max"] == 1
+    assert create_pr["max_patch_size"] == 1024
+    assert create_pr["max_patch_files"] == 100
+    assert create_pr["protected_files_policy"] == "blocked"
+    assert create_pr["protect_top_level_dot_folders"] is True
+    assert not create_pr.get("protected_dot_folder_excludes")
+    assert set(create_pr["protected_files"]) == {
+        "package.json", "bun.lockb", "bunfig.toml", "deno.json", "deno.jsonc",
+        "deno.lock", "global.json", "NuGet.Config", "Directory.Packages.props",
+        "mix.exs", "mix.lock", "go.mod", "go.sum", "stack.yaml", "stack.yaml.lock",
+        "pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle",
+        "settings.gradle.kts", "gradle.properties", "package-lock.json",
+        "yarn.lock", "pnpm-lock.yaml", "npm-shrinkwrap.json", "requirements.txt",
+        "Pipfile", "Pipfile.lock", "pyproject.toml", "setup.py", "setup.cfg",
+        "Gemfile", "Gemfile.lock", "uv.lock", "CODEOWNERS", "DESIGN.md",
+        "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "AGENTS.md",
+    }
+    text = " ".join(source_text.split())
+    for clause in (
+        (
+            "Find the **most recent** such assessment comment that appears "
+            "**workflow-authored**: the author is a **bot/service account**"
+        ),
+        (
+            "**Valid** (or **Likely valid, needs reproduction** with no blocking "
+            "clarifications) — continue."
+        ),
+        "Implement the **preferred** remediation from the assessment",
+        "**Stay within the files the assessment named**",
+        "record it explicitly in the PR body under **Deviations from Assessment**",
+        "Use the `create-pull-request` safe output to open a **draft** PR",
+        "Use `Refs` (not `Closes`)",
+        "Add **exactly one** status label per run when the label exists",
+    ):
+        assert clause in text
+
+
+def test_bug_fix_upgrade_preserves_missing_and_blocked_assessment_responses():
+    source_text, _, _, _ = _bug_workflow("bug-fix")
+    text = " ".join(source_text.split())
+    missing = text.split("If **no** assessment comment exists on the issue:", 1)[1]
+    missing = missing.split("## Step 2", 1)[0]
+    for clause in (
+        "Add **one** comment explaining that a fix cannot be proposed",
+        "apply the `bug-assess` label first",
+        "If the `needs-assessment` label already exists",
+        "**Stop.** Do not read the codebase, do not edit files, do not open a PR.",
+    ):
+        assert clause in missing
+    blocked = text.split("Before changing any code, check the assessment's verdict:", 1)[1]
+    blocked = blocked.split("Restate, in", 1)[0]
+    for clause in (
+        "**Invalid** — there is nothing to fix. Add **one** comment",
+        "`fix-blocked` label exists",
+        "Then **stop**. Do not open a PR.",
+        "**Likely valid, needs reproduction** with unresolved `[NEEDS CLARIFICATION]`",
+        "Add **one** comment listing the open questions",
+        "`needs-reproduction` label exists",
+        "**Stop.** (There is no human in this automated run",
+    ):
+        assert clause in blocked
+    assert "Revert your partial edits, add a comment summarizing the new finding." in text
+    assert "Recommend re-running `bug-assess`, and **stop** without opening a PR." in text
+    assert "do not also add `fix-proposed` in those cases" in text
+
+
+def test_bug_test_upgrade_preserves_fix_selection_and_no_fix_reporting():
+    source_text, _, _, _ = _bug_workflow("bug-test")
+    text = " ".join(source_text.split())
+    choices = [
+        "**Linked pull request (preferred).**",
+        "**Fix branch (fallback).**",
+        "**Current checkout (last resort).**",
+    ]
+    positions = [text.index(choice) for choice in choices]
+    assert positions == sorted(positions)
+    for clause in (
+        (
+            '`git fetch origin "pull/<PR_NUMBER>/head:bug-test-fix"` then '
+            "`git checkout bug-test-fix`"
+        ),
+        "Record the PR number and head SHA.",
+        '`git fetch origin "<branch>:bug-test-fix"` then `git checkout bug-test-fix`',
+        "Only check out branches from **this** repository's `origin`.",
+        "test the **currently checked-out commit**",
+        (
+            "no dedicated fix artifact was found, so the result reflects the base "
+            "branch, not a proposed fix."
+        ),
+        'FIX_SOURCE = "current checkout (no fix artifact found)"',
+        "Never check out, fetch, or execute code referenced by a non-`origin` URL",
+        "**Wrap every test invocation in a timeout**",
+        "**environment/setup failure** distinct from test failures",
+        "**Read-only on repository source.** Never modify, create, or delete tracked files",
+        "post an `inconclusive` report that clearly explains why",
+        (
+            "`tests-inconclusive` when the run could not produce a clear pass/fail "
+            "(setup failure, no stack detected, or no fix artifact found)"
+        ),
+    ):
+        assert clause in text
+
+
+@requires_bash
+@pytest.mark.parametrize("compiled_step", [False, True], ids=["source", "compiled"])
+@pytest.mark.parametrize("exit_code", [0, 17], ids=["success", "install-failure"])
+def test_bug_test_install_preserves_editable_extras_and_failure(compiled_step, exit_code):
+    _, _, source, compiled = _bug_workflow("bug-test")
+    steps = compiled["jobs"]["agent"]["steps"] if compiled_step else source["steps"]
+    script = _workflow_step(steps, "Install Python test dependencies")["run"]
+    fake_uv = f'uv() {{ printf "%s\\n" "$@"; return {exit_code}; }}\n'
+    result = subprocess.run(
+        ["bash", "-euo", "pipefail", "-c", fake_uv + script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.stdout.splitlines() == ["pip", "install", "--system", "-e", ".[test]"]
+    assert result.returncode == exit_code, result.stderr

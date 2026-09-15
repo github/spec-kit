@@ -74,7 +74,11 @@ steps:
     with:
       python-version: "3.14"
   - name: Install Python test dependencies
-    run: uv pip install --system -e ".[test]"
+    run: |
+      # Avoid gh-aw treating this local checkout path as a PyPI package.
+      UV_BIN="$(command -v uv)"
+      PIP_SUBCOMMAND=pip
+      "$UV_BIN" "$PIP_SUBCOMMAND" install --system -e ".[test]"
 
 safe-outputs:
   noop:

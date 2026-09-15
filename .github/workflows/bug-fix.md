@@ -31,6 +31,7 @@ safe-outputs:
     labels: [bug-fix, automated]
     draft: true
     max: 1
+    max-patch-size: 1024
     protected-files:
       policy: blocked
       exclude:
