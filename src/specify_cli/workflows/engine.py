@@ -860,12 +860,17 @@ class RunState:
         # float) reaches that slice and raises a raw, unhelpful
         # ``TypeError: slice indices must be integers or None or have an
         # __index__ method`` from deep inside ``resume()`` instead of the
-        # clean "Invalid run state: ..." this loader already gives every
-        # other malformed field. A negative value slices from the end instead
-        # of failing, silently resuming from the wrong step. Reject both here,
-        # consistent with the sibling checks. ``bool`` is an ``int`` subclass,
-        # so it is excluded explicitly (mirrors the ``max_iterations`` /
-        # ``continue_on_error`` bool guards elsewhere in this module).
+        # clean "Invalid run state: ..." error the sibling fields above
+        # already give when malformed. A negative value slices from the end
+        # instead of failing, silently resuming from the wrong step. Reject
+        # both here, consistent with those sibling checks (this loader does
+        # not shape-check every restored field -- e.g. ``step_results`` and
+        # ``workflow_dir`` below are still assigned directly -- only
+        # ``current_step_index`` is addressed here, since it is the one
+        # ``resume()`` depends on for a safe list slice). ``bool`` is an
+        # ``int`` subclass, so it is excluded explicitly (mirrors the
+        # ``max_iterations`` / ``continue_on_error`` bool guards elsewhere in
+        # this module).
         current_step_index = state_data.get("current_step_index", 0)
         if (
             isinstance(current_step_index, bool)
