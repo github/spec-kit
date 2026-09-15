@@ -9,7 +9,7 @@ Validates:
   particular that ``{SCRIPT}`` resolves to a script the extension actually
   ships under ``.specify/extensions/github/scripts/`` rather than to core
 - The ``before_taskstoissues`` / ``after_taskstoissues`` hook contract
-- Behaviour of the bash and Python ``resolve-tasks`` twins
+- Behaviour of the bash, PowerShell and Python ``resolve-tasks`` twins
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ import yaml
 
 from specify_cli import _locate_bundled_extension
 from tests.conftest import requires_bash
+from tests.parity_helpers import HAS_POWERSHELL, POWERSHELL_EXE
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -473,6 +474,7 @@ class TestCommandBody:
 
 PY_SCRIPT = EXT_DIR / SCRIPT_TWINS["py"]
 SH_SCRIPT = EXT_DIR / SCRIPT_TWINS["sh"]
+PS_SCRIPT = EXT_DIR / SCRIPT_TWINS["ps"]
 
 
 def _make_feature_project(tmp_path: Path) -> Path:
@@ -568,6 +570,84 @@ class TestResolveTasksPython:
 
         assert result.returncode == 0, result.stderr
         assert feature_json.read_bytes() == before
+
+
+def _resolver_env() -> dict[str, str]:
+    """Environment without an inherited feature override."""
+    env = dict(os.environ)
+    env.pop("SPECIFY_FEATURE_DIRECTORY", None)
+    return env
+
+
+def _run_ps(project: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [POWERSHELL_EXE, "-NoProfile", "-File", str(PS_SCRIPT), "-Json"],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=_resolver_env(),
+    )
+
+
+def _run_py(project: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, str(PY_SCRIPT), "--json"],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=_resolver_env(),
+    )
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+class TestResolveTasksPowerShellParity:
+    """The PowerShell twin must agree with the Python twin."""
+
+    def test_json_output_matches_python(self, tmp_path: Path):
+        project = _make_feature_project(tmp_path)
+
+        ps = _run_ps(project)
+        py = _run_py(project)
+
+        assert ps.returncode == 0, ps.stderr
+        assert py.returncode == 0, py.stderr
+        ps_payload = json.loads(ps.stdout)
+        py_payload = json.loads(py.stdout)
+        assert list(ps_payload) == ["FEATURE_DIR", "TASKS", "AVAILABLE_DOCS"]
+        assert Path(ps_payload["FEATURE_DIR"]) == Path(py_payload["FEATURE_DIR"])
+        assert Path(ps_payload["TASKS"]) == Path(py_payload["TASKS"])
+        assert ps_payload["AVAILABLE_DOCS"] == py_payload["AVAILABLE_DOCS"]
+        assert ps_payload["AVAILABLE_DOCS"] == ["research.md", "tasks.md"]
+
+    def test_single_document_stays_a_json_array(self, tmp_path: Path):
+        """ConvertTo-Json unwraps one-element arrays unless forced."""
+        project = _make_feature_project(tmp_path)
+        (project / "specs" / "001-demo" / "research.md").unlink()
+
+        ps = _run_ps(project)
+        py = _run_py(project)
+
+        assert ps.returncode == 0, ps.stderr
+        assert py.returncode == 0, py.stderr
+        ps_docs = json.loads(ps.stdout)["AVAILABLE_DOCS"]
+        assert isinstance(ps_docs, list)
+        assert ps_docs == ["tasks.md"]
+        assert ps_docs == json.loads(py.stdout)["AVAILABLE_DOCS"]
+
+    def test_missing_tasks_md_fails_like_python(self, tmp_path: Path):
+        project = _make_feature_project(tmp_path)
+        (project / "specs" / "001-demo" / "tasks.md").unlink()
+
+        ps = _run_ps(project)
+        py = _run_py(project)
+
+        assert ps.returncode == 1
+        assert py.returncode == 1
+        assert "tasks.md not found" in ps.stderr
+        assert "tasks.md not found" in py.stderr
+        assert ps.stdout.strip() == ""
 
 
 @requires_bash
