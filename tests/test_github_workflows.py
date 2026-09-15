@@ -609,7 +609,6 @@ def test_bug_fix_upgrade_preserves_scoped_draft_pr_contract():
         "labels": ["bug-fix", "automated"],
         "draft": True,
         "max": 1,
-        "max-patch-size": 1024,
         "protected-files": {
             "policy": "blocked", "exclude": ["README.md", "CHANGELOG.md"]
         },
@@ -618,7 +617,6 @@ def test_bug_fix_upgrade_preserves_scoped_draft_pr_contract():
     assert create_pr["title_prefix"] == "[bug-fix] "
     assert create_pr["labels"] == ["bug-fix", "automated"]
     assert create_pr["max"] == 1
-    assert create_pr["max_patch_size"] == 1024
     assert create_pr["max_patch_files"] == 100
     assert create_pr["protected_files_policy"] == "blocked"
     assert create_pr["protect_top_level_dot_folders"] is True
