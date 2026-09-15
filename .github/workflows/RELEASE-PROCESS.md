@@ -205,12 +205,18 @@ Verify the release branch/tag, GitHub Release, wheel (`.whl`), and source distri
 | Tag exists, GitHub Release is missing | Confirm that the tag points to the intended release commit, then create the GitHub Release from that existing tag with the same notes format used by `release.yml`. |
 | Valid tag exists, neither wheel nor sdist is published to PyPI | Run **Publish to PyPI** manually with the exact release tag, independently of GitHub Release creation. |
 | PyPI version exists, GitHub Release is missing | Keep the existing tag unchanged and create the GitHub Release from it. |
-| Wheel is published, sdist is missing | Prefer retrying the failed `publish` job with the original `dist` artifact (see below). `uv publish` skips the identical existing wheel and uploads the missing sdist. |
-| Sdist is published, wheel is missing | Prefer retrying the failed `publish` job with the original `dist` artifact (see below). `uv publish` skips the identical existing sdist and uploads the missing wheel. |
+| Wheel is published, sdist is missing | Recover the original build artifacts and publish the missing sdist using the procedure below; verify the existing wheel matches exactly. |
+| Sdist is published, wheel is missing | Recover the original build artifacts and publish the missing wheel using the procedure below; verify the existing sdist matches exactly. |
 
-For partial PyPI uploads, inspect the original run and published files before retrying. If only the `publish` job failed and the original `dist` artifact is still available, rerun that failed job to reuse the successful build. With PyPI, [repeating `uv publish` skips existing identical files](https://docs.astral.sh/uv/guides/package/#publishing-your-package) and uploads missing files; existing files must match exactly.
+For partial PyPI uploads, use a recovery procedure that does not depend on a failed-job rerun retaining access to the original build:
 
-Rerunning the entire workflow also reruns `uv build`. Before retrying publication with rebuilt artifacts, verify that artifacts corresponding to already-published files match those files exactly. The same tag alone does not guarantee identical build output. If they differ, stop and investigate; do not replace published files or move the tag. Previously used distribution filenames cannot be replaced or reused for different contents, even after deletion.
+1. Inspect the original **Publish to PyPI** run and the files already on PyPI. Download and preserve its original `dist` artifact before any rerun, if it is still accessible, and confirm the run used the intended release tag.
+2. Extract the wheel and sdist into a clean `dist/` directory. Compare the SHA-256 hashes of files whose names are already on PyPI with the hashes published by PyPI; they must match exactly.
+3. Have a maintainer with PyPI publishing permission run `uv publish` against that directory using an authorized PyPI token. The current workflow accepts only a tag and cannot take a saved artifact as input; its Trusted Publishing identity does not grant credentials to a local shell. With PyPI, [repeating `uv publish` skips existing identical files](https://docs.astral.sh/uv/guides/package/#publishing-your-package) and uploads missing files. Confirm that both the wheel and sdist are present afterward.
+
+If the original artifact is unavailable, rebuild from the unchanged release tag and perform the same hash comparison before publishing. The same tag alone does not guarantee identical build output. If any already-published file differs, stop and investigate; do not replace published files or move the tag. Previously used distribution filenames cannot be replaced or reused for different contents, even after deletion.
+
+Rerunning the entire workflow also reruns `uv build` and proceeds to publication without a separate manual comparison step. Do not use it as a substitute for the verification above after a partial upload. If no authorized publishing path is available for the verified artifacts, ask a PyPI project owner to arrange recovery.
 
 ### Release Workflow Didn't Trigger
 
