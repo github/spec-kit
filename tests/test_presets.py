@@ -11519,16 +11519,56 @@ class TestPresetUpdateCommand:
         assert exc_info.value.exit_code == 1
         assert calls == []
 
-    def test_mutually_exclusive_sources_are_rejected(self, project_dir, monkeypatch):
-        self._manager(monkeypatch, project_dir)
+    @pytest.mark.parametrize(
+        ("from_url", "dev"),
+        [
+            ("https://example.com/preset.zip", "./preset"),
+            ("", "./preset"),
+            ("https://example.com/preset.zip", ""),
+        ],
+    )
+    def test_mutually_exclusive_sources_are_rejected(
+        self, project_dir, monkeypatch, from_url, dev
+    ):
+        commands = self._manager(monkeypatch, project_dir)
+        calls = []
+        monkeypatch.setattr(commands, "preset_remove", lambda *_args: calls.append("remove"))
+        monkeypatch.setattr(commands, "preset_add", lambda **_kwargs: calls.append("add"))
+
         with pytest.raises(typer.Exit) as exc_info:
             preset_update(
                 "test-pack",
-                from_url="https://example.com/preset.zip",
-                dev="./preset",
+                from_url=from_url,
+                dev=dev,
                 priority=10,
             )
+
         assert exc_info.value.exit_code == 1
+        assert calls == []
+
+    @pytest.mark.parametrize(
+        ("from_url", "dev", "option"),
+        [("", None, "--from"), (None, "", "--dev")],
+    )
+    def test_empty_source_is_rejected_before_removal(
+        self, project_dir, monkeypatch, capsys, from_url, dev, option
+    ):
+        commands = self._manager(monkeypatch, project_dir)
+        calls = []
+        monkeypatch.setattr(commands, "preset_remove", lambda *_args: calls.append("remove"))
+        monkeypatch.setattr(commands, "preset_add", lambda **_kwargs: calls.append("add"))
+
+        with pytest.raises(typer.Exit) as exc_info:
+            preset_update(
+                "test-pack",
+                from_url=from_url,
+                dev=dev,
+                priority=10,
+            )
+
+        assert exc_info.value.exit_code == 1
+        assert calls == []
+        assert f"{option} must not be empty" in strip_ansi(capsys.readouterr().out)
 
     def test_remove_failure_prevents_add(self, project_dir, monkeypatch):
         commands = self._manager(monkeypatch, project_dir)

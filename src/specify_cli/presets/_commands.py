@@ -499,8 +499,14 @@ def preset_update(
     from .. import _require_specify_project
     from . import PresetManager
 
-    if from_url and dev:
+    if from_url is not None and dev is not None:
         console.print("[red]Error:[/red] --from and --dev are mutually exclusive")
+        raise typer.Exit(1)
+    if from_url == "":
+        console.print("[red]Error:[/red] --from must not be empty")
+        raise typer.Exit(1)
+    if dev == "":
+        console.print("[red]Error:[/red] --dev must not be empty")
         raise typer.Exit(1)
 
     # Validate priority before removal. add rejects the same range, but only

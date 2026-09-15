@@ -129,6 +129,22 @@ def test_preset_update_cli_contract():
         assert rejected.exit_code == 2
         assert f"No such option: {unsupported_option}" in strip_ansi(rejected.output)
 
+    for source_option in ("--from", "--dev"):
+        empty_source = runner.invoke(
+            app, ["preset", "update", PRESET_ID, source_option, ""]
+        )
+        assert empty_source.exit_code == 1
+        assert f"{source_option} must not be empty" in strip_ansi(empty_source.output)
+
+    mutually_exclusive = runner.invoke(
+        app,
+        ["preset", "update", PRESET_ID, "--from", "", "--dev", "replacement"],
+    )
+    assert mutually_exclusive.exit_code == 1
+    assert "--from and --dev are mutually exclusive" in strip_ansi(
+        mutually_exclusive.output
+    )
+
     help_result = runner.invoke(app, ["preset", "update", "--help"])
     assert help_result.exit_code == 0
     help_output = strip_ansi(help_result.output)
