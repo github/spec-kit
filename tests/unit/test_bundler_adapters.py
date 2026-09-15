@@ -1,6 +1,8 @@
 """Unit tests for catalog-fetch adapters (auth + redirect safety)."""
 from __future__ import annotations
 
+from typing import Self
+
 import pytest
 
 from specify_cli.bundler import BundlerError
@@ -23,7 +25,7 @@ class _FakeResponse:
         self._offset = 0
         self._final_url = final_url
 
-    def __enter__(self) -> "_FakeResponse":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *exc) -> bool:
@@ -134,6 +136,33 @@ def test_builtin_default_catalog_fetches_repository_catalog_online(monkeypatch):
         "source_id": "team",
         "url": adapters.FIRSTPARTY_CATALOG_URL,
     }
+
+
+def test_builtin_default_catalog_falls_back_to_core_pack_on_fetch_error(
+    monkeypatch, tmp_path
+):
+    catalog_path = tmp_path / "bundles" / "catalog.json"
+    catalog_path.parent.mkdir()
+    catalog_path.write_text(
+        '{"schema_version":"1.0","bundles":{"packaged":{'
+        '"id":"packaged","name":"Packaged","version":"1.0.0",'
+        '"role":"developer","description":"Packaged catalog entry.",'
+        '"author":"Spec Kit","license":"MIT","download_url":"",'
+        '"requires":{"speckit_version":">=0.1.0"},'
+        '"provides":{},"verified":false}}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(adapters, "_locate_core_pack", lambda: tmp_path)
+
+    def fail_http_get_json(source_id, url):
+        raise BundlerError("repository unavailable")
+
+    monkeypatch.setattr(adapters, "_http_get_json", fail_http_get_json)
+
+    fetcher = adapters.make_catalog_fetcher(allow_network=True)
+    result = fetcher(_source("builtin://default"))
+
+    assert "packaged" in result["bundles"]
 
 
 def test_builtin_default_catalog_uses_core_pack_snapshot_offline(monkeypatch, tmp_path):

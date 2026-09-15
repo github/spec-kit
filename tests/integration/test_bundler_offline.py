@@ -41,6 +41,36 @@ def test_builtin_default_catalog_resolves_first_party_bundles_offline():
     assert resolved.install_allowed is True
 
 
+def test_builtin_catalog_failure_does_not_block_lower_priority_source(monkeypatch):
+    def fail_http_get_json(source_id, url):
+        raise BundlerError("repository unavailable")
+
+    monkeypatch.setattr(
+        "specify_cli.bundler.services.adapters._http_get_json", fail_http_get_json
+    )
+    monkeypatch.setattr(
+        "specify_cli.bundler.services.adapters._load_packaged_catalog",
+        lambda filename: {"schema_version": "1.0", "bundles": {}},
+    )
+
+    project = _src("project", "https://example.com/catalog.json", priority=10)
+    fetcher = make_catalog_fetcher(allow_network=True)
+
+    def fetch_project(source):
+        if source.id == "project":
+            return {
+                "schema_version": "1.0",
+                "bundles": {"company": catalog_entry_dict("company")},
+            }
+        return fetcher(source)
+
+    stack = CatalogStack(
+        [_src("default", "builtin://default"), project], fetch_project
+    )
+
+    assert stack.resolve("company").source.id == "project"
+
+
 def test_builtin_community_catalog_resolves_from_packaged_snapshot_offline():
     fetcher = make_catalog_fetcher(allow_network=False)
     source = _src(

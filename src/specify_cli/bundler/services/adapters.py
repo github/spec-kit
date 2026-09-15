@@ -143,7 +143,16 @@ def make_catalog_fetcher(*, allow_network: bool = True):
             if repository_url is None:
                 raise BundlerError(f"Unknown built-in catalog '{url}'.")
             if allow_network:
-                return _http_get_json(source.id, repository_url)
+                try:
+                    return _http_get_json(source.id, repository_url)
+                except BundlerError as exc:
+                    # Built-in catalogs remain usable when the repository is
+                    # temporarily unavailable; the packaged snapshot is the
+                    # authoritative offline fallback.
+                    try:
+                        return _load_packaged_catalog(_BUILTIN_PACKAGED_SNAPSHOTS[url])
+                    except BundlerError as snapshot_exc:
+                        raise snapshot_exc from exc
             return _load_packaged_catalog(_BUILTIN_PACKAGED_SNAPSHOTS[url])
 
         if scheme == "file":
@@ -204,7 +213,7 @@ def _http_get_json(source_id: str, url: str) -> dict:
             ).decode("utf-8")
     except BundlerError:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise BundlerError(f"Failed to fetch catalog from {url}: {exc}") from exc
     return loads_json(raw, origin=final_url)
 
