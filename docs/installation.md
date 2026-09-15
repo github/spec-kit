@@ -138,16 +138,16 @@ This confirms that the `specify` command is available and reporting the expected
 
 After initialization, you should see the following commands available in your coding agent:
 
-- `/speckit.specify` - Create specifications
-- `/speckit.plan` - Generate implementation plans
-- `/speckit.tasks` - Break down into actionable tasks
-- `/speckit.implement` - Execute implementation tasks
-- `/speckit.analyze` - Validate cross-artifact consistency
-- `/speckit.clarify` - Identify and resolve ambiguities
-- `/speckit.checklist` - Generate quality checklists
-- `/speckit.constitution` - Create or update project principles
-- `/speckit.converge` - Assess codebase against artifacts and append remaining tasks
-- `/speckit.taskstoissues` - Convert tasks to issues
+- `/speckit-specify` - Create specifications
+- `/speckit-plan` - Generate implementation plans
+- `/speckit-tasks` - Break down into actionable tasks
+- `/speckit-implement` - Execute implementation tasks
+- `/speckit-analyze` - Validate cross-artifact consistency
+- `/speckit-clarify` - Identify and resolve ambiguities
+- `/speckit-checklist` - Generate quality checklists
+- `/speckit-constitution` - Create or update project principles
+- `/speckit-converge` - Assess codebase against artifacts and append remaining tasks
+- `/speckit-taskstoissues` - Convert tasks to issues
 
 Scripts are installed into a variant subdirectory matching the chosen script type:
 
