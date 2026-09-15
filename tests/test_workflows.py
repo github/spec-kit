@@ -8787,11 +8787,22 @@ class TestWorkflowCatalog:
         assert new["priority"] == 1  # max(inf coerced to 0) + 1
 
     def test_add_catalog_duplicate_is_idempotent(self, project_dir):
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+        from specify_cli.workflows.catalog import WorkflowCatalog
 
         catalog = WorkflowCatalog(project_dir)
         assert catalog.add_catalog("https://example.com/catalog.json") == "added"
         assert catalog.add_catalog("https://example.com/catalog.json") == "unchanged"
+
+        cfg = project_dir / ".specify" / "workflow-catalogs.yml"
+        data = yaml.safe_load(cfg.read_text(encoding="utf-8"))
+        assert len(data["catalogs"]) == 1
+
+    def test_add_catalog_duplicate_same_name_is_idempotent(self, project_dir):
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        catalog = WorkflowCatalog(project_dir)
+        assert catalog.add_catalog("https://example.com/catalog.json", "mine") == "added"
+        assert catalog.add_catalog("https://example.com/catalog.json", "mine") == "unchanged"
 
         cfg = project_dir / ".specify" / "workflow-catalogs.yml"
         data = yaml.safe_load(cfg.read_text(encoding="utf-8"))
@@ -9539,11 +9550,22 @@ class TestStepCatalog:
         assert config_path.read_text(encoding="utf-8") == original
 
     def test_add_catalog_duplicate_is_idempotent(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+        from specify_cli.workflows.catalog import StepCatalog
 
         catalog = StepCatalog(project_dir)
         assert catalog.add_catalog("https://example.com/steps.json") == "added"
         assert catalog.add_catalog("https://example.com/steps.json") == "unchanged"
+
+        cfg = project_dir / ".specify" / "step-catalogs.yml"
+        data = yaml.safe_load(cfg.read_text(encoding="utf-8"))
+        assert len(data["catalogs"]) == 1
+
+    def test_add_catalog_duplicate_same_name_is_idempotent(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        catalog = StepCatalog(project_dir)
+        assert catalog.add_catalog("https://example.com/steps.json", "mine") == "added"
+        assert catalog.add_catalog("https://example.com/steps.json", "mine") == "unchanged"
 
         cfg = project_dir / ".specify" / "step-catalogs.yml"
         data = yaml.safe_load(cfg.read_text(encoding="utf-8"))

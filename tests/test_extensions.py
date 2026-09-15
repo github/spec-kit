@@ -7648,6 +7648,40 @@ class TestExtensionAddCLI:
         assert second.exit_code == 1
         assert "different settings" in second.output
 
+    def test_catalog_add_string_representations_are_idempotent(self, tmp_path):
+        """A stored entry using supported string representations (a numeric-string
+        priority and a string boolean) is equivalent to the requested defaults, so
+        a rerun is a no-op rather than a false conflict (#4505)."""
+        import yaml as _yaml
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        # Hand-written config: priority as a string, install_allowed as "false".
+        (project_dir / ".specify" / "extension-catalogs.yml").write_text(
+            _yaml.safe_dump({"catalogs": [{
+                "name": "community",
+                "url": "https://example.com/catalog.json",
+                "priority": "10",
+                "install_allowed": "false",
+                "description": "",
+            }]}),
+            encoding="utf-8",
+        )
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, [
+                "extension", "catalog", "add",
+                "https://example.com/catalog.json", "--name", "community",
+            ], catch_exceptions=True)
+
+        assert result.exit_code == 0, result.output
+        assert "nothing to do" in result.output
+
     def test_catalog_add_escapes_config_saved_path_markup(self, tmp_path):
         """Catalog add's saved-path label should render literally under Rich."""
         from typer.testing import CliRunner

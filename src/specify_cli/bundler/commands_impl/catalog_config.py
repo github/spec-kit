@@ -197,13 +197,22 @@ def add_source(
             # Idempotent add (#4505): identity is the source id or url. A rerun
             # requesting the same settings is a successful no-op; differing
             # settings are a conflict rather than a silent overwrite.
+            #
+            # Parse the matching entry through CatalogSource.from_dict first:
+            # _read() only checks that entries are mappings, so a hand-edited
+            # entry may carry a non-integer priority. Normalizing here surfaces
+            # that as a clean BundlerError (matching catalog parsing) instead of
+            # leaking int()'s ValueError/OverflowError past the CLI's
+            # `except BundlerError`, and lets supported representations (e.g. a
+            # string priority) compare equal to the requested defaults.
+            existing_source = CatalogSource.from_dict(dict(existing), Scope.PROJECT)
             if (
-                existing.get("id") == resolved_id
-                and existing.get("url") == url
-                and int(existing.get("priority", 0)) == desired["priority"]
-                and str(existing.get("install_policy", "")) == desired["install_policy"]
+                existing_source.id == resolved_id
+                and existing_source.url == url
+                and existing_source.priority == desired["priority"]
+                and existing_source.install_policy.value == desired["install_policy"]
             ):
-                return CatalogSource.from_dict(dict(existing), Scope.PROJECT), "unchanged"
+                return existing_source, "unchanged"
             raise BundlerError(
                 f"Catalog source '{resolved_id}' (or url) already exists in this "
                 "project with different settings. Remove it first to change it."

@@ -3953,6 +3953,37 @@ class TestPresetCatalogMultiCatalog:
         assert second.exit_code == 1
         assert "different settings" in second.output
 
+    def test_catalog_add_string_representations_are_idempotent(self, project_dir):
+        """A stored preset catalog using supported string representations (a
+        numeric-string priority and a string boolean) is equivalent to the
+        requested defaults, so a rerun is a no-op rather than a false conflict
+        (#4505)."""
+        import yaml as _yaml
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        (project_dir / ".specify" / "preset-catalogs.yml").write_text(
+            _yaml.safe_dump({"catalogs": [{
+                "name": "mine",
+                "url": "https://example.com/c.json",
+                "priority": "10",
+                "install_allowed": "false",
+                "description": "",
+            }]}),
+            encoding="utf-8",
+        )
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, [
+                "preset", "catalog", "add",
+                "https://example.com/c.json", "--name", "mine",
+            ])
+
+        assert result.exit_code == 0, result.output
+        assert "nothing to do" in result.output
+
     def test_catalog_remove_escapes_rich_markup(self, project_dir):
         """`preset catalog remove` must not parse the name as Rich markup."""
         from typer.testing import CliRunner

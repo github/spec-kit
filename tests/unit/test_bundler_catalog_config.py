@@ -124,6 +124,52 @@ def test_add_source_refuses_symlinked_specify_escape(tmp_path: Path):
         cc.add_source(project, "https://example.com/c.json", policy="install-allowed", priority=50)
 
 
+def test_add_source_rerun_surfaces_bad_stored_priority_as_bundlererror(tmp_path: Path):
+    """A hand-edited matching entry with a non-integer priority must surface a
+    clean BundlerError during an idempotent-add comparison rather than leaking
+    int()'s ValueError past the CLI's `except BundlerError` (#4505)."""
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    cc._config_path(project).write_text(
+        "schema_version: '1.0'\n"
+        "catalogs:\n"
+        "  - id: mine\n"
+        "    url: https://example.com/c.json\n"
+        "    priority: not-a-number\n"
+        "    install_policy: install-allowed\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(BundlerError, match="non-integer priority"):
+        cc.add_source(
+            project, "https://example.com/c.json", source_id="mine",
+            policy="install-allowed", priority=10,
+        )
+
+
+def test_add_source_rerun_with_string_priority_is_unchanged(tmp_path: Path):
+    """A stored priority written as a numeric string is normalized like catalog
+    parsing, so an otherwise-identical rerun is a no-op, not a false conflict."""
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    cc._config_path(project).write_text(
+        "schema_version: '1.0'\n"
+        "catalogs:\n"
+        "  - id: mine\n"
+        "    url: https://example.com/c.json\n"
+        "    priority: '10'\n"
+        "    install_policy: install-allowed\n",
+        encoding="utf-8",
+    )
+
+    source, status = cc.add_source(
+        project, "https://example.com/c.json", source_id="mine",
+        policy="install-allowed", priority=10,
+    )
+    assert status == "unchanged"
+    assert source.priority == 10
+
+
 def test_read_rejects_non_list_catalogs(tmp_path: Path):
     project = tmp_path / "proj"
     (project / ".specify").mkdir(parents=True)

@@ -47,6 +47,37 @@ preset_catalog_app = typer.Typer(
 preset_app.add_typer(preset_catalog_app, name="catalog")
 
 
+def _normalize_catalog_priority(value: object) -> object:
+    """Normalize a stored catalog priority the way the preset reader does.
+
+    The preset reader (``specify_cli/presets/__init__.py``) accepts
+    integer-string priorities like ``"10"`` but rejects bools. Mirror that here
+    so an equivalent rerun whose persisted priority is a supported string
+    representation is still a no-op rather than a false conflict (#4505). A
+    value that cannot be normalized is returned unchanged so it simply fails to
+    compare equal.
+    """
+    if isinstance(value, bool):
+        return value
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return value
+
+
+def _normalize_catalog_install_allowed(value: object) -> bool:
+    """Normalize a stored ``install_allowed`` the way the preset reader does.
+
+    The reader treats the strings ``"true"``/``"yes"``/``"1"`` (case- and
+    whitespace-insensitive) as truthy; everything else falls back to ``bool``.
+    Comparing raw values instead would report ``install_allowed: "false"`` as a
+    conflict because ``bool("false")`` is ``True``.
+    """
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "yes", "1")
+    return bool(value)
+
+
 def _warn_unmet_extension_dependencies(manager, manifest) -> None:
     """Warn when a preset's declared extension dependencies are unsatisfied.
 
@@ -937,8 +968,10 @@ def preset_catalog_add(
         if isinstance(existing, dict) and existing.get("name") == name:
             if (
                 str(existing.get("url", "")) == url
-                and existing.get("priority") == priority
-                and bool(existing.get("install_allowed", False)) == install_allowed
+                and _normalize_catalog_priority(existing.get("priority")) == priority
+                and _normalize_catalog_install_allowed(
+                    existing.get("install_allowed", False)
+                ) == install_allowed
                 and str(existing.get("description", "")) == description
             ):
                 console.print(

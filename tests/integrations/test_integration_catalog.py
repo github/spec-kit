@@ -1186,6 +1186,16 @@ class TestCatalogSourceManagement:
         with pytest.raises(IntegrationValidationError, match="different name"):
             cat.add_catalog("https://dup.example.com/catalog.json", name="second")
 
+    def test_add_catalog_duplicate_url_same_name_is_idempotent_noop(self, tmp_path, monkeypatch):
+        """Re-adding the same URL with the *same* explicit name is a no-op (#4505)."""
+        self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        assert cat.add_catalog("https://dup.example.com/catalog.json", name="mine") == "added"
+        assert cat.add_catalog("https://dup.example.com/catalog.json", name="mine") == "unchanged"
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        assert len(data["catalogs"]) == 1
+
     def test_add_catalog_rejects_invalid_url(self, tmp_path, monkeypatch):
         self._isolate(tmp_path, monkeypatch)
         cat = IntegrationCatalog(tmp_path)
