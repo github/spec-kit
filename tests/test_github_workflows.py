@@ -467,7 +467,7 @@ def test_bug_test_workflow_provisions_python_dependencies():
     steps = compiled["jobs"]["agent"]["steps"]
 
     assert source["network"] == {
-        "allowed": ["defaults", "pypi.org", "files.pythonhosted.org"]
+        "allowed": ["defaults", "github.com", "pypi.org", "files.pythonhosted.org"]
     }
     assert '"pypi.org"' in compiled_text
     assert '"files.pythonhosted.org"' in compiled_text
@@ -504,6 +504,63 @@ def test_bug_test_workflow_provisions_python_dependencies():
     assert 'UV_BIN="$(command -v uv)"' in install
     assert "PIP_SUBCOMMAND=pip" in install
     assert '"$UV_BIN" "$PIP_SUBCOMMAND" install --system -e ".[test]"' in install
+
+
+def test_bug_test_network_allows_only_required_github_host():
+    _, _, _, compiled = _bug_workflow("bug-test")
+    steps = compiled["jobs"]["agent"]["steps"]
+    domains = set(
+        _workflow_step(steps, "Ingest agent output")["env"][
+            "GH_AW_ALLOWED_DOMAINS"
+        ].split(",")
+    )
+    assert {"github.com", "pypi.org", "files.pythonhosted.org"} <= domains
+    assert all("*" not in domain for domain in domains)
+    assert not {
+        "gitlab.com", "example.com", "localhost",
+        "127.0.0.1", "::1", "10.0.0.1", "172.16.0.1", "192.168.0.1",
+        "169.254.169.254", "metadata.google.internal", "metadata.azure.com",
+    } & domains
+    firewall_step = next(
+        step for step in steps if r'\"allowDomains\":[' in step.get("run", "")
+    )
+    network_match = re.search(
+        r'\\"network\\":(\{.*?\}),\\"apiProxy\\"', firewall_step["run"]
+    )
+    assert network_match is not None
+    network = json.loads(network_match[1].replace(r'\"', '"'))
+    assert set(network["allowDomains"]) == domains
+    assert network["isolation"] is True
+
+
+def test_bug_test_distinguishes_missing_fix_from_failed_discovery():
+    source_text, _, _, _ = _bug_workflow("bug-test")
+    selection = " ".join(
+        source_text.split("## Step 2", 1)[1].split("## Step 3", 1)[0].split()
+    )
+    for clause in (
+        (
+            "Only after successful discovery establishes that neither a linked "
+            "PR nor a named fix branch exists, test the **currently checked-out commit**"
+        ),
+        (
+            "If discovery, fetch, or checkout fails, report the error as an "
+            "**environment/setup failure** with an `inconclusive` result "
+            "instead of testing another revision."
+        ),
+    ):
+        assert clause in selection
+
+
+def test_bug_test_requires_original_exit_code_before_log_filtering():
+    source_text, _, _, _ = _bug_workflow("bug-test")
+    execution = " ".join(
+        source_text.split("## Step 4", 1)[1].split("## Step 5", 1)[0].split()
+    )
+    assert (
+        "For all commands, capture the original exit code **before** filtering "
+        "output; successful log filtering must not hide command failure."
+    ) in execution
 
 
 @pytest.mark.parametrize("name", ["bug-fix", "bug-test"])
