@@ -1309,6 +1309,7 @@ class WorkflowEngine:
         alias_map: dict[str, str] | None = None,
         alias_local_only: bool = False,
         alias_may_collide: bool = False,
+        alias_records: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         """Execute a list of steps sequentially.
 
@@ -1334,13 +1335,29 @@ class WorkflowEngine:
         ``_collect_reserved_step_ids``), so unlike a while/do-while loop
         body's ids (always globally unique), one CAN collide with an
         unrelated, distinctly-authored step's id. When set, the immediate
-        ``state.step_results`` mirror below is skipped for any original id
-        that is a member of ``context.reserved_step_ids`` — that id belongs
-        to a real step elsewhere in the workflow, and this alias write must
-        never clobber it. Propagated through the recursive calls below so it
-        stays set for descendants (e.g. a while loop nested inside the
-        fan-out template) once a fan-out template is entered; see
-        ``_run_fan_out``.
+        ``state.step_results`` mirror is skipped for any original id that is
+        a member of ``context.reserved_step_ids`` — that id belongs to a
+        real step elsewhere in the workflow, and this alias write must never
+        clobber its *persisted* entry. It still updates ``context.steps``
+        for that id (below), because a later sibling step within this SAME
+        item's own template must still resolve ``steps.<id>`` to the
+        item-local value; protecting the shared/persisted entry must not
+        also break that local lookup. Propagated through the recursive
+        calls below so it stays set for descendants (e.g. a while loop
+        nested inside the fan-out template) once a fan-out template is
+        entered; see ``_run_fan_out``.
+
+        ``alias_records``, when given, is a mutable ``{original_id: data}``
+        accumulator that every ``context.steps``-only alias write below adds
+        itself to (whether triggered by ``alias_local_only`` or by the
+        collision guard above). ``_run_fan_out``'s ``run_item`` passes one in
+        for concurrent items so it can defer publishing to shared state until
+        after the whole item finishes (see there). This is populated by
+        reference at the point each write happens rather than reconstructed
+        afterward from ``alias_map``, because a nested while/do-while body
+        renames itself dynamically at runtime (see ``_rename_step_tree_ids``)
+        and so has no entry in the caller's static ``alias_map`` — only a
+        write-time accumulator sees aliases at every nesting depth.
         """
         for i, step_config in enumerate(steps):
             step_id = step_config.get("id", f"step-{i}")
@@ -1399,11 +1416,14 @@ class WorkflowEngine:
             if alias_map is not None:
                 orig_id = alias_map.get(step_id)
                 if orig_id is not None:
-                    if alias_local_only:
-                        context.steps[orig_id] = step_data
-                    elif not (
+                    skip_shared = (
                         alias_may_collide and orig_id in context.reserved_step_ids
-                    ):
+                    )
+                    if alias_local_only or skip_shared:
+                        context.steps[orig_id] = step_data
+                        if alias_records is not None:
+                            alias_records[orig_id] = step_data
+                    else:
                         self._record_result(context, state, orig_id, step_data)
 
             state.append_log(
@@ -1538,6 +1558,7 @@ class WorkflowEngine:
                                 step_offset=-1, alias_map=id_map,
                                 alias_local_only=alias_local_only,
                                 alias_may_collide=alias_may_collide,
+                                alias_records=alias_records,
                             )
                             if state.status in (
                                 RunStatus.PAUSED,
@@ -1551,6 +1572,7 @@ class WorkflowEngine:
                         step_offset=-1, alias_map=alias_map,
                         alias_local_only=alias_local_only,
                         alias_may_collide=alias_may_collide,
+                        alias_records=alias_records,
                     )
                     if state.status in (
                         RunStatus.PAUSED,
@@ -1686,26 +1708,61 @@ class WorkflowEngine:
             original_steps = item_ctx.steps
             item_steps = dict(original_steps) if local_only else original_steps
             item_ctx.steps = item_steps
+
+            # Sequential items (not local_only) execute directly against the
+            # real shared ``original_steps`` object — no copy — so when a
+            # template id collides with a real, globally-unique step
+            # elsewhere in the workflow (``context.reserved_step_ids``),
+            # _execute_steps's collision guard still writes the item-local
+            # value into ``context.steps[orig_id]`` (so a later sibling step
+            # within THIS item's own template resolves correctly — see
+            # _execute_steps), but that write lands directly in the shared
+            # object. Snapshot each colliding id's pre-item value here so it
+            # can be restored once this item finishes, so that transient
+            # item-local write never leaks to the next item or to code
+            # outside this fan-out. The concurrent path needs no equivalent:
+            # its writes land in the private ``item_steps`` copy above, which
+            # is simply discarded below instead of merged back wholesale.
+            restore_values: dict[str, Any] = {}
+            restore_missing: set[str] = set()
+            if not local_only:
+                for orig in set(id_map.values()) & context.reserved_step_ids:
+                    if orig in original_steps:
+                        restore_values[orig] = original_steps[orig]
+                    else:
+                        restore_missing.add(orig)
+
+            # Accumulates every context.steps-only alias write from anywhere
+            # in this item's subtree, including inside a nested while/do-while
+            # body — which _rename_step_tree_ids deliberately leaves
+            # unrenamed here because it re-namespaces itself dynamically at
+            # runtime (see _execute_steps), so it has no entry in id_map
+            # below. Reconstructing alias_records from id_map after the fact
+            # would silently miss any such nested alias; the accumulator
+            # instead captures it at write time regardless of nesting depth.
+            alias_records: dict[str, dict[str, Any]] = {}
             try:
                 self._execute_steps(
                     [item_step], item_ctx, state, registry, step_offset=-1,
                     alias_map=id_map, alias_local_only=local_only,
-                    alias_may_collide=True,
+                    alias_may_collide=True, alias_records=alias_records,
                 )
             finally:
                 item_ctx.steps = original_steps
-            alias_records: dict[str, dict[str, Any]] = {}
+                if not local_only:
+                    for orig, val in restore_values.items():
+                        original_steps[orig] = val
+                    for orig in restore_missing:
+                        original_steps.pop(orig, None)
             steps_view = item_steps if local_only else item_ctx.steps
-            for new_id, orig_id in id_map.items():
-                if new_id in steps_view:
-                    data = steps_view[new_id]
-                    if local_only:
+            if local_only:
+                for new_id in id_map:
+                    if new_id in steps_view:
                         # Publish the namespaced (disjoint, per-item) result
                         # into the truly-shared steps dict explicitly — safe
                         # even under concurrency since each item only ever
                         # writes its own namespaced keys here.
-                        original_steps[new_id] = data
-                    alias_records[orig_id] = data
+                        original_steps[new_id] = steps_view[new_id]
             # Read back through the local view, not the outer closure —
             # clearer and robust if StepContext copying ever stops sharing
             # the steps dict by reference.

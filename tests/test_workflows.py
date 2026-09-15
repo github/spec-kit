@@ -6652,6 +6652,86 @@ steps:
         for idx, item in enumerate(items):
             assert state.step_results[f"fan:leaf:{idx}"]["output"]["marker"] == item
 
+    @pytest.mark.parametrize("max_concurrency", [1, 2])
+    def test_fan_out_reserved_id_collision_still_resolves_item_local_sibling(
+        self, tmp_path, max_concurrency
+    ):
+        """Protecting a reserved id's shared/persisted entry from a
+        colliding fan-out template alias must not also break a later
+        sibling step *within that same item* resolving the id locally.
+
+        The template's first step uses id "first", which collides with a
+        real, distinctly-authored step "first" elsewhere in the workflow
+        (pre-populated and marked reserved, exactly like the sibling
+        `..._never_clobbers_unrelated_step` tests above). The template's
+        second step reads `steps.first.output.marker` via the real
+        `{{ }}` expression path. It must see THIS item's own "first"
+        result, not the outside one -- for both the sequential
+        (max_concurrency=1) and concurrent (2) fan-out paths -- while the
+        outside step's entry must still come out of the fan-out untouched.
+        """
+        from specify_cli.workflows.base import (
+            RunStatus,
+            StepBase,
+            StepContext,
+            StepResult,
+            StepStatus,
+        )
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.steps.if_then import IfThenStep
+
+        class _WriteStep(StepBase):
+            type_key = "write"
+
+            def execute(self, config, context):
+                return StepResult(
+                    status=StepStatus.COMPLETED, output={"marker": context.item}
+                )
+
+        class _ReadStep(StepBase):
+            type_key = "read"
+
+            def execute(self, config, context):
+                seen = evaluate_expression(
+                    "{{ steps.first.output.marker }}", context
+                )
+                return StepResult(status=StepStatus.COMPLETED, output={"seen": seen})
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        unrelated_result = {
+            "type": "command",
+            "output": {"marker": "unrelated"},
+            "status": "completed",
+            "error": None,
+        }
+        context = StepContext(reserved_step_ids=frozenset({"first"}))
+        context.steps["first"] = unrelated_result
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        state.step_results["first"] = unrelated_result
+        registry = {"if": IfThenStep(), "write": _WriteStep(), "read": _ReadStep()}
+        template = {
+            "id": "item",
+            "type": "if",
+            "condition": "true",
+            "then": [
+                {"id": "first", "type": "write"},
+                {"id": "second", "type": "read"},
+            ],
+        }
+        items = ["a", "b", "c"]
+        engine._run_fan_out(
+            items, template, "fan", context, state, registry, max_concurrency
+        )
+
+        for idx, item in enumerate(items):
+            assert state.step_results[f"fan:second:{idx}"]["output"]["seen"] == item
+
+        # The outside step's own entry must survive the fan-out untouched.
+        assert state.step_results["first"] == unrelated_result
+        assert context.steps["first"] == unrelated_result
+
     def test_fan_out_namespaces_nested_descendant_steps(self, project_dir):
         """A step nested inside a fan-out template's `if`/`switch` branch
         must get a unique namespaced key per item, not just the template's
@@ -6700,8 +6780,9 @@ steps:
         assert state.step_results["fan:leaf:1"]["output"]["stdout"] == "b\n"
         assert state.step_results["fan:leaf:2"]["output"]["stdout"] == "c\n"
 
+    @pytest.mark.parametrize("max_concurrency", [1, 2])
     def test_while_loop_nested_in_fan_out_aliases_to_true_original_id(
-        self, project_dir
+        self, project_dir, max_concurrency
     ):
         """A `while` loop that is itself a fan-out template (or nested inside
         one) must alias its body's steps back to their real, bare original
@@ -6718,11 +6799,21 @@ steps:
         (`fan:item:0:fan:leaf:0:0`) back to it instead of to the workflow
         author's actual bare id `leaf`. `state.step_results["leaf"]` would
         then never be populated at all, so `steps.leaf` could never resolve.
+
+        Parametrized over both the sequential (1) and concurrent (2) fan-out
+        paths: a nested while/do-while body renames itself dynamically at
+        runtime, so it has no entry in the fan-out's own static
+        `_rename_step_tree_ids` map. The concurrent path's bare-id alias
+        used to be reconstructed from that static map after the item
+        finished, which silently dropped this dynamically-namespaced alias
+        -- `fan:item:*:leaf:0` (asserted below) survived, but the bare
+        `leaf` key never did, even though the sequential path (which writes
+        aliases immediately, not from that reconstruction) got it right.
         """
         from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
         from specify_cli.workflows.base import RunStatus
 
-        yaml_str = """
+        yaml_str = f"""
 schema_version: "1.0"
 workflow:
   id: "fan-out-nested-while"
@@ -6731,8 +6822,8 @@ workflow:
 steps:
   - id: fan
     type: fan-out
-    items: "{{ ['a', 'b'] }}"
-    max_concurrency: 1
+    items: "{{{{ ['a', 'b'] }}}}"
+    max_concurrency: {max_concurrency}
     step:
       id: item
       type: while
@@ -6741,7 +6832,7 @@ steps:
       steps:
         - id: leaf
           type: shell
-          run: "echo {{ item }}"
+          run: "echo {{{{ item }}}}"
 """
         definition = WorkflowDefinition.from_string(yaml_str)
         engine = WorkflowEngine(project_dir)
@@ -6749,7 +6840,9 @@ steps:
 
         assert state.status == RunStatus.COMPLETED
         # The bare id resolves -- to the latest (last) item's value, matching
-        # the alias convention used everywhere else in this module.
+        # the alias convention used everywhere else in this module. Item
+        # order (not completion order) decides "latest" under concurrency
+        # too -- see _run_fan_out's deterministic-publish comment.
         assert state.step_results["leaf"]["output"]["stdout"] == "b\n"
         # Each item's own namespaced entry is still separately recoverable,
         # aliased against its item-level prefix, not doubly-prefixed.
