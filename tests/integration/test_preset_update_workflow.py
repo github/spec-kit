@@ -114,6 +114,36 @@ def project(tmp_path: Path, monkeypatch) -> Path:
     return root
 
 
+def test_preset_update_cli_contract():
+    """Typer exposes the required ID and only the supported update options."""
+    runner = CliRunner()
+
+    missing_id = runner.invoke(app, ["preset", "update"])
+    assert missing_id.exit_code == 2
+    assert "Missing argument 'preset_id'" in strip_ansi(missing_id.output)
+
+    for unsupported_option in ("--all", "--dry-run"):
+        rejected = runner.invoke(
+            app, ["preset", "update", PRESET_ID, unsupported_option]
+        )
+        assert rejected.exit_code == 2
+        assert f"No such option: {unsupported_option}" in strip_ansi(rejected.output)
+
+    help_result = runner.invoke(app, ["preset", "update", "--help"])
+    assert help_result.exit_code == 0
+    help_output = strip_ansi(help_result.output)
+    assert "Usage: specify preset update [OPTIONS] {preset_id}" in help_output
+    assert (
+        "Replace an installed preset using the normal remove and add flows."
+        in help_output
+    )
+    assert "Installed preset ID to replace" in help_output
+    for supported_option in ("--from", "--dev", "--priority"):
+        assert supported_option in help_output
+    assert "--all" not in help_output
+    assert "--dry-run" not in help_output
+
+
 def test_preset_update_replaces_installed_preset(project: Path, tmp_path: Path):
     """A successful update really swaps the installed preset on disk."""
     runner = CliRunner()
