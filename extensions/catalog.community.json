@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-11T00:00:00Z",
+  "updated_at": "2026-09-15T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -3547,6 +3547,48 @@
       "stars": 0,
       "created_at": "2026-03-26T00:00:00Z",
       "updated_at": "2026-03-26T00:00:00Z"
+    },
+    "openup": {
+      "name": "OpenUP Governed Lifecycle",
+      "id": "openup",
+      "description": "Adds the OpenUP lifecycle to Spec Kit: phases, iterations, a seven-level WBS, an executable risk register, bi-directional traceability, and machine-checkable milestone gates.",
+      "author": "Aniket Gore",
+      "version": "0.1.0",
+      "download_url": "https://github.com/anvigo12/specup/releases/download/v0.1.0/openup-0.1.0.zip",
+      "sha256": "012e11f5949060d57bef2c5ea15772e4649fc92d723e171a85e6230fb87cb46f",
+      "repository": "https://github.com/anvigo12/specup",
+      "homepage": "https://github.com/anvigo12/specup",
+      "documentation": "https://github.com/anvigo12/specup/blob/main/docs/guide/using-specup.md",
+      "changelog": "",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0,<2.0.0",
+        "tools": [
+          {
+            "name": "python3",
+            "version": ">=3.10",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 9,
+        "hooks": 4
+      },
+      "tags": [
+        "governance",
+        "traceability",
+        "risk",
+        "lifecycle",
+        "openup"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-15T00:00:00Z",
+      "updated_at": "2026-09-15T00:00:00Z"
     },
     "optimize": {
       "name": "Optimize Extension",
