@@ -46,7 +46,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Trae](https://www.trae.ai/)                                                         | `trae`           | Skills-based integration; skills are installed automatically                                                                               |
 | [ZCode](https://zcode.z.ai/)                                                         | `zcode`          | Skills-based integration; installs skills into `.zcode/skills/` and invokes them as `$speckit-<command>`                                  |
 | [Zed](https://zed.dev/)                                                              | `zed`            | Skills-based integration; installs skills into `.agents/skills` and invokes them as `/speckit-<command>`                                  |
-| Generic                                                                              | `generic`        | Bring your own agent — use `--integration generic --integration-options="--commands-dir <path>"` for AI coding agents not listed above     |
+| Generic                                                                              | `generic`        | Bring your own agent — use `--integration generic --integration-options="--commands-dir <path>"` for AI coding agents not listed above; add `--skills` for the `speckit-<name>/SKILL.md` layout |
 
 ## List Available Integrations
 
@@ -237,6 +237,7 @@ Some integrations accept additional options via `--integration-options`:
 | Integration | Option              | Description                                                    |
 | ----------- | ------------------- | -------------------------------------------------------------- |
 | `generic`   | `--commands-dir`    | Required. Directory for command files                          |
+| `generic`   | `--skills`          | Render commands as `speckit-<name>/SKILL.md` directories under `--commands-dir` instead of flat `speckit.<name>.md` files. Command references and next-step guidance switch to `/speckit-<name>`. Generic's output directory is a runtime option rather than a static per-agent folder, so this does not enable extension/preset add-on skill registration in either layout. |
 | `kimi`      | `--migrate-legacy`  | Migrate legacy `.kimi/skills/` installs to `.kimi-code/skills/` (including dotted→hyphenated skill naming, e.g. `speckit.xxx` → `speckit-xxx`) |
 | `copilot`   | `--commands`        | Scaffold `.github/agents/*.agent.md` commands with `.github/prompts/*.prompt.md` companions and merge `.vscode/settings.json` instead of using the default skills layout. |
 | `copilot`   | `--skills`          | Force the default skills layout, overriding an existing commands layout during an explicit migration. |
@@ -245,6 +246,7 @@ Example:
 
 ```bash
 specify integration install generic --integration-options="--commands-dir .myagent/cmds"
+specify integration install generic --integration-options="--commands-dir .myagent/skills --skills"
 ```
 
 ## Scaffold a New Integration

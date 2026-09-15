@@ -49,6 +49,17 @@ class GenericIntegration(MarkdownIntegration):
         "extension": ".md",
     }
 
+    def effective_invoke_separator(
+        self,
+        parsed_options: dict[str, Any] | None = None,
+        project_root: Path | None = None,
+    ) -> str:
+        """``"-"`` for the ``--skills`` SKILL.md layout, ``"."`` for the
+        default flat ``speckit.<name>.md`` layout — mirrors the separator
+        ``_build_skill_content()`` already uses to process each template.
+        """
+        return "-" if self.is_skills_mode(parsed_options, project_root) else "."
+
     @classmethod
     def options(cls) -> list[IntegrationOption]:
         return [

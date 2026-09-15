@@ -467,6 +467,94 @@ class TestGenericIntegration:
             f"Extra: {sorted(set(actual) - set(expected))}"
         )
 
+    # -- Skills-mode alignment (separator, next-steps, add-on registration) --
+
+    def test_effective_invoke_separator_tracks_skills_flag(self, tmp_path):
+        """The separator used to render shared templates and next-step
+        guidance must match the layout ``setup()`` actually writes."""
+        i = get_integration("generic")
+        assert i.effective_invoke_separator({"skills": True}, tmp_path) == "-"
+        assert i.effective_invoke_separator({"skills": False}, tmp_path) == "."
+        assert i.effective_invoke_separator(None, tmp_path) == "."
+
+    def test_shared_template_and_next_steps_use_hyphen_in_skills_mode(self, tmp_path):
+        """End-to-end: with --skills, shared templates and the printed next
+        steps must reference /speckit-plan (the layout actually generated),
+        not the nonexistent flat /speckit.plan."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "generic-skills-e2e"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(app, [
+                "init", "--here", "--integration", "generic",
+                "--integration-options=--commands-dir .myagent/skills --skills",
+                "--script", "sh",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0, f"init failed: {result.output}"
+
+        plan_template = project / ".specify" / "templates" / "plan-template.md"
+        content = plan_template.read_text(encoding="utf-8")
+        assert "__SPECKIT_COMMAND_PLAN__" not in content
+        assert "/speckit-plan" in content
+        assert "/speckit.plan" not in content
+
+        assert "/speckit-plan" in result.output
+        assert "/speckit.plan" not in result.output
+
+    def test_shared_template_and_next_steps_use_dot_without_skills_flag(
+        self, tmp_path
+    ):
+        """Regression guard: default flat-mode generic is unchanged — shared
+        templates and next steps still reference the flat /speckit.plan."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "generic-flat-e2e"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(app, [
+                "init", "--here", "--integration", "generic",
+                "--integration-options=--commands-dir .myagent/commands",
+                "--script", "sh",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0, f"init failed: {result.output}"
+
+        plan_template = project / ".specify" / "templates" / "plan-template.md"
+        content = plan_template.read_text(encoding="utf-8")
+        assert "/speckit.plan" in content
+        assert "/speckit-plan" not in content
+
+        assert "/speckit.plan" in result.output
+        assert "/speckit-plan" not in result.output
+
+    def test_generic_skills_mode_does_not_register_addon_skills_elsewhere(
+        self, tmp_path
+    ):
+        """Copilot review (PR #4562): a generic --skills project persists
+        ai_skills=True, but generic's output directory is a runtime
+        --commands-dir option, not a static per-agent folder — there is no
+        directory extension/preset skill registration could safely resolve.
+        resolve_active_skills_dir() must stay disabled for generic rather
+        than silently falling back to .agents/skills."""
+        from specify_cli import resolve_active_skills_dir
+        from specify_cli._init_options import save_init_options
+
+        save_init_options(
+            tmp_path, {"ai": "generic", "ai_skills": True}
+        )
+        assert resolve_active_skills_dir(tmp_path) is None
+        assert not (tmp_path / ".agents" / "skills").exists()
+
     def test_complete_file_inventory_ps(self, tmp_path):
         """Every file produced by specify init --integration generic --integration-options=--commands-dir ... --script ps."""
         from typer.testing import CliRunner
