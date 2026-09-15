@@ -90,6 +90,21 @@ def test_update_accepts_integration_override():
     assert "integration" in result.output
 
 
+def test_add_forwards_refresh_default_without_refreshing(project: Path):
+    from specify_cli.commands import bundle as bundle_commands
+
+    with patch.object(bundle_commands, "bundle_install") as install:
+        result = runner.invoke(app, ["bundle", "add", "demo"])
+
+    assert result.exit_code == 0, result.output
+    install.assert_called_once_with(
+        bundle_id="demo",
+        integration=None,
+        offline=False,
+        refresh=False,
+    )
+
+
 def test_list_empty_project(project: Path):
     result = runner.invoke(app, ["bundle", "list"])
     assert result.exit_code == 0

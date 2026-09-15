@@ -458,9 +458,17 @@ def bundle_add(
     ),
     integration: str = typer.Option(None, "--integration", help="Override integration"),
     offline: bool = typer.Option(False, "--offline", help="Do not access the network"),
+    refresh: bool = typer.Option(
+        False, "--refresh", help="Refresh owned components from this bundle source",
+    ),
 ) -> None:
     """Install a bundle's full component set (alias for install)."""
-    return bundle_install(bundle_id=bundle_id, integration=integration, offline=offline)
+    return bundle_install(
+        bundle_id=bundle_id,
+        integration=integration,
+        offline=offline,
+        refresh=refresh,
+    )
 
 
 @bundle_app.command("update")
