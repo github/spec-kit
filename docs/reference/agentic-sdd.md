@@ -117,7 +117,18 @@ Assesses the codebase against the feature's spec, plan, and tasks to confirm not
 /speckit.converge
 ```
 
-It first prints a severity-graded findings summary, then resolves to one of two outcomes:
+It first prints a severity-graded findings summary, including per-category `checked/total`
+coverage and a compact stable-key inventory ledger. Counts are derived from the feature artifacts,
+not model memory. It then resolves to one of three outcomes:
 
-- **Converged** — no gaps found. `tasks.md` is left byte-for-byte unchanged and you'll see a clean result like `✅ Converged — the implementation satisfies the spec, plan, and tasks.` You're done; proceed to review or open a PR.
-- **Tasks appended** — gaps found. Converge appends them as new tasks under a Convergence section in `tasks.md` and tells you how many. Run `/speckit.implement` again to complete them, then `/speckit.converge` once more. Each pass finds fewer items; repeat until it reports converged.
+- **Incomplete assessment** — one or more inventory keys could not be assessed. The report names
+  those keys and their incomplete coverage category, does not modify `tasks.md`, and is **not** a
+  clean result. Resolve the missing evidence and run `/speckit.converge` again.
+- **Converged** — every applicable inventory category is fully assessed and no gaps were found.
+  `tasks.md` is left byte-for-byte unchanged and you'll see a clean result like
+  `✅ Converged — the implementation satisfies the spec, plan, and tasks.` You're done; proceed
+  to review or open a PR.
+- **Tasks appended** — every applicable inventory category is fully assessed and gaps were found.
+  Converge appends them as new tasks under a Convergence section in `tasks.md` and tells you how
+  many. Run `/speckit.implement` again to complete them, then `/speckit.converge` once more.
+  Each pass finds fewer items; repeat until it reports converged.
