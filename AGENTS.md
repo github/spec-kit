@@ -523,7 +523,7 @@ Disclosure is **continuous**, not a one-time event. A single AI-disclosure parag
 
 ### Comments
 
-- If you are an agent working on behalf of a human, **disclose your identity in your PR comment** — name the agent, its model, and the human you are acting for (e.g., "Posted on behalf of @user by GitHub Copilot (model: Claude Opus 4.8)").
+- If you are an agent working on behalf of a human, **disclose your identity in your PR comment** — name the agent, its model, the settings/mode (e.g. autonomous vs. human-supervised), the extent of AI involvement in the comment, and the human you are acting for (e.g., "Posted on behalf of @user by GitHub Copilot (model: Claude Opus 4.8, autonomous); comment fully AI-drafted."). This matches the disclosure the public [CONTRIBUTING.md](./CONTRIBUTING.md#ai-contributions-in-spec-kit) policy requires for AI-generated PR responses and comments.
 - **Re-state agent identity in each review-round summary comment.** A prior PR-body disclosure does not cover later comments or commits.
 - Post **one** top-level summary comment per review round listing what changed and the commit SHA. Do not reply on every individual comment.
 - Reply inline only when context is needed (disagreement, deferral, non-obvious fix). Keep it to a sentence or two.
