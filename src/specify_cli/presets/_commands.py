@@ -524,12 +524,17 @@ def preset_update(
     # reconciliation before add resolves and installs the replacement.
     preset_remove(preset_id)
 
-    retry_args = ["specify", "preset", "add", preset_id]
-    if from_url:
-        retry_args.extend(["--from", from_url])
-    if dev:
-        retry_args.extend(["--dev", dev])
-    retry_args.extend(["--priority", str(priority)])
+    retry_args = ["specify", "preset", "add"]
+    retry_options = []
+    if from_url is not None:
+        retry_options.extend(["--from", from_url])
+    if dev is not None:
+        retry_options.extend(["--dev", dev])
+    retry_options.extend(["--priority", str(priority)])
+    if preset_id.startswith("-"):
+        retry_args.extend([*retry_options, "--", preset_id])
+    else:
+        retry_args.extend([preset_id, *retry_options])
 
     def report_add_failure() -> None:
         import subprocess

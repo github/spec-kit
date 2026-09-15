@@ -41,6 +41,7 @@ def write_preset(
     version: str,
     body: str,
     extra_file: str | None = None,
+    preset_id: str = PRESET_ID,
 ) -> Path:
     """Write a minimal single-template preset under *directory*.
 
@@ -58,7 +59,7 @@ def write_preset(
             {
                 "schema_version": "1.0",
                 "preset": {
-                    "id": PRESET_ID,
+                    "id": preset_id,
                     "name": "Update Workflow Demo",
                     "version": version,
                     "description": "Fixture preset for update workflow tests",
@@ -261,3 +262,66 @@ def test_preset_update_failed_replacement_prints_working_retry_command(
     assert metadata is not None
     assert metadata["version"] == "2.0.0"
     assert metadata["priority"] == 7
+
+
+def test_preset_update_retry_handles_option_like_id(project: Path, tmp_path: Path):
+    """The printed retry places a leading-hyphen ID after ``--``."""
+    runner = CliRunner()
+    preset_id = "--option-like-preset"
+
+    original = write_preset(
+        tmp_path / "option-v1",
+        version="1.0.0",
+        body="# Option-like Version One\n",
+        preset_id=preset_id,
+    )
+    install = runner.invoke(app, ["preset", "add", "--dev", str(original)])
+    assert install.exit_code == 0, install.output
+    assert PresetManager(project).registry.is_installed(preset_id)
+
+    replacement = tmp_path / "option-replacement"
+    update = runner.invoke(
+        app,
+        [
+            "preset",
+            "update",
+            "--dev",
+            str(replacement),
+            "--priority",
+            "9",
+            "--",
+            preset_id,
+        ],
+    )
+    assert update.exit_code == 1, update.output
+    assert not PresetManager(project).registry.is_installed(preset_id)
+
+    rendered = retry_command_from(update.output)
+    assert rendered == render_command(
+        [
+            "specify",
+            "preset",
+            "add",
+            "--dev",
+            str(replacement),
+            "--priority",
+            "9",
+            "--",
+            preset_id,
+        ]
+    )
+
+    write_preset(
+        replacement,
+        version="2.0.0",
+        body="# Option-like Version Two\n",
+        preset_id=preset_id,
+    )
+    retry_args = parse_command(rendered)
+    retry = runner.invoke(app, retry_args[1:])
+
+    assert retry.exit_code == 0, retry.output
+    metadata = PresetManager(project).registry.get(preset_id)
+    assert metadata is not None
+    assert metadata["version"] == "2.0.0"
+    assert metadata["priority"] == 9
