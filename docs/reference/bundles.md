@@ -4,6 +4,13 @@ Bundles compose existing Spec Kit components — extensions, presets, workflows,
 
 A bundle is described by a `bundle.yml` manifest and is discovered through the same catalog stack as other components. Installing a bundle resolves its declared components against pinned versions, checks for the single cross-bundle conflict point (the active integration), and applies each component idempotently with full provenance tracking so it can be cleanly removed or refreshed later.
 
+For a concrete starting point, see the
+[example bundle manifests](https://github.com/github/spec-kit/tree/main/examples/bundles)
+for product managers, business analysts, security researchers, and developers.
+These demonstrate packaging a role-based setup, not filled generated feature
+specs; for end-to-end usage examples, see
+[community walkthroughs](../community/walkthroughs.md).
+
 ## First-party Bundles
 
 Spec Kit ships a first-party bundle catalog in `bundles/catalog.json`. These bundles are curated, marked `verified: true`, and resolve through the built-in `builtin://default` catalog source.
@@ -161,6 +168,11 @@ Bundles are discovered through a priority-ordered stack of catalog sources (proj
 
 - `builtin://default` — first-party bundles shipped in `bundles/catalog.json` (`bugfix`, `assess`, ...), install-allowed.
 - `builtin://community` — community submissions in `bundles/catalog.community.json`, discovery-only.
+
+Each source has an install policy. `install-allowed` sources can be installed
+from; `discovery-only` sources appear in `search` and `info` but refuse
+installation. Inspect the active stack before installing a bundle from a
+non-default source.
 
 ### List the Catalog Stack
 

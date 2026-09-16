@@ -27,7 +27,11 @@ To build the documentation locally:
 - `index.md` - Main documentation homepage
 - `toc.yml` - Table of contents configuration
 - `installation.md` - Installation guide
-- `quickstart.md` - Quick start guide
+- `quickstart.md` - Spec-Driven Development walkthrough
+- `guides/bugfix.md` - Bug-fixing walkthrough
+- `guides/assessment.md` - Idea assessment walkthrough
+- `guides/customization.md` - Choosing and combining customization building blocks
+- `reference/agentic-*.md` - Detailed process command references
 - `_site/` - Generated documentation output (ignored by git)
 
 ## Deployment

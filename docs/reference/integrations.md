@@ -48,6 +48,26 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Zed](https://zed.dev/)                                                              | `zed`            | Skills-based integration; installs skills into `.agents/skills` and invokes them as `/speckit-<command>`                                  |
 | Generic                                                                              | `generic`        | Bring your own agent — use `--integration generic --integration-options="--commands-dir <path>"` for AI coding agents not listed above     |
 
+## Command Invocation
+
+Invoke Spec Kit's process steps inside your coding agent, not in the terminal.
+In GitHub Copilot's default mode, these are skills you invoke in the agent's
+chat. CLI installation and setup commands are separate terminal operations.
+The steps are the same across integrations, but their spelling depends on the
+agent and its installed mode:
+
+| Integration or mode | SDD example | Extension example |
+| --- | --- | --- |
+| GitHub Copilot, default skills mode | `/speckit-specify` | `/speckit-bug-assess` |
+| Dotted slash-command notation used in the references | `/speckit.specify` | `/speckit.bug.assess` |
+| Codex, Command Code, ZCode skills | `$speckit-specify` | `$speckit-bug-assess` |
+| Kimi skills | `/skill:speckit-specify` | `/skill:speckit-bug-assess` |
+
+Use the form exposed by your agent. Copilot's default skills are installed under
+`.github/skills/`; its opt-in commands layout is selected with
+`--integration-options="--commands"`. In that layout, Copilot CLI can select an
+agent through `/agents` or address it directly in a prompt.
+
 ## List Available Integrations
 
 ```bash
