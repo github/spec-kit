@@ -51,6 +51,106 @@ def test_install_is_idempotent(tmp_path: Path):
     assert len(load_records(tmp_path)) == 1
 
 
+def test_install_rejects_version_change_without_refresh(tmp_path: Path):
+    """A normal install must not advance a record past stale components.
+
+    ``bundle install`` is intentionally idempotent.  When the same bundle ID
+    resolves to a different version, callers must use ``bundle update`` so the
+    owned primitives are refreshed before the record is changed.
+    """
+    make_project(tmp_path)
+    installer = FakeInstaller()
+
+    version_one = _bundle("demo", ["ext-a"], version="1.0.0")
+    install_bundle(tmp_path, _plan(version_one), installer, manifest=version_one)
+
+    version_two = _bundle("demo", ["ext-a"], version="2.0.0")
+    with pytest.raises(BundlerError, match="bundle update"):
+        install_bundle(tmp_path, _plan(version_two), installer, manifest=version_two)
+
+    record = load_records(tmp_path)[0]
+    assert record.version == "1.0.0"
+    assert len(installer.install_calls) == 1
+
+
+@pytest.mark.parametrize("kind,updates", [
+    ("extensions", {"version": "2.0.0"}),
+    ("presets", {"version": "3.0.0"}),
+    ("steps", {"version": "1.0.0"}),
+    ("workflows", {"version": "0.4.0"}),
+    ("extensions", {"source": "https://example.com/catalog.json"}),
+    ("presets", {"priority": 20}),
+    ("presets", {"strategy": "prepend"}),
+    ("extensions", None),
+    ("presets", None),
+    ("steps", None),
+    ("workflows", None),
+])
+def test_install_requires_refresh_for_owned_component_changes(
+    tmp_path: Path, kind: str, updates: dict | None,
+):
+    make_project(tmp_path)
+    data = valid_manifest_dict()
+    original = BundleManifest.from_dict(data)
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(original), installer, manifest=original)
+    original_record = records_path(tmp_path).read_bytes()
+    original_installed = set(installer.installed)
+    installer.install_calls.clear()
+
+    component_id = data["provides"][kind][0]["id"]
+    if updates is None:
+        data["provides"][kind] = []
+    else:
+        data["provides"][kind][0].update(updates)
+    # Even a new component ordered before the changed one must not be installed.
+    data["provides"]["extensions"].insert(0, {"id": "ext-new", "version": "1.0.0"})
+    changed = BundleManifest.from_dict(data)
+    plan = _plan(changed)
+
+    with pytest.raises(BundlerError, match="--refresh"):
+        install_bundle(tmp_path, plan, installer, manifest=changed)
+
+    assert records_path(tmp_path).read_bytes() == original_record
+    assert installer.installed == original_installed
+    assert installer.install_calls == []
+    assert installer.refresh_calls == []
+    assert installer.remove_calls == []
+
+    result = install_bundle(tmp_path, plan, installer, manifest=changed, refresh=True)
+    record = load_records(tmp_path)[0]
+    assert record.version == original.bundle.version
+    assert record.contributed_components == tuple(plan.components)
+    assert {(c.kind, c.id) for c in result.installed} == {("extensions", "ext-new")}
+    if updates is None:
+        assert installer.remove_calls == [(kind, component_id)]
+        assert (kind, component_id) not in installer.installed
+    else:
+        assert (kind, component_id) in installer.refresh_calls
+        assert installer.remove_calls == []
+
+
+def test_install_allows_reordered_components_and_additions(tmp_path: Path):
+    make_project(tmp_path)
+    data = valid_manifest_dict()
+    data["provides"]["extensions"].append({"id": "ext-b", "version": "1.0.0"})
+    original = BundleManifest.from_dict(data)
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(original), installer, manifest=original)
+
+    data["provides"]["extensions"].reverse()
+    # Identity includes kind: a step can have the same ID as an extension.
+    data["provides"]["steps"].append({"id": "ext-a"})
+    changed = BundleManifest.from_dict(data)
+    plan = _plan(changed)
+    result = install_bundle(tmp_path, plan, installer, manifest=changed)
+
+    assert {(c.kind, c.id) for c in result.installed} == {("steps", "ext-a")}
+    assert len(result.skipped) == 5
+    assert installer.refresh_calls == []
+    assert load_records(tmp_path)[0].contributed_components == tuple(plan.components)
+
+
 def test_partial_failure_rolls_back_and_records_nothing(tmp_path: Path):
     make_project(tmp_path)
     manifest = BundleManifest.from_dict(valid_manifest_dict())

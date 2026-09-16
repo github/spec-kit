@@ -1733,9 +1733,11 @@ def workflow_add(
     from_url: str | None = typer.Option(None, "--from", help="Install from a custom URL"),
 ):
     """Install a workflow from catalog, URL, or local path."""
+    from . import load_custom_steps
     from .engine import WorkflowDefinition
 
     project_root = _require_specify_project()
+    load_custom_steps(project_root)
     _open_workflow_registry(project_root)
     workflows_dir = project_root / ".specify" / "workflows"
     # With --from, source names the expected workflow ID: validate it up

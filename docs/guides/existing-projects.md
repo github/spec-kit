@@ -33,6 +33,12 @@ specifications for existing behavior.
 
 ## 2. Capture Project Guardrails
 
+The remaining steps illustrate adopting **SDD** for a bounded feature. If your
+first task is a repair, you can instead follow the
+[bug-fixing quickstart](bugfix.md) after initialization; to evaluate a proposal,
+use the [idea assessment quickstart](assessment.md). Neither process requires
+completing the SDD steps below first.
+
 Run `/speckit.constitution` with principles that are already true for the
 repository or that the team has explicitly agreed to adopt:
 
@@ -49,7 +55,7 @@ so unrealistic rules create noise instead of useful constraints.
 
 ## 3. Choose a Bounded First Change
 
-Start with a feature, bug fix, or modernization slice that can be reviewed
+Start with a feature or modernization slice that can be reviewed
 independently. Do not make "document the entire existing system" your first
 feature unless that inventory is itself the intended deliverable.
 

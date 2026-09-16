@@ -11,7 +11,7 @@ These are one time installations required to be able to test your changes locall
 1. Install [Python 3.11+](https://www.python.org/downloads/)
 1. Install [uv](https://docs.astral.sh/uv/) for package management
 1. Install [Git](https://git-scm.com/downloads)
-1. Have an [AI coding agent available](README.md#-supported-ai-coding-agent-integrations)
+1. Have an [AI coding agent available](https://github.github.io/spec-kit/reference/integrations.html)
 
 <details>
 <summary><b>💡 Hint if you are using <code>VSCode</code> or <code>GitHub Codespaces</code> as your IDE</b></summary>
@@ -55,7 +55,7 @@ Here are a few things you can do that will increase the likelihood of your pull 
 - Write a [good commit message](http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html).
 - Test your changes with the Spec-Driven Development workflow to ensure compatibility.
 
-Accounts with three open pull requests may continue submitting changes, but additional submissions may be placed behind contributions from other authors in the review queue. Coding agents should disclose this possibility and obtain the filer's confirmation before opening another pull request.
+Accounts with three open pull requests may continue submitting changes, but additional submissions may be placed behind contributions from other authors in the review queue. Coding agents should disclose this possibility and obtain the filer's confirmation before opening another pull request. Repository-owned `gh-aw` maintenance workflows do not require this confirmation.
 
 ### Evidence gate
 
@@ -150,6 +150,27 @@ We recommend naming branches as `<type>/<number>-<short-slug>`, where `<number>`
 Including the issue or PR number makes branches traceable — especially useful since the project uses squash merges and `git branch --merged` won't detect merged branches. If you start with a PR (no issue), use the PR number once it's assigned.
 
 ## Development workflow
+
+### Does Spec Kit use Spec Kit?
+
+Yes — we dogfood Spec Kit while developing Spec Kit, especially for substantial
+features and changes to the development workflow. Contributors are asked to test
+relevant changes through the Spec-Driven Development commands. The
+[feature assessment workflow](https://github.com/github/spec-kit/blob/main/.github/workflows/feature-assess.md)
+is currently the automated dogfooding path: its setup uses the CLI from the
+current checkout to initialize Copilot and install the `assess` extension, after
+which Copilot follows the generated assessment skills against feature requests.
+The other agentic workflows currently operate independently of the Specify CLI.
+
+This does not mean every change goes through the full workflow. Small fixes can
+use the normal issue, pull request, review, and test process. Dogfooding
+scaffolding and artifacts under `.github/agents/`, `.github/prompts/`,
+`.github/copilot-instructions.md`, `.grok/`, `.specify/`, and `specs/` are
+intentionally gitignored. The automated assessment workflow is ephemeral and
+neither commits nor pushes its generated Copilot skills, so its output does not
+enter repository history.
+
+### Workflow expectations
 
 When working on spec-kit:
 
