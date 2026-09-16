@@ -41,9 +41,20 @@ def test_builtin_default_catalog_resolves_first_party_bundles_offline():
     assert resolved.install_allowed is True
 
 
-def test_builtin_catalog_failure_does_not_block_lower_priority_source(monkeypatch):
+@pytest.mark.parametrize(
+    "source_id, builtin_id, builtin_priority, project_priority",
+    [
+        pytest.param("default", "builtin://default", 1, 10, id="default"),
+        pytest.param("community", "builtin://community", 20, 30, id="community"),
+    ],
+)
+def test_builtin_catalog_failure_does_not_block_lower_priority_source(
+    monkeypatch, source_id, builtin_id, builtin_priority, project_priority
+):
+    from specify_cli.bundler.services import adapters
+
     def fail_http_get_json(source_id, url):
-        raise BundlerError("repository unavailable")
+        raise adapters._CatalogUnavailable("repository unavailable")
 
     monkeypatch.setattr(
         "specify_cli.bundler.services.adapters._http_get_json", fail_http_get_json
@@ -53,7 +64,9 @@ def test_builtin_catalog_failure_does_not_block_lower_priority_source(monkeypatc
         lambda filename: {"schema_version": "1.0", "bundles": {}},
     )
 
-    project = _src("project", "https://example.com/catalog.json", priority=10)
+    project = _src(
+        "project", "https://example.com/catalog.json", priority=project_priority
+    )
     fetcher = make_catalog_fetcher(allow_network=True)
 
     def fetch_project(source):
@@ -65,10 +78,13 @@ def test_builtin_catalog_failure_does_not_block_lower_priority_source(monkeypatc
         return fetcher(source)
 
     stack = CatalogStack(
-        [_src("default", "builtin://default"), project], fetch_project
+        [_src(source_id, builtin_id, priority=builtin_priority), project],
+        fetch_project,
     )
 
-    assert stack.resolve("company").source.id == "project"
+    with pytest.warns(UserWarning, match="packaged snapshot"):
+        resolved = stack.resolve("company")
+    assert resolved.source.id == "project"
 
 
 def test_builtin_community_catalog_resolves_from_packaged_snapshot_offline():

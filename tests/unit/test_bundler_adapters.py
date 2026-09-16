@@ -1,6 +1,8 @@
 """Unit tests for catalog-fetch adapters (auth + redirect safety)."""
 from __future__ import annotations
 
+import urllib.error
+import warnings
 from typing import Self
 
 import pytest
@@ -92,6 +94,73 @@ def test_http_fetch_bounds_catalog_response(monkeypatch):
         fetcher(_source("https://example.com/c.json"))
 
 
+def test_http_get_json_marks_connection_error_unavailable(monkeypatch):
+    def fake_open_url(url, timeout=10, extra_headers=None, redirect_validator=None):
+        raise urllib.error.URLError("name resolution failed")
+
+    monkeypatch.setattr("specify_cli.authentication.http.open_url", fake_open_url)
+
+    with pytest.raises(adapters._CatalogUnavailable):
+        adapters._http_get_json("team", "https://example.com/c.json")
+
+
+def test_http_get_json_marks_server_error_unavailable(monkeypatch):
+    def fake_open_url(url, timeout=10, extra_headers=None, redirect_validator=None):
+        raise urllib.error.HTTPError(url, 503, "Service Unavailable", {}, None)
+
+    monkeypatch.setattr("specify_cli.authentication.http.open_url", fake_open_url)
+
+    with pytest.raises(adapters._CatalogUnavailable, match="503"):
+        adapters._http_get_json("team", "https://example.com/c.json")
+
+
+def test_http_get_json_preserves_client_error_as_bundler_error(monkeypatch):
+    def fake_open_url(url, timeout=10, extra_headers=None, redirect_validator=None):
+        raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+
+    monkeypatch.setattr("specify_cli.authentication.http.open_url", fake_open_url)
+
+    with pytest.raises(BundlerError, match="404") as excinfo:
+        adapters._http_get_json("team", "https://example.com/c.json")
+    assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
+
+
+def test_http_get_json_preserves_malformed_json(monkeypatch):
+    def fake_open_url(url, timeout=10, extra_headers=None, redirect_validator=None):
+        return _FakeResponse(b"not json", url)
+
+    monkeypatch.setattr("specify_cli.authentication.http.open_url", fake_open_url)
+
+    with pytest.raises(BundlerError) as excinfo:
+        adapters._http_get_json("team", "https://example.com/c.json")
+    assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
+
+
+def test_http_get_json_preserves_invalid_utf8(monkeypatch):
+    def fake_open_url(url, timeout=10, extra_headers=None, redirect_validator=None):
+        return _FakeResponse(b"\xff\xfe", url)
+
+    monkeypatch.setattr("specify_cli.authentication.http.open_url", fake_open_url)
+
+    with pytest.raises(BundlerError, match="not valid UTF-8") as excinfo:
+        adapters._http_get_json("team", "https://example.com/c.json")
+    assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
+
+
+def test_http_get_json_preserves_oversized_response(monkeypatch):
+    body = b'{"schema_version":"1.0","bundles":{}}'
+
+    def fake_open_url(url, timeout=10, extra_headers=None, redirect_validator=None):
+        return _FakeResponse(body, url)
+
+    monkeypatch.setattr("specify_cli.authentication.http.open_url", fake_open_url)
+    monkeypatch.setattr(adapters, "MAX_JSON_CATALOG_BYTES", len(body) - 1)
+
+    with pytest.raises(BundlerError) as excinfo:
+        adapters._http_get_json("team", "https://example.com/c.json")
+    assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
+
+
 @pytest.mark.parametrize(
     "url",
     [
@@ -118,7 +187,43 @@ def test_local_catalog_decode_errors_are_wrapped(tmp_path, use_file_url):
         fetcher(_source(url))
 
 
-def test_builtin_default_catalog_fetches_repository_catalog_online(monkeypatch):
+_SNAPSHOT_BODY = (
+    '{"schema_version":"1.0","bundles":{"packaged":{'
+    '"id":"packaged","name":"Packaged","version":"1.0.0",'
+    '"role":"developer","description":"Packaged catalog entry.",'
+    '"author":"Spec Kit","license":"MIT","download_url":"",'
+    '"requires":{"speckit_version":">=0.1.0"},'
+    '"provides":{},"verified":false}}}'
+)
+
+
+def _write_snapshot(tmp_path, filename):
+    path = tmp_path / "bundles" / filename
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(_SNAPSHOT_BODY, encoding="utf-8")
+    return path
+
+
+_BUILTIN_CASES = [
+    pytest.param(
+        "builtin://default",
+        "catalog.json",
+        adapters.FIRSTPARTY_CATALOG_URL,
+        id="default",
+    ),
+    pytest.param(
+        "builtin://community",
+        "catalog.community.json",
+        adapters.COMMUNITY_CATALOG_URL,
+        id="community",
+    ),
+]
+
+
+@pytest.mark.parametrize("builtin_id, snapshot_name, expected_url", _BUILTIN_CASES)
+def test_builtin_catalog_fetches_repository_catalog_online(
+    monkeypatch, builtin_id, snapshot_name, expected_url
+):
     captured: dict = {}
 
     def fake_http_get_json(source_id, url):
@@ -129,102 +234,69 @@ def test_builtin_default_catalog_fetches_repository_catalog_online(monkeypatch):
     monkeypatch.setattr(adapters, "_http_get_json", fake_http_get_json)
 
     fetcher = adapters.make_catalog_fetcher(allow_network=True)
-    result = fetcher(_source("builtin://default"))
+    result = fetcher(_source(builtin_id))
 
     assert result["bundles"] == {}
-    assert captured == {
-        "source_id": "team",
-        "url": adapters.FIRSTPARTY_CATALOG_URL,
-    }
+    assert captured == {"source_id": "team", "url": expected_url}
 
 
-def test_builtin_default_catalog_falls_back_to_core_pack_on_fetch_error(
-    monkeypatch, tmp_path
+@pytest.mark.parametrize("builtin_id, snapshot_name, expected_url", _BUILTIN_CASES)
+def test_builtin_catalog_falls_back_to_snapshot_on_availability_error(
+    monkeypatch, tmp_path, builtin_id, snapshot_name, expected_url
 ):
-    catalog_path = tmp_path / "bundles" / "catalog.json"
-    catalog_path.parent.mkdir()
-    catalog_path.write_text(
-        '{"schema_version":"1.0","bundles":{"packaged":{'
-        '"id":"packaged","name":"Packaged","version":"1.0.0",'
-        '"role":"developer","description":"Packaged catalog entry.",'
-        '"author":"Spec Kit","license":"MIT","download_url":"",'
-        '"requires":{"speckit_version":">=0.1.0"},'
-        '"provides":{},"verified":false}}}',
-        encoding="utf-8",
-    )
+    _write_snapshot(tmp_path, snapshot_name)
     monkeypatch.setattr(adapters, "_locate_core_pack", lambda: tmp_path)
 
     def fail_http_get_json(source_id, url):
-        raise BundlerError("repository unavailable")
+        raise adapters._CatalogUnavailable("repository unavailable")
 
     monkeypatch.setattr(adapters, "_http_get_json", fail_http_get_json)
 
     fetcher = adapters.make_catalog_fetcher(allow_network=True)
-    result = fetcher(_source("builtin://default"))
+    with pytest.warns(UserWarning, match="packaged snapshot"):
+        result = fetcher(_source(builtin_id))
 
     assert "packaged" in result["bundles"]
 
 
-def test_builtin_default_catalog_uses_core_pack_snapshot_offline(monkeypatch, tmp_path):
-    catalog_path = tmp_path / "bundles" / "catalog.json"
-    catalog_path.parent.mkdir()
-    catalog_path.write_text(
-        '{"schema_version":"1.0","bundles":{"packaged":{'
-        '"id":"packaged","name":"Packaged","version":"1.0.0",'
-        '"role":"developer","description":"Packaged catalog entry.",'
-        '"author":"Spec Kit","license":"MIT","download_url":"",'
-        '"requires":{"speckit_version":">=0.1.0"},'
-        '"provides":{},"verified":false}}}',
-        encoding="utf-8",
-    )
+@pytest.mark.parametrize("builtin_id, snapshot_name, expected_url", _BUILTIN_CASES)
+def test_builtin_catalog_validation_error_is_not_masked_by_snapshot(
+    monkeypatch, tmp_path, builtin_id, snapshot_name, expected_url
+):
+    _write_snapshot(tmp_path, snapshot_name)
     monkeypatch.setattr(adapters, "_locate_core_pack", lambda: tmp_path)
 
-    fetcher = adapters.make_catalog_fetcher(allow_network=False)
-    result = fetcher(_source("builtin://default"))
+    def fail_http_get_json(source_id, url):
+        raise BundlerError("Invalid catalog payload")
 
-    assert "packaged" in result["bundles"]
-
-
-def test_builtin_community_catalog_fetches_repository_catalog_online(monkeypatch):
-    captured: dict = {}
-
-    def fake_http_get_json(source_id, url):
-        captured["source_id"] = source_id
-        captured["url"] = url
-        return {"schema_version": "1.0", "bundles": {}}
-
-    monkeypatch.setattr(adapters, "_http_get_json", fake_http_get_json)
+    monkeypatch.setattr(adapters, "_http_get_json", fail_http_get_json)
+    monkeypatch.setattr(
+        adapters,
+        "_load_packaged_catalog",
+        lambda filename: pytest.fail(
+            "snapshot must not be used for validation errors"
+        ),
+    )
 
     fetcher = adapters.make_catalog_fetcher(allow_network=True)
-    result = fetcher(_source("builtin://community"))
-
-    assert result["bundles"] == {}
-    assert captured == {
-        "source_id": "team",
-        "url": adapters.COMMUNITY_CATALOG_URL,
-    }
+    with pytest.raises(BundlerError, match="Invalid catalog payload"):
+        fetcher(_source(builtin_id))
 
 
-def test_builtin_community_catalog_uses_core_pack_snapshot_offline(
-    monkeypatch, tmp_path
+@pytest.mark.parametrize("builtin_id, snapshot_name, expected_url", _BUILTIN_CASES)
+def test_builtin_catalog_uses_core_pack_snapshot_offline_quietly(
+    monkeypatch, tmp_path, builtin_id, snapshot_name, expected_url
 ):
-    catalog_path = tmp_path / "bundles" / "catalog.community.json"
-    catalog_path.parent.mkdir()
-    catalog_path.write_text(
-        '{"schema_version":"1.0","bundles":{"packaged":{'
-        '"id":"packaged","name":"Packaged","version":"1.0.0",'
-        '"role":"developer","description":"Packaged catalog entry.",'
-        '"author":"Spec Kit","license":"MIT","download_url":"",'
-        '"requires":{"speckit_version":">=0.1.0"},'
-        '"provides":{},"verified":false}}}',
-        encoding="utf-8",
-    )
+    _write_snapshot(tmp_path, snapshot_name)
     monkeypatch.setattr(adapters, "_locate_core_pack", lambda: tmp_path)
 
     fetcher = adapters.make_catalog_fetcher(allow_network=False)
-    result = fetcher(_source("builtin://community"))
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = fetcher(_source(builtin_id))
 
     assert "packaged" in result["bundles"]
+    assert not [w for w in caught if "snapshot" in str(w.message)]
 
 
 @pytest.mark.parametrize(
