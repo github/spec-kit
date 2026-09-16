@@ -675,6 +675,7 @@ def test_bug_fix_upgrade_preserves_scoped_draft_pr_contract():
     assert create_pr["labels"] == ["bug-fix", "automated"]
     assert create_pr["max"] == 1
     assert create_pr["max_patch_files"] == 100
+    assert create_pr["max_patch_size"] == 4096
     assert create_pr["protected_files_policy"] == "blocked"
     assert create_pr["protect_top_level_dot_folders"] is True
     assert not create_pr.get("protected_dot_folder_excludes")
