@@ -284,8 +284,7 @@ class BobIntegration(IntegrationBase):
             return super().build_command_invocation(command_name, args)
 
         stem = command_name
-        if stem.startswith("speckit."):
-            stem = stem[len("speckit."):]
+        stem = stem.removeprefix("speckit.")
         invocation = "/speckit-" + stem.replace(".", "-")
         return f"{invocation} {args}" if args else invocation
 
