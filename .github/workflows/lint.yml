@@ -62,17 +62,28 @@ jobs:
           set -euo pipefail
           shopt -s globstar nullglob
 
+          # Checked per glob, not on the total: one stale entry among several
+          # still leaves that part of the documentation unlinted, which is the
+          # failure #4526 was about.
           count=0
+          empty=()
           while IFS= read -r glob; do
             [ -z "$glob" ] && continue
+            matched=0
             for path in $glob; do
-              [ -f "$path" ] && count=$((count + 1))
+              [ -f "$path" ] && matched=$((matched + 1))
             done
+            # An array, not a string: nullglob is on, so re-expanding an
+            # unquoted list of unmatched globs would erase it.
+            [ "$matched" -eq 0 ] && empty+=("$glob")
+            count=$((count + matched))
           done <<< "$DOC_GLOBS"
 
           echo "documentation files matched: $count"
-          if [ "$count" -eq 0 ]; then
-            echo "::error::markdownlint globs matched no files; the lint job would pass without checking anything (see #4526)"
+          if [ ${#empty[@]} -gt 0 ]; then
+            for glob in "${empty[@]}"; do
+              echo "::error::markdownlint glob matches no files: $glob (see #4526)"
+            done
             exit 1
           fi
 
