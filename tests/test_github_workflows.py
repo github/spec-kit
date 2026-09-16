@@ -55,6 +55,12 @@ COMMUNITY_SUBMISSION_WORKFLOWS = (
         "Do not modify any other files",
     ),
 )
+REPOSITORY_OWNED_DRAFT_PR_EXEMPTION = (
+    "This repository-owned gh-aw maintenance workflow does not perform the contributor "
+    "open-PR count check or request confirmation. After successful validation and "
+    "allowed catalog/docs file updates, emit the configured draft `create_pull_request` "
+    "safe output regardless of the submitter's or filing account's open PR count."
+)
 
 
 def _publish_workflow_steps() -> dict[str, dict[str, object]]:
@@ -103,6 +109,19 @@ def _create_pull_request_allowed_files(source_text: str) -> list[str]:
         for line in allowed_files_match.group("files").splitlines()
         if line.strip()
     ]
+
+
+def _compiled_create_pull_request_config(compiled_text: str) -> dict[str, object]:
+    compiled = yaml.safe_load(compiled_text)
+    config_step = _workflow_step(
+        compiled["jobs"]["agent"]["steps"], "Generate Safe Outputs Config"
+    )
+    config = next(
+        line.strip()
+        for line in config_step["run"].splitlines()
+        if line.lstrip().startswith('{"')
+    )
+    return json.loads(config)["create_pull_request"]
 
 
 def _workflow_frontmatter(source_text: str) -> dict[str, object]:
@@ -317,6 +336,29 @@ def test_community_submission_automation_is_wired_to_allowed_files():
         ]
         assert f'"allowed_files":["{catalog_file}","{docs_file}"]' in compiled_text
         assert label in assignment_text
+
+
+def test_community_submission_draft_pr_exemption_is_runtime_wired():
+    """Repository-owned catalog maintenance bypasses contributor PR-count policy."""
+    for workflow, _, catalog_file, docs_file, _ in COMMUNITY_SUBMISSION_WORKFLOWS:
+        source = WORKFLOWS_DIR / f"add-community-{workflow}.md"
+        compiled = WORKFLOWS_DIR / f"add-community-{workflow}.lock.yml"
+        source_text = source.read_text(encoding="utf-8")
+        compiled_text = compiled.read_text(encoding="utf-8")
+
+        assert REPOSITORY_OWNED_DRAFT_PR_EXEMPTION in " ".join(source_text.split())
+        assert (
+            f"{{{{#runtime-import .github/workflows/add-community-{workflow}.md}}}}"
+            in compiled_text
+        )
+
+        source_create_pr = _frontmatter(source_text)["safe-outputs"][
+            "create-pull-request"
+        ]
+        compiled_create_pr = _compiled_create_pull_request_config(compiled_text)
+        assert source_create_pr["draft"] is True
+        assert compiled_create_pr["draft"] is True
+        assert compiled_create_pr["allowed_files"] == [catalog_file, docs_file]
 
 
 # Full clauses from the catalog download-URL checks (issue #4185). Assert the
