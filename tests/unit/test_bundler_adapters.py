@@ -7,6 +7,7 @@ from typing import Self
 
 import pytest
 
+from specify_cli.authentication.http import RedirectPolicyError
 from specify_cli.bundler import BundlerError
 from specify_cli.bundler.models.catalog import CatalogSource, InstallPolicy
 from specify_cli.bundler.services import adapters
@@ -297,6 +298,71 @@ def test_builtin_catalog_uses_core_pack_snapshot_offline_quietly(
 
     assert "packaged" in result["bundles"]
     assert not [w for w in caught if "snapshot" in str(w.message)]
+
+
+@pytest.mark.parametrize("status_code", [408, 429, 500])
+def test_builtin_community_catalog_falls_back_for_transient_http_failures(
+    monkeypatch, tmp_path, status_code
+):
+    catalog_path = tmp_path / "bundles" / "catalog.community.json"
+    catalog_path.parent.mkdir()
+    catalog_path.write_text(
+        '{"schema_version":"1.0","bundles":{}}', encoding="utf-8"
+    )
+    monkeypatch.setattr(adapters, "_locate_core_pack", lambda: tmp_path)
+
+    def fail(url, timeout=10, extra_headers=None, redirect_validator=None):
+        raise urllib.error.HTTPError(url, status_code, "transient", {}, None)
+
+    monkeypatch.setattr("specify_cli.authentication.http.open_url", fail)
+    fetcher = adapters.make_catalog_fetcher(allow_network=True)
+
+    assert fetcher(_source("builtin://community")) == {
+        "schema_version": "1.0",
+        "bundles": {},
+    }
+
+
+def test_builtin_community_catalog_falls_back_for_transport_errors(monkeypatch, tmp_path):
+    catalog_path = tmp_path / "bundles" / "catalog.community.json"
+    catalog_path.parent.mkdir()
+    catalog_path.write_text(
+        '{"schema_version":"1.0","bundles":{}}', encoding="utf-8"
+    )
+    monkeypatch.setattr(adapters, "_locate_core_pack", lambda: tmp_path)
+
+    def fail(url, timeout=10, extra_headers=None, redirect_validator=None):
+        raise urllib.error.URLError("network unreachable")
+
+    monkeypatch.setattr("specify_cli.authentication.http.open_url", fail)
+    fetcher = adapters.make_catalog_fetcher(allow_network=True)
+
+    assert fetcher(_source("builtin://community")) == {
+        "schema_version": "1.0",
+        "bundles": {},
+    }
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        RedirectPolicyError("unsafe redirect"),
+        RedirectPolicyError("malformed redirect URL"),
+    ],
+)
+def test_builtin_community_catalog_does_not_fall_back_for_redirect_policy_errors(
+    monkeypatch, tmp_path, error
+):
+    monkeypatch.setattr(adapters, "_locate_core_pack", lambda: tmp_path)
+
+    def fail(url, timeout=10, extra_headers=None, redirect_validator=None):
+        raise error
+
+    monkeypatch.setattr("specify_cli.authentication.http.open_url", fail)
+    fetcher = adapters.make_catalog_fetcher(allow_network=True)
+
+    with pytest.raises(BundlerError, match="Failed to fetch catalog"):
+        fetcher(_source("builtin://community"))
 
 
 @pytest.mark.parametrize(

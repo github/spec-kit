@@ -47,6 +47,7 @@ _BUILTIN_PACKAGED_SNAPSHOTS: dict[str, str] = {
 }
 
 HTTP_TIMEOUT_SECONDS = 10
+_TRANSIENT_HTTP_STATUS_CODES = (408, 429)
 
 
 class _CatalogUnavailable(BundlerError):
@@ -214,7 +215,7 @@ def _http_get_json(source_id: str, url: str) -> dict:
     HTTPS/host guarantee from ``_validate_remote_url`` is preserved end to end
     rather than only on the initial URL.
     """
-    from ...authentication.http import open_url
+    from ...authentication.http import RedirectPolicyError, open_url
 
     def _validate_redirect(_old_url: str, new_url: str) -> None:
         _validate_remote_url(source_id, new_url)
@@ -237,11 +238,18 @@ def _http_get_json(source_id: str, url: str) -> dict:
         # Size limits, redirect/URL validation: content or security failures,
         # never transient -- must not be downgraded to availability.
         raise
+    except RedirectPolicyError as exc:
+        # Unsafe/malformed redirects are security failures and must surface as
+        # a hard error instead of being downgraded to catalog unavailability.
+        raise BundlerError(
+            f"Failed to fetch catalog from {url}: {exc}"
+        ) from exc
     except urllib.error.HTTPError as exc:
-        # urllib raises HTTPError for any non-2xx status; only 5xx is a
-        # transient server-side availability failure. A 4xx (404, 403, ...)
-        # is a definitive response and must surface as a hard error.
-        if exc.code >= 500:
+        # urllib raises HTTPError for any non-2xx status; only transient
+        # server-side availability responses (408, 429, 5xx) fall back to the
+        # snapshot. Any other 4xx (404, 403, ...) is definitive and must
+        # surface as a hard error.
+        if exc.code in _TRANSIENT_HTTP_STATUS_CODES or exc.code >= 500:
             raise _CatalogUnavailable(
                 f"Failed to fetch catalog from {url}: HTTP {exc.code} {exc.reason}"
             ) from exc
