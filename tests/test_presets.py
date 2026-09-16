@@ -9430,6 +9430,8 @@ class TestPresetSkills:
 
         assert outside_file.read_text(encoding="utf-8") == "do-not-touch"
         assert (skill_dir / "SKILL.md").is_symlink()
+
+    def test_is_safe_registry_skill_name_rejects_unsafe_values(self, project_dir):
         """Unit-test the centralized registry skill-name boundary guard.
 
         ``registered_skills`` entries are persisted registry data, not
