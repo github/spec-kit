@@ -7598,7 +7598,9 @@ class TestExtensionAddCLI:
         assert result.exit_code == 0, result.output
         assert f"URL: {url}" in result.output
 
-    def test_catalog_add_duplicate_is_idempotent(self, tmp_path):
+    @pytest.mark.parametrize("name", ["community", " community "])
+    @pytest.mark.parametrize("padding", ["", " \t"])
+    def test_catalog_add_duplicate_is_idempotent(self, tmp_path, name, padding):
         """Re-adding an identical catalog is a successful no-op (#4505)."""
         from typer.testing import CliRunner
         from unittest.mock import patch
@@ -7614,12 +7616,57 @@ class TestExtensionAddCLI:
         ]
         runner = CliRunner()
         with patch.object(Path, "cwd", return_value=project_dir):
-            first = runner.invoke(app, args, catch_exceptions=True)
+            first = runner.invoke(app, [
+                "extension", "catalog", "add",
+                f"{padding}https://example.com/catalog.json{padding}", "--name", name,
+            ], catch_exceptions=True)
+            assert first.exit_code == 0, first.output
+            config_path = project_dir / ".specify" / "extension-catalogs.yml"
+            original = config_path.read_bytes()
             second = runner.invoke(app, args, catch_exceptions=True)
 
-        assert first.exit_code == 0, first.output
         assert second.exit_code == 0, second.output
         assert "nothing to do" in second.output
+        assert config_path.read_bytes() == original
+        entries = yaml.safe_load(original)["catalogs"]
+        assert len(entries) == 1
+        assert entries[0]["name"] == "community"
+        assert entries[0]["url"] == "https://example.com/catalog.json"
+
+    @pytest.mark.parametrize("stored_name,name", [
+        (" community ", "community"),
+        ("community", " community "),
+        (" community ", "\tcommunity\t"),
+    ])
+    @pytest.mark.parametrize("stored_padding,padding", [(" \t", ""), ("", " \t"), (" ", "\t")])
+    @pytest.mark.parametrize("priority", [10, 20])
+    def test_catalog_add_normalizes_existing_identity(
+        self, project_dir, monkeypatch, stored_name, name, stored_padding, padding, priority
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        config_path.write_text(yaml.safe_dump({"catalogs": [{
+            "name": stored_name,
+            "url": f"{stored_padding}https://example.com/catalog.json{stored_padding}",
+            "priority": 10,
+            "install_allowed": False,
+        }]}), encoding="utf-8")
+        original = config_path.read_bytes()
+        modified_at = config_path.stat().st_mtime_ns
+
+        result = CliRunner().invoke(app, [
+            "extension", "catalog", "add",
+            f"{padding}https://example.com/catalog.json{padding}",
+            "--name", name, "--priority", str(priority),
+        ], catch_exceptions=False)
+
+        assert result.exit_code == (0 if priority == 10 else 1), result.output
+        assert ("nothing to do" if priority == 10 else "different settings") in result.output
+        assert config_path.read_bytes() == original
+        assert config_path.stat().st_mtime_ns == modified_at
 
     def test_catalog_add_duplicate_different_settings_conflicts(self, tmp_path):
         """Re-adding a same-named catalog with different settings errors (#4505)."""

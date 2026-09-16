@@ -645,6 +645,8 @@ def catalog_add(
 
     project_root = _require_specify_project()
     specify_dir = project_root / ".specify"
+    url = url.strip()
+    name = name.strip()
 
     # Validate URL
     tmp_catalog = ExtensionCatalog(project_root)
@@ -676,9 +678,9 @@ def catalog_add(
     # still a conflict — we refuse to silently change priority/install
     # permissions and ask the user to remove it first.
     for existing in catalogs:
-        if isinstance(existing, dict) and existing.get("name") == name:
+        if isinstance(existing, dict) and str(existing.get("name", "")).strip() == name:
             if (
-                str(existing.get("url", "")) == url
+                str(existing.get("url", "")).strip() == url
                 and _normalize_catalog_priority(existing.get("priority")) == priority
                 and _normalize_catalog_install_allowed(
                     existing.get("install_allowed", False)

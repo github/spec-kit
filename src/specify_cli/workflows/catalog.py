@@ -708,12 +708,13 @@ class WorkflowCatalog:
     def add_catalog(self, url: str, name: str | None = None) -> str:
         """Add a catalog source to the project-level config.
 
-        Identity is the URL: adding a URL that is already configured is
-        idempotent (#4505). A rerun requesting the same name (or no explicit
-        name) is a no-op that returns ``"unchanged"``; a rerun requesting a
+        Identity is the URL with surrounding whitespace stripped. Adding an
+        existing URL is idempotent (#4505): requesting the same name (or no
+        explicit name) returns ``"unchanged"``; a rerun requesting a
         different name is rejected as a conflict. Returns ``"added"`` when a
         new entry is written.
         """
+        url = url.strip()
         self._validate_catalog_url(url)
         config_path = self.project_root / ".specify" / "workflow-catalogs.yml"
 
@@ -742,7 +743,7 @@ class WorkflowCatalog:
         # same name (or no explicit name) is a no-op; a different name conflicts.
         requested_name = str(name).strip() if name is not None else ""
         for cat in catalogs:
-            if isinstance(cat, dict) and cat.get("url") == url:
+            if isinstance(cat, dict) and str(cat.get("url", "")).strip() == url:
                 existing_name = str(cat.get("name", "")).strip()
                 if not requested_name or requested_name == existing_name:
                     return "unchanged"
@@ -1406,12 +1407,13 @@ class StepCatalog:
     def add_catalog(self, url: str, name: str | None = None) -> str:
         """Add a catalog source to the project-level config.
 
-        Identity is the URL: adding a URL that is already configured is
-        idempotent (#4505). A rerun requesting the same name (or no explicit
-        name) is a no-op that returns ``"unchanged"``; a rerun requesting a
+        Identity is the URL with surrounding whitespace stripped. Adding an
+        existing URL is idempotent (#4505): requesting the same name (or no
+        explicit name) returns ``"unchanged"``; a rerun requesting a
         different name is rejected as a conflict. Returns ``"added"`` when a
         new entry is written.
         """
+        url = url.strip()
         self._validate_catalog_url(url)
         config_path = self.project_root / ".specify" / "step-catalogs.yml"
 
@@ -1440,7 +1442,7 @@ class StepCatalog:
         # same name (or no explicit name) is a no-op; a different name conflicts.
         requested_name = str(name).strip() if name is not None else ""
         for cat in catalogs:
-            if isinstance(cat, dict) and cat.get("url") == url:
+            if isinstance(cat, dict) and str(cat.get("url", "")).strip() == url:
                 existing_name = str(cat.get("name", "")).strip()
                 if not requested_name or requested_name == existing_name:
                     return "unchanged"

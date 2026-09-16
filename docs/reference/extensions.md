@@ -158,6 +158,8 @@ Adds a catalog to the project's `.specify/extension-catalogs.yml`.
 
 Adding a catalog is idempotent (identity is the catalog **name**): re-running `catalog add` with the same name and identical settings is a successful no-op (exit code 0), so it is safe to include in a re-runnable workflow. Re-adding the same name with *different* settings is rejected as a conflict rather than silently overwriting the existing entry — remove it first to change it.
 
+Surrounding whitespace in catalog names and URLs is ignored when comparing entries and stripped from newly added entries. A no-op leaves the existing configuration unchanged.
+
 ### Remove a Catalog
 
 ```bash

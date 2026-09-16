@@ -9981,6 +9981,93 @@ class PkgStep(StepBase):
         assert name_a != name_b, "Module names for 'a-b' and 'a_b' must differ"
 
 
+@pytest.mark.parametrize("command,config_filename", [
+    (["workflow", "catalog", "add"], "workflow-catalogs.yml"),
+    (["workflow", "step", "catalog", "add"], "step-catalogs.yml"),
+])
+class TestWorkflowCatalogAddCLI:
+    @pytest.mark.parametrize("name", [None, "mine"])
+    @pytest.mark.parametrize("padding", ["", " \t"])
+    def test_add_catalog_duplicate_outcomes(
+        self, project_dir, monkeypatch, command, config_filename, name, padding
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        url = "https://example.com/catalog.json"
+        name_args = ["--name", name] if name is not None else []
+        runner = CliRunner()
+        first = runner.invoke(
+            app, [*command, f"{padding}{url}{padding}", *name_args], catch_exceptions=False
+        )
+        assert first.exit_code == 0, first.output
+        assert "source added" in first.output
+        config_path = project_dir / ".specify" / config_filename
+        original = config_path.read_bytes()
+        modified_at = config_path.stat().st_mtime_ns
+
+        second = runner.invoke(app, [*command, url, *name_args], catch_exceptions=False)
+
+        assert second.exit_code == 0, second.output
+        assert "already configured" in second.output
+        assert "source added" not in second.output
+        assert config_path.read_bytes() == original
+        assert config_path.stat().st_mtime_ns == modified_at
+        entries = yaml.safe_load(original)["catalogs"]
+        assert len(entries) == 1
+        assert entries[0]["url"] == url
+        assert entries[0]["name"] == (name or "catalog-1")
+
+        conflict = runner.invoke(
+            app, [*command, url, "--name", "different"], catch_exceptions=False
+        )
+        assert conflict.exit_code == 1, conflict.output
+        assert "different name" in conflict.output
+        assert "source added" not in conflict.output
+        assert config_path.read_bytes() == original
+        assert config_path.stat().st_mtime_ns == modified_at
+
+    @pytest.mark.parametrize("stored_padding,padding", [
+        ("", ""), (" \t", ""), ("", " \t"), (" ", "\t"),
+    ])
+    @pytest.mark.parametrize("name", [None, "mine", "different"])
+    def test_add_catalog_existing_url_outcomes(
+        self, project_dir, monkeypatch, command, config_filename, stored_padding, padding, name
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        url = "https://example.com/catalog.json"
+        config_path = project_dir / ".specify" / config_filename
+        config_path.write_text(yaml.safe_dump({"catalogs": [{
+            "name": "mine",
+            "url": f"{stored_padding}{url}{stored_padding}",
+            "priority": 7,
+            "install_allowed": False,
+            "description": "Keep this entry unchanged.",
+        }]}), encoding="utf-8")
+        original = config_path.read_bytes()
+        modified_at = config_path.stat().st_mtime_ns
+        name_args = ["--name", name] if name is not None else []
+
+        result = CliRunner().invoke(
+            app, [*command, f"{padding}{url}{padding}", *name_args], catch_exceptions=False
+        )
+
+        if name == "different":
+            assert result.exit_code == 1, result.output
+            assert "different name" in result.output
+            assert "already configured:" not in result.output
+        else:
+            assert result.exit_code == 0, result.output
+            assert "already configured" in result.output
+        assert "source added" not in result.output
+        assert config_path.read_bytes() == original
+        assert config_path.stat().st_mtime_ns == modified_at
+
+
 # ===== CLI Step Remove Tests =====
 
 class TestWorkflowStepRemoveCLI:

@@ -922,6 +922,7 @@ def preset_catalog_add(
 
     project_root = _require_specify_project()
     specify_dir = project_root / ".specify"
+    url = url.strip()
 
     # Validate URL
     tmp_catalog = PresetCatalog(project_root)
@@ -954,7 +955,7 @@ def preset_catalog_add(
         console.print("[red]Error:[/red] Invalid catalog config: 'catalogs' must be a list.")
         raise typer.Exit(1)
 
-    # Only rendering is escaped — the raw values are what get persisted and
+    # Only rendering is escaped — the unescaped values get persisted and
     # compared below, so a name containing markup still round-trips exactly.
     safe_name = _escape_markup(str(name))
     safe_url = _escape_markup(str(url))
@@ -967,7 +968,7 @@ def preset_catalog_add(
     for existing in catalogs:
         if isinstance(existing, dict) and existing.get("name") == name:
             if (
-                str(existing.get("url", "")) == url
+                str(existing.get("url", "")).strip() == url
                 and _normalize_catalog_priority(existing.get("priority")) == priority
                 and _normalize_catalog_install_allowed(
                     existing.get("install_allowed", False)
