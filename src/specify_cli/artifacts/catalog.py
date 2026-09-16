@@ -13,14 +13,19 @@ from __future__ import annotations
 
 import re
 import shlex
+from collections.abc import Iterable
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Any, Iterable, Literal
+from typing import Any, Literal
 
 import yaml
 
 from ._identifiers import (
     IdentifierComponentError,
+    derive_hook_lookup_id,
+    derive_hook_public_id,
     derive_public_id,
+    parse_hook_artifact_name,
+    parse_lookup_id,
     validate_component,
 )
 from .models import (
@@ -29,10 +34,16 @@ from .models import (
     ArtifactKind,
     ArtifactNotFoundError,
     ArtifactResolutionError,
+    ContributionNotFoundError,
+    HookArtifact,
+    HookStackEntry,
     NotASpecKitProjectError,
 )
-from .resolution import _build_stack, _layer_provenance
-
+from .resolution import (
+    _build_stack,
+    _layer_provenance,
+    _repo_relative_existing_file,
+)
 
 _TEMPLATE_SUFFIX = ".md"
 _SCRIPT_SUFFIX = ".sh"
@@ -215,6 +226,17 @@ def _resolve_kind_hint(name: str, kind: ArtifactKind | None) -> tuple[str, Artif
     grammar and ``kind`` is also set explicitly, the two must agree — a
     mismatch is treated as an unknown artifact.
     """
+    if kind == "hook":
+        if name.startswith("hook:"):
+            candidate = name.removeprefix("hook:")
+            try:
+                parse_hook_artifact_name(candidate)
+            except IdentifierComponentError:
+                pass
+            else:
+                return candidate, "hook"
+        return name, "hook"
+
     if ":" in name:
         prefix, _, bare = name.partition(":")
         if prefix in ("command", "template", "script"):
@@ -222,11 +244,21 @@ def _resolve_kind_hint(name: str, kind: ArtifactKind | None) -> tuple[str, Artif
             if kind is not None and kind != resolved:
                 raise ArtifactNotFoundError(name)
             return bare, resolved
+        if prefix == "hook":
+            if kind is not None and kind != "hook":
+                raise ArtifactNotFoundError(name)
+            return bare, "hook"
     return name, kind
 
 
 def _validate_artifact_name(name: str, kind: ArtifactKind) -> str:
     """Validate the structural identifier component constraints for ``name``."""
+    if kind == "hook":
+        try:
+            parse_hook_artifact_name(name)
+        except IdentifierComponentError as exc:
+            raise ArtifactNotFoundError(name) from exc
+        return name
     try:
         return validate_component(name, f"{kind} name")
     except IdentifierComponentError as exc:
@@ -249,11 +281,11 @@ class ArtifactCatalog:
         self.project_root = project_root
 
     # ------------------------------------------------------------------ list
-    def list_artifacts(self) -> list[Artifact]:
+    def list_artifacts(self) -> list[Artifact | HookArtifact]:
         """Return every artifact Spec Kit exposes for this project, deduped.
 
-        Sort order is deterministic — first by ``kind`` in the fixed
-        ``["command", "template", "script"]`` order, then by ``name``.
+        Named artifacts are sorted by kind and name. Hook artifacts follow in
+        their deterministic event, priority, and declaration order.
         Returns an empty list when no artifacts are found rather than raising;
         a fresh install with no presets, no extensions, and no built-in assets is
         still a valid Spec Kit project.
@@ -268,8 +300,9 @@ class ArtifactCatalog:
         is decided by :meth:`PresetResolver.collect_all_layers`'s own
         ordering (index 0 = winner), not by enumeration order here.
         """
-        artifacts, _layers_cache, _resolver, _manifest_cache = self._collect_inventory()
-        return artifacts
+        artifacts, _layers_cache, resolver, _manifest_cache = self._collect_inventory()
+        hooks, _hook_stack_cache = self._collect_hook_inventory(resolver)
+        return [*artifacts, *hooks]
 
     def list_artifacts_with_stack(self) -> list[dict[str, Any]]:
         """Return list rows enriched with each artifact's full composition stack."""
@@ -286,6 +319,15 @@ class ArtifactCatalog:
             )
             row = artifact.to_json_dict()
             row["stack"] = [layer.to_json_dict() for layer in stack]
+            rows.append(row)
+
+        hook_rows, hook_stack_cache = self._collect_hook_inventory(resolver)
+        for hook in hook_rows:
+            row = hook.to_json_dict()
+            row["stack"] = [
+                entry.to_json_dict()
+                for entry in hook_stack_cache[(hook.eventName, hook.targetCommand)]
+            ]
             rows.append(row)
         return rows
 
@@ -308,6 +350,9 @@ class ArtifactCatalog:
         """
         bare, resolved_kind = _resolve_kind_hint(name, kind)
 
+        if resolved_kind == "hook":
+            return self._get_hook_info(bare, original_argument=name)
+
         # Project and registry validation happens once, inside
         # ``_collect_inventory`` below — the same chokepoint ``list_artifacts``
         # uses — so both public methods fail closed identically instead of
@@ -319,11 +364,18 @@ class ArtifactCatalog:
                 for artifact in inventory
                 if artifact.name == bare
             ]
+            hook_rows, _hook_stack_cache = self._collect_hook_inventory(resolver)
+            if any(row.name == bare for row in hook_rows):
+                matches.append(("hook", bare))
             if not matches:
                 raise ArtifactNotFoundError(name)
             if len(matches) > 1:
                 raise AmbiguousArtifactError(bare, [k for k, _ in matches])
             resolved_kind = matches[0][0]
+            if resolved_kind == "hook":
+                return self._get_hook_info(
+                    bare, original_argument=name, resolver=resolver
+                )
 
         validated_name = _validate_artifact_name(bare, resolved_kind)
         artifact = next(
@@ -355,6 +407,349 @@ class ArtifactCatalog:
             "stack": [layer.to_json_dict() for layer in stack],
         }
 
+    def get_contribution_info(self, lookup_id: str) -> dict[str, Any]:
+        """Resolve a stack ``lookupId`` to its validated manifest entry."""
+        _validate_project(self.project_root)
+        _validate_extension_registry(self.project_root)
+        try:
+            layer, source_id, kind, name = parse_lookup_id(lookup_id)
+        except IdentifierComponentError as exc:
+            raise ContributionNotFoundError(lookup_id) from exc
+        if layer == "project":
+            raise ContributionNotFoundError(lookup_id)
+
+        from ..presets import PresetError, PresetResolver
+
+        resolver = PresetResolver(self.project_root)
+        try:
+            if layer == "preset":
+                resolved = self._find_preset_contribution(
+                    resolver, source_id, kind, name
+                )
+            else:
+                resolved = self._find_extension_contribution(
+                    resolver, source_id, kind, name
+                )
+        except (OSError, PresetError) as exc:
+            raise ArtifactResolutionError() from exc
+        if resolved is None:
+            raise ContributionNotFoundError(lookup_id)
+
+        contribution, manifest_path, source_path = resolved
+        return {
+            "id": lookup_id,
+            "layer": layer,
+            "sourceId": source_id,
+            "kind": kind,
+            "name": name,
+            "manifestPath": manifest_path,
+            "sourcePath": source_path,
+            "contribution": contribution,
+        }
+
+    def _find_preset_contribution(
+        self,
+        resolver: Any,
+        source_id: str,
+        kind: str,
+        name: str,
+    ) -> tuple[dict[str, Any], str, str | None] | None:
+        for pack_id, _metadata in resolver._get_all_presets_by_priority():
+            if pack_id != source_id:
+                continue
+            pack_dir = resolver.presets_dir / pack_id
+            manifest = resolver._get_manifest(pack_dir)
+            if manifest is None:
+                return None
+            for entry in manifest.templates:
+                if (
+                    isinstance(entry, dict)
+                    and entry.get("type") == kind
+                    and entry.get("name") == name
+                ):
+                    return self._contribution_result(
+                        entry, pack_dir, manifest.path
+                    )
+        return None
+
+    def _find_extension_contribution(
+        self,
+        resolver: Any,
+        source_id: str,
+        kind: str,
+        name: str,
+    ) -> tuple[dict[str, Any], str, str | None] | None:
+        from ..extensions import (
+            ExtensionManifest,
+            ValidationError,
+            coerce_hook_entries,
+        )
+
+        for _priority, extension_id, _metadata in resolver._get_all_extensions_by_priority():
+            if extension_id != source_id:
+                continue
+            extension_dir = resolver.extensions_dir / extension_id
+            manifest_path = extension_dir / "extension.yml"
+            try:
+                manifest = ExtensionManifest(manifest_path)
+            except (ValidationError, OSError, TypeError, AttributeError):
+                return None
+            if kind == "hook":
+                event_name, command = parse_hook_artifact_name(name)
+                matching: dict[str, Any] | None = None
+                hook_config = (manifest.hooks or {}).get(event_name)
+                for entry in coerce_hook_entries(hook_config):
+                    if isinstance(entry, dict) and entry.get("command") == command:
+                        matching = entry
+                if matching is None:
+                    return None
+                relative_manifest = _repo_relative_existing_file(
+                    self.project_root, manifest.path
+                )
+                if relative_manifest is None:
+                    raise ArtifactResolutionError()
+                return (
+                    {**matching, "eventName": event_name},
+                    relative_manifest,
+                    None,
+                )
+
+            entries = {
+                "command": manifest.commands,
+                "template": manifest.templates,
+                "script": manifest.scripts,
+            }[kind]
+            for entry in entries:
+                if isinstance(entry, dict) and entry.get("name") == name:
+                    return self._contribution_result(
+                        entry, extension_dir, manifest.path
+                    )
+        return None
+
+    def _contribution_result(
+        self,
+        entry: dict[str, Any],
+        pack_dir: Path,
+        manifest_path: Path,
+    ) -> tuple[dict[str, Any], str, str | None]:
+        relative_manifest = _repo_relative_existing_file(
+            self.project_root, manifest_path
+        )
+        if relative_manifest is None:
+            raise ArtifactResolutionError()
+        relative_file = entry.get("file")
+        source_path = None
+        if isinstance(relative_file, str):
+            try:
+                resolved_pack = pack_dir.resolve()
+                candidate = pack_dir / relative_file
+                candidate.resolve().relative_to(resolved_pack)
+            except (OSError, ValueError):
+                pass
+            else:
+                source_path = _repo_relative_existing_file(
+                    self.project_root, candidate
+                )
+        return (
+            dict(entry),
+            relative_manifest,
+            source_path,
+        )
+
+    def _get_hook_info(
+        self,
+        bare_name: str,
+        original_argument: str,
+        resolver: Any | None = None,
+    ) -> dict[str, Any]:
+        """Return one hook row and its additive declaration stack."""
+        _validate_artifact_name(bare_name, "hook")
+        event_name, command = parse_hook_artifact_name(bare_name)
+        hook_rows, stack_cache = self._collect_hook_inventory(resolver)
+        for row in hook_rows:
+            if row.eventName != event_name or row.targetCommand != command:
+                continue
+            payload = row.to_json_dict()
+            payload["stack"] = [
+                entry.to_json_dict()
+                for entry in stack_cache[(event_name, command)]
+            ]
+            return payload
+        raise ArtifactNotFoundError(original_argument)
+
+    def _collect_hook_inventory(
+        self, resolver: Any | None = None
+    ) -> tuple[
+        list[HookArtifact],
+        dict[tuple[str, str], list[HookStackEntry]],
+    ]:
+        """Project declared hooks and existing runtime bindings into artifact rows."""
+        from ..extensions import (
+            DEFAULT_HOOK_PRIORITY,
+            ExtensionManager,
+            ExtensionManifest,
+            HookExecutor,
+            ValidationError,
+            coerce_hook_entries,
+            normalize_priority,
+        )
+        from ..presets import PresetError, PresetResolver
+
+        if resolver is None:
+            _validate_project(self.project_root)
+            _validate_extension_registry(self.project_root)
+            resolver = PresetResolver(self.project_root)
+
+        grouped: dict[tuple[str, str], list[tuple[int, dict[str, Any]]]] = {}
+        extension_manager = ExtensionManager(self.project_root)
+        insertion_index = 0
+
+        try:
+            extensions = resolver._get_all_extensions_by_priority()
+            for _resolver_priority, extension_id, metadata in extensions:
+                extension_dir = resolver.extensions_dir / extension_id
+                if metadata is not None:
+                    manifest = extension_manager.get_extension(extension_id)
+                else:
+                    manifest_path = extension_dir / "extension.yml"
+                    manifest = None
+                    if manifest_path.is_file():
+                        try:
+                            manifest = ExtensionManifest(manifest_path)
+                        except (
+                            ValidationError,
+                            OSError,
+                            TypeError,
+                            AttributeError,
+                        ):
+                            manifest = None
+                if manifest is None:
+                    continue
+
+                manifest_path = _repo_relative_existing_file(
+                    self.project_root, manifest.path
+                )
+                if manifest_path is None:
+                    raise ArtifactResolutionError()
+                source_id = extension_id
+
+                for event_name, hook_config in (manifest.hooks or {}).items():
+                    entries_by_command: dict[
+                        str, tuple[dict[str, Any], str, str]
+                    ] = {}
+                    for entry in coerce_hook_entries(hook_config):
+                        if not isinstance(entry, dict):
+                            continue
+                        command = entry.get("command")
+                        try:
+                            public_id = derive_hook_public_id(event_name, command)
+                            lookup_id = derive_hook_lookup_id(
+                                "extension", source_id, event_name, command
+                            )
+                        except IdentifierComponentError:
+                            continue
+                        entries_by_command.pop(command, None)
+                        entries_by_command[command] = (
+                            entry,
+                            public_id,
+                            lookup_id,
+                        )
+
+                    for command, entry_data in entries_by_command.items():
+                        entry, public_id, lookup_id = entry_data
+                        insertion_index += 1
+                        declaration = {
+                            "id": public_id,
+                            "layer": "extension",
+                            "sourceId": source_id,
+                            "runtimeExtensionId": manifest.id,
+                            "presetId": None,
+                            "presetName": None,
+                            "manifestPath": manifest_path,
+                            "lookupId": lookup_id,
+                            "eventName": event_name,
+                            "command": command,
+                            "description": entry.get("description", ""),
+                            "priority": normalize_priority(
+                                entry.get("priority"), DEFAULT_HOOK_PRIORITY
+                            ),
+                            "optional": bool(entry.get("optional", True)),
+                        }
+                        grouped.setdefault((event_name, command), []).append(
+                            (insertion_index, declaration)
+                        )
+        except (OSError, PresetError) as exc:
+            raise ArtifactResolutionError() from exc
+
+        hook_executor = HookExecutor(self.project_root)
+        enabled_by_event: dict[str, list[dict[str, Any]]] = {}
+        rows: list[HookArtifact] = []
+        stack_cache: dict[tuple[str, str], list[HookStackEntry]] = {}
+
+        for (event_name, command), declarations in grouped.items():
+            if event_name not in enabled_by_event:
+                enabled_by_event[event_name] = hook_executor.get_hooks_for_event(
+                    event_name
+                )
+            enabled_bindings = enabled_by_event[event_name]
+            ordered = sorted(
+                declarations,
+                key=lambda item: (item[1]["priority"], item[0]),
+            )
+            stack_entries = [
+                HookStackEntry(
+                    id=declaration["id"],
+                    layer="extension",
+                    sourceId=declaration["sourceId"],
+                    presetId=None,
+                    presetName=None,
+                    strategy="additive",
+                    active=any(
+                        binding.get("extension")
+                        == declaration["runtimeExtensionId"]
+                        and binding.get("command") == command
+                        for binding in enabled_bindings
+                    ),
+                    hidden=False,
+                    manifestPath=declaration["manifestPath"],
+                    lookupId=declaration["lookupId"],
+                    sourcePath=None,
+                    priority=declaration["priority"],
+                    optional=declaration["optional"],
+                )
+                for _index, declaration in ordered
+            ]
+            stack_cache[(event_name, command)] = stack_entries
+            description = next(
+                (
+                    declaration["description"]
+                    for _index, declaration in ordered
+                    if isinstance(declaration["description"], str)
+                    and declaration["description"]
+                ),
+                "",
+            )
+            public_id = derive_hook_public_id(event_name, command)
+            rows.append(
+                HookArtifact(
+                    id=public_id,
+                    name=public_id.removeprefix("hook:"),
+                    kind="hook",
+                    description=description,
+                    eventName=event_name,
+                    targetCommand=command,
+                    registered=any(entry.active for entry in stack_entries),
+                )
+            )
+
+        rows.sort(
+            key=lambda row: (
+                row.eventName,
+                stack_cache[(row.eventName, row.targetCommand)][0].priority,
+            )
+        )
+        return rows, stack_cache
+
     # -------------------------------------------------------------- internals
     def _collect_inventory(
         self,
@@ -367,7 +762,10 @@ class ArtifactCatalog:
         _validate_project(self.project_root)
         _validate_extension_registry(self.project_root)
 
-        from ..presets import PresetError, PresetResolver  # lazy: avoids circular import
+        from ..presets import (  # lazy: avoids circular import
+            PresetError,
+            PresetResolver,
+        )
 
         resolver = PresetResolver(self.project_root)
         layers_cache: dict[tuple[ArtifactKind, str], list[dict[str, Any]]] = {}

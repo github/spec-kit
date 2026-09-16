@@ -119,17 +119,9 @@ def _layer_provenance(
         declared = _manifest_entry_for_path(
             manifest, "extension", extension_dir, kind, name, path
         )
-        source_id = (
-            manifest.id
-            if declared is not None
-            and manifest is not None
-            and isinstance(manifest.id, str)
-            and manifest.id
-            else extension_id
-        )
         return _LayerProvenance(
             "extension",
-            source_id,
+            extension_id,
             extension_id,
             extension_dir,
             manifest,
@@ -148,17 +140,9 @@ def _layer_provenance(
     declared = _manifest_entry_for_path(
         manifest, "preset", pack_dir, kind, name, path
     )
-    source_id = (
-        manifest.id
-        if declared is not None
-        and manifest is not None
-        and isinstance(manifest.id, str)
-        and manifest.id
-        else pack_id
-    )
     return _LayerProvenance(
         "preset",
-        source_id,
+        pack_id,
         pack_id,
         pack_dir,
         manifest,

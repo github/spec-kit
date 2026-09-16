@@ -20,10 +20,10 @@ import io
 import json
 import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 
+from ..presets import PresetError
 from . import (
     ArtifactCatalog,
     ArtifactError,
@@ -31,11 +31,10 @@ from . import (
     ArtifactResolutionError,
     NotASpecKitProjectError,
 )
-from ..presets import PresetError
 
 artifact_app = typer.Typer(
     name="artifact",
-    help="Introspect commands, templates, and scripts Spec Kit exposes.",
+    help="Introspect commands, templates, scripts, and hooks Spec Kit exposes.",
     no_args_is_help=True,
 )
 
@@ -100,7 +99,7 @@ def artifact_list(
         help="Emit the inventory as a JSON array on stdout.",
     ),
 ) -> None:
-    """List every command, template, and script Spec Kit exposes."""
+    """List every command, template, script, and hook Spec Kit exposes."""
     _require_json_flag(json_flag)
     try:
         root = _resolve_project_root()
@@ -125,20 +124,20 @@ def artifact_info(
         "--json",
         help="Emit the composition stack as a JSON object on stdout.",
     ),
-    kind: Optional[str] = typer.Option(
+    kind: str | None = typer.Option(
         None,
         "--kind",
-        help="Narrow the lookup to one artifact family (command/template/script).",
+        help="Narrow the lookup to one artifact family (command/template/script/hook).",
     ),
 ) -> None:
     """Show one artifact and its full composition stack."""
     _require_json_flag(json_flag)
 
-    resolved_kind: Optional[ArtifactKind] = None
+    resolved_kind: ArtifactKind | None = None
     if kind is not None:
-        if kind not in ("command", "template", "script"):
+        if kind not in ("command", "template", "script", "hook"):
             print(
-                f"invalid --kind {kind!r}: expected one of command, template, script",
+                f"invalid --kind {kind!r}: expected one of command, template, script, hook",
                 file=sys.stderr,
             )
             raise typer.Exit(code=2)
@@ -156,6 +155,44 @@ def artifact_info(
         return  # pragma: no cover
 
     sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
+    sys.stdout.write("\n")
+
+
+@artifact_app.command("lookup")
+def artifact_lookup(
+    lookup_id: str = typer.Argument(..., help="Contribution lookupId from an artifact stack."),
+    json_flag: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the validated manifest contribution used by Spec Kit as JSON.",
+    ),
+) -> None:
+    """Resolve a stack lookupId to its effective preset or extension contribution."""
+    _require_json_flag(json_flag)
+    try:
+        root = _resolve_project_root()
+        payload = ArtifactCatalog(root).get_contribution_info(lookup_id)
+    except ArtifactError as exc:
+        _emit_error_and_exit(exc)
+        return  # pragma: no cover
+    except (OSError, PresetError):
+        _emit_error_and_exit(ArtifactResolutionError())
+        return  # pragma: no cover
+
+    try:
+        rendered = json.dumps(
+            payload,
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        rendered.encode("utf-8")
+    except (TypeError, ValueError, UnicodeEncodeError):
+        _emit_error_and_exit(ArtifactResolutionError())
+        return  # pragma: no cover
+
+    sys.stdout.write(rendered)
     sys.stdout.write("\n")
 
 

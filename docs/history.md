@@ -149,6 +149,19 @@ integrations, 157 community extensions, 33 presets, and 270+ contributors. Spec
 Kit continues to favor adaptability: processes, integrations, and conventions
 can evolve while agents help projects apply those changes.
 
+The [1.0.0 release](https://github.com/github/spec-kit/releases/tag/v1.0.0)
+marked a year of work rather than a promise that the project was finished or its
+shape frozen. In the lead maintainer's personal anniversary post,
+[*Spec Kit Turns One — and Ships 1.0.0*](https://www.manorrock.com/blog/2026/08/21/spec_kit_turns_one.html),
+1.0.0 is **now just a number**: as agents make adapting to change less expensive,
+the value moves from stability to adaptability.
+
+The anniversary also recognized everyone who used Spec Kit, challenged its
+assumptions, reported problems, contributed code or documentation, created
+extensions or presets, shared ideas, or helped someone get started. The milestone
+belongs to the community that carried the project through its first year and
+continues to shape it.
+
 ## Enduring themes
 
 Several themes connect the project's stewardship periods and technical
