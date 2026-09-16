@@ -2,6 +2,7 @@
 
 import json
 import ssl
+import sys
 from unittest.mock import patch
 
 from typer.testing import CliRunner
@@ -95,3 +96,26 @@ class TestVersionCommand:
         expected = ssl.OPENSSL_VERSION
         assert expected, "test host reports no ssl.OPENSSL_VERSION to assert against"
         assert expected in result.output
+
+    def test_version_skips_openssl_row_when_ssl_unavailable(self, monkeypatch):
+        """An interpreter built without the ssl extension skips the OpenSSL row.
+
+        ``sys.modules["ssl"] = None`` makes ``import ssl`` raise ImportError,
+        simulating a build without ``_ssl``. The command must still succeed —
+        only the OpenSSL row is omitted.
+        """
+        monkeypatch.setitem(sys.modules, "ssl", None)
+        with patch("specify_cli.get_speckit_version", return_value="1.2.3"):
+            result = runner.invoke(app, ["version"])
+
+        assert result.exit_code == 0
+        assert "OpenSSL" not in result.output
+
+    def test_version_features_never_touches_ssl(self, monkeypatch):
+        """--features/--json return early and must not require ssl at all."""
+        monkeypatch.setitem(sys.modules, "ssl", None)
+        with patch("specify_cli.get_speckit_version", return_value="1.2.3"):
+            result = runner.invoke(app, ["version", "--features", "--json"])
+
+        assert result.exit_code == 0
+        assert json.loads(result.output)["version"] == "1.2.3"
