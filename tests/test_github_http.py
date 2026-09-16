@@ -150,6 +150,61 @@ class TestResolveGitHubReleaseAssetApiUrl:
         )
         assert result == "https://api.github.com/repos/org/repo/releases/assets/99"
 
+    def test_accepts_case_variant_public_metadata_repository_identity(self):
+        """GitHub owner and repository names are case-insensitive identities."""
+        asset_url = "https://api.github.com/repos/owner/repository/releases/assets/99"
+        result = resolve_github_release_asset_api_url(
+            "https://github.com/Owner/Repository/releases/download/v1.0/pack.zip",
+            self._make_open_url_fn(
+                {"assets": [{"name": "pack.zip", "url": asset_url}]}
+            ),
+        )
+        assert result == asset_url
+
+    @pytest.mark.parametrize(
+        "asset_url",
+        [
+            None,
+            99,
+            "http://metadata.example/repos/org/repo/releases/assets/99",
+            "https://wrong.example/repos/org/repo/releases/assets/99",
+            "http://api.github.com/repos/org/repo/releases/assets/99",
+            "https://api.github.com:8443/repos/org/repo/releases/assets/99",
+            "https://api.github.com:notaport/repos/org/repo/releases/assets/99",
+            "https://[not-an-ip]/repos/org/repo/releases/assets/99",
+            "https:///repos/org/repo/releases/assets/99",
+            "ftp://api.github.com/repos/org/repo/releases/assets/99",
+            "https://api.github.com/repos/other/repo/releases/assets/99",
+            "https://api.github.com/repos/org/other/releases/assets/99",
+            "https://api.github.com/repos/org/repo/releases/download/99",
+            "https://api.github.com/repos/org/repo/releases/assets/not-a-number",
+            "https://api.github.com/repos/org/repo/releases/assets/99/extra",
+            "https://api.github.com/repos/org/repo/releases/assets/99?download=1",
+            "https://api.github.com/repos/org/repo/releases/assets/99#fragment",
+            "https://user@api.github.com/repos/org/repo/releases/assets/99",
+            "https://api.github.com/repos/org/repo/releases/assets/99\n",
+            "https://api.github.com/repos/org/repo/releases/assets/99\t",
+            " https://api.github.com/repos/org/repo/releases/assets/99",
+            "https://api.github.com/repos/org/repo/releases/assets/99 ",
+            "https://api.github.com/repos/org/repo/releases/assets/99;",
+            "https://api.github.com/repos/org/repo/releases/assets/99?",
+            "https://api.github.com/repos/org/repo/releases/assets/99#",
+            "https://api.github.com/repos/org/repo/releases/assets/%",
+            "https://api.github.com/repos/org/repo/releases/assets/%9",
+            "https://api.github.com/repos/org/repo/releases/assets/%ZZ",
+            "https://api.github.com:65536/repos/org/repo/releases/assets/99",
+        ],
+    )
+    def test_rejects_invalid_public_metadata_asset_url(self, asset_url):
+        """Metadata cannot replace a browser URL with a noncanonical API URL."""
+        result = resolve_github_release_asset_api_url(
+            "https://github.com/org/repo/releases/download/v1.0/pack.zip",
+            self._make_open_url_fn(
+                {"assets": [{"name": "pack.zip", "url": asset_url}]}
+            ),
+        )
+        assert result is None
+
     def test_returns_none_when_asset_not_found(self):
         """Returns None when the release exists but asset name doesn't match."""
         release_json = {"assets": [{"name": "other.zip", "url": "https://api.github.com/repos/org/repo/releases/assets/1"}]}
@@ -171,6 +226,15 @@ class TestResolveGitHubReleaseAssetApiUrl:
         result = resolve_github_release_asset_api_url(
             "https://github.com/org/repo/releases/download/v1/pack.zip",
             failing_open,
+        )
+        assert result is None
+
+    @pytest.mark.parametrize("release_json", [[], {"assets": {}}])
+    def test_returns_none_for_invalid_release_metadata(self, release_json):
+        """Malformed release metadata retains the existing None fallback."""
+        result = resolve_github_release_asset_api_url(
+            "https://github.com/org/repo/releases/download/v1/pack.zip",
+            self._make_open_url_fn(release_json),
         )
         assert result is None
 
@@ -265,6 +329,18 @@ class TestResolveGitHubReleaseAssetApiUrl:
             github_hosts=("ghes.example",),
         )
         assert result == "https://ghes.example/api/v3/repos/o/r/releases/assets/7"
+
+    def test_accepts_case_variant_ghes_metadata_repository_identity(self):
+        """GHES owner and repository names are case-insensitive identities."""
+        asset_url = (
+            "https://ghes.example/api/v3/repos/owner/repository/releases/assets/7"
+        )
+        result = resolve_github_release_asset_api_url(
+            "https://ghes.example/Owner/Repository/releases/download/v1/ext.zip",
+            self._make_open_url_fn({"assets": [{"name": "ext.zip", "url": asset_url}]}),
+            github_hosts=("ghes.example",),
+        )
+        assert result == asset_url
 
     def test_passthrough_for_existing_ghes_api_asset_url(self):
         """An already-resolved GHES /api/v3 asset URL is returned as-is."""
@@ -365,6 +441,99 @@ class TestResolveGitHubReleaseAssetApiUrl:
             github_hosts=("localhost",),
         )
         assert captured == ["http://localhost:8000/api/v3/repos/o/r/releases/tags/v1"]
+
+    @pytest.mark.parametrize(
+        ("download_url", "asset_url", "expected_lookup_url"),
+        [
+            (
+                "http://[::1]/o/r/releases/download/v1/ext.zip",
+                "http://[::1]/api/v3/repos/o/r/releases/assets/7",
+                "http://[::1]/api/v3/repos/o/r/releases/tags/v1",
+            ),
+            (
+                "https://[::1]:8443/o/r/releases/download/v1/ext.zip",
+                "https://[0:0:0:0:0:0:0:1]:8443/api/v3/repos/o/r/releases/assets/7",
+                "https://[::1]:8443/api/v3/repos/o/r/releases/tags/v1",
+            ),
+        ],
+    )
+    def test_ghes_ipv6_api_base_and_metadata_origin(
+        self, download_url, asset_url, expected_lookup_url
+    ):
+        """GHES IPv6 API lookups retain brackets and compare equivalent literals."""
+        captured = []
+
+        @contextmanager
+        def capturing_open(url, timeout=None, extra_headers=None):
+            captured.append(url)
+            resp = MagicMock()
+            resp.read.side_effect = io.BytesIO(json.dumps({
+                "assets": [{"name": "ext.zip", "url": asset_url}]
+            }).encode()).read
+            yield resp
+
+        result = resolve_github_release_asset_api_url(
+            download_url,
+            capturing_open,
+            github_hosts=("::1",),
+        )
+        assert result == asset_url
+        assert captured == [expected_lookup_url]
+
+    @pytest.mark.parametrize(
+        ("download_url", "asset_url", "github_hosts"),
+        [
+            (
+                "https://ghes.example/o/r/releases/download/v1/ext.zip",
+                "https://ghes.example/api/v3/repos/o/r/releases/assets/7",
+                ("ghes.example",),
+            ),
+            (
+                "https://ghes.example:8443/o/r/releases/download/v1/ext.zip",
+                "https://GHES.EXAMPLE:8443/api/v3/repos/o/r/releases/assets/7",
+                ("ghes.example",),
+            ),
+            (
+                "http://localhost:8000/o/r/releases/download/v1/ext.zip",
+                "http://localhost:8000/api/v3/repos/o/r/releases/assets/7",
+                ("localhost",),
+            ),
+            (
+                "http://localhost/o/r/releases/download/v1/ext.zip",
+                "http://LOCALHOST:80/api/v3/repos/o/r/releases/assets/7",
+                ("localhost",),
+            ),
+        ],
+    )
+    def test_accepts_same_origin_ghes_metadata_asset_url(
+        self, download_url, asset_url, github_hosts
+    ):
+        """GHES metadata URLs retain their derived scheme, host, and port."""
+        result = resolve_github_release_asset_api_url(
+            download_url,
+            self._make_open_url_fn({"assets": [{"name": "ext.zip", "url": asset_url}]}),
+            github_hosts=github_hosts,
+        )
+        assert result == asset_url
+
+    @pytest.mark.parametrize(
+        "asset_url",
+        [
+            "https://other.example/api/v3/repos/o/r/releases/assets/7",
+            "http://ghes.example/api/v3/repos/o/r/releases/assets/7",
+            "https://ghes.example:8443/api/v3/repos/o/r/releases/assets/7",
+            "https://ghes.example/api/v3/repos/o/other/releases/assets/7",
+            "https://ghes.example/api/v3/repos/o/r/releases/assets/7/extra",
+        ],
+    )
+    def test_rejects_wrong_origin_or_path_for_ghes_metadata_asset_url(self, asset_url):
+        """GHES metadata URLs must match the derived API origin and endpoint."""
+        result = resolve_github_release_asset_api_url(
+            "https://ghes.example/o/r/releases/download/v1/ext.zip",
+            self._make_open_url_fn({"assets": [{"name": "ext.zip", "url": asset_url}]}),
+            github_hosts=("ghes.example",),
+        )
+        assert result is None
 
     def test_ghes_wildcard_does_not_match_bare_host(self):
         """A '*.suffix' pattern does not match the bare host (must list it explicitly)."""
