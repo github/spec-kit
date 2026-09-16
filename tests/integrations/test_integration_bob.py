@@ -974,8 +974,17 @@ class TestBobCliDispatch:
     def test_build_exec_args_ignores_model(self):
         """Bob exposes no model flag on ``run``, so *model* is a no-op."""
         bob = get_integration("bob")
-        assert bob.build_exec_args("/speckit-plan", model="some-model") == \
-            bob.build_exec_args("/speckit-plan")
+        assert bob.build_exec_args("/speckit-plan", model="gpt-4") == [
+            "bob", "run", "--trust", "--accept-license", "-f", "json",
+            "/speckit-plan",
+        ]
+
+    def test_build_exec_args_ignores_project_root(self, tmp_path):
+        """Bob uses cwd for project context, so *project_root* is accepted but ignored in CLI args."""
+        bob = get_integration("bob")
+        args_with = bob.build_exec_args("/speckit-plan", project_root=tmp_path)
+        args_without = bob.build_exec_args("/speckit-plan")
+        assert args_with == args_without
 
     def test_command_invocation_uses_hyphen_in_skills_mode(self):
         """Skills-mode projects install ``.bob/skills/speckit-<cmd>/``, so the
