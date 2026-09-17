@@ -1241,6 +1241,7 @@ class TestOpencodePluginMerging:
         assert plugin_path.is_file()
         content = plugin_path.read_text()
         assert "speckit.tdd.validate" in content
+        assert 'runEvent("speckit.tdd.validate", "pre_tool_use", input, output, 60)' in content
 
 
 # -- Command runner test (core execution) -----------------------------------
