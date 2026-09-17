@@ -852,25 +852,10 @@ class RunState:
         )
         state.status = RunStatus(state_data["status"])
 
-        # ``resume()`` slices ``definition.steps[state.current_step_index :]``
-        # with no guard of its own -- unlike ``workflow_id`` /
-        # ``installed_workflow_id`` / ``installed_registry_root`` / ``inputs``
-        # above, this field was never shape-checked here. A non-int value (a
-        # hand-edited or externally-written state.json, e.g. a string or
-        # float) reaches that slice and raises a raw, unhelpful
-        # ``TypeError: slice indices must be integers or None or have an
-        # __index__ method`` from deep inside ``resume()`` instead of the
-        # clean "Invalid run state: ..." error the sibling fields above
-        # already give when malformed. A negative value slices from the end
-        # instead of failing, silently resuming from the wrong step. Reject
-        # both here, consistent with those sibling checks (this loader does
-        # not shape-check every restored field -- e.g. ``step_results`` and
-        # ``workflow_dir`` below are still assigned directly -- only
-        # ``current_step_index`` is addressed here, since it is the one
-        # ``resume()`` depends on for a safe list slice). ``bool`` is an
-        # ``int`` subclass, so it is excluded explicitly (mirrors the
-        # ``max_iterations`` / ``continue_on_error`` bool guards elsewhere in
-        # this module).
+        # Validate the index shape before restoring it. The upper bound cannot
+        # be checked until resume() loads the workflow definition and is handled
+        # there. Reject bool explicitly because it subclasses int; otherwise a
+        # malformed value could fail during slicing or resume from the wrong step.
         current_step_index = state_data.get("current_step_index", 0)
         if (
             isinstance(current_step_index, bool)
