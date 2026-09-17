@@ -11,6 +11,7 @@ These wire the bundler's injectable seams to the real environment:
 from __future__ import annotations
 
 import re
+import ssl
 import urllib.error
 import warnings
 from pathlib import Path
@@ -56,7 +57,8 @@ class _CatalogUnavailable(BundlerError):
     Marks only transient fetch failures — connection/DNS errors, timeouts, and
     availability HTTP responses (408, 429, 5xx) — so the built-in catalog
     fallback does not swallow content or security validation failures (malformed
-    JSON, oversized or non-UTF-8 bodies, unsafe redirects, other HTTP 4xx).
+    JSON, oversized or non-UTF-8 bodies, unsafe redirects, TLS certificate
+    verification failures, other HTTP 4xx).
     """
 
 
@@ -238,6 +240,13 @@ def _http_get_json(source_id: str, url: str) -> dict:
         # Size limits, redirect/URL validation: content or security failures,
         # never transient -- must not be downgraded to availability.
         raise
+    except ssl.SSLCertVerificationError as exc:
+        # TLS certificate verification is a security check, not a transient
+        # availability failure: never mask it with the packaged snapshot. Some
+        # call paths raise this directly (it subclasses OSError).
+        raise BundlerError(
+            f"Failed to fetch catalog from {url}: {exc}"
+        ) from exc
     except RedirectPolicyError as exc:
         # Unsafe/malformed redirects are security failures and must surface as
         # a hard error instead of being downgraded to catalog unavailability.
@@ -257,6 +266,13 @@ def _http_get_json(source_id: str, url: str) -> dict:
             f"Failed to fetch catalog from {url}: HTTP {exc.code} {exc.reason}"
         ) from exc
     except urllib.error.URLError as exc:
+        # urllib wraps a TLS handshake failure as URLError(reason=<ssl error>);
+        # a certificate-verification failure is a security failure, not a
+        # transient availability problem, so it must not use the snapshot.
+        if isinstance(exc.reason, ssl.SSLCertVerificationError):
+            raise BundlerError(
+                f"Failed to fetch catalog from {url}: {exc.reason}"
+            ) from exc
         raise _CatalogUnavailable(
             f"Failed to fetch catalog from {url}: {exc.reason}"
         ) from exc

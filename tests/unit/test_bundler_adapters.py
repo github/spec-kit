@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import ssl
 import urllib.error
 import urllib.request
 import warnings
@@ -392,6 +393,42 @@ def test_builtin_community_catalog_does_not_fall_back_for_redirect_policy_errors
     fetcher = adapters.make_catalog_fetcher(allow_network=True)
 
     with pytest.raises(BundlerError, match="Failed to fetch catalog") as excinfo:
+        fetcher(_source("builtin://community"))
+    assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        # urllib wraps a TLS handshake failure as URLError(reason=<ssl error>).
+        urllib.error.URLError(
+            ssl.SSLCertVerificationError("certificate verify failed")
+        ),
+        # Other call paths raise the ssl error directly (it subclasses OSError).
+        ssl.SSLCertVerificationError("certificate verify failed"),
+    ],
+    ids=["urlerror-wrapped", "direct"],
+)
+def test_builtin_community_catalog_does_not_fall_back_for_cert_verification_errors(
+    monkeypatch, tmp_path, error
+):
+    """A TLS certificate-verification failure is a security failure, not a
+    transient availability problem, so it must surface as a hard error instead
+    of using the packaged snapshot. A snapshot is present to prove that."""
+    catalog_path = tmp_path / "bundles" / "catalog.community.json"
+    catalog_path.parent.mkdir()
+    catalog_path.write_text(
+        '{"schema_version":"1.0","bundles":{}}', encoding="utf-8"
+    )
+    monkeypatch.setattr(adapters, "_locate_core_pack", lambda: tmp_path)
+
+    def fail(url, timeout=10, extra_headers=None, redirect_validator=None):
+        raise error
+
+    monkeypatch.setattr("specify_cli.authentication.http.open_url", fail)
+    fetcher = adapters.make_catalog_fetcher(allow_network=True)
+
+    with pytest.raises(BundlerError, match="certificate verify failed") as excinfo:
         fetcher(_source("builtin://community"))
     assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
 
