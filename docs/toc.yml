@@ -81,6 +81,8 @@
       href: local-development.md
     - name: Evolving Specs
       href: guides/evolving-specs.md
+    - name: Contract-Driven Development
+      href: guides/contract-driven-development.md
     - name: Monorepos
       href: guides/monorepo.md
 
