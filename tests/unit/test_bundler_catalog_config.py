@@ -89,6 +89,42 @@ def test_remove_source_accepts_relative_local_path(tmp_path: Path, monkeypatch):
         cc.remove_source(project, "sub/cat.json")
 
 
+def test_remove_deletes_a_project_source_overriding_a_builtin_id(tmp_path: Path):
+    """The documented override must be undoable.
+
+    `remove_source` refused any built-in id before looking at what the project
+    config actually held — yet its own error tells the user to "add a same-id
+    source to override it instead". Once they did, the same guard refused to
+    delete that override, leaving no CLI path back short of hand-editing the
+    config.
+    """
+    builtin_id = sorted(cc._BUILTIN_IDS)[0]
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+
+    cc.add_source(
+        project,
+        "https://example.test/override.json",
+        source_id=builtin_id,
+        policy="install-allowed",
+        priority=1,
+    )
+    assert [c["id"] for c in cc._read(project)] == [builtin_id]
+
+    assert cc.remove_source(project, builtin_id) == builtin_id
+    assert cc._read(project) == []
+
+
+def test_remove_builtin_without_an_override_is_still_refused(tmp_path: Path):
+    """Deleting the built-in default itself stays refused."""
+    builtin_id = sorted(cc._BUILTIN_IDS)[0]
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+
+    with pytest.raises(BundlerError, match="built-in default source"):
+        cc.remove_source(project, builtin_id)
+
+
 def test_remove_by_id_does_not_also_delete_canonical_url_match(tmp_path: Path, monkeypatch):
     """`remove <id>` must remove only the exact-id source, not also a different
     source whose url happens to equal the id's canonicalized path. (_canonicalize_url

@@ -205,13 +205,19 @@ def add_source(
 
 def remove_source(project_root: Path, id_or_url: str) -> str:
     target = id_or_url.strip()
-    if target in _BUILTIN_IDS:
+    catalogs = _read(project_root)
+    # Refuse a built-in id only when there is nothing project-scoped to remove.
+    # This message tells the user to "add a same-id source to override it" --
+    # and once they did, the same guard refused to delete that override, so the
+    # documented workflow had no way back short of hand-editing the config.
+    # A project-scoped entry is the user's own file and is theirs to remove;
+    # deleting it simply restores the built-in default.
+    if target in _BUILTIN_IDS and not any(c.get("id") == target for c in catalogs):
         raise BundlerError(
             f"'{target}' is a built-in default source and cannot be deleted "
             "(add a same-id source to override it instead)."
         )
 
-    catalogs = _read(project_root)
     # Prefer an exact id/url match.
     remaining = [c for c in catalogs if c.get("id") != target and c.get("url") != target]
     if len(remaining) == len(catalogs):
