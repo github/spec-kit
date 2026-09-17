@@ -1,6 +1,7 @@
 """Unit tests for catalog-fetch adapters (auth + redirect safety)."""
 from __future__ import annotations
 
+import http.client
 import io
 import ssl
 import urllib.error
@@ -395,6 +396,44 @@ def test_builtin_community_catalog_does_not_fall_back_for_redirect_policy_errors
     with pytest.raises(BundlerError, match="Failed to fetch catalog") as excinfo:
         fetcher(_source("builtin://community"))
     assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
+
+
+def test_builtin_community_catalog_falls_back_for_incomplete_read(
+    monkeypatch, tmp_path
+):
+    """A chunked response truncated mid-read is a transient transport failure
+    (``http.client.IncompleteRead`` is not an ``OSError``/``URLError``), so it
+    must use the packaged snapshot rather than surface as a hard error."""
+    catalog_path = tmp_path / "bundles" / "catalog.community.json"
+    catalog_path.parent.mkdir()
+    catalog_path.write_text(
+        '{"schema_version":"1.0","bundles":{}}', encoding="utf-8"
+    )
+    monkeypatch.setattr(adapters, "_locate_core_pack", lambda: tmp_path)
+
+    class _TruncatedResponse:
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *exc) -> bool:
+            return False
+
+        def geturl(self) -> str:
+            return adapters.COMMUNITY_CATALOG_URL
+
+        def read(self, size: int = -1) -> bytes:
+            raise http.client.IncompleteRead(b"partial")
+
+    monkeypatch.setattr(
+        "specify_cli.authentication.http.open_url",
+        lambda *args, **kwargs: _TruncatedResponse(),
+    )
+    fetcher = adapters.make_catalog_fetcher(allow_network=True)
+
+    assert fetcher(_source("builtin://community")) == {
+        "schema_version": "1.0",
+        "bundles": {},
+    }
 
 
 @pytest.mark.parametrize(

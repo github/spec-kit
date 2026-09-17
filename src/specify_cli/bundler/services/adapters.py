@@ -10,6 +10,7 @@ These wire the bundler's injectable seams to the real environment:
 """
 from __future__ import annotations
 
+import http.client
 import re
 import ssl
 import urllib.error
@@ -54,11 +55,11 @@ _TRANSIENT_HTTP_STATUS_CODES = (408, 429)
 class _CatalogUnavailable(BundlerError):
     """A built-in catalog could not be reached (transport/availability failure).
 
-    Marks only transient fetch failures — connection/DNS errors, timeouts, and
-    availability HTTP responses (408, 429, 5xx) — so the built-in catalog
-    fallback does not swallow content or security validation failures (malformed
-    JSON, oversized or non-UTF-8 bodies, unsafe redirects, TLS certificate
-    verification failures, other HTTP 4xx).
+    Marks only transient fetch failures — connection/DNS errors, timeouts,
+    truncated responses, and availability HTTP responses (408, 429, 5xx) — so
+    the built-in catalog fallback does not swallow content or security
+    validation failures (malformed JSON, oversized or non-UTF-8 bodies, unsafe
+    redirects, TLS certificate verification failures, other HTTP 4xx).
     """
 
 
@@ -281,6 +282,12 @@ def _http_get_json(source_id: str, url: str) -> dict:
         # other low-level transport failures not wrapped in URLError.
         raise _CatalogUnavailable(
             f"Failed to fetch catalog from {url}: {exc}"
+        ) from exc
+    except http.client.IncompleteRead as exc:
+        # A chunked response truncated mid-read is a transport failure, not a
+        # definitive or content error, so it should use the packaged snapshot.
+        raise _CatalogUnavailable(
+            f"Failed to fetch catalog from {url}: incomplete read ({exc})"
         ) from exc
     except UnicodeDecodeError as exc:
         # A non-UTF-8 body is a malformed response, not an availability issue.
