@@ -35,10 +35,11 @@ Each entry in the `providers` array has the following fields:
 | Field | Required | Description |
 |---|---|---|
 | `hosts` | Yes | Array of hostnames this entry applies to. Supports exact hostnames, or a leading `*.` wildcard for subdomains only (for example, `*.visualstudio.com`). `*.visualstudio.com` matches `foo.visualstudio.com`, but not `visualstudio.com`. Other glob patterns such as `*github.com` or `gith?b.com` are not supported. |
-| `provider` | Yes | Built-in provider key: `github` or `azure-devops`. |
+| `provider` | Yes | Built-in provider key: `github`, `azure-devops`, or `bitbucket`. |
 | `auth` | Yes | Auth scheme (see below). |
 | `token` | No | Token value (inline). Use `token_env` instead when possible. |
 | `token_env` | No | Environment variable name to read the token from. |
+| `username` | For `basic` | Username half of a Basic credential — for Bitbucket API tokens, the Atlassian account email. Must not contain `:`. |
 
 For `azure-ad` auth, additional fields are required:
 
@@ -48,7 +49,7 @@ For `azure-ad` auth, additional fields are required:
 | `client_id` | Yes | Service principal client ID. |
 | `client_secret_env` | Yes | Environment variable containing the client secret. |
 
-Either `token` or `token_env` must be set for `bearer` and `basic-pat` schemes.
+Either `token` or `token_env` must be set for the `bearer`, `basic-pat`, and `basic` schemes.
 
 ## Providers and auth schemes
 
@@ -140,6 +141,58 @@ Requires `az login` to have been run beforehand.
   "client_secret_env": "AZURE_CLIENT_SECRET"
 }
 ```
+
+### Bitbucket (`bitbucket`)
+
+| Scheme | Header | Use for |
+|---|---|---|
+| `bearer` | `Authorization: Bearer <token>` | Repository / project / workspace access tokens (Bitbucket Cloud), HTTP access tokens (Bitbucket Data Center) |
+| `basic` | `Authorization: Basic base64(<username>:<token>)` | Atlassian API tokens (username = Atlassian account email). Bitbucket Cloud app passwords were removed by Atlassian on July 28, 2026 — use an API token or an access token instead. |
+
+**Example — Bitbucket Cloud access token (recommended):**
+
+```json
+{
+  "hosts": ["api.bitbucket.org", "bitbucket.org"],
+  "provider": "bitbucket",
+  "auth": "bearer",
+  "token_env": "BITBUCKET_ACCESS_TOKEN"
+}
+```
+
+Create the token with the **Repositories: Read** scope on the repository
+(or project/workspace) that hosts your catalogs and archives.
+
+**Example — Atlassian API token (Basic auth):**
+
+```json
+{
+  "hosts": ["api.bitbucket.org", "bitbucket.org"],
+  "provider": "bitbucket",
+  "auth": "basic",
+  "username": "you@example.com",
+  "token_env": "ATLASSIAN_API_TOKEN"
+}
+```
+
+**Example — Bitbucket Data Center HTTP access token:**
+
+```json
+{
+  "hosts": ["bitbucket.example.com"],
+  "provider": "bitbucket",
+  "auth": "bearer",
+  "token_env": "BITBUCKET_DC_TOKEN"
+}
+```
+
+> **Note:** Bitbucket Cloud serves file downloads (the repository
+> **Downloads** section) via a redirect to a pre-signed Amazon S3 URL.
+> Specify strips the `Authorization` header on that redirect because the
+> target leaves your declared hosts — this is expected and the download
+> still succeeds, since the S3 URL is self-authorizing. Pin a `sha256` in
+> your catalog entries so the unauthenticated final hop stays
+> integrity-checked.
 
 ## Multiple entries
 
