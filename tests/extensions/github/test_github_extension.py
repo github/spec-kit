@@ -163,6 +163,12 @@ class TestManifest:
         aliases = [a for cmd in m.commands for a in cmd.get("aliases", []) or []]
         assert aliases == []
 
+    def test_declares_its_mandatory_external_tools(self):
+        """The command runs ``git config`` and needs the GitHub MCP tools."""
+        tools = {t["name"]: t for t in _manifest_dict()["requires"]["tools"]}
+        assert set(tools) == {"git", "github-mcp-server"}
+        assert all(t["required"] is True for t in tools.values())
+
     def test_core_command_remains_unchanged(self):
         """Stage 1 is additive: the core command still ships."""
         assert CORE_COMMAND.is_file()
@@ -200,6 +206,53 @@ class TestExtensionInstall:
         assert manager.remove("github") is True
         assert not manager.registry.is_installed("github")
         assert not (tmp_path / ".specify" / "extensions" / "github").exists()
+
+    @pytest.mark.parametrize(
+        "agent,extension_artifacts,core_artifact",
+        [
+            (
+                "copilot",
+                [
+                    f".github/agents/{COMMAND_NAME}.agent.md",
+                    f".github/prompts/{COMMAND_NAME}.prompt.md",
+                ],
+                ".github/agents/speckit.taskstoissues.agent.md",
+            ),
+            (
+                "claude",
+                [".claude/skills/speckit-github-taskstoissues/SKILL.md"],
+                ".claude/skills/speckit-taskstoissues/SKILL.md",
+            ),
+        ],
+        ids=["command-mode", "skills-mode"],
+    )
+    def test_remove_deletes_registered_artifacts_and_keeps_core(
+        self,
+        tmp_path: Path,
+        agent: str,
+        extension_artifacts: list[str],
+        core_artifact: str,
+    ):
+        from specify_cli.extensions import ExtensionManager
+
+        (tmp_path / ".specify").mkdir()
+        (tmp_path / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": agent, "script": "sh"}), encoding="utf-8"
+        )
+        core = tmp_path / core_artifact
+        core.parent.mkdir(parents=True)
+        core.write_text("core taskstoissues\n", encoding="utf-8")
+
+        manager = ExtensionManager(tmp_path)
+        manager.install_from_directory(EXT_DIR, "0.9.0", register_commands=True)
+        for rel_path in extension_artifacts:
+            assert (tmp_path / rel_path).is_file(), f"Not registered: {rel_path}"
+
+        assert manager.remove("github") is True
+
+        for rel_path in extension_artifacts:
+            assert not (tmp_path / rel_path).exists(), f"Left behind: {rel_path}"
+        assert core.read_text(encoding="utf-8") == "core taskstoissues\n"
 
 
 # -- Rendered command artifacts -----------------------------------------------
@@ -542,6 +595,41 @@ class TestResolveTasksPython:
         assert "tasks.md" in result.stdout
         # ASCII fallback, matching core and the PowerShell twin.
         assert "[OK] tasks.md" in result.stdout
+
+    def test_json_mode_survives_a_cp1252_stdout_with_a_non_ascii_path(
+        self, tmp_path: Path
+    ):
+        """Regression: the rendered command always runs ``--json``.
+
+        Raw non-ASCII in the payload raised UnicodeEncodeError on a legacy
+        stdout; ASCII escapes decode back to the same path.
+        """
+        project = tmp_path / "project"
+        feature = project / "specs" / "001-功能"
+        feature.mkdir(parents=True)
+        (project / ".specify").mkdir()
+        (project / ".specify" / "feature.json").write_text(
+            json.dumps({"feature_directory": "specs/001-功能"}), encoding="utf-8"
+        )
+        (feature / "tasks.md").write_text("- [ ] T001 Task\n", encoding="utf-8")
+
+        env = {**os.environ, "PYTHONIOENCODING": "cp1252"}
+        env.pop("SPECIFY_FEATURE_DIRECTORY", None)
+        result = subprocess.run(
+            [sys.executable, str(PY_SCRIPT), "--json"],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            encoding="cp1252",
+            env=env,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert "UnicodeEncodeError" not in result.stderr
+        assert result.stdout.isascii()
+        payload = json.loads(result.stdout)
+        assert Path(payload["FEATURE_DIR"]) == feature
+        assert payload["AVAILABLE_DOCS"] == ["tasks.md"]
 
     def test_text_mode_uses_the_glyph_when_stdout_can_encode_it(
         self, tmp_path: Path

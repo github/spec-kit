@@ -86,4 +86,4 @@ specify extension add github
 | ------------------------- | --------------------------------- |
 | `/speckit.taskstoissues`  | `/speckit.github.taskstoissues`   |
 
-Behavior is unchanged: the same remote validation, the same deduplication across open and closed issues, the same issue titles, and the same hook contract. This extension does **not** register `speckit.taskstoissues` as an alias, so the two commands coexist without shadowing each other while the core command still exists.
+Issue creation is unchanged: the same remote validation, the same deduplication across open and closed issues, the same issue titles, and the same hook contract. Feature resolution differs in one way: this extension does not require `plan.md` (see [Scripts](#scripts)), so it can run on a feature where the core command would stop. This extension does **not** register `speckit.taskstoissues` as an alias, so the two commands coexist without shadowing each other while the core command still exists.
