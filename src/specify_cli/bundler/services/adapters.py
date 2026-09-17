@@ -54,9 +54,9 @@ class _CatalogUnavailable(BundlerError):
     """A built-in catalog could not be reached (transport/availability failure).
 
     Marks only transient fetch failures — connection/DNS errors, timeouts, and
-    HTTP 5xx — so the built-in catalog fallback does not swallow content or
-    security validation failures (malformed JSON, oversized or non-UTF-8
-    bodies, unsafe redirects, HTTP 4xx).
+    availability HTTP responses (408, 429, 5xx) — so the built-in catalog
+    fallback does not swallow content or security validation failures (malformed
+    JSON, oversized or non-UTF-8 bodies, unsafe redirects, other HTTP 4xx).
     """
 
 

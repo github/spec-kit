@@ -1,13 +1,15 @@
 """Unit tests for catalog-fetch adapters (auth + redirect safety)."""
 from __future__ import annotations
 
+import io
 import urllib.error
+import urllib.request
 import warnings
 from typing import Self
 
 import pytest
 
-from specify_cli.authentication.http import RedirectPolicyError
+from specify_cli.authentication.http import _StripAuthOnRedirect
 from specify_cli.bundler import BundlerError
 from specify_cli.bundler.models.catalog import CatalogSource, InstallPolicy
 from specify_cli.bundler.services import adapters
@@ -344,25 +346,54 @@ def test_builtin_community_catalog_falls_back_for_transport_errors(monkeypatch, 
 
 
 @pytest.mark.parametrize(
-    "error",
+    "target",
     [
-        RedirectPolicyError("unsafe redirect"),
-        RedirectPolicyError("malformed redirect URL"),
+        # Remote-to-loopback redirect (accepted by URL validation, rejected by
+        # the strict redirect policy).
+        "https://localhost/internal/catalog.json",
+        # Malformed redirect target (unterminated IPv6 bracket).
+        "https://[::1/internal/catalog.json",
     ],
 )
 def test_builtin_community_catalog_does_not_fall_back_for_redirect_policy_errors(
-    monkeypatch, tmp_path, error
+    monkeypatch, tmp_path, target
 ):
+    """A redirect the shared client rejects as a policy violation must surface
+    as a hard error even though ``RedirectPolicyError`` subclasses ``URLError``.
+
+    The fake ``open_url`` runs the real ``_StripAuthOnRedirect`` handler, so the
+    production classification is exercised instead of injecting the exception.
+    A snapshot is present to prove the fallback is not taken.
+    """
+    catalog_path = tmp_path / "bundles" / "catalog.community.json"
+    catalog_path.parent.mkdir()
+    catalog_path.write_text(
+        '{"schema_version":"1.0","bundles":{}}', encoding="utf-8"
+    )
     monkeypatch.setattr(adapters, "_locate_core_pack", lambda: tmp_path)
 
-    def fail(url, timeout=10, extra_headers=None, redirect_validator=None):
-        raise error
+    def redirect_into_policy_violation(
+        url, timeout=10, extra_headers=None, redirect_validator=None
+    ):
+        handler = _StripAuthOnRedirect((), redirect_validator)
+        handler.redirect_request(
+            urllib.request.Request(url),
+            io.BytesIO(b""),
+            302,
+            "Found",
+            {},
+            target,
+        )
+        raise AssertionError("redirect should have been rejected")
 
-    monkeypatch.setattr("specify_cli.authentication.http.open_url", fail)
+    monkeypatch.setattr(
+        "specify_cli.authentication.http.open_url", redirect_into_policy_violation
+    )
     fetcher = adapters.make_catalog_fetcher(allow_network=True)
 
-    with pytest.raises(BundlerError, match="Failed to fetch catalog"):
+    with pytest.raises(BundlerError, match="Failed to fetch catalog") as excinfo:
         fetcher(_source("builtin://community"))
+    assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
 
 
 @pytest.mark.parametrize(
