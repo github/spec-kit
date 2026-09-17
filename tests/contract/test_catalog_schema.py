@@ -256,6 +256,72 @@ def test_catalog_entry_rejects_non_boolean_verified():
         CatalogEntry.from_dict(data)
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "name",
+        "version",
+        "role",
+        "description",
+        "author",
+        "license",
+        "download_url",
+    ],
+)
+def test_catalog_entry_explicit_null_field_reads_as_empty(field: str):
+    """An explicitly null field must read as "", not the literal "None".
+
+    `str(data.get(key, ""))` only defaults for a *missing* key. A key present
+    but null — how YAML spells an empty field (`author:` with nothing after
+    it) — yields `None`, and `str(None)` is the truthy string `"None"`. The
+    same constructor already guards `sha256` and `repository` against exactly
+    this.
+    """
+    from specify_cli.bundler.models.catalog import CatalogEntry
+
+    data = catalog_entry_dict("demo")
+    data[field] = None
+
+    entry = CatalogEntry.from_dict(data)
+
+    assert getattr(entry, field) == ""
+
+
+def test_catalog_source_rejects_an_explicitly_null_id():
+    """`id: null` must be refused, not registered as a source named "None".
+
+    The `if not source_id` guard was defeated by the truthy literal, so the
+    source was accepted and carried the name `"None"` into the stack.
+    """
+    from specify_cli.bundler.models.catalog import CatalogSource, Scope
+
+    with pytest.raises(BundlerError, match="missing its 'id'"):
+        CatalogSource.from_dict(
+            {
+                "id": None,
+                "url": "https://example.test/catalog.json",
+                "priority": 5,
+                "install_policy": "install-allowed",
+            },
+            Scope.PROJECT,
+        )
+
+
+def test_catalog_source_rejects_an_explicitly_null_url():
+    from specify_cli.bundler.models.catalog import CatalogSource, Scope
+
+    with pytest.raises(BundlerError, match="missing its 'url'"):
+        CatalogSource.from_dict(
+            {
+                "id": "demo",
+                "url": None,
+                "priority": 5,
+                "install_policy": "install-allowed",
+            },
+            Scope.PROJECT,
+        )
+
+
 def test_catalog_entry_preserves_sha256_through_provenance():
     digest = "a" * 64
     payload = catalog_payload(
