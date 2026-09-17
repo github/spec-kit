@@ -20,10 +20,10 @@ from tests.parity_helpers import (
     install_scripts,
     json_stdout,
     make_repo,
+    make_yaml_less_venv,
     ps_cmd,
     py_cmd,
     run,
-    venv_python3_exe,
 )
 
 SCRIPT = "resolve-template"
@@ -661,15 +661,8 @@ def test_all_variants_honor_speckit_python_override_when_yaml_missing(
     on PATH (#4443)."""
     repo, expected = _setup_repo(tmp_path)
 
-    no_yaml_python = tmp_path / "no-yaml-venv"
-    subprocess.run(
-        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
-        check=True,
-        capture_output=True,
-    )
-    no_yaml_exe = venv_python3_exe(no_yaml_python)
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
     no_yaml_bin = no_yaml_exe.parent
-    assert no_yaml_exe.is_file()
 
     py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
 
@@ -719,14 +712,7 @@ def test_all_variants_fall_back_when_speckit_python_lacks_pyyaml(
     """
     repo, expected = _setup_repo(tmp_path)
 
-    no_yaml_python = tmp_path / "no-yaml-venv"
-    subprocess.run(
-        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
-        check=True,
-        capture_output=True,
-    )
-    no_yaml_exe = venv_python3_exe(no_yaml_python)
-    assert no_yaml_exe.is_file()
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
 
     env = clean_env()
     env["SPECKIT_PYTHON"] = str(no_yaml_exe)
@@ -743,6 +729,16 @@ def test_all_variants_fall_back_when_speckit_python_lacks_pyyaml(
         == {"TEMPLATE_NAME": TEMPLATE, "TEMPLATE_CONTENT": expected}
         for result in results
     )
+
+
+def test_clean_env_strips_pythonpath(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A ``--without-pip`` venv still honors an inherited `PYTHONPATH`, so a
+    leaked `PYTHONPATH` pointing at a directory with PyYAML would let the
+    "no-PyYAML" interpreters used above import it anyway, silently making
+    those tests pass without exercising the `SPECKIT_PYTHON`/delegated-YAML
+    path they claim to cover (#4445)."""
+    monkeypatch.setenv("PYTHONPATH", "/somewhere/with/yaml")
+    assert "PYTHONPATH" not in clean_env()
 
 
 @requires_bash
@@ -769,13 +765,7 @@ def test_bash_honors_speckit_python_path_containing_spaces(tmp_path: Path) -> No
     spaced_exe.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
     spaced_exe.chmod(0o755)
 
-    no_yaml_python = tmp_path / "no-yaml-venv"
-    subprocess.run(
-        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
-        check=True,
-        capture_output=True,
-    )
-    no_yaml_bin = venv_python3_exe(no_yaml_python).parent
+    no_yaml_bin = make_yaml_less_venv(tmp_path / "no-yaml-venv").parent
 
     env = clean_env()
     env["SPECKIT_PYTHON"] = str(spaced_exe)
@@ -805,14 +795,7 @@ def test_python_variant_delegates_manifest_with_non_json_native_yaml_value(
         encoding="utf-8",
     )
 
-    no_yaml_python = tmp_path / "no-yaml-venv"
-    subprocess.run(
-        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
-        check=True,
-        capture_output=True,
-    )
-    no_yaml_exe = venv_python3_exe(no_yaml_python)
-    assert no_yaml_exe.is_file()
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
 
     py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
     env = clean_env()
@@ -848,14 +831,7 @@ def test_python_variant_rejects_delegated_manifest_with_non_string_validated_fie
         encoding="utf-8",
     )
 
-    no_yaml_python = tmp_path / "no-yaml-venv"
-    subprocess.run(
-        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
-        check=True,
-        capture_output=True,
-    )
-    no_yaml_exe = venv_python3_exe(no_yaml_python)
-    assert no_yaml_exe.is_file()
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
 
     py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
     env = clean_env()
@@ -883,14 +859,7 @@ def test_python_variant_delegates_manifest_with_non_ascii_metadata_under_ascii_l
         encoding="utf-8",
     )
 
-    no_yaml_python = tmp_path / "no-yaml-venv"
-    subprocess.run(
-        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
-        check=True,
-        capture_output=True,
-    )
-    no_yaml_exe = venv_python3_exe(no_yaml_python)
-    assert no_yaml_exe.is_file()
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
 
     py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
     env = clean_env()
@@ -926,14 +895,7 @@ def test_python_variant_delegates_manifest_with_non_json_native_mapping_key(
         encoding="utf-8",
     )
 
-    no_yaml_python = tmp_path / "no-yaml-venv"
-    subprocess.run(
-        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
-        check=True,
-        capture_output=True,
-    )
-    no_yaml_exe = venv_python3_exe(no_yaml_python)
-    assert no_yaml_exe.is_file()
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
 
     py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
     env = clean_env()
@@ -965,14 +927,7 @@ def test_python_variant_delegates_manifest_with_recursive_yaml_alias(
         encoding="utf-8",
     )
 
-    no_yaml_python = tmp_path / "no-yaml-venv"
-    subprocess.run(
-        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
-        check=True,
-        capture_output=True,
-    )
-    no_yaml_exe = venv_python3_exe(no_yaml_python)
-    assert no_yaml_exe.is_file()
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
 
     py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
     env = clean_env()
@@ -1013,14 +968,7 @@ def test_python_variant_delegates_manifest_with_shared_non_recursive_alias(
         encoding="utf-8",
     )
 
-    no_yaml_python = tmp_path / "no-yaml-venv"
-    subprocess.run(
-        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
-        check=True,
-        capture_output=True,
-    )
-    no_yaml_exe = venv_python3_exe(no_yaml_python)
-    assert no_yaml_exe.is_file()
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
 
     py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
     env = clean_env()
@@ -1069,14 +1017,7 @@ def test_python_variant_reports_concise_error_for_malformed_delegated_manifest(
     manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
     manifest.write_text("provides: [\n", encoding="utf-8")
 
-    no_yaml_python = tmp_path / "no-yaml-venv"
-    subprocess.run(
-        [sys.executable, "-m", "venv", "--without-pip", str(no_yaml_python)],
-        check=True,
-        capture_output=True,
-    )
-    no_yaml_exe = venv_python3_exe(no_yaml_python)
-    assert no_yaml_exe.is_file()
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
 
     py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
     env = clean_env()

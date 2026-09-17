@@ -79,6 +79,10 @@ def clean_env() -> dict[str, str]:
     for key in list(env):
         if key.startswith("SPECIFY_"):
             env.pop(key)
+    # A --without-pip venv still honors an inherited PYTHONPATH, so leaving
+    # this set could make a "no-PyYAML" test interpreter import PyYAML
+    # anyway, silently skipping the delegated-parsing path under test.
+    env.pop("PYTHONPATH", None)
     return env
 
 
@@ -87,6 +91,30 @@ def venv_python3_exe(venv_dir: Path) -> Path:
     if os.name == "nt":
         return venv_dir / "Scripts" / "python.exe"
     return venv_dir / "bin" / "python3"
+
+
+def make_yaml_less_venv(venv_dir: Path) -> Path:
+    """Create a ``--without-pip`` venv and return its python3 executable.
+
+    Asserts the interpreter cannot actually import PyYAML, since it could
+    otherwise be visible via an inherited ``PYTHONPATH`` despite
+    ``--without-pip``, silently invalidating tests that assume it lacks one.
+    """
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(venv_dir)],
+        check=True,
+        capture_output=True,
+    )
+    exe = venv_python3_exe(venv_dir)
+    assert exe.is_file()
+    probe = subprocess.run(
+        [str(exe), "-c", "import yaml"],
+        capture_output=True,
+        env=clean_env(),
+        check=False,
+    )
+    assert probe.returncode != 0, "venv unexpectedly has PyYAML importable"
+    return exe
 
 
 def collation_range_locale() -> str | None:
