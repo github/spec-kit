@@ -2231,8 +2231,11 @@ def _remove_toml_entries(dst: Path) -> bool:
         existing,
         flags=re.DOTALL,
     )
-    # If only whitespace/comments remain, the file had no user content —
-    # delete it rather than leaving an empty stub that confuses uninstall.
+    if cleaned == existing:
+        return False
+    # Stripping removed a Specify-owned block. If only whitespace/comments
+    # remain, the file had no user content — delete it rather than leaving
+    # an empty stub that confuses uninstall.
     stripped = "\n".join(
         line for line in cleaned.splitlines()
         if line.strip() and not line.strip().startswith("#")
@@ -2240,8 +2243,6 @@ def _remove_toml_entries(dst: Path) -> bool:
     if not stripped:
         dst.unlink(missing_ok=True)
         return True
-    if cleaned == existing:
-        return False
     dst.write_text(cleaned, encoding="utf-8")
     return False
 

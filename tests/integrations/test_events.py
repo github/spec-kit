@@ -984,6 +984,67 @@ class TestTomlNoOpMerge:
         assert config_path.stat().st_mtime_ns == mtime_before
         manifest.record_existing.assert_not_called()
 
+    def test_comments_only_config_untouched_on_teardown(self, tmp_path):
+        """The no-op guard must run before the empty/comments-only deletion
+        branch: a comments-only file has no Specify-owned blocks to strip,
+        so ``cleaned == existing`` and the file must be left in place, not
+        unlinked as if it were an empty stub."""
+        from specify_cli.integrations.codex import CodexIntegration
+
+        integration = CodexIntegration()
+        manifest = _claude_manifest(tmp_path)
+        config_path = tmp_path / ".codex" / "config.toml"
+        config_path.parent.mkdir(parents=True)
+        original_bytes = b"# managed by the user, not Specify\n# second comment line\n"
+        config_path.write_bytes(original_bytes)
+        mtime_before = config_path.stat().st_mtime_ns
+
+        install_integration_events(integration, tmp_path, manifest, {})
+
+        assert config_path.exists(), "comments-only user config was deleted"
+        assert config_path.read_bytes() == original_bytes
+        assert config_path.stat().st_mtime_ns == mtime_before
+        manifest.record_existing.assert_not_called()
+
+    def test_blank_config_untouched_on_teardown(self, tmp_path):
+        """Same as above for a whitespace-only pre-existing file."""
+        from specify_cli.integrations.codex import CodexIntegration
+
+        integration = CodexIntegration()
+        manifest = _claude_manifest(tmp_path)
+        config_path = tmp_path / ".codex" / "config.toml"
+        config_path.parent.mkdir(parents=True)
+        original_bytes = b"\n\n"
+        config_path.write_bytes(original_bytes)
+        mtime_before = config_path.stat().st_mtime_ns
+
+        install_integration_events(integration, tmp_path, manifest, {})
+
+        assert config_path.exists(), "blank user config was deleted"
+        assert config_path.read_bytes() == original_bytes
+        assert config_path.stat().st_mtime_ns == mtime_before
+        manifest.record_existing.assert_not_called()
+
+    def test_owned_only_config_still_deleted_on_teardown(self, tmp_path):
+        """The unchanged-content guard must not defeat the existing cleanup:
+        when the file contains only a Specify-owned block that teardown
+        actually strips, ``cleaned != existing`` and the resulting
+        comments/whitespace-only remainder is still deleted (#14)."""
+        from specify_cli.integrations.codex import CodexIntegration
+
+        integration = CodexIntegration()
+        manifest = _claude_manifest(tmp_path)
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"pre_tool_use": [{"command": "speckit.tdd.validate"}]},
+        )
+        config_path = tmp_path / ".codex" / "config.toml"
+        assert config_path.is_file()
+
+        remove_integration_events(integration, tmp_path, manifest)
+
+        assert not config_path.exists()
+
 
 # -- Opencode TS Plugin merging ---------------------------------------------
 
