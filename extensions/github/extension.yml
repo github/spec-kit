@@ -13,7 +13,12 @@ requires:
   speckit_version: ">=0.2.0"
   tools:
     - name: git
-      required: false
+      required: true
+      description: "Reads the origin remote to find the target GitHub repository"
+    - name: github-mcp-server
+      required: true
+      description: "Provides the list_issues and issue_write tools"
+      install_url: "https://github.com/github/github-mcp-server"
 
 provides:
   commands:

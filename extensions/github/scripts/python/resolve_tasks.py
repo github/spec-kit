@@ -187,9 +187,9 @@ def main(argv: list[str]) -> int:
             "TASKS": str(tasks),
             "AVAILABLE_DOCS": docs,
         }
-        sys.stdout.write(
-            json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
-        )
+        # ASCII escapes decode to the same values and, unlike raw non-ASCII,
+        # survive a legacy stdout such as cp1252 on a redirected Windows pipe.
+        sys.stdout.write(json.dumps(payload, separators=(",", ":")) + "\n")
     else:
         print(f"FEATURE_DIR:{feature_dir}")
         print(f"TASKS:{tasks}")
