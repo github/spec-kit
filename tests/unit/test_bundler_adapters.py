@@ -217,7 +217,6 @@ def test_local_catalog_toctou_race(tmp_path, use_file_url):
     url = catalog_path.as_uri() if use_file_url else str(catalog_path)
 
     mock_path = MagicMock(spec=Path)
-    mock_path.exists.return_value = True
     mock_path.read_text.side_effect = FileNotFoundError(str(catalog_path))
 
     fetcher = adapters.make_catalog_fetcher(allow_network=False)
@@ -225,3 +224,4 @@ def test_local_catalog_toctou_race(tmp_path, use_file_url):
     with patch.object(adapters.Path, "__new__", return_value=mock_path):
         with pytest.raises(BundlerError, match="Catalog file not found"):
             fetcher(_source(url))
+        mock_path.exists.assert_not_called()
