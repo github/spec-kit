@@ -193,7 +193,10 @@ def add_source(
         "install_policy": install_policy.value,
     }
     for existing in catalogs:
-        if existing.get("id") == resolved_id or existing.get("url") == url:
+        if (
+            str(existing.get("id", "")).strip() == resolved_id
+            or str(existing.get("url", "")).strip() == url
+        ):
             # Idempotent add (#4505): identity is the source id or url. A rerun
             # requesting the same settings is a successful no-op; differing
             # settings are a conflict rather than a silent overwrite.

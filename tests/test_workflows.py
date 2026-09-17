@@ -9994,20 +9994,23 @@ class TestWorkflowCatalogAddCLI:
         from typer.testing import CliRunner
         from specify_cli import app
 
-        monkeypatch.chdir(project_dir)
         url = "https://example.com/catalog.json"
         name_args = ["--name", name] if name is not None else []
         runner = CliRunner()
-        first = runner.invoke(
-            app, [*command, f"{padding}{url}{padding}", *name_args], catch_exceptions=False
-        )
+        with monkeypatch.context() as scoped:
+            scoped.chdir(project_dir)
+            first = runner.invoke(
+                app, [*command, f"{padding}{url}{padding}", *name_args], catch_exceptions=False
+            )
         assert first.exit_code == 0, first.output
         assert "source added" in first.output
         config_path = project_dir / ".specify" / config_filename
         original = config_path.read_bytes()
         modified_at = config_path.stat().st_mtime_ns
 
-        second = runner.invoke(app, [*command, url, *name_args], catch_exceptions=False)
+        with monkeypatch.context() as scoped:
+            scoped.chdir(project_dir)
+            second = runner.invoke(app, [*command, url, *name_args], catch_exceptions=False)
 
         assert second.exit_code == 0, second.output
         assert "already configured" in second.output
@@ -10019,9 +10022,11 @@ class TestWorkflowCatalogAddCLI:
         assert entries[0]["url"] == url
         assert entries[0]["name"] == (name or "catalog-1")
 
-        conflict = runner.invoke(
-            app, [*command, url, "--name", "different"], catch_exceptions=False
-        )
+        with monkeypatch.context() as scoped:
+            scoped.chdir(project_dir)
+            conflict = runner.invoke(
+                app, [*command, url, "--name", "different"], catch_exceptions=False
+            )
         assert conflict.exit_code == 1, conflict.output
         assert "different name" in conflict.output
         assert "source added" not in conflict.output
@@ -10038,7 +10043,6 @@ class TestWorkflowCatalogAddCLI:
         from typer.testing import CliRunner
         from specify_cli import app
 
-        monkeypatch.chdir(project_dir)
         url = "https://example.com/catalog.json"
         config_path = project_dir / ".specify" / config_filename
         config_path.write_text(yaml.safe_dump({"catalogs": [{
@@ -10052,9 +10056,11 @@ class TestWorkflowCatalogAddCLI:
         modified_at = config_path.stat().st_mtime_ns
         name_args = ["--name", name] if name is not None else []
 
-        result = CliRunner().invoke(
-            app, [*command, f"{padding}{url}{padding}", *name_args], catch_exceptions=False
-        )
+        with monkeypatch.context() as scoped:
+            scoped.chdir(project_dir)
+            result = CliRunner().invoke(
+                app, [*command, f"{padding}{url}{padding}", *name_args], catch_exceptions=False
+            )
 
         if name == "different":
             assert result.exit_code == 1, result.output

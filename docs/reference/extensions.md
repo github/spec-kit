@@ -160,6 +160,8 @@ Adding a catalog is idempotent (identity is the catalog **name**): re-running `c
 
 Surrounding whitespace in catalog names and URLs is ignored when comparing entries and stripped from newly added entries. A no-op leaves the existing configuration unchanged.
 
+Stored priorities may use numeric strings, but YAML booleans (`true`/`false`) are invalid and are never equivalent to integer priorities (`1`/`0`). Re-adding a matching catalog with an invalid stored priority reports a conflict.
+
 ### Remove a Catalog
 
 ```bash

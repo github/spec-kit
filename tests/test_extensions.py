@@ -7646,7 +7646,6 @@ class TestExtensionAddCLI:
         from typer.testing import CliRunner
         from specify_cli import app
 
-        monkeypatch.chdir(project_dir)
         config_path = project_dir / ".specify" / "extension-catalogs.yml"
         config_path.write_text(yaml.safe_dump({"catalogs": [{
             "name": stored_name,
@@ -7657,11 +7656,13 @@ class TestExtensionAddCLI:
         original = config_path.read_bytes()
         modified_at = config_path.stat().st_mtime_ns
 
-        result = CliRunner().invoke(app, [
-            "extension", "catalog", "add",
-            f"{padding}https://example.com/catalog.json{padding}",
-            "--name", name, "--priority", str(priority),
-        ], catch_exceptions=False)
+        with monkeypatch.context() as scoped:
+            scoped.chdir(project_dir)
+            result = CliRunner().invoke(app, [
+                "extension", "catalog", "add",
+                f"{padding}https://example.com/catalog.json{padding}",
+                "--name", name, "--priority", str(priority),
+            ], catch_exceptions=False)
 
         assert result.exit_code == (0 if priority == 10 else 1), result.output
         assert ("nothing to do" if priority == 10 else "different settings") in result.output
@@ -7728,6 +7729,36 @@ class TestExtensionAddCLI:
 
         assert result.exit_code == 0, result.output
         assert "nothing to do" in result.output
+
+    @pytest.mark.parametrize("stored_priority,priority", [
+        (True, 1), (False, 0), (1, 1), (0, 0), ("1", 1), ("0", 0),
+    ])
+    def test_catalog_add_priority_equivalence(self, project_dir, monkeypatch, stored_priority, priority):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        config_path.write_text(yaml.safe_dump({"catalogs": [{
+            "name": "mine",
+            "url": "https://example.com/catalog.json",
+            "priority": stored_priority,
+            "install_allowed": False,
+        }]}), encoding="utf-8")
+        original = config_path.read_bytes()
+        modified_at = config_path.stat().st_mtime_ns
+
+        with monkeypatch.context() as scoped:
+            scoped.chdir(project_dir)
+            result = CliRunner().invoke(app, [
+                "extension", "catalog", "add", "https://example.com/catalog.json",
+                "--name", "mine", "--priority", str(priority),
+            ], catch_exceptions=False)
+
+        invalid = isinstance(stored_priority, bool)
+        assert result.exit_code == (1 if invalid else 0), result.output
+        assert ("different settings" if invalid else "nothing to do") in result.output
+        assert config_path.read_bytes() == original
+        assert config_path.stat().st_mtime_ns == modified_at
 
     def test_catalog_add_escapes_config_saved_path_markup(self, tmp_path):
         """Catalog add's saved-path label should render literally under Rich."""

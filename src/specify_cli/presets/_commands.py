@@ -47,22 +47,22 @@ preset_catalog_app = typer.Typer(
 preset_app.add_typer(preset_catalog_app, name="catalog")
 
 
-def _normalize_catalog_priority(value: object) -> object:
+def _normalize_catalog_priority(value: object) -> int | None:
     """Normalize a stored catalog priority the way the preset reader does.
 
     The preset reader (``specify_cli/presets/__init__.py``) accepts
     integer-string priorities like ``"10"`` but rejects bools. Mirror that here
     so an equivalent rerun whose persisted priority is a supported string
     representation is still a no-op rather than a false conflict (#4505). A
-    value that cannot be normalized is returned unchanged so it simply fails to
-    compare equal.
+    value that cannot be normalized returns ``None`` so it cannot compare equal
+    to an integer.
     """
     if isinstance(value, bool):
-        return value
+        return None
     try:
         return int(value)
     except (TypeError, ValueError, OverflowError):
-        return value
+        return None
 
 
 def _normalize_catalog_install_allowed(value: object) -> bool:

@@ -177,6 +177,8 @@ Registers a project-scoped catalog source and persists it.
 
 Adding a source is idempotent (identity is the source **id or url**): re-running `catalog add` with the same id/url and identical `--policy`/`--priority` is a successful no-op (exit code 0), so it is safe to include in a re-runnable workflow. Re-adding a matching id/url with *different* settings is rejected as a conflict rather than silently overwriting the existing source — remove it first to change it.
 
+Surrounding whitespace in source ids and URLs is ignored when matching identities and comparing settings. No-ops and conflicts leave the existing configuration unchanged; they do not rewrite stored values to normalize them.
+
 ### Remove a Catalog Source
 
 ```bash
