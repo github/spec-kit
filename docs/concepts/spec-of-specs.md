@@ -1,7 +1,7 @@
 # Spec of Specs
 
 When a feature is too large to run through a single
-`/speckit.specify` → `/speckit.plan` → `/speckit.tasks` → `/speckit.implement`
+`/speckit-specify` → `/speckit-plan` → `/speckit-tasks` → `/speckit-implement`
 cycle without the model losing track mid-implementation, you can break it into a
 **roadmap** of smaller, independently-specified sub-features. This is the "spec of
 specs" approach: one up-front pass decomposes a massive feature into self-contained
@@ -10,7 +10,7 @@ specs, and each of those runs through its own specify/plan/tasks/implement cycle
 > **When to reach for this.** Decomposition adds the most overhead of any strategy
 > in [Handling Complex Features](complex-features.md). Use it **only when the lighter
 > options there are insufficient** — first try limiting how many tasks run per
-> `/speckit.implement` invocation, then sub-agent delegation, then a combination.
+> `/speckit-implement` invocation, then sub-agent delegation, then a combination.
 > Reach for a spec of specs only when even a single phase is too large to handle in
 > one run.
 
@@ -40,7 +40,7 @@ Treat this as a lightweight planning conversation with your agent, not a full sp
 
 The roadmap is deliberately shallow: it names and orders the sub-features but does
 **not** design them. The design happens when each slice runs through its own
-`/speckit.specify`.
+`/speckit-specify`.
 
 ## The roadmap artifact
 
@@ -78,10 +78,10 @@ With the roadmap in hand, work through the entries one at a time using the norma
 Spec Kit flow — nothing new to learn:
 
 1. Pick the next roadmap entry whose dependencies are already `done` (or have none).
-2. Run `/speckit.specify` for just that slice, describing only its intent and scope
+2. Run `/speckit-specify` for just that slice, describing only its intent and scope
    from the roadmap entry. Because the slice is bounded, its spec, plan, and tasks
    stay well within the context window.
-3. Run `/speckit.plan`, `/speckit.tasks`, and `/speckit.implement` for that slice as
+3. Run `/speckit-plan`, `/speckit-tasks`, and `/speckit-implement` for that slice as
    usual.
 4. Mark the roadmap entry `done` and move to the next one.
 

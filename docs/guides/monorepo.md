@@ -43,7 +43,7 @@ slash commands. Root resolution finds the nearest `.specify/`.
 
 ```bash
 cd apps/web
-# then run /speckit.specify, /speckit.plan, … in your agent
+# then run /speckit-specify, /speckit-plan, … in your agent
 ```
 
 ## Targeting a member project from the repo root
@@ -99,7 +99,7 @@ when it is present in the environment of the shell that runs those scripts.
   it is reliable there.
 - **Interactive agents:** whether an exported variable reaches the shell tool an
   agent uses is agent-specific. Export `SPECIFY_INIT_DIR` *before* launching the
-  agent, and verify once (e.g. run `/speckit.specify` and confirm the new feature
+  agent, and verify once (e.g. run `/speckit-specify` and confirm the new feature
   landed under the intended project's `specs/`).
 
 ## Git in a monorepo
@@ -117,7 +117,7 @@ when it is present in the environment of the shell that runs those scripts.
 ## Constitutions
 
 Each member project has its own `.specify/memory/constitution.md` and
-`/speckit.constitution` edits the local project's file. Spec Kit does not provide
+`/speckit-constitution` edits the local project's file. Spec Kit does not provide
 a built-in base/inheritance mechanism; if you want one constitution to reference
 shared rules elsewhere in the monorepo, you need to maintain that wiring yourself.
 Otherwise, duplicate or sync shared engineering rules per project.
