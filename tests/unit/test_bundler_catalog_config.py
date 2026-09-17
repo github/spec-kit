@@ -89,6 +89,34 @@ def test_remove_source_accepts_relative_local_path(tmp_path: Path, monkeypatch):
         cc.remove_source(project, "sub/cat.json")
 
 
+def test_failed_add_does_not_persist_a_broken_entry(tmp_path: Path):
+    """A rejected `catalog add` must leave the config untouched.
+
+    `CatalogSource.from_dict` already rejects an empty id, but it ran *after*
+    `_write` had persisted the entry, so a whitespace-only `--id` reported
+    "A catalog source is missing its 'id'" while leaving `{"id": "", ...}`
+    behind — and every later command that loads the stack then failed with that
+    same error, wedging the project's catalog config.
+    """
+    from specify_cli.bundler.services.catalog_stack import load_source_stack
+
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+
+    with pytest.raises(BundlerError, match="missing its 'id'"):
+        cc.add_source(
+            project,
+            "https://example.test/c.json",
+            source_id="   ",
+            policy="install-allowed",
+            priority=5,
+        )
+
+    assert cc._read(project) == []
+    # The stack must still load — this is what the stray entry used to break.
+    assert [source.id for source in load_source_stack(project)]
+
+
 def test_remove_by_id_does_not_also_delete_canonical_url_match(tmp_path: Path, monkeypatch):
     """`remove <id>` must remove only the exact-id source, not also a different
     source whose url happens to equal the id's canonicalized path. (_canonicalize_url
