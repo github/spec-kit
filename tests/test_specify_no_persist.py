@@ -1,10 +1,10 @@
-"""Tests for SPECIFY_NO_PERSIST, the env-level equivalent of --no-persist (#4128).
+"""Tests for SPECIFY_FEATURE_NO_PERSIST, the env-level equivalent of --no-persist (#4128).
 
 Scripts like setup-plan/setup-tasks call get_feature_paths() without
 --no-persist, so every invocation with SPECIFY_FEATURE_DIRECTORY set
 overwrites .specify/feature.json. In multi-agent setups where several
 processes each set their own SPECIFY_FEATURE_DIRECTORY, this creates a
-write-write race on the shared file. SPECIFY_NO_PERSIST lets an orchestrator
+write-write race on the shared file. SPECIFY_FEATURE_NO_PERSIST lets an orchestrator
 suppress that write across every script invocation without having to patch
 each call site.
 """
@@ -68,7 +68,7 @@ def test_bash_specify_no_persist_suppresses_write(repo: Path) -> None:
     (repo / "specs" / "001-a").mkdir(parents=True)
     env = clean_env()
     env["SPECIFY_FEATURE_DIRECTORY"] = "specs/001-a"
-    env["SPECIFY_NO_PERSIST"] = "1"
+    env["SPECIFY_FEATURE_NO_PERSIST"] = "1"
     result = run(bash_cmd(repo, SCRIPT, "--json"), repo, env)
     assert result.returncode == 0, result.stderr
     assert _feature_json(repo) is None
@@ -77,7 +77,7 @@ def test_bash_specify_no_persist_suppresses_write(repo: Path) -> None:
 @requires_bash
 def test_bash_specify_no_persist_does_not_clobber_existing_pin(repo: Path) -> None:
     """A second agent's SPECIFY_FEATURE_DIRECTORY must not overwrite the
-    first agent's persisted feature.json when SPECIFY_NO_PERSIST is set."""
+    first agent's persisted feature.json when SPECIFY_FEATURE_NO_PERSIST is set."""
     (repo / "specs" / "001-a").mkdir(parents=True)
     (repo / "specs" / "002-b").mkdir(parents=True)
     env = clean_env()
@@ -87,7 +87,7 @@ def test_bash_specify_no_persist_does_not_clobber_existing_pin(repo: Path) -> No
     assert _feature_json(repo) == {"feature_directory": "specs/001-a"}
 
     env["SPECIFY_FEATURE_DIRECTORY"] = "specs/002-b"
-    env["SPECIFY_NO_PERSIST"] = "1"
+    env["SPECIFY_FEATURE_NO_PERSIST"] = "1"
     result = run(bash_cmd(repo, SCRIPT, "--json"), repo, env)
     assert result.returncode == 0, result.stderr
     assert _feature_json(repo) == {"feature_directory": "specs/001-a"}
@@ -98,7 +98,7 @@ def test_ps_specify_no_persist_suppresses_write(repo: Path) -> None:
     (repo / "specs" / "001-a").mkdir(parents=True)
     env = clean_env()
     env["SPECIFY_FEATURE_DIRECTORY"] = "specs/001-a"
-    env["SPECIFY_NO_PERSIST"] = "true"
+    env["SPECIFY_FEATURE_NO_PERSIST"] = "true"
     result = run(ps_cmd(repo, SCRIPT, "-Json"), repo, env)
     assert result.returncode == 0, result.stderr
     assert _feature_json(repo) is None
@@ -108,14 +108,14 @@ def test_py_specify_no_persist_suppresses_write(repo: Path) -> None:
     (repo / "specs" / "001-a").mkdir(parents=True)
     env = clean_env()
     env["SPECIFY_FEATURE_DIRECTORY"] = "specs/001-a"
-    env["SPECIFY_NO_PERSIST"] = "1"
+    env["SPECIFY_FEATURE_NO_PERSIST"] = "1"
     result = run(py_cmd(repo, SCRIPT, "--json"), repo, env)
     assert result.returncode == 0, result.stderr
     assert _feature_json(repo) is None
 
 
 # create-new-feature writes .specify/feature.json directly (not via
-# get_feature_paths()), so it must honor SPECIFY_NO_PERSIST separately.
+# get_feature_paths()), so it must honor SPECIFY_FEATURE_NO_PERSIST separately.
 
 CREATE_SCRIPT = "create-new-feature"
 SPEC_TEMPLATE_BODY = "# Spec Template\n\nBody.\n"
@@ -134,7 +134,7 @@ def _create_feature_repo(tmp_path: Path, name: str = "proj") -> Path:
 def test_bash_create_new_feature_no_persist_suppresses_write(tmp_path: Path) -> None:
     repo = _create_feature_repo(tmp_path)
     env = clean_env()
-    env["SPECIFY_NO_PERSIST"] = "1"
+    env["SPECIFY_FEATURE_NO_PERSIST"] = "1"
     result = run(bash_cmd(repo, CREATE_SCRIPT, "--json", "x"), repo, env)
     assert result.returncode == 0, result.stderr
     assert _feature_json(repo) is None
@@ -144,7 +144,7 @@ def test_bash_create_new_feature_no_persist_suppresses_write(tmp_path: Path) -> 
 def test_ps_create_new_feature_no_persist_suppresses_write(tmp_path: Path) -> None:
     repo = _create_feature_repo(tmp_path)
     env = clean_env()
-    env["SPECIFY_NO_PERSIST"] = "true"
+    env["SPECIFY_FEATURE_NO_PERSIST"] = "true"
     result = run(ps_cmd(repo, CREATE_SCRIPT, "-Json", "x"), repo, env)
     assert result.returncode == 0, result.stderr
     assert _feature_json(repo) is None
@@ -153,7 +153,7 @@ def test_ps_create_new_feature_no_persist_suppresses_write(tmp_path: Path) -> No
 def test_py_create_new_feature_no_persist_suppresses_write(tmp_path: Path) -> None:
     repo = _create_feature_repo(tmp_path)
     env = clean_env()
-    env["SPECIFY_NO_PERSIST"] = "1"
+    env["SPECIFY_FEATURE_NO_PERSIST"] = "1"
     result = run(py_cmd(repo, CREATE_SCRIPT, "--json", "x"), repo, env)
     assert result.returncode == 0, result.stderr
     assert _feature_json(repo) is None

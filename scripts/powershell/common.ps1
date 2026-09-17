@@ -166,11 +166,11 @@ function Get-FeaturePathsEnv {
         [switch]$ReturnNullOnError
     )
 
-    # SPECIFY_NO_PERSIST is the environment-level equivalent of -NoPersist,
+    # SPECIFY_FEATURE_NO_PERSIST is the environment-level equivalent of -NoPersist,
     # letting an orchestrator (multi-agent runner, CI matrix) guarantee that no
     # script invocation in the process tree writes .specify/feature.json, even
     # scripts that don't pass -NoPersist themselves (#4128).
-    $noPersist = [bool]$NoPersist -or $env:SPECIFY_NO_PERSIST -eq '1' -or $env:SPECIFY_NO_PERSIST -eq 'true'
+    $noPersist = [bool]$NoPersist -or $env:SPECIFY_FEATURE_NO_PERSIST -eq '1' -or $env:SPECIFY_FEATURE_NO_PERSIST -eq 'true'
 
     $repoRoot = Get-RepoRoot -ReturnNullOnError:$ReturnNullOnError
     if (-not $repoRoot) { return $null }

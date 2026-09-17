@@ -284,8 +284,8 @@ if (-not $DryRun) {
     }
 
     # Persist to .specify/feature.json so downstream commands can find the
-    # feature, unless the orchestrator opted out via SPECIFY_NO_PERSIST (#4129).
-    if ($env:SPECIFY_NO_PERSIST -ne '1' -and $env:SPECIFY_NO_PERSIST -ne 'true') {
+    # feature, unless the orchestrator opted out via SPECIFY_FEATURE_NO_PERSIST (#4129).
+    if ($env:SPECIFY_FEATURE_NO_PERSIST -ne '1' -and $env:SPECIFY_FEATURE_NO_PERSIST -ne 'true') {
         Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $featureDir
     }
 

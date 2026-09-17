@@ -408,8 +408,8 @@ def main(argv: list[str] | None = None) -> int:
                 spec_file.touch()
 
         # Persist to .specify/feature.json so downstream commands can find the
-        # feature, unless the orchestrator opted out via SPECIFY_NO_PERSIST (#4129).
-        if os.environ.get("SPECIFY_NO_PERSIST", "") not in ("1", "true"):
+        # feature, unless the orchestrator opted out via SPECIFY_FEATURE_NO_PERSIST (#4129).
+        if os.environ.get("SPECIFY_FEATURE_NO_PERSIST", "") not in ("1", "true"):
             persist_feature_json(repo_root, f"specs/{branch_name}")
 
         # Inform the user how to set feature state in their own shell.

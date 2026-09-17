@@ -367,8 +367,8 @@ if [ "$DRY_RUN" != true ]; then
     fi
 
     # Persist to .specify/feature.json so downstream commands can find the
-    # feature, unless the orchestrator opted out via SPECIFY_NO_PERSIST (#4129).
-    if [[ "${SPECIFY_NO_PERSIST:-}" != "1" && "${SPECIFY_NO_PERSIST:-}" != "true" ]]; then
+    # feature, unless the orchestrator opted out via SPECIFY_FEATURE_NO_PERSIST (#4129).
+    if [[ "${SPECIFY_FEATURE_NO_PERSIST:-}" != "1" && "${SPECIFY_FEATURE_NO_PERSIST:-}" != "true" ]]; then
         _persist_feature_json "$REPO_ROOT" "$FEATURE_DIR"
     fi
 

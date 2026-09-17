@@ -169,11 +169,11 @@ get_feature_paths() {
         no_persist=true
         shift
     fi
-    # SPECIFY_NO_PERSIST is the environment-level equivalent of --no-persist,
+    # SPECIFY_FEATURE_NO_PERSIST is the environment-level equivalent of --no-persist,
     # letting an orchestrator (multi-agent runner, CI matrix) guarantee that no
     # script invocation in the process tree writes .specify/feature.json, even
     # scripts that don't pass --no-persist themselves (#4128).
-    if [[ "${SPECIFY_NO_PERSIST:-}" == "1" || "${SPECIFY_NO_PERSIST:-}" == "true" ]]; then
+    if [[ "${SPECIFY_FEATURE_NO_PERSIST:-}" == "1" || "${SPECIFY_FEATURE_NO_PERSIST:-}" == "true" ]]; then
         no_persist=true
     fi
 
