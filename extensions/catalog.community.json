@@ -6061,7 +6061,7 @@
       "changelog": "https://github.com/datastone-inc/spec-kit-verify-tasks/blob/master/CHANGELOG.md",
       "license": "MIT",
       "category": "code",
-      "effect": "read-only",
+      "effect": "read-write",
       "requires": {
         "speckit_version": ">=0.12.17"
       },
