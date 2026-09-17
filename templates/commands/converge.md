@@ -144,6 +144,12 @@ Create an internal model (do not echo raw artifacts):
 
 ### 4. Assess the Codebase and Classify Findings
 
+Include every existing task in the assessment inventory, regardless of checkbox state or
+Convergence phase: completion claims are not evidence. Verify current behavior against
+the spec, plan, and constitution; for corrective task chains, assess the resulting behavior,
+not superseded implementation details. Check both unmet obligations and implementation
+that contradicts, exceeds, or falls outside the stated intent.
+
 For each item in the intent inventory, inspect the current code in scope and produce a
 `Finding` only where there is a gap. Classify every finding by **gap type**:
 
