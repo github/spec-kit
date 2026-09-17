@@ -3805,6 +3805,68 @@ Agent __AGENT__
         assert "{ARGS}" not in content
         assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
 
+    def test_command_mode_registration_strips_scripts_key(self, project_dir, temp_dir):
+        """Extension commands rendered in command mode (non-SKILL.md agents)
+        must not leak the build-time ``scripts:`` key into agent-facing
+        frontmatter, matching the core template render (#4554)."""
+        import yaml
+
+        ext_dir = temp_dir / "ext-scripted-commands"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-scripted-commands",
+                "name": "Scripted Commands Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.ext-scripted-commands.plan",
+                        "file": "commands/plan.md",
+                        "description": "Scripted command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "plan.md").write_text(
+            "---\n"
+            "description: Scripted command\n"
+            "scripts:\n"
+            '  sh: ../../scripts/bash/setup-plan.sh --json "{ARGS}"\n'
+            "  ps: ../../scripts/powershell/setup-plan.ps1 -Json\n"
+            "---\n\n"
+            "Run {SCRIPT}\n"
+        )
+
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text('{"ai":"copilot","script":"sh"}')
+
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("copilot", manifest, ext_dir, project_dir)
+
+        command_file = agents_dir / "speckit.ext-scripted-commands.plan.agent.md"
+        assert command_file.exists()
+
+        content = command_file.read_text()
+        assert "{SCRIPT}" not in content
+        assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
+        assert "scripts:" not in content
+        assert "sh:" not in content
+
     @pytest.mark.parametrize("agent_name,skills_path", [
         ("codex", ".agents/skills"),
         ("kimi", ".kimi-code/skills"),
