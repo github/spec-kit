@@ -122,7 +122,7 @@ def _workflow_step(steps: list[dict[str, object]], name: str) -> dict[str, objec
     return next(step for step in steps if step.get("name") == name)
 
 
-def _bug_workflow(name: str) -> tuple[str, str, dict, dict]:
+def _agentic_workflow(name: str) -> tuple[str, str, dict, dict]:
     source_text = (WORKFLOWS_DIR / f"{name}.md").read_text(encoding="utf-8")
     compiled_text = (WORKFLOWS_DIR / f"{name}.lock.yml").read_text(encoding="utf-8")
     return (
@@ -334,8 +334,163 @@ def test_community_submission_automation_is_wired_to_allowed_files():
             catalog_file,
             docs_file,
         ]
-        assert f'"allowed_files":["{catalog_file}","{docs_file}"]' in compiled_text
+        assert _safe_output_config(yaml.safe_load(compiled_text))[
+            "create_pull_request"
+        ]["allowed_files"] == [catalog_file, docs_file]
         assert label in assignment_text
+
+
+@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+def test_community_upgrade_uses_established_runtime_defaults(kind):
+    _, compiled_text, source, compiled = _agentic_workflow(f"add-community-{kind}")
+    metadata = _gh_aw_metadata(compiled_text)
+    assert metadata["compiler_version"] == "v0.88.7"
+    assert metadata["engine_versions"] == {"copilot": "1.0.80"}
+    assert metadata["strict"] is True
+    assert "engine" not in source
+
+    info = _workflow_step(
+        compiled["jobs"]["activation"]["steps"], "Generate agentic run info"
+    )["env"]
+    assert info["GH_AW_INFO_MODEL"] == (
+        "${{ vars.GH_AW_MODEL_AGENT_COPILOT || "
+        "vars.GH_AW_DEFAULT_MODEL_COPILOT || 'auto' }}"
+    )
+    assert info["GH_AW_INFO_AWF_VERSION"] == "v0.28.14"
+    manifest_prefix = "# gh-aw-manifest: "
+    manifest = json.loads(compiled_text.splitlines()[1].removeprefix(manifest_prefix))
+    assert {container["image"] for container in manifest["containers"]} == {
+        "ghcr.io/github/gh-aw-firewall/agent:0.28.14",
+        "ghcr.io/github/gh-aw-firewall/api-proxy:0.28.14",
+        "ghcr.io/github/gh-aw-firewall/squid:0.28.14",
+        "ghcr.io/github/gh-aw-mcpg:v0.4.18",
+        "ghcr.io/github/gh-aw-node",
+        "ghcr.io/github/github-mcp-server:v1.11.0",
+    }
+    for container in manifest["containers"]:
+        assert re.fullmatch(r"sha256:[0-9a-f]{64}", container["digest"])
+        assert container["pinned_image"] == (
+            f"{container['image']}@{container['digest']}"
+        )
+    refs = {match.group("ref") for match in USES_RE.finditer(compiled_text)}
+    assert refs
+    assert all(PINNED_SHA_RE.search(ref) for ref in refs)
+    assert {ref for ref in refs if ref.startswith("github/gh-aw-actions/")} == {
+        "github/gh-aw-actions/setup@5e508589e03a7757a7e05b26e834292f5445bfb6"
+    }
+
+
+@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+def test_community_upgrade_preserves_activation_and_permission_guards(kind):
+    _, _, source, compiled = _agentic_workflow(f"add-community-{kind}")
+    label = f"{kind}-submission"
+    assert (source.get("on") or source[True]) == {
+        "issues": {"types": ["labeled"], "names": [label]},
+        "skip-bots": ["github-actions", "copilot", "dependabot"],
+    }
+    assert (compiled.get("on") or compiled[True]) == {
+        "issues": {"types": ["labeled"]}
+    }
+    guard = (
+        "github.event_name != 'issues' || github.event.action != 'labeled' || "
+        f"github.event.label.name == '{label}'"
+    )
+    pre_activation = compiled["jobs"]["pre_activation"]
+    assert " ".join(pre_activation["if"].split()) == guard
+    assert " ".join(compiled["jobs"]["activation"]["if"].split()) == (
+        f"needs.pre_activation.outputs.activated == 'true' && ({guard})"
+    )
+    assert pre_activation["outputs"]["activated"] == (
+        "${{ steps.check_membership.outputs.is_team_member == 'true' && "
+        "steps.check_skip_bots.outputs.skip_bots_ok == 'true' }}"
+    )
+    assert _workflow_step(
+        pre_activation["steps"], "Check team membership for workflow"
+    )["env"]["GH_AW_REQUIRED_ROLES"] == "admin,maintainer,write"
+    assert _workflow_step(pre_activation["steps"], "Check skip-bots")["env"][
+        "GH_AW_SKIP_BOTS"
+    ] == "github-actions,copilot-swe-agent,Copilot,copilot,@app/copilot-swe-agent,dependabot"
+
+    agent = compiled["jobs"]["agent"]
+    assert agent["needs"] == "activation"
+    assert agent["if"] == "needs.activation.outputs.daily_ai_credits_exceeded != 'true'"
+    assert compiled["permissions"] == {}
+    assert source["permissions"] == agent["permissions"] == {
+        "contents": "read", "issues": "read"
+    }
+    assert source["tools"]["github"] == {
+        "toolsets": ["issues", "repos"], "min-integrity": "none"
+    }
+    assert source["checkout"] == {"fetch-depth": 0}
+    assert _workflow_step(agent["steps"], "Checkout repository")["with"] == {
+        "persist-credentials": False, "fetch-depth": 0
+    }
+    output_permissions = {
+        "contents": "write", "issues": "write", "pull-requests": "write"
+    }
+    assert compiled["jobs"]["safe_outputs"]["permissions"] == output_permissions
+    assert compiled["jobs"]["conclusion"]["permissions"] == {
+        **output_permissions, "actions": "read"
+    }
+
+
+@pytest.mark.parametrize(
+    "kind,label,catalog_file,docs_file,instruction", COMMUNITY_SUBMISSION_WORKFLOWS
+)
+def test_community_upgrade_preserves_scoped_draft_pr_contract(
+    kind, label, catalog_file, docs_file, instruction
+):
+    source_text, _, source, compiled = _agentic_workflow(f"add-community-{kind}")
+    assert instruction in source_text
+    outputs = _safe_output_config(compiled)
+    expected_outputs = {
+        "add_comment", "add_labels", "create_pull_request", "noop",
+        "create_report_incomplete_issue", "missing_data", "missing_tool",
+        "report_incomplete",
+    }
+    expected_source_outputs = {
+        "add-comment", "add-labels", "create-pull-request", "noop", "threat-detection"
+    }
+    if kind == "bundle":
+        expected_outputs.add("remove_labels")
+        expected_source_outputs.add("remove-labels")
+        assert outputs["remove_labels"]["allowed"] == source["safe-outputs"][
+            "remove-labels"
+        ]["allowed"] == ["validation-passed", "validation-failed", "needs-info"]
+    assert set(outputs) == expected_outputs
+    assert set(source["safe-outputs"]) == expected_source_outputs
+    assert outputs["add_comment"] == source["safe-outputs"]["add-comment"] == {"max": 2}
+    assert outputs["add_labels"] == source["safe-outputs"]["add-labels"] == {
+        "allowed": [label, "validation-passed", "validation-failed", "needs-info"],
+        "max": 3,
+    }
+    assert source["safe-outputs"]["noop"] == {"report-as-issue": False}
+    assert outputs["noop"] == {"max": 1, "report-as-issue": "false"}
+    assert source["safe-outputs"]["create-pull-request"] == {
+        "title-prefix": f"[{kind}] ",
+        "labels": [label, "automated"],
+        "draft": True,
+        "max": 1,
+        "allowed-files": [catalog_file, docs_file],
+        "protected-files": {
+            "policy": "blocked", "exclude": ["README.md", "CHANGELOG.md"]
+        },
+    }
+    create_pr = outputs["create_pull_request"]
+    assert create_pr["allowed_files"] == [catalog_file, docs_file]
+    assert create_pr["draft"] is True
+    assert create_pr["title_prefix"] == f"[{kind}] "
+    assert create_pr["labels"] == [label, "automated"]
+    assert create_pr["max"] == 1
+    assert create_pr["max_patch_files"] == 100
+    assert create_pr["max_patch_size"] == 4096
+    assert create_pr["protected_files_policy"] == "blocked"
+    assert create_pr["protect_top_level_dot_folders"] is True
+    assert not create_pr.get("protected_dot_folder_excludes")
+    assert "AGENTS.md" in create_pr["protected_files"]
+    assert not {"README.md", "CHANGELOG.md", "CLAUDE.md", "GEMINI.md"} & set(
+        create_pr["protected_files"]
+    )
 
 
 # Full clauses from the catalog download-URL checks (issue #4185). Assert the
@@ -453,17 +608,49 @@ def test_community_submission_threat_detection_is_fail_closed():
             f"add-community-{workflow}.lock.yml must compile threat detection "
             "in fail-closed mode"
         )
-        assert (
-            "process.env.GH_AW_DETECTION_CONTINUE_ON_ERROR !== 'false'"
-            in compiled_text
-        ), (
-            f"add-community-{workflow}.lock.yml is missing the detection "
-            "continue-on-error gate"
+        jobs = yaml.safe_load(compiled_text)["jobs"]
+        detection = jobs["detection"]
+        assert detection["needs"] == ["activation", "agent"]
+        assert detection["if"] == "always() && needs.agent.result != 'skipped'"
+        guard = _workflow_step(detection["steps"], "Check if detection needed")
+        assert guard["id"] == "detection_guard"
+        assert guard["env"] == {
+            "OUTPUT_TYPES": "${{ needs.agent.outputs.output_types }}",
+            "HAS_PATCH": "${{ needs.agent.outputs.has_patch }}",
+        }
+        execution = _workflow_step(detection["steps"], "Execute threat detection with AWF")
+        assert execution["id"] == "detection_agentic_execution"
+        assert execution["if"] == (
+            "always() && steps.detection_guard.outputs.run_detection == 'true'"
+        )
+        assert execution["env"]["GH_AW_DETECTION_CONTINUE_ON_ERROR"] == "false"
+        conclusion = _workflow_step(detection["steps"], "Conclude threat detection")
+        assert conclusion["id"] == "detection_conclusion"
+        assert conclusion["if"] == "always()"
+        assert not conclusion.get("continue-on-error", False)
+        assert conclusion["env"] == {
+            "RUN_DETECTION": "${{ steps.detection_guard.outputs.run_detection }}",
+            "DETECTION_AGENTIC_EXECUTION_OUTCOME": (
+                "${{ steps.detection_agentic_execution.outcome }}"
+            ),
+            "GH_AW_DETECTION_CONTINUE_ON_ERROR": "false",
+        }
+        assert conclusion["run"].strip() == (
+            'bash "${RUNNER_TEMP}/gh-aw/actions/conclude_threat_detection.sh" '
+            "/tmp/gh-aw/threat-detection/detection_result.json"
+        )
+        assert _workflow_step(detection["steps"], "Setup Scripts")["uses"] == (
+            "github/gh-aw-actions/setup@5e508589e03a7757a7e05b26e834292f5445bfb6"
+        )
+        assert jobs["safe_outputs"]["needs"] == ["activation", "agent", "detection"]
+        assert jobs["safe_outputs"]["if"] == (
+            "(!cancelled()) && needs.agent.result != 'skipped' && "
+            "needs.detection.result == 'success'"
         )
 
 
 def test_bug_test_workflow_provisions_python_dependencies():
-    _, compiled_text, source, compiled = _bug_workflow("bug-test")
+    _, compiled_text, source, compiled = _agentic_workflow("bug-test")
     steps = compiled["jobs"]["agent"]["steps"]
 
     assert source["network"] == {
@@ -507,7 +694,7 @@ def test_bug_test_workflow_provisions_python_dependencies():
 
 
 def test_bug_test_network_allows_only_required_github_host():
-    _, _, _, compiled = _bug_workflow("bug-test")
+    _, _, _, compiled = _agentic_workflow("bug-test")
     steps = compiled["jobs"]["agent"]["steps"]
     domains = set(
         _workflow_step(steps, "Ingest agent output")["env"][
@@ -534,7 +721,7 @@ def test_bug_test_network_allows_only_required_github_host():
 
 
 def test_bug_test_distinguishes_missing_fix_from_failed_discovery():
-    source_text, _, _, _ = _bug_workflow("bug-test")
+    source_text, _, _, _ = _agentic_workflow("bug-test")
     selection = " ".join(
         source_text.split("## Step 2", 1)[1].split("## Step 3", 1)[0].split()
     )
@@ -553,7 +740,7 @@ def test_bug_test_distinguishes_missing_fix_from_failed_discovery():
 
 
 def test_bug_test_requires_original_exit_code_before_log_filtering():
-    source_text, _, _, _ = _bug_workflow("bug-test")
+    source_text, _, _, _ = _agentic_workflow("bug-test")
     execution = " ".join(
         source_text.split("## Step 4", 1)[1].split("## Step 5", 1)[0].split()
     )
@@ -565,7 +752,7 @@ def test_bug_test_requires_original_exit_code_before_log_filtering():
 
 @pytest.mark.parametrize("name", ["bug-fix", "bug-test"])
 def test_bug_workflow_upgrade_preserves_runtime_and_negative_guards(name):
-    _, compiled_text, source, compiled = _bug_workflow(name)
+    _, compiled_text, source, compiled = _agentic_workflow(name)
     metadata = _gh_aw_metadata(compiled_text)
     assert metadata["compiler_version"] == "v0.88.7"
     assert metadata["engine_versions"] == {"copilot": "1.0.80"}
@@ -659,7 +846,7 @@ def test_bug_workflow_upgrade_preserves_runtime_and_negative_guards(name):
 
 
 def test_bug_fix_upgrade_preserves_scoped_draft_pr_contract():
-    source_text, _, source, compiled = _bug_workflow("bug-fix")
+    source_text, _, source, compiled = _agentic_workflow("bug-fix")
     create_pr = _safe_output_config(compiled)["create_pull_request"]
     assert source["safe-outputs"]["create-pull-request"] == {
         "title-prefix": "[bug-fix] ",
@@ -711,7 +898,7 @@ def test_bug_fix_upgrade_preserves_scoped_draft_pr_contract():
 
 
 def test_bug_fix_upgrade_preserves_missing_and_blocked_assessment_responses():
-    source_text, _, _, _ = _bug_workflow("bug-fix")
+    source_text, _, _, _ = _agentic_workflow("bug-fix")
     text = " ".join(source_text.split())
     missing = text.split("If **no** assessment comment exists on the issue:", 1)[1]
     missing = missing.split("## Step 2", 1)[0]
@@ -740,7 +927,7 @@ def test_bug_fix_upgrade_preserves_missing_and_blocked_assessment_responses():
 
 
 def test_bug_test_upgrade_preserves_fix_selection_and_no_fix_reporting():
-    source_text, _, _, _ = _bug_workflow("bug-test")
+    source_text, _, _, _ = _agentic_workflow("bug-test")
     text = " ".join(source_text.split())
     choices = [
         "**Linked pull request (preferred).**",
@@ -780,7 +967,7 @@ def test_bug_test_upgrade_preserves_fix_selection_and_no_fix_reporting():
 @pytest.mark.parametrize("compiled_step", [False, True], ids=["source", "compiled"])
 @pytest.mark.parametrize("exit_code", [0, 17], ids=["success", "install-failure"])
 def test_bug_test_install_preserves_editable_extras_and_failure(compiled_step, exit_code):
-    _, _, source, compiled = _bug_workflow("bug-test")
+    _, _, source, compiled = _agentic_workflow("bug-test")
     steps = compiled["jobs"]["agent"]["steps"] if compiled_step else source["steps"]
     script = _workflow_step(steps, "Install Python test dependencies")["run"]
     fake_uv = f'uv() {{ printf "%s\\n" "$@"; return {exit_code}; }}\n'
