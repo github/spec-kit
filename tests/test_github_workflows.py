@@ -595,6 +595,69 @@ def _frontmatter(source_text: str) -> dict:
     return yaml.safe_load(frontmatter)
 
 
+def _community_submission_agent_run(workflow: str) -> str:
+    compiled = WORKFLOWS_DIR / f"add-community-{workflow}.lock.yml"
+    steps = yaml.safe_load(compiled.read_text(encoding="utf-8"))["jobs"]["agent"][
+        "steps"
+    ]
+    return next(
+        step["run"]
+        for step in steps
+        if step["name"] == "Execute GitHub Copilot CLI"
+    )
+
+
+def test_community_submission_archive_fetch_tool_is_allowed():
+    """Archive checks must not require an interactive curl permission grant."""
+    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+        source = WORKFLOWS_DIR / f"add-community-{workflow}.md"
+        bash_tools = _frontmatter(source.read_text(encoding="utf-8"))["tools"]["bash"]
+
+        assert "curl" in bash_tools, f"{workflow} cannot fetch binary archives"
+        assert "*" not in bash_tools
+        agent_run = _community_submission_agent_run(workflow)
+        assert "shell(curl:*)" in agent_run
+        assert "--allow-all-tools" not in agent_run
+
+
+def test_community_submission_archive_redirect_hosts_are_allowed():
+    """Both accepted ZIP URL patterns must work through the restricted firewall."""
+    download_hosts = {
+        "github.com",
+        "codeload.github.com",
+        "release-assets.githubusercontent.com",
+    }
+    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+        source = WORKFLOWS_DIR / f"add-community-{workflow}.md"
+        config = _frontmatter(source.read_text(encoding="utf-8"))
+
+        assert set(config.get("network", {}).get("allowed", [])) == {
+            "defaults",
+            *download_hosts,
+        }, f"{workflow} must allow only the required download hosts plus defaults"
+        agent_run = _community_submission_agent_run(workflow)
+        for host in download_hosts:
+            assert f'\\"{host}\\"' in agent_run
+
+
+def test_community_submission_archive_fetch_requires_direct_evidence():
+    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+        source_text = (WORKFLOWS_DIR / f"add-community-{workflow}.md").read_text(
+            encoding="utf-8"
+        )
+
+        assert "Use `curl` for binary downloads" in source_text
+        assert "--proto '=https' --proto-redir '=https'" in source_text
+        assert "`--max-time 60`" in source_text
+        assert "`--write-out '%{http_code}'`" in source_text
+        assert (
+            "A blocked or failed download\n"
+            "must not count as a passed check; repository/release metadata is not a\n"
+            "substitute for fetching the archive."
+        ) in source_text
+        assert "Never execute downloaded content." in source_text
+
+
 def test_community_submission_threat_detection_is_fail_closed():
     for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
         source = WORKFLOWS_DIR / f"add-community-{workflow}.md"
