@@ -16,6 +16,7 @@ import json
 import os
 import shlex
 import subprocess
+import sys
 import tempfile
 import tarfile
 import shutil
@@ -46,6 +47,7 @@ from specify_cli.presets import (
 from specify_cli.extensions import ExtensionRegistry
 from specify_cli._console import console
 from specify_cli.presets._commands import (
+    _render_powershell_argv,
     _warn_unmet_extension_dependencies,
     preset_update,
 )
@@ -11650,11 +11652,68 @@ class TestPresetUpdateCommand:
             "6",
         ]
         expected = (
-            subprocess.list2cmdline(retry_args)
+            _render_powershell_argv(retry_args)
             if os.name == "nt"
             else shlex.join(retry_args)
         )
         assert expected in output
+
+    def test_retry_command_quotes_powershell_metacharacters(
+        self, project_dir, monkeypatch, capsys
+    ):
+        """Windows retry commands keep PowerShell metacharacters literal."""
+        commands = self._manager(monkeypatch, project_dir)
+        monkeypatch.setattr(commands, "preset_remove", lambda _preset_id: None)
+
+        def fail_add(**_kwargs):
+            raise typer.Exit(1)
+
+        monkeypatch.setattr(commands, "preset_add", fail_add)
+        monkeypatch.setattr(os, "name", "nt")
+
+        with pytest.raises(typer.Exit) as exc_info:
+            preset_update(
+                "test-pack",
+                from_url=None,
+                dev=r"C:\replacement&$backup's presets",
+                priority=6,
+            )
+
+        assert exc_info.value.exit_code == 1
+        output = strip_ansi(capsys.readouterr().out)
+        expected = (
+            "& 'specify' 'preset' 'add' 'test-pack' '--dev' "
+            "'C:\\replacement&$backup''s presets' '--priority' '6'"
+        )
+        assert "Retry in PowerShell: " in output
+        assert expected in output
+
+    def test_powershell_retry_renderer_preserves_literal_arguments(self):
+        """The rendered command survives parsing by a real PowerShell."""
+        powershell = shutil.which("pwsh") or shutil.which("powershell")
+        if powershell is None:
+            pytest.skip("PowerShell is not available")
+
+        arguments = [
+            "https://example.com/archive.zip?one=1&two=$value",
+            r"C:\owner's presets",
+        ]
+        rendered = _render_powershell_argv(
+            [
+                sys.executable,
+                "-c",
+                "import json,sys; print(json.dumps(sys.argv[1:]))",
+                *arguments,
+            ]
+        )
+        result = subprocess.run(
+            [powershell, "-NoProfile", "-Command", rendered],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        assert json.loads(result.stdout) == arguments
 
     def test_invalid_priority_rejected_before_removal(
         self, project_dir, monkeypatch, capsys

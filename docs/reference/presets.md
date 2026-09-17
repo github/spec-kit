@@ -49,7 +49,8 @@ higher, and the preset must already be installed. Beyond those checks the
 replacement source itself is not inspected in advance. If removal succeeds but
 replacement installation fails, the previous preset has already been removed.
 The command reports a copy-pastable `specify preset add` retry command,
-including the replacement source and priority. There is no source pre-flight,
+including the replacement source and priority. On Windows, the reported command
+is explicitly formatted for PowerShell. There is no source pre-flight,
 version comparison, manifest diff, staging, rollback, automatic repair, or
 recovery transaction. A missing or invalid replacement source can therefore
 leave the preset removed. With

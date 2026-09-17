@@ -54,6 +54,19 @@ preset_app.add_typer(preset_catalog_app, name="catalog")
 MINIMUM_PRESET_PRIORITY = 1
 
 
+def _render_powershell_argv(argv: list[str]) -> str:
+    """Render argv as a copy-pastable PowerShell command.
+
+    PowerShell single-quoted strings are literal except that an embedded single
+    quote is escaped by doubling it. The call operator is required because the
+    executable name is quoted too.
+    """
+    def quote_arg(arg: str) -> str:
+        return "'" + arg.replace("'", "''") + "'"
+
+    return "& " + " ".join(quote_arg(arg) for arg in argv)
+
+
 def _validate_priority(priority: int) -> None:
     """Reject a non-positive priority before any destructive work begins.
 
@@ -537,18 +550,17 @@ def preset_update(
         retry_args.extend([preset_id, *retry_options])
 
     def report_add_failure() -> None:
-        import subprocess
-
-        rendered_args = (
-            subprocess.list2cmdline(retry_args)
-            if os.name == "nt"
-            else shlex.join(retry_args)
-        )
+        if os.name == "nt":
+            retry_label = "Retry in PowerShell: "
+            rendered_args = _render_powershell_argv(retry_args)
+        else:
+            retry_label = "Retry with: "
+            rendered_args = shlex.join(retry_args)
         console.print(
             "[red]Error:[/red] Preset update failed; the previous preset was removed."
         )
         console.print(
-            "Retry with: [cyan]"
+            f"{retry_label}[cyan]"
             f"{_escape_markup(rendered_args)}"
             "[/cyan]",
             soft_wrap=True,

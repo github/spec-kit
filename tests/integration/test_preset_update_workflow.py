@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import os
 import shlex
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -20,6 +19,7 @@ from typer.testing import CliRunner
 
 from specify_cli import app
 from specify_cli.presets import PresetManager
+from specify_cli.presets._commands import _render_powershell_argv
 from tests.conftest import strip_ansi
 
 PRESET_ID = "update-workflow-demo"
@@ -88,23 +88,24 @@ def write_preset(
 def render_command(args: list[str]) -> str:
     """Render *args* the way ``preset update`` renders its retry command."""
     if os.name == "nt":
-        return subprocess.list2cmdline(args)
+        return _render_powershell_argv(args)
     return shlex.join(args)
 
 
 def parse_command(rendered: str) -> list[str]:
     """Inverse of :func:`render_command` for the simple args used here."""
     if os.name == "nt":
-        return [token.strip('"') for token in shlex.split(rendered, posix=False)]
+        return shlex.split(rendered)[1:]
     return shlex.split(rendered)
 
 
 def retry_command_from(output: str) -> str:
     """Extract the retry command printed after a failed update."""
+    prefix = "Retry in PowerShell: " if os.name == "nt" else "Retry with: "
     for line in strip_ansi(output).splitlines():
         stripped = line.strip()
-        if stripped.startswith("Retry with: "):
-            return stripped[len("Retry with: ") :].strip()
+        if stripped.startswith(prefix):
+            return stripped[len(prefix) :].strip()
     raise AssertionError(f"No retry command found in output:\n{output}")
 
 
