@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-15T00:00:00Z",
+  "updated_at": "2026-09-17T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -6053,21 +6053,21 @@
       "id": "verify-tasks",
       "description": "Detect phantom completions: tasks marked [X] in tasks.md with no real implementation.",
       "author": "Dave Sharpe",
-      "version": "1.0.0",
-      "download_url": "https://github.com/datastone-inc/spec-kit-verify-tasks/archive/refs/tags/v1.0.0.zip",
+      "version": "1.2.0",
+      "download_url": "https://github.com/datastone-inc/spec-kit-verify-tasks/archive/refs/tags/v1.2.0.zip",
       "repository": "https://github.com/datastone-inc/spec-kit-verify-tasks",
       "homepage": "https://github.com/datastone-inc/spec-kit-verify-tasks",
-      "documentation": "https://github.com/datastone-inc/spec-kit-verify-tasks/blob/main/README.md",
-      "changelog": "https://github.com/datastone-inc/spec-kit-verify-tasks/blob/main/CHANGELOG.md",
+      "documentation": "https://github.com/datastone-inc/spec-kit-verify-tasks/blob/master/README.md",
+      "changelog": "https://github.com/datastone-inc/spec-kit-verify-tasks/blob/master/CHANGELOG.md",
       "license": "MIT",
       "category": "code",
       "effect": "read-only",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=0.12.17"
       },
       "provides": {
         "commands": 1,
-        "hooks": 1
+        "hooks": 2
       },
       "tags": [
         "verification",
@@ -6079,7 +6079,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-16T00:00:00Z",
-      "updated_at": "2026-03-16T00:00:00Z"
+      "updated_at": "2026-09-17T00:00:00Z"
     },
     "version-guard": {
       "name": "Version Guard",
