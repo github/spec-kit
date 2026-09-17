@@ -1,6 +1,8 @@
 """Helpers for interpreting persisted init options."""
 
 import json
+import os
+import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Union
@@ -23,10 +25,22 @@ def save_init_options(project_path: Path, options: dict[str, Any]) -> None:
     """Persist the CLI options used during ``specify init``."""
     dest = project_path / INIT_OPTIONS_FILE
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(
-        json.dumps(options, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
-        encoding="utf-8",
+    fd, tmp = tempfile.mkstemp(
+        dir=str(dest.parent),
+        prefix=f".{dest.name}.",
+        suffix=".tmp",
     )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(options, f, indent=2, sort_keys=True, ensure_ascii=False)
+            f.write("\n")
+        os.replace(tmp, dest)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def load_init_options(project_path: Path) -> dict[str, Any]:
