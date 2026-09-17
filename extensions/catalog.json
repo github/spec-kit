@@ -37,7 +37,7 @@
       "name": "Bug Triage Workflow",
       "id": "bug",
       "version": "1.0.0",
-      "description": "Assess, fix, and validate bug reports against the codebase with per-bug reports stored under .specify/bugs/<slug>/",
+      "description": "Assess, load or report (GitHub issue), fix, and validate bug reports against the codebase, with optional branch isolation and PR creation; per-bug reports stored under .specify/bugs/<slug>/",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "bundled": true,
