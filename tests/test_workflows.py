@@ -2594,6 +2594,70 @@ class TestInitStep:
         assert result.output["exit_code"] != 0
         assert result.error is not None
 
+    def test_failed_init_surfaces_inits_own_message(self, tmp_path):
+        """A failing init step must report init's diagnostics, not 'SystemExit: 1'.
+
+        `typer.Exit(n)` — how `specify init` reports every ordinary failure —
+        surfaces through `CliRunner` as `result.exception = SystemExit(n)`, so
+        the unexpected-crash branch fired on routine errors too. `init` prints
+        through Rich to stdout, leaving `result.stderr` empty, so the
+        synthesized "SystemExit: 1" became the whole of stderr and preempted
+        the `stderr.strip() or stdout.strip()` fallback — stranding the real
+        message (here, the list of valid integrations) in stdout.
+        """
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        result = InitStep().execute(
+            {
+                "id": "bootstrap",
+                "here": True,
+                "integration": "no-such-agent",
+                "script": "sh",
+            },
+            StepContext(project_root=str(tmp_path)),
+        )
+
+        assert result.status == StepStatus.FAILED
+        assert result.error is not None
+        assert result.error.strip() != "SystemExit: 1"
+        assert result.output["stderr"].strip() != "SystemExit: 1"
+        # The real diagnostic reaches the caller.
+        collapsed = " ".join(result.error.split())
+        assert "no-such-agent" in collapsed or "Unknown" in collapsed, collapsed
+
+    def test_unexpected_crash_still_reports_its_exception(self, monkeypatch, tmp_path):
+        """The branch's original purpose is preserved for a genuine crash.
+
+        Only `SystemExit` is now excluded; any other exception escaping the
+        runner must still be surfaced, since nothing else would describe it.
+        """
+        from specify_cli.workflows.steps.init import InitStep
+        import typer.testing
+
+        class _Result:
+            exit_code = 1
+            output = ""
+            stderr = ""
+            exception = RuntimeError("boom inside init")
+
+        class _Runner:
+            def __init__(self, *a, **k):
+                pass
+
+            def invoke(self, *a, **k):
+                return _Result()
+
+        monkeypatch.setattr(typer.testing, "CliRunner", _Runner)
+
+        from specify_cli.workflows.base import StepContext
+
+        _code, _stdout, stderr = InitStep()._run_init(
+            ["init", "demo"], StepContext(project_root=str(tmp_path))
+        )
+
+        assert "RuntimeError: boom inside init" in stderr
+
     def test_non_empty_current_dir_without_force_fails_fast(self, tmp_path):
         from specify_cli.workflows.steps.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus
