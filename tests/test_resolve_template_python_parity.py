@@ -910,6 +910,39 @@ def test_python_variant_delegates_manifest_with_non_json_native_mapping_key(
     }
 
 
+def test_python_variant_delegates_manifest_with_omap_metadata(
+    tmp_path: Path,
+) -> None:
+    """An ignored `!!omap` metadata value must not break delegation:
+    PyYAML's safe loader represents `!!omap`/`!!pairs` entries as tuples,
+    which naive recursive normalization returns unchanged, so a nested
+    non-JSON-native mapping key inside one (e.g. an unquoted date) still
+    reaches `json.dump` unstringified and raises `TypeError`, even though
+    the in-process parser accepts and ignores the same metadata (#4445)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "metadata: !!omap\n  - entry:\n      2026-09-08: value\n"
+        + manifest.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
 @requires_bash
 def test_python_variant_delegates_manifest_with_recursive_yaml_alias(
     tmp_path: Path,

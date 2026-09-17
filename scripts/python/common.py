@@ -433,7 +433,7 @@ class _DelegatedYAML:
                     "def _stringify_keys(obj, stack=None):\n"
                     "    if stack is None:\n"
                     "        stack = set()\n"
-                    "    if isinstance(obj, (dict, list)):\n"
+                    "    if isinstance(obj, (dict, list, tuple)):\n"
                     "        if id(obj) in stack:\n"
                     f"            return {{'{_NON_NATIVE_MARKER_KEY}': True}}\n"
                     "        stack.add(id(obj))\n"
