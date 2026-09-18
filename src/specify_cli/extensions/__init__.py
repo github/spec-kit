@@ -1184,21 +1184,54 @@ class ExtensionManager:
 
         return installed_names
 
+    @staticmethod
+    def _normalize_shadow_name(name: str) -> str:
+        """Normalize a command/alias name to its on-disk output form.
+
+        Agent integrations (Cline, Forge, Junie) and the SKILL.md output-name
+        computation (``CommandRegistrar._compute_output_name``) all collapse
+        dots to hyphens and prefix a bare name with ``speckit-``, so
+        ``speckit.taskstoissues``, ``taskstoissues``, and
+        ``speckit-taskstoissues`` are distinct alias spellings that land on
+        the same on-disk command name. Normalize before comparing so all of
+        them are caught, not just the exact dotted spelling.
+        """
+        hyphenated = name.replace(".", "-")
+        if not hyphenated.startswith("speckit-"):
+            hyphenated = f"speckit-{hyphenated}"
+        return hyphenated
+
     def _validate_install_conflicts(self, manifest: ExtensionManifest) -> None:
-        """Reject installs that would shadow core or installed extension commands."""
+        """Reject installs that would shadow core or installed extension commands.
+
+        Primary command names are already namespace-checked against
+        ``CORE_COMMAND_NAMES`` in ``_collect_manifest_command_names``, but
+        aliases are intentionally free-form (see the comment there) and so
+        can only be caught here, by comparing declared names' normalized
+        on-disk form (see ``_normalize_shadow_name``) against core command
+        names rather than relying on ``_get_installed_command_name_map``,
+        which only knows about installed extensions.
+        """
         declared_names = self._collect_manifest_command_names(manifest)
         installed_names = self._get_installed_command_name_map(
             exclude_extension_id=manifest.id
         )
+        core_shadow_names = {
+            self._normalize_shadow_name(f"speckit.{name}") for name in CORE_COMMAND_NAMES
+        }
 
-        collisions = [
-            f"{name} (already provided by extension '{installed_names[name]}')"
-            for name in sorted(declared_names)
-            if name in installed_names
-        ]
+        collisions = []
+        for name in sorted(declared_names):
+            if name in installed_names:
+                collisions.append(
+                    f"{name} (already provided by extension '{installed_names[name]}')"
+                )
+            elif self._normalize_shadow_name(name) in core_shadow_names:
+                collisions.append(f"{name} (conflicts with core command)")
+
         if collisions:
             raise ValidationError(
-                "Extension commands conflict with installed extensions:\n- "
+                "Extension commands conflict with core or installed extension commands:\n- "
                 + "\n- ".join(collisions)
             )
 

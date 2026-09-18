@@ -284,8 +284,7 @@ class BobIntegration(IntegrationBase):
             return super().build_command_invocation(command_name, args)
 
         stem = command_name
-        if stem.startswith("speckit."):
-            stem = stem[len("speckit."):]
+        stem = stem.removeprefix("speckit.")
         invocation = "/speckit-" + stem.replace(".", "-")
         return f"{invocation} {args}" if args else invocation
 
@@ -321,6 +320,7 @@ class BobIntegration(IntegrationBase):
         output_json: bool = True,
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         """Non-interactive dispatch through ``bob run``.
 

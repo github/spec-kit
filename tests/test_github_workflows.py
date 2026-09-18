@@ -56,6 +56,12 @@ COMMUNITY_SUBMISSION_WORKFLOWS = (
         "Do not modify any other files",
     ),
 )
+REPOSITORY_OWNED_DRAFT_PR_EXEMPTION = (
+    "This repository-owned gh-aw maintenance workflow does not perform the contributor "
+    "open-PR count check or request confirmation. After successful validation and "
+    "allowed catalog/docs file updates, emit the configured draft `create_pull_request` "
+    "safe output regardless of the submitter's or filing account's open PR count."
+)
 
 
 def _publish_workflow_steps() -> dict[str, dict[str, object]]:
@@ -440,8 +446,15 @@ def test_community_upgrade_preserves_activation_and_permission_guards(kind):
 def test_community_upgrade_preserves_scoped_draft_pr_contract(
     kind, label, catalog_file, docs_file, instruction
 ):
-    source_text, _, source, compiled = _agentic_workflow(f"add-community-{kind}")
+    source_text, compiled_text, source, compiled = _agentic_workflow(
+        f"add-community-{kind}"
+    )
     assert instruction in source_text
+    assert REPOSITORY_OWNED_DRAFT_PR_EXEMPTION in " ".join(source_text.split())
+    assert (
+        f"{{{{#runtime-import .github/workflows/add-community-{kind}.md}}}}"
+        in compiled_text
+    )
     outputs = _safe_output_config(compiled)
     expected_outputs = {
         "add_comment", "add_labels", "create_pull_request", "noop",

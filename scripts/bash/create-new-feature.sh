@@ -265,6 +265,10 @@ else
     BRANCH_SUFFIX=$(generate_branch_name "$FEATURE_DESCRIPTION")
 fi
 
+if [ -z "$BRANCH_SUFFIX" ]; then
+    echo "[specify] Warning: Feature name is empty after removing unsupported characters. Use --short-name with ASCII letters or digits (for example, user-auth)." >&2
+fi
+
 # Warn if --number and --timestamp are both specified
 if [ "$USE_TIMESTAMP" = true ] && [ -n "$BRANCH_NUMBER" ]; then
     >&2 echo "[specify] Warning: --number is ignored when --timestamp is used"
