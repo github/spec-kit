@@ -206,6 +206,11 @@ are already present, `cargo test` when crates are already present), run the
 
 ## Step 6 — Open a Draft Pull Request
 
+This repository-owned gh-aw maintenance workflow does not perform the contributor
+open-PR count check or request confirmation. After completing the assessment-scoped
+remediation and local checks above, emit the configured draft `create_pull_request`
+safe output regardless of the submitter's or filing account's open PR count.
+
 Use the `create-pull-request` safe output to open a **draft** PR with your
 changes. The harness handles branching, committing, and pushing from the working
 tree you edited — you do not run `git` yourself.

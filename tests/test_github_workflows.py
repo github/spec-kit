@@ -950,6 +950,20 @@ def test_bug_workflow_upgrade_preserves_runtime_and_negative_guards(name):
     } == expected_actions
 
 
+def test_bug_fix_exempts_maintenance_from_pr_count_confirmation():
+    source_text, compiled_text, _, _ = _agentic_workflow("bug-fix")
+    publication = source_text.split("## Step 6", 1)[1].split("## Step 7", 1)[0]
+    exemption = (
+        "This repository-owned gh-aw maintenance workflow does not perform the "
+        "contributor open-PR count check or request confirmation. After completing "
+        "the assessment-scoped remediation and local checks above, emit the "
+        "configured draft `create_pull_request` safe output regardless of the "
+        "submitter's or filing account's open PR count."
+    )
+    assert exemption in " ".join(publication.split())
+    assert "{{#runtime-import .github/workflows/bug-fix.md}}" in compiled_text
+
+
 def test_bug_fix_upgrade_preserves_scoped_draft_pr_contract():
     source_text, _, source, compiled = _agentic_workflow("bug-fix")
     create_pr = _safe_output_config(compiled)["create_pull_request"]
@@ -996,6 +1010,10 @@ def test_bug_fix_upgrade_preserves_scoped_draft_pr_contract():
         "**Stay within the files the assessment named**",
         "record it explicitly in the PR body under **Deviations from Assessment**",
         "Use the `create-pull-request` safe output to open a **draft** PR",
+        (
+            "The harness handles branching, committing, and pushing from the "
+            "working tree you edited — you do not run `git` yourself."
+        ),
         "Use `Refs` (not `Closes`)",
         "Add **exactly one** status label per run when the label exists",
     ):
