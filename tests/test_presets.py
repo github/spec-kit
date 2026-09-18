@@ -3850,6 +3850,28 @@ class TestPresetCatalogEntry:
 class TestPresetCatalogMultiCatalog:
     """Test multi-catalog support in PresetCatalog."""
 
+    def test_catalog_add_is_idempotent_for_identical_entry(self, project_dir):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        args = [
+            "preset",
+            "catalog",
+            "add",
+            "https://example.com/catalog.json",
+            "--name",
+            "community",
+        ]
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            assert runner.invoke(app, args).exit_code == 0
+            config_path = project_dir / ".specify" / "preset-catalogs.yml"
+            original = config_path.read_bytes()
+            assert runner.invoke(app, args).exit_code == 0
+            assert config_path.read_bytes() == original
+            assert runner.invoke(app, [*args, "--priority", "11"]).exit_code == 1
+
     def test_default_active_catalogs(self, project_dir):
         """Test that default catalogs are returned when no config exists."""
         catalog = PresetCatalog(project_dir)

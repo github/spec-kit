@@ -69,6 +69,31 @@ def test_add_source_persists_absolute_local_path(tmp_path: Path, monkeypatch):
     assert Path(source.url) == catalog.resolve()
 
 
+def test_add_source_is_idempotent_for_identical_entry(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    args = {
+        "policy": "install-allowed",
+        "priority": 50,
+        "source_id": "example",
+    }
+
+    first = cc.add_source(project, "https://example.com/catalog.json", **args)
+    original = cc._config_path(project).read_bytes()
+    second = cc.add_source(project, "https://example.com/catalog.json", **args)
+
+    assert second == first
+    assert cc._config_path(project).read_bytes() == original
+    with pytest.raises(BundlerError, match="already exists"):
+        cc.add_source(
+            project,
+            "https://example.com/catalog.json",
+            policy="install-allowed",
+            priority=51,
+            source_id="example",
+        )
+
+
 def test_remove_source_accepts_relative_local_path(tmp_path: Path, monkeypatch):
     """add_source stores a local path as an absolute url, so remove_source must
     accept the same relative path the caller added; otherwise `remove ./cat.json`

@@ -928,20 +928,24 @@ def preset_catalog_add(
     safe_name = _escape_markup(str(name))
     safe_url = _escape_markup(str(url))
 
-    # Check for duplicate name
-    for existing in catalogs:
-        if isinstance(existing, dict) and existing.get("name") == name:
-            console.print(f"[yellow]Warning:[/yellow] A catalog named '{safe_name}' already exists.")
-            console.print("Use 'specify preset catalog remove' first, or choose a different name.")
-            raise typer.Exit(1)
-
-    catalogs.append({
+    entry = {
         "name": name,
         "url": url,
         "priority": priority,
         "install_allowed": install_allowed,
         "description": description,
-    })
+    }
+
+    # Check for duplicate name
+    for existing in catalogs:
+        if isinstance(existing, dict) and existing.get("name") == name:
+            if existing == entry:
+                return
+            console.print(f"[yellow]Warning:[/yellow] A catalog named '{safe_name}' already exists.")
+            console.print("Use 'specify preset catalog remove' first, or choose a different name.")
+            raise typer.Exit(1)
+
+    catalogs.append(entry)
 
     config["catalogs"] = catalogs
     config_path.write_text(yaml.safe_dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")

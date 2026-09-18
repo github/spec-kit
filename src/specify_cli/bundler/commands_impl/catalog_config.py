@@ -186,18 +186,20 @@ def add_source(
     resolved_id = (source_id or _derive_id(url)).strip()
 
     catalogs = _read(project_root)
-    for existing in catalogs:
-        if existing.get("id") == resolved_id or existing.get("url") == url:
-            raise BundlerError(
-                f"Catalog source '{resolved_id}' (or url) already exists in this project."
-            )
-
     entry = {
         "id": resolved_id,
         "url": url,
         "priority": int(priority),
         "install_policy": install_policy.value,
     }
+    for existing in catalogs:
+        if existing.get("id") == resolved_id or existing.get("url") == url:
+            if existing == entry:
+                return CatalogSource.from_dict(existing, Scope.PROJECT)
+            raise BundlerError(
+                f"Catalog source '{resolved_id}' (or url) already exists in this project."
+            )
+
     catalogs.append(entry)
     _write(project_root, catalogs)
     return CatalogSource.from_dict(entry, Scope.PROJECT)

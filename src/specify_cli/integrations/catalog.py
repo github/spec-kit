@@ -432,6 +432,7 @@ class IntegrationCatalog(CatalogStackBase):
         # Validate each existing entry before mutating anything. Fail fast so
         # we don't silently preserve a corrupt sibling entry or derive a new
         # priority from a bogus value.
+        normalized_name = str(name).strip() if name is not None else ""
         existing_priorities: List[int] = []
         valid_catalog_count = 0
         for idx, cat in enumerate(catalogs):
@@ -452,6 +453,12 @@ class IntegrationCatalog(CatalogStackBase):
                     f"Invalid catalog entry at index {idx} in {config_path}: {exc}"
                 ) from exc
             if existing_url == url:
+                generated_name = f"catalog-{valid_catalog_count + 1}"
+                requested_name = normalized_name or generated_name
+                existing_name = str(cat.get("name", generated_name)).strip()
+                if existing_name == requested_name:
+                    self._load_catalog_config(config_path)
+                    return
                 raise IntegrationValidationError(
                     f"Catalog URL already configured: {url}"
                 )
@@ -478,9 +485,8 @@ class IntegrationCatalog(CatalogStackBase):
                 # Match `_load_catalog_config()`'s defaulting rule so the new
                 # entry still sorts after implicit-priority siblings.
                 existing_priorities.append(idx + 1)
-
         max_priority = max(existing_priorities, default=0)
-        normalized_name = str(name).strip() if name is not None else ""
+        max_priority = max(existing_priorities, default=0)
         generated_name = f"catalog-{valid_catalog_count + 1}"
         catalogs.append(
             {

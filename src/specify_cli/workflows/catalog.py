@@ -732,8 +732,13 @@ class WorkflowCatalog:
                 "Catalog config 'catalogs' must be a list."
             )
         # Check for duplicate URL (guard against non-dict entries)
-        for cat in catalogs:
+        for idx, cat in enumerate(catalogs):
             if isinstance(cat, dict) and cat.get("url") == url:
+                generated_name = f"catalog-{idx + 1}"
+                requested_name = name or generated_name
+                if cat.get("name", generated_name) == requested_name:
+                    self._load_catalog_config(config_path)
+                    return
                 raise WorkflowValidationError(
                     f"Catalog URL already configured: {url}"
                 )
@@ -1414,8 +1419,13 @@ class StepCatalog:
             raise StepValidationError(
                 "Catalog config 'catalogs' must be a list."
             )
-        for cat in catalogs:
+        for idx, cat in enumerate(catalogs):
             if isinstance(cat, dict) and cat.get("url") == url:
+                generated_name = f"catalog-{idx + 1}"
+                requested_name = name or generated_name
+                if cat.get("name", generated_name) == requested_name:
+                    self._load_catalog_config(config_path)
+                    return
                 raise StepValidationError(
                     f"Catalog URL already configured: {url}"
                 )
