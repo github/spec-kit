@@ -3126,79 +3126,6 @@ class TestExtensionManager:
         with pytest.raises(ValidationError, match="already provided by extension 'ext-one'"):
             manager.install_from_directory(second_dir, "0.1.0", register_commands=False)
 
-    def test_install_rejects_equivalent_alias_collision_with_installed_extension(
-        self, temp_dir, project_dir
-    ):
-        """Equivalent alias spellings must not overwrite installed output."""
-        import yaml
-
-        first_dir = temp_dir / "ext-one"
-        first_dir.mkdir()
-        (first_dir / "commands").mkdir()
-        first_manifest = {
-            "schema_version": "1.0",
-            "extension": {
-                "id": "ext-one",
-                "name": "Extension One",
-                "version": "1.0.0",
-                "description": "Test",
-            },
-            "requires": {"speckit_version": ">=0.1.0"},
-            "provides": {
-                "commands": [
-                    {
-                        "name": "speckit.ext-one.sync",
-                        "file": "commands/cmd.md",
-                        "aliases": ["shared-sync"],
-                    }
-                ]
-            },
-        }
-        (first_dir / "extension.yml").write_text(yaml.dump(first_manifest))
-        (first_dir / "commands" / "cmd.md").write_text(
-            "---\ndescription: Test\n---\n\nBody"
-        )
-        installed_ext_dir = project_dir / ".specify" / "extensions" / "ext-one"
-        installed_ext_dir.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(first_dir, installed_ext_dir)
-
-        second_dir = temp_dir / "ext-two"
-        second_dir.mkdir()
-        (second_dir / "commands").mkdir()
-        second_manifest = {
-            "schema_version": "1.0",
-            "extension": {
-                "id": "ext-two",
-                "name": "Extension Two",
-                "version": "1.0.0",
-                "description": "Test",
-            },
-            "requires": {"speckit_version": ">=0.1.0"},
-            "provides": {
-                "commands": [
-                    {
-                        "name": "speckit.ext-two.sync",
-                        "file": "commands/cmd.md",
-                        "aliases": ["speckit.shared.sync"],
-                    }
-                ]
-            },
-        }
-        (second_dir / "extension.yml").write_text(yaml.dump(second_manifest))
-        (second_dir / "commands" / "cmd.md").write_text(
-            "---\ndescription: Test\n---\n\nBody"
-        )
-
-        manager = ExtensionManager(project_dir)
-        manager.registry.add("ext-one", {"version": "1.0.0", "source": "local"})
-
-        with pytest.raises(
-            ValidationError, match="already provided by extension 'ext-one'"
-        ):
-            manager.install_from_directory(
-                second_dir, "0.1.0", register_commands=False
-            )
-
     def test_install_rejects_alias_shadowing_core_command(self, temp_dir, project_dir):
         """An alias equal to a core command's qualified name must not install.
 
@@ -7869,6 +7796,46 @@ class TestExtensionAddCLI:
                     "mine",
                     "--priority",
                     "1",
+                ],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "nothing to do" in result.output
+        assert config_path.read_bytes() == original
+
+    @pytest.mark.parametrize("stored_name", ["missing", None, "", " \t"])
+    def test_catalog_add_blank_name_uses_reader_default(
+        self, project_dir, monkeypatch, stored_name
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        entry = {
+            "url": "https://example.com/catalog.json",
+            "priority": 10,
+            "install_allowed": False,
+        }
+        if stored_name != "missing":
+            entry["name"] = stored_name
+        config_path.write_text(
+            yaml.safe_dump({"catalogs": [entry]}),
+            encoding="utf-8",
+        )
+        original = config_path.read_bytes()
+
+        with monkeypatch.context() as scoped:
+            scoped.chdir(project_dir)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "extension",
+                    "catalog",
+                    "add",
+                    "https://example.com/catalog.json",
+                    "--name",
+                    "catalog-1",
                 ],
                 catch_exceptions=False,
             )

@@ -458,17 +458,6 @@ class IntegrationCatalog(CatalogStackBase):
                 raise IntegrationValidationError(
                     f"Invalid catalog entry at index {idx} in {config_path}: {exc}"
                 ) from exc
-            if existing_url == url:
-                # Idempotent add (#4505): same URL already configured.
-                existing_name = str(cat.get("name", "")).strip()
-                if not requested_name or requested_name == existing_name:
-                    return "unchanged"
-                raise IntegrationValidationError(
-                    f"Catalog URL already configured with a different name "
-                    f"('{existing_name}'): {url}. Remove it first or pass "
-                    f"--name '{existing_name}'."
-                )
-            valid_catalog_count += 1
             if "priority" in cat:
                 raw_priority = cat.get("priority")
                 if isinstance(raw_priority, bool):
@@ -480,17 +469,27 @@ class IntegrationCatalog(CatalogStackBase):
                 try:
                     normalized_priority = int(raw_priority)
                 except (TypeError, ValueError, OverflowError):
-                    # OverflowError: int(float("inf")) — a ``priority: .inf``.
                     raise IntegrationValidationError(
                         f"Invalid catalog entry at index {idx} in {config_path}: "
                         f"'priority' must be an integer, got "
                         f"{raw_priority!r}."
                     ) from None
-                existing_priorities.append(normalized_priority)
             else:
-                # Match `_load_catalog_config()`'s defaulting rule so the new
-                # entry still sorts after implicit-priority siblings.
-                existing_priorities.append(idx + 1)
+                # Match `_load_catalog_config()`'s defaulting rule.
+                normalized_priority = idx + 1
+            existing_priorities.append(normalized_priority)
+
+            if existing_url == url:
+                # Idempotent add (#4505): same URL already configured.
+                existing_name = str(cat.get("name", "")).strip()
+                if not requested_name or requested_name == existing_name:
+                    return "unchanged"
+                raise IntegrationValidationError(
+                    f"Catalog URL already configured with a different name "
+                    f"('{existing_name}'): {url}. Remove it first or pass "
+                    f"--name '{existing_name}'."
+                )
+            valid_catalog_count += 1
 
         max_priority = max(existing_priorities, default=0)
         normalized_name = str(name).strip() if name is not None else ""

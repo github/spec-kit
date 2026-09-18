@@ -4061,6 +4061,46 @@ class TestPresetCatalogMultiCatalog:
         assert "nothing to do" in result.output
         assert config_path.read_bytes() == original
 
+    @pytest.mark.parametrize("stored_name", ["missing", None, "", " \t"])
+    def test_catalog_add_blank_name_uses_reader_default(
+        self, project_dir, monkeypatch, stored_name
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        config_path = project_dir / ".specify" / "preset-catalogs.yml"
+        entry = {
+            "url": "https://example.com/catalog.json",
+            "priority": 10,
+            "install_allowed": False,
+        }
+        if stored_name != "missing":
+            entry["name"] = stored_name
+        config_path.write_text(
+            yaml.safe_dump({"catalogs": [entry]}),
+            encoding="utf-8",
+        )
+        original = config_path.read_bytes()
+
+        with monkeypatch.context() as scoped:
+            scoped.chdir(project_dir)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "preset",
+                    "catalog",
+                    "add",
+                    "https://example.com/catalog.json",
+                    "--name",
+                    "catalog-1",
+                ],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "nothing to do" in result.output
+        assert config_path.read_bytes() == original
+
     def test_catalog_add_duplicate_different_settings_conflicts(self, project_dir):
         """Re-adding a same-named preset catalog with different settings errors (#4505)."""
         from typer.testing import CliRunner

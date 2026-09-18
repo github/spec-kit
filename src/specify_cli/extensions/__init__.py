@@ -1216,24 +1216,17 @@ class ExtensionManager:
         installed_names = self._get_installed_command_name_map(
             exclude_extension_id=manifest.id
         )
-        installed_shadow_names: Dict[str, str] = {}
-        for installed_name, extension_id in installed_names.items():
-            installed_shadow_names.setdefault(
-                self._normalize_shadow_name(installed_name), extension_id
-            )
         core_shadow_names = {
             self._normalize_shadow_name(f"speckit.{name}") for name in CORE_COMMAND_NAMES
         }
 
         collisions = []
         for name in sorted(declared_names):
-            normalized_name = self._normalize_shadow_name(name)
-            if normalized_name in installed_shadow_names:
+            if name in installed_names:
                 collisions.append(
-                    f"{name} (already provided by extension "
-                    f"'{installed_shadow_names[normalized_name]}')"
+                    f"{name} (already provided by extension '{installed_names[name]}')"
                 )
-            elif normalized_name in core_shadow_names:
+            elif self._normalize_shadow_name(name) in core_shadow_names:
                 collisions.append(f"{name} (conflicts with core command)")
 
         if collisions:

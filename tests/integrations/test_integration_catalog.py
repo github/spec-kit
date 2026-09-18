@@ -1196,6 +1196,35 @@ class TestCatalogSourceManagement:
         data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
         assert len(data["catalogs"]) == 1
 
+    def test_add_catalog_duplicate_url_validates_stored_priority(
+        self, tmp_path, monkeypatch
+    ):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "mine",
+                            "url": "https://dup.example.com/catalog.json",
+                            "priority": "first",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(
+            IntegrationValidationError, match="'priority' must be an integer"
+        ):
+            IntegrationCatalog(tmp_path).add_catalog(
+                "https://dup.example.com/catalog.json",
+                name="mine",
+            )
+
     def test_add_catalog_rejects_invalid_url(self, tmp_path, monkeypatch):
         self._isolate(tmp_path, monkeypatch)
         cat = IntegrationCatalog(tmp_path)

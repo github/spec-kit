@@ -176,6 +176,30 @@ def test_add_source_rerun_with_string_priority_is_unchanged(tmp_path: Path):
     assert source.priority == 10
 
 
+def test_add_source_same_url_without_id_preserves_custom_id(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    original_source, first_status = cc.add_source(
+        project,
+        "https://example.com/c.json",
+        source_id="custom",
+        policy="install-allowed",
+        priority=10,
+    )
+
+    source, status = cc.add_source(
+        project,
+        "https://example.com/c.json",
+        policy="install-allowed",
+        priority=10,
+    )
+
+    assert first_status == "added"
+    assert status == "unchanged"
+    assert source.id == original_source.id == "custom"
+    assert len(cc._read(project)) == 1
+
+
 @pytest.mark.parametrize("id_padding", ["", " \t"])
 @pytest.mark.parametrize("url_padding", ["", " \t"])
 @pytest.mark.parametrize("source_id,url,outcome", [

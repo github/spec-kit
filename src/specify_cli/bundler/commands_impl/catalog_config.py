@@ -183,7 +183,8 @@ def add_source(
 
     url = _canonicalize_url(url)
     install_policy = InstallPolicy.parse(policy)
-    resolved_id = (source_id or _derive_id(url)).strip()
+    requested_id = source_id.strip() if source_id is not None else ""
+    resolved_id = requested_id or _derive_id(url)
 
     catalogs = _read(project_root)
     desired = {
@@ -210,7 +211,10 @@ def add_source(
             # string priority) compare equal to the requested defaults.
             existing_source = CatalogSource.from_dict(dict(existing), Scope.PROJECT)
             if (
-                existing_source.id == resolved_id
+                (
+                    existing_source.id == resolved_id
+                    or (not requested_id and existing_source.url == url)
+                )
                 and existing_source.url == url
                 and existing_source.priority == desired["priority"]
                 and existing_source.install_policy.value == desired["install_policy"]

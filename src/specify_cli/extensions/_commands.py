@@ -677,10 +677,25 @@ def catalog_add(
     # workflow without failing. A same-name entry whose settings differ is
     # still a conflict — we refuse to silently change priority/install
     # permissions and ask the user to remove it first.
+    valid_catalog_count = 0
     for idx, existing in enumerate(catalogs):
-        if isinstance(existing, dict) and str(existing.get("name", "")).strip() == name:
+        if not isinstance(existing, dict):
+            continue
+        existing_url = str(existing.get("url", "")).strip()
+        if not existing_url:
+            continue
+        valid_catalog_count += 1
+        raw_existing_name = existing.get("name")
+        existing_name = (
+            str(raw_existing_name).strip()
+            if raw_existing_name is not None
+            else ""
+        )
+        if not existing_name:
+            existing_name = f"catalog-{valid_catalog_count}"
+        if existing_name == name:
             if (
-                str(existing.get("url", "")).strip() == url
+                existing_url == url
                 and _normalize_catalog_priority(
                     existing.get("priority", idx + 1)
                 ) == priority
