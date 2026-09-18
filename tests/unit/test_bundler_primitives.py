@@ -87,8 +87,13 @@ def test_offline_workflow_allows_bundled(tmp_path: Path, monkeypatch):
     import specify_cli
     import specify_cli._assets as assets
 
+    bundled = tmp_path / "wf"
+    bundled.mkdir()
+    (bundled / "workflow.yml").write_text(
+        "workflow:\n  id: bundled-wf\n  version: 1.0.0\n", encoding="utf-8"
+    )
     monkeypatch.setattr(
-        assets, "_locate_bundled_workflow", lambda wid: tmp_path / "wf"
+        assets, "_locate_bundled_workflow", lambda wid: bundled
     )
     calls: list[tuple] = []
     monkeypatch.setattr(
@@ -100,7 +105,7 @@ def test_offline_workflow_allows_bundled(tmp_path: Path, monkeypatch):
     manager = primitive_manager("workflows", tmp_path, allow_network=False)
     manager.install(_component("workflows", "bundled-wf"))
 
-    assert calls == [("bundled-wf", False, None)]
+    assert calls == [(str(bundled / "workflow.yml"), True, None)]
 
 
 def test_assert_pinned_version_matches_passes():
