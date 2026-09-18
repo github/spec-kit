@@ -4653,6 +4653,48 @@
       "created_at": "2026-06-24T00:00:00Z",
       "updated_at": "2026-06-24T00:00:00Z"
     },
+    "rollout": {
+      "name": "Rollout",
+      "id": "rollout",
+      "description": "Progressive-delivery capability for Spec-Driven Development: teaches agents to recognize feature-flag / canary delivery candidates and fold a concrete rollout strategy into specs, plans, tasks, and implementation.",
+      "author": "Fyloss",
+      "version": "0.1.2",
+      "download_url": "https://github.com/Fyloss/spec-kit-rollout/archive/refs/tags/v0.1.2.zip",
+      "repository": "https://github.com/Fyloss/spec-kit-rollout",
+      "homepage": "https://github.com/Fyloss/spec-kit-rollout",
+      "documentation": "https://github.com/Fyloss/spec-kit-rollout/tree/master/docs/",
+      "changelog": "https://github.com/Fyloss/spec-kit-rollout/blob/master/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.12.0",
+        "tools": [
+          {
+            "name": "LaunchDarkly MCP server",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 9,
+        "hooks": 7
+      },
+      "tags": [
+        "feature-flags",
+        "progressive-delivery",
+        "canary-release",
+        "rollout",
+        "mcp",
+        "launchdarkly",
+        "release-management"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-18T00:00:00Z",
+      "updated_at": "2026-09-18T00:00:00Z"
+    },
     "schedule": {
       "name": "Spec Kit Schedule — parallel subagent rounds",
       "id": "schedule",
