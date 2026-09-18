@@ -6,6 +6,7 @@ Antigravity uses ``.agents/skills/speckit-<name>/SKILL.md`` layout (enforced sin
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -87,12 +88,28 @@ class AgyIntegration(SkillsIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
-        # agy does not support --model or JSON output; both params are ignored
-        args = [self._resolve_executable(), "--print", prompt]
-        # Honor SPECKIT_INTEGRATION_AGY_EXTRA_ARGS (operator-supplied flags),
-        # appended after the positional prompt like the devin integration.
+        self.validate_runtime_config(integration_args, integration_options)
+        # agy does not support JSON output; output_json is ignored.
+        args = [self._resolve_executable()]
+        # Pass --model before --print so agy can parse it as a flag.
+        # agy >=1.20 supports: agy --model <name> --print <prompt>
+        if model:
+            args.extend(["--model", model])
+        # Inject --add-dir so agy discovers the project workspace when invoked
+        # from an arbitrary working directory (e.g. the workflow engine's cwd).
+        # Without this agy falls back to its own scratch directory and cannot
+        # locate .agents/skills/, reporting "no active workspace".
+        if project_root is not None:
+            args.extend(["--add-dir", str(project_root.resolve())])
+        # Honor SPECKIT_INTEGRATION_AGY_EXTRA_ARGS (operator-supplied flags).
+        # These MUST be inserted before --print because agy treats every token
+        # that follows --print as part of the prompt, not as CLI flags.
         self._apply_extra_args_env_var(args)
+        args.extend(["--print", prompt])
         return args
 
     def setup(

@@ -1383,7 +1383,7 @@ def workflow_run(
         err.print(f"[red]Error:[/red] Workflow not found: {source}")
         raise typer.Exit(1)
     except ValueError as exc:
-        err.print(f"[red]Error:[/red] Invalid workflow: {exc}")
+        err.print(f"[red]Error:[/red] Invalid workflow: {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     # Validate
@@ -1424,10 +1424,10 @@ def workflow_run(
                 ),
             )
     except ValueError as exc:
-        err.print(f"[red]Error:[/red] {exc}")
+        err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
     except Exception as exc:
-        err.print(f"[red]Workflow failed:[/red] {exc}")
+        err.print(f"[red]Workflow failed:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     if json_output:
@@ -1708,6 +1708,24 @@ def workflow_list():
         console.print()
 
 
+def _cleanup_download_tmp_path(tmp_path: Path | None) -> None:
+    """Best-effort unlink of a partially-downloaded workflow temp file.
+
+    A cleanup ``OSError`` here must never replace/mask whatever error or
+    interrupt is already propagating -- warn about it and keep going.
+    """
+    if tmp_path is None:
+        return
+    try:
+        tmp_path.unlink(missing_ok=True)
+    except OSError as cleanup_exc:
+        console.print(
+            "[yellow]Warning:[/yellow] Could not remove temporary "
+            f"workflow download file: {_escape_markup(str(cleanup_exc))} "
+            f"(path: {_escape_markup(str(tmp_path))})"
+        )
+
+
 @workflow_app.command("add")
 def workflow_add(
     source: str = typer.Argument(..., help="Workflow ID, URL, or local path"),
@@ -1715,9 +1733,11 @@ def workflow_add(
     from_url: str | None = typer.Option(None, "--from", help="Install from a custom URL"),
 ):
     """Install a workflow from catalog, URL, or local path."""
+    from . import load_custom_steps
     from .engine import WorkflowDefinition
 
     project_root = _require_specify_project()
+    load_custom_steps(project_root)
     _open_workflow_registry(project_root)
     workflows_dir = project_root / ".specify" / "workflows"
     # With --from, source names the expected workflow ID: validate it up
@@ -2037,23 +2057,23 @@ def workflow_add(
                             _enforce_workflow_yaml_size(downloaded_content)
                     tmp.write(downloaded_content)
         except typer.Exit:
+            _cleanup_download_tmp_path(tmp_path)
             raise
         except Exception as exc:
-            if tmp_path is not None:
-                # A cleanup failure here must never replace/mask the
-                # original download error below with a raw, unhandled
-                # OSError -- warn about it and keep going, exactly like the
-                # later post-install finally cleanup does.
-                try:
-                    tmp_path.unlink(missing_ok=True)
-                except OSError as cleanup_exc:
-                    console.print(
-                        "[yellow]Warning:[/yellow] Could not remove temporary "
-                        f"workflow download file: {_escape_markup(str(cleanup_exc))} "
-                        f"(path: {_escape_markup(str(tmp_path))})"
-                    )
+            # A cleanup failure here must never replace/mask the
+            # original download error below with a raw, unhandled
+            # OSError -- warn about it and keep going, exactly like the
+            # later post-install finally cleanup does.
+            _cleanup_download_tmp_path(tmp_path)
             console.print(f"[red]Error:[/red] Failed to download workflow: {_escape_markup(str(exc))}")
             raise typer.Exit(1)
+        except BaseException:
+            # Covers KeyboardInterrupt and other non-Exception exits: the
+            # temp file is already created on disk (delete=False) by this
+            # point, so an interrupt during the size-limited read must still
+            # unlink it rather than leaking it to the system temp directory.
+            _cleanup_download_tmp_path(tmp_path)
+            raise
         try:
             if downloaded_archive_format is None:
                 _validate_and_install_local(
@@ -3346,12 +3366,31 @@ def workflow_step_add(
         try:
             import yaml as _yaml
 
-            meta = _yaml.safe_load(step_yml_content.decode("utf-8")) or {}
+            step_yml_text = step_yml_content.decode("utf-8")
+            # ``safe_load`` returns None for BOTH an empty document and an
+            # explicit null scalar (``null``, ``~``, ``NULL``), so it cannot
+            # tell them apart on its own. ``compose`` yields no node only for
+            # a genuinely empty document.
+            node = _yaml.compose(step_yml_text)
+            meta = _yaml.safe_load(step_yml_text)
+            is_empty_document = node is None or (
+                meta is None
+                and isinstance(node, _yaml.nodes.ScalarNode)
+                and node.value == ""
+                and node.start_mark.index == node.end_mark.index
+            )
         except Exception as exc:
             console.print(f"[red]Error:[/red] Invalid step.yml: {exc}")
             raise typer.Exit(1)
 
-        if not isinstance(meta, dict):
+        # Do NOT coerce with ``or {}`` here: that also turns a FALSY non-mapping
+        # (top-level ``[]``, ``false``, ``0``, ``''``, or an explicit ``null``)
+        # into ``{}`` and silently bypasses this shape check, surfacing the
+        # unrelated "missing 'step.type_key'" error below instead of the real
+        # problem. Only a genuinely empty document defaults to ``{}``.
+        if meta is None and is_empty_document:
+            meta = {}
+        elif not isinstance(meta, dict):
             console.print("[red]Error:[/red] step.yml must be a YAML mapping")
             raise typer.Exit(1)
 

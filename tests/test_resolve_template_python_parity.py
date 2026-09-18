@@ -92,6 +92,40 @@ def test_all_variants_preserve_composition_parity(
 
 
 @requires_bash
+def test_all_variants_treat_core_token_in_core_content_as_literal(
+    tmp_path: Path,
+) -> None:
+    """Core content holding a literal ``{CORE_TEMPLATE}`` must not be re-expanded.
+
+    The wrap strategy fills the placeholders present in the *wrapper*. A token
+    that arrives as part of the composed core content is data, not a slot, so it
+    survives into the output untouched. Rescanning the substituted string instead
+    reintroduces a token on every pass and never terminates, so the regression
+    mode here is a hang rather than a wrong value -- hence the timeout, without
+    which a reintroduced bug would stall the suite instead of failing it.
+    """
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    expected = install_composition_stack(repo, TEMPLATE, "# Core {CORE_TEMPLATE}\n")
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, timeout=30),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, timeout=30),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, timeout=30))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(result.stderr == "" for result in results)
+    # The wrapper contributes exactly one placeholder, so exactly one literal
+    # token -- the one carried in by the core content -- remains in the output.
+    assert expected.count("{CORE_TEMPLATE}") == 1
+    assert all(
+        json_stdout(result)["TEMPLATE_CONTENT"] == expected for result in results
+    )
+
+
+@requires_bash
 def test_all_variants_read_utf8_registry_under_ascii_locale(
     tmp_path: Path,
 ) -> None:

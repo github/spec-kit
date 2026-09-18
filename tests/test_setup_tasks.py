@@ -797,6 +797,39 @@ def test_setup_tasks_ps_missing_template_errors(tasks_repo: Path) -> None:
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+def test_setup_tasks_ps_text_output_lists_available_docs(tasks_repo: Path) -> None:
+    """Text mode must print a status line per document, like the bash/Python twins.
+
+    `Test-FileExists` / `Test-DirHasFiles` report their line with `Write-Output`
+    and ALSO `return $true/$false`, both on the Success stream. Piping the whole
+    call to `| Out-Null` discarded the boolean AND the report line, so
+    `AVAILABLE_DOCS:` was emitted with nothing under it.
+    """
+    feat = _minimal_feature(tasks_repo)
+    (feat / "research.md").write_text("# research\n", encoding="utf-8")
+
+    script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+
+    result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(script)],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "AVAILABLE_DOCS:" in result.stdout
+    for doc in ("research.md", "data-model.md", "contracts/", "quickstart.md"):
+        assert doc in result.stdout, (doc, result.stdout)
+    normalized = result.stdout.replace("\r\n", "\n")
+    assert "[OK] research.md" in normalized, normalized
+    assert "[FAIL] data-model.md" in normalized, normalized
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_powershell_command_hint_normalizes_mixed_separators(
     tasks_repo: Path,
 ) -> None:

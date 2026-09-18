@@ -1,15 +1,34 @@
 <div class="landing-hero">
 
+<img class="landing-hero-logo" src="images/spec-kit-logo.webp" alt="" width="120" height="120">
+
 # GitHub Spec Kit
 
-**Spec-Driven Development or your own process — step by step or as an automated workflow.**
+**Build with a spec, fix a bug, or assess an idea — with your coding agent.**
 
-Spec Kit is an extensible, intent-driven harness that pushes any coding agent beyond code, guiding it across your SDLC or any business process. Use it for [Spec-Driven Development](concepts/sdd.md) (SDD), where you describe _what_ to build and refine it through structured phases. Run it step by step, automate it end to end, or shape a process of your own, keeping intent at the center.
+Spec Kit gives your coding agent structured processes that keep intent and evidence ahead of implementation. Start with Spec-Driven Development (SDD), bug fixing, or idea assessment. Run a process step by step, automate it, or [shape one of your own](guides/customization.md) — including processes beyond software development.
 
 <a href="installation.md" class="btn btn-primary btn-lg">Install Spec Kit</a>&nbsp;
-<a href="quickstart.md" class="btn btn-outline-primary btn-lg">Quick Start</a>
+<a href="#choose-your-process" class="btn btn-outline-primary btn-lg">Choose your process</a>
 
 </div>
+
+---
+
+## Choose your process
+
+| What you need | Start here | What you get |
+| --- | --- | --- |
+| Build a feature or application | [Spec-Driven Development](quickstart.md) | A specification carried through planning, implementation, and convergence |
+| Diagnose and repair broken behavior | [Bug fixing](guides/bugfix.md) | An assessed cause, scoped fix, and recorded verification |
+| Decide whether an idea deserves investment | [Idea assessment](guides/assessment.md) | An evidence-backed go, clarify, or stop decision |
+
+These are independent entry points, not mandatory phases. SDD ships in core.
+Bug fixing and assessment are bundled, opt-in extensions. Assessment can stand
+alone; a decision to proceed does not automatically start implementation.
+
+Adding Spec Kit to an established codebase? Start with the
+[existing-project guide](guides/existing-projects.md).
 
 ---
 
@@ -19,7 +38,7 @@ Spec Kit is an extensible, intent-driven harness that pushes any coding agent be
 
 ### Spec-driven by default
 
-The core SDD process ships ready to use: **Spec → Plan → Tasks → Implement**.
+The core SDD process ships ready to use: **Specify → Plan → Tasks → Implement → Converge**.
 
 Define what to build before building it. Rich templates, quality checklists, and cross-artifact analysis come out of the box. Each phase produces a Markdown artifact that feeds the next — giving your AI coding agent structured context instead of ad-hoc prompts.
 
@@ -31,7 +50,7 @@ Define what to build before building it. Rich templates, quality checklists, and
 
 ### Use any coding agent
 
-<span class="pillar-stat">35 integrations</span> — Copilot, Gemini, Codex, Kilo Code, Zed, Claude, Forge, Kiro, and more. Switch freely between agents with a single command. No lock-in.
+<span class="pillar-stat">38 integrations</span> — Copilot, Gemini, Codex, Kilo Code, Zed, Claude, Forge, Kiro, and more. Switch freely between agents with a single command. No lock-in.
 
 Run `specify init` with your agent of choice and Spec Kit sets up the right command files and directory structures automatically. If your agent isn't listed, the `generic` integration is an escape hatch for any tool.
 
@@ -43,7 +62,7 @@ Run `specify init` with your agent of choice and Spec Kit sets up the right comm
 
 ### Make it your own
 
-<span class="pillar-stat">138 community extensions</span> (70+ authors), <span class="pillar-stat">25 presets</span>, and growing. Tune the core process with presets, extend it with extensions, orchestrate it with workflows, and package it all up as bundles you can share — or replace the process entirely. The process itself lives in these building blocks, so you're never locked to SDD, or even to software.
+<span class="pillar-stat">157 community extensions</span> (90+ authors), <span class="pillar-stat">33 presets</span>, and growing. Tune the core process with presets, extend it with extensions, orchestrate it with workflows, and package it all up as bundles you can share — or replace the process entirely. The process itself lives in these building blocks, so you're never locked to SDD, or even to software.
 
 Including entirely different processes:
 
@@ -82,31 +101,31 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
 
 ## Built by the community
 
-**240+ contributors** power the Spec Kit ecosystem — from core integrations to entirely new processes. Anyone can create and publish an extension, preset, or workflow.
+**270+ contributors** power the Spec Kit ecosystem — from core integrations to entirely new processes. Anyone can create and publish an extension, preset, or workflow.
 
 <div class="stats-grid">
   <div class="stat-item">
-    <span class="stat-number">121K+</span>
+    <span class="stat-number">130K+</span>
     <span class="stat-label">GitHub stars</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">240+</span>
+    <span class="stat-number">270+</span>
     <span class="stat-label">Contributors</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">35</span>
+    <span class="stat-number">38</span>
     <span class="stat-label">Integrations</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">138</span>
+    <span class="stat-number">157</span>
     <span class="stat-label">Extensions</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">25</span>
+    <span class="stat-number">33</span>
     <span class="stat-label">Presets</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">6</span>
+    <span class="stat-number">7</span>
     <span class="stat-label">Friends projects</span>
   </div>
 </div>
@@ -121,8 +140,28 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
 
 <div class="nav-cards">
   <a href="quickstart.md" class="nav-card">
-    <strong>Getting Started</strong>
-    <span>Install, configure, and run your first SDD workflow</span>
+    <strong>Spec-Driven Development</strong>
+    <span>Define, plan, implement, and converge on a feature</span>
+  </a>
+  <a href="guides/bugfix.md" class="nav-card">
+    <strong>Bug Fixing</strong>
+    <span>Assess the cause, apply a scoped fix, and verify the result</span>
+  </a>
+  <a href="guides/assessment.md" class="nav-card">
+    <strong>Idea Assessment</strong>
+    <span>Research an idea and decide whether it deserves investment</span>
+  </a>
+  <a href="guides/customization.md" class="nav-card">
+    <strong>Customize Spec Kit</strong>
+    <span>Adapt a process, add capabilities, or package a role-based setup</span>
+  </a>
+  <a href="guides/existing-projects.md" class="nav-card">
+    <strong>Existing Projects</strong>
+    <span>Adopt Spec Kit safely in an established codebase</span>
+  </a>
+  <a href="upgrade.md" class="nav-card">
+    <strong>Upgrade</strong>
+    <span>Keep an existing Spec Kit project current across releases</span>
   </a>
   <a href="reference/overview.md" class="nav-card">
     <strong>Reference</strong>
@@ -140,6 +179,10 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
     <strong>What is SDD?</strong>
     <span>The philosophy behind Spec-Driven Development</span>
   </a>
+  <a href="history.md" class="nav-card">
+    <strong>History</strong>
+    <span>How Spec Kit grew from its SDD foundation into an extensible process harness</span>
+  </a>
 </div>
 
 ---
@@ -151,8 +194,8 @@ uv tool install specify-cli
 specify init my-project --integration copilot
 ```
 
-Ready to start? Follow the [Quick Start Guide](quickstart.md).
+Ready to start? [Choose your process](#choose-your-process).
 
 </div>
 
-<p class="text-end small text-body-secondary">Last updated: July 16, 2026</p>
+<p class="text-end small text-body-secondary">Last updated: September 14, 2026</p>

@@ -38,7 +38,7 @@ def _write_feature_json(
     repo: Path, feature_directory: str = "specs/001-my-feature"
 ) -> None:
     (repo / ".specify" / "feature.json").write_text(
-        json.dumps({"feature_directory": feature_directory}),
+        json.dumps({"feature_directory": feature_directory}, ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -286,6 +286,40 @@ def test_ps_paths_only_succeeds_on_non_spec_branch(prereq_repo: Path) -> None:
     assert "REPO_ROOT" in data
     assert "BRANCH" in data
     assert "FEATURE_DIR" in data
+
+
+@pytest.mark.skipif(
+    not _WINDOWS_POWERSHELL, reason="Windows PowerShell 5.1 not available"
+)
+def test_windows_powershell_reads_bomless_utf8_feature_json(
+    prereq_repo: Path,
+) -> None:
+    """Windows PowerShell must decode non-ASCII feature paths as UTF-8 (#4333)."""
+    feature_directory = "specs/001-后台信息架构"
+    feature_path = prereq_repo / feature_directory
+    feature_path.mkdir(parents=True)
+    _write_feature_json(prereq_repo, feature_directory)
+
+    resolved_path = prereq_repo / "resolved-feature-path.txt"
+    common_ps = prereq_repo / ".specify" / "scripts" / "powershell" / "common.ps1"
+    ps_command = (
+        f". '{common_ps}'; "
+        "$resolved = Get-FeaturePathsEnv -NoPersist; "
+        "$utf8NoBom = New-Object System.Text.UTF8Encoding($false); "
+        f"[System.IO.File]::WriteAllText('{resolved_path}', "
+        "[string]$resolved.FEATURE_DIR, $utf8NoBom)"
+    )
+    result = subprocess.run(
+        [_WINDOWS_POWERSHELL, "-NoProfile", "-Command", ps_command],
+        cwd=prereq_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert resolved_path.read_text(encoding="utf-8") == str(feature_path)
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")

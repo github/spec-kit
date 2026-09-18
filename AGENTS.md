@@ -41,6 +41,8 @@ src/specify_cli/integrations/
 │   └── __init__.py
 ├── copilot/               # Example: IntegrationBase subclass (custom setup)
 │   └── __init__.py
+├── docker_agent/          # Example: Docker Agent SkillsIntegration subclass
+│   └── __init__.py
 └── ...                    # One subpackage per supported agent
 ```
 
@@ -504,23 +506,25 @@ Disclosure is **continuous**, not a one-time event. A single AI-disclosure parag
 ### Opening pull requests
 
 - Before opening a pull request, check whether the account that will file it already has three open pull requests in this repository.
-- If so, alert the user that additional submissions may receive lower review priority and ask for explicit permission to proceed. Do not assume consent.
+- If so, alert the user that additional submissions may receive lower review priority and ask for explicit permission to proceed. Do not assume consent. If the user is unavailable to provide that permission, including during autonomous or non-interactive operation, do not open the pull request. Preserve the work on a branch and report that confirmation is required.
+- Repository-owned `gh-aw` maintenance workflows are exempt from this open-PR count check and confirmation requirement.
 
 ### Commits
 
 - **Every commit you author must carry an `Assisted-by:` trailer** identifying the agent and whether it acted autonomously or under direct human supervision, for example:
 
   ```
-  Assisted-by: GitHub Copilot (model: <name-if-known>, autonomous)
+  Assisted-by: GitHub Copilot (model: Claude Opus 4.8, autonomous)
   ```
 
+  Name the actual model you are running as — the same hard requirement contributors are held to in [CONTRIBUTING.md](./CONTRIBUTING.md#ai-contributions-in-spec-kit). Only in the rare case where an agent genuinely cannot determine its own model may it write `model: unknown` instead.
   Use `supervised` instead of `autonomous` only when a human actually authored or line-by-line reviewed the change before it was committed.
 - **Never push solo-authored commits that hide agent authorship behind the operator's git identity.** If an agent generated the change, the trailer must say so even when the commit is attributed to a human account.
 - Preserve any tool-generated `Co-authored-by:` trailers (e.g. Copilot Autofix) — do not strip them to make a commit look hand-written.
 
 ### Comments
 
-- If you are an agent working on behalf of a human, **disclose your identity in your PR comment** — name the agent (and model, if applicable) and the human you are acting for (e.g., "Posted on behalf of @user by GitHub Copilot (model: &lt;name-if-known&gt;)").
+- If you are an agent working on behalf of a human, **disclose your identity in your PR comment** — name the agent, its model, the settings/mode (e.g. autonomous vs. human-supervised), the extent of AI involvement in the comment, and the human you are acting for (e.g., "Posted on behalf of @user by GitHub Copilot (model: Claude Opus 4.8, autonomous); comment fully AI-drafted."). This matches the disclosure the public [CONTRIBUTING.md](./CONTRIBUTING.md#ai-contributions-in-spec-kit) policy requires for AI-generated PR responses and comments.
 - **Re-state agent identity in each review-round summary comment.** A prior PR-body disclosure does not cover later comments or commits.
 - Post **one** top-level summary comment per review round listing what changed and the commit SHA. Do not reply on every individual comment.
 - Reply inline only when context is needed (disagreement, deferral, non-obvious fix). Keep it to a sentence or two.

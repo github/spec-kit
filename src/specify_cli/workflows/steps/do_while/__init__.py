@@ -5,6 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
+from specify_cli.workflows.expressions import (
+    condition_has_malformed_expression_block,
+    condition_is_interpolated_to_text,
+    condition_is_never_evaluated,
+    format_condition_remediation,
+)
 
 
 class DoWhileStep(StepBase):
@@ -88,6 +94,49 @@ class DoWhileStep(StepBase):
                 f"Do-while step {config.get('id', '?')!r}: 'condition' must be a "
                 f"string or boolean, got {type(config['condition']).__name__}."
             )
+        elif condition_is_never_evaluated(config["condition"]):
+            # A string condition with no ``{{ }}`` block is never evaluated:
+            # evaluate_expression() returns it unchanged and bool() then makes
+            # any non-empty text true. `condition: inputs.count > 100` reads as
+            # a real comparison but always takes every iteration. This is the same
+            # silent-truthiness mistake the list/dict branch above rejects, and
+            # GitHub Actions accepts a bare expression in `if:`, so it is easy
+            # to write by habit.
+            errors.append(
+                f"Do-while step {config.get('id', '?')!r}: 'condition' "
+                f"{config['condition']!r} is not a single complete '{{{{ }}}}' block, so "
+                "it is never evaluated as an expression and is always true. "
+                + format_condition_remediation(config["condition"])
+            )
+        elif condition_has_malformed_expression_block(config["condition"]):
+            # Different fault, different advice. Here the block is *not* skipped:
+            # _interpolate_expressions cannot close it with its quote-aware scan, so it
+            # falls back to the first raw close and evaluates whatever that truncated.
+            # `{{ inputs.missing | default('oops }}` reaches the filter parser and raises
+            # ValueError at run time, so reporting it as "always true" would be wrong
+            # twice over: it is evaluated, and it does not end up true.
+            errors.append(
+                f"Do-while step {config.get('id', '?')!r}: 'condition' "
+                f"{config['condition']!r} opens a '{{{{' the interpolator cannot "
+                "close, so it falls back to the first raw '}}' and evaluates a "
+                "truncated expression instead of the one written. Balance the "
+                "delimiters and quotes."
+            )
+        elif condition_is_interpolated_to_text(config["condition"]):
+            # Third fault, third message. The braces are here and they close, but they
+            # do not cover the whole condition, so evaluate_expression takes its text
+            # path rather than the typed one: each block is substituted into the
+            # surrounding string and the result is coerced by bool(). Two blocks joined
+            # by `and` render "False and False", which is true. No paste-ready
+            # correction is offered: there is no single right rewrite, because only the
+            # author knows which grouping the operators were meant to have.
+            errors.append(
+                f"Do-while step {config.get('id', '?')!r}: 'condition' "
+                f"{config['condition']!r} holds more than one '{{{{ }}}}' block, or "
+                "text around one, so it is substituted into a string and coerced by "
+                "bool() instead of being evaluated. Put the whole expression inside a "
+                "single '{{ }}' block."
+            )
         max_iter = config.get("max_iterations")
         if max_iter is not None:
             # bool is a subclass of int, so isinstance(True, int) is True and
@@ -98,6 +147,14 @@ class DoWhileStep(StepBase):
                     f"Do-while step {config.get('id', '?')!r}: "
                     f"'max_iterations' must be an integer >= 1."
                 )
+        if "steps" not in config:
+            # This step's own docstring promises "The first invocation always
+            # returns the nested steps for execution" -- with no body it
+            # validated clean and then returned none, so the loop never ran even
+            # once. See the matching guard in the ``while`` step.
+            errors.append(
+                f"Do-while step {config.get('id', '?')!r} is missing 'steps' field."
+            )
         nested = config.get("steps", [])
         if not isinstance(nested, list):
             errors.append(

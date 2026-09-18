@@ -18,7 +18,7 @@ from typer.testing import CliRunner
 from specify_cli import app
 from specify_cli.bundler import BundlerError
 from specify_cli.commands.bundle import _local_manifest_source
-from tests.bundler_helpers import make_project, valid_manifest_dict, write_manifest
+from tests.bundler_helpers import FakeInstaller, make_project, valid_manifest_dict, write_manifest
 
 
 def test_local_source_none_for_non_path():
@@ -309,3 +309,172 @@ def test_incompatible_local_manifest_is_rejected_before_project_init(
     assert result.exit_code == 1
     assert "requires Spec Kit >=999.0.0" in result.output
     run_init.assert_not_called()
+
+
+@pytest.mark.parametrize("source_kind", ["manifest", "directory", "zip"])
+@pytest.mark.parametrize("bundle_version", ["1.2.0", "2.0.0"])
+def test_local_install_refresh_updates_owned_components(
+    tmp_path: Path, monkeypatch, source_kind: str, bundle_version: str,
+):
+    """Local upgrades refresh owned pins before advancing the bundle record."""
+    from specify_cli.bundler.models.records import load_records, records_path
+
+    project = make_project(tmp_path / "proj")
+    monkeypatch.chdir(project)
+    versions = {}
+
+    class VersionedInstaller(FakeInstaller):
+        def install(self, root, component):
+            super().install(root, component)
+            versions[(component.kind, component.id)] = component.version
+
+        def refresh(self, root, component):
+            assert load_records(root)[0].version == "1.2.0"
+            super().refresh(root, component)
+            versions[(component.kind, component.id)] = component.version
+
+    installer = VersionedInstaller()
+    monkeypatch.setattr(
+        "specify_cli.bundler.services.adapters.DefaultPrimitiveInstaller",
+        lambda **kwargs: installer,
+    )
+    data = valid_manifest_dict()
+    manifest_path = write_manifest(tmp_path / "local bundle", data)
+    runner = CliRunner()
+    first = runner.invoke(app, ["bundle", "install", str(manifest_path), "--offline"])
+    assert first.exit_code == 0, first.output
+    original_record = records_path(project).read_bytes()
+    original_versions = dict(versions)
+
+    data["bundle"]["version"] = bundle_version
+    data["provides"]["extensions"][0]["version"] = "2.0.0"
+    data["provides"]["presets"][0]["version"] = "3.0.0"
+    data["provides"]["workflows"][0]["version"] = "0.4.0"
+    write_manifest(manifest_path.parent, data)
+    if source_kind == "manifest":
+        source = manifest_path
+    elif source_kind == "directory":
+        source = manifest_path.parent
+    else:
+        source = tmp_path / "local bundle.zip"
+        with zipfile.ZipFile(source, "w") as archive:
+            archive.write(manifest_path, "bundle.yml")
+
+    rejected = runner.invoke(app, ["bundle", "install", str(source), "--offline"])
+    assert rejected.exit_code == 1, rejected.output
+    assert records_path(project).read_bytes() == original_record
+    assert versions == original_versions
+    assert installer.refresh_calls == []
+
+    refreshed = runner.invoke(
+        app, ["bundle", "install", str(source), "--offline", "--refresh"],
+    )
+    assert refreshed.exit_code == 0, refreshed.output
+    assert "--refresh" in rejected.output
+    assert "4 refreshed" in refreshed.output
+    expected = {
+        ("extensions", "ext-a"): "2.0.0",
+        ("presets", "preset-a"): "3.0.0",
+        ("steps", "step-a"): None,
+        ("workflows", "wf-a"): "0.4.0",
+    }
+    assert versions == expected
+    assert set(installer.refresh_calls) == set(expected)
+    record = load_records(project)[0]
+    assert record.version == bundle_version
+    assert {(c.kind, c.id): c.version for c in record.contributed_components} == expected
+
+
+@pytest.mark.parametrize("source_kind", ["manifest", "directory", "zip"])
+@pytest.mark.parametrize("bundle_version", ["1.2.0", "2.0.0"])
+def test_local_refresh_catalog_extension_requires_network(
+    tmp_path: Path, monkeypatch, source_kind: str, bundle_version: str,
+):
+    """Use the real installer; replace only catalog I/O with local artifacts."""
+    from specify_cli.bundler.models.records import load_records, records_path
+    from specify_cli.extensions import ExtensionCatalog
+
+    project = make_project(tmp_path / "project")
+    monkeypatch.chdir(project)
+    monkeypatch.setattr("specify_cli.commands.bundle._bundle_overlaps", lambda *a, **kw: [])
+    monkeypatch.setattr("specify_cli._assets._locate_bundled_extension", lambda cid: None)
+    version = "1.0.0"
+    downloads = []
+
+    def download_extension(self, extension_id):
+        downloads.append((extension_id, version))
+        artifact = tmp_path / "extension.zip"
+        extension = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": extension_id, "name": "Catalog extension",
+                "version": version, "description": "Refresh regression",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": [
+                {"name": "speckit.catalog-ext.hello", "file": "commands/hello.md"},
+            ]},
+        }
+        with zipfile.ZipFile(artifact, "w") as archive:
+            archive.writestr("extension.yml", yaml.safe_dump(extension))
+            archive.writestr("commands/hello.md", f"---\ndescription: Test\n---\n{version}\n")
+        return artifact
+
+    monkeypatch.setattr(
+        ExtensionCatalog, "get_extension_info",
+        lambda self, cid: {"id": cid, "version": version, "_install_allowed": True},
+    )
+    monkeypatch.setattr(ExtensionCatalog, "download_extension", download_extension)
+    data = valid_manifest_dict(provides={"extensions": [{"id": "catalog-ext", "version": version}]})
+    manifest_path = write_manifest(tmp_path / "local bundle", data)
+    runner = CliRunner()
+    first = runner.invoke(app, ["bundle", "install", str(manifest_path)])
+    assert first.exit_code == 0, first.output
+    installed_dir = project / ".specify" / "extensions" / "catalog-ext"
+    payload = installed_dir / "commands" / "hello.md"
+    original_payload = payload.read_bytes()
+    original_manifest = (installed_dir / "extension.yml").read_bytes()
+    original_record = records_path(project).read_bytes()
+
+    version = "2.0.0"
+    data["bundle"]["version"] = bundle_version
+    data["provides"]["extensions"][0]["version"] = version
+    write_manifest(manifest_path.parent, data)
+    if source_kind == "manifest":
+        source = manifest_path
+    elif source_kind == "directory":
+        source = manifest_path.parent
+    else:
+        source = tmp_path / "local bundle.zip"
+        with zipfile.ZipFile(source, "w") as archive:
+            archive.write(manifest_path, "bundle.yml")
+
+    rejected = runner.invoke(app, ["bundle", "install", str(source), "--offline"])
+    assert rejected.exit_code == 1, rejected.output
+    assert "--refresh" in rejected.output
+    assert downloads == [("catalog-ext", "1.0.0")]
+    assert records_path(project).read_bytes() == original_record
+    assert payload.read_bytes() == original_payload
+    assert (installed_dir / "extension.yml").read_bytes() == original_manifest
+
+    offline = runner.invoke(app, ["bundle", "install", str(source), "--refresh", "--offline"])
+    assert offline.exit_code == 1, offline.output
+    output = " ".join(offline.output.split())
+    assert "catalog-ext" in output
+    assert "refreshing this component requires network access" in output
+    assert "re-run without --offline" in output
+    assert "install it first" not in output
+    assert downloads == [("catalog-ext", "1.0.0")]
+    assert records_path(project).read_bytes() == original_record
+    assert payload.read_bytes() == original_payload
+    assert (installed_dir / "extension.yml").read_bytes() == original_manifest
+
+    refreshed = runner.invoke(app, ["bundle", "install", str(source), "--refresh"])
+    assert refreshed.exit_code == 0, refreshed.output
+    assert "1 refreshed" in refreshed.output
+    assert downloads == [("catalog-ext", "1.0.0"), ("catalog-ext", "2.0.0")]
+    assert payload.read_text(encoding="utf-8").endswith("2.0.0\n")
+    assert yaml.safe_load((installed_dir / "extension.yml").read_text(encoding="utf-8"))["extension"]["version"] == version
+    record = load_records(project)[0]
+    assert record.version == bundle_version
+    assert record.contributed_components[0].version == version

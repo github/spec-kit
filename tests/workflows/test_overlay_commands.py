@@ -220,6 +220,115 @@ class TestOverlayCli:
         assert result.exit_code == 1
         assert "must be >= 1" in result.output
 
+    def test_overlay_add_keeps_non_ascii_text_readable(
+        self, project_dir, monkeypatch
+    ):
+        """``overlay add`` must not escape non-ASCII text in the written file.
+
+        Overlay files are documented as hand-authored, so writing them back
+        with ``\\uXXXX`` escapes makes the user's own file unreadable.
+        """
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "echo"}],
+            },
+        )
+        message = "Revisar el plan — ¿aprobar? 日本語"
+        overlay_file = project_dir / "overlay.yml"
+        overlay_file.write_text(
+            yaml.safe_dump(
+                {
+                    "id": "ov1",
+                    "extends": "wf",
+                    "priority": 10,
+                    "edits": [
+                        {
+                            "operation": "replace",
+                            "anchor": "a",
+                            "step": {
+                                "id": "a",
+                                "type": "gate",
+                                "message": message,
+                                "options": ["approve"],
+                            },
+                        }
+                    ],
+                },
+                allow_unicode=True,
+            ),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(app, ["workflow", "overlay", "add", str(overlay_file)])
+        assert result.exit_code == 0, result.output
+
+        installed = (
+            project_dir / ".specify" / "workflows" / "overlays" / "wf" / "ov1.yml"
+        )
+        text = installed.read_text(encoding="utf-8")
+        assert message in text, text
+        assert "\\u" not in text and "\\x" not in text, text
+        # The value must still round-trip identically.
+        data = yaml.safe_load(text)
+        assert data["edits"][0]["step"]["message"] == message
+
+    def test_overlay_set_priority_keeps_non_ascii_text_readable(
+        self, project_dir, monkeypatch
+    ):
+        """Toggling an overlay must not mangle non-ASCII text already in it."""
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "echo"}],
+            },
+        )
+        message = "Revisar el plan — ¿aprobar? 日本語"
+        _write_overlay(
+            project_dir,
+            "wf",
+            "ov1",
+            {
+                "id": "ov1",
+                "extends": "wf",
+                "priority": 10,
+                "edits": [
+                    {
+                        "operation": "replace",
+                        "anchor": "a",
+                        "step": {
+                            "id": "a",
+                            "type": "gate",
+                            "message": message,
+                            "options": ["approve"],
+                        },
+                    }
+                ],
+            },
+        )
+
+        result = runner.invoke(
+            app, ["workflow", "overlay", "set-priority", "wf", "ov1", "20"]
+        )
+        assert result.exit_code == 0, result.output
+
+        text = (
+            project_dir / ".specify" / "workflows" / "overlays" / "wf" / "ov1.yml"
+        ).read_text(encoding="utf-8")
+        assert message in text, text
+        assert "\\u" not in text and "\\x" not in text, text
+        data = yaml.safe_load(text)
+        assert data["priority"] == 20
+        assert data["edits"][0]["step"]["message"] == message
+
     def test_overlay_set_priority(self, project_dir, monkeypatch):
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
         _write_workflow(

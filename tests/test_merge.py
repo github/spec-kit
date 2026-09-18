@@ -212,3 +212,29 @@ def test_handle_vscode_settings_propagates_programming_errors(tmp_path):
             )
     finally:
         utils_mod.merge_json_files = original_merge
+
+
+def test_merge_json_files_propagates_programming_errors(tmp_path, monkeypatch):
+    """Unexpected programming errors reading the existing file must propagate.
+
+    ``merge_json_files``'s own read of the existing JSON file caught bare
+    ``Exception`` around ``json5.load``, so a real bug there (e.g. a
+    ``TypeError``) was silently treated the same as a normal parse failure --
+    ``None`` returned, existing settings preserved, nothing logged unless
+    ``verbose``. Only ``OSError`` (inaccessible file) and ``ValueError``
+    (malformed JSON5 -- json5's decode error is a ``ValueError`` subclass)
+    are expected outcomes here; anything else must propagate, matching the
+    narrowing already applied to the caller, ``handle_vscode_settings``.
+    """
+    existing_file = tmp_path / "settings.json"
+    existing_file.write_text('{"a": 1}\n', encoding="utf-8")
+
+    import specify_cli._utils as utils_mod
+
+    def _boom(*_a, **_kw):
+        raise TypeError("boom")
+
+    monkeypatch.setattr(utils_mod.json5, "load", _boom)
+
+    with pytest.raises(TypeError):
+        merge_json_files(existing_file, {"b": 2})

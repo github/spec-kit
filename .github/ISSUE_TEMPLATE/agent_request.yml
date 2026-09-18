@@ -8,7 +8,7 @@ body:
       value: |
         Thanks for requesting a new agent! Before submitting, please check if the agent is already supported.
 
-        **Currently supported agents**: Alquimia AI, Amp, Antigravity, Auggie CLI, Claude Code, Cline, CodeBuddy, Codex CLI, Command Code, Cursor, Devin for Terminal, Factory Droid, Firebender, Forge, Gemini CLI, GitHub Copilot, Goose, Grok Build, Hermes Agent, IBM Bob, Junie, Kilo Code, Kimi Code, Kiro CLI, Lingma, Mistral Vibe, Oh My Pi, opencode, Pi Coding Agent, Qoder CLI, Qwen Code, RovoDev ACLI, SHAI, Tabnine CLI, Trae, ZCode, Zed
+        **Currently supported agents**: Alquimia AI, Amp, Antigravity, Auggie CLI, Claude Code, Cline, CodeBuddy, Codex CLI, Command Code, Cursor, Devin for Terminal, Docker Agent, Factory Droid, DeepSeek Harness, Firebender, Forge, Gemini CLI, GitHub Copilot, Goose, Grok Build, Hermes Agent, IBM Bob, Junie, Kilo Code, Kimi Code, Kiro CLI, Lingma, Mistral Vibe, Muse Code, Oh My Pi, opencode, Pi Coding Agent, Qoder CLI, Qwen Code, RovoDev ACLI, SHAI, Tabnine CLI, Trae, ZCode, Zed
 
   - type: input
     id: agent-name
@@ -139,3 +139,16 @@ body:
       label: Additional Context
       description: Any other relevant information about this agent
       placeholder: Screenshots, community links, comparison to existing agents, etc.
+
+  - type: textarea
+    id: ai-disclosure
+    attributes:
+      label: AI Disclosure
+      description: >-
+        Per our [Contributing guidelines](https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md#ai-contributions-in-spec-kit),
+        any AI assistance used to create this issue must be disclosed. If you used AI, name the agent/tool, model(s),
+        settings/mode (reasoning effort; autonomous vs. human-supervised), and extent. Otherwise leave this as "N/A".
+        This does not change how your issue is handled — it just gives maintainers visibility into model/agent usage.
+      value: "N/A"
+    validations:
+      required: true

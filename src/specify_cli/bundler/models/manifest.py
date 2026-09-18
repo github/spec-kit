@@ -237,17 +237,19 @@ def _text(raw: Any) -> str:
 
 
 def _parse_str_list(raw: Any, field_name: str) -> tuple[str, ...]:
-    """Coerce a manifest list-of-strings field into a tuple of strings.
+    """Parse a manifest list-of-strings field into a tuple of strings.
 
     Rejects a bare string/bytes (which would otherwise be iterated
-    character-by-character) and any non-list/tuple, matching the manifest
-    contract (``string[]``).
+    character-by-character), any non-list/tuple, and any non-string member,
+    matching the manifest contract (``string[]``).
     """
     if raw is None:
         return ()
     if isinstance(raw, (str, bytes)) or not isinstance(raw, (list, tuple)):
         raise BundlerError(f"'{field_name}' must be a list of strings when present.")
-    return tuple(str(item) for item in raw)
+    if any(not isinstance(item, str) for item in raw):
+        raise BundlerError(f"'{field_name}' must be a list of strings when present.")
+    return tuple(raw)
 
 
 def _parse_refs(kind: str, raw: Any) -> list[ComponentRef]:

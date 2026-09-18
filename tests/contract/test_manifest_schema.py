@@ -165,6 +165,25 @@ def test_string_mcp_rejected_not_split_per_character():
         BundleManifest.from_dict(data)
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("tags", [1]),
+        ("requires.tools", [False]),
+        ("requires.mcp", [{}]),
+    ],
+)
+def test_string_list_fields_reject_non_string_members(field, value):
+    data = valid_manifest_dict()
+    if field == "tags":
+        data["tags"] = value
+    else:
+        data["requires"][field.split(".", 1)[1]] = value
+
+    with pytest.raises(BundlerError, match="must be a list of strings"):
+        BundleManifest.from_dict(data)
+
+
 def test_string_integration_rejected_not_silently_dropped():
     # A present-but-non-mapping 'integration' (a bare string) was silently
     # dropped, leaving the bundle wrongly integration-agnostic. Reject it like

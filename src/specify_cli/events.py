@@ -17,7 +17,7 @@ import shutil
 import sys
 import subprocess
 import platform
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -29,6 +29,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # -- Constants -------------------------------------------------------------
+
+# Generated hook dispatchers refuse to delegate unless this name is True.
+# An older installed specify_cli.events (uvx-init plus a stale global
+# install) would otherwise run unconfined script tokens.
+EVENT_SCRIPT_PATH_CONFINEMENT = True
 
 EVENTS_DISPATCHER_DIR = Path(".specify")
 EVENTS_DISPATCHER_FILENAME = "events.py"
@@ -83,7 +88,22 @@ import shlex
 import shutil
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
+
+
+def _script_under_base(base, token, project_root):
+    """Return token resolved under base, or None if it leaves the project."""
+    posix_path = PurePosixPath(token)
+    win_path = PureWindowsPath(token)
+    if posix_path.anchor or win_path.anchor:
+        return None
+    try:
+        root = project_root.resolve()
+        candidate = (base / token).resolve()
+        candidate.relative_to(root)
+    except (OSError, ValueError):
+        return None
+    return candidate
 
 
 def _find_command_template(command_name, project_root):
@@ -228,8 +248,8 @@ def _resolve_argv(template_path, project_root, ext_id):
         return None
     if not tokens:
         return None
-    script_abs = base / tokens[0]
-    if not script_abs.exists():
+    script_abs = _script_under_base(base, tokens[0], project_root)
+    if script_abs is None or not script_abs.exists():
         return None
     rest = tokens[1:]
 
@@ -260,11 +280,18 @@ def _run_inline(command_name, payload, project_root, timeout, envelope="plain", 
     if not argv:
         return 0
     try:
+        # ``payload`` is decoded above from the binary buffer with an explicit
+        # ``utf-8``. Without ``encoding=`` here, ``text=True`` re-encodes it
+        # for the child's stdin using ``locale.getpreferredencoding()`` — on
+        # Windows that is commonly the ANSI codepage, not UTF-8, so a non-ASCII
+        # payload (e.g. ``é``) would reach the handler as the wrong bytes.
+        # Pin both directions to utf-8 so decode and re-encode agree.
         result = subprocess.run(
             argv,
             input=payload,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=timeout,
             cwd=str(project_root),
         )
@@ -355,14 +382,35 @@ def main():
     # hookEventName field (required by Qwen's hooks spec; included by
     # Gemini/Tabnine/Devin which derive from the same protocol).
     native_event = sys.argv[5] if len(sys.argv) >= 6 else ""
-    payload = sys.stdin.read() if not sys.stdin.isatty() else "{}"
+    # Cap piped stdin at 1 MiB to prevent a DoS (mirrors the same guard on the
+    # `specify event run` CLI command). Read from the binary buffer so the cap
+    # counts encoded bytes, not decoded characters.
+    MAX_STDIN_BYTES = 1 * 1024 * 1024
+    if not sys.stdin.isatty():
+        raw = sys.stdin.buffer.read(MAX_STDIN_BYTES + 1)
+        if len(raw) > MAX_STDIN_BYTES:
+            print(
+                "stdin payload exceeds 1 MiB limit; truncate or pipe a smaller payload",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        payload = raw.decode("utf-8")
+    else:
+        payload = "{}"
     project_root = Path(__file__).parent.parent.resolve()
 
     # Preferred path: specify_cli is importable (durable install) — delegate to
     # the full resolver, which also handles extension manifests whose file stem
     # differs from the command name and the project's custom script selection.
+    # Require EVENT_SCRIPT_PATH_CONFINEMENT so a stale global install cannot
+    # bypass the generated dispatcher's path guard.
     try:
-        from specify_cli.events import resolve_and_run_event_command
+        from specify_cli.events import (
+            EVENT_SCRIPT_PATH_CONFINEMENT as _confine_ok,
+            resolve_and_run_event_command,
+        )
+        if _confine_ok is not True:
+            raise ImportError("specify_cli.events lacks script path confinement")
         sys.exit(
             resolve_and_run_event_command(
                 command_name, _event_name, payload, project_root, timeout=timeout, envelope=envelope, native_event=native_event
@@ -541,6 +589,30 @@ def _find_command_template(command_name: str, project_root: Path) -> tuple[Path 
     return None, None
 
 
+def _confine_event_script_path(
+    project_root: Path, base: Path, token: str
+) -> Path | None:
+    """Resolve *token* under *base*, or None if it leaves the project.
+
+    Rejects anchored tokens (absolute, drive, UNC) so ``Path`` cannot
+    discard *base*. ``..`` is allowed when the resolved path stays inside
+    *project_root*, which is how extension templates reach core scripts
+    via ``../../scripts/...``. Keep the generated ``_script_under_base``
+    in sync.
+    """
+    posix_path = PurePosixPath(token)
+    win_path = PureWindowsPath(token)
+    if posix_path.anchor or win_path.anchor:
+        return None
+    try:
+        root = project_root.resolve()
+        candidate = (base / token).resolve()
+        candidate.relative_to(root)
+    except (OSError, ValueError):
+        return None
+    return candidate
+
+
 def _resolve_event_command_argv(
     template_path: Path, project_root: Path, ext_id: str | None
 ) -> list[str] | None:
@@ -609,8 +681,8 @@ def _resolve_event_command_argv(
         return None
     if not tokens:
         return None
-    script_abs = base / tokens[0]
-    if not script_abs.exists():
+    script_abs = _confine_event_script_path(project_root, base, tokens[0])
+    if script_abs is None or not script_abs.exists():
         return None
     rest_args = tokens[1:]
 
@@ -626,7 +698,16 @@ def _resolve_event_command_argv(
         # subprocess.run(shell=False); invoke via `pwsh -File` (PowerShell 7+),
         # falling back to `powershell -File` (Windows PowerShell) when pwsh is
         # absent (S6). The default Windows script type would otherwise fail.
-        launcher = shutil.which("pwsh") or shutil.which("powershell") or "pwsh"
+        # When NEITHER is on PATH, degrade to "no argv" like every other
+        # failure branch in this resolver (and its documented stdlib mirror,
+        # the generated dispatcher's `_resolve_argv`) — a bare "pwsh" here
+        # would make subprocess.run() raise FileNotFoundError, surfacing as a
+        # confusing "[Errno 2] No such file or directory: 'pwsh'" instead of
+        # the clean "No script found for event command" the caller reports
+        # for a genuinely missing script.
+        launcher = shutil.which("pwsh") or shutil.which("powershell")
+        if not launcher:
+            return None
         return [launcher, "-File", str(script_abs), *rest_args]
 
     # sh: the script is chmod'd executable during install on POSIX. On Windows
@@ -699,11 +780,19 @@ def resolve_and_run_event_command(
         logger.warning("No script found for event command '%s'", command_name)
         return 0
     try:
+        # ``payload`` reaches here already decoded from stdin's binary buffer
+        # with an explicit ``utf-8`` (see event_run/dispatcher main()). Without
+        # ``encoding=`` here, ``text=True`` re-encodes it for the child's
+        # stdin using ``locale.getpreferredencoding()`` — on Windows that is
+        # commonly the ANSI codepage, not UTF-8, so a non-ASCII payload (e.g.
+        # ``é``) would reach the handler as the wrong bytes. Pin both
+        # directions to utf-8 so decode and re-encode agree.
         result = subprocess.run(
             argv,
             input=payload,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=timeout,
             cwd=str(project_root),
         )
@@ -1031,7 +1120,7 @@ def collect_extension_events(project_root: Path) -> ResolvedEvents:
                 continue
             try:
                 data = yaml.safe_load(ext_yml.read_text(encoding="utf-8")) or {}
-            except (UnicodeDecodeError, yaml.YAMLError):
+            except (OSError, UnicodeDecodeError, yaml.YAMLError):
                 continue
             if not isinstance(data, dict):
                 continue
@@ -2040,7 +2129,10 @@ def _merge_toml_fragment(dst: Path, fragment: str) -> bool:
     An unreadable or undecodable pre-existing file aborts the merge instead
     of discarding the user's bytes, mirroring ``_load_user_json`` (#22).
     Returns False when skipped so callers avoid tracking the untouched file
-    (S5).
+    (S5) — including when there is no fragment to add and no owned blocks to
+    remove, so a no-op install doesn't rewrite (and, via text-mode newline
+    translation, mangle the line endings of) an untouched pre-existing file
+    (#4563).
     """
     _ensure_safe_destination(dst)
     existing = ""
@@ -2055,14 +2147,16 @@ def _merge_toml_fragment(dst: Path, fragment: str) -> bool:
             )
             logger.debug("Read error detail: %s", exc)
             return False
-    existing = re.sub(
+    stripped = re.sub(
         r'\[\[hooks\.\w+\]\]\n(?:(?!\[\[hooks\.\w+\]\]).)*?speckit_marker = true\n*',
         "",
         existing,
         flags=re.DOTALL,
     )
+    if not fragment and stripped == existing:
+        return False
     dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_text(existing.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
+    dst.write_text(stripped.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
     return True
 
 
@@ -2106,6 +2200,11 @@ def _remove_toml_entries(dst: Path) -> bool:
     """Remove Specify-marked TOML entries; delete the file if now empty (#14).
 
     Returns True if the file was deleted (no user content remained).
+
+    Leaves the file untouched (no write) when there are no Specify-owned
+    blocks to strip, so a no-op teardown/install doesn't rewrite (and, via
+    text-mode newline translation, mangle the line endings of) an untouched
+    pre-existing file (#4563).
     """
     if not dst.exists():
         return False
@@ -2132,8 +2231,11 @@ def _remove_toml_entries(dst: Path) -> bool:
         existing,
         flags=re.DOTALL,
     )
-    # If only whitespace/comments remain, the file had no user content —
-    # delete it rather than leaving an empty stub that confuses uninstall.
+    if cleaned == existing:
+        return False
+    # Stripping removed a Specify-owned block. If only whitespace/comments
+    # remain, the file had no user content — delete it rather than leaving
+    # an empty stub that confuses uninstall.
     stripped = "\n".join(
         line for line in cleaned.splitlines()
         if line.strip() and not line.strip().startswith("#")

@@ -7,6 +7,7 @@ offline-first).
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -69,6 +70,18 @@ def test_default_installer_threads_allow_network(tmp_path: Path):
         installer.install(tmp_path, _component("workflows"))
 
 
+@pytest.mark.parametrize("kind", ["presets", "extensions", "workflows", "steps"])
+def test_offline_refresh_explains_component_needs_network(tmp_path: Path, kind: str):
+    installer = DefaultPrimitiveInstaller(allow_network=False)
+    with pytest.raises(BundlerError) as exc:
+        installer.refresh(tmp_path, _component(kind, "definitely-not-bundled"))
+    message = str(exc.value)
+    assert "definitely-not-bundled" in message
+    assert "refreshing this component requires network access" in message
+    assert "re-run without --offline" in message
+    assert "install it first" not in message
+
+
 def test_offline_workflow_allows_bundled(tmp_path: Path, monkeypatch):
     # A workflow that ships with Spec Kit must install even with --offline.
     import specify_cli
@@ -77,13 +90,17 @@ def test_offline_workflow_allows_bundled(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         assets, "_locate_bundled_workflow", lambda wid: tmp_path / "wf"
     )
-    calls: list[str] = []
-    monkeypatch.setattr(specify_cli, "workflow_add", lambda wid: calls.append(wid))
+    calls: list[tuple] = []
+    monkeypatch.setattr(
+        specify_cli,
+        "workflow_add",
+        lambda wid, dev=object(), from_url=object(): calls.append((wid, dev, from_url)),
+    )
 
     manager = primitive_manager("workflows", tmp_path, allow_network=False)
     manager.install(_component("workflows", "bundled-wf"))
 
-    assert calls == ["bundled-wf"]
+    assert calls == [("bundled-wf", False, None)]
 
 
 def test_assert_pinned_version_matches_passes():
@@ -134,6 +151,96 @@ def test_preset_install_preserves_explicit_zero_priority(tmp_path: Path, monkeyp
     assert calls["priority"] == 0
 
 
+def test_catalog_preset_install_and_refresh_forward_catalog_name(
+    tmp_path: Path, monkeypatch
+):
+    import specify_cli._assets as assets
+    from specify_cli.presets import PresetCatalog
+
+    archive = tmp_path / "preset.zip"
+    archive.write_bytes(b"placeholder")
+    calls = []
+
+    class _FakeManager:
+        def install_from_zip(self, *args, **kwargs):
+            calls.append(kwargs)
+
+    monkeypatch.setattr(assets, "_locate_bundled_preset", lambda _id: None)
+    monkeypatch.setattr(
+        PresetCatalog,
+        "get_pack_info",
+        lambda _self, _id: {
+            "version": "1.0.0",
+            "_install_allowed": True,
+            "_catalog_name": "bundle-preset-catalog",
+        },
+    )
+    monkeypatch.setattr(PresetCatalog, "download_pack", lambda _self, _id: archive)
+
+    manager = primitive_manager("presets", tmp_path, allow_network=True)
+    manager._manager = _FakeManager()
+    component = ComponentRef(kind="presets", id="catalog-preset", version="1.0.0")
+    manager.install(component)
+    archive.write_bytes(b"placeholder")
+    manager.refresh(component)
+
+    assert [call["catalog_name"] for call in calls] == [
+        "bundle-preset-catalog",
+        "bundle-preset-catalog",
+    ]
+    assert calls[1]["force"] is True
+
+
+def test_catalog_extension_install_and_refresh_forward_catalog_and_scaffolding(
+    tmp_path: Path, monkeypatch
+):
+    import specify_cli._assets as assets
+    from specify_cli.extensions import ExtensionCatalog
+
+    archive = tmp_path / "extension.zip"
+    archive.write_bytes(b"placeholder")
+    installs = []
+    scaffolded = []
+
+    class _FakeManager:
+        def install_from_zip(self, *args, **kwargs):
+            installs.append(kwargs)
+            return SimpleNamespace(id="catalog-extension")
+
+        def scaffold_config(self, extension_id):
+            scaffolded.append(extension_id)
+
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda _id: None)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "get_extension_info",
+        lambda _self, _id: {
+            "version": "1.0.0",
+            "_install_allowed": True,
+            "_catalog_name": "bundle-extension-catalog",
+        },
+    )
+    monkeypatch.setattr(
+        ExtensionCatalog, "download_extension", lambda _self, _id: archive
+    )
+
+    manager = primitive_manager("extensions", tmp_path, allow_network=True)
+    manager._manager = _FakeManager()
+    component = ComponentRef(
+        kind="extensions", id="catalog-extension", version="1.0.0"
+    )
+    manager.install(component)
+    archive.write_bytes(b"placeholder")
+    manager.refresh(component)
+
+    assert [call["catalog_name"] for call in installs] == [
+        "bundle-extension-catalog",
+        "bundle-extension-catalog",
+    ]
+    assert installs[1]["force"] is True
+    assert scaffolded == ["catalog-extension", "catalog-extension"]
+
+
 def _write_manifest(path: Path, root_key: str, version: str) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     (path / f"{root_key}.yml").write_text(
@@ -169,16 +276,105 @@ def test_bundled_extension_pin_match_installs(tmp_path: Path, monkeypatch):
     bundled = _write_manifest(tmp_path / "ext", "extension", "1.0.0")
     monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: bundled)
     called: list = []
-    monkeypatch.setattr(
-        ExtensionManager, "install_from_directory",
-        lambda self, *a, **k: called.append(a),
-    )
+
+    def _fake_install(self, *a, **k):
+        called.append(a)
+        return SimpleNamespace(id="my-ext")
+
+    monkeypatch.setattr(ExtensionManager, "install_from_directory", _fake_install)
 
     manager = primitive_manager("extensions", tmp_path, allow_network=False)
     # matching pin, and unpinned, both install cleanly
     manager.install(ComponentRef(kind="extensions", id="my-ext", version="1.0.0"))
     manager.install(ComponentRef(kind="extensions", id="my-ext", version=None))
     assert len(called) == 2
+
+
+def _write_extension_with_config(ext_dir: Path) -> None:
+    """A minimal, real (unmocked) extension source with a provides.config entry."""
+    import yaml
+
+    ext_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "schema_version": "1.0",
+        "extension": {
+            "id": "my-ext",
+            "name": "My Extension",
+            "version": "1.0.0",
+            "description": "Test extension",
+        },
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {
+            "commands": [
+                {"name": "speckit.my-ext.hello", "file": "commands/hello.md"},
+            ],
+            "config": [
+                {"name": "my-ext-config.yml", "template": "config-template.yml"},
+            ],
+        },
+    }
+    (ext_dir / "extension.yml").write_text(yaml.dump(manifest), encoding="utf-8")
+    (ext_dir / "config-template.yml").write_text("setting: default\n", encoding="utf-8")
+    (ext_dir / "commands").mkdir(exist_ok=True)
+    (ext_dir / "commands" / "hello.md").write_text("---\ndescription: Test\n---\n\nhi\n", encoding="utf-8")
+
+
+def test_bundled_extension_install_scaffolds_config(tmp_path: Path, monkeypatch):
+    """A bundle-installed extension must have its provides.config templates
+    scaffolded, exactly like `specify extension add` does (issue: bundle
+    install skipped ExtensionManager.scaffold_config)."""
+    import specify_cli._assets as assets
+
+    project = tmp_path / "project"
+    ext_source = tmp_path / "ext-source"
+    _write_extension_with_config(ext_source)
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: ext_source)
+
+    manager = primitive_manager("extensions", project, allow_network=False)
+    manager.install(ComponentRef(kind="extensions", id="my-ext"))
+
+    scaffolded = project / ".specify" / "extensions" / "my-ext" / "my-ext-config.yml"
+    assert scaffolded.exists()
+    assert scaffolded.read_text(encoding="utf-8") == "setting: default\n"
+
+
+def test_catalog_extension_install_scaffolds_config(tmp_path: Path, monkeypatch):
+    """A catalog-resolved (downloaded ZIP) extension install must also
+    scaffold its provides.config templates, matching the bundled-directory
+    coverage above. Exercises the reported reproduction, which installed an
+    extension resolved from the catalog rather than one shipped with Spec Kit."""
+    import zipfile
+
+    import specify_cli._assets as assets
+    from specify_cli.extensions import ExtensionCatalog
+
+    project = tmp_path / "project"
+    ext_source = tmp_path / "ext-source"
+    _write_extension_with_config(ext_source)
+
+    zip_path = tmp_path / "my-ext.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        for f in ext_source.rglob("*"):
+            if f.is_file():
+                zf.write(f, f.relative_to(ext_source))
+
+    # No bundled asset located: forces the catalog/ZIP branch (install_from_zip).
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: None)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "get_extension_info",
+        lambda self, eid: {"id": eid, "_install_allowed": True},
+    )
+    monkeypatch.setattr(
+        ExtensionCatalog, "download_extension", lambda self, eid: zip_path
+    )
+
+    manager = primitive_manager("extensions", project, allow_network=True)
+    manager.install(ComponentRef(kind="extensions", id="my-ext"))
+
+    scaffolded = project / ".specify" / "extensions" / "my-ext" / "my-ext-config.yml"
+    assert scaffolded.exists()
+    assert scaffolded.read_text(encoding="utf-8") == "setting: default\n"
 
 
 def test_bundled_preset_pin_mismatch_refuses(tmp_path: Path, monkeypatch):
@@ -227,10 +423,12 @@ def test_extension_refresh_calls_install_with_force(tmp_path: Path, monkeypatch)
     bundled = _write_manifest(tmp_path / "ext", "extension", "1.0.0")
     monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: bundled)
     force_values: list = []
-    monkeypatch.setattr(
-        ExtensionManager, "install_from_directory",
-        lambda self, *a, **k: force_values.append(k.get("force", False)),
-    )
+
+    def _fake_install(self, *a, **k):
+        force_values.append(k.get("force", False))
+        return SimpleNamespace(id="my-ext")
+
+    monkeypatch.setattr(ExtensionManager, "install_from_directory", _fake_install)
 
     manager = primitive_manager("extensions", tmp_path, allow_network=False)
     manager.refresh(ComponentRef(kind="extensions", id="my-ext"))
@@ -265,10 +463,12 @@ def test_default_installer_refresh_dispatches_to_kind_manager(tmp_path: Path, mo
     bundled = _write_manifest(tmp_path / "ext", "extension", "1.0.0")
     monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: bundled)
     force_values: list = []
-    monkeypatch.setattr(
-        ExtensionManager, "install_from_directory",
-        lambda self, *a, **k: force_values.append(k.get("force", False)),
-    )
+
+    def _fake_install(self, *a, **k):
+        force_values.append(k.get("force", False))
+        return SimpleNamespace(id="my-ext")
+
+    monkeypatch.setattr(ExtensionManager, "install_from_directory", _fake_install)
 
     installer = DefaultPrimitiveInstaller(allow_network=False)
     installer.refresh(tmp_path, _component("extensions", "my-ext"))
@@ -290,6 +490,7 @@ def test_refresh_succeeds_and_passes_force_true(tmp_path: Path, monkeypatch):
     def _fake_install_from_directory(self, *a, **k):
         force_seen.append(k.get("force", False))
         self.registry.add("my-ext", {"version": "1.0.0"})
+        return SimpleNamespace(id="my-ext")
 
     monkeypatch.setattr(
         ExtensionManager, "install_from_directory", _fake_install_from_directory
@@ -334,3 +535,75 @@ def _plan(manifest):
         effective_integration=None,
         components=components,
     )
+
+
+def test_step_refresh_restores_registry_entry_when_reinstall_fails(
+    tmp_path: Path, monkeypatch
+):
+    """A failed step refresh must leave the registry entry restored.
+
+    ``refresh`` keeps a backup and restores it "if the remove+reinstall path
+    fails", but the registry half of that rollback was unreachable:
+    ``StepRegistry`` snapshots the file once in ``__init__`` and
+    ``is_installed`` reads only that snapshot, so after ``self.remove()``
+    deleted the entry from disk the stale snapshot still reported it as
+    installed and ``not ...is_installed(...)`` was always False.
+
+    The step package came back but stayed unregistered — ``workflow step
+    list`` stopped showing it, and ``workflow step add`` then refused with
+    "Step directory already exists".
+    """
+    import json
+
+    import specify_cli
+    from specify_cli.workflows.catalog import StepRegistry
+
+    steps_dir = tmp_path / ".specify" / "workflows" / "steps"
+    (steps_dir / "my-step").mkdir(parents=True)
+    (steps_dir / "my-step" / "step.yml").write_text(
+        "step:\n  type_key: my-step\n", encoding="utf-8"
+    )
+    (steps_dir / "my-step" / "__init__.py").write_text("", encoding="utf-8")
+    (steps_dir / StepRegistry.REGISTRY_FILE).write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "steps": {
+                    "my-step": {
+                        "name": "My Step",
+                        "version": "1.0.0",
+                        "type_key": "my-step",
+                        # Distinctive past timestamps: a rollback must put the
+                        # entry back verbatim, and ``StepRegistry.add()`` would
+                        # silently replace both of these with ``now``.
+                        "installed_at": "2020-01-01T00:00:00+00:00",
+                        "updated_at": "2020-02-02T00:00:00+00:00",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    seeded = StepRegistry(tmp_path).get("my-step")
+    assert StepRegistry(tmp_path).is_installed("my-step")
+
+    # Removal succeeds (real code path); only the re-install fails, which is
+    # what a catalog 404 / size-limit / type_key mismatch produces.
+    def _boom(step_id, *args, **kwargs):
+        raise BundlerError(f"Failed to install step '{step_id}'.")
+
+    monkeypatch.setattr(specify_cli, "workflow_step_add", _boom)
+
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    with pytest.raises(BundlerError):
+        manager.refresh(_component("steps", "my-step"))
+
+    # Read the registry fresh from disk — the point of the fix.
+    restored = StepRegistry(tmp_path)
+    assert restored.is_installed("my-step"), (
+        steps_dir / StepRegistry.REGISTRY_FILE
+    ).read_text(encoding="utf-8")
+    # A rollback must be a rollback: the entry comes back byte-for-byte, not
+    # re-registered with fresh ``installed_at`` / ``updated_at`` stamps.
+    assert restored.get("my-step") == seeded

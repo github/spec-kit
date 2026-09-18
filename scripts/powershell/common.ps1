@@ -1,6 +1,7 @@
 #!/usr/bin/env pwsh
 # Common PowerShell functions analogous to common.sh
 
+
 # Find repository root by searching upward for .specify directory
 # This is the primary marker for spec-kit projects
 function Find-SpecifyRoot {
@@ -135,7 +136,7 @@ function Save-FeatureJson {
     # Read current value and skip write when unchanged
     if (Test-Path -LiteralPath $fjPath -PathType Leaf) {
         try {
-            $raw = Get-Content -LiteralPath $fjPath -Raw
+            $raw = [System.IO.File]::ReadAllText($fjPath, [System.Text.Encoding]::UTF8)
             $cfg = $raw | ConvertFrom-Json
             if ($cfg.feature_directory -eq $FeatureDirectory) {
                 return
@@ -193,7 +194,7 @@ function Get-FeaturePathsEnv {
             Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $env:SPECIFY_FEATURE_DIRECTORY
         }
     } elseif (Test-Path $featureJson) {
-        $featureJsonRaw = Get-Content -LiteralPath $featureJson -Raw
+        $featureJsonRaw = [System.IO.File]::ReadAllText($featureJson, [System.Text.Encoding]::UTF8)
         try {
             $featureConfig = $featureJsonRaw | ConvertFrom-Json
         } catch {

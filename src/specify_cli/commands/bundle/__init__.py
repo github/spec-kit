@@ -353,12 +353,16 @@ def bundle_install(
     ),
     integration: str = typer.Option(None, "--integration", help="Override integration"),
     offline: bool = typer.Option(False, "--offline", help="Do not access the network"),
+    refresh: bool = typer.Option(
+        False, "--refresh", help="Refresh owned components from this bundle source",
+    ),
 ) -> None:
     """Install a bundle's full component set through each primitive's machinery.
 
     ``bundle_id`` may be a catalog bundle id, or a local path to a built
     artifact (``.zip``), a bundle directory, or a ``bundle.yml`` file. Local
-    sources install directly without consulting the catalog stack.
+    sources install directly without consulting the catalog stack. Use
+    ``--refresh`` to update owned components from a newer local source.
     """
     try:
         from ...bundler.lib.project import find_project_root
@@ -428,14 +432,20 @@ def bundle_install(
             plan,
             DefaultPrimitiveInstaller(allow_network=not offline),
             manifest=manifest,
+            refresh=refresh,
         )
     except BundlerError as exc:
         _fail(str(exc))
         return
 
+    refresh_summary = (
+        f", {len(result.refreshed)} refreshed, {len(result.uninstalled)} removed"
+        if refresh else ""
+    )
     console.print(
         f"[green]✓[/green] Installed '{_escape_markup(str(result.bundle_id))}' "
-        f"({len(result.installed)} added, {len(result.skipped)} already present)."
+        f"({len(result.installed)} added, {len(result.skipped)} already present"
+        f"{refresh_summary})."
     )
 
 
@@ -934,7 +944,6 @@ def _download_remote_manifest(
     expected_sha256: str | None = None,
 ):
     """Fetch a remote bundle artifact over HTTPS and extract its manifest."""
-    import io
     import tempfile
     from pathlib import PurePosixPath
     from urllib.parse import urlparse as _urlparse
@@ -1038,7 +1047,20 @@ def _download_remote_manifest(
                     )
                 return manifest
 
-        data = _yaml.safe_load(io.BytesIO(raw))
+        # Decode as UTF-8 explicitly -- matching yamlio.load_yaml's contract --
+        # instead of feeding PyYAML the raw byte stream. PyYAML's Reader
+        # auto-detects a UTF-16 BOM and would silently *accept* a manifest
+        # that the local directory/bundle.yml sources reject, letting this
+        # remote-download path diverge from them (see the sibling .zip fix
+        # for _local_manifest_source, which had the identical bug).
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeError as exc:
+            raise BundlerError(
+                f"Downloaded content for bundle '{entry_id}' from "
+                f"{_source_desc} could not be read: {exc}"
+            ) from exc
+        data = _yaml.safe_load(text)
         return BundleManifest.from_dict(data)
     except BundlerError:
         raise
