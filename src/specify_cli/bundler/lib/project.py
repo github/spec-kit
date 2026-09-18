@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..._project import _resolve_init_dir_override
+from ...integration_state import clean_integration_key
 from .. import BundlerError
 from .yamlio import ensure_within, load_json
 
@@ -97,6 +98,12 @@ def active_integration(project_root: Path) -> str | None:
             or data.get("id")
             or data.get("active")
         )
-        if isinstance(value, str) and value:
-            return value
+        # Normalize through the same helper the canonical reader uses rather
+        # than re-implementing the check. ``isinstance(value, str) and value``
+        # accepted a whitespace-only key as a real one -- truthy, so it also
+        # suppressed the "not determinable" fallback -- and returned a padded
+        # key verbatim, which matches no registered integration:
+        #     '  copilot  ' -> '  copilot  '   (canonical: 'copilot')
+        #     '   '         -> '   '           (canonical: None)
+        return clean_integration_key(value)
     return None
