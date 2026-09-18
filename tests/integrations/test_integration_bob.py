@@ -379,6 +379,7 @@ class TestBobInitFlowDefault:
 
     def test_init_default_creates_skills(self, tmp_path):
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         target = tmp_path / "test-proj"
@@ -392,6 +393,7 @@ class TestBobInitFlowDefault:
 
     def test_init_default_complete_file_inventory_sh(self, tmp_path):
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         project = tmp_path / "inventory-sh-bob"
@@ -422,6 +424,7 @@ class TestBobInitFlowLegacy:
 
     def test_init_legacy_creates_commands(self, tmp_path):
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         target = tmp_path / "test-proj"
@@ -445,8 +448,8 @@ class TestBobInitFlowLegacy:
         legacy projects.)
         """
         from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli import load_init_options
+
+        from specify_cli import app, load_init_options
 
         target = tmp_path / "test-proj"
         result = CliRunner().invoke(app, [
@@ -504,6 +507,7 @@ class TestBobRegistrarConfig:
     def test_legacy_mode_project_extension_registration_runs(self, tmp_path):
         """Extension registrar writes to .bob/commands/ for legacy-mode projects."""
         import textwrap
+
         from specify_cli.agents import CommandRegistrar
 
         # Simulate a legacy-mode Bob project: .bob/commands exists, .bob/skills does not
@@ -543,6 +547,7 @@ class TestBobRegistrarConfig:
         BobIntegration.invoke_separator_for_mode(False) -> ".".
         """
         import textwrap
+
         from specify_cli.agents import CommandRegistrar
 
         # Legacy-mode project: .bob/commands exists, ai_skills is NOT set.
@@ -582,10 +587,10 @@ class TestBobUseFlowPreservesLegacyLayout:
         """``use``/``switch``/``upgrade`` on a ``.bob/commands``-only project
         (no stored ``legacy_commands``) must not write ``ai_skills=True``.
         """
+        from specify_cli import load_init_options
         from specify_cli.integrations._helpers import (
             _update_init_options_for_integration,
         )
-        from specify_cli import load_init_options
 
         # Existing Bob 1.x project: legacy commands dir on disk, no ai_skills.
         cmds = tmp_path / ".bob" / "commands"
@@ -604,10 +609,10 @@ class TestBobUseFlowPreservesLegacyLayout:
 
     def test_update_init_options_keeps_skills_project_as_skills(self, tmp_path):
         """A ``.bob/skills`` project stays skills on re-activation."""
+        from specify_cli import load_init_options
         from specify_cli.integrations._helpers import (
             _update_init_options_for_integration,
         )
-        from specify_cli import load_init_options
 
         (tmp_path / ".bob" / "skills" / "speckit-plan").mkdir(parents=True)
         bob = get_integration("bob")
@@ -648,7 +653,9 @@ class TestBobUseFlowPreservesLegacyLayout:
         with ``/speckit.<cmd>`` (dot), not ``/speckit-<cmd>``.
         """
         import json
+
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         # Create a real legacy Bob project (renders shared templates).
@@ -974,8 +981,17 @@ class TestBobCliDispatch:
     def test_build_exec_args_ignores_model(self):
         """Bob exposes no model flag on ``run``, so *model* is a no-op."""
         bob = get_integration("bob")
-        assert bob.build_exec_args("/speckit-plan", model="some-model") == \
-            bob.build_exec_args("/speckit-plan")
+        assert bob.build_exec_args("/speckit-plan", model="gpt-4") == [
+            "bob", "run", "--trust", "--accept-license", "-f", "json",
+            "/speckit-plan",
+        ]
+
+    def test_build_exec_args_ignores_project_root(self, tmp_path):
+        """Bob uses cwd for project context, so *project_root* is accepted but ignored in CLI args."""
+        bob = get_integration("bob")
+        args_with = bob.build_exec_args("/speckit-plan", project_root=tmp_path)
+        args_without = bob.build_exec_args("/speckit-plan")
+        assert args_with == args_without
 
     def test_command_invocation_uses_hyphen_in_skills_mode(self):
         """Skills-mode projects install ``.bob/skills/speckit-<cmd>/``, so the

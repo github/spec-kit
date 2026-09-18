@@ -2087,6 +2087,42 @@ class TestPromptStep:
             assert result.status is StepStatus.FAILED, bad
             assert "'timeout' must be a positive number" in (result.error or ""), bad
 
+    def test_try_dispatch_threads_project_root(self):
+        """PromptStep._try_dispatch must pass context.project_root to build_exec_args."""
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from specify_cli.workflows.base import StepContext
+        from specify_cli.workflows.steps.prompt import PromptStep
+
+        step = PromptStep()
+        ctx = StepContext(project_root="/fake/project/root", default_integration="dummy")
+
+        mock_impl = MagicMock()
+        mock_impl.key = "dummy"
+        mock_impl.build_exec_args.return_value = ["dummy", "args"]
+        mock_get_integration = MagicMock(return_value=mock_impl)
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+
+        with patch("specify_cli.integrations.get_integration", mock_get_integration), \
+             patch("specify_cli.workflows.steps.prompt.shutil.which", return_value="/opt/dummy"), \
+             patch("subprocess.run", return_value=mock_result):
+            step.execute(
+                {"id": "p", "type": "prompt", "prompt": "hi", "integration": "dummy"},
+                ctx,
+            )
+
+        mock_impl.build_exec_args.assert_called_once_with(
+            "hi",
+            model=None,
+            output_json=False,
+            project_root=Path("/fake/project/root"),
+        )
+
 
 class TestShellStep:
     """Test the shell step type."""

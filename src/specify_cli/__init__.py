@@ -311,6 +311,15 @@ def resolve_active_skills_dir(project_root: Path) -> Path | None:
     if not isinstance(agent, str) or not agent:
         return None
 
+    # generic's output directory is a runtime --commands-dir CLI option, not
+    # a static per-agent folder (its config["folder"] is None), so there is
+    # no directory extension/preset skill registration could safely resolve
+    # here even when the project was scaffolded with --skills. Registration
+    # stays disabled for generic in both layouts, matching flat-mode generic
+    # (which never persists ai_skills=True and so never reaches this point).
+    if agent == "generic":
+        return None
+
     ai_skills_enabled = _is_ai_skills_enabled(opts)
     if not ai_skills_enabled and agent != "kimi":
         return None
