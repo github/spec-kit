@@ -7568,30 +7568,31 @@ class TestExtensionIgnore:
 class TestExtensionAddCLI:
     """CLI integration tests for extension add command."""
 
-    def test_catalog_add_rejects_empty_normalized_name(self, project_dir, monkeypatch):
+    def test_catalog_add_is_idempotent_for_identical_entry(self, tmp_path):
         from typer.testing import CliRunner
+        from unittest.mock import patch
         from specify_cli import app
 
-        with monkeypatch.context() as scoped:
-            scoped.chdir(project_dir)
-            result = CliRunner().invoke(
-                app,
-                [
-                    "extension",
-                    "catalog",
-                    "add",
-                    "https://example.com/catalog.json",
-                    "--name",
-                    " \t",
-                ],
-                catch_exceptions=False,
-            )
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        args = [
+            "extension",
+            "catalog",
+            "add",
+            "https://example.com/catalog.json",
+            "--name",
+            "community",
+        ]
 
-        assert result.exit_code == 1
-        assert "must be non-empty" in result.output
-        assert not (
-            project_dir / ".specify" / "extension-catalogs.yml"
-        ).exists()
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            assert runner.invoke(app, args).exit_code == 0
+            config_path = project_dir / ".specify" / "extension-catalogs.yml"
+            original = config_path.read_bytes()
+            assert runner.invoke(app, args).exit_code == 0
+            assert config_path.read_bytes() == original
+            assert runner.invoke(app, [*args, "--priority", "11"]).exit_code == 1
 
     def test_catalog_add_escapes_url_markup(self, tmp_path):
         """Catalog add should render user-supplied URLs literally."""
@@ -7622,333 +7623,6 @@ class TestExtensionAddCLI:
 
         assert result.exit_code == 0, result.output
         assert f"URL: {url}" in result.output
-
-    @pytest.mark.parametrize("name", ["community", " community "])
-    @pytest.mark.parametrize("padding", ["", " \t"])
-    def test_catalog_add_duplicate_is_idempotent(self, tmp_path, name, padding):
-        """Re-adding an identical catalog is a successful no-op (#4505)."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        args = [
-            "extension", "catalog", "add",
-            "https://example.com/catalog.json", "--name", "community",
-        ]
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            first = runner.invoke(app, [
-                "extension", "catalog", "add",
-                f"{padding}https://example.com/catalog.json{padding}", "--name", name,
-            ], catch_exceptions=True)
-            assert first.exit_code == 0, first.output
-            config_path = project_dir / ".specify" / "extension-catalogs.yml"
-            original = config_path.read_bytes()
-            second = runner.invoke(app, args, catch_exceptions=True)
-
-        assert second.exit_code == 0, second.output
-        assert "nothing to do" in second.output
-        assert config_path.read_bytes() == original
-        entries = yaml.safe_load(original)["catalogs"]
-        assert len(entries) == 1
-        assert entries[0]["name"] == "community"
-        assert entries[0]["url"] == "https://example.com/catalog.json"
-
-    @pytest.mark.parametrize("stored_name,name", [
-        (" community ", "community"),
-        ("community", " community "),
-        (" community ", "\tcommunity\t"),
-    ])
-    @pytest.mark.parametrize("stored_padding,padding", [(" \t", ""), ("", " \t"), (" ", "\t")])
-    @pytest.mark.parametrize("priority", [10, 20])
-    def test_catalog_add_normalizes_existing_identity(
-        self, project_dir, monkeypatch, stored_name, name, stored_padding, padding, priority
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        config_path = project_dir / ".specify" / "extension-catalogs.yml"
-        config_path.write_text(yaml.safe_dump({"catalogs": [{
-            "name": stored_name,
-            "url": f"{stored_padding}https://example.com/catalog.json{stored_padding}",
-            "priority": 10,
-            "install_allowed": False,
-        }]}), encoding="utf-8")
-        original = config_path.read_bytes()
-        modified_at = config_path.stat().st_mtime_ns
-
-        with monkeypatch.context() as scoped:
-            scoped.chdir(project_dir)
-            result = CliRunner().invoke(app, [
-                "extension", "catalog", "add",
-                f"{padding}https://example.com/catalog.json{padding}",
-                "--name", name, "--priority", str(priority),
-            ], catch_exceptions=False)
-
-        assert result.exit_code == (0 if priority == 10 else 1), result.output
-        assert ("nothing to do" if priority == 10 else "different settings") in result.output
-        assert config_path.read_bytes() == original
-        assert config_path.stat().st_mtime_ns == modified_at
-
-    def test_catalog_add_duplicate_different_settings_conflicts(self, tmp_path):
-        """Re-adding a same-named catalog with different settings errors (#4505)."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            first = runner.invoke(app, [
-                "extension", "catalog", "add",
-                "https://example.com/catalog.json", "--name", "community",
-                "--priority", "10",
-            ], catch_exceptions=True)
-            second = runner.invoke(app, [
-                "extension", "catalog", "add",
-                "https://example.com/catalog.json", "--name", "community",
-                "--priority", "20",
-            ], catch_exceptions=True)
-
-        assert first.exit_code == 0, first.output
-        assert second.exit_code == 1
-        assert "different settings" in second.output
-
-    def test_catalog_add_string_representations_are_idempotent(self, tmp_path):
-        """A stored entry using supported string representations (a numeric-string
-        priority and a string boolean) is equivalent to the requested defaults, so
-        a rerun is a no-op rather than a false conflict (#4505)."""
-        import yaml as _yaml
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-        # Hand-written config: priority as a string, install_allowed as "false".
-        (project_dir / ".specify" / "extension-catalogs.yml").write_text(
-            _yaml.safe_dump({"catalogs": [{
-                "name": "community",
-                "url": "https://example.com/catalog.json",
-                "priority": "10",
-                "install_allowed": "false",
-                "description": "",
-            }]}),
-            encoding="utf-8",
-        )
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(app, [
-                "extension", "catalog", "add",
-                "https://example.com/catalog.json", "--name", "community",
-            ], catch_exceptions=True)
-
-        assert result.exit_code == 0, result.output
-        assert "nothing to do" in result.output
-
-    @pytest.mark.parametrize("stored_priority,priority", [
-        (True, 1), (False, 0), (1, 1), (0, 0), ("1", 1), ("0", 0),
-    ])
-    def test_catalog_add_priority_equivalence(self, project_dir, monkeypatch, stored_priority, priority):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        config_path = project_dir / ".specify" / "extension-catalogs.yml"
-        config_path.write_text(yaml.safe_dump({"catalogs": [{
-            "name": "mine",
-            "url": "https://example.com/catalog.json",
-            "priority": stored_priority,
-            "install_allowed": False,
-        }]}), encoding="utf-8")
-        original = config_path.read_bytes()
-        modified_at = config_path.stat().st_mtime_ns
-
-        with monkeypatch.context() as scoped:
-            scoped.chdir(project_dir)
-            result = CliRunner().invoke(app, [
-                "extension", "catalog", "add", "https://example.com/catalog.json",
-                "--name", "mine", "--priority", str(priority),
-            ], catch_exceptions=False)
-
-        invalid = isinstance(stored_priority, bool)
-        assert result.exit_code == (1 if invalid else 0), result.output
-        assert ("different settings" if invalid else "nothing to do") in result.output
-        assert config_path.read_bytes() == original
-        assert config_path.stat().st_mtime_ns == modified_at
-
-    def test_catalog_add_omitted_priority_uses_reader_default(
-        self, project_dir, monkeypatch
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        config_path = project_dir / ".specify" / "extension-catalogs.yml"
-        config_path.write_text(
-            yaml.safe_dump(
-                {
-                    "catalogs": [
-                        {
-                            "name": "mine",
-                            "url": "https://example.com/catalog.json",
-                            "install_allowed": False,
-                        }
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
-        original = config_path.read_bytes()
-
-        with monkeypatch.context() as scoped:
-            scoped.chdir(project_dir)
-            result = CliRunner().invoke(
-                app,
-                [
-                    "extension",
-                    "catalog",
-                    "add",
-                    "https://example.com/catalog.json",
-                    "--name",
-                    "mine",
-                    "--priority",
-                    "1",
-                ],
-                catch_exceptions=False,
-            )
-
-        assert result.exit_code == 0, result.output
-        assert "nothing to do" in result.output
-        assert config_path.read_bytes() == original
-
-    @pytest.mark.parametrize("stored_name", ["missing", None, "", " \t"])
-    def test_catalog_add_blank_name_uses_reader_default(
-        self, project_dir, monkeypatch, stored_name
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        config_path = project_dir / ".specify" / "extension-catalogs.yml"
-        entry = {
-            "url": "https://example.com/catalog.json",
-            "priority": 10,
-            "install_allowed": False,
-        }
-        if stored_name != "missing":
-            entry["name"] = stored_name
-        config_path.write_text(
-            yaml.safe_dump({"catalogs": [entry]}),
-            encoding="utf-8",
-        )
-        original = config_path.read_bytes()
-
-        with monkeypatch.context() as scoped:
-            scoped.chdir(project_dir)
-            result = CliRunner().invoke(
-                app,
-                [
-                    "extension",
-                    "catalog",
-                    "add",
-                    "https://example.com/catalog.json",
-                    "--name",
-                    "catalog-1",
-                ],
-                catch_exceptions=False,
-            )
-
-        assert result.exit_code == 0, result.output
-        assert "nothing to do" in result.output
-        assert config_path.read_bytes() == original
-
-    def test_catalog_add_same_name_with_blank_url_conflicts(
-        self, project_dir, monkeypatch
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        config_path = project_dir / ".specify" / "extension-catalogs.yml"
-        config_path.write_text(
-            yaml.safe_dump(
-                {
-                    "catalogs": [
-                        {
-                            "name": "mine",
-                            "url": "",
-                            "priority": 10,
-                            "install_allowed": False,
-                        }
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
-        original = config_path.read_bytes()
-
-        with monkeypatch.context() as scoped:
-            scoped.chdir(project_dir)
-            result = CliRunner().invoke(
-                app,
-                [
-                    "extension",
-                    "catalog",
-                    "add",
-                    "https://example.com/catalog.json",
-                    "--name",
-                    "mine",
-                ],
-                catch_exceptions=False,
-            )
-
-        assert result.exit_code == 1
-        assert "different settings" in result.output
-        assert config_path.read_bytes() == original
-
-    @pytest.mark.parametrize("requested_name", ["mine", " mine "])
-    def test_catalog_remove_normalizes_name(
-        self, project_dir, monkeypatch, requested_name
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        config_path = project_dir / ".specify" / "extension-catalogs.yml"
-        config_path.write_text(
-            yaml.safe_dump(
-                {
-                    "catalogs": [
-                        {
-                            "name": "  mine  ",
-                            "url": "https://example.com/catalog.json",
-                            "priority": 10,
-                            "install_allowed": False,
-                        }
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        with monkeypatch.context() as scoped:
-            scoped.chdir(project_dir)
-            result = CliRunner().invoke(
-                app,
-                ["extension", "catalog", "remove", requested_name],
-                catch_exceptions=False,
-            )
-
-        assert result.exit_code == 0, result.output
-        assert "Removed catalog 'mine'" in result.output
-        assert yaml.safe_load(config_path.read_text(encoding="utf-8"))[
-            "catalogs"
-        ] == []
 
     def test_catalog_add_escapes_config_saved_path_markup(self, tmp_path):
         """Catalog add's saved-path label should render literally under Rich."""

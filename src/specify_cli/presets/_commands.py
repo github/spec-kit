@@ -47,37 +47,6 @@ preset_catalog_app = typer.Typer(
 preset_app.add_typer(preset_catalog_app, name="catalog")
 
 
-def _normalize_catalog_priority(value: object) -> int | None:
-    """Normalize a stored catalog priority the way the preset reader does.
-
-    The preset reader (``specify_cli/presets/__init__.py``) accepts
-    integer-string priorities like ``"10"`` but rejects bools. Mirror that here
-    so an equivalent rerun whose persisted priority is a supported string
-    representation is still a no-op rather than a false conflict (#4505). A
-    value that cannot be normalized returns ``None`` so it cannot compare equal
-    to an integer.
-    """
-    if isinstance(value, bool):
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError, OverflowError):
-        return None
-
-
-def _normalize_catalog_install_allowed(value: object) -> bool:
-    """Normalize a stored ``install_allowed`` the way the preset reader does.
-
-    The reader treats the strings ``"true"``/``"yes"``/``"1"`` (case- and
-    whitespace-insensitive) as truthy; everything else falls back to ``bool``.
-    Comparing raw values instead would report ``install_allowed: "false"`` as a
-    conflict because ``bool("false")`` is ``True``.
-    """
-    if isinstance(value, str):
-        return value.strip().lower() in ("true", "yes", "1")
-    return bool(value)
-
-
 def _warn_unmet_extension_dependencies(manager, manifest) -> None:
     """Warn when a preset's declared extension dependencies are unsatisfied.
 
@@ -922,11 +891,6 @@ def preset_catalog_add(
 
     project_root = _require_specify_project()
     specify_dir = project_root / ".specify"
-    url = url.strip()
-    name = name.strip()
-    if not name:
-        console.print("[red]Error:[/red] Catalog name must be non-empty.")
-        raise typer.Exit(1)
 
     # Validate URL
     tmp_catalog = PresetCatalog(project_root)
@@ -959,61 +923,29 @@ def preset_catalog_add(
         console.print("[red]Error:[/red] Invalid catalog config: 'catalogs' must be a list.")
         raise typer.Exit(1)
 
-    # Only rendering is escaped — the unescaped values get persisted and
+    # Only rendering is escaped — the raw values are what get persisted and
     # compared below, so a name containing markup still round-trips exactly.
     safe_name = _escape_markup(str(name))
     safe_url = _escape_markup(str(url))
 
-    # Idempotent add (#4505): a rerun that requests an identical entry is a
-    # successful no-op so the same `catalog add` can live in a re-runnable
-    # workflow without failing. A same-name entry whose settings differ is
-    # still a conflict — we refuse to silently change priority/install
-    # permissions and ask the user to remove it first.
-    valid_catalog_count = 0
-    for idx, existing in enumerate(catalogs):
-        if not isinstance(existing, dict):
-            continue
-        existing_url = str(existing.get("url", "")).strip()
-        raw_existing_name = existing.get("name")
-        existing_name = (
-            str(raw_existing_name).strip()
-            if raw_existing_name is not None
-            else ""
-        )
-        if existing_url:
-            valid_catalog_count += 1
-        if not existing_name and existing_url:
-            existing_name = f"catalog-{valid_catalog_count}"
-        if existing_name == name:
-            if (
-                existing_url == url
-                and _normalize_catalog_priority(
-                    existing.get("priority", idx + 1)
-                ) == priority
-                and _normalize_catalog_install_allowed(
-                    existing.get("install_allowed", False)
-                ) == install_allowed
-                and str(existing.get("description", "")) == description
-            ):
-                console.print(
-                    f"[green]✓[/green] Catalog '[bold]{safe_name}[/bold]' is already "
-                    "configured with these settings; nothing to do."
-                )
-                return
-            console.print(
-                f"[red]Error:[/red] A catalog named '{safe_name}' already exists with "
-                "different settings."
-            )
-            console.print("Use 'specify preset catalog remove' first, or choose a different name.")
-            raise typer.Exit(1)
-
-    catalogs.append({
+    entry = {
         "name": name,
         "url": url,
         "priority": priority,
         "install_allowed": install_allowed,
         "description": description,
-    })
+    }
+
+    # Check for duplicate name
+    for existing in catalogs:
+        if isinstance(existing, dict) and existing.get("name") == name:
+            if existing == entry:
+                return
+            console.print(f"[yellow]Warning:[/yellow] A catalog named '{safe_name}' already exists.")
+            console.print("Use 'specify preset catalog remove' first, or choose a different name.")
+            raise typer.Exit(1)
+
+    catalogs.append(entry)
 
     config["catalogs"] = catalogs
     config_path.write_text(yaml.safe_dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
@@ -1035,7 +967,6 @@ def preset_catalog_remove(
 
     project_root = _require_specify_project()
     specify_dir = project_root / ".specify"
-    name = name.strip()
 
     config_path = specify_dir / "preset-catalogs.yml"
     if not config_path.exists():
@@ -1061,12 +992,7 @@ def preset_catalog_remove(
     safe_name = _escape_markup(str(name))
 
     original_count = len(catalogs)
-    catalogs = [
-        c
-        for c in catalogs
-        if isinstance(c, dict)
-        and str(c.get("name", "")).strip() != name
-    ]
+    catalogs = [c for c in catalogs if isinstance(c, dict) and c.get("name") != name]
 
     if len(catalogs) == original_count:
         console.print(f"[red]Error:[/red] Catalog '{safe_name}' not found.")

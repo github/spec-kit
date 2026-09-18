@@ -63,11 +63,35 @@ def test_add_source_persists_absolute_local_path(tmp_path: Path, monkeypatch):
     catalog.write_text("{}", encoding="utf-8")
 
     monkeypatch.chdir(project)
-    source, status = cc.add_source(project, "sub/cat.json", policy="install-allowed", priority=50)
+    source = cc.add_source(project, "sub/cat.json", policy="install-allowed", priority=50)
 
-    assert status == "added"
     assert Path(source.url).is_absolute()
     assert Path(source.url) == catalog.resolve()
+
+
+def test_add_source_is_idempotent_for_identical_entry(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    args = {
+        "policy": "install-allowed",
+        "priority": 50,
+        "source_id": "example",
+    }
+
+    first = cc.add_source(project, "https://example.com/catalog.json", **args)
+    original = cc._config_path(project).read_bytes()
+    second = cc.add_source(project, "https://example.com/catalog.json", **args)
+
+    assert second == first
+    assert cc._config_path(project).read_bytes() == original
+    with pytest.raises(BundlerError, match="already exists"):
+        cc.add_source(
+            project,
+            "https://example.com/catalog.json",
+            policy="install-allowed",
+            priority=51,
+            source_id="example",
+        )
 
 
 def test_remove_source_accepts_relative_local_path(tmp_path: Path, monkeypatch):
@@ -122,127 +146,6 @@ def test_add_source_refuses_symlinked_specify_escape(tmp_path: Path):
 
     with pytest.raises(BundlerError, match="escapes the allowed root"):
         cc.add_source(project, "https://example.com/c.json", policy="install-allowed", priority=50)
-
-
-@pytest.mark.parametrize("padding", ["", " \t"])
-def test_add_source_rerun_surfaces_bad_stored_priority_as_bundlererror(tmp_path: Path, padding):
-    """A hand-edited matching entry with a non-integer priority must surface a
-    clean BundlerError during an idempotent-add comparison rather than leaking
-    int()'s ValueError past the CLI's `except BundlerError` (#4505)."""
-    project = tmp_path / "proj"
-    (project / ".specify").mkdir(parents=True)
-    cc._config_path(project).write_text(
-        "schema_version: '1.0'\n"
-        "catalogs:\n"
-        f"  - id: '{padding}mine{padding}'\n"
-        f"    url: '{padding}https://example.com/c.json{padding}'\n"
-        "    priority: not-a-number\n"
-        "    install_policy: install-allowed\n",
-        encoding="utf-8",
-    )
-
-    config_path = cc._config_path(project)
-    original = config_path.read_bytes()
-    modified_at = config_path.stat().st_mtime_ns
-    with pytest.raises(BundlerError, match="non-integer priority"):
-        cc.add_source(
-            project, "https://example.com/c.json", source_id="mine",
-            policy="install-allowed", priority=10,
-        )
-    assert config_path.read_bytes() == original
-    assert config_path.stat().st_mtime_ns == modified_at
-
-
-def test_add_source_rerun_with_string_priority_is_unchanged(tmp_path: Path):
-    """A stored priority written as a numeric string is normalized like catalog
-    parsing, so an otherwise-identical rerun is a no-op, not a false conflict."""
-    project = tmp_path / "proj"
-    (project / ".specify").mkdir(parents=True)
-    cc._config_path(project).write_text(
-        "schema_version: '1.0'\n"
-        "catalogs:\n"
-        "  - id: mine\n"
-        "    url: https://example.com/c.json\n"
-        "    priority: '10'\n"
-        "    install_policy: install-allowed\n",
-        encoding="utf-8",
-    )
-
-    source, status = cc.add_source(
-        project, "https://example.com/c.json", source_id="mine",
-        policy="install-allowed", priority=10,
-    )
-    assert status == "unchanged"
-    assert source.priority == 10
-
-
-def test_add_source_same_url_without_id_preserves_custom_id(tmp_path: Path):
-    project = tmp_path / "proj"
-    (project / ".specify").mkdir(parents=True)
-    original_source, first_status = cc.add_source(
-        project,
-        "https://example.com/c.json",
-        source_id="custom",
-        policy="install-allowed",
-        priority=10,
-    )
-
-    source, status = cc.add_source(
-        project,
-        "https://example.com/c.json",
-        policy="install-allowed",
-        priority=10,
-    )
-
-    assert first_status == "added"
-    assert status == "unchanged"
-    assert source.id == original_source.id == "custom"
-    assert len(cc._read(project)) == 1
-
-
-@pytest.mark.parametrize("id_padding", ["", " \t"])
-@pytest.mark.parametrize("url_padding", ["", " \t"])
-@pytest.mark.parametrize("source_id,url,outcome", [
-    ("local", "https://example.com/c.json", "unchanged"),
-    ("local", "https://example.com/other.json", "conflict"),
-    ("other", "https://example.com/c.json", "conflict"),
-    ("other", "https://example.com/other.json", "added"),
-])
-def test_add_source_normalizes_stored_identity(
-    tmp_path: Path, id_padding, url_padding, source_id, url, outcome
-):
-    project = tmp_path / "proj"
-    (project / ".specify").mkdir(parents=True)
-    existing = {
-        "id": f"{id_padding}local{id_padding}",
-        "url": f"{url_padding}https://example.com/c.json{url_padding}",
-        "priority": 10,
-        "install_policy": "install-allowed",
-    }
-    cc._write(project, [existing])
-    config_path = cc._config_path(project)
-    original = config_path.read_bytes()
-    modified_at = config_path.stat().st_mtime_ns
-
-    if outcome == "conflict":
-        with pytest.raises(BundlerError, match="different settings"):
-            cc.add_source(project, url, source_id=source_id, policy="install-allowed", priority=10)
-    else:
-        source, status = cc.add_source(
-            project, url, source_id=source_id, policy="install-allowed", priority=10,
-        )
-        assert status == outcome
-        assert source.id == source_id
-        assert source.url == url
-        assert source.priority == 10
-        assert source.install_allowed
-
-    entries = cc._read(project)
-    assert entries[0] == existing
-    assert len(entries) == (2 if outcome == "added" else 1)
-    if outcome != "added":
-        assert config_path.read_bytes() == original
-        assert config_path.stat().st_mtime_ns == modified_at
 
 
 def test_read_rejects_non_list_catalogs(tmp_path: Path):
@@ -356,7 +259,7 @@ def test_add_source_allows_local_path_with_colon(tmp_path: Path, monkeypatch):
     (project / ".specify").mkdir(parents=True)
     monkeypatch.chdir(project)
     # A relative path containing ':' but no '://' is still a local path.
-    source, _ = cc.add_source(project, "weird:name.json", policy="install-allowed", priority=50)
+    source = cc.add_source(project, "weird:name.json", policy="install-allowed", priority=50)
     assert source.url.endswith("weird:name.json") or "weird" in source.url
 
 
@@ -370,7 +273,7 @@ def test_add_source_rejects_plain_http_for_non_localhost(tmp_path: Path):
 def test_add_source_allows_http_for_localhost(tmp_path: Path):
     project = tmp_path / "proj"
     (project / ".specify").mkdir(parents=True)
-    source, _ = cc.add_source(project, "http://localhost:8080/c.json", policy="install-allowed", priority=50)
+    source = cc.add_source(project, "http://localhost:8080/c.json", policy="install-allowed", priority=50)
     assert source.url == "http://localhost:8080/c.json"
 
 

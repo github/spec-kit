@@ -390,20 +390,14 @@ class IntegrationCatalog(CatalogStackBase):
             for e in entries
         ]
 
-    def add_catalog(self, url: str, name: Optional[str] = None) -> str:
+    def add_catalog(self, url: str, name: Optional[str] = None) -> None:
         """Add a catalog source to the project-level config file.
 
         The URL is normalized (whitespace stripped) and validated before being
-        written. Identity for an integration catalog is the (normalized) URL.
-        Adding a URL that is already configured is idempotent (#4505): a rerun
-        that requests the same name (or no explicit name) is a successful
-        no-op, while a rerun that requests a *different* name is rejected as a
-        conflict rather than silently overwriting the stored entry. Priority is
-        derived as ``max(existing) + 1`` so a newly added entry sorts last in
-        the resolution order unless the user edits the file manually.
-
-        Returns ``"added"`` when a new entry is written, or ``"unchanged"``
-        when an equivalent entry already existed.
+        written. Duplicate URLs are rejected, including near-duplicates that
+        differ only by surrounding whitespace. Priority is derived as
+        ``max(existing) + 1`` so the new entry sorts last in the resolution
+        order unless the user edits the file manually.
         """
         url = url.strip()
         if not url:
@@ -438,10 +432,9 @@ class IntegrationCatalog(CatalogStackBase):
         # Validate each existing entry before mutating anything. Fail fast so
         # we don't silently preserve a corrupt sibling entry or derive a new
         # priority from a bogus value.
-        requested_name = str(name).strip() if name is not None else ""
+        normalized_name = str(name).strip() if name is not None else ""
         existing_priorities: List[int] = []
         valid_catalog_count = 0
-        matching_catalog: tuple[bool, str] | None = None
         for idx, cat in enumerate(catalogs):
             if not isinstance(cat, dict):
                 raise IntegrationValidationError(
@@ -459,6 +452,17 @@ class IntegrationCatalog(CatalogStackBase):
                 raise IntegrationValidationError(
                     f"Invalid catalog entry at index {idx} in {config_path}: {exc}"
                 ) from exc
+            if existing_url == url:
+                generated_name = f"catalog-{valid_catalog_count + 1}"
+                requested_name = normalized_name or generated_name
+                existing_name = str(cat.get("name", generated_name)).strip()
+                if existing_name == requested_name:
+                    self._load_catalog_config(config_path)
+                    return
+                raise IntegrationValidationError(
+                    f"Catalog URL already configured: {url}"
+                )
+            valid_catalog_count += 1
             if "priority" in cat:
                 raw_priority = cat.get("priority")
                 if isinstance(raw_priority, bool):
@@ -470,43 +474,19 @@ class IntegrationCatalog(CatalogStackBase):
                 try:
                     normalized_priority = int(raw_priority)
                 except (TypeError, ValueError, OverflowError):
+                    # OverflowError: int(float("inf")) — a ``priority: .inf``.
                     raise IntegrationValidationError(
                         f"Invalid catalog entry at index {idx} in {config_path}: "
                         f"'priority' must be an integer, got "
                         f"{raw_priority!r}."
                     ) from None
+                existing_priorities.append(normalized_priority)
             else:
-                # Match `_load_catalog_config()`'s defaulting rule.
-                normalized_priority = idx + 1
-            existing_priorities.append(normalized_priority)
-            valid_catalog_count += 1
-
-            raw_existing_name = cat.get("name")
-            existing_name = (
-                str(raw_existing_name).strip()
-                if raw_existing_name is not None
-                else ""
-            )
-            if not existing_name:
-                existing_name = f"catalog-{valid_catalog_count}"
-            if existing_url == url and matching_catalog is None:
-                matching_catalog = (
-                    not requested_name or requested_name == existing_name,
-                    existing_name,
-                )
-
-        if matching_catalog is not None:
-            names_match, existing_name = matching_catalog
-            if names_match:
-                return "unchanged"
-            raise IntegrationValidationError(
-                f"Catalog URL already configured with a different name "
-                f"('{existing_name}'): {url}. Remove it first or pass "
-                f"--name '{existing_name}'."
-            )
-
+                # Match `_load_catalog_config()`'s defaulting rule so the new
+                # entry still sorts after implicit-priority siblings.
+                existing_priorities.append(idx + 1)
         max_priority = max(existing_priorities, default=0)
-        normalized_name = str(name).strip() if name is not None else ""
+        max_priority = max(existing_priorities, default=0)
         generated_name = f"catalog-{valid_catalog_count + 1}"
         catalogs.append(
             {
@@ -528,7 +508,6 @@ class IntegrationCatalog(CatalogStackBase):
                 sort_keys=False,
                 allow_unicode=True,
             )
-        return "added"
 
     def remove_catalog(self, index: int) -> str:
         """Remove a catalog source by 0-based index.

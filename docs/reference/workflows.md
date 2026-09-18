@@ -405,10 +405,6 @@ specify workflow catalog add <url>
 
 Adds a custom catalog URL to the project's `.specify/workflow-catalogs.yml`.
 
-Adding a catalog is idempotent (identity is the catalog **URL**): re-running `catalog add` with the same URL and the same (or no) `--name` is a successful no-op (exit code 0), so it is safe to include in a re-runnable workflow. Re-adding the same URL with a *different* `--name` is rejected as a conflict rather than silently overwriting the existing entry — remove it first to change it.
-
-Surrounding whitespace in catalog URLs is ignored when comparing entries and stripped from newly added entries. A no-op leaves the existing configuration unchanged.
-
 ### Remove a Catalog
 
 ```bash
@@ -425,20 +421,6 @@ Catalogs are resolved in this order (first match wins):
 2. **Project config** — `.specify/workflow-catalogs.yml`
 3. **User config** — `~/.specify/workflow-catalogs.yml`
 4. **Built-in defaults** — official catalog + community catalog
-
-### Step Catalogs
-
-Custom step types have a separate catalog stack:
-
-```bash
-specify workflow step catalog list
-specify workflow step catalog add <url> [--name <name>]
-specify workflow step catalog remove <index>
-```
-
-`step catalog add` writes to `.specify/step-catalogs.yml`. Like workflow catalogs, step catalogs use the **URL** as their identity, ignoring surrounding whitespace. Adding the same URL with the same (or no) `--name` is a successful no-op (exit code 0) that leaves the configuration unchanged. A different `--name` for that URL is a conflict (exit code 1); remove the existing entry first to change it. New entries store the URL without surrounding whitespace.
-
-`step catalog list` shows the active sources, and `step catalog remove` removes a project entry by its index. Step catalog resolution uses `SPECKIT_STEP_CATALOG_URL`, then the project config, then `~/.specify/step-catalogs.yml`, then built-in defaults.
 
 ## Workflow Definition
 

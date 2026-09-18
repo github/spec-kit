@@ -705,16 +705,8 @@ class WorkflowCatalog:
             for e in entries
         ]
 
-    def add_catalog(self, url: str, name: str | None = None) -> str:
-        """Add a catalog source to the project-level config.
-
-        Identity is the URL with surrounding whitespace stripped. Adding an
-        existing URL is idempotent (#4505): requesting the same name (or no
-        explicit name) returns ``"unchanged"``; a rerun requesting a
-        different name is rejected as a conflict. Returns ``"added"`` when a
-        new entry is written.
-        """
-        url = url.strip()
+    def add_catalog(self, url: str, name: str | None = None) -> None:
+        """Add a catalog source to the project-level config."""
         self._validate_catalog_url(url)
         config_path = self.project_root / ".specify" / "workflow-catalogs.yml"
 
@@ -739,23 +731,16 @@ class WorkflowCatalog:
             raise WorkflowValidationError(
                 "Catalog config 'catalogs' must be a list."
             )
-        # Idempotent add (#4505): identity is the URL. A rerun requesting the
-        # same name (or no explicit name) is a no-op; a different name conflicts.
-        requested_name = str(name).strip() if name is not None else ""
+        # Check for duplicate URL (guard against non-dict entries)
         for idx, cat in enumerate(catalogs):
-            if isinstance(cat, dict) and str(cat.get("url", "")).strip() == url:
-                # A no-op must not bless a project config that the normal
-                # catalog-loading path would reject.
-                self._load_catalog_config(config_path)
-                existing_name = str(
-                    cat.get("name", f"catalog-{idx + 1}")
-                ).strip()
-                if not requested_name or requested_name == existing_name:
-                    return "unchanged"
+            if isinstance(cat, dict) and cat.get("url") == url:
+                generated_name = f"catalog-{idx + 1}"
+                requested_name = name or generated_name
+                if cat.get("name", generated_name) == requested_name:
+                    self._load_catalog_config(config_path)
+                    return
                 raise WorkflowValidationError(
-                    f"Catalog URL already configured with a different name "
-                    f"('{existing_name}'): {url}. Remove it first or pass "
-                    f"--name '{existing_name}'."
+                    f"Catalog URL already configured: {url}"
                 )
 
         # Derive priority from the highest existing priority + 1.
@@ -779,7 +764,7 @@ class WorkflowCatalog:
         )
         catalogs.append(
             {
-                "name": requested_name or f"catalog-{len(catalogs) + 1}",
+                "name": name or f"catalog-{len(catalogs) + 1}",
                 "url": url,
                 "priority": max_priority + 1,
                 "install_allowed": True,
@@ -796,7 +781,6 @@ class WorkflowCatalog:
             raise WorkflowValidationError(
                 f"Failed to write catalog config {config_path}: {exc}"
             ) from exc
-        return "added"
 
     def remove_catalog(self, index: int) -> str:
         """Remove a catalog source by index (0-based). Returns the removed name."""
@@ -1409,16 +1393,8 @@ class StepCatalog:
             for e in entries
         ]
 
-    def add_catalog(self, url: str, name: str | None = None) -> str:
-        """Add a catalog source to the project-level config.
-
-        Identity is the URL with surrounding whitespace stripped. Adding an
-        existing URL is idempotent (#4505): requesting the same name (or no
-        explicit name) returns ``"unchanged"``; a rerun requesting a
-        different name is rejected as a conflict. Returns ``"added"`` when a
-        new entry is written.
-        """
-        url = url.strip()
+    def add_catalog(self, url: str, name: str | None = None) -> None:
+        """Add a catalog source to the project-level config."""
         self._validate_catalog_url(url)
         config_path = self.project_root / ".specify" / "step-catalogs.yml"
 
@@ -1443,23 +1419,15 @@ class StepCatalog:
             raise StepValidationError(
                 "Catalog config 'catalogs' must be a list."
             )
-        # Idempotent add (#4505): identity is the URL. A rerun requesting the
-        # same name (or no explicit name) is a no-op; a different name conflicts.
-        requested_name = str(name).strip() if name is not None else ""
         for idx, cat in enumerate(catalogs):
-            if isinstance(cat, dict) and str(cat.get("url", "")).strip() == url:
-                # A no-op must not bless a project config that the normal
-                # catalog-loading path would reject.
-                self._load_catalog_config(config_path)
-                existing_name = str(
-                    cat.get("name", f"catalog-{idx + 1}")
-                ).strip()
-                if not requested_name or requested_name == existing_name:
-                    return "unchanged"
+            if isinstance(cat, dict) and cat.get("url") == url:
+                generated_name = f"catalog-{idx + 1}"
+                requested_name = name or generated_name
+                if cat.get("name", generated_name) == requested_name:
+                    self._load_catalog_config(config_path)
+                    return
                 raise StepValidationError(
-                    f"Catalog URL already configured with a different name "
-                    f"('{existing_name}'): {url}. Remove it first or pass "
-                    f"--name '{existing_name}'."
+                    f"Catalog URL already configured: {url}"
                 )
 
         # Coerce existing priorities to int with a safe fallback so a user-edited
@@ -1482,7 +1450,7 @@ class StepCatalog:
         )
         catalogs.append(
             {
-                "name": requested_name or f"catalog-{len(catalogs) + 1}",
+                "name": name or f"catalog-{len(catalogs) + 1}",
                 "url": url,
                 "priority": max_priority + 1,
                 "install_allowed": True,
@@ -1501,7 +1469,6 @@ class StepCatalog:
             raise StepValidationError(
                 f"Failed to write catalog config {config_path}: {exc}"
             ) from exc
-        return "added"
 
     def remove_catalog(self, index: int) -> str:
         """Remove a catalog source by index (0-based). Returns the removed name."""

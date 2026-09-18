@@ -8786,35 +8786,20 @@ class TestWorkflowCatalog:
         new = next(c for c in data["catalogs"] if c["url"] == "https://b.example.com/c.json")
         assert new["priority"] == 1  # max(inf coerced to 0) + 1
 
-    def test_add_catalog_duplicate_is_idempotent(self, project_dir):
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        catalog = WorkflowCatalog(project_dir)
-        assert catalog.add_catalog("https://example.com/catalog.json") == "added"
-        assert catalog.add_catalog("https://example.com/catalog.json") == "unchanged"
-
-        cfg = project_dir / ".specify" / "workflow-catalogs.yml"
-        data = yaml.safe_load(cfg.read_text(encoding="utf-8"))
-        assert len(data["catalogs"]) == 1
-
-    def test_add_catalog_duplicate_same_name_is_idempotent(self, project_dir):
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        catalog = WorkflowCatalog(project_dir)
-        assert catalog.add_catalog("https://example.com/catalog.json", "mine") == "added"
-        assert catalog.add_catalog("https://example.com/catalog.json", "mine") == "unchanged"
-
-        cfg = project_dir / ".specify" / "workflow-catalogs.yml"
-        data = yaml.safe_load(cfg.read_text(encoding="utf-8"))
-        assert len(data["catalogs"]) == 1
-
-    def test_add_catalog_duplicate_different_name_conflicts(self, project_dir):
+    def test_add_catalog_is_idempotent_for_identical_url_and_name(
+        self, project_dir
+    ):
         from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
 
         catalog = WorkflowCatalog(project_dir)
-        catalog.add_catalog("https://example.com/catalog.json", "first")
-        with pytest.raises(WorkflowValidationError, match="different name"):
-            catalog.add_catalog("https://example.com/catalog.json", "second")
+        catalog.add_catalog("https://example.com/catalog.json")
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        original = config_path.read_bytes()
+        catalog.add_catalog("https://example.com/catalog.json")
+        assert config_path.read_bytes() == original
+
+        with pytest.raises(WorkflowValidationError, match="already configured"):
+            catalog.add_catalog("https://example.com/catalog.json", "different")
 
     def test_remove_catalog(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog
@@ -9549,35 +9534,20 @@ class TestStepCatalog:
 
         assert config_path.read_text(encoding="utf-8") == original
 
-    def test_add_catalog_duplicate_is_idempotent(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog
-
-        catalog = StepCatalog(project_dir)
-        assert catalog.add_catalog("https://example.com/steps.json") == "added"
-        assert catalog.add_catalog("https://example.com/steps.json") == "unchanged"
-
-        cfg = project_dir / ".specify" / "step-catalogs.yml"
-        data = yaml.safe_load(cfg.read_text(encoding="utf-8"))
-        assert len(data["catalogs"]) == 1
-
-    def test_add_catalog_duplicate_same_name_is_idempotent(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog
-
-        catalog = StepCatalog(project_dir)
-        assert catalog.add_catalog("https://example.com/steps.json", "mine") == "added"
-        assert catalog.add_catalog("https://example.com/steps.json", "mine") == "unchanged"
-
-        cfg = project_dir / ".specify" / "step-catalogs.yml"
-        data = yaml.safe_load(cfg.read_text(encoding="utf-8"))
-        assert len(data["catalogs"]) == 1
-
-    def test_add_catalog_duplicate_different_name_conflicts(self, project_dir):
+    def test_add_catalog_is_idempotent_for_identical_url_and_name(
+        self, project_dir
+    ):
         from specify_cli.workflows.catalog import StepCatalog, StepValidationError
 
         catalog = StepCatalog(project_dir)
-        catalog.add_catalog("https://example.com/steps.json", "first")
-        with pytest.raises(StepValidationError, match="different name"):
-            catalog.add_catalog("https://example.com/steps.json", "second")
+        catalog.add_catalog("https://example.com/steps.json")
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        original = config_path.read_bytes()
+        catalog.add_catalog("https://example.com/steps.json")
+        assert config_path.read_bytes() == original
+
+        with pytest.raises(StepValidationError, match="already configured"):
+            catalog.add_catalog("https://example.com/steps.json", "different")
 
     def test_remove_catalog(self, project_dir):
         from specify_cli.workflows.catalog import StepCatalog
@@ -9979,230 +9949,6 @@ class PkgStep(StepBase):
         name_a = make_module_name("a-b")
         name_b = make_module_name("a_b")
         assert name_a != name_b, "Module names for 'a-b' and 'a_b' must differ"
-
-
-@pytest.mark.parametrize("command,config_filename", [
-    (["workflow", "catalog", "add"], "workflow-catalogs.yml"),
-    (["workflow", "step", "catalog", "add"], "step-catalogs.yml"),
-])
-class TestWorkflowCatalogAddCLI:
-    @pytest.mark.parametrize(
-        ("requested_name", "stored_name"),
-        [("  mine  ", "mine"), ("   ", "catalog-1")],
-    )
-    def test_add_catalog_normalizes_name(
-        self,
-        project_dir,
-        monkeypatch,
-        command,
-        config_filename,
-        requested_name,
-        stored_name,
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        with monkeypatch.context() as scoped:
-            scoped.chdir(project_dir)
-            result = CliRunner().invoke(
-                app,
-                [
-                    *command,
-                    "https://example.com/catalog.json",
-                    "--name",
-                    requested_name,
-                ],
-                catch_exceptions=False,
-            )
-
-        assert result.exit_code == 0, result.output
-        config_path = project_dir / ".specify" / config_filename
-        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-        assert data["catalogs"][0]["name"] == stored_name
-
-    @pytest.mark.parametrize("priority", ["not-a-number", True])
-    def test_add_catalog_duplicate_validates_existing_config(
-        self, project_dir, monkeypatch, command, config_filename, priority
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        url = "https://example.com/catalog.json"
-        config_path = project_dir / ".specify" / config_filename
-        config_path.write_text(
-            yaml.safe_dump(
-                {
-                    "catalogs": [
-                        {
-                            "name": "mine",
-                            "url": url,
-                            "priority": priority,
-                        }
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
-        original = config_path.read_bytes()
-
-        with monkeypatch.context() as scoped:
-            scoped.chdir(project_dir)
-            result = CliRunner().invoke(
-                app,
-                [*command, url, "--name", "mine"],
-                catch_exceptions=False,
-            )
-
-        assert result.exit_code == 1, result.output
-        assert "Invalid priority" in result.output
-        assert config_path.read_bytes() == original
-
-    def test_add_catalog_escapes_markup_in_success_output(
-        self, project_dir, monkeypatch, command, config_filename
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        url = "https://example.com/[/red]/catalog.json"
-        runner = CliRunner()
-        with monkeypatch.context() as scoped:
-            scoped.chdir(project_dir)
-            first = runner.invoke(
-                app, [*command, url], catch_exceptions=False
-            )
-        assert first.exit_code == 0, first.output
-        assert url in first.output
-
-        with monkeypatch.context() as scoped:
-            scoped.chdir(project_dir)
-            second = runner.invoke(
-                app, [*command, url], catch_exceptions=False
-            )
-        assert second.exit_code == 0, second.output
-        assert url in second.output
-
-    def test_add_catalog_missing_name_uses_loader_fallback(
-        self, project_dir, monkeypatch, command, config_filename
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        url = "https://example.com/catalog.json"
-        config_path = project_dir / ".specify" / config_filename
-        config_path.write_text(
-            yaml.safe_dump(
-                {
-                    "catalogs": [
-                        {
-                            "url": url,
-                            "priority": 1,
-                            "install_allowed": True,
-                        }
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
-        original = config_path.read_bytes()
-
-        with monkeypatch.context() as scoped:
-            scoped.chdir(project_dir)
-            result = CliRunner().invoke(
-                app,
-                [*command, url, "--name", "catalog-1"],
-                catch_exceptions=False,
-            )
-
-        assert result.exit_code == 0, result.output
-        assert "already configured" in result.output
-        assert config_path.read_bytes() == original
-
-    @pytest.mark.parametrize("name", [None, "mine"])
-    @pytest.mark.parametrize("padding", ["", " \t"])
-    def test_add_catalog_duplicate_outcomes(
-        self, project_dir, monkeypatch, command, config_filename, name, padding
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        url = "https://example.com/catalog.json"
-        name_args = ["--name", name] if name is not None else []
-        runner = CliRunner()
-        with monkeypatch.context() as scoped:
-            scoped.chdir(project_dir)
-            first = runner.invoke(
-                app, [*command, f"{padding}{url}{padding}", *name_args], catch_exceptions=False
-            )
-        assert first.exit_code == 0, first.output
-        assert "source added" in first.output
-        config_path = project_dir / ".specify" / config_filename
-        original = config_path.read_bytes()
-        modified_at = config_path.stat().st_mtime_ns
-
-        with monkeypatch.context() as scoped:
-            scoped.chdir(project_dir)
-            second = runner.invoke(app, [*command, url, *name_args], catch_exceptions=False)
-
-        assert second.exit_code == 0, second.output
-        assert "already configured" in second.output
-        assert "source added" not in second.output
-        assert config_path.read_bytes() == original
-        assert config_path.stat().st_mtime_ns == modified_at
-        entries = yaml.safe_load(original)["catalogs"]
-        assert len(entries) == 1
-        assert entries[0]["url"] == url
-        assert entries[0]["name"] == (name or "catalog-1")
-
-        with monkeypatch.context() as scoped:
-            scoped.chdir(project_dir)
-            conflict = runner.invoke(
-                app, [*command, url, "--name", "different"], catch_exceptions=False
-            )
-        assert conflict.exit_code == 1, conflict.output
-        assert "different name" in conflict.output
-        assert "source added" not in conflict.output
-        assert config_path.read_bytes() == original
-        assert config_path.stat().st_mtime_ns == modified_at
-
-    @pytest.mark.parametrize("stored_padding,padding", [
-        ("", ""), (" \t", ""), ("", " \t"), (" ", "\t"),
-    ])
-    @pytest.mark.parametrize("name", [None, "mine", "different"])
-    def test_add_catalog_existing_url_outcomes(
-        self, project_dir, monkeypatch, command, config_filename, stored_padding, padding, name
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        url = "https://example.com/catalog.json"
-        config_path = project_dir / ".specify" / config_filename
-        config_path.write_text(yaml.safe_dump({"catalogs": [{
-            "name": "mine",
-            "url": f"{stored_padding}{url}{stored_padding}",
-            "priority": 7,
-            "install_allowed": False,
-            "description": "Keep this entry unchanged.",
-        }]}), encoding="utf-8")
-        original = config_path.read_bytes()
-        modified_at = config_path.stat().st_mtime_ns
-        name_args = ["--name", name] if name is not None else []
-
-        with monkeypatch.context() as scoped:
-            scoped.chdir(project_dir)
-            result = CliRunner().invoke(
-                app, [*command, f"{padding}{url}{padding}", *name_args], catch_exceptions=False
-            )
-
-        if name == "different":
-            assert result.exit_code == 1, result.output
-            assert "different name" in result.output
-            assert "already configured:" not in result.output
-        else:
-            assert result.exit_code == 0, result.output
-            assert "already configured" in result.output
-        assert "source added" not in result.output
-        assert config_path.read_bytes() == original
-        assert config_path.stat().st_mtime_ns == modified_at
 
 
 # ===== CLI Step Remove Tests =====

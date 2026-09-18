@@ -3025,16 +3025,12 @@ def workflow_catalog_add(
     project_root = _require_specify_project()
     catalog = WorkflowCatalog(project_root)
     try:
-        status = catalog.add_catalog(url, name)
+        catalog.add_catalog(url, name)
     except WorkflowValidationError as exc:
-        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+        console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
 
-    safe_url = _escape_markup(url)
-    if status == "unchanged":
-        console.print(f"[green]✓[/green] Catalog source already configured: {safe_url}")
-    else:
-        console.print(f"[green]✓[/green] Catalog source added: {safe_url}")
+    console.print(f"[green]✓[/green] Catalog source added: {url}")
 
 
 @workflow_catalog_app.command("remove")
@@ -3775,18 +3771,12 @@ def workflow_step_catalog_add(
 
     catalog = StepCatalog(project_root)
     try:
-        status = catalog.add_catalog(url, name)
+        catalog.add_catalog(url, name)
     except StepValidationError as exc:
-        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+        console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
 
-    safe_url = _escape_markup(url)
-    if status == "unchanged":
-        console.print(
-            f"[green]✓[/green] Step catalog source already configured: {safe_url}"
-        )
-    else:
-        console.print(f"[green]✓[/green] Step catalog source added: {safe_url}")
+    console.print(f"[green]✓[/green] Step catalog source added: {url}")
 
 
 @workflow_step_catalog_app.command("remove")

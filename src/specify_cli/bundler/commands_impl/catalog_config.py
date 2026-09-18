@@ -139,7 +139,7 @@ def add_source(
     policy: str,
     priority: int,
     source_id: str | None = None,
-) -> tuple[CatalogSource, str]:
+) -> CatalogSource:
     url = url.strip()
     if not url:
         raise BundlerError("A catalog url is required.")
@@ -183,51 +183,26 @@ def add_source(
 
     url = _canonicalize_url(url)
     install_policy = InstallPolicy.parse(policy)
-    requested_id = source_id.strip() if source_id is not None else ""
-    resolved_id = requested_id or _derive_id(url)
+    resolved_id = (source_id or _derive_id(url)).strip()
 
     catalogs = _read(project_root)
-    desired = {
+    entry = {
         "id": resolved_id,
         "url": url,
         "priority": int(priority),
         "install_policy": install_policy.value,
     }
     for existing in catalogs:
-        if (
-            str(existing.get("id", "")).strip() == resolved_id
-            or str(existing.get("url", "")).strip() == url
-        ):
-            # Idempotent add (#4505): identity is the source id or url. A rerun
-            # requesting the same settings is a successful no-op; differing
-            # settings are a conflict rather than a silent overwrite.
-            #
-            # Parse the matching entry through CatalogSource.from_dict first:
-            # _read() only checks that entries are mappings, so a hand-edited
-            # entry may carry a non-integer priority. Normalizing here surfaces
-            # that as a clean BundlerError (matching catalog parsing) instead of
-            # leaking int()'s ValueError/OverflowError past the CLI's
-            # `except BundlerError`, and lets supported representations (e.g. a
-            # string priority) compare equal to the requested defaults.
-            existing_source = CatalogSource.from_dict(dict(existing), Scope.PROJECT)
-            if (
-                (
-                    existing_source.id == resolved_id
-                    or (not requested_id and existing_source.url == url)
-                )
-                and existing_source.url == url
-                and existing_source.priority == desired["priority"]
-                and existing_source.install_policy.value == desired["install_policy"]
-            ):
-                return existing_source, "unchanged"
+        if existing.get("id") == resolved_id or existing.get("url") == url:
+            if existing == entry:
+                return CatalogSource.from_dict(existing, Scope.PROJECT)
             raise BundlerError(
-                f"Catalog source '{resolved_id}' (or url) already exists in this "
-                "project with different settings. Remove it first to change it."
+                f"Catalog source '{resolved_id}' (or url) already exists in this project."
             )
 
-    catalogs.append(desired)
+    catalogs.append(entry)
     _write(project_root, catalogs)
-    return CatalogSource.from_dict(desired, Scope.PROJECT), "added"
+    return CatalogSource.from_dict(entry, Scope.PROJECT)
 
 
 def remove_source(project_root: Path, id_or_url: str) -> str:

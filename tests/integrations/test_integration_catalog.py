@@ -1168,137 +1168,19 @@ class TestCatalogSourceManagement:
         entries = data["catalogs"]
         assert [e["name"] for e in entries] == ["mine", "catalog-2"]
 
-    def test_add_catalog_duplicate_url_is_idempotent_noop(self, tmp_path, monkeypatch):
-        """Re-adding the same URL (no explicit name) is a successful no-op (#4505)."""
-        self._isolate(tmp_path, monkeypatch)
-        cat = IntegrationCatalog(tmp_path)
-        assert cat.add_catalog("https://dup.example.com/catalog.json") == "added"
-        assert cat.add_catalog("https://dup.example.com/catalog.json") == "unchanged"
-        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
-        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-        assert len(data["catalogs"]) == 1
-
-    def test_add_catalog_duplicate_url_different_name_conflicts(self, tmp_path, monkeypatch):
-        """Re-adding the same URL with a different name is rejected as a conflict (#4505)."""
-        self._isolate(tmp_path, monkeypatch)
-        cat = IntegrationCatalog(tmp_path)
-        cat.add_catalog("https://dup.example.com/catalog.json", name="first")
-        with pytest.raises(IntegrationValidationError, match="different name"):
-            cat.add_catalog("https://dup.example.com/catalog.json", name="second")
-
-    def test_add_catalog_duplicate_url_same_name_is_idempotent_noop(self, tmp_path, monkeypatch):
-        """Re-adding the same URL with the *same* explicit name is a no-op (#4505)."""
-        self._isolate(tmp_path, monkeypatch)
-        cat = IntegrationCatalog(tmp_path)
-        assert cat.add_catalog("https://dup.example.com/catalog.json", name="mine") == "added"
-        assert cat.add_catalog("https://dup.example.com/catalog.json", name="mine") == "unchanged"
-        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
-        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-        assert len(data["catalogs"]) == 1
-
-    def test_add_catalog_duplicate_url_validates_stored_priority(
+    def test_add_catalog_is_idempotent_for_identical_url_and_name(
         self, tmp_path, monkeypatch
     ):
         self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        cat.add_catalog("https://dup.example.com/catalog.json")
         cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
-        cfg_path.parent.mkdir(parents=True, exist_ok=True)
-        cfg_path.write_text(
-            yaml.safe_dump(
-                {
-                    "catalogs": [
-                        {
-                            "name": "mine",
-                            "url": "https://dup.example.com/catalog.json",
-                            "priority": "first",
-                        }
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
+        original = cfg_path.read_bytes()
+        cat.add_catalog("https://dup.example.com/catalog.json")
+        assert cfg_path.read_bytes() == original
 
-        with pytest.raises(
-            IntegrationValidationError, match="'priority' must be an integer"
-        ):
-            IntegrationCatalog(tmp_path).add_catalog(
-                "https://dup.example.com/catalog.json",
-                name="mine",
-            )
-
-    @pytest.mark.parametrize("stored_name", ["missing", None, "", " \t"])
-    def test_add_catalog_duplicate_url_uses_reader_name_fallback(
-        self, tmp_path, monkeypatch, stored_name
-    ):
-        self._isolate(tmp_path, monkeypatch)
-        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
-        cfg_path.parent.mkdir(parents=True, exist_ok=True)
-        entry = {
-            "url": "https://dup.example.com/catalog.json",
-            "priority": 1,
-        }
-        if stored_name != "missing":
-            entry["name"] = stored_name
-        cfg_path.write_text(
-            yaml.safe_dump({"catalogs": [entry]}),
-            encoding="utf-8",
-        )
-
-        assert (
-            IntegrationCatalog(tmp_path).add_catalog(
-                "https://dup.example.com/catalog.json",
-                name="catalog-1",
-            )
-            == "unchanged"
-        )
-
-    @pytest.mark.parametrize(
-        ("invalid_entry", "match"),
-        [
-            (
-                {
-                    "name": "bad-url",
-                    "url": "http://example.com/catalog.json",
-                    "priority": 2,
-                },
-                "HTTPS",
-            ),
-            (
-                {
-                    "name": "bad-priority",
-                    "url": "https://other.example.com/catalog.json",
-                    "priority": "first",
-                },
-                "'priority' must be an integer",
-            ),
-        ],
-    )
-    def test_add_catalog_duplicate_url_validates_remaining_entries(
-        self, tmp_path, monkeypatch, invalid_entry, match
-    ):
-        self._isolate(tmp_path, monkeypatch)
-        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
-        cfg_path.parent.mkdir(parents=True, exist_ok=True)
-        cfg_path.write_text(
-            yaml.safe_dump(
-                {
-                    "catalogs": [
-                        {
-                            "name": "mine",
-                            "url": "https://dup.example.com/catalog.json",
-                            "priority": 1,
-                        },
-                        invalid_entry,
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        with pytest.raises(IntegrationValidationError, match=match):
-            IntegrationCatalog(tmp_path).add_catalog(
-                "https://dup.example.com/catalog.json",
-                name="mine",
-            )
+        with pytest.raises(IntegrationValidationError, match="already configured"):
+            cat.add_catalog("https://dup.example.com/catalog.json", name="different")
 
     def test_add_catalog_rejects_invalid_url(self, tmp_path, monkeypatch):
         self._isolate(tmp_path, monkeypatch)
@@ -1627,15 +1509,13 @@ class TestCatalogSourceManagement:
         data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
         assert data["catalogs"][0]["url"] == "https://a.example.com/catalog.json"
 
-    def test_add_catalog_whitespace_only_duplicate_is_noop(self, tmp_path, monkeypatch):
-        """A second add differing only by whitespace (no new name) is an idempotent no-op."""
+    def test_add_catalog_rejects_whitespace_only_duplicate(self, tmp_path, monkeypatch):
+        """A second add with only whitespace differences must be rejected as a duplicate."""
         self._isolate(tmp_path, monkeypatch)
         cat = IntegrationCatalog(tmp_path)
         cat.add_catalog("https://a.example.com/catalog.json", name="a")
-        assert cat.add_catalog("  https://a.example.com/catalog.json  ") == "unchanged"
-        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
-        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-        assert len(data["catalogs"]) == 1
+        with pytest.raises(IntegrationValidationError, match="already configured"):
+            cat.add_catalog("  https://a.example.com/catalog.json  ")
 
     def test_remove_catalog_wraps_unlink_oserror(self, tmp_path, monkeypatch):
         """An OSError from `Path.unlink` surfaces as IntegrationValidationError."""
