@@ -436,7 +436,7 @@ def _read_response_within_limit(response, max_bytes: int | None = None) -> bytes
     if callable(getheader):
         try:
             raw_length = getheader("Content-Length")
-        except Exception:
+        except AttributeError:
             raw_length = None
         if raw_length is not None:
             try:
