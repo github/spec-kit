@@ -276,6 +276,11 @@ repository README remains the source for the actual URLs.
 
 Create one draft pull request.
 
+This repository-owned gh-aw maintenance workflow does not perform the contributor
+open-PR count check or request confirmation. After successful validation and
+allowed catalog/docs file updates, emit the configured draft `create_pull_request`
+safe output regardless of the submitter's or filing account's open PR count.
+
 - New entry branch:
   `community/${{ github.event.issue.number }}-add-<bundle-id>-bundle`
 - Update branch:
