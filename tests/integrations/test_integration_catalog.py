@@ -1168,19 +1168,12 @@ class TestCatalogSourceManagement:
         entries = data["catalogs"]
         assert [e["name"] for e in entries] == ["mine", "catalog-2"]
 
-    def test_add_catalog_is_idempotent_for_identical_url_and_name(
-        self, tmp_path, monkeypatch
-    ):
+    def test_add_catalog_rejects_duplicate_url(self, tmp_path, monkeypatch):
         self._isolate(tmp_path, monkeypatch)
         cat = IntegrationCatalog(tmp_path)
         cat.add_catalog("https://dup.example.com/catalog.json")
-        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
-        original = cfg_path.read_bytes()
-        cat.add_catalog("https://dup.example.com/catalog.json")
-        assert cfg_path.read_bytes() == original
-
         with pytest.raises(IntegrationValidationError, match="already configured"):
-            cat.add_catalog("https://dup.example.com/catalog.json", name="different")
+            cat.add_catalog("https://dup.example.com/catalog.json")
 
     def test_add_catalog_rejects_invalid_url(self, tmp_path, monkeypatch):
         self._isolate(tmp_path, monkeypatch)
