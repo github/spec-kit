@@ -547,15 +547,16 @@ def integration_catalog_add(
     except IntegrationCatalogError as exc:
         # Covers both URL validation (base class) and config-file validation
         # (IntegrationValidationError subclass).
-        console.print(f"[red]Error:[/red] {exc}")
+        console.print(f"[red]Error:[/red] {_rich_escape(str(exc))}")
         raise typer.Exit(1)
 
+    safe_url = _rich_escape(normalized_url)
     if status == "unchanged":
         console.print(
-            f"[green]✓[/green] Catalog source already configured: {normalized_url}"
+            f"[green]✓[/green] Catalog source already configured: {safe_url}"
         )
     else:
-        console.print(f"[green]✓[/green] Catalog source added: {normalized_url}")
+        console.print(f"[green]✓[/green] Catalog source added: {safe_url}")
 
 
 @integration_catalog_app.command("remove")

@@ -742,9 +742,11 @@ class WorkflowCatalog:
         # Idempotent add (#4505): identity is the URL. A rerun requesting the
         # same name (or no explicit name) is a no-op; a different name conflicts.
         requested_name = str(name).strip() if name is not None else ""
-        for cat in catalogs:
+        for idx, cat in enumerate(catalogs):
             if isinstance(cat, dict) and str(cat.get("url", "")).strip() == url:
-                existing_name = str(cat.get("name", "")).strip()
+                existing_name = str(
+                    cat.get("name", f"catalog-{idx + 1}")
+                ).strip()
                 if not requested_name or requested_name == existing_name:
                     return "unchanged"
                 raise WorkflowValidationError(
@@ -1441,9 +1443,11 @@ class StepCatalog:
         # Idempotent add (#4505): identity is the URL. A rerun requesting the
         # same name (or no explicit name) is a no-op; a different name conflicts.
         requested_name = str(name).strip() if name is not None else ""
-        for cat in catalogs:
+        for idx, cat in enumerate(catalogs):
             if isinstance(cat, dict) and str(cat.get("url", "")).strip() == url:
-                existing_name = str(cat.get("name", "")).strip()
+                existing_name = str(
+                    cat.get("name", f"catalog-{idx + 1}")
+                ).strip()
                 if not requested_name or requested_name == existing_name:
                     return "unchanged"
                 raise StepValidationError(

@@ -9986,6 +9986,66 @@ class PkgStep(StepBase):
     (["workflow", "step", "catalog", "add"], "step-catalogs.yml"),
 ])
 class TestWorkflowCatalogAddCLI:
+    def test_add_catalog_escapes_markup_in_success_output(
+        self, project_dir, monkeypatch, command, config_filename
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        url = "https://example.com/[/red]/catalog.json"
+        runner = CliRunner()
+        with monkeypatch.context() as scoped:
+            scoped.chdir(project_dir)
+            first = runner.invoke(
+                app, [*command, url], catch_exceptions=False
+            )
+        assert first.exit_code == 0, first.output
+        assert url in first.output
+
+        with monkeypatch.context() as scoped:
+            scoped.chdir(project_dir)
+            second = runner.invoke(
+                app, [*command, url], catch_exceptions=False
+            )
+        assert second.exit_code == 0, second.output
+        assert url in second.output
+
+    def test_add_catalog_missing_name_uses_loader_fallback(
+        self, project_dir, monkeypatch, command, config_filename
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        url = "https://example.com/catalog.json"
+        config_path = project_dir / ".specify" / config_filename
+        config_path.write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "url": url,
+                            "priority": 1,
+                            "install_allowed": True,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        original = config_path.read_bytes()
+
+        with monkeypatch.context() as scoped:
+            scoped.chdir(project_dir)
+            result = CliRunner().invoke(
+                app,
+                [*command, url, "--name", "catalog-1"],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "already configured" in result.output
+        assert config_path.read_bytes() == original
+
     @pytest.mark.parametrize("name", [None, "mine"])
     @pytest.mark.parametrize("padding", ["", " \t"])
     def test_add_catalog_duplicate_outcomes(

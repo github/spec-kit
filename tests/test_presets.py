@@ -3848,6 +3848,33 @@ class TestPresetCatalogEntry:
 
 
 class TestPresetCatalogMultiCatalog:
+    def test_catalog_add_rejects_empty_normalized_name(
+        self, project_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        with monkeypatch.context() as scoped:
+            scoped.chdir(project_dir)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "preset",
+                    "catalog",
+                    "add",
+                    "https://example.com/catalog.json",
+                    "--name",
+                    " \t",
+                ],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 1
+        assert "must be non-empty" in result.output
+        assert not (
+            project_dir / ".specify" / "preset-catalogs.yml"
+        ).exists()
+
     """Test multi-catalog support in PresetCatalog."""
 
     def test_default_active_catalogs(self, project_dir):
@@ -4099,6 +4126,49 @@ class TestPresetCatalogMultiCatalog:
 
         assert result.exit_code == 0, result.output
         assert "nothing to do" in result.output
+        assert config_path.read_bytes() == original
+
+    def test_catalog_add_same_name_with_blank_url_conflicts(
+        self, project_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        config_path = project_dir / ".specify" / "preset-catalogs.yml"
+        config_path.write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "mine",
+                            "url": "",
+                            "priority": 10,
+                            "install_allowed": False,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        original = config_path.read_bytes()
+
+        with monkeypatch.context() as scoped:
+            scoped.chdir(project_dir)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "preset",
+                    "catalog",
+                    "add",
+                    "https://example.com/catalog.json",
+                    "--name",
+                    "mine",
+                ],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 1
+        assert "different settings" in result.output
         assert config_path.read_bytes() == original
 
     def test_catalog_add_duplicate_different_settings_conflicts(self, project_dir):

@@ -3027,13 +3027,14 @@ def workflow_catalog_add(
     try:
         status = catalog.add_catalog(url, name)
     except WorkflowValidationError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
+        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
+    safe_url = _escape_markup(url)
     if status == "unchanged":
-        console.print(f"[green]✓[/green] Catalog source already configured: {url}")
+        console.print(f"[green]✓[/green] Catalog source already configured: {safe_url}")
     else:
-        console.print(f"[green]✓[/green] Catalog source added: {url}")
+        console.print(f"[green]✓[/green] Catalog source added: {safe_url}")
 
 
 @workflow_catalog_app.command("remove")
@@ -3776,13 +3777,16 @@ def workflow_step_catalog_add(
     try:
         status = catalog.add_catalog(url, name)
     except StepValidationError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
+        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
+    safe_url = _escape_markup(url)
     if status == "unchanged":
-        console.print(f"[green]✓[/green] Step catalog source already configured: {url}")
+        console.print(
+            f"[green]✓[/green] Step catalog source already configured: {safe_url}"
+        )
     else:
-        console.print(f"[green]✓[/green] Step catalog source added: {url}")
+        console.print(f"[green]✓[/green] Step catalog source added: {safe_url}")
 
 
 @workflow_step_catalog_app.command("remove")

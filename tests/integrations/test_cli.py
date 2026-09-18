@@ -2565,6 +2565,18 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert second.exit_code == 1
         assert "different name" in second.output
 
+    def test_catalog_add_escapes_markup_in_success_output(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        url = "https://dup.example.com/[/red]/catalog.json"
+
+        first = self._invoke(["integration", "catalog", "add", url], project)
+        assert first.exit_code == 0, first.output
+        assert url in first.output
+
+        second = self._invoke(["integration", "catalog", "add", url], project)
+        assert second.exit_code == 0, second.output
+        assert url in second.output
+
     def test_catalog_remove_out_of_range(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)
         # Need a config file for remove to attempt an index lookup

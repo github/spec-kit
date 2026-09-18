@@ -441,6 +441,7 @@ class IntegrationCatalog(CatalogStackBase):
         requested_name = str(name).strip() if name is not None else ""
         existing_priorities: List[int] = []
         valid_catalog_count = 0
+        matching_catalog: tuple[bool, str] | None = None
         for idx, cat in enumerate(catalogs):
             if not isinstance(cat, dict):
                 raise IntegrationValidationError(
@@ -478,18 +479,31 @@ class IntegrationCatalog(CatalogStackBase):
                 # Match `_load_catalog_config()`'s defaulting rule.
                 normalized_priority = idx + 1
             existing_priorities.append(normalized_priority)
-
-            if existing_url == url:
-                # Idempotent add (#4505): same URL already configured.
-                existing_name = str(cat.get("name", "")).strip()
-                if not requested_name or requested_name == existing_name:
-                    return "unchanged"
-                raise IntegrationValidationError(
-                    f"Catalog URL already configured with a different name "
-                    f"('{existing_name}'): {url}. Remove it first or pass "
-                    f"--name '{existing_name}'."
-                )
             valid_catalog_count += 1
+
+            raw_existing_name = cat.get("name")
+            existing_name = (
+                str(raw_existing_name).strip()
+                if raw_existing_name is not None
+                else ""
+            )
+            if not existing_name:
+                existing_name = f"catalog-{valid_catalog_count}"
+            if existing_url == url and matching_catalog is None:
+                matching_catalog = (
+                    not requested_name or requested_name == existing_name,
+                    existing_name,
+                )
+
+        if matching_catalog is not None:
+            names_match, existing_name = matching_catalog
+            if names_match:
+                return "unchanged"
+            raise IntegrationValidationError(
+                f"Catalog URL already configured with a different name "
+                f"('{existing_name}'): {url}. Remove it first or pass "
+                f"--name '{existing_name}'."
+            )
 
         max_priority = max(existing_priorities, default=0)
         normalized_name = str(name).strip() if name is not None else ""

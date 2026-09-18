@@ -924,6 +924,9 @@ def preset_catalog_add(
     specify_dir = project_root / ".specify"
     url = url.strip()
     name = name.strip()
+    if not name:
+        console.print("[red]Error:[/red] Catalog name must be non-empty.")
+        raise typer.Exit(1)
 
     # Validate URL
     tmp_catalog = PresetCatalog(project_root)
@@ -971,16 +974,15 @@ def preset_catalog_add(
         if not isinstance(existing, dict):
             continue
         existing_url = str(existing.get("url", "")).strip()
-        if not existing_url:
-            continue
-        valid_catalog_count += 1
         raw_existing_name = existing.get("name")
         existing_name = (
             str(raw_existing_name).strip()
             if raw_existing_name is not None
             else ""
         )
-        if not existing_name:
+        if existing_url:
+            valid_catalog_count += 1
+        if not existing_name and existing_url:
             existing_name = f"catalog-{valid_catalog_count}"
         if existing_name == name:
             if (

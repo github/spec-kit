@@ -1225,6 +1225,81 @@ class TestCatalogSourceManagement:
                 name="mine",
             )
 
+    @pytest.mark.parametrize("stored_name", ["missing", None, "", " \t"])
+    def test_add_catalog_duplicate_url_uses_reader_name_fallback(
+        self, tmp_path, monkeypatch, stored_name
+    ):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "url": "https://dup.example.com/catalog.json",
+            "priority": 1,
+        }
+        if stored_name != "missing":
+            entry["name"] = stored_name
+        cfg_path.write_text(
+            yaml.safe_dump({"catalogs": [entry]}),
+            encoding="utf-8",
+        )
+
+        assert (
+            IntegrationCatalog(tmp_path).add_catalog(
+                "https://dup.example.com/catalog.json",
+                name="catalog-1",
+            )
+            == "unchanged"
+        )
+
+    @pytest.mark.parametrize(
+        ("invalid_entry", "match"),
+        [
+            (
+                {
+                    "name": "bad-url",
+                    "url": "http://example.com/catalog.json",
+                    "priority": 2,
+                },
+                "HTTPS",
+            ),
+            (
+                {
+                    "name": "bad-priority",
+                    "url": "https://other.example.com/catalog.json",
+                    "priority": "first",
+                },
+                "'priority' must be an integer",
+            ),
+        ],
+    )
+    def test_add_catalog_duplicate_url_validates_remaining_entries(
+        self, tmp_path, monkeypatch, invalid_entry, match
+    ):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "mine",
+                            "url": "https://dup.example.com/catalog.json",
+                            "priority": 1,
+                        },
+                        invalid_entry,
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(IntegrationValidationError, match=match):
+            IntegrationCatalog(tmp_path).add_catalog(
+                "https://dup.example.com/catalog.json",
+                name="mine",
+            )
+
     def test_add_catalog_rejects_invalid_url(self, tmp_path, monkeypatch):
         self._isolate(tmp_path, monkeypatch)
         cat = IntegrationCatalog(tmp_path)
