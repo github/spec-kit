@@ -314,6 +314,7 @@ The currently declared multi-install safe integrations are:
 | `kiro-cli` | `.kiro/prompts` |
 | `lingma` | `.lingma/skills` |
 | `omp` | `.omp/commands` |
+| `opencode` | `.opencode/commands` |
 | `pi` | `.pi/prompts` |
 | `qodercli` | `.qoder/skills` |
 | `qwen` | `.qwen/commands` |

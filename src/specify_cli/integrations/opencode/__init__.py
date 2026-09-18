@@ -8,6 +8,7 @@ from ..base import MarkdownIntegration
 
 class OpencodeIntegration(MarkdownIntegration):
     key = "opencode"
+    multi_install_safe = True
     config = {
         "name": "opencode",
         "folder": ".opencode/",
