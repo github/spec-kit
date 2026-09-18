@@ -185,6 +185,10 @@ if ($ShortName) {
     $branchSuffix = Get-BranchName -Description $featureDesc
 }
 
+if (-not $branchSuffix) {
+    [Console]::Error.WriteLine("[specify] Warning: Feature name is empty after removing unsupported characters. Use -ShortName with ASCII letters or digits (for example, user-auth).")
+}
+
 # Treat an explicit empty string as omitted, matching the bash and Python twins.
 $hasNumber = $PSBoundParameters.ContainsKey('Number') -and $Number -ne ''
 

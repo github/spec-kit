@@ -309,6 +309,7 @@ class CopilotIntegration(IntegrationBase):
         output_json: bool = True,
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         self.validate_runtime_config(integration_args, integration_options)
         # GitHub Copilot CLI uses ``copilot -p "prompt"`` for

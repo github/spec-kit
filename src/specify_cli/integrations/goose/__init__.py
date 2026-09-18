@@ -1,6 +1,7 @@
 """Goose integration — open source AI agent (Agentic AI Foundation)."""
 
 from __future__ import annotations
+from pathlib import Path
 
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -32,6 +33,7 @@ class GooseIntegration(YamlIntegration):
         output_json: bool = True,
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         """Build CLI arguments for non-interactive ``goose`` execution.
 

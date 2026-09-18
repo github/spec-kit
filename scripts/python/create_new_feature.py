@@ -264,6 +264,13 @@ def main(argv: list[str] | None = None) -> int:
     else:
         branch_suffix = _generate_branch_name(args.description)
 
+    if not branch_suffix:
+        print(
+            "[specify] Warning: Feature name is empty after removing unsupported characters. "
+            "Use --short-name with ASCII letters or digits (for example, user-auth).",
+            file=sys.stderr,
+        )
+
     branch_number = args.branch_number
     if args.use_timestamp and branch_number:
         print(

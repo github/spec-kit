@@ -2087,6 +2087,42 @@ class TestPromptStep:
             assert result.status is StepStatus.FAILED, bad
             assert "'timeout' must be a positive number" in (result.error or ""), bad
 
+    def test_try_dispatch_threads_project_root(self):
+        """PromptStep._try_dispatch must pass context.project_root to build_exec_args."""
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from specify_cli.workflows.base import StepContext
+        from specify_cli.workflows.steps.prompt import PromptStep
+
+        step = PromptStep()
+        ctx = StepContext(project_root="/fake/project/root", default_integration="dummy")
+
+        mock_impl = MagicMock()
+        mock_impl.key = "dummy"
+        mock_impl.build_exec_args.return_value = ["dummy", "args"]
+        mock_get_integration = MagicMock(return_value=mock_impl)
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+
+        with patch("specify_cli.integrations.get_integration", mock_get_integration), \
+             patch("specify_cli.workflows.steps.prompt.shutil.which", return_value="/opt/dummy"), \
+             patch("subprocess.run", return_value=mock_result):
+            step.execute(
+                {"id": "p", "type": "prompt", "prompt": "hi", "integration": "dummy"},
+                ctx,
+            )
+
+        mock_impl.build_exec_args.assert_called_once_with(
+            "hi",
+            model=None,
+            output_json=False,
+            project_root=Path("/fake/project/root"),
+        )
+
 
 class TestShellStep:
     """Test the shell step type."""
@@ -10272,6 +10308,68 @@ class TestWorkflowAddCaseInsensitiveSuffix:
 
         assert result.exit_code == 0, result.output
         assert "installed" in result.output
+
+    def test_add_installs_workflow_with_custom_step(self, temp_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+        step_dir = temp_dir / ".specify" / "workflows" / "steps" / "test-add-step"
+        step_dir.mkdir(parents=True)
+        step_manifest = {
+            "schema_version": "1.0",
+            "step": {
+                "type_key": "test-add-step",
+                "name": "Test Add Step",
+                "version": "1.0.0",
+            },
+        }
+        (step_dir / "step.yml").write_text(
+            yaml.safe_dump(step_manifest, sort_keys=False),
+            encoding="utf-8",
+        )
+        (step_dir / "__init__.py").write_text(
+            """
+from specify_cli.workflows.base import StepBase, StepResult
+
+
+class TestAddStep(StepBase):
+    type_key = "test-add-step"
+
+    def execute(self, config, context):
+        return StepResult()
+""",
+            encoding="utf-8",
+        )
+
+        src = temp_dir / "sample.yml"
+        workflow_definition = {
+            "schema_version": "1.0",
+            "workflow": {
+                "id": "test-workflow-with-custom-step",
+                "name": "Test Workflow With Custom Step",
+                "version": "1.0.0",
+            },
+            "steps": [
+                {"id": "custom-step", "type": "test-add-step"},
+            ],
+        }
+        src.write_text(
+            yaml.safe_dump(workflow_definition, sort_keys=False),
+            encoding="utf-8",
+        )
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
+
+        assert result.exit_code == 0, result.output
+        installed_workflow = (
+            temp_dir
+            / ".specify"
+            / "workflows"
+            / "test-workflow-with-custom-step"
+            / "workflow.yml"
+        )
+        assert installed_workflow.is_file()
 
 
 class TestWorkflowInfoStepGraph:
