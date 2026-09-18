@@ -83,6 +83,10 @@ def clean_env() -> dict[str, str]:
     # this set could make a "no-PyYAML" test interpreter import PyYAML
     # anyway, silently skipping the delegated-parsing path under test.
     env.pop("PYTHONPATH", None)
+    # Tests exercising SPECKIT_PYTHON set it explicitly; an ambient value in
+    # the host environment would otherwise silently override the "unset"
+    # baseline for every other test.
+    env.pop("SPECKIT_PYTHON", None)
     return env
 
 

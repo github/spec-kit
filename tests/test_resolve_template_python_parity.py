@@ -741,6 +741,17 @@ def test_clean_env_strips_pythonpath(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "PYTHONPATH" not in clean_env()
 
 
+def test_clean_env_strips_speckit_python(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An ambient `SPECKIT_PYTHON` in the host/CI environment would otherwise
+    survive into every baseline built from `clean_env()`, silently bypassing
+    the blocked/default interpreter that tests like
+    `test_all_variants_fail_when_yaml_parser_is_unavailable` rely on. Tests
+    that exercise the override set it explicitly after calling
+    `clean_env()` (#4445)."""
+    monkeypatch.setenv("SPECKIT_PYTHON", "/somewhere/with/yaml")
+    assert "SPECKIT_PYTHON" not in clean_env()
+
+
 @requires_bash
 def test_bash_honors_speckit_python_path_containing_spaces(tmp_path: Path) -> None:
     """SPECKIT_PYTHON may be an absolute path containing spaces (e.g. a venv
@@ -1035,6 +1046,30 @@ def test_python_variant_rejects_speckit_python_override_without_python_3(
     monkeypatch.setattr(python_common.subprocess, "run", fake_run)
 
     assert python_common._import_yaml() is None
+
+
+def test_python_variant_skips_yaml_probe_for_manifest_less_preset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A preset with no preset.yml only needs the conventional template
+    fallback; importing/probing PyYAML for it (which can spawn a
+    SPECKIT_PYTHON child process) is unnecessary per-preset overhead that
+    `resolve_template_content` would otherwise pay for every manifest-less
+    preset (#4445)."""
+    preset_dir = tmp_path / "preset"
+    (preset_dir / "templates").mkdir(parents=True)
+    conventional = preset_dir / "templates" / f"{TEMPLATE}.md"
+    conventional.write_text("# Preset\n", encoding="utf-8")
+
+    def fail_if_called() -> object:
+        raise AssertionError("_import_yaml should not be called without a manifest")
+
+    monkeypatch.setattr(python_common, "_import_yaml", fail_if_called)
+
+    assert python_common._preset_template_layer(preset_dir, TEMPLATE) == (
+        conventional,
+        "replace",
+    )
 
 
 @requires_bash

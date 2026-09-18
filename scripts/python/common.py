@@ -512,56 +512,52 @@ def _preset_template_layer(
     manifest_path = preset_dir / "preset.yml"
     conventional = _conventional_template(preset_dir, template_name)
 
-    yaml = _import_yaml()
-    if yaml is None:
-        if manifest_path.is_file():
-            raise TemplateResolutionError(
-                "PyYAML is required to resolve preset template composition"
-            )
+    if not manifest_path.is_file():
         return (conventional, "replace") if conventional is not None else None
 
-    if manifest_path.is_file():
-        try:
-            manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-            if not isinstance(manifest, dict):
-                raise ValueError("manifest root must be a mapping")
-            if "provides" not in manifest:
-                raise ValueError("manifest missing provides section")
-            provides = manifest["provides"]
-            if not isinstance(provides, dict):
-                raise ValueError("manifest provides must be a mapping")
-            if "templates" not in provides:
-                raise ValueError("manifest provides missing templates")
-            templates = provides["templates"]
-            if not isinstance(templates, list):
-                raise ValueError("manifest templates must be a list")
-            if not templates:
-                raise ValueError("manifest must provide at least one template")
-            for entry in templates:
-                _validate_manifest_template_entry(entry)
-            for entry in templates:
-                if (
-                    entry.get("name") != template_name
-                    or entry.get("type", "template") != "template"
-                ):
-                    continue
-                file_value = entry.get("file", "")
-                strategy = entry.get("strategy", "replace")
-                relative = Path(file_value)
-                if (
-                    not relative
-                    or relative.is_absolute()
-                    or ".." in relative.parts
-                ):
-                    return None
-                candidate = preset_dir / relative
-                if not candidate.is_file():
-                    return None
-                return candidate, strategy.lower()
-        except (OSError, UnicodeError, ValueError, yaml.YAMLError) as exc:
-            raise TemplateResolutionError(
-                f"Failed to parse preset manifest {manifest_path}: {exc}"
-            ) from exc
+    yaml = _import_yaml()
+    if yaml is None:
+        raise TemplateResolutionError(
+            "PyYAML is required to resolve preset template composition"
+        )
+
+    try:
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict):
+            raise ValueError("manifest root must be a mapping")
+        if "provides" not in manifest:
+            raise ValueError("manifest missing provides section")
+        provides = manifest["provides"]
+        if not isinstance(provides, dict):
+            raise ValueError("manifest provides must be a mapping")
+        if "templates" not in provides:
+            raise ValueError("manifest provides missing templates")
+        templates = provides["templates"]
+        if not isinstance(templates, list):
+            raise ValueError("manifest templates must be a list")
+        if not templates:
+            raise ValueError("manifest must provide at least one template")
+        for entry in templates:
+            _validate_manifest_template_entry(entry)
+        for entry in templates:
+            if (
+                entry.get("name") != template_name
+                or entry.get("type", "template") != "template"
+            ):
+                continue
+            file_value = entry.get("file", "")
+            strategy = entry.get("strategy", "replace")
+            relative = Path(file_value)
+            if not relative or relative.is_absolute() or ".." in relative.parts:
+                return None
+            candidate = preset_dir / relative
+            if not candidate.is_file():
+                return None
+            return candidate, strategy.lower()
+    except (OSError, UnicodeError, ValueError, yaml.YAMLError) as exc:
+        raise TemplateResolutionError(
+            f"Failed to parse preset manifest {manifest_path}: {exc}"
+        ) from exc
 
     return (conventional, "replace") if conventional is not None else None
 
