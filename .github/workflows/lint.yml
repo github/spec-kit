@@ -15,7 +15,6 @@ jobs:
         docs/**/*.md
         README.md
         README.zh-CN.md
-        CHANGELOG.md
         CODE_OF_CONDUCT.md
         CONTRIBUTING.md
         DEVELOPMENT.md
