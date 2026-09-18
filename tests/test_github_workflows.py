@@ -607,6 +607,19 @@ def _community_submission_agent_run(workflow: str) -> str:
     )
 
 
+def _community_submission_harness_command(workflow: str) -> str:
+    agent_run = _community_submission_agent_run(workflow)
+    lines = [
+        line
+        for line in agent_run.splitlines()
+        if "copilot_harness.cjs" in line and not line.lstrip().startswith("#")
+    ]
+    assert len(lines) == 1, (
+        f"{workflow} must have exactly one executable Copilot harness command"
+    )
+    return lines[0]
+
+
 def test_community_submission_archive_fetch_tool_is_allowed():
     """Archive checks must not require an interactive curl permission grant."""
     for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
@@ -615,9 +628,9 @@ def test_community_submission_archive_fetch_tool_is_allowed():
 
         assert "curl" in bash_tools, f"{workflow} cannot fetch binary archives"
         assert "*" not in bash_tools
-        agent_run = _community_submission_agent_run(workflow)
-        assert "shell(curl:*)" in agent_run
-        assert "--allow-all-tools" not in agent_run
+        harness_command = _community_submission_harness_command(workflow)
+        assert "shell(curl:*)" in harness_command
+        assert "--allow-all-tools" not in harness_command
 
 
 def test_community_submission_archive_redirect_hosts_are_allowed():
@@ -663,7 +676,7 @@ def test_community_submission_archive_fetch_requires_direct_evidence():
         )
 
         assert "Use `curl` for binary downloads" in source_text
-        assert "--proto '=https' --proto-redir '=https'" in source_text
+        assert "--location --proto '=https' --proto-redir '=https'" in source_text
         assert "`--max-time 60`" in source_text
         assert "`--write-out '%{http_code}'`" in source_text
         assert (
