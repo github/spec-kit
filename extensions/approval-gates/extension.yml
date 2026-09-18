@@ -1,0 +1,52 @@
+schema_version: "1.0"
+
+extension:
+  id: "approval-gates"
+  name: "Approval Gates"
+  version: "1.0.0"
+  description: "Enforce approval requirements between spec-driven development phases"
+  author: "Spec Kit Team"
+  repository: "https://github.com/github/spec-kit/tree/main/extensions/approval-gates"
+  license: "MIT"
+  homepage: "https://github.com/github/spec-kit/tree/main/extensions/approval-gates"
+
+requires:
+  speckit_version: ">=0.1.0"
+
+provides:
+  commands:
+    - name: "speckit.approval-gates.status"
+      file: "commands/status.md"
+      description: "Show approval gates configuration and enforcement status"
+      aliases: ["speckit.approval-gates.check"]
+
+  config:
+    - name: "approval-gates-config.yml"
+      template: "approval-gates-config.template.yml"
+      description: "Approval gates configuration for this project"
+      required: false
+
+hooks:
+  after_tasks:
+    command: "speckit.approval-gates.status"
+    optional: true
+    prompt: "Check approval gates for next phase?"
+    description: "Show approval requirements after task breakdown"
+
+tags:
+  - "workflow"
+  - "governance"
+  - "approval"
+  - "quality-gates"
+
+defaults:
+  specify:
+    enabled: false
+  plan:
+    enabled: false
+  tasks:
+    enabled: false
+  implement:
+    enabled: false
+  constitution:
+    enabled: false
