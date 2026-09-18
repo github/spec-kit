@@ -16,7 +16,7 @@ def _normalized_template() -> str:
     return " ".join(CONVERGE_TEMPLATE.read_text(encoding="utf-8").split())
 
 
-def test_converge_scaffold_includes_every_task_and_evidence_source():
+def test_converge_scaffold_includes_complete_assessment_guidance():
     text = _normalized_template()
     required_clauses = (
         "Include every existing task in the intent inventory",
@@ -25,6 +25,8 @@ def test_converge_scaffold_includes_every_task_and_evidence_source():
         "Verify current behavior against the spec, plan, tasks, and constitution",
         "for corrective task chains, assess the resulting behavior, "
         "not superseded implementation details",
+        "Check both unmet obligations and implementation that contradicts, exceeds, "
+        "or falls outside the stated intent",
     )
 
     for clause in required_clauses:
