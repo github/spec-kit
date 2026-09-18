@@ -451,7 +451,10 @@ class IntegrationManifest:
             _ensure_safe_manifest_destination(self.project_root, path)
             os.replace(temp_path, path)
         finally:
-            temp_path.unlink(missing_ok=True)
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
         return path
 
     @classmethod
