@@ -1,6 +1,7 @@
 """Antigravity (agy) integration — skills-based agent.
 
-Antigravity uses ``.agents/skills/speckit-<name>/SKILL.md`` layout (supported in Antigravity CLI v1.0.0+ and Antigravity IDE v2.0.0+).
+Antigravity uses ``.agents/skills/speckit-<name>/SKILL.md`` layout
+(supported in Antigravity CLI v1.0.0+ and Antigravity IDE v2.0.0+).
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ class AgyIntegration(SkillsIntegration):
     names are automatically converted to hyphenated skill invocations.
     """
 
-    key = "agy"
+    key: ClassVar[str] = "agy"
     config: ClassVar[dict[str, Any]] = {
         "name": "Antigravity",
         "folder": ".agents/",
@@ -73,10 +74,13 @@ class AgyIntegration(SkillsIntegration):
             args.extend(["--model", model])
         if output_json:
             args.extend(["--output-format", "json"])
-        if project_root is not None:
-            args.extend(["--add-dir", str(project_root.resolve())])
-        # Honor SPECKIT_INTEGRATION_AGY_EXTRA_ARGS (operator-supplied flags),
-        # positioned before the positional prompt.
+        if project_root is not None and str(project_root).strip():
+            # agy requires an active workspace directory to discover skills under
+            # .agents/skills/ when invoked from workflow directories (see issue #4480, PR #4481).
+            args.extend(["--add-dir", str(Path(project_root).resolve())])
+        # Honor SPECKIT_INTEGRATION_AGY_EXTRA_ARGS (operator-supplied flags).
+        # Positioned before --print because agy consumes all trailing arguments
+        # as prompt text (see #4480).
         self._apply_extra_args_env_var(args)
         args.extend(["--print", prompt])
         return args

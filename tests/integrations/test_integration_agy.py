@@ -1,5 +1,6 @@
 """Tests for AgyIntegration (Antigravity)."""
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -104,8 +105,6 @@ class TestAgyBuildExecArgs:
 
     def test_build_exec_args_default(self):
         """build_exec_args returns ['agy', '--output-format', 'json', '--print', prompt] by default."""
-        from specify_cli.integrations import get_integration
-
         i = get_integration("agy")
         result = i.build_exec_args("describe my feature")
         assert result == [
@@ -118,8 +117,6 @@ class TestAgyBuildExecArgs:
 
     def test_build_exec_args_supports_model(self):
         """agy supports --model; model param must be included before --print."""
-        from specify_cli.integrations import get_integration
-
         i = get_integration("agy")
         result = i.build_exec_args("my prompt", model="gemini-pro", output_json=False)
         assert result == [
@@ -132,16 +129,12 @@ class TestAgyBuildExecArgs:
 
     def test_build_exec_args_no_model_flag_when_model_is_none(self):
         """When model is None, no --model flag should appear in the args."""
-        from specify_cli.integrations import get_integration
-
         i = get_integration("agy")
         result = i.build_exec_args("my prompt", model=None)
         assert "--model" not in result
 
     def test_build_exec_args_supports_model_and_json(self):
         """agy supports both --model and --output-format json simultaneously."""
-        from specify_cli.integrations import get_integration
-
         i = get_integration("agy")
         result = i.build_exec_args("my prompt", model="gemini-pro", output_json=True)
         assert result == [
@@ -156,8 +149,6 @@ class TestAgyBuildExecArgs:
 
     def test_build_exec_args_honors_output_json_false(self):
         """agy supports output_json=False; --output-format json must be omitted."""
-        from specify_cli.integrations import get_integration
-
         i = get_integration("agy")
         result = i.build_exec_args("my prompt", output_json=False)
         assert result == [
@@ -181,8 +172,6 @@ class TestAgyBuildExecArgs:
         self, monkeypatch, env_var, value
     ):
         """Setting permissions env var to truthy values enables --dangerously-skip-permissions."""
-        from specify_cli.integrations import get_integration
-
         monkeypatch.setenv(env_var, value)
         i = get_integration("agy")
         result = i.build_exec_args("my prompt", output_json=False)
@@ -201,19 +190,16 @@ class TestAgyBuildExecArgs:
         self, monkeypatch, value
     ):
         """Falsy or invalid env values must not enable --dangerously-skip-permissions."""
-        from specify_cli.integrations import get_integration
-
         monkeypatch.setenv("SPECKIT_AGY_ALLOW_ALL_TOOLS", value)
         i = get_integration("agy")
         result = i.build_exec_args("my prompt", output_json=False)
         assert "--dangerously-skip-permissions" not in result
         assert result == ["agy", "--print", "my prompt"]
 
-    def test_build_exec_args_env_empty_fallthrough(self, monkeypatch):
-        """Empty string in integration-specific var must fall through to generic var."""
-        from specify_cli.integrations import get_integration
-
-        monkeypatch.setenv("SPECKIT_INTEGRATION_AGY_ALLOW_ALL_TOOLS", "  ")
+    @pytest.mark.parametrize("empty_val", ["", "  "])
+    def test_build_exec_args_env_empty_fallthrough(self, monkeypatch, empty_val):
+        """Empty string or whitespace in integration-specific var must fall through to generic var."""
+        monkeypatch.setenv("SPECKIT_INTEGRATION_AGY_ALLOW_ALL_TOOLS", empty_val)
         monkeypatch.setenv("SPECKIT_AGY_ALLOW_ALL_TOOLS", "1")
         i = get_integration("agy")
         result = i.build_exec_args("my prompt", output_json=False)
@@ -226,8 +212,6 @@ class TestAgyBuildExecArgs:
 
     def test_build_exec_args_env_precedence(self, monkeypatch):
         """Integration-specific variable takes precedence over generic variable."""
-        from specify_cli.integrations import get_integration
-
         monkeypatch.setenv("SPECKIT_INTEGRATION_AGY_ALLOW_ALL_TOOLS", "0")
         monkeypatch.setenv("SPECKIT_AGY_ALLOW_ALL_TOOLS", "1")
         i = get_integration("agy")
@@ -236,8 +220,6 @@ class TestAgyBuildExecArgs:
 
     def test_build_exec_args_honors_extra_args(self, monkeypatch):
         """SPECKIT_INTEGRATION_AGY_EXTRA_ARGS must be positioned before --print."""
-        from specify_cli.integrations import get_integration
-
         monkeypatch.setenv("SPECKIT_INTEGRATION_AGY_EXTRA_ARGS", "--verbose")
         i = get_integration("agy")
         assert i.build_exec_args("my prompt", output_json=False) == [
@@ -253,10 +235,8 @@ class TestAgyBuildExecArgs:
         Without --add-dir, agy cannot locate .agents/skills/ and reports
         'no active workspace', ignoring installed Spec Kit skills entirely.
 
-        See issue #4480.
+        See issue #4480 (PR #4481).
         """
-        from specify_cli.integrations import get_integration
-
         i = get_integration("agy")
         result = i.build_exec_args(
             "my prompt", project_root=tmp_path, output_json=False
@@ -265,7 +245,7 @@ class TestAgyBuildExecArgs:
         add_dir_idx = result.index("--add-dir")
         print_idx = result.index("--print")
         assert add_dir_idx < print_idx, "--add-dir must come before --print"
-        assert result[add_dir_idx + 1] == str(tmp_path)
+        assert result[add_dir_idx + 1] == str(tmp_path.resolve())
 
     def test_build_exec_args_relative_project_root(self):
         """Relative project_root must be resolved to an absolute path.
@@ -273,8 +253,6 @@ class TestAgyBuildExecArgs:
         Passing a relative path to --add-dir breaks agy when the subprocess
         also changes cwd to that same relative path.
         """
-        from specify_cli.integrations import get_integration
-
         i = get_integration("agy")
         rel_path = Path("my_relative_dir")
         result = i.build_exec_args(
@@ -284,40 +262,38 @@ class TestAgyBuildExecArgs:
         add_dir_idx = result.index("--add-dir")
         assert result[add_dir_idx + 1] == str(rel_path.resolve())
 
-    def test_build_exec_args_no_add_dir_when_project_root_is_none(self):
-        """When project_root is None, --add-dir must not appear."""
-        from specify_cli.integrations import get_integration
-
+    @pytest.mark.parametrize("empty_root", [None, "", "   "])
+    def test_build_exec_args_no_add_dir_when_project_root_is_empty(self, empty_root):
+        """When project_root is None or empty/whitespace, --add-dir must not appear."""
         i = get_integration("agy")
-        result = i.build_exec_args("my prompt", project_root=None)
+        result = i.build_exec_args("my prompt", project_root=empty_root)
         assert "--add-dir" not in result
 
     def test_build_exec_args_combined_flag_order(self, monkeypatch, tmp_path):
-        """When permissions, model, project_root, and EXTRA_ARGS are all set, all must appear before --print."""
-        from specify_cli.integrations import get_integration
-
+        """When permissions, model, output_json, project_root, and EXTRA_ARGS
+        are all set, all must appear before --print in expected order.
+        """
         monkeypatch.setenv("SPECKIT_AGY_ALLOW_ALL_TOOLS", "1")
         monkeypatch.setenv("SPECKIT_INTEGRATION_AGY_EXTRA_ARGS", "--custom-flag")
         i = get_integration("agy")
         result = i.build_exec_args(
             "hello", model="claude-3", project_root=tmp_path, output_json=True
         )
-        assert result[0] == "agy"
-        print_idx = result.index("--print")
-        for flag in (
+        assert result == [
+            "agy",
             "--dangerously-skip-permissions",
             "--model",
+            "claude-3",
             "--output-format",
+            "json",
             "--add-dir",
+            str(tmp_path.resolve()),
             "--custom-flag",
-        ):
-            assert flag in result
-            assert result.index(flag) < print_idx, f"{flag} must appear before --print"
-        assert result[-1] == "hello"
+            "--print",
+            "hello",
+        ]
 
     def test_build_exec_args_honors_executable_override(self, monkeypatch):
-        from specify_cli.integrations import get_integration
-
         monkeypatch.setenv("SPECKIT_INTEGRATION_AGY_EXECUTABLE", "/custom/agy")
         i = get_integration("agy")
         assert i.build_exec_args("my prompt")[0] == "/custom/agy"
@@ -325,8 +301,6 @@ class TestAgyBuildExecArgs:
     def test_dispatch_command_forwards_project_root_as_add_dir(self, tmp_path):
         """dispatch_command must pass project_root to build_exec_args so --add-dir is included."""
         from unittest.mock import MagicMock, patch
-
-        from specify_cli.integrations import get_integration
 
         i = get_integration("agy")
         mock_result = MagicMock()
@@ -345,7 +319,9 @@ class TestAgyBuildExecArgs:
         assert result["exit_code"] == 0
         argv = mock_run.call_args[0][0]
         assert "--add-dir" in argv
-        assert argv[argv.index("--add-dir") + 1] == str(tmp_path)
+        assert argv[argv.index("--add-dir") + 1] == str(tmp_path.resolve())
+        assert "--output-format" in argv
+        assert argv[argv.index("--output-format") + 1] == "json"
 
 
 class TestAgyHookCommandNote:
@@ -356,19 +332,25 @@ class TestAgyHookCommandNote:
     """
 
     def test_hook_note_injected_in_skills_with_hooks(self, tmp_path):
-        """Skills with hook sections should contain the normalization note."""
-        from specify_cli.integrations import get_integration
+        """Skills with hook sections should contain the normalization note and valid manifest hashes."""
         from specify_cli.integrations.manifest import IntegrationManifest
 
         i = get_integration("agy")
         m = IntegrationManifest("agy", tmp_path)
-        i.setup(tmp_path, m, script_type="sh")
+        created = i.setup(tmp_path, m, script_type="sh")
         specify_skill = tmp_path / ".agents/skills/speckit-specify/SKILL.md"
         assert specify_skill.exists()
         content = specify_skill.read_text(encoding="utf-8")
         assert "replace dots" in content, (
             "speckit-specify should have dot-to-hyphen hook note"
         )
+        rel_key = ".agents/skills/speckit-specify/SKILL.md"
+        assert rel_key in m.files
+        assert (
+            m.files[rel_key] == hashlib.sha256(specify_skill.read_bytes()).hexdigest()
+        )
+        assert m.check_modified() == []
+        assert len(created) > 0
 
     def test_hook_note_not_in_skills_without_hooks(self):
         """Skills without hook sections should not get the note."""
@@ -400,5 +382,6 @@ class TestAgyHookCommandNote:
         )
         result = AgyIntegration._inject_hook_command_note(content)
         lines = result.splitlines()
-        note_line = next(ln for ln in lines if "replace dots" in ln)
+        note_line = next((ln for ln in lines if "replace dots" in ln), None)
+        assert note_line is not None, "Hook note line should be present"
         assert note_line.startswith("   "), "Note should preserve indentation"
