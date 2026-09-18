@@ -20,7 +20,6 @@ network:
   allowed:
     - defaults
     - github.com
-    - codeload.github.com
     - release-assets.githubusercontent.com
 
 permissions:
