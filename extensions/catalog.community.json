@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-11T00:00:00Z",
+  "updated_at": "2026-09-17T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -8,8 +8,8 @@
       "id": "adrkit",
       "description": "Pulls the decisions governing this work into agent context, checks produced plans against them, and drafts an ADR from a plan artifact.",
       "author": "Mark Beacom (@mbeacom)",
-      "version": "0.1.2",
-      "download_url": "https://github.com/mbeacom/adrkit/releases/download/spec-kit-v0.1.2/adrkit.zip",
+      "version": "0.1.4",
+      "download_url": "https://github.com/mbeacom/adrkit/releases/download/spec-kit-v0.1.4/adrkit.zip",
       "repository": "https://github.com/mbeacom/adrkit",
       "homepage": "https://adrkit.dev",
       "documentation": "https://github.com/mbeacom/adrkit/blob/main/packages/adapters/spec-kit/README.md",
@@ -18,7 +18,7 @@
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.13.0,<0.16.0",
+        "speckit_version": ">=0.13.0,<1.1.0",
         "tools": [
           {
             "name": "adr",
@@ -42,7 +42,48 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-03T00:00:00Z",
-      "updated_at": "2026-08-03T00:00:00Z"
+      "updated_at": "2026-09-15T00:00:00Z"
+    },
+    "aee": {
+      "name": "Applied Epistemic Engineering",
+      "id": "aee",
+      "description": "Challenges claims, traces evidence, propagates uncertainty, and routes epistemic failures between Spec Kit phases.",
+      "author": "ElectroHire",
+      "version": "1.0.0",
+      "download_url": "https://github.com/electrohire/spec-kit-aee/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/electrohire/spec-kit-aee",
+      "homepage": "https://github.com/electrohire/spec-kit-aee",
+      "documentation": "https://github.com/electrohire/spec-kit-aee#readme",
+      "changelog": "https://github.com/electrohire/spec-kit-aee/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0",
+        "tools": [
+          {
+            "name": "aee",
+            "version": ">=1.0.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 6,
+        "hooks": 5
+      },
+      "tags": [
+        "epistemics",
+        "evidence",
+        "provenance",
+        "uncertainty",
+        "governance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-15T00:00:00Z",
+      "updated_at": "2026-09-15T00:00:00Z"
     },
     "aide": {
       "name": "AI-Driven Engineering (AIDE)",
@@ -1428,8 +1469,8 @@
       "id": "cosmosdb",
       "description": "Best-practice Azure Cosmos DB code generation and review for any AI coding agent",
       "author": "Theo van Kraay (maintained on behalf of the Azure Cosmos DB team; hosted in the AzureCosmosDB org)",
-      "version": "0.1.0",
-      "download_url": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb/archive/refs/tags/v0.1.0.zip",
+      "version": "0.2.0",
+      "download_url": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb/archive/refs/tags/v0.2.0.zip",
       "repository": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb",
       "homepage": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb",
       "documentation": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb/blob/main/README.md",
@@ -1455,7 +1496,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-21T00:00:00Z",
-      "updated_at": "2026-08-21T00:00:00Z"
+      "updated_at": "2026-09-15T00:00:00Z"
     },
     "cost": {
       "name": "Cost Tracker",
@@ -3548,6 +3589,48 @@
       "created_at": "2026-03-26T00:00:00Z",
       "updated_at": "2026-03-26T00:00:00Z"
     },
+    "openup": {
+      "name": "OpenUP Governed Lifecycle",
+      "id": "openup",
+      "description": "Adds the OpenUP lifecycle to Spec Kit: phases, iterations, a seven-level WBS, an executable risk register, bi-directional traceability, and machine-checkable milestone gates.",
+      "author": "Aniket Gore",
+      "version": "0.1.0",
+      "download_url": "https://github.com/anvigo12/specup/releases/download/v0.1.0/openup-0.1.0.zip",
+      "sha256": "012e11f5949060d57bef2c5ea15772e4649fc92d723e171a85e6230fb87cb46f",
+      "repository": "https://github.com/anvigo12/specup",
+      "homepage": "https://github.com/anvigo12/specup",
+      "documentation": "https://github.com/anvigo12/specup/blob/main/docs/guide/using-specup.md",
+      "changelog": "",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0,<2.0.0",
+        "tools": [
+          {
+            "name": "python3",
+            "version": ">=3.10",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 9,
+        "hooks": 4
+      },
+      "tags": [
+        "governance",
+        "traceability",
+        "risk",
+        "lifecycle",
+        "openup"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-15T00:00:00Z",
+      "updated_at": "2026-09-15T00:00:00Z"
+    },
     "optimize": {
       "name": "Optimize Extension",
       "id": "optimize",
@@ -5215,17 +5298,17 @@
       "id": "status-report",
       "description": "Project status, feature progress, and next-action recommendations for spec-driven workflows.",
       "author": "Open-Agent-Tools",
-      "version": "1.2.5",
-      "download_url": "https://github.com/Open-Agent-Tools/spec-kit-status/archive/refs/tags/v1.2.5.zip",
+      "version": "1.4.2",
+      "download_url": "https://github.com/Open-Agent-Tools/spec-kit-status/archive/refs/tags/v1.4.2.zip",
       "repository": "https://github.com/Open-Agent-Tools/spec-kit-status",
       "homepage": "https://github.com/Open-Agent-Tools/spec-kit-status",
       "documentation": "https://github.com/Open-Agent-Tools/spec-kit-status/blob/main/README.md",
       "changelog": "https://github.com/Open-Agent-Tools/spec-kit-status/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "visibility",
-      "effect": "read-only",
+      "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=1.0.0"
       },
       "provides": {
         "commands": 1,
@@ -5240,7 +5323,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-08T15:05:14Z",
-      "updated_at": "2026-04-08T15:05:14Z"
+      "updated_at": "2026-09-14T00:00:00Z"
     },
     "superb": {
       "name": "Superpowers Bridge",
@@ -5970,21 +6053,21 @@
       "id": "verify-tasks",
       "description": "Detect phantom completions: tasks marked [X] in tasks.md with no real implementation.",
       "author": "Dave Sharpe",
-      "version": "1.0.0",
-      "download_url": "https://github.com/datastone-inc/spec-kit-verify-tasks/archive/refs/tags/v1.0.0.zip",
+      "version": "1.2.0",
+      "download_url": "https://github.com/datastone-inc/spec-kit-verify-tasks/archive/refs/tags/v1.2.0.zip",
       "repository": "https://github.com/datastone-inc/spec-kit-verify-tasks",
       "homepage": "https://github.com/datastone-inc/spec-kit-verify-tasks",
-      "documentation": "https://github.com/datastone-inc/spec-kit-verify-tasks/blob/main/README.md",
-      "changelog": "https://github.com/datastone-inc/spec-kit-verify-tasks/blob/main/CHANGELOG.md",
+      "documentation": "https://github.com/datastone-inc/spec-kit-verify-tasks/blob/master/README.md",
+      "changelog": "https://github.com/datastone-inc/spec-kit-verify-tasks/blob/master/CHANGELOG.md",
       "license": "MIT",
       "category": "code",
-      "effect": "read-only",
+      "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=0.12.17"
       },
       "provides": {
         "commands": 1,
-        "hooks": 1
+        "hooks": 2
       },
       "tags": [
         "verification",
@@ -5996,7 +6079,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-16T00:00:00Z",
-      "updated_at": "2026-03-16T00:00:00Z"
+      "updated_at": "2026-09-17T00:00:00Z"
     },
     "version-guard": {
       "name": "Version Guard",

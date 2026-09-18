@@ -2,6 +2,56 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.0.8] - 2026-09-17
+
+### Changed
+
+- [extension] Update Verify Tasks extension to v1.2.0 (#4617)
+- docs: explain contract-driven development for component interfaces (#4609) (#4616)
+- chore: upgrade community workflows to gh-aw v0.88.7 (#4615)
+- Raise bug-fix workflow credit cap and run pytest from PATH (#4508)
+- Add Applied Epistemic Engineering extension to community catalog (#4595)
+- fix(extensions): reject aliases that shadow core commands (#4558)
+- fix: strip `scripts:` from extension command frontmatter in command mode (#4559)
+- docs: require agent, model, and settings in AI disclosure (#4512)
+- docs: update release process guide (#4502)
+- [extension] Update Status Report extension to v1.4.2 (#4585)
+- fix: warn when feature names have an empty suffix (#4575)
+- chore: upgrade bug-fix and bug-test to gh-aw v0.88.7 (#4604)
+- fix(workflows): load custom steps before add (#4473)
+- fix(github-http): validate release asset metadata URLs (#4438)
+- Add OpenUP Governance preset to community catalog (#4596)
+- Add OpenUP Governed Lifecycle extension to community catalog (#4598)
+- Update Azure Cosmos DB extension to v0.2.0 (#4602)
+- Update adrkit extension to v0.1.4 (#4600)
+- chore: upgrade feature-assess to gh-aw v0.88.7 (#4546)
+- chore: release 1.0.7, begin 1.0.8.dev0 development (#4592)
+
+## [1.0.7] - 2026-09-15
+
+### Changed
+
+- fix(integrations): dispatch bob commands via `bob run` (#4492)
+- Bound speckit.clarify planning deferral to implementation details (#4507)
+- docs: simplify README around three processes (#4591)
+- chore(deps): bump actions/deploy-pages from 5.0.0 to 5.0.1 (#4517)
+- feat: add artifact-owned contribution lookup (#4550)
+- feat: expose hook contributions via specify artifact (#4348)
+- Update DocGuard — CDD Enforcement extension to v0.34.9 (#4545)
+- [extension] Update MAQA — Multi-Agent & Quality Assurance extension to v0.3.1 (#4544)
+- feat: add `specify artifact` introspection (#4305)
+- fix: require explicit refresh for bundle manifest changes (#4477)
+- fix(workflows): harden community submission workflows (#4510)
+- [extension] Add GitHub Issue Triage extension to community catalog (#4539)
+- Fix catalog-latest-url-bypass: require tag-pinned catalog download URLs (#4194)
+- refactor(workflows): let the evaluator report its own leaves (#4274) (#4460)
+- [preset] Add Secure Development Assurance Governance preset (#4513)
+- Add Product Definition as Code (PDaC) extension to community catalog (#4514)
+- feat: add JSON output to preset and extension lists (#4218)
+- docs: exempt repository maintenance workflows from PR throttle (#4499)
+- chore: refresh bug-assess workflow with gh-aw v0.88.7 (#4497)
+- chore: release 1.0.6, begin 1.0.7.dev0 development (#4511)
+
 ## [1.0.6] - 2026-09-10
 
 ### Changed

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-14T00:00:00Z",
+  "updated_at": "2026-09-15T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -658,6 +658,37 @@
       ],
       "created_at": "2026-04-09T00:00:00Z",
       "updated_at": "2026-04-09T00:00:00Z"
+    },
+    "openup-governance": {
+      "name": "OpenUP Governance",
+      "id": "openup-governance",
+      "version": "0.1.0",
+      "description": "Composes OpenUP lifecycle governance into Spec Kit's own constitution, spec, plan and tasks templates, and wraps /tasks and /implement with the governed execution contract.",
+      "author": "Aniket Gore",
+      "repository": "https://github.com/anvigo12/specup",
+      "download_url": "https://github.com/anvigo12/specup/releases/download/v0.1.0/openup-governance-0.1.0.zip",
+      "sha256": "c9bce34220773f07596e2e02e8b23f86886d4f7c3a0d38e22b1039ad2fe50137",
+      "homepage": "https://github.com/anvigo12/specup",
+      "documentation": "https://github.com/anvigo12/specup/blob/main/presets/openup-governance/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=1.0.0,<2.0.0",
+        "extensions": [
+          "openup"
+        ]
+      },
+      "provides": {
+        "templates": 4,
+        "commands": 2
+      },
+      "tags": [
+        "openup",
+        "governance",
+        "traceability",
+        "lifecycle"
+      ],
+      "created_at": "2026-09-15T00:00:00Z",
+      "updated_at": "2026-09-15T00:00:00Z"
     },
     "parallel-autonomous-run-governance": {
       "name": "Parallel Autonomous Run Governance",

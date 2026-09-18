@@ -17,6 +17,11 @@ and `tasks.md` after requirements change. See
 [Evolving Specs in Existing Projects](../guides/evolving-specs.md) for the
 existing-project evolution workflows.
 
+When components expose interfaces to external consumers, use
+[Contract-Driven Development](../guides/contract-driven-development.md) to
+agree on their observable obligations before implementing each side. This
+applies regardless of architecture or repository layout.
+
 ## Development Phases
 
 | Phase | Focus | Key Activities |
