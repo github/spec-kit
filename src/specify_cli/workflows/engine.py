@@ -1726,7 +1726,7 @@ class WorkflowEngine:
             restore_values: dict[str, Any] = {}
             restore_missing: set[str] = set()
             if not local_only:
-                for orig in set(id_map.values()) & context.reserved_step_ids:
+                for orig in context.reserved_step_ids:
                     if orig in original_steps:
                         restore_values[orig] = original_steps[orig]
                     else:
