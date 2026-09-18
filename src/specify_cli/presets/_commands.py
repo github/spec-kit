@@ -1035,6 +1035,7 @@ def preset_catalog_remove(
 
     project_root = _require_specify_project()
     specify_dir = project_root / ".specify"
+    name = name.strip()
 
     config_path = specify_dir / "preset-catalogs.yml"
     if not config_path.exists():
@@ -1060,7 +1061,12 @@ def preset_catalog_remove(
     safe_name = _escape_markup(str(name))
 
     original_count = len(catalogs)
-    catalogs = [c for c in catalogs if isinstance(c, dict) and c.get("name") != name]
+    catalogs = [
+        c
+        for c in catalogs
+        if isinstance(c, dict)
+        and str(c.get("name", "")).strip() != name
+    ]
 
     if len(catalogs) == original_count:
         console.print(f"[red]Error:[/red] Catalog '{safe_name}' not found.")

@@ -7912,6 +7912,44 @@ class TestExtensionAddCLI:
         assert "different settings" in result.output
         assert config_path.read_bytes() == original
 
+    @pytest.mark.parametrize("requested_name", ["mine", " mine "])
+    def test_catalog_remove_normalizes_name(
+        self, project_dir, monkeypatch, requested_name
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        config_path.write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "  mine  ",
+                            "url": "https://example.com/catalog.json",
+                            "priority": 10,
+                            "install_allowed": False,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with monkeypatch.context() as scoped:
+            scoped.chdir(project_dir)
+            result = CliRunner().invoke(
+                app,
+                ["extension", "catalog", "remove", requested_name],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Removed catalog 'mine'" in result.output
+        assert yaml.safe_load(config_path.read_text(encoding="utf-8"))[
+            "catalogs"
+        ] == []
+
     def test_catalog_add_escapes_config_saved_path_markup(self, tmp_path):
         """Catalog add's saved-path label should render literally under Rich."""
         from typer.testing import CliRunner

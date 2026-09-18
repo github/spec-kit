@@ -744,6 +744,7 @@ def catalog_remove(
     """Remove a catalog from .specify/extension-catalogs.yml."""
     project_root = _require_specify_project()
     specify_dir = project_root / ".specify"
+    name = name.strip()
 
     config_path = specify_dir / "extension-catalogs.yml"
     if not config_path.exists():
@@ -758,7 +759,12 @@ def catalog_remove(
         raise typer.Exit(1)
     safe_name = _escape_markup(name)
     original_count = len(catalogs)
-    catalogs = [c for c in catalogs if isinstance(c, dict) and c.get("name") != name]
+    catalogs = [
+        c
+        for c in catalogs
+        if isinstance(c, dict)
+        and str(c.get("name", "")).strip() != name
+    ]
 
     if len(catalogs) == original_count:
         console.print(f"[red]Error:[/red] Catalog '{safe_name}' not found.")

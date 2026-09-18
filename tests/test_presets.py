@@ -4278,6 +4278,44 @@ class TestPresetCatalogMultiCatalog:
         assert result.exit_code == 0, result.output
         assert name in result.output
 
+    @pytest.mark.parametrize("requested_name", ["mine", " mine "])
+    def test_catalog_remove_normalizes_name(
+        self, project_dir, monkeypatch, requested_name
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        config_path = project_dir / ".specify" / "preset-catalogs.yml"
+        config_path.write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "  mine  ",
+                            "url": "https://example.com/catalog.json",
+                            "priority": 10,
+                            "install_allowed": False,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with monkeypatch.context() as scoped:
+            scoped.chdir(project_dir)
+            result = CliRunner().invoke(
+                app,
+                ["preset", "catalog", "remove", requested_name],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Removed catalog 'mine'" in result.output
+        assert yaml.safe_load(config_path.read_text(encoding="utf-8"))[
+            "catalogs"
+        ] == []
+
     def test_catalog_remove_escapes_markup_in_not_found_error(self, project_dir):
         """The not-found error path renders the name too."""
         from typer.testing import CliRunner
