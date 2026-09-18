@@ -857,6 +857,30 @@ def condition_is_never_evaluated(condition: Any) -> bool:
     return _first_unclosable_block(stripped) == "verbatim"
 
 
+def switch_expression_is_never_evaluated(expression: Any) -> bool:
+    """True when a switch *expression* is a reference written without its braces.
+
+    ``condition_is_never_evaluated`` cannot be reused here as it stands. It flags
+    every braceless string, because a condition is coerced by ``bool()`` and any
+    non-empty text is therefore always true. A switch instead matches its resolved
+    value against case keys, and a case key is a literal: ``expression: review``
+    resolves to ``"review"`` and dispatches the ``review:`` case, and whitespace
+    strips to the ``""`` key. Both are valid, if constant, switches.
+
+    What is never evaluated is text plainly meant as an expression -- one that opens
+    by walking into a root ``_build_namespace`` supplies, such as ``inputs.mode``.
+    It is matched against the case keys as its own source text, so it falls through
+    to ``default`` on every run. An opening ``{{`` the interpolator emits verbatim
+    is flagged for the same reason, exactly as it is for a condition.
+    """
+    if not isinstance(expression, str):
+        return False
+    stripped = expression.strip()
+    if "{{" in stripped:
+        return _first_unclosable_block(stripped) == "verbatim"
+    return _NAMESPACE_REFERENCE.match(stripped) is not None
+
+
 def condition_is_interpolated_to_text(condition: Any) -> bool:
     """True when *condition* holds ``{{ }}`` blocks but is spliced into text, not evaluated.
 
@@ -1085,6 +1109,11 @@ def _has_incomplete_operand(text: str) -> bool:
 # The roots _build_namespace supplies. A reference to anything else resolves to
 # None, so a correction built on one turns a truthy condition false.
 _NAMESPACE_ROOTS = ("inputs", "steps", "item", "fan_in", "context")
+
+# Text that opens by walking into one of those roots: `inputs.mode`, `item[0]`.
+_NAMESPACE_REFERENCE = re.compile(
+    r"(?:%s)(?:\.[\w-]|\[\d)" % "|".join(_NAMESPACE_ROOTS)
+)
 
 def _is_path_segment(segment: str) -> bool:
     """Whether _resolve_dot_path can walk *segment*: a name, or a name it indexes."""
