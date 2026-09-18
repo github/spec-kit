@@ -6,6 +6,7 @@ import pytest
 
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.kimi import (
+    _is_speckit_generated_skill,
     _migrate_legacy_kimi_dotted_skills,
     _migrate_legacy_kimi_skills_dir,
 )
@@ -402,3 +403,84 @@ class TestKimiNextSteps:
         assert "/skill:speckit-constitution" in result.output
         assert "/speckit.constitution" not in result.output
         assert "Optional skills that you can use for your specs" in result.output
+
+
+class TestIsSpeckitGeneratedSkill:
+    """Exception narrowing for _is_speckit_generated_skill (PR #3923)."""
+
+    def test_missing_pyyaml_returns_false(self, tmp_path: Path) -> None:
+        """ImportError when yaml is missing must return False."""
+        skill_dir = tmp_path / "skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nmetadata:\n  author: github-spec-kit\n  source: templates/commands/test\n---\nBody\n",
+            encoding="utf-8",
+        )
+
+        import sys
+        saved = sys.modules.get("yaml")
+        try:
+            sys.modules["yaml"] = None
+            assert _is_speckit_generated_skill(skill_dir) is False
+        finally:
+            if saved is not None:
+                sys.modules["yaml"] = saved
+            else:
+                sys.modules.pop("yaml", None)
+
+    def test_malformed_yaml_returns_false(self, tmp_path: Path) -> None:
+        """yaml.YAMLError from malformed frontmatter must return False."""
+        skill_dir = tmp_path / "skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\n: invalid: yaml: [[\n---\nBody\n",
+            encoding="utf-8",
+        )
+
+        assert _is_speckit_generated_skill(skill_dir) is False
+
+    def test_valid_generated_skill_returns_true(self, tmp_path: Path) -> None:
+        """Valid speckit-generated skill metadata must be recognized."""
+        skill_dir = tmp_path / "skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nmetadata:\n  author: github-spec-kit\n  source: templates/commands/plan\n---\n# Plan\nBody\n",
+            encoding="utf-8",
+        )
+
+        assert _is_speckit_generated_skill(skill_dir) is True
+
+    def test_user_authored_skill_returns_false(self, tmp_path: Path) -> None:
+        """User-authored skill must not be treated as speckit-generated."""
+        skill_dir = tmp_path / "skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nmetadata:\n  author: human\n  source: manual\n---\n# My Skill\nBody\n",
+            encoding="utf-8",
+        )
+
+        assert _is_speckit_generated_skill(skill_dir) is False
+
+    def test_no_frontmatter_returns_false(self, tmp_path: Path) -> None:
+        """SKILL.md without frontmatter must return False."""
+        skill_dir = tmp_path / "skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "# Just a heading\nBody\n",
+            encoding="utf-8",
+        )
+
+        assert _is_speckit_generated_skill(skill_dir) is False
+
+    def test_symlinked_skill_returns_false(self, tmp_path: Path) -> None:
+        """Symlinked SKILL.md must never be treated as generated."""
+        skill_dir = tmp_path / "skill"
+        skill_dir.mkdir()
+        target = tmp_path / "external.md"
+        target.write_text(
+            "---\nmetadata:\n  author: github-spec-kit\n  source: templates/commands/test\n---\nBody\n",
+            encoding="utf-8",
+        )
+        (skill_dir / "SKILL.md").symlink_to(target)
+
+        assert _is_speckit_generated_skill(skill_dir) is False
