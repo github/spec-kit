@@ -143,6 +143,11 @@ class IntegrationBase(ABC):
     integration that sets this flag.
     """
 
+    agents_dir: str | None = None
+    """Project-relative directory this harness reads subagent definitions from
+    (``.claude/agents`` for Claude Code, ``.cursor/agents`` for Cursor). ``None``
+    means the harness has no file-based subagent lane and an extension's
+    ``provides.agents`` is skipped for it, with a note."""
     legacy_flat_command_dir: str | None = None
     """Previous flat command directory retired after skill replacements exist."""
 

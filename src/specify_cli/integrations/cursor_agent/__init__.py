@@ -40,6 +40,7 @@ class CursorAgentIntegration(SkillsIntegration):
     }
 
     multi_install_safe = True
+    agents_dir = ".cursor/agents"
 
     CANONICAL_TO_NATIVE = {
         "session_start": "sessionStart",

@@ -53,6 +53,7 @@ class ClaudeIntegration(SkillsIntegration):
         "extension": "/SKILL.md",
     }
     multi_install_safe = True
+    agents_dir = ".claude/agents"
 
     CANONICAL_TO_NATIVE = {
         "session_start": "SessionStart",

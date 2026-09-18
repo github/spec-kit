@@ -65,6 +65,39 @@ EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]
 # commands, these are not namespaced (they aren't invoked via a command
 # name), so they follow the same plain slug pattern as extension.id.
 VALID_EXTENSION_ARTIFACT_NAME_PATTERN = re.compile(r"^[a-z0-9-]+$")
+INTEGRATION_FOLDER_TOKEN = "{integration_folder}"
+
+
+def project_dest_violation(value: Any) -> Optional[str]:
+    """Return why ``value`` is unsafe as a ``provides.files`` destination.
+
+    A destination is a project-relative file path (``.claude/workflows/x.js``),
+    optionally starting with ``{integration_folder}/`` which resolves to the
+    active integration's own folder at install time. It may never be absolute,
+    climb out of the project, end in a separator, or land under ``.specify/``
+    (that tree belongs to Spec Kit's own machinery and the extension's own
+    installed copy already lives there).
+    """
+    if not isinstance(value, str) or not value or value.strip() != value:
+        return "must be a non-empty string without surrounding whitespace"
+    probe = value
+    if probe.startswith(INTEGRATION_FOLDER_TOKEN + "/"):
+        probe = "x/" + probe[len(INTEGRATION_FOLDER_TOKEN) + 1:]
+    elif INTEGRATION_FOLDER_TOKEN in probe:
+        return f"{INTEGRATION_FOLDER_TOKEN} is only allowed as the leading path segment"
+    reason = relative_extension_path_violation(probe)
+    if reason:
+        return reason
+    if probe == ".specify" or probe.startswith(".specify/"):
+        return "must not land under .specify/"
+    return None
+
+
+def _note(message: str) -> None:
+    """A one-line, user-facing note (rich markup allowed)."""
+    from rich.console import Console
+
+    Console().print(message)
 
 VALID_SCRIPT_RUNTIMES = frozenset({"bash", "powershell", "python"})
 
@@ -377,6 +410,8 @@ class ExtensionManifest:
         commands = provides.get("commands", [])
         templates = provides.get("templates", [])
         scripts = provides.get("scripts", [])
+        agents = provides.get("agents", [])
+        files = provides.get("files", [])
         hooks = self.data.get("hooks")
         events = self.data.get("events")
 
@@ -386,6 +421,10 @@ class ExtensionManifest:
             raise ValidationError("Invalid provides.templates: expected a list")
         if "scripts" in provides and not isinstance(scripts, list):
             raise ValidationError("Invalid provides.scripts: expected a list")
+        if "agents" in provides and not isinstance(agents, list):
+            raise ValidationError("Invalid provides.agents: expected a list")
+        if "files" in provides and not isinstance(files, list):
+            raise ValidationError("Invalid provides.files: expected a list")
         if "hooks" in self.data and not isinstance(hooks, dict):
             raise ValidationError("Invalid hooks: expected a mapping")
         if "events" in self.data:
@@ -397,15 +436,25 @@ class ExtensionManifest:
         has_events = bool(events)
         has_templates = bool(templates)
         has_scripts = bool(scripts)
+        has_agents = bool(agents)
+        has_files = bool(files)
 
-        if not has_commands and not has_hooks and not has_events and not has_templates and not has_scripts:
+        if not (has_commands or has_hooks or has_events or has_templates or has_scripts or has_agents or has_files):
             raise ValidationError(
                 "Extension must provide at least one command, hook, or event "
-                "(or a declared template/script)"
+                "(or a declared template/script/agent/file)"
             )
 
         self._validate_provided_artifacts(templates, section="templates", singular="template")
         self._validate_provided_artifacts(scripts, section="scripts", singular="script")
+        self._validate_provided_artifacts(agents, section="agents", singular="agent")
+        self._validate_provided_artifacts(files, section="files", singular="file")
+        for entry in files:
+            reason = project_dest_violation(entry.get("dest"))
+            if reason:
+                raise ValidationError(
+                    f"Invalid file 'dest' for '{entry.get('name')}': {reason}"
+                )
 
         # Validate hook values (if present).
         # Each event is a single mapping or a list of mappings.
@@ -719,6 +768,16 @@ class ExtensionManifest:
     def scripts(self) -> List[Dict[str, Any]]:
         """Get list of declared scripts (provides.scripts)."""
         return self.data.get("provides", {}).get("scripts", [])
+
+    @property
+    def agents(self) -> List[Dict[str, Any]]:
+        """Get list of declared subagent definitions (provides.agents)."""
+        return self.data.get("provides", {}).get("agents", [])
+
+    @property
+    def files(self) -> List[Dict[str, Any]]:
+        """Get list of declared project files (provides.files)."""
+        return self.data.get("provides", {}).get("files", [])
 
     @property
     def hooks(self) -> Dict[str, Any]:
@@ -1877,6 +1936,153 @@ class ExtensionManager:
 
         return candidates
 
+    def _active_integration(self):
+        """The integration the project was initialised with, or ``None``."""
+        from .. import load_init_options
+        from ..integrations import get_integration
+
+        opts = load_init_options(self.project_root)
+        if not isinstance(opts, dict):
+            return None
+        selected_ai = opts.get("ai")
+        if not isinstance(selected_ai, str) or not selected_ai:
+            return None
+        try:
+            return get_integration(selected_ai)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _file_sha256(path: Path) -> str:
+        h = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    def _ensure_inside_project(self, dest: Path) -> None:
+        normalized = Path(os.path.normpath(dest))
+        root = Path(os.path.normpath(self.project_root))
+        if not normalized.is_relative_to(root):
+            raise ExtensionError(f"Destination {dest} escapes the project root")
+
+    def _place_owned_file(
+        self, source: Path, dest: Path, owned: Dict[str, str]
+    ) -> bool:
+        """Write ``source`` to ``dest`` unless a file we do not own is there.
+
+        Ownership is a recorded content hash: a destination that exists with a
+        hash other than the one this extension last wrote is a person's file and
+        is left alone (and reported). Returns True when the file was written.
+        """
+        self._ensure_inside_project(dest)
+        rel = dest.relative_to(self.project_root).as_posix()
+        if dest.exists():
+            current = self._file_sha256(dest)
+            previously = owned.get(rel)
+            if previously is not None and previously != current:
+                _note(f"[yellow]⚠[/yellow] {rel} was edited locally; left alone (delete it to take the extension's copy)")
+                return False
+            if previously is None and current != self._file_sha256(source):
+                _note(f"[yellow]⚠[/yellow] {rel} exists and is not this extension's; left alone")
+                return False
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, dest)
+        owned[rel] = self._file_sha256(dest)
+        return True
+
+    def _register_extension_agents(
+        self, manifest: ExtensionManifest, extension_dir: Path
+    ) -> Dict[str, str]:
+        """Copy ``provides.agents`` into the active integration's agents directory.
+
+        Returns ``{project-relative path: sha256}`` for the registry. An
+        integration without an ``agents_dir`` gets nothing and a one-line note.
+        """
+        agents = manifest.agents
+        if not agents:
+            return {}
+        integration = self._active_integration()
+        agents_dir = getattr(integration, "agents_dir", None) if integration else None
+        if not agents_dir:
+            key = getattr(integration, "key", None) or "the active integration"
+            _note(f"[dim]{key} has no subagent directory; {len(agents)} agent definition(s) from '{manifest.id}' not placed[/dim]")
+            return {}
+        owned: Dict[str, str] = {}
+        previous = self.registry.get(manifest.id) if self.registry.is_installed(manifest.id) else None
+        if previous and isinstance(previous.get("registered_agents"), dict):
+            owned.update({k: v for k, v in previous["registered_agents"].items() if isinstance(k, str) and isinstance(v, str)})
+        for entry in agents:
+            source = extension_dir / entry["file"]
+            if not source.is_file():
+                _note(f"[yellow]⚠[/yellow] agent '{entry['name']}': {entry['file']} missing in extension")
+                continue
+            dest = self.project_root / agents_dir / f"{entry['name']}{source.suffix or '.md'}"
+            self._place_owned_file(source, dest, owned)
+        return owned
+
+    def _install_extension_files(
+        self, manifest: ExtensionManifest, extension_dir: Path
+    ) -> Dict[str, str]:
+        """Copy ``provides.files`` verbatim to their project destinations.
+
+        ``{integration_folder}/`` at the start of ``dest`` resolves to the active
+        integration's folder (``.claude/``, ``.cursor/``, …); an entry that needs
+        it is skipped, with a note, when no integration is active.
+        """
+        files = manifest.files
+        if not files:
+            return {}
+        integration = self._active_integration()
+        folder = None
+        if integration is not None and isinstance(getattr(integration, "config", None), dict):
+            folder = str(integration.config.get("folder") or "").strip("/")
+        owned: Dict[str, str] = {}
+        previous = self.registry.get(manifest.id) if self.registry.is_installed(manifest.id) else None
+        if previous and isinstance(previous.get("registered_files"), dict):
+            owned.update({k: v for k, v in previous["registered_files"].items() if isinstance(k, str) and isinstance(v, str)})
+        for entry in files:
+            source = extension_dir / entry["file"]
+            if not source.is_file():
+                _note(f"[yellow]⚠[/yellow] file '{entry['name']}': {entry['file']} missing in extension")
+                continue
+            dest_rel = str(entry["dest"])
+            if dest_rel.startswith(INTEGRATION_FOLDER_TOKEN + "/"):
+                if not folder:
+                    _note(f"[dim]no active integration folder; file '{entry['name']}' not placed[/dim]")
+                    continue
+                dest_rel = f"{folder}/{dest_rel[len(INTEGRATION_FOLDER_TOKEN) + 1:]}"
+            self._place_owned_file(source, self.project_root / dest_rel, owned)
+        return owned
+
+    def _remove_extension_owned_files(
+        self, registered_agents: Dict[str, str], registered_files: Dict[str, str]
+    ) -> None:
+        """Delete the agent and project files this extension placed, unless edited since."""
+        for group in (registered_agents, registered_files):
+            if not isinstance(group, dict):
+                continue
+            for rel, recorded in group.items():
+                if not isinstance(rel, str) or not isinstance(recorded, str):
+                    continue
+                dest = self.project_root / rel
+                try:
+                    self._ensure_inside_project(dest)
+                except ExtensionError:
+                    continue
+                if not dest.is_file():
+                    continue
+                if self._file_sha256(dest) != recorded:
+                    _note(f"[yellow]⚠[/yellow] {rel} was edited locally; left in place")
+                    continue
+                dest.unlink()
+                parent = dest.parent
+                try:
+                    if parent != self.project_root and not any(parent.iterdir()):
+                        parent.rmdir()
+                except OSError:
+                    pass
+
     def _unregister_extension_skills(
         self,
         skill_names: List[str],
@@ -2584,6 +2790,11 @@ class ExtensionManager:
             manifest, dest_dir, link_outputs=link_commands
         )
 
+        # Subagent definitions and verbatim project files (provides.agents /
+        # provides.files) land in the active integration's own directories.
+        registered_agents = self._register_extension_agents(manifest, dest_dir)
+        registered_files = self._install_extension_files(manifest, dest_dir)
+
         # Register hooks and update installed list in extensions.yml
         hook_executor = HookExecutor(self.project_root)
         hook_executor.register_hooks(manifest)
@@ -2623,6 +2834,8 @@ class ExtensionManager:
                 "priority": priority,
                 "registered_commands": registered_commands,
                 "registered_skills": registered_skills,
+                "registered_agents": registered_agents,
+                "registered_files": registered_files,
             },
         )
 
@@ -2927,6 +3140,10 @@ class ExtensionManager:
 
         # Unregister agent skills
         self._unregister_extension_skills(registered_skills, extension_id)
+        self._remove_extension_owned_files(
+            (metadata.get("registered_agents") if metadata else None) or {},
+            (metadata.get("registered_files") if metadata else None) or {},
+        )
 
         if keep_config:
             # Preserve config files, only remove non-config files

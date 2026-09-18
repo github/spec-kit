@@ -168,6 +168,34 @@ catalogs:
     description: "Our approved extensions"
 ```
 
+## Subagent Definitions and Project Files
+
+An extension can ship two artifact kinds that live in the coding agent's own
+directories rather than in a command:
+
+```yaml
+provides:
+  agents:
+    - name: explorer
+      file: agents/explorer.md            # Markdown with frontmatter (name, description, model, tools)
+      description: "Read-only codebase exploration on a small model"
+  files:
+    - name: critic-panel
+      file: workflows/critic-panel.js
+      dest: "{integration_folder}/workflows/critic-panel.js"   # or a plain project-relative path
+      description: "A Workflow script the /speckit-…-review command runs"
+```
+
+- **`agents`** land in the active integration's subagent directory: `.claude/agents/<name>.md`
+  for Claude Code, `.cursor/agents/<name>.md` for Cursor. An integration with no file-based
+  subagent lane (Codex today) skips them with a one-line note; nothing else changes.
+- **`files`** are copied verbatim to `dest`. `{integration_folder}/` at the start of `dest`
+  resolves to the active integration's folder (`.claude/`, `.cursor/`, `.agents/`, …). A
+  destination may not be absolute, climb out of the project, or land under `.specify/`.
+- Both are recorded in the registry with a content hash. On reinstall or removal a file a
+  person edited since is **left alone** and reported; only unchanged copies are replaced or
+  deleted.
+
 ## Extension Configuration
 
 Most extensions include configuration files in their install directory:

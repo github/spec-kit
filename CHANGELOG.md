@@ -2,6 +2,12 @@
 
 <!-- insert new changelog below this comment -->
 
+## [Unreleased]
+
+### Added
+
+- feat(extensions): `provides.agents` places subagent definitions in the active integration's agent directory (`.claude/agents`, `.cursor/agents`), and `provides.files` ships verbatim project files (for example Workflow scripts) to a declared destination, `{integration_folder}/` resolving per integration. Both are hash-tracked: a locally edited file is never overwritten or removed.
+
 ## [1.0.6] - 2026-09-10
 
 ### Changed
