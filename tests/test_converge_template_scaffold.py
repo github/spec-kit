@@ -1,9 +1,9 @@
-"""Regression tests for the converge command's task-assessment contract.
+"""Scaffold checks for the converge command's task-assessment guidance.
 
-The converge prompt must assess the current implementation against every task,
-including tasks marked complete or added during an earlier Convergence phase.
-These tests read the template as text because the behavior is encoded in the
-prompt itself.
+These tests verify that the generated prompt includes the instructions needed
+to scaffold assessment of every task, including tasks marked complete or added
+during an earlier Convergence phase. They do not execute an LLM or assert how
+an LLM will respond.
 """
 
 from pathlib import Path
@@ -16,7 +16,7 @@ def _normalized_template() -> str:
     return " ".join(CONVERGE_TEMPLATE.read_text(encoding="utf-8").split())
 
 
-def test_converge_assesses_every_task_against_current_behavior():
+def test_converge_scaffold_includes_every_task_and_evidence_source():
     text = _normalized_template()
     required_clauses = (
         "Include every existing task in the intent inventory",
@@ -28,8 +28,8 @@ def test_converge_assesses_every_task_against_current_behavior():
     )
 
     for clause in required_clauses:
-        assert clause in text, f"converge.md is missing prompt contract: {clause!r}"
+        assert clause in text, f"converge.md is missing scaffold guidance: {clause!r}"
 
 
-def test_converge_does_not_define_a_separate_assessment_inventory():
+def test_converge_scaffold_uses_the_defined_intent_inventory():
     assert "assessment inventory" not in _normalized_template()
