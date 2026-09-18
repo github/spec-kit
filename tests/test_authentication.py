@@ -1005,6 +1005,14 @@ class TestBitbucketAuth:
         entry = _bitbucket_basic_entry(username="   ")
         assert BitbucketAuth().resolve_token(entry) is None
 
+    def test_resolve_token_basic_colon_username_returns_none(self, monkeypatch):
+        # load_auth_config rejects this, but a directly-constructed entry
+        # must not yield "user:name:<secret>", which a server parses as
+        # user "user" (RFC 7617 §2).
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "api-tok")
+        entry = _bitbucket_basic_entry(username="user:name")
+        assert BitbucketAuth().resolve_token(entry) is None
+
     def test_resolve_token_basic_missing_secret_returns_none(self, monkeypatch):
         monkeypatch.delenv("ATLASSIAN_API_TOKEN", raising=False)
         entry = _bitbucket_basic_entry()

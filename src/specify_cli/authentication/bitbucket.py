@@ -58,14 +58,16 @@ class BitbucketAuth(AuthProvider):
         """Resolve the credential, combining ``username`` for ``basic``.
 
         Returns ``None`` when the secret is missing, or — for ``basic`` —
-        when ``username`` is absent (config validation enforces it, but
-        directly-constructed entries must not produce a malformed
-        ``:<secret>`` credential).
+        when ``username`` is absent or contains ``:``. Config validation
+        already enforces both for ``auth.json`` entries, but a
+        directly-constructed entry must not produce a malformed
+        ``:<secret>`` credential or a ``user:name:<secret>`` one that the
+        server would parse as user ``user`` (RFC 7617 §2).
         """
         secret = super().resolve_token(entry)
         if entry.auth != "basic":
             return secret
         username = (entry.username or "").strip()
-        if not secret or not username:
+        if not secret or not username or ":" in username:
             return None
         return f"{username}:{secret}"
