@@ -923,6 +923,7 @@ def preset_catalog_add(
     project_root = _require_specify_project()
     specify_dir = project_root / ".specify"
     url = url.strip()
+    name = name.strip()
 
     # Validate URL
     tmp_catalog = PresetCatalog(project_root)
@@ -965,11 +966,16 @@ def preset_catalog_add(
     # workflow without failing. A same-name entry whose settings differ is
     # still a conflict — we refuse to silently change priority/install
     # permissions and ask the user to remove it first.
-    for existing in catalogs:
-        if isinstance(existing, dict) and existing.get("name") == name:
+    for idx, existing in enumerate(catalogs):
+        if (
+            isinstance(existing, dict)
+            and str(existing.get("name", "")).strip() == name
+        ):
             if (
                 str(existing.get("url", "")).strip() == url
-                and _normalize_catalog_priority(existing.get("priority")) == priority
+                and _normalize_catalog_priority(
+                    existing.get("priority", idx + 1)
+                ) == priority
                 and _normalize_catalog_install_allowed(
                     existing.get("install_allowed", False)
                 ) == install_allowed

@@ -99,11 +99,15 @@ def _project_core_asset_root(project_root: Path | None, subdir: str) -> Path | N
         return None
     if subdir not in {"commands", "scripts", "templates"}:
         return None  # pragma: no cover — internal misuse
+    if subdir == "scripts":
+        candidate = project_root / ".specify" / "scripts"
+        return candidate if candidate.is_dir() else None
+
     from ..presets import PresetResolver  # lazy: avoids circular import
 
     candidate = PresetResolver(project_root).templates_dir
-    if subdir != "templates":
-        candidate = candidate / subdir
+    if subdir == "commands":
+        candidate = candidate / "commands"
     return candidate if candidate.is_dir() else None
 
 

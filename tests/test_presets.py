@@ -3973,6 +3973,94 @@ class TestPresetCatalogMultiCatalog:
         assert config_path.read_bytes() == original
         assert config_path.stat().st_mtime_ns == modified_at
 
+    @pytest.mark.parametrize("requested_name", ["mine", " mine "])
+    def test_catalog_add_normalizes_existing_name(
+        self, project_dir, monkeypatch, requested_name
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        config_path = project_dir / ".specify" / "preset-catalogs.yml"
+        config_path.write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "  mine  ",
+                            "url": "https://example.com/catalog.json",
+                            "priority": 10,
+                            "install_allowed": False,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        original = config_path.read_bytes()
+
+        with monkeypatch.context() as scoped:
+            scoped.chdir(project_dir)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "preset",
+                    "catalog",
+                    "add",
+                    "https://example.com/catalog.json",
+                    "--name",
+                    requested_name,
+                ],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "nothing to do" in result.output
+        assert config_path.read_bytes() == original
+
+    def test_catalog_add_omitted_priority_uses_reader_default(
+        self, project_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        config_path = project_dir / ".specify" / "preset-catalogs.yml"
+        config_path.write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "mine",
+                            "url": "https://example.com/catalog.json",
+                            "install_allowed": False,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        original = config_path.read_bytes()
+
+        with monkeypatch.context() as scoped:
+            scoped.chdir(project_dir)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "preset",
+                    "catalog",
+                    "add",
+                    "https://example.com/catalog.json",
+                    "--name",
+                    "mine",
+                    "--priority",
+                    "1",
+                ],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "nothing to do" in result.output
+        assert config_path.read_bytes() == original
+
     def test_catalog_add_duplicate_different_settings_conflicts(self, project_dir):
         """Re-adding a same-named preset catalog with different settings errors (#4505)."""
         from typer.testing import CliRunner

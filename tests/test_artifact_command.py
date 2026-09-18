@@ -183,6 +183,38 @@ class TestListArtifactsContract:
             "demo": script
         }
 
+    def test_core_scripts_use_project_install_without_shared_asset_fallback(
+        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        commands_dir = spec_kit_project / ".specify" / "templates" / "commands"
+        commands_dir.mkdir()
+        scripts_dir = spec_kit_project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        (commands_dir / "demo.md").write_text(
+            "---\n"
+            "scripts:\n"
+            "  sh: scripts/bash/demo.sh\n"
+            "---\n",
+            encoding="utf-8",
+        )
+        script = scripts_dir / "demo.sh"
+        script.write_text("#!/bin/sh\n", encoding="utf-8")
+        (spec_kit_project / ".specify" / "init-options.json").write_text(
+            json.dumps({"script": "sh"}),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "specify_cli.artifacts.catalog._locate_shared_asset_dir",
+            lambda _subdir: None,
+        )
+
+        catalog = ArtifactCatalog(spec_kit_project)
+
+        assert catalog._selected_core_script_paths() == {"demo": script}
+        assert "script:demo" in {
+            artifact.id for artifact in catalog.list_artifacts()
+        }
+
     @pytest.mark.parametrize(
         "reference_kind",
         [
@@ -483,12 +515,21 @@ class TestListArtifactsContract:
         commands_dir = templates_dir / "commands"
         commands_dir.mkdir()
         (commands_dir / "local-command.md").write_text(
-            "---\ndescription: Local command\n---\n", encoding="utf-8"
+            "---\n"
+            "description: Local command\n"
+            "scripts:\n"
+            "  sh: scripts/bash/legacy-script.sh\n"
+            "---\n",
+            encoding="utf-8",
         )
-        scripts_dir = templates_dir / "scripts"
-        scripts_dir.mkdir()
+        scripts_dir = spec_kit_project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
         (scripts_dir / "legacy-script.sh").write_text(
             "# Local script\n", encoding="utf-8"
+        )
+        (spec_kit_project / ".specify" / "init-options.json").write_text(
+            json.dumps({"script": "sh"}),
+            encoding="utf-8",
         )
 
         catalog = ArtifactCatalog(spec_kit_project)
