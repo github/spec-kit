@@ -3847,41 +3847,6 @@
       "created_at": "2026-09-08T00:00:00Z",
       "updated_at": "2026-09-08T00:00:00Z"
     },
-    "prepay-audit": {
-      "name": "AgentPay Pre-Pay Audit — Grade an endpoint before your agent pays it",
-      "id": "prepay-audit",
-      "description": "Audit a paid API before money moves: grade the endpoint's 402 terms, see what the live market actually charges, and confirm the wallet can complete the payment right now.",
-      "author": "AgentPay Team",
-      "version": "1.0.0",
-      "download_url": "https://github.com/shawnhvac/spec-kit-prepay-audit/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/shawnhvac/spec-kit-prepay-audit",
-      "homepage": "https://x402-agent-pay.com",
-      "documentation": "https://github.com/shawnhvac/spec-kit-prepay-audit#readme",
-      "changelog": "https://github.com/shawnhvac/spec-kit-prepay-audit/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "category": "visibility",
-      "effect": "read-only",
-      "requires": {
-        "speckit_version": ">=0.1.0"
-      },
-      "provides": {
-        "commands": 3,
-        "hooks": 1
-      },
-      "tags": [
-        "payments",
-        "x402",
-        "audit",
-        "api",
-        "usdc",
-        "base"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-09-16T00:00:00Z",
-      "updated_at": "2026-09-16T00:00:00Z"
-    },
     "plan-review-gate": {
       "name": "Plan Review Gate",
       "id": "plan-review-gate",
@@ -3948,6 +3913,41 @@
       "stars": 0,
       "created_at": "2026-04-10T00:00:00Z",
       "updated_at": "2026-04-10T00:00:00Z"
+    },
+    "prepay-audit": {
+      "name": "AgentPay Pre-Pay Audit — Grade an endpoint before your agent pays it",
+      "id": "prepay-audit",
+      "description": "Audit a paid API before money moves: grade the endpoint's 402 terms, see what the live market actually charges, and confirm the wallet can complete the payment right now.",
+      "author": "AgentPay Team",
+      "version": "1.0.0",
+      "download_url": "https://github.com/shawnhvac/spec-kit-prepay-audit/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/shawnhvac/spec-kit-prepay-audit",
+      "homepage": "https://x402-agent-pay.com",
+      "documentation": "https://github.com/shawnhvac/spec-kit-prepay-audit#readme",
+      "changelog": "https://github.com/shawnhvac/spec-kit-prepay-audit/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "visibility",
+      "effect": "read-only",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "payments",
+        "x402",
+        "audit",
+        "api",
+        "usdc",
+        "base"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-16T00:00:00Z",
+      "updated_at": "2026-09-16T00:00:00Z"
     },
     "presetify": {
       "name": "Presetify",
