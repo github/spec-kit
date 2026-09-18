@@ -744,6 +744,9 @@ class WorkflowCatalog:
         requested_name = str(name).strip() if name is not None else ""
         for idx, cat in enumerate(catalogs):
             if isinstance(cat, dict) and str(cat.get("url", "")).strip() == url:
+                # A no-op must not bless a project config that the normal
+                # catalog-loading path would reject.
+                self._load_catalog_config(config_path)
                 existing_name = str(
                     cat.get("name", f"catalog-{idx + 1}")
                 ).strip()
@@ -776,7 +779,7 @@ class WorkflowCatalog:
         )
         catalogs.append(
             {
-                "name": name or f"catalog-{len(catalogs) + 1}",
+                "name": requested_name or f"catalog-{len(catalogs) + 1}",
                 "url": url,
                 "priority": max_priority + 1,
                 "install_allowed": True,
@@ -1445,6 +1448,9 @@ class StepCatalog:
         requested_name = str(name).strip() if name is not None else ""
         for idx, cat in enumerate(catalogs):
             if isinstance(cat, dict) and str(cat.get("url", "")).strip() == url:
+                # A no-op must not bless a project config that the normal
+                # catalog-loading path would reject.
+                self._load_catalog_config(config_path)
                 existing_name = str(
                     cat.get("name", f"catalog-{idx + 1}")
                 ).strip()
@@ -1476,7 +1482,7 @@ class StepCatalog:
         )
         catalogs.append(
             {
-                "name": name or f"catalog-{len(catalogs) + 1}",
+                "name": requested_name or f"catalog-{len(catalogs) + 1}",
                 "url": url,
                 "priority": max_priority + 1,
                 "install_allowed": True,

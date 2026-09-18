@@ -9986,6 +9986,77 @@ class PkgStep(StepBase):
     (["workflow", "step", "catalog", "add"], "step-catalogs.yml"),
 ])
 class TestWorkflowCatalogAddCLI:
+    @pytest.mark.parametrize(
+        ("requested_name", "stored_name"),
+        [("  mine  ", "mine"), ("   ", "catalog-1")],
+    )
+    def test_add_catalog_normalizes_name(
+        self,
+        project_dir,
+        monkeypatch,
+        command,
+        config_filename,
+        requested_name,
+        stored_name,
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        with monkeypatch.context() as scoped:
+            scoped.chdir(project_dir)
+            result = CliRunner().invoke(
+                app,
+                [
+                    *command,
+                    "https://example.com/catalog.json",
+                    "--name",
+                    requested_name,
+                ],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0, result.output
+        config_path = project_dir / ".specify" / config_filename
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert data["catalogs"][0]["name"] == stored_name
+
+    @pytest.mark.parametrize("priority", ["not-a-number", True])
+    def test_add_catalog_duplicate_validates_existing_config(
+        self, project_dir, monkeypatch, command, config_filename, priority
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        url = "https://example.com/catalog.json"
+        config_path = project_dir / ".specify" / config_filename
+        config_path.write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "mine",
+                            "url": url,
+                            "priority": priority,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        original = config_path.read_bytes()
+
+        with monkeypatch.context() as scoped:
+            scoped.chdir(project_dir)
+            result = CliRunner().invoke(
+                app,
+                [*command, url, "--name", "mine"],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert "Invalid priority" in result.output
+        assert config_path.read_bytes() == original
+
     def test_add_catalog_escapes_markup_in_success_output(
         self, project_dir, monkeypatch, command, config_filename
     ):
