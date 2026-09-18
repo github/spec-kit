@@ -2129,7 +2129,10 @@ def _merge_toml_fragment(dst: Path, fragment: str) -> bool:
     An unreadable or undecodable pre-existing file aborts the merge instead
     of discarding the user's bytes, mirroring ``_load_user_json`` (#22).
     Returns False when skipped so callers avoid tracking the untouched file
-    (S5).
+    (S5) — including when there is no fragment to add and no owned blocks to
+    remove, so a no-op install doesn't rewrite (and, via text-mode newline
+    translation, mangle the line endings of) an untouched pre-existing file
+    (#4563).
     """
     _ensure_safe_destination(dst)
     existing = ""
@@ -2144,14 +2147,16 @@ def _merge_toml_fragment(dst: Path, fragment: str) -> bool:
             )
             logger.debug("Read error detail: %s", exc)
             return False
-    existing = re.sub(
+    stripped = re.sub(
         r'\[\[hooks\.\w+\]\]\n(?:(?!\[\[hooks\.\w+\]\]).)*?speckit_marker = true\n*',
         "",
         existing,
         flags=re.DOTALL,
     )
+    if not fragment and stripped == existing:
+        return False
     dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_text(existing.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
+    dst.write_text(stripped.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
     return True
 
 
@@ -2195,6 +2200,11 @@ def _remove_toml_entries(dst: Path) -> bool:
     """Remove Specify-marked TOML entries; delete the file if now empty (#14).
 
     Returns True if the file was deleted (no user content remained).
+
+    Leaves the file untouched (no write) when there are no Specify-owned
+    blocks to strip, so a no-op teardown/install doesn't rewrite (and, via
+    text-mode newline translation, mangle the line endings of) an untouched
+    pre-existing file (#4563).
     """
     if not dst.exists():
         return False
@@ -2221,8 +2231,11 @@ def _remove_toml_entries(dst: Path) -> bool:
         existing,
         flags=re.DOTALL,
     )
-    # If only whitespace/comments remain, the file had no user content —
-    # delete it rather than leaving an empty stub that confuses uninstall.
+    if cleaned == existing:
+        return False
+    # Stripping removed a Specify-owned block. If only whitespace/comments
+    # remain, the file had no user content — delete it rather than leaving
+    # an empty stub that confuses uninstall.
     stripped = "\n".join(
         line for line in cleaned.splitlines()
         if line.strip() and not line.strip().startswith("#")
