@@ -29,6 +29,10 @@ class AuthConfigEntry:
     tenant_id: str | None = None
     client_id: str | None = None
     client_secret_env: str | None = None
+    # Username half of a Basic credential (required for auth="basic",
+    # e.g. Bitbucket Atlassian API tokens). Appended last so existing
+    # positional constructions keep their parameter positions.
+    username: str | None = None
 
 
 def _default_config_path() -> Path:
@@ -177,13 +181,28 @@ def load_auth_config(
                 f"auth scheme {auth!r}; supported: {list(_prov.supported_auth_schemes)}"
             )
 
+        username = entry_raw.get("username")
+        if username is not None and (
+            not isinstance(username, str) or not username.strip()
+        ):
+            raise ValueError(f"providers[{i}]: 'username' must be a non-empty string")
+        # RFC 7617 §2: the user-id of a Basic credential must not contain ':'
+        # — the server splits on the first colon, so this would silently
+        # authenticate as the wrong user and fail with a confusing 401.
+        if isinstance(username, str) and ":" in username:
+            raise ValueError(f"providers[{i}]: 'username' must not contain ':'")
+
         # Validate token source based on auth scheme
-        if auth in ("bearer", "basic-pat"):
-            if not token and not token_env:
-                raise ValueError(
-                    f"providers[{i}]: auth={auth!r} requires 'token' or 'token_env'"
-                )
-        elif auth == "azure-ad":
+        if auth in ("bearer", "basic-pat", "basic") and not token and not token_env:
+            raise ValueError(
+                f"providers[{i}]: auth={auth!r} requires 'token' or 'token_env'"
+            )
+        if auth == "basic" and not username:
+            raise ValueError(
+                f"providers[{i}]: auth='basic' requires 'username' "
+                "(e.g. the Atlassian account email for Bitbucket API tokens)"
+            )
+        if auth == "azure-ad":
             tenant_id = entry_raw.get("tenant_id")
             client_id = entry_raw.get("client_id")
             client_secret_env = entry_raw.get("client_secret_env")
@@ -210,6 +229,7 @@ def load_auth_config(
                 auth=auth,
                 token=token,
                 token_env=_norm(token_env),
+                username=_norm(username),
                 tenant_id=_norm(entry_raw.get("tenant_id")),
                 client_id=_norm(entry_raw.get("client_id")),
                 client_secret_env=_norm(entry_raw.get("client_secret_env")),

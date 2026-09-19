@@ -41,9 +41,11 @@ def get_provider(key: str) -> AuthProvider | None:
 def _register_builtins() -> None:
     """Register all built-in authentication providers (alphabetical)."""
     from .azure_devops import AzureDevOpsAuth
+    from .bitbucket import BitbucketAuth
     from .github import GitHubAuth
 
     _register(AzureDevOpsAuth())
+    _register(BitbucketAuth())
     _register(GitHubAuth())
 
 
