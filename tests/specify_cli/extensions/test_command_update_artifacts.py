@@ -1,10 +1,11 @@
-"""Tests for the bundled-extension local update route (#4345).
+"""Tests for ``_command_update_artifacts`` and the bundled update route.
 
 Bundled extensions have no download URL, so `specify extension update`
 installs them from the copy shipped with the running spec-kit release,
 packaged by `_archive_extension_directory` into the same hardened
 archive pipeline that downloaded updates use. These tests pin that
-packaging step and its round trip through the archive installer.
+packaging step and its round trip through the archive installer. The
+primary command tests live in ``test_command_update.py``.
 """
 
 from __future__ import annotations

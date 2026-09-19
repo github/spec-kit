@@ -4,6 +4,10 @@ Extension Manager for Spec Kit
 Handles installation, removal, and management of Spec Kit extensions.
 Extensions are modular packages that add commands and functionality to spec-kit
 without bloating the core framework.
+
+CLI handlers live in ``command_*.py`` modules, registered through
+``_commands.py``. Command-private phases use ``_command_<name>_*.py``;
+nested catalog handlers live under ``catalog/``.
 """
 
 from __future__ import annotations
