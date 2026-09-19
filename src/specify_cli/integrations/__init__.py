@@ -75,6 +75,7 @@ def _register_builtins() -> None:
     from .kimi import KimiIntegration
     from .kiro_cli import KiroCliIntegration
     from .lingma import LingmaIntegration
+    from .mcode import McodeIntegration
     from .muse import MuseIntegration
     from .omp import OmpIntegration
     from .opencode import OpencodeIntegration
@@ -118,6 +119,7 @@ def _register_builtins() -> None:
     _register(KimiIntegration())
     _register(KiroCliIntegration())
     _register(LingmaIntegration())
+    _register(McodeIntegration())
     _register(MuseIntegration())
     _register(OmpIntegration())
     _register(OpencodeIntegration())
