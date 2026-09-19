@@ -43,6 +43,24 @@ def valid_manifest_dict(**overrides) -> dict:
     return data
 
 
+def bundled_extension_version(extension_id: str) -> str:
+    """Version declared by the bundled extension the primitives will install.
+
+    Resolved through the same lookup ``BundleExtensionPrimitive`` uses, so
+    fixtures that pin a real bundled extension stay valid across legitimate
+    extension version bumps (#4345) instead of hardcoding a literal that
+    drifts out of sync and trips the exact-pin enforcement.
+    """
+    from specify_cli._assets import _locate_bundled_extension
+
+    bundled_dir = _locate_bundled_extension(extension_id)
+    assert bundled_dir is not None, f"bundled extension '{extension_id}' not found"
+    manifest = yaml.safe_load(
+        (bundled_dir / "extension.yml").read_text(encoding="utf-8")
+    )
+    return manifest["extension"]["version"]
+
+
 def write_manifest(directory: Path, data: dict | None = None) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     manifest_path = directory / "bundle.yml"

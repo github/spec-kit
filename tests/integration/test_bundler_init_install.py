@@ -18,7 +18,7 @@ from specify_cli import app
 from specify_cli.bundler.models.manifest import BundleManifest
 from specify_cli.commands.bundle import _resolve_init_integration
 from specify_cli.bundler.services.packager import build_bundle
-from tests.bundler_helpers import valid_manifest_dict
+from tests.bundler_helpers import bundled_extension_version, valid_manifest_dict
 
 runner = CliRunner()
 
@@ -75,7 +75,14 @@ def _build_mini(tmp_path: Path) -> Path:
                     "license": "MIT",
                 },
                 "requires": {"speckit_version": ">=0.1.0"},
-                "provides": {"extensions": [{"id": "agent-context", "version": "1.0.0"}]},
+                "provides": {
+                    "extensions": [
+                        {
+                            "id": "agent-context",
+                            "version": bundled_extension_version("agent-context"),
+                        }
+                    ]
+                },
             }
         ),
         encoding="utf-8",
