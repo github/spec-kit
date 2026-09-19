@@ -25,6 +25,7 @@ from packaging.version import InvalidVersion, Version
 
 REPO_ROOT = Path(__file__).parents[2]
 EXTENSIONS_ROOT = REPO_ROOT / "extensions"
+EXAMPLE_BUNDLES_ROOT = REPO_ROOT / "examples" / "bundles"
 
 
 def _catalog_entries() -> dict[str, dict]:
@@ -81,3 +82,39 @@ def test_catalog_version_is_valid_pep440(ext_id: str):
             f"extensions/catalog.json entry '{ext_id}' version {version!r} is not a valid "
             f"PEP 440 version ({exc}); `extension update` would skip it"
         )
+
+
+def _example_bundle_extension_pins() -> list[tuple[str, str, str]]:
+    """(bundle name, extension id, pinned version) for every example bundle."""
+    pins = []
+    for manifest_path in sorted(EXAMPLE_BUNDLES_ROOT.glob("*/bundle.yml")):
+        data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        for entry in (data.get("provides") or {}).get("extensions") or []:
+            pins.append((manifest_path.parent.name, entry["id"], str(entry.get("version"))))
+    return pins
+
+
+def test_example_bundles_pin_extensions():
+    assert _example_bundle_extension_pins(), "expected at least one extension pin in examples/bundles"
+
+
+@pytest.mark.parametrize(
+    "bundle_name,ext_id,pinned",
+    _example_bundle_extension_pins(),
+    ids=lambda v: v if isinstance(v, str) else str(v),
+)
+def test_example_bundle_pins_match_bundled_manifest(bundle_name: str, ext_id: str, pinned: str):
+    """``BundleExtensionPrimitive`` refuses to install when the resolved
+    extension version differs from the bundle's pin, so an example bundle that
+    still pins a bundled extension's previous version fails for every user who
+    installs it. Test fixtures derive their pins from the bundled manifest and
+    therefore cannot catch this; the shipped examples must be checked directly."""
+    manifest_path = EXTENSIONS_ROOT / ext_id / "extension.yml"
+    if not manifest_path.is_file():
+        pytest.skip(f"'{ext_id}' is not a bundled extension; pin resolves via the catalog at install time")
+    manifest_version = _manifest_version(ext_id)
+    assert Version(pinned) == Version(manifest_version), (
+        f"examples/bundles/{bundle_name}/bundle.yml pins '{ext_id}' to {pinned} but "
+        f"{manifest_path.relative_to(REPO_ROOT)} declares {manifest_version}; the bundler "
+        f"enforces exact pins, so installing this example would fail"
+    )
