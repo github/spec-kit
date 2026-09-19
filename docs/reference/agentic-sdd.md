@@ -1,6 +1,6 @@
 # Agentic SDD
 
-The `/speckit.*` slash commands drive the core Spec-Driven Development (SDD) process — an **agentic process** your coding agent runs step by step. For a guided, end-to-end run see the [Quick Start Guide](../quickstart.md); this page is the detailed reference for each command — including arguments, output, and how they interact. For the philosophy behind the process, see [What is SDD?](../concepts/sdd.md). For bug triage, see [Agentic Bug Fix](agentic-bugfix.md).
+The `/speckit-*` slash commands drive the core Spec-Driven Development (SDD) process — an **agentic process** your coding agent runs step by step. For a guided, end-to-end run see the [Quick Start Guide](../quickstart.md); this page is the detailed reference for each command — including arguments, output, and how they interact. For the philosophy behind the process, see [What is SDD?](../concepts/sdd.md). For bug triage, see [Agentic Bug Fix](agentic-bugfix.md).
 
 The commands are designed to run in order, but only `/speckit-specify` is strictly required before `/speckit-plan`. The clarify, checklist, and analyze commands are quality gates you add for anything with meaningful ambiguity.
 
@@ -9,7 +9,7 @@ For evaluating an idea before committing to a specification, see
 independent of the SDD process.
 
 > [!NOTE]
-> Commands are written in `/speckit.*` form throughout this page. GitHub Copilot's default skills mode uses `/speckit-*`; some other agents use `$speckit-*` (e.g. Codex, ZCode) or `/skill:speckit-*` (e.g. Kimi). See [Command invocation](integrations.md#command-invocation).
+> Commands are written in GitHub Copilot's default skills form, `/speckit-*`, throughout this page. Some other agents use `$speckit-*` (e.g. Codex, ZCode) or `/skill:speckit-*` (e.g. Kimi). See [Command invocation](integrations.md#command-invocation).
 
 ```text
 /speckit-constitution -> /speckit-specify -> /speckit-clarify -> /speckit-plan -> /speckit-checklist -> /speckit-tasks -> /speckit-analyze -> /speckit-implement -> /speckit-converge
