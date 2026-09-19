@@ -47,7 +47,7 @@ cd my-project
 
 この例では **GitHub Copilotのデフォルトのスキルモード** を使用しています。他の対応エージェントを使う場合は、`copilot` をお使いのエージェントの[エージェント識別子](https://github.github.io/spec-kit/reference/integrations.html)に置き換えてください。
 
-すでにコードがありますか?[既存プロジェクト向けガイド](https://github.github.io/spec-kit/guides/existing-projects.html)を参照してください。バージョン固定でのインストール、その他のインストーラー、CI、トラブルシューティングについては[インストールガイド](https://github.github.io/spec-kit/installation.html)を、既存のインストールを更新する場合は[アップグレードガイド](https://github.github.io/spec-kit/upgrade.html)を参照してください。
+すでにコードがありますか？[既存プロジェクト向けガイド](https://github.github.io/spec-kit/guides/existing-projects.html)を参照してください。バージョン固定でのインストール、その他のインストーラー、CI、トラブルシューティングについては[インストールガイド](https://github.github.io/spec-kit/installation.html)を、既存のインストールを更新する場合は[アップグレードガイド](https://github.github.io/spec-kit/upgrade.html)を参照してください。
 
 ここから**プロジェクトディレクトリでコーディングエージェントを起動し**、下記のいずれかのプロセスを選んでください。各 `/speckit-*` **スキルはエージェントのチャット内で**、1つずつ呼び出し、結果を確認してから次に進んでください。これらはターミナルコマンドではなく、エージェントのスキルです。エージェントやモードによっては、[異なる呼び出し方](https://github.github.io/spec-kit/reference/integrations.html#command-invocation)を使う場合があります。
 
