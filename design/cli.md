@@ -301,4 +301,3 @@ For a new or refactored command:
 - [ ] Compatibility paths and user-visible help remain unchanged unless the
       change explicitly requires otherwise.
 - [ ] Focused tests, relevant legacy suites, lint, and the full test suite pass.
-
