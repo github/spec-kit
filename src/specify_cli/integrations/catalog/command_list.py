@@ -13,7 +13,7 @@ from . import catalog_app
 @catalog_app.command("list")
 def integration_catalog_list():
     """List configured integration catalog sources."""
-    from . import IntegrationCatalog, IntegrationCatalogError
+    from .. import IntegrationCatalog, IntegrationCatalogError
     from ... import _require_specify_project
 
     project_root = _require_specify_project()

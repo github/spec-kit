@@ -13,7 +13,7 @@ def integration_catalog_remove(
     index: int = typer.Argument(..., help="Catalog index to remove (from 'catalog list')"),
 ):
     """Remove an integration catalog source by 0-based index."""
-    from . import IntegrationCatalog, IntegrationCatalogError
+    from .. import IntegrationCatalog, IntegrationCatalogError
     from ... import _require_specify_project
 
     project_root = _require_specify_project()

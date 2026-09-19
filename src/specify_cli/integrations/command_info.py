@@ -18,8 +18,8 @@ def integration_info(
     integration_id: str = typer.Argument(..., help="Integration ID"),
 ):
     """Show catalog details for a single integration."""
-    from . import INTEGRATION_REGISTRY
-    from .catalog import (
+    from . import (
+        INTEGRATION_REGISTRY,
         IntegrationCatalog,
         IntegrationCatalogError,
         IntegrationValidationError,

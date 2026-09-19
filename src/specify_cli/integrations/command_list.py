@@ -28,7 +28,7 @@ def integration_list(
     installed_keys = set(_installed_integration_keys(current))
 
     if catalog:
-        from .catalog import IntegrationCatalog, IntegrationCatalogError
+        from . import IntegrationCatalog, IntegrationCatalogError
 
         ic = IntegrationCatalog(project_root)
         try:

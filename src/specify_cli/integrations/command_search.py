@@ -20,8 +20,8 @@ def integration_search(
     author: Optional[str] = typer.Option(None, "--author", help="Filter by author"),
 ):
     """Search for integrations in the active catalog stack."""
-    from . import INTEGRATION_REGISTRY
-    from .catalog import (
+    from . import (
+        INTEGRATION_REGISTRY,
         IntegrationCatalog,
         IntegrationCatalogError,
         IntegrationValidationError,

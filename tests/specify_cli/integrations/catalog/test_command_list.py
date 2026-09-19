@@ -115,7 +115,7 @@ class TestIntegrationCatalogListMarkup(IntegrationListCatalogTestBase):
         """User-editable catalog name/url/description must not be parsed as Rich markup."""
         from typer.testing import CliRunner
         from specify_cli import app
-        from specify_cli.integrations.catalog import IntegrationCatalog
+        from specify_cli.integrations import IntegrationCatalog
         runner = CliRunner()
         project = self._init_project(tmp_path)
 

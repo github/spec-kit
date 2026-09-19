@@ -40,7 +40,7 @@ class TestIntegrationSearch(IntegrationCatalogCliTestBase):
             "{bad json\n", encoding="utf-8"
         )
 
-        from specify_cli.integrations.catalog import IntegrationCatalog
+        from specify_cli.integrations import IntegrationCatalog
 
         def fail_search(self, **kwargs):
             raise AssertionError("catalog search should not be called")
@@ -64,7 +64,7 @@ class TestIntegrationSearch(IntegrationCatalogCliTestBase):
         # ``Path.read_text(encoding="utf-8")`` raises ``UnicodeDecodeError``.
         (project / ".specify" / "integration.json").write_bytes(b"\xff\xfe\x00\x00")
 
-        from specify_cli.integrations.catalog import IntegrationCatalog
+        from specify_cli.integrations import IntegrationCatalog
 
         def fail_search(self, **kwargs):
             raise AssertionError("catalog search should not be called")
@@ -179,7 +179,7 @@ class TestIntegrationSearch(IntegrationCatalogCliTestBase):
         project = self._make_project(tmp_path)
         monkeypatch.setenv("SPECKIT_INTEGRATION_CATALOG_URL", "   ")
 
-        from specify_cli.integrations.catalog import (
+        from specify_cli.integrations import (
             IntegrationCatalog,
             IntegrationCatalogError,
         )

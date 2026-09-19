@@ -1,4 +1,4 @@
-"""Shared setup for integration scaffold domain and command tests."""
+"""Shared setup for integration scaffold command tests."""
 
 from pathlib import Path
 

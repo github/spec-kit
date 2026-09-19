@@ -54,22 +54,13 @@ def test_catalog_commands_registered_once_in_stable_order():
     assert _commands.integration_catalog_app is catalog_app
 
 
-def test_legacy_grouped_command_imports_resolve_to_extracted_handlers():
-    from specify_cli.integrations import (
-        _install_commands,
-        _migrate_commands,
-        _query_commands,
-        _scaffold_commands,
+def test_catalog_package_preserves_domain_import_compatibility():
+    from specify_cli.integrations import IntegrationCatalog
+    from specify_cli.integrations.catalog import (
+        IntegrationCatalog as CompatibilityIntegrationCatalog,
     )
-    from specify_cli.integrations.command_install import integration_install
-    from specify_cli.integrations.command_list import integration_list
-    from specify_cli.integrations.command_scaffold import integration_scaffold
-    from specify_cli.integrations.command_upgrade import integration_upgrade
 
-    assert _install_commands.integration_install is integration_install
-    assert _migrate_commands.integration_upgrade is integration_upgrade
-    assert _query_commands.integration_list is integration_list
-    assert _scaffold_commands.integration_scaffold is integration_scaffold
+    assert CompatibilityIntegrationCatalog is IntegrationCatalog
 
 
 def test_version_lookup_remains_late_bound_through_commands_module(monkeypatch):
@@ -78,20 +69,6 @@ def test_version_lookup_remains_late_bound_through_commands_module(monkeypatch):
     monkeypatch.setattr(_commands, "get_speckit_version", lambda: "9.8.7-test")
 
     assert _get_speckit_version() == "9.8.7-test"
-
-
-def test_upgrade_layout_helpers_remain_patchable_through_legacy_module(monkeypatch):
-    from specify_cli.integrations import _migrate_commands
-    from specify_cli.integrations import command_upgrade
-
-    sentinel = object()
-    monkeypatch.setattr(
-        _migrate_commands,
-        "_installed_presets_affecting_agent",
-        lambda *_args, **_kwargs: sentinel,
-    )
-
-    assert command_upgrade._installed_presets_affecting_agent(".", "copilot") is sentinel
 
 
 class TestParseIntegrationOptionsEqualsForm:

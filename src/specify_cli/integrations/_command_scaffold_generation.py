@@ -1,4 +1,4 @@
-"""Developer helpers for scaffolding built-in integrations."""
+"""Generation phase for the ``specify integration scaffold`` command."""
 
 from __future__ import annotations
 

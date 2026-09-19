@@ -1,8 +1,7 @@
 """Shared infrastructure and registration for ``specify integration`` commands.
 
-Command handlers belong in ``command_*.py`` modules. Thin compatibility
-re-exports preserve established direct-import paths in the former grouped
-command modules.
+Command handlers belong in ``command_*.py`` modules. Compatibility exports
+required by external CLI consumers remain at this registration boundary.
 """
 from __future__ import annotations
 
@@ -24,6 +23,7 @@ integration_app = typer.Typer(
     help="Manage coding agent integrations",
     add_completion=False,
 )
+
 
 def register(app: typer.Typer) -> None:
     """Attach the integration command group to the root Typer app."""

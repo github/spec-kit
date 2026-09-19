@@ -1,11 +1,11 @@
-"""Tests for the integration scaffolding domain API."""
+"""Tests for the integration scaffold generation phase."""
 
 from pathlib import Path
 
 import pytest
 
-from specify_cli.integration_scaffold import scaffold_integration
-from tests.integrations._integration_scaffold_helpers import integration_repo_root as _repo_root
+from specify_cli.integrations._command_scaffold_generation import scaffold_integration
+from tests.specify_cli.integrations._scaffold_helpers import integration_repo_root as _repo_root
 
 @pytest.mark.parametrize(
     ("integration_type", "base_class", "commands_subdir", "args", "extension"),

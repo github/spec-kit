@@ -15,40 +15,14 @@ from ..integration_runtime import (
 from ..integration_state import default_integration_key as _default_integration_key, installed_integration_keys as _installed_integration_keys
 from ._command_upgrade_layout import (
     _PresetRegistryUnreadableError,
+    _installed_command_presets_affecting_agent,
+    _installed_presets_affecting_agent,
+    _legacy_command_root_changed,
+    _legacy_command_root_upgrade_pending,
+    _manifest_tracks_skill_layout,
 )
 from ._commands import integration_app
 from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _refresh_init_options_speckit_version, _register_extensions_for_agent, _register_presets_for_agent, _resolve_integration_options, _resolve_integration_script_type, _unregister_enabled_extension_commands_for_agent, _update_init_options_for_integration, _write_integration_json
-
-
-def _legacy_layout_helper(name: str):
-    """Resolve a layout helper through the former module for patch compatibility."""
-    from . import _migrate_commands
-
-    return getattr(_migrate_commands, name)
-
-
-def _manifest_tracks_skill_layout(*args, **kwargs):
-    return _legacy_layout_helper("_manifest_tracks_skill_layout")(*args, **kwargs)
-
-
-def _legacy_command_root_changed(*args, **kwargs):
-    return _legacy_layout_helper("_legacy_command_root_changed")(*args, **kwargs)
-
-
-def _legacy_command_root_upgrade_pending(*args, **kwargs):
-    return _legacy_layout_helper("_legacy_command_root_upgrade_pending")(
-        *args, **kwargs
-    )
-
-
-def _installed_presets_affecting_agent(*args, **kwargs):
-    return _legacy_layout_helper("_installed_presets_affecting_agent")(*args, **kwargs)
-
-
-def _installed_command_presets_affecting_agent(*args, **kwargs):
-    return _legacy_layout_helper("_installed_command_presets_affecting_agent")(
-        *args, **kwargs
-    )
 
 
 @integration_app.command("upgrade")

@@ -1,15 +1,14 @@
 """Tests for the ``specify integration scaffold`` command."""
 
-from pathlib import Path  # noqa: F401
-
 from typer.testing import CliRunner
 
 from specify_cli import app
 from tests.conftest import strip_ansi
-from tests.integrations._integration_scaffold_helpers import integration_repo_root as _repo_root
+from tests.specify_cli.integrations._scaffold_helpers import integration_repo_root as _repo_root
 
 
 runner = CliRunner()
+
 
 def test_integration_scaffold_creates_markdown_files(tmp_path, monkeypatch):
     root = _repo_root(tmp_path)
@@ -60,7 +59,7 @@ def test_integration_scaffold_reports_filesystem_errors_cleanly(tmp_path, monkey
     root = _repo_root(tmp_path)
     monkeypatch.chdir(root)
 
-    import specify_cli.integration_scaffold as scaffold_module
+    import specify_cli.integrations._command_scaffold_generation as scaffold_module
 
     def boom(*args, **kwargs):
         raise PermissionError("Permission denied: read-only checkout")

@@ -62,7 +62,7 @@ class IntegrationCatalogCliTestBase:
 
     def _patch_catalog(self, monkeypatch, integrations=None):
         """Return a stubbed `_get_merged_integrations` that yields *integrations*."""
-        from specify_cli.integrations.catalog import IntegrationCatalog
+        from specify_cli.integrations import IntegrationCatalog
 
         data = list(integrations if integrations is not None else self.FAKE_INTEGRATIONS)
 

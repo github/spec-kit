@@ -201,7 +201,7 @@ class BobIntegration(IntegrationBase):
         *parsed_options* is typically empty: no flag was passed, and existing
         Bob 1.x installs never persisted a ``legacy_commands`` option to
         recover.  This is independent of whether ``setup()`` runs — ``upgrade``
-        *does* call :meth:`setup` (see ``_migrate_commands.integration_upgrade``),
+        *does* call :meth:`setup` (see ``command_upgrade.integration_upgrade``),
         but it passes those same empty *parsed_options*, so without disk
         detection the mode would resolve to the skills default.  Defaulting to
         skills there would rewrite such a project's ``ai_skills`` flag to

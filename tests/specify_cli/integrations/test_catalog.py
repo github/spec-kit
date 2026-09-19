@@ -1,4 +1,4 @@
-"""Tests for the integration catalog domain API."""
+"""Tests for the integration package's catalog domain API."""
 
 import json
 
@@ -7,7 +7,7 @@ import yaml
 
 from tests.http_helpers import route_opener_open_through_urlopen  # noqa: F401
 
-from specify_cli.integrations.catalog import (
+from specify_cli.integrations import (
     IntegrationCatalog,
     IntegrationCatalogEntry,
     IntegrationCatalogError,
@@ -334,11 +334,11 @@ class TestCatalogFetch:
     ):
         """Regression: _fetch_single_catalog must use read_response_limited
         with MAX_JSON_METADATA_BYTES, not unbounded resp.read()."""
-        from specify_cli.integrations.catalog import (
+        from specify_cli.integrations import (
             IntegrationCatalog,
             IntegrationCatalogError,
         )
-        import specify_cli.integrations.catalog as catalog_module
+        import specify_cli.integrations as catalog_module
 
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("USERPROFILE", str(tmp_path))
@@ -379,7 +379,7 @@ class TestCatalogFetch:
 
         monkeypatch.setattr(_auth_http.urllib.request, "urlopen", fake_urlopen)
 
-        from specify_cli.integrations.catalog import IntegrationCatalogEntry
+        from specify_cli.integrations import IntegrationCatalogEntry
 
         entry = IntegrationCatalogEntry(
             url="https://example.com/catalog.json",

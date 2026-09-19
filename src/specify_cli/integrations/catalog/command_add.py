@@ -21,7 +21,7 @@ def integration_catalog_add(
     name: Optional[str] = typer.Option(None, "--name", help="Catalog name"),
 ):
     """Add an integration catalog source to the project config."""
-    from . import IntegrationCatalog, IntegrationCatalogError
+    from .. import IntegrationCatalog, IntegrationCatalogError
     from ... import _require_specify_project
 
     project_root = _require_specify_project()
