@@ -54,12 +54,12 @@ Invoke Spec Kit's process steps inside your coding agent, not in the terminal.
 In GitHub Copilot's default mode, these are skills you invoke in the agent's
 chat. CLI installation and setup commands are separate terminal operations.
 The steps are the same across integrations, but their spelling depends on the
-agent and its installed mode:
+agent and its installed mode. Reference pages use GitHub Copilot's default
+skills form unless noted otherwise:
 
 | Integration or mode | SDD example | Extension example |
 | --- | --- | --- |
 | GitHub Copilot, default skills mode | `/speckit-specify` | `/speckit-bug-assess` |
-| Dotted slash-command notation used in the references | `/speckit.specify` | `/speckit.bug.assess` |
 | Codex, Command Code, ZCode skills | `$speckit-specify` | `$speckit-bug-assess` |
 | Kimi skills | `/skill:speckit-specify` | `/skill:speckit-bug-assess` |
 
