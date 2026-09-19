@@ -1593,6 +1593,8 @@ class WorkflowEngine:
                     fan_out_results = self._run_fan_out(
                         items, template, step_id, context, state, registry,
                         result.output.get("max_concurrency", 1),
+                        parent_local_only=alias_local_only,
+                        parent_alias_records=alias_records,
                     )
                     context.item = None
                     # Preserve original output and add collected results
@@ -1622,6 +1624,9 @@ class WorkflowEngine:
         state: RunState,
         registry: dict[str, Any],
         max_concurrency: Any,
+        *,
+        parent_local_only: bool = False,
+        parent_alias_records: dict[str, dict[str, Any]] | None = None,
     ) -> list[Any]:
         """Run a fan-out template once per item; return per-item outputs in item order.
 
@@ -1644,6 +1649,25 @@ class WorkflowEngine:
         coerced (``None``, a non-numeric string, ``.inf``/``.nan``, …) or that
         coerces to <= 1 runs sequentially, while a numeric string like ``"4"`` or
         a float like ``4.0`` is honored.
+
+        ``parent_local_only`` / ``parent_alias_records`` let a fan-out step
+        nested inside another loop/fan-out item inherit that ENCLOSING item's
+        isolation instead of deciding isolation purely from this call's own
+        ``max_concurrency``. Without this, a fan-out template step nested
+        inside a concurrently-running OUTER fan-out item (or while/do-while
+        body) would decide its own bare-id aliasing is safe to write directly
+        to shared ``state.step_results``/``context.steps`` whenever ITS OWN
+        ``max_concurrency`` <= 1 — even though the enclosing item is one of
+        several running in parallel, so sibling outer items running this same
+        nested fan-out would race on those bare-id keys exactly like the
+        top-level concurrency guard (see ``run_item`` below) exists to
+        prevent. Passing the enclosing item's own ``alias_local_only`` here
+        forces every item of this nested fan-out — sequential or concurrent —
+        to isolate its writes the same way, and ``parent_alias_records`` (the
+        enclosing item's own accumulator; see ``_execute_steps``) receives
+        this fan-out's bare-id aliases too, so they are still published when
+        the enclosing item finishes, mirroring how a nested while/do-while
+        body's dynamic alias already reaches that accumulator.
         """
         if not items:
             return []
@@ -1680,9 +1704,12 @@ class WorkflowEngine:
             item_step, id_map = _rename_step_tree_ids(
                 template, step_id, str(idx), default_id=base_id,
             )
-            # ``local_only`` (concurrent path): give this item a private
-            # dict for its ``.steps`` reads/writes, snapshotting the shared
-            # steps dict at the point this item starts. Namespaced results
+            # ``local_only`` (true for the concurrent path below, or for ANY
+            # path when ``parent_local_only`` says this whole fan-out is
+            # itself nested inside an already-isolated enclosing item): give
+            # this item a private dict for its ``.steps`` reads/writes,
+            # snapshotting the shared steps dict at the point this item
+            # starts. Namespaced results
             # still land in the real ``state.step_results`` (via
             # _record_result's unconditional write — see _execute_steps),
             # but the immediate bare-id alias (see alias_map below) writes
@@ -1769,7 +1796,12 @@ class WorkflowEngine:
             return steps_view.get(item_step["id"], {}).get("output", {}), alias_records
 
         # Sequential path — identical to the historical behavior, plus
-        # immediate (not post-subtree) bare-id aliasing.
+        # immediate (not post-subtree) bare-id aliasing. ``local_only``
+        # follows ``parent_local_only`` rather than being hardcoded False:
+        # when this fan-out is itself nested inside an already-isolated
+        # enclosing item, its own sequential items must isolate too (see the
+        # ``parent_local_only`` docstring above) even though there is no
+        # concurrency AT THIS LEVEL to race against.
         if workers <= 1:
             results: list[Any] = []
             previous_item = context.item
@@ -1778,9 +1810,11 @@ class WorkflowEngine:
             try:
                 for item_idx, item_val in enumerate(items):
                     context.item = item_val
-                    output, _alias_records = run_item(
-                        item_idx, context, local_only=False
+                    output, item_alias_records = run_item(
+                        item_idx, context, local_only=parent_local_only
                     )
+                    if parent_local_only and parent_alias_records is not None:
+                        parent_alias_records.update(item_alias_records)
                     results.append(output)
                     if state.status in halting:
                         break
@@ -1888,14 +1922,35 @@ class WorkflowEngine:
                         other.cancel()
                     break
 
-        # Apply exactly one item's bare-id aliases to the real shared state —
-        # deterministically the last item in item order (the halting item, if
-        # any, else the last one collected) — now that the pool has joined
-        # and this runs single-threaded again, so it can never race a
-        # concurrently-running item the way writing it during run_item would.
+        # Apply exactly one item's bare-id aliases — deterministically the
+        # last item in item order (the halting item, if any, else the last
+        # one collected) — now that the pool has joined and this runs
+        # single-threaded again, so it can never race a concurrently-running
+        # item the way writing it during run_item would.
         last_idx = halt[0] if halt is not None else (collected - 1 if collected else None)
         if last_idx is not None:
             for orig_id, data in alias_slots[last_idx].items():
+                if parent_local_only:
+                    # Nested inside an already-isolated enclosing item (see
+                    # the ``parent_local_only`` docstring above): the
+                    # enclosing item may itself be one of several
+                    # concurrently-running outer items, so this fan-out's
+                    # aliases must stay item-local too, not reach the truly
+                    # shared ``state.step_results``. Write into the
+                    # enclosing item's own steps view (``context.steps`` at
+                    # this point IS that private overlay — see
+                    # ``_run_fan_out``'s ``context`` parameter) and into its
+                    # accumulator so it is still published once the
+                    # enclosing item itself finishes, exactly like a nested
+                    # while/do-while body's alias already is. Unlike the
+                    # non-nested branch below, no reserved-id collision skip
+                    # is needed: this write never touches persisted state,
+                    # mirroring ``_execute_steps``'s own context.steps write
+                    # for a colliding alias.
+                    context.steps[orig_id] = data
+                    if parent_alias_records is not None:
+                        parent_alias_records[orig_id] = data
+                    continue
                 # orig_id came from inside this fan-out's template, which is
                 # exempt from the global id-uniqueness check (see
                 # _collect_reserved_step_ids) -- it can coincide with a real,
