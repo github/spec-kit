@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 from pathlib import Path
 
 import typer
@@ -45,6 +46,42 @@ preset_catalog_app = typer.Typer(
     add_completion=False,
 )
 preset_app.add_typer(preset_catalog_app, name="catalog")
+
+
+#: Lowest priority a user may request. Lower numbers win resolution, so the
+#: stack is anchored at 1 rather than 0 to leave no unreachable slot above the
+#: highest-precedence preset.
+MINIMUM_PRESET_PRIORITY = 1
+
+
+def _render_powershell_argv(argv: list[str]) -> str:
+    """Render argv as a copy-pastable PowerShell command.
+
+    PowerShell single-quoted strings are literal except that an embedded single
+    quote is escaped by doubling it. The call operator is required because the
+    executable name is quoted too.
+    """
+    def quote_arg(arg: str) -> str:
+        return "'" + arg.replace("'", "''") + "'"
+
+    return "& " + " ".join(quote_arg(arg) for arg in argv)
+
+
+def _validate_priority(priority: int) -> None:
+    """Reject a non-positive priority before any destructive work begins.
+
+    Shared by add, set-priority, and update so the three commands cannot drift
+    apart on the accepted range or the message they print. update in particular
+    must call this *before* removing the installed preset: validating only
+    inside add would leave the preset removed and print a retry command
+    carrying the same rejected priority.
+    """
+    if priority < MINIMUM_PRESET_PRIORITY:
+        console.print(
+            "[red]Error:[/red] Priority must be a positive integer "
+            f"({MINIMUM_PRESET_PRIORITY} or higher)"
+        )
+        raise typer.Exit(1)
 
 
 def _warn_unmet_extension_dependencies(manager, manifest) -> None:
@@ -240,9 +277,7 @@ def preset_add(
 
     project_root = _require_specify_project()
     # Validate priority
-    if priority < 1:
-        console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
-        raise typer.Exit(1)
+    _validate_priority(priority)
 
     manager = PresetManager(project_root)
     speckit_version = get_speckit_version()
@@ -451,6 +486,99 @@ def preset_remove(
         console.print(f"[green]✓[/green] Preset '{preset_id}' removed successfully")
     else:
         console.print(f"[red]Error:[/red] Failed to remove preset '{preset_id}'")
+        raise typer.Exit(1)
+
+
+@preset_app.command("update")
+def preset_update(
+    preset_id: str = typer.Argument(..., help="Installed preset ID to replace"),
+    from_url: str = typer.Option(
+        None,
+        "--from",
+        help="Install the replacement from a .zip, .tar.gz, or .tgz URL",
+    ),
+    dev: str = typer.Option(
+        None,
+        "--dev",
+        help="Install the replacement from a local directory (development mode)",
+    ),
+    priority: int = typer.Option(
+        10,
+        "--priority",
+        help="Resolution priority for the replacement (default 10)",
+    ),
+):
+    """Replace an installed preset using the normal remove and add flows."""
+    from .. import _require_specify_project
+    from . import PresetManager
+
+    if from_url is not None and dev is not None:
+        console.print("[red]Error:[/red] --from and --dev are mutually exclusive")
+        raise typer.Exit(1)
+    if from_url == "":
+        console.print("[red]Error:[/red] --from must not be empty")
+        raise typer.Exit(1)
+    if dev == "":
+        console.print("[red]Error:[/red] --dev must not be empty")
+        raise typer.Exit(1)
+
+    # Validate priority before removal. add rejects the same range, but only
+    # after remove has already run, which would leave the preset removed and
+    # the printed retry command carrying the rejected priority.
+    _validate_priority(priority)
+
+    project_root = _require_specify_project()
+    manager = PresetManager(project_root)
+    if not manager.registry.is_installed(preset_id):
+        console.print(f"[red]Error:[/red] Preset '{preset_id}' is not installed")
+        raise typer.Exit(1)
+
+    # Keep update deliberately destructive: remove performs its complete normal
+    # reconciliation before add resolves and installs the replacement.
+    preset_remove(preset_id)
+
+    retry_args = ["specify", "preset", "add"]
+    retry_options = []
+    if from_url is not None:
+        retry_options.extend(["--from", from_url])
+    if dev is not None:
+        retry_options.extend(["--dev", dev])
+    retry_options.extend(["--priority", str(priority)])
+    if preset_id.startswith("-"):
+        retry_args.extend([*retry_options, "--", preset_id])
+    else:
+        retry_args.extend([preset_id, *retry_options])
+
+    def report_add_failure() -> None:
+        if os.name == "nt":
+            retry_label = "Retry in PowerShell: "
+            rendered_args = _render_powershell_argv(retry_args)
+        else:
+            retry_label = "Retry with: "
+            rendered_args = shlex.join(retry_args)
+        console.print(
+            "[red]Error:[/red] Preset update failed; the previous preset was removed."
+        )
+        console.print(
+            f"{retry_label}[cyan]"
+            f"{_escape_markup(rendered_args)}"
+            "[/cyan]",
+            soft_wrap=True,
+        )
+
+    try:
+        preset_add(
+            preset_id=preset_id,
+            from_url=from_url,
+            dev=dev,
+            priority=priority,
+        )
+    except typer.Exit as error:
+        report_add_failure()
+        raise typer.Exit(error.exit_code or 1)
+    except Exception as error:
+        console.print(f"[red]Error:[/red] {_escape_markup(str(error))}")
+        report_add_failure()
         raise typer.Exit(1)
 
 
@@ -698,9 +826,7 @@ def preset_set_priority(
 
     project_root = _require_specify_project()
     # Validate priority
-    if priority < 1:
-        console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
-        raise typer.Exit(1)
+    _validate_priority(priority)
 
     manager = PresetManager(project_root)
 
