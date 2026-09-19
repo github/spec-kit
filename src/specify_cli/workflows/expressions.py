@@ -416,6 +416,41 @@ def _find_top_level(text: str, token: str) -> int:
     return -1
 
 
+def _is_single_list_literal(expr: str) -> bool:
+    """Return ``True`` only when *expr* is exactly one bracketed list
+    literal -- the opening ``[`` closes at the FINAL character, not partway
+    through the string.
+
+    ``expr.startswith("[") and expr.endswith("]")`` alone also matches a
+    list literal immediately followed by an index suffix, e.g.
+    ``[1,2,3][1]`` (meant as "index 1 of [1,2,3]", i.e. 2). Naively
+    stripping the outer brackets from that string yields the garbage
+    ``1,2,3][1``, which then silently evaluates to ``[1, 2, None]`` instead
+    of raising or resolving the index -- the same "grabs the wrong span"
+    failure mode the string-literal check above guards against, just never
+    given the same treatment for brackets.
+    """
+    if not (expr.startswith("[") and expr.endswith("]")):
+        return False
+    quote: str | None = None
+    depth = 0
+    n = len(expr)
+    for i, ch in enumerate(expr):
+        if quote is not None:
+            if ch == quote:
+                quote = None
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+        elif ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+            if depth == 0:
+                return i == n - 1
+    return False
+
+
 def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> Any:
     """Apply a single pipe filter segment to *value*.
 
@@ -647,7 +682,7 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         return None
 
     # List literal (simple)
-    if expr.startswith("[") and expr.endswith("]"):
+    if _is_single_list_literal(expr):
         inner = expr[1:-1].strip()
         if not inner:
             return []
