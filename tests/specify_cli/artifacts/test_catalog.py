@@ -1,9 +1,4 @@
-"""Unit and contract tests for the `specify artifact` command group.
-
-Covers the pure-logic layer (:class:`ArtifactCatalog`) plus the CLI wiring
-(``specify artifact list``, ``specify artifact info``) exercised through
-Typer's ``CliRunner``.
-"""
+"""Domain and contract tests for artifact inventory and resolution."""
 
 from __future__ import annotations
 
@@ -11,14 +6,11 @@ import json
 import os
 import re
 import shutil
-from datetime import date
 from pathlib import Path
 
 import pytest
 import yaml
-from typer.testing import CliRunner
 
-from specify_cli import app
 from specify_cli.artifacts import (
     AmbiguousArtifactError,
     Artifact,
@@ -34,36 +26,11 @@ from specify_cli.artifacts.resolution import _preset_display_name
 from specify_cli.extensions import CORE_COMMAND_NAMES, ExtensionRegistry
 from specify_cli.presets import PresetRegistry, PresetResolver
 from tests.conftest import install_preset
-
-ERROR_REGEX = re.compile(
-    r"^(unknown artifact |unknown contribution |ambiguous artifact |"
-    r"artifact resolution failed|not a Spec Kit project)"
+from tests.specify_cli.artifacts.helpers import (
+    ERROR_REGEX,
+    install_extension_with_hooks,
+    write_hook_binding,
 )
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def spec_kit_project(tmp_path: Path) -> Path:
-    """Create a minimal but valid Spec Kit project layout."""
-    root = tmp_path / "proj"
-    root.mkdir()
-    (root / ".specify").mkdir()
-    (root / ".specify" / "presets").mkdir()
-    (root / ".specify" / "extensions").mkdir()
-    (root / ".specify" / "templates").mkdir()
-    return root
-
-
-@pytest.fixture
-def non_project(tmp_path: Path) -> Path:
-    """A directory that intentionally lacks ``.specify/``."""
-    root = tmp_path / "not-proj"
-    root.mkdir()
-    return root
 
 
 # ---------------------------------------------------------------------------
@@ -924,80 +891,11 @@ class TestSkillsExcluded:
 
 
 # ---------------------------------------------------------------------------
-# CLI wiring — Typer CliRunner
+# Manifest contribution lookup
 # ---------------------------------------------------------------------------
 
 
-class TestCLI:
-    def test_list_requires_json_flag(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.chdir(spec_kit_project)
-        runner = CliRunner()
-        result = runner.invoke(app, ["artifact", "list"])
-        assert result.exit_code == 2
-        assert result.stdout == ""
-
-    def test_list_json_emits_array(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.chdir(spec_kit_project)
-        runner = CliRunner()
-        result = runner.invoke(app, ["artifact", "list", "--json"])
-        assert result.exit_code == 0, result.stderr
-        payload = json.loads(result.stdout)
-        assert isinstance(payload, list)
-        assert result.stdout.endswith("\n")
-
-    def test_list_json_rows_include_stack(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.chdir(spec_kit_project)
-        runner = CliRunner()
-        result = runner.invoke(app, ["artifact", "list", "--json"])
-        assert result.exit_code == 0, result.stderr
-        payload = json.loads(result.stdout)
-        assert payload, "expected at least one artifact"
-
-        row = payload[0]
-        assert set(row.keys()) == {"id", "name", "kind", "description", "stack"}
-        assert isinstance(row["stack"], list)
-
-        info_result = runner.invoke(app, ["artifact", "info", row["id"], "--json"])
-        assert info_result.exit_code == 0, info_result.stderr
-        info = json.loads(info_result.stdout)
-        assert row["stack"] == info["stack"]
-
-    def test_lookup_json_cross_references_manifest_contribution(
-        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        monkeypatch.chdir(spec_kit_project)
-        pack = install_preset(
-            spec_kit_project,
-            "lookup-pack",
-            {
-                "templates": [
-                    {
-                        "type": "template",
-                        "name": "lookup-template",
-                        "file": "templates/lookup.md",
-                        "description": "Lookup target",
-                    }
-                ]
-            },
-        )
-        (pack / "templates").mkdir()
-        (pack / "templates" / "lookup.md").write_text("body", encoding="utf-8")
-
-        lookup_id = ArtifactCatalog(spec_kit_project).get_artifact_info(
-            "template:lookup-template"
-        )["stack"][0]["lookupId"]
-        result = CliRunner().invoke(
-            app, ["artifact", "lookup", lookup_id, "--json"]
-        )
-
-        assert result.exit_code == 0, result.stderr
-        payload = json.loads(result.stdout)
-        assert payload["id"] == lookup_id
-        assert payload["contribution"]["description"] == "Lookup target"
-        assert payload["sourcePath"] == (
-            ".specify/presets/lookup-pack/templates/lookup.md"
-        )
-
+class TestContributionInfo:
     def test_lookup_returns_normalized_preset_declaration(
         self, spec_kit_project: Path
     ):
@@ -1159,134 +1057,6 @@ class TestCLI:
             ".specify/presets/symlinked-project/templates/source.md"
         )
 
-    def test_lookup_json_rejects_unknown_contribution(
-        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        monkeypatch.chdir(spec_kit_project)
-        lookup_id = "extension:missing:command:speckit.missing.command"
-
-        result = CliRunner().invoke(
-            app, ["artifact", "lookup", lookup_id, "--json"]
-        )
-
-        assert result.exit_code == 1
-        assert result.stdout == ""
-        assert json.loads(result.stderr) == {
-            "error": f"unknown contribution {lookup_id}"
-        }
-
-    @pytest.mark.parametrize(
-        "manifest_value",
-        [
-            date(2026, 1, 1),
-            float("nan"),
-            float("inf"),
-            float("-inf"),
-            "\ud800",
-        ],
-        ids=[
-            "date",
-            "nan",
-            "positive-infinity",
-            "negative-infinity",
-            "unpaired-surrogate",
-        ],
-    )
-    def test_lookup_json_rejects_non_json_manifest_value(
-        self,
-        spec_kit_project: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        manifest_value: object,
-    ):
-        monkeypatch.chdir(spec_kit_project)
-        install_preset(
-            spec_kit_project,
-            "non-json-contribution",
-            {
-                "templates": [
-                    {
-                        "type": "template",
-                        "name": "non-json-contribution",
-                        "extra": manifest_value,
-                    }
-                ]
-            },
-        )
-
-        result = CliRunner().invoke(
-            app,
-            [
-                "artifact",
-                "lookup",
-                "preset:non-json-contribution:template:non-json-contribution",
-                "--json",
-            ],
-        )
-
-        assert result.exit_code == 1
-        assert result.stdout == ""
-        assert json.loads(result.stderr) == {
-            "error": "artifact resolution failed"
-        }
-
-    @pytest.mark.parametrize(
-        "lookup_id",
-        [
-            "invalid:source:command:name",
-            "extension:source:invalid:name",
-            "extension:source:hook:%FF:command",
-            "extension:source:hook:event:%ZZ",
-        ],
-    )
-    def test_lookup_json_rejects_malformed_lookup_id(
-        self,
-        spec_kit_project: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        lookup_id: str,
-    ):
-        monkeypatch.chdir(spec_kit_project)
-
-        result = CliRunner().invoke(
-            app, ["artifact", "lookup", lookup_id, "--json"]
-        )
-
-        assert result.exit_code == 1
-        assert result.stdout == ""
-        assert json.loads(result.stderr) == {
-            "error": f"unknown contribution {lookup_id}"
-        }
-
-    def test_lookup_requires_json_flag(
-        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        monkeypatch.chdir(spec_kit_project)
-        result = CliRunner().invoke(
-            app,
-            [
-                "artifact",
-                "lookup",
-                "extension:missing:command:speckit.missing.command",
-            ],
-        )
-
-        assert result.exit_code == 2
-        assert result.stdout == ""
-
-    def test_lookup_validates_project_before_lookup_id(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        monkeypatch.chdir(tmp_path)
-        result = CliRunner().invoke(
-            app,
-            ["artifact", "lookup", "project:_:command:local", "--json"],
-        )
-
-        assert result.exit_code == 1
-        assert result.stdout == ""
-        assert json.loads(result.stderr) == {
-            "error": "not a Spec Kit project: no .specify/ directory found"
-        }
-
     def test_hidden_command_layer_source_path_is_own_pack_file(
         self, spec_kit_project: Path
     ):
@@ -1367,211 +1137,7 @@ class TestCLI:
                 ".specify/presets/aaa-low-priority-preset/commands/speckit.compliance.plan.md"
             )
 
-    def test_list_json_stack_source_path_contract(
-        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        preset_pack = install_preset(
-            spec_kit_project,
-            "compliance",
-            {
-                "commands": [
-                    {
-                        "name": "speckit.compliance.plan",
-                        "file": "commands/speckit.compliance.plan.md",
-                        "description": "Compliance plan",
-                    }
-                ]
-            },
-        )
-        (preset_pack / "commands").mkdir()
-        (preset_pack / "commands" / "speckit.compliance.plan.md").write_text(
-            "---\ndescription: Compliance plan\n---\nbody\n", encoding="utf-8"
-        )
-        PresetRegistry(spec_kit_project / ".specify" / "presets").update(
-            "compliance",
-            {
-                "registered_skills": {
-                    "copilot": ["speckit-compliance-plan"],
-                }
-            },
-        )
-        skill_file = (
-            spec_kit_project
-            / ".github"
-            / "skills"
-            / "speckit-compliance-plan"
-            / "SKILL.md"
-        )
-        skill_file.parent.mkdir(parents=True)
-        skill_file.write_text("---\nname: speckit-compliance-plan\n---\n", encoding="utf-8")
 
-        extension_dir = spec_kit_project / ".specify" / "extensions" / "quality"
-        (extension_dir / "templates").mkdir(parents=True)
-        (extension_dir / "templates" / "checklist.md").write_text(
-            "---\ndescription: Extension checklist\n---\n", encoding="utf-8"
-        )
-        (extension_dir / "extension.yml").write_text(
-            yaml.safe_dump(
-                {
-                    "schema_version": "1.0",
-                    "extension": {
-                        "id": "quality",
-                        "name": "Quality",
-                        "version": "1.0.0",
-                        "description": "test",
-                        "author": "test",
-                        "repository": "https://example.com",
-                        "license": "MIT",
-                    },
-                    "requires": {"speckit_version": ">=0.2.0"},
-                    "provides": {
-                        "templates": [
-                            {
-                                "name": "checklist",
-                                "file": "templates/checklist.md",
-                                "description": "Extension checklist",
-                            }
-                        ]
-                    },
-                }
-            ),
-            encoding="utf-8",
-        )
-        ExtensionRegistry(spec_kit_project / ".specify" / "extensions").add(
-            "quality", {"version": "1.0.0", "enabled": True}
-        )
-
-        monkeypatch.chdir(spec_kit_project)
-        runner = CliRunner()
-        result = runner.invoke(app, ["artifact", "list", "--json"])
-        assert result.exit_code == 0, result.stderr
-        payload = json.loads(result.stdout)
-
-        non_null_source_paths: set[str] = set()
-        for row in payload:
-            for layer in row["stack"]:
-                assert "sourcePath" in layer
-                source_path = layer["sourcePath"]
-                if source_path is None:
-                    continue
-                assert isinstance(source_path, str)
-                assert (spec_kit_project / source_path).is_file()
-                non_null_source_paths.add(source_path)
-
-        assert ".github/skills/speckit-compliance-plan/SKILL.md" in non_null_source_paths
-        assert ".specify/extensions/quality/templates/checklist.md" in non_null_source_paths
-
-    def test_list_json_is_pretty_printed(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.chdir(spec_kit_project)
-        runner = CliRunner()
-        result = runner.invoke(app, ["artifact", "list", "--json"])
-        assert '  "id"' in result.stdout  # 2-space indent visible
-
-    def test_info_json_shape(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.chdir(spec_kit_project)
-        runner = CliRunner()
-        result = runner.invoke(app, ["artifact", "info", "speckit.constitution", "--json"])
-        assert result.exit_code == 0, result.stderr
-        payload = json.loads(result.stdout)
-        assert set(payload.keys()) == {"id", "name", "kind", "description", "stack"}
-
-    def test_info_accepts_id_form_on_cli(
-        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        monkeypatch.chdir(spec_kit_project)
-        runner = CliRunner()
-        by_bare = runner.invoke(app, ["artifact", "info", "speckit.plan", "--json"])
-        by_id = runner.invoke(app, ["artifact", "info", "command:speckit.plan", "--json"])
-        assert by_bare.exit_code == 0, by_bare.stderr
-        assert by_id.exit_code == 0, by_id.stderr
-        assert json.loads(by_id.stdout) == json.loads(by_bare.stdout)
-
-    def test_info_unknown_error_envelope(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.chdir(spec_kit_project)
-        runner = CliRunner()
-        result = runner.invoke(app, ["artifact", "info", "no.such.thing", "--json"])
-        assert result.exit_code == 1
-        assert result.stdout == ""
-        err = json.loads(result.stderr)
-        assert set(err.keys()) == {"error"}
-        assert ERROR_REGEX.match(err["error"])
-
-    def test_info_corrupt_extension_registry_uses_json_error_envelope(
-        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        extensions_dir = spec_kit_project / ".specify" / "extensions"
-        (extensions_dir / ".registry").write_text("{invalid", encoding="utf-8")
-        monkeypatch.chdir(spec_kit_project)
-        result = CliRunner().invoke(
-            app, ["artifact", "info", "speckit.constitution", "--json"]
-        )
-        assert result.exit_code == 1
-        assert result.stdout == ""
-        assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
-
-    def test_list_corrupt_extension_registry_uses_json_error_envelope(
-        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        extensions_dir = spec_kit_project / ".specify" / "extensions"
-        (extensions_dir / ".registry").write_text("{invalid", encoding="utf-8")
-        monkeypatch.chdir(spec_kit_project)
-        result = CliRunner().invoke(app, ["artifact", "list", "--json"])
-        assert result.exit_code == 1
-        assert result.stdout == ""
-        assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
-
-    def test_not_a_project_error_envelope(self, non_project: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.chdir(non_project)
-        runner = CliRunner()
-        result = runner.invoke(app, ["artifact", "list", "--json"])
-        assert result.exit_code == 1
-        assert result.stdout == ""
-        err = json.loads(result.stderr)
-        assert err["error"] == "not a Spec Kit project: no .specify/ directory found"
-
-    def test_stdout_empty_on_error(self, non_project: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.chdir(non_project)
-        runner = CliRunner()
-        for argv in (
-            ["artifact", "list", "--json"],
-            ["artifact", "info", "x", "--json"],
-        ):
-            result = runner.invoke(app, argv)
-            assert result.stdout == "", f"stdout leak for {argv}: {result.stdout!r}"
-
-    @pytest.mark.parametrize(
-        "override",
-        ("missing-project", "."),
-    )
-    def test_invalid_init_dir_override_uses_json_error_envelope(
-        self,
-        non_project: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        override: str,
-    ):
-        monkeypatch.chdir(non_project)
-        monkeypatch.setenv("SPECIFY_INIT_DIR", override)
-        runner = CliRunner()
-        for argv in (
-            ["artifact", "list", "--json"],
-            ["artifact", "info", "x", "--json"],
-        ):
-            result = runner.invoke(app, argv)
-            assert result.exit_code == 1
-            assert result.stdout == ""
-            assert json.loads(result.stderr) == {
-                "error": "not a Spec Kit project: no .specify/ directory found"
-            }
-
-
-class TestUTF8NoBOM:
-    def test_output_is_utf8_without_bom(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.chdir(spec_kit_project)
-        runner = CliRunner()
-        result = runner.invoke(app, ["artifact", "list", "--json"])
-        assert result.exit_code == 0
-        # No BOM at start
-        assert not result.stdout.startswith("\ufeff")
 
 
 # ---------------------------------------------------------------------------
@@ -2053,67 +1619,15 @@ provides:
 # ---------------------------------------------------------------------------
 
 
-def _install_extension_with_hooks(
-    project_root: Path,
-    extension_id: str,
-    hooks: dict,
-    *,
-    manifest_id: str | None = None,
-    priority: int = 10,
-    enabled: bool = True,
-) -> Path:
-    """Create a registered extension whose manifest declares hook contributions."""
-    ext_dir = project_root / ".specify" / "extensions" / extension_id
-    ext_dir.mkdir(parents=True, exist_ok=True)
-    manifest = {
-        "schema_version": "1.0",
-        "extension": {
-            "id": manifest_id or extension_id,
-            "name": manifest_id or extension_id,
-            "version": "1.0.0",
-            "description": "Test extension",
-            "author": "test",
-            "repository": "https://example.com",
-            "license": "MIT",
-        },
-        "requires": {"speckit_version": ">=0.2.0"},
-        "provides": {},
-        "hooks": hooks,
-    }
-    (ext_dir / "extension.yml").write_text(
-        yaml.safe_dump(manifest), encoding="utf-8"
-    )
-    ExtensionRegistry(project_root / ".specify" / "extensions").add(
-        extension_id,
-        {"version": "1.0.0", "enabled": enabled, "priority": priority},
-    )
-    return ext_dir
 
 
-def _write_hook_binding(
-    project_root: Path,
-    event_name: str,
-    entries: list[dict],
-) -> None:
-    """Write concrete hook bindings in the runtime extension configuration."""
-    config_path = project_root / ".specify" / "extensions.yml"
-    config_path.write_text(
-        yaml.safe_dump(
-            {
-                "installed": [],
-                "settings": {"auto_execute_hooks": True},
-                "hooks": {event_name: entries},
-            }
-        ),
-        encoding="utf-8",
-    )
 
 
 class TestHookInventory:
     def test_flat_and_stack_listings_include_the_same_hook(
         self, spec_kit_project: Path
     ):
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "compliance",
             hooks={"before_specify": [{"command": "speckit.compliance.pre-check"}]},
@@ -2151,7 +1665,7 @@ class TestHookInventory:
     def test_invalid_unicode_hook_is_omitted_without_hiding_healthy_hooks(
         self, spec_kit_project: Path, hooks: dict
     ):
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "unicode-hooks",
             hooks=hooks,
@@ -2173,7 +1687,7 @@ class TestHookInventory:
     ):
         from specify_cli.artifacts._identifiers import derive_hook_lookup_id
 
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "compliance",
             hooks={
@@ -2239,13 +1753,13 @@ class TestHookInventory:
     def test_hook_lookup_targets_installed_provider_with_shared_manifest_id(
         self, spec_kit_project: Path
     ):
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "a-copy",
             manifest_id="shared-hooks",
             hooks={"after_plan": [{"command": "unrelated.cmd"}]},
         )
-        second = _install_extension_with_hooks(
+        second = install_extension_with_hooks(
             spec_kit_project,
             "b-copy",
             manifest_id="shared-hooks",
@@ -2282,7 +1796,7 @@ class TestHookInventory:
             ("a-copy", "First hook"),
             ("b-copy", "Second hook"),
         ):
-            _install_extension_with_hooks(
+            install_extension_with_hooks(
                 spec_kit_project,
                 installed_id,
                 manifest_id="shared-hooks",
@@ -2327,17 +1841,17 @@ class TestHookInventory:
     def test_duplicate_declarations_are_additive_and_priority_sorted(
         self, spec_kit_project: Path
     ):
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "ext-a",
             hooks={"before_specify": [{"command": "shared.cmd", "priority": 10}]},
         )
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "ext-b",
             hooks={"before_specify": [{"command": "shared.cmd", "priority": 3}]},
         )
-        _write_hook_binding(
+        write_hook_binding(
             spec_kit_project,
             "before_specify",
             [
@@ -2357,13 +1871,13 @@ class TestHookInventory:
     def test_equal_priorities_preserve_deterministic_resolver_order(
         self, spec_kit_project: Path
     ):
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "ext-a",
             hooks={"before_specify": [{"command": "shared.cmd", "priority": 5}]},
             priority=5,
         )
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "ext-b",
             hooks={"before_specify": [{"command": "shared.cmd", "priority": 5}]},
@@ -2384,7 +1898,7 @@ class TestHookInventory:
     def test_duplicate_declarations_within_extension_use_last_value(
         self, spec_kit_project: Path
     ):
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "ext",
             hooks={
@@ -2416,7 +1930,7 @@ class TestHookInventory:
     def test_disabled_extension_contributions_are_excluded(
         self, spec_kit_project: Path
     ):
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "disabled",
             hooks={"before_specify": [{"command": "disabled.cmd"}]},
@@ -2430,7 +1944,7 @@ class TestHookInventory:
     def test_malformed_manifest_is_omitted_without_hiding_healthy_hooks(
         self, spec_kit_project: Path, registered: bool
     ):
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "healthy",
             hooks={"before_specify": [{"command": "speckit.healthy.cmd"}]},
@@ -2459,7 +1973,7 @@ class TestHookInventory:
         assert hook_rows[0]["stack"][0]["sourceId"] == "healthy"
 
     def test_hooks_never_use_builtin_layer(self, spec_kit_project: Path):
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "ext",
             hooks={"before_specify": [{"command": "cmd.x"}]},
@@ -2508,12 +2022,12 @@ class TestHookRegistration:
         binding: dict,
         expected: bool,
     ):
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "compliance",
             hooks={"before_specify": [{"command": "speckit.compliance.pre-check"}]},
         )
-        _write_hook_binding(spec_kit_project, "before_specify", [binding])
+        write_hook_binding(spec_kit_project, "before_specify", [binding])
 
         rows = ArtifactCatalog(spec_kit_project).list_artifacts_with_stack()
         row = next(item for item in rows if item["kind"] == "hook")
@@ -2524,7 +2038,7 @@ class TestHookRegistration:
     def test_binding_only_activates_matching_command(
         self, spec_kit_project: Path
     ):
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "compliance",
             hooks={
@@ -2534,7 +2048,7 @@ class TestHookRegistration:
                 ]
             },
         )
-        _write_hook_binding(
+        write_hook_binding(
             spec_kit_project,
             "before_specify",
             [
@@ -2558,12 +2072,12 @@ class TestHookRegistration:
         self, spec_kit_project: Path
     ):
         for extension_id in ("ext-a", "ext-b"):
-            _install_extension_with_hooks(
+            install_extension_with_hooks(
                 spec_kit_project,
                 extension_id,
                 hooks={"before_specify": [{"command": "shared.cmd"}]},
             )
-        _write_hook_binding(
+        write_hook_binding(
             spec_kit_project,
             "before_specify",
             [
@@ -2587,7 +2101,7 @@ class TestHookRegistration:
     def test_renamed_installation_uses_manifest_id_for_runtime_activation(
         self, spec_kit_project: Path
     ):
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "renamed-installation",
             manifest_id="runtime-id",
@@ -2597,7 +2111,7 @@ class TestHookRegistration:
                 ]
             },
         )
-        _write_hook_binding(
+        write_hook_binding(
             spec_kit_project,
             "before_specify",
             [
@@ -2624,7 +2138,7 @@ class TestHookRegistration:
     def test_invalid_runtime_config_degrades_to_unregistered(
         self, spec_kit_project: Path
     ):
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "compliance",
             hooks={"before_specify": [{"command": "speckit.compliance.pre-check"}]},
@@ -2640,7 +2154,7 @@ class TestHookRegistration:
 
 class TestHookInfo:
     def test_hook_shorthand_round_trips(self, spec_kit_project: Path):
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "compliance",
             hooks={"before_specify": [{"command": "speckit.compliance.pre-check"}]},
@@ -2657,7 +2171,7 @@ class TestHookInfo:
     def test_colon_containing_values_round_trip_through_encoded_id(
         self, spec_kit_project: Path
     ):
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "ext",
             hooks={
@@ -2699,7 +2213,7 @@ class TestHookInfo:
         )
 
     def test_kind_hint_resolves_hook_name(self, spec_kit_project: Path):
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "ext",
             hooks={"after_plan": [{"command": "cmd.x"}]},
@@ -2716,7 +2230,7 @@ class TestHookInfo:
     def test_kind_hint_disambiguates_reserved_event_names(
         self, spec_kit_project: Path, event_name: str
     ):
-        _install_extension_with_hooks(
+        install_extension_with_hooks(
             spec_kit_project,
             "ext",
             hooks={event_name: [{"command": "cmd.x"}]},
@@ -2742,65 +2256,6 @@ class TestHookInfo:
             )
 
 
-class TestHookCli:
-    def test_list_and_info_json(self, spec_kit_project: Path, monkeypatch):
-        _install_extension_with_hooks(
-            spec_kit_project,
-            "compliance",
-            hooks={"before_specify": [{"command": "speckit.compliance.pre-check"}]},
-        )
-        monkeypatch.chdir(spec_kit_project)
-        runner = CliRunner()
-
-        list_result = runner.invoke(app, ["artifact", "list", "--json"])
-        info_result = runner.invoke(
-            app,
-            [
-                "artifact",
-                "info",
-                "hook:before_specify:speckit.compliance.pre-check",
-                "--json",
-            ],
-        )
-
-        assert list_result.exit_code == 0, list_result.output
-        assert info_result.exit_code == 0, info_result.output
-        assert any(row["kind"] == "hook" for row in json.loads(list_result.stdout))
-        assert json.loads(info_result.stdout)["kind"] == "hook"
-
-    def test_unknown_hook_json_error_envelope(
-        self, spec_kit_project: Path, monkeypatch
-    ):
-        monkeypatch.chdir(spec_kit_project)
-
-        result = CliRunner().invoke(
-            app,
-            ["artifact", "info", "hook:nope:missing.cmd", "--json"],
-            catch_exceptions=False,
-        )
-
-        assert result.exit_code == 1
-        assert result.stdout == ""
-        assert ERROR_REGEX.match(json.loads(result.stderr)["error"])
-
-    @pytest.mark.parametrize(
-        "identifier",
-        ["hook:event:bad%escape", "hook:event:%FF"],
-    )
-    def test_malformed_hook_id_json_error_envelope(
-        self, spec_kit_project: Path, monkeypatch, identifier: str
-    ):
-        monkeypatch.chdir(spec_kit_project)
-
-        result = CliRunner().invoke(
-            app,
-            ["artifact", "info", identifier, "--json"],
-            catch_exceptions=False,
-        )
-
-        assert result.exit_code == 1
-        assert result.stdout == ""
-        assert ERROR_REGEX.match(json.loads(result.stderr)["error"])
 
 
 def test_existing_artifact_shapes_do_not_gain_hook_fields(

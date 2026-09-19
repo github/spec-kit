@@ -1,4 +1,4 @@
-"""Resolver-parity tests for the `specify artifact` command group.
+"""Resolver-parity tests for the artifact catalog domain.
 
 Verifies that the artifact output stays consistent with the underlying
 :class:`~specify_cli.presets.PresetResolver`, including for contributions
