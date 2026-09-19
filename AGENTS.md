@@ -541,6 +541,10 @@ Disclosure is **continuous**, not a one-time event. A single AI-disclosure parag
 
 ## Common Pitfalls
 
+For local Ruff checks, use the CI-pinned `uvx` command in
+[Run Lint / Basic Checks](docs/local-development.md#8-run-lint--basic-checks),
+even when Ruff is absent from `PATH` and `.venv`.
+
 1. **Using shorthand keys for CLI-based integrations**: For CLI-based integrations (`requires_cli: True`), the `key` must match the executable name (e.g., `"cursor-agent"` not `"cursor"`). `shutil.which(key)` is used for CLI tool checks — mismatches require special-case mappings. IDE-based integrations (`requires_cli: False`) are not subject to this constraint.
 2. **Reintroducing context handling into the CLI**: The opt-in `agent-context` extension owns everything about context files — including the per-agent default mapping in `agent-context-defaults.json`. Integration classes must **not** declare a `context_file`, and no CLI code should read, write, resolve, or migrate context files. All context-file logic lives in `.specify/extensions/agent-context/` and its bundled scripts.
 3. **Incorrect `requires_cli` value**: Set to `True` only for agents that have a CLI tool; set to `False` for IDE-based agents.

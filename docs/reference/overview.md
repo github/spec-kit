@@ -8,6 +8,14 @@ The foundational commands for creating and managing Spec Kit projects. Initializ
 
 [Core Commands reference →](core.md)
 
+## Project Configuration
+
+Project configuration lets you inspect settings recorded during initialization,
+change supported settings, and access extension lifecycle commands from the
+same configuration namespace.
+
+[Project Configuration reference →](configuration.md)
+
 ## Integrations
 
 Integrations connect Spec Kit to your AI coding agent. Each integration sets up the appropriate command files and directory structures for a specific agent. Only one integration is active per project at a time, and you can switch between them at any point.
