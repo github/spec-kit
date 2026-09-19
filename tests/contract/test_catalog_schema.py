@@ -11,7 +11,7 @@ from pathlib import Path
 
 import yaml
 
-from specify_cli.bundler.models.catalog import (
+from specify_cli.bundles.catalogs import (
     BUILTIN_DEFAULT_STACK,
     CatalogSource,
     InstallPolicy,
@@ -21,7 +21,7 @@ from specify_cli.bundler.models.catalog import (
 )
 from specify_cli.bundler import BundlerError
 import pytest
-from tests.bundler_helpers import catalog_entry_dict, catalog_payload, make_project
+from tests.specify_cli.bundles.helpers import catalog_entry_dict, catalog_payload, make_project
 
 
 def test_non_integer_source_priority_raises_actionable_error():
@@ -243,7 +243,7 @@ def test_wheel_packages_firstparty_bundle_catalog():
 
 
 def test_catalog_entry_rejects_string_tags():
-    from specify_cli.bundler.models.catalog import CatalogEntry
+    from specify_cli.bundles.catalogs import CatalogEntry
 
     data = catalog_entry_dict("demo")
     data["tags"] = "not-a-list"
@@ -252,7 +252,7 @@ def test_catalog_entry_rejects_string_tags():
 
 
 def test_catalog_entry_rejects_non_string_tag_members():
-    from specify_cli.bundler.models.catalog import CatalogEntry
+    from specify_cli.bundles.catalogs import CatalogEntry
 
     data = catalog_entry_dict("demo")
     data["tags"] = ["valid", 1]
@@ -261,7 +261,7 @@ def test_catalog_entry_rejects_non_string_tag_members():
 
 
 def test_catalog_entry_rejects_non_boolean_verified():
-    from specify_cli.bundler.models.catalog import CatalogEntry
+    from specify_cli.bundles.catalogs import CatalogEntry
 
     data = catalog_entry_dict("demo")
     data["verified"] = "false"  # truthy string must not mark the entry verified
@@ -305,7 +305,7 @@ def test_load_payload_rejects_missing_entry_id():
 
 
 def test_catalog_entry_rejects_non_mapping_requires():
-    from specify_cli.bundler.models.catalog import CatalogEntry
+    from specify_cli.bundles.catalogs import CatalogEntry
 
     data = catalog_entry_dict("demo")
     data["requires"] = "speckit>=0.1"
@@ -314,7 +314,7 @@ def test_catalog_entry_rejects_non_mapping_requires():
 
 
 def test_catalog_entry_rejects_non_mapping_provides():
-    from specify_cli.bundler.models.catalog import CatalogEntry
+    from specify_cli.bundles.catalogs import CatalogEntry
 
     data = catalog_entry_dict("demo")
     data["provides"] = "extensions"
@@ -345,7 +345,7 @@ def test_catalog_entry_rejects_falsy_non_mapping(field, bad):
     # `or {}` coerced a FALSY non-mapping ([], '', 0, False) to {} before the
     # isinstance guard, silently accepting a corrupt entry; only absent/None
     # means "not present". Mirrors the manifest requires/provides guard.
-    from specify_cli.bundler.models.catalog import CatalogEntry
+    from specify_cli.bundles.catalogs import CatalogEntry
 
     data = catalog_entry_dict("demo")
     data[field] = bad
