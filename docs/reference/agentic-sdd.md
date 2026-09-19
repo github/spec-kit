@@ -171,3 +171,6 @@ This command requires a GitHub `origin` remote and access to the GitHub MCP tool
 for listing and creating issues. It creates issues only in the repository
 identified by that remote and checks existing task IDs to avoid duplicates.
 It is not required to implement tasks or converge on a feature.
+
+> [!NOTE]
+> GitHub issue tracking is moving out of core into the bundled, opt-in [`github` extension](https://github.com/github/spec-kit/blob/main/extensions/github/README.md). `/speckit.taskstoissues` still works and is unchanged, but its replacement, `/speckit.github.taskstoissues`, is available today via `specify extension add github`. See the [migration notes](https://github.com/github/spec-kit/blob/main/extensions/github/README.md#migrating-from-the-core-taskstoissues-command).
