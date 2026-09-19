@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from specify_cli.workflows.overlays.layer_sources import (
+from specify_cli.workflows.overlay.layer_sources import (
     BaseWorkflowSource,
     OverlayLoadError,
     ProjectOverlaySource,

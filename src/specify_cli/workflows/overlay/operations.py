@@ -1,4 +1,4 @@
-"""CLI handlers for ``specify workflow overlay *`` and ``specify workflow resolve``."""
+"""Domain operations used by workflow overlay and resolve commands."""
 
 from __future__ import annotations
 
@@ -12,14 +12,7 @@ from rich.markup import escape as _escape_markup
 
 from ..._console import console, err_console
 from ...extensions import normalize_priority
-from .._commands import (
-    _commit_workflow_file,
-    _discard_committed_backup_file,
-    _reject_unsafe_dir,
-    _reject_unsafe_workflow_storage,
-    _safe_discard_staged_workflow_file,
-    _stage_workflow_file,
-)
+from .. import _commands as cli
 from . import WorkflowResolver
 from .schema import _RESERVED_WORKFLOW_IDS, _SAFE_ID_PATTERN, validate_overlay_yaml
 
@@ -50,9 +43,9 @@ def _validate_workflow_id_or_exit(workflow_id: str) -> None:
 
 def _overlay_root(project_root: Path) -> Path:
     """Return the project-local overlay root after rejecting unsafe ancestors."""
-    _reject_unsafe_workflow_storage(project_root)
+    cli._reject_unsafe_workflow_storage(project_root)
     root = project_root / ".specify" / "workflows" / "overlays"
-    _reject_unsafe_dir(root, ".specify/workflows/overlays")
+    cli._reject_unsafe_dir(root, ".specify/workflows/overlays")
     return root
 
 
@@ -72,7 +65,7 @@ def _ensure_contained_dir(path: Path, root: Path) -> Path:
 
     Returns *path* if safe. Raises typer.Exit on traversal or symlink.
     """
-    _reject_unsafe_dir(root, ".specify/workflows/overlays")
+    cli._reject_unsafe_dir(root, ".specify/workflows/overlays")
     if path.is_symlink():
         err_console.print(
             f"[red]Error:[/red] Refusing to use symlinked path {path}."
@@ -134,7 +127,7 @@ def _find_overlay_file(project_root: Path, workflow_id: str, overlay_id: str) ->
 
 def _ensure_contained_path(path: Path, root: Path) -> Path:
     """Return *path* only if it resolves inside *root*; otherwise raise typer.Exit."""
-    _reject_unsafe_dir(root, ".specify/workflows/overlays")
+    cli._reject_unsafe_dir(root, ".specify/workflows/overlays")
     if path.is_symlink():
         err_console.print(
             f"[red]Error:[/red] Refusing to use symlinked path {path}."
@@ -176,7 +169,7 @@ def workflow_overlay_add(
 
     Returns the path of the installed overlay file, or None on failure.
     """
-    _reject_unsafe_workflow_storage(project_root)
+    cli._reject_unsafe_workflow_storage(project_root)
     data, errors = _read_overlay(source)
     if data is None:
         for err in errors:
@@ -258,7 +251,7 @@ def workflow_overlay_add(
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
         existed_before = target_path.exists()
-        staged = _stage_workflow_file(target_path.parent)
+        staged = cli._stage_workflow_file(target_path.parent)
         try:
             # ``allow_unicode=True`` matches every other YAML writer in the
             # repo. Without it every non-ASCII character in a hand-authored
@@ -269,16 +262,16 @@ def workflow_overlay_add(
                     "utf-8"
                 )
             )
-            backup = _commit_workflow_file(staged, target_path, existed_before)
+            backup = cli._commit_workflow_file(staged, target_path, existed_before)
         except BaseException:
-            _safe_discard_staged_workflow_file(
+            cli._safe_discard_staged_workflow_file(
                 staged, target_path.parent, existed_before
             )
             raise
     except OSError as exc:
         err_console.print(f"[red]Error:[/red] Failed to write overlay: {exc}")
         return None
-    _discard_committed_backup_file(backup)
+    cli._discard_committed_backup_file(backup)
 
     console.print(
         f"[green]\u2713[/green] Overlay '{overlay.id}' added for workflow '{overlay.extends}'"
@@ -294,7 +287,7 @@ def _update_overlay_field(
     value: Any,
 ) -> bool:
     """Update a single field in a project-local overlay file."""
-    _reject_unsafe_workflow_storage(project_root)
+    cli._reject_unsafe_workflow_storage(project_root)
     path = _find_overlay_file(project_root, workflow_id, overlay_id)
     if path is None:
         err_console.print(
@@ -319,7 +312,7 @@ def _update_overlay_field(
     backup: Path | None = None
     try:
         existed_before = path.exists()
-        staged = _stage_workflow_file(path.parent)
+        staged = cli._stage_workflow_file(path.parent)
         try:
             # ``allow_unicode=True`` matches every other YAML writer in the
             # repo. Without it every non-ASCII character in a hand-authored
@@ -330,14 +323,16 @@ def _update_overlay_field(
                     "utf-8"
                 )
             )
-            backup = _commit_workflow_file(staged, path, existed_before)
+            backup = cli._commit_workflow_file(staged, path, existed_before)
         except BaseException:
-            _safe_discard_staged_workflow_file(staged, path.parent, existed_before)
+            cli._safe_discard_staged_workflow_file(
+                staged, path.parent, existed_before
+            )
             raise
     except OSError as exc:
         err_console.print(f"[red]Error:[/red] Failed to write overlay: {exc}")
         return False
-    _discard_committed_backup_file(backup)
+    cli._discard_committed_backup_file(backup)
 
     return True
 
@@ -393,7 +388,7 @@ def workflow_overlay_remove(
     overlay_id: str,
 ) -> bool:
     """Remove a project-local overlay file."""
-    _reject_unsafe_workflow_storage(project_root)
+    cli._reject_unsafe_workflow_storage(project_root)
     path = _find_overlay_file(project_root, workflow_id, overlay_id)
     if path is None:
         err_console.print(
@@ -416,7 +411,7 @@ def workflow_overlay_list(project_root: Path, workflow_id: str) -> list[dict[str
 
     Returns the raw list data for machine-readable callers, or None on error.
     """
-    _reject_unsafe_workflow_storage(project_root)
+    cli._reject_unsafe_workflow_storage(project_root)
     _validate_workflow_id_or_exit(workflow_id)
     resolver = WorkflowResolver(project_root)
     try:
@@ -455,7 +450,7 @@ def workflow_resolve(project_root: Path, workflow_id: str) -> dict[str, Any] | N
 
     Returns a serializable attribution payload.
     """
-    _reject_unsafe_workflow_storage(project_root)
+    cli._reject_unsafe_workflow_storage(project_root)
     _validate_workflow_id_or_exit(workflow_id)
     resolver = WorkflowResolver(project_root)
     try:

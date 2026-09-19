@@ -148,11 +148,20 @@ extensions/
 The nested package's `__init__.py` owns its Typer application and registration.
 Shared helpers for that nested surface can live in `_helpers.py`.
 
-Creating a nested CLI package does not transfer same-named domain behavior into
-that package. If an existing domain module collides with a new nested command
-namespace, keep the implementation in the parent domain package (or a focused
-domain module there). Preserve an established import path through thin
-compatibility exports from the nested package when required.
+A nested CLI hierarchy may also be the root of a bounded subdomain when its
+concept depends on the parent domain but owns a distinct resource and lifecycle
+that the parent commands do not cover. In that case, keep the subdomain's
+non-command modules and its `command_*.py` adapters together in the nested
+package. Storage, validation, composition, or distribution behavior specific to
+that resource are signals that the namespace is a domain root, not merely a CLI
+group.
+
+Creating a nested CLI package solely to group commands does not transfer
+same-named parent-domain behavior into that package. If an existing domain
+module merely collides with a new nested command namespace, keep the
+implementation in the parent domain package (or a focused domain module there).
+Preserve an established import path through thin compatibility exports from the
+nested package when required.
 
 Do not add a nested `_commands.py` merely for symmetry. Create one only when
 the nested group develops substantial shared command infrastructure that no
