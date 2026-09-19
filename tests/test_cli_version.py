@@ -1,10 +1,11 @@
 """Tests for CLI version reporting."""
 
 import json
-import ssl
 import sys
+from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
@@ -88,6 +89,8 @@ class TestVersionCommand:
         version`` reported no OpenSSL information at all, so a report had no way
         to show which runtime was actually in use.
         """
+        ssl = pytest.importorskip("ssl")
+
         with patch("specify_cli.get_speckit_version", return_value="1.2.3"):
             result = runner.invoke(app, ["version"])
 
@@ -105,6 +108,20 @@ class TestVersionCommand:
         only the OpenSSL row is omitted.
         """
         monkeypatch.setitem(sys.modules, "ssl", None)
+        with patch("specify_cli.get_speckit_version", return_value="1.2.3"):
+            result = runner.invoke(app, ["version"])
+
+        assert result.exit_code == 0
+        assert "OpenSSL" not in result.output
+
+    def test_version_skips_openssl_row_when_version_attr_missing(self, monkeypatch):
+        """An ssl module without OPENSSL_VERSION also skips the row.
+
+        The implementation reads ``getattr(ssl, "OPENSSL_VERSION", "")``, so an
+        importable ssl that lacks the attribute must omit the row rather than
+        raise AttributeError.
+        """
+        monkeypatch.setitem(sys.modules, "ssl", SimpleNamespace())
         with patch("specify_cli.get_speckit_version", return_value="1.2.3"):
             result = runner.invoke(app, ["version"])
 
