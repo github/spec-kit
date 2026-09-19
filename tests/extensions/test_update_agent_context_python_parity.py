@@ -562,3 +562,85 @@ def test_python_upsert_matches_powershell(tmp_path: Path) -> None:
 
     assert ps.returncode == py.returncode == 0, ps.stderr + py.stderr
     assert (repo_a / "AGENTS.md").read_bytes() == (repo_b / "AGENTS.md").read_bytes()
+
+
+# ── Composed preset instructions (#4200) parity ──────────────────────────────
+
+PRESET_RULES = (
+    "# Preset rules\n\n- Use point reads \u2014 keep RU low\n- Prefer id as partition key\n"
+)
+
+
+def install_preset_instructions(
+    project_root: Path,
+    preset_id: str,
+    rules: str,
+    file_rel: str = "instructions/rules.md",
+) -> None:
+    """Materialize an installed + enabled provides.instructions preset on disk."""
+    presets = project_root / ".specify" / "presets"
+    preset_dir = presets / preset_id
+    target = preset_dir / file_rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(rules, encoding="utf-8")
+    (preset_dir / "preset.yml").write_text(
+        'schema_version: "1.0"\n'
+        "preset:\n"
+        f"  id: {preset_id}\n"
+        f"  name: {preset_id}\n"
+        '  version: "1.0.0"\n'
+        "  description: d\n"
+        "requires:\n"
+        '  speckit_version: ">=0.6.0"\n'
+        "provides:\n"
+        "  instructions:\n"
+        f"    - file: {file_rel}\n",
+        encoding="utf-8",
+    )
+    registry = presets / ".registry"
+    data = (
+        json.loads(registry.read_text(encoding="utf-8"))
+        if registry.is_file()
+        else {"schema_version": "1.0", "presets": {}}
+    )
+    data["presets"][preset_id] = {"version": "1.0.0", "enabled": True}
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    registry.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+@requires_posix_bash
+def test_python_composes_preset_instructions_matching_bash(tmp_path: Path) -> None:
+    repo_a, repo_b = twin_projects(tmp_path, context_file="AGENTS.md")
+    for repo in (repo_a, repo_b):
+        add_plan(repo)
+        install_preset_instructions(repo, "rules", PRESET_RULES)
+
+    bash = run_bash(repo_a)
+    py = run_python(repo_b)
+
+    assert_parity(bash, py, repo_a, repo_b)
+    content_b = (repo_b / "AGENTS.md").read_bytes()
+    assert (repo_a / "AGENTS.md").read_bytes() == content_b
+    assert b"<!-- SPECKIT PRESET:rules START -->" in content_b
+    # Non-ASCII payload survives byte-for-byte through both twins.
+    assert "Use point reads \u2014 keep RU low".encode("utf-8") in content_b
+
+
+@pytest.mark.skipif(not POWERSHELL, reason="no PowerShell available")
+def test_python_composes_preset_instructions_matching_powershell(
+    tmp_path: Path,
+) -> None:
+    repo_a = make_project(tmp_path / "proj-ps", context_file="AGENTS.md")
+    repo_b = make_project(tmp_path / "proj-py", context_file="AGENTS.md")
+    for repo in (repo_a, repo_b):
+        add_plan(repo)
+        install_preset_instructions(repo, "rules", PRESET_RULES)
+
+    ps = run_powershell(repo_a)
+    py = run_python(repo_b)
+
+    assert ps.returncode == py.returncode == 0, ps.stderr + py.stderr
+    content_b = (repo_b / "AGENTS.md").read_bytes()
+    assert (repo_a / "AGENTS.md").read_bytes() == content_b
+    assert b"<!-- SPECKIT PRESET:rules START -->" in content_b
+    assert "Use point reads \u2014 keep RU low".encode("utf-8") in content_b
