@@ -9,7 +9,7 @@ from urllib.request import Request
 
 import pytest
 
-from specify_cli._github_http import (
+from specify_cli.authentication.github_http import (
     GITHUB_HOSTS,
     build_github_request,
     resolve_github_release_asset_api_url,
@@ -47,7 +47,9 @@ class TestBuildGitHubRequest:
     )
     def test_malformed_explicit_port_raises_before_request_construction(self, url):
         """Malformed explicit ports are rejected before creating a Request."""
-        with patch("specify_cli._github_http.urllib.request.Request") as request:
+        with patch(
+            "specify_cli.authentication.github_http.urllib.request.Request"
+        ) as request:
             with pytest.raises(ValueError):
                 build_github_request(url)
         request.assert_not_called()

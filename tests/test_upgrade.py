@@ -349,7 +349,7 @@ def _capture_request_via_auth_opener():
 
 
 def _inject_github_config(monkeypatch, token_env="GH_TOKEN"):
-    from tests.auth_helpers import inject_github_config
+    from tests.specify_cli.authentication.helpers import inject_github_config
     inject_github_config(monkeypatch, token_env)
 
 

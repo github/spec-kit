@@ -190,7 +190,7 @@ def _download_remote_manifest(
     import yaml as _yaml
 
     from ..authentication.http import github_provider_hosts, open_url
-    from .._github_http import resolve_github_release_asset_api_url
+    from ..authentication.github_http import resolve_github_release_asset_api_url
     from .manifest import BundleManifest
     from ..shared_infra import verify_archive_sha256
 
