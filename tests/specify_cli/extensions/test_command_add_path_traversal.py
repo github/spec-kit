@@ -1,4 +1,7 @@
-"""Security tests for the extension URL download cache."""
+"""Path-traversal tests supplementing ``specify extension add`` coverage.
+
+The primary command tests live in ``test_command_add.py``.
+"""
 
 from __future__ import annotations
 
