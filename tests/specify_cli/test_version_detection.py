@@ -12,7 +12,7 @@ import pytest
 import specify_cli
 from specify_cli import app
 
-from tests.self_upgrade_helpers import (
+from tests.specify_cli.self_upgrade_helpers import (
     route_opener_open_through_urlopen,  # noqa: F401 (autouse fixture)
     _InstallMethod,
     _assemble_installer_argv,

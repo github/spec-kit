@@ -167,6 +167,15 @@ Do not add a nested `_commands.py` merely for symmetry. Create one only when
 the nested group develops substantial shared command infrastructure that no
 longer fits cleanly in `__init__.py` and `_helpers.py`.
 
+### Singular command groups
+
+Use the repository's plural command-package convention even when a user-facing
+CLI namespace is singular. The `specify self` group therefore lives in
+`specify_cli/selfs/`, while the established `specify_cli._version` module
+remains the version-domain API and monkeypatch surface. The command adapters
+resolve patch-owned `_version` attributes at execution time, and `_version`
+re-exports the command symbols for compatibility.
+
 Do not create a nested directory for an implementation phase that is not a CLI
 subcommand. For example, an `update/` directory would incorrectly suggest an
 `extension update ...` subcommand group. Use `_command_update_<phase>.py`
