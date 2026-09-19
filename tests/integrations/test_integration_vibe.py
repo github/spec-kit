@@ -373,3 +373,14 @@ class TestVibeInjectFrontmatterFlagNoTrailingNewline:
             "---\nname: x\nuser-invocable: true\n"
             "disable-model-invocation: false\n---"
         )
+
+    def test_preserves_crlf_line_endings(self):
+        """When the closing delimiter *does* end with \\r\\n, the injected
+        line must reuse that EOL rather than switching the file to LF."""
+        from specify_cli.integrations.vibe import VibeIntegration
+
+        content = "---\r\nname: x\r\n---\r\n"
+        result = VibeIntegration._inject_frontmatter_flag(
+            content, "user-invocable"
+        )
+        assert result == "---\r\nname: x\r\nuser-invocable: true\r\n---\r\n"

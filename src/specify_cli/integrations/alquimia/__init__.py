@@ -152,13 +152,13 @@ class AlquimiaAIIntegration(SkillsIntegration):
             if dash_count == 1 and stripped.startswith(f"{key}:"):
                 return content
 
-        # Inject before the closing --- of frontmatter. Always emit a
-        # newline after the injected key so the key and the closing ---
-        # stay on separate lines even when the closing delimiter is the
-        # last line of the file with no trailing newline -- otherwise the
-        # injected text glues onto the "---" (e.g. "user-invocable: true---"),
-        # destroying the delimiter so a later call's pre-scan/injection
-        # never finds a second "---" and silently drops that key entirely.
+        # Inject before the closing --- of frontmatter. Preserve the
+        # existing EOL style, but default to "\n" (rather than "") when the
+        # closing delimiter is the last line of the file with no trailing
+        # newline -- otherwise the injected text glues onto the "---"
+        # (e.g. "user-invocable: true---"), destroying the delimiter so a
+        # later call's pre-scan/injection never finds a second "---" and
+        # silently drops that key entirely.
         out: list[str] = []
         dash_count = 0
         injected = False
@@ -167,7 +167,13 @@ class AlquimiaAIIntegration(SkillsIntegration):
             if stripped == "---":
                 dash_count += 1
                 if dash_count == 2 and not injected:
-                    out.append(f"{key}: {value}\n")
+                    if line.endswith("\r\n"):
+                        eol = "\r\n"
+                    elif line.endswith("\n"):
+                        eol = "\n"
+                    else:
+                        eol = "\n"
+                    out.append(f"{key}: {value}{eol}")
                     injected = True
             out.append(line)
         return "".join(out)
