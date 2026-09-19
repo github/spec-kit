@@ -661,9 +661,10 @@ class TestResolveTasksPython:
 
 
 def _resolver_env() -> dict[str, str]:
-    """Environment without an inherited feature override."""
+    """Environment without inherited project or feature overrides."""
     env = dict(os.environ)
     env.pop("SPECIFY_FEATURE_DIRECTORY", None)
+    env.pop("SPECIFY_INIT_DIR", None)
     return env
 
 
@@ -859,3 +860,147 @@ class TestResolveTasksBash:
 
         assert result.returncode == 1
         assert "tasks.md not found" in result.stderr
+
+
+# -- Override contract, across all three twins --------------------------------
+
+_TWINS = [
+    pytest.param("sh", marks=requires_bash, id="bash"),
+    pytest.param(
+        "ps",
+        marks=pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available"),
+        id="powershell",
+    ),
+    pytest.param("py", id="python"),
+]
+
+
+def _run_twin(
+    twin: str, cwd: Path, **overrides: str
+) -> subprocess.CompletedProcess:
+    argv = {
+        "sh": ["bash", str(SH_SCRIPT), "--json"],
+        "ps": [POWERSHELL_EXE, "-NoProfile", "-File", str(PS_SCRIPT), "-Json"],
+        "py": [sys.executable, str(PY_SCRIPT), "--json"],
+    }[twin]
+    return subprocess.run(
+        argv,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env={**_resolver_env(), **overrides},
+    )
+
+
+def _add_feature(project: Path, name: str) -> Path:
+    feature = project / "specs" / name
+    feature.mkdir(parents=True)
+    (feature / "tasks.md").write_text("- [ ] T001 Task\n", encoding="utf-8")
+    return feature
+
+
+@pytest.mark.parametrize("twin", _TWINS)
+class TestResolverOverrides:
+    """``SPECIFY_INIT_DIR`` and ``SPECIFY_FEATURE_DIRECTORY``, per twin.
+
+    Core's parity suites never execute these vendored copies, so drift in any
+    one twin's precedence, relative-path handling or failure mode would
+    otherwise ship unnoticed. Paths are compared by trailing components
+    because Git Bash on Windows reports POSIX-style paths.
+    """
+
+    def test_feature_directory_override_beats_feature_json(
+        self, tmp_path: Path, twin: str
+    ):
+        project = _make_feature_project(tmp_path)
+        _add_feature(project, "002-override")
+
+        result = _run_twin(
+            twin, project, SPECIFY_FEATURE_DIRECTORY="specs/002-override"
+        )
+
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout)
+        # Relative override resolves against the project root.
+        assert Path(payload["FEATURE_DIR"]).parts[-2:] == ("specs", "002-override")
+        assert payload["AVAILABLE_DOCS"] == ["tasks.md"]
+
+    def test_absolute_feature_directory_override(self, tmp_path: Path, twin: str):
+        project = _make_feature_project(tmp_path)
+        feature = _add_feature(project, "003-absolute")
+        absolute = feature.as_posix()
+        if twin == "sh":
+            # Bash, like core's common.sh, treats only a leading "/" as
+            # absolute, so give it the path in its own terms (on Git Bash a
+            # Windows drive path would otherwise be joined to the root).
+            absolute = subprocess.run(
+                ["bash", "-c", "pwd"],
+                cwd=feature,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+
+        result = _run_twin(twin, project, SPECIFY_FEATURE_DIRECTORY=absolute)
+
+        assert result.returncode == 0, result.stderr
+        assert Path(json.loads(result.stdout)["FEATURE_DIR"]).name == "003-absolute"
+
+    def test_missing_feature_directory_override_fails(
+        self, tmp_path: Path, twin: str
+    ):
+        project = _make_feature_project(tmp_path)
+
+        result = _run_twin(
+            twin, project, SPECIFY_FEATURE_DIRECTORY="specs/does-not-exist"
+        )
+
+        assert result.returncode == 1
+        assert "Feature directory not found" in result.stderr
+        assert result.stdout.strip() == ""
+
+    def test_relative_init_dir_is_resolved_from_cwd(self, tmp_path: Path, twin: str):
+        _make_feature_project(tmp_path)
+
+        result = _run_twin(twin, tmp_path, SPECIFY_INIT_DIR="project")
+
+        assert result.returncode == 0, result.stderr
+        feature_dir = Path(json.loads(result.stdout)["FEATURE_DIR"])
+        assert feature_dir.parts[-3:] == ("project", "specs", "001-demo")
+
+    def test_init_dir_beats_the_enclosing_project(self, tmp_path: Path, twin: str):
+        """The override wins even when cwd is itself inside a Spec Kit project."""
+        project = _make_feature_project(tmp_path)
+        decoy = tmp_path / "decoy"
+        (decoy / ".specify").mkdir(parents=True)
+
+        result = _run_twin(twin, decoy, SPECIFY_INIT_DIR=project.as_posix())
+
+        assert result.returncode == 0, result.stderr
+        assert Path(json.loads(result.stdout)["FEATURE_DIR"]).name == "001-demo"
+
+    def test_nonexistent_init_dir_fails(self, tmp_path: Path, twin: str):
+        project = _make_feature_project(tmp_path)
+
+        result = _run_twin(
+            twin, project, SPECIFY_INIT_DIR=(tmp_path / "missing").as_posix()
+        )
+
+        assert result.returncode == 1
+        assert "SPECIFY_INIT_DIR does not point to an existing directory" in (
+            result.stderr
+        )
+        assert result.stdout.strip() == ""
+
+    def test_init_dir_without_specify_fails(self, tmp_path: Path, twin: str):
+        """No silent fallback to cwd when the override is not a project."""
+        project = _make_feature_project(tmp_path)
+        plain = tmp_path / "plain"
+        plain.mkdir()
+
+        result = _run_twin(twin, project, SPECIFY_INIT_DIR=plain.as_posix())
+
+        assert result.returncode == 1
+        assert "SPECIFY_INIT_DIR is not a Spec Kit project" in result.stderr
+        assert result.stdout.strip() == ""
