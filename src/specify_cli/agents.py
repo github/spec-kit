@@ -201,32 +201,35 @@ class CommandRegistrar:
         if not isinstance(text, str) or not text:
             return text
 
-        for old, new in (
-            ("../../memory/", ".specify/memory/"),
-            ("../../scripts/", ".specify/scripts/"),
-            ("../../templates/", ".specify/templates/"),
-        ):
-            text = text.replace(old, new)
-
-        # Only rewrite top-level style references so existing generated paths
-        # like ".specify/extensions/<ext>/scripts/..." remain intact. When
-        # rendering extension commands, top-level "scripts/" is extension-local.
         scripts_replacement = (
             f".specify/extensions/{extension_id}/scripts/"
             if extension_id
             else ".specify/scripts/"
         )
-        text = re.sub(r'(^|[\s`"\'(])(?:\.?/)?memory/', r"\1.specify/memory/", text)
-        text = re.sub(
-            r'(^|[\s`"\'(])(?:\.?/)?scripts/', rf"\1{scripts_replacement}", text
-        )
-        text = re.sub(
-            r'(^|[\s`"\'(])(?:\.?/)?templates/', r"\1.specify/templates/", text
+
+        pattern = re.compile(
+            r"""(^|[\s`"'(\[{<])(\.specify/|(?:\.\./)+|(?:\.?/))?(scripts|memory|templates)/"""
         )
 
-        return text.replace(".specify/.specify/", ".specify/").replace(
-            ".specify.specify/", ".specify/"
-        )
+        def _replace(m: re.Match) -> str:
+            prefix = m.group(1)
+            rel = m.group(2)
+            target = m.group(3)
+
+            if rel == ".specify/":
+                # Already normalized to project structure
+                return m.group(0)
+
+            if rel and rel.startswith("../"):
+                # Explicit repo-relative path always maps to root .specify/<target>/
+                return f"{prefix}.specify/{target}/"
+
+            # Top-level or ./ path
+            if target == "scripts":
+                return f"{prefix}{scripts_replacement}"
+            return f"{prefix}.specify/{target}/"
+
+        return pattern.sub(_replace, text)
 
     @staticmethod
     def rewrite_extension_paths(
