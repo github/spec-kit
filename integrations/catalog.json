@@ -362,6 +362,15 @@
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["ide", "skills"]
+    },
+    "muse": {
+      "id": "muse",
+      "name": "Muse Code",
+      "version": "1.0.0",
+      "description": "Meta Muse Code CLI skills-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "skills"]
     }
   }
 }

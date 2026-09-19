@@ -937,6 +937,115 @@ class TestTomlUnreadableConfig:
         assert config_path.read_bytes() == user_bytes
 
 
+class TestTomlNoOpMerge:
+    """#4563: installing with no resolved events must leave a pre-existing,
+    Specify-unowned config.toml byte-for-byte untouched.
+
+    This is the real ``specify integration install codex`` repro: a project
+    with no Codex-specific event hooks configured resolves to ``events={}``
+    (see ``resolve_events``), which routes through
+    ``install_integration_events``'s empty-map branch into
+    ``_remove_native_event_hooks`` -> ``_remove_toml_entries`` — not through
+    ``_merge_toml_fragment``, which only runs when there is at least one
+    supported, non-empty event to merge. ``_remove_toml_entries`` computed
+    ``cleaned`` via a regex strip and then unconditionally called
+    ``dst.write_text(cleaned, ...)`` even when ``cleaned == existing`` (no
+    Specify-marked blocks present), which (through Python's text-mode
+    newline translation on read/write) silently changed the file's
+    line-ending convention on Windows — turning a clean install into a
+    spurious git diff with no semantic change.
+    """
+
+    def test_no_events_leaves_existing_config_untouched(self, tmp_path):
+        from specify_cli.integrations.codex import CodexIntegration
+
+        integration = CodexIntegration()
+        manifest = _claude_manifest(tmp_path)
+        config_path = tmp_path / ".codex" / "config.toml"
+        config_path.parent.mkdir(parents=True)
+        original_bytes = b"project_doc_max_bytes = 200000"
+        config_path.write_bytes(original_bytes)
+        mtime_before = config_path.stat().st_mtime_ns
+
+        # The real no-extensions-installed shape: resolve_events() returns an
+        # empty map when no built-in defaults, extensions, or overrides
+        # contribute any handlers.
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {},
+        )
+
+        assert config_path.read_bytes() == original_bytes
+        # An unconditional rewrite can reproduce identical bytes on Linux
+        # (text-mode newline translation is a no-op when the platform line
+        # separator is already "\n"), so byte equality alone doesn't catch
+        # the defect here; assert the file was never even opened for
+        # writing, which is what actually mangles line endings on Windows.
+        assert config_path.stat().st_mtime_ns == mtime_before
+        manifest.record_existing.assert_not_called()
+
+    def test_comments_only_config_untouched_on_teardown(self, tmp_path):
+        """The no-op guard must run before the empty/comments-only deletion
+        branch: a comments-only file has no Specify-owned blocks to strip,
+        so ``cleaned == existing`` and the file must be left in place, not
+        unlinked as if it were an empty stub."""
+        from specify_cli.integrations.codex import CodexIntegration
+
+        integration = CodexIntegration()
+        manifest = _claude_manifest(tmp_path)
+        config_path = tmp_path / ".codex" / "config.toml"
+        config_path.parent.mkdir(parents=True)
+        original_bytes = b"# managed by the user, not Specify\n# second comment line\n"
+        config_path.write_bytes(original_bytes)
+        mtime_before = config_path.stat().st_mtime_ns
+
+        install_integration_events(integration, tmp_path, manifest, {})
+
+        assert config_path.exists(), "comments-only user config was deleted"
+        assert config_path.read_bytes() == original_bytes
+        assert config_path.stat().st_mtime_ns == mtime_before
+        manifest.record_existing.assert_not_called()
+
+    def test_blank_config_untouched_on_teardown(self, tmp_path):
+        """Same as above for a whitespace-only pre-existing file."""
+        from specify_cli.integrations.codex import CodexIntegration
+
+        integration = CodexIntegration()
+        manifest = _claude_manifest(tmp_path)
+        config_path = tmp_path / ".codex" / "config.toml"
+        config_path.parent.mkdir(parents=True)
+        original_bytes = b"\n\n"
+        config_path.write_bytes(original_bytes)
+        mtime_before = config_path.stat().st_mtime_ns
+
+        install_integration_events(integration, tmp_path, manifest, {})
+
+        assert config_path.exists(), "blank user config was deleted"
+        assert config_path.read_bytes() == original_bytes
+        assert config_path.stat().st_mtime_ns == mtime_before
+        manifest.record_existing.assert_not_called()
+
+    def test_owned_only_config_still_deleted_on_teardown(self, tmp_path):
+        """The unchanged-content guard must not defeat the existing cleanup:
+        when the file contains only a Specify-owned block that teardown
+        actually strips, ``cleaned != existing`` and the resulting
+        comments/whitespace-only remainder is still deleted (#14)."""
+        from specify_cli.integrations.codex import CodexIntegration
+
+        integration = CodexIntegration()
+        manifest = _claude_manifest(tmp_path)
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"pre_tool_use": [{"command": "speckit.tdd.validate"}]},
+        )
+        config_path = tmp_path / ".codex" / "config.toml"
+        assert config_path.is_file()
+
+        remove_integration_events(integration, tmp_path, manifest)
+
+        assert not config_path.exists()
+
+
 # -- Opencode TS Plugin merging ---------------------------------------------
 
 class TestOpencodePluginMerging:
@@ -1549,6 +1658,198 @@ class TestCommandRunner:
             cwd=str(tmp_path),
         )
         assert not ran.exists(), f"stale package ran; stderr={result.stderr!r}"
+
+    def test_dispatcher_rejects_oversized_stdin(self, tmp_path):
+        """The generated dispatcher — the actual script native hooks invoke —
+        must enforce the same 1 MiB stdin cap as `specify event run`. The
+        #3857 DoS guard previously only applied to the CLI command; the
+        template's own `sys.stdin.read()` had no cap at all."""
+        import subprocess as _sp
+        import sys as _sys
+
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"session_start": [{"command": "speckit.boot"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+
+        oversized = "x" * (1 * 1024 * 1024 + 10)
+        result = _sp.run(
+            [_sys.executable, str(dispatcher), "speckit.boot", "session_start", "60"],
+            input=oversized,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 1, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        assert "1 MiB limit" in result.stderr
+
+    def test_dispatcher_stdin_cap_counts_bytes_not_characters(self, tmp_path):
+        """~300k emoji is ~1.14 MiB of UTF-8 but only 300k *characters* —
+        comfortably under a text-mode `sys.stdin.read(N)` character cap. The
+        dispatcher must still reject it by reading from the binary buffer."""
+        import subprocess as _sp
+        import sys as _sys
+
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"session_start": [{"command": "speckit.boot"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+
+        oversized = "\U0001F600" * 300_000  # 4 bytes each in UTF-8
+        assert len(oversized) < 1 * 1024 * 1024  # under a character-based cap
+        result = _sp.run(
+            [_sys.executable, str(dispatcher), "speckit.boot", "session_start", "60"],
+            input=oversized,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 1, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        assert "1 MiB limit" in result.stderr
+
+    def test_dispatcher_underlimit_stdin_still_runs(self, tmp_path):
+        """A normal, under-the-cap piped payload must still reach the handler
+        byte-for-byte, including non-ASCII content -- verifying the explicit
+        utf-8 decode of stdin and the explicit utf-8 encode of the handler's
+        subprocess input agree end-to-end (regression guard against both an
+        over-eager cap check and a locale-dependent re-encode: without an
+        explicit ``encoding=`` on the inner subprocess.run, ``text=True``
+        falls back to ``locale.getpreferredencoding()`` for the child's
+        stdin, which on Windows is commonly not UTF-8, corrupting non-ASCII
+        payloads even though the dispatcher's own stdin decode is UTF-8).
+
+        Uses a Python handler (unlike the previous POSIX-shell-only version)
+        so this test actually runs on Windows, where that mismatch occurs.
+        """
+        import subprocess as _sp
+        import sys as _sys
+
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"session_start": [{"command": "speckit.boot"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        out_file = tmp_path / "payload.out"
+        (cmd_dir / "boot.md").write_text(
+            "---\ndescription: \"Boot\"\nscripts:\n  py: scripts/boot.py\n---\nBody\n",
+            encoding="utf-8",
+        )
+        script_dir = tmp_path / ".specify" / "scripts"
+        script_dir.mkdir(parents=True)
+        script = script_dir / "boot.py"
+        # Read the handler's own stdin as raw bytes (not text mode) so this
+        # script's own decoding can't mask a mismatch introduced upstream.
+        script.write_text(
+            "import sys\n"
+            f"open({str(out_file)!r}, 'wb').write(sys.stdin.buffer.read())\n",
+            encoding="utf-8",
+        )
+
+        payload = '{"key": "café"}'  # non-ASCII exercises the utf-8 round trip
+        result = _sp.run(
+            [_sys.executable, str(dispatcher), "speckit.boot", "session_start", "60"],
+            input=payload,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        assert out_file.read_bytes() == payload.encode("utf-8")
+
+    def test_dispatcher_inline_fallback_preserves_non_ascii_payload(self, tmp_path):
+        """The self-contained stdlib fallback (``_run_inline`` — used when
+        ``specify_cli`` is not importable, e.g. a one-time ``uvx`` init) must
+        preserve a non-ASCII payload byte-for-byte too, not just the
+        preferred delegated path.
+
+        In a dev environment where ``specify_cli`` IS importable, the
+        dispatcher always delegates to the installed
+        ``resolve_and_run_event_command`` and ``_run_inline`` is never
+        reached, so a bug isolated to ``_run_inline`` alone would not be
+        caught by ``test_dispatcher_underlimit_stdin_still_runs``. This test
+        forces the fallback the same way
+        ``test_dispatcher_ignores_stale_specify_cli_without_confinement``
+        does: a stale shadow package on PYTHONPATH lacking
+        EVENT_SCRIPT_PATH_CONFINEMENT, so the confinement check ImportErrors
+        out of delegation.
+        """
+        import subprocess as _sp
+        import sys as _sys
+
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"session_start": [{"command": "speckit.boot"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        out_file = tmp_path / "payload.out"
+        (cmd_dir / "boot.md").write_text(
+            "---\ndescription: \"Boot\"\nscripts:\n  py: scripts/boot.py\n---\nBody\n",
+            encoding="utf-8",
+        )
+        script_dir = tmp_path / ".specify" / "scripts"
+        script_dir.mkdir(parents=True)
+        script = script_dir / "boot.py"
+        script.write_text(
+            "import sys\n"
+            f"open({str(out_file)!r}, 'wb').write(sys.stdin.buffer.read())\n",
+            encoding="utf-8",
+        )
+
+        fake_dir = tmp_path / "_stale_pkg"
+        pkg = fake_dir / "specify_cli"
+        pkg.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+        (pkg / "events.py").write_text(
+            "def resolve_and_run_event_command(*_a, **_k):\n"
+            "    raise AssertionError('delegated path must not run')\n",
+            encoding="utf-8",
+        )
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(fake_dir)
+
+        payload = '{"key": "café"}'  # non-ASCII exercises the utf-8 round trip
+        result = _sp.run(
+            [_sys.executable, str(dispatcher), "speckit.boot", "session_start", "60"],
+            input=payload,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=env,
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        assert out_file.read_bytes() == payload.encode("utf-8")
 
     def test_dispatcher_threads_per_handler_timeout(self, tmp_path):
         """S4: the generated dispatcher reads an optional 4th timeout arg and

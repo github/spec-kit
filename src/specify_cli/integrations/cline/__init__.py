@@ -101,14 +101,25 @@ class ClineIntegration(MarkdownIntegration):
 
         Targets the line ``- For each executable hook, output the following``
         and inserts the note on the line before it, matching its indentation.
-        Skips if the note is already present.
+        Skips individual instructions that already have the note immediately
+        above them.
         """
-        if "replace dots" in content:
-            return content
+        note = _HOOK_COMMAND_NOTE.rstrip("\n")
 
         def repl(m: re.Match[str]) -> str:
             indent = m.group(1)
             instruction = m.group(2)
+            # Check the line immediately above this instruction, mirroring the
+            # shared ``SkillsIntegration`` helper. The previous whole-document
+            # ``if "replace dots" in content`` scan meant any command or
+            # extension markdown whose prose merely contained that phrase lost
+            # the note entirely -- leaving the agent told to emit a dotted
+            # ``/speckit.git.commit``, which Cline never registers -- and a
+            # document with one already-noted section never got a note on a
+            # second, un-noted one.
+            previous_lines = content[:m.start()].splitlines()
+            if previous_lines and previous_lines[-1] == indent + note:
+                return m.group(0)
             # ``eol`` is empty when the regex matched via ``$`` because the
             # instruction was the final line of a file with no trailing
             # newline. Default to ``\n`` so the note never collapses onto
@@ -116,15 +127,20 @@ class ClineIntegration(MarkdownIntegration):
             eol = m.group(3) or "\n"
             return (
                 indent
-                + _HOOK_COMMAND_NOTE.rstrip("\n")
+                + note
                 + eol
                 + indent
                 + instruction
                 + eol
             )
 
+        # ``[ \t]*`` rather than ``\s*``: ``\s`` matches newlines, so the
+        # captured "indent" could swallow a preceding blank line and the note
+        # was then emitted with a spurious blank line between it and the
+        # instruction. This also matches the shared base helper, without which
+        # the per-instruction check above cannot line up.
         return re.sub(
-            r"(?m)^(\s*)(- For each executable hook, output the following[^\r\n]*)(\r\n|\n|$)",
+            r"(?m)^([ \t]*)(- For each executable hook, output the following[^\r\n]*)(\r\n|\n|$)",
             repl,
             content,
         )

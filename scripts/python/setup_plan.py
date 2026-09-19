@@ -82,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "FEATURE_SPEC": str(paths.feature_spec),
                     "IMPL_PLAN": str(paths.impl_plan),
-                    "SPECS_DIR": str(paths.feature_dir),
+                    "FEATURE_DIR": str(paths.feature_dir),
                     "BRANCH": paths.current_branch,
                 }
             )
@@ -90,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(f"FEATURE_SPEC: {paths.feature_spec}")
         print(f"IMPL_PLAN: {paths.impl_plan}")
-        print(f"SPECS_DIR: {paths.feature_dir}")
+        print(f"FEATURE_DIR: {paths.feature_dir}")
         print(f"BRANCH: {paths.current_branch}")
     return 0
 

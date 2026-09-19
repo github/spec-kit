@@ -139,7 +139,7 @@ def _get_valid_step_types() -> set[str]:
     if STEP_REGISTRY:
         return set(STEP_REGISTRY.keys())
     return {
-        "command", "shell", "prompt", "gate", "if", "init",
+        "command", "shell", "prompt", "gate", "if", "init", "slot",
         "switch", "while", "do-while", "fan-out", "fan-in",
     }
 
@@ -431,6 +431,13 @@ def _validate_steps(
         if step_impl:
             step_errors = step_impl.validate(step_config)
             errors.extend(step_errors)
+
+        if step_type == "slot" and inside_fan_out:
+            errors.append(
+                f"Slot step {step_id!r} is not supported inside fan-out "
+                "templates because overlays cannot address runtime-multiplied "
+                "templates."
+            )
 
         # Validate optional `continue_on_error` field. The engine honours
         # this on any step that returns StepStatus.FAILED so the pipeline can route
@@ -1114,6 +1121,7 @@ class WorkflowEngine:
             default_options=definition.default_options,
             project_root=str(self.project_root),
             run_id=state.run_id,
+            is_resume=True,
             workflow_dir=state.workflow_dir,
         )
 
@@ -1230,6 +1238,11 @@ class WorkflowEngine:
                 "status": result.status.value,
                 "error": result.error,
             }
+            if step_type == "command" and "integration_args" in result.output:
+                step_data["integration_args"] = result.output["integration_args"]
+                step_data["integration_options"] = result.output[
+                    "integration_options"
+                ]
             self._record_result(context, state, step_id, step_data)
 
             state.append_log(

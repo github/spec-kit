@@ -10,11 +10,17 @@ on:
 
 tools:
   edit:
-  bash: ["echo", "grep", "sort", "python3", "jq", "date"]
+  bash: ["echo", "grep", "sort", "python3", "jq", "date", "curl"]
   github:
     toolsets: [issues, repos]
     min-integrity: none
   web-fetch:
+
+network:
+  allowed:
+    - defaults
+    - github.com
+    - release-assets.githubusercontent.com
 
 permissions:
   contents: read
@@ -26,6 +32,8 @@ checkout:
 safe-outputs:
   noop:
     report-as-issue: false
+  threat-detection:
+    continue-on-error: false
   create-pull-request:
     title-prefix: "[bundle] "
     labels: [bundle-submission, automated]
@@ -118,13 +126,35 @@ Run every check and collect all failures before deciding the outcome.
 
 ### 2c. Release artifact
 
-- The download URL must be an HTTPS GitHub release asset URL under the submitted
-  repository:
+- The download URL MUST belong to the submitted repository
+  (`https://github.com/<owner>/<repo>/...` with the same `<owner>/<repo>` as
+  the Repository URL). Reject URLs for any other GitHub repository.
+- The download URL MUST follow the accepted tag-pinned pattern:
   `https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>.zip`.
-- Confirm the release exists, its tag corresponds to the submitted version
-  (`vX.Y.Z` or `X.Y.Z`), and the exact ZIP asset is attached to that release.
+- If the download URL path contains `releases/latest/`, reject with an
+  explanation — this URL is floating and not acceptable. Mark this pinning
+  check failed and skip the HTTP request for this URL, then continue the
+  remaining validations.
+- The `<tag>` segment in the URL MUST correspond to the submitted version.
+  Accept `vX.Y.Z`, `X.Y.Z`, and scoped tags whose version suffix matches
+  (for example `aide-v1.0.0` for version `1.0.0`). Reject a tag whose
+  embedded semver does not equal the submitted version.
+- Only after all pinning checks pass, fetch the download URL and perform the
+  remaining artifact checks:
+  - Verify the URL returns HTTP 200.
+  - If `sha256` is included, verify it matches the downloaded archive. Requiring
+    `sha256` on every catalog entry is follow-up work and MUST NOT fail this
+    check when the field is absent.
+  - Confirm the release exists and the exact ZIP asset is attached to it.
 - Confirm the asset name is versioned and consistent with the submitted bundle
   ID and version.
+
+Use `curl` for binary downloads, follow HTTPS redirects with
+`--location --proto '=https' --proto-redir '=https'`, and bound the request with
+`--max-time 60`. Save the archive under `/tmp/gh-aw/` and inspect the final
+HTTP status with `--write-out '%{http_code}'`. A blocked or failed download
+must not count as a passed check; repository/release metadata is not a
+substitute for fetching the archive. Never execute downloaded content.
 
 Do not fetch arbitrary user-provided URLs. Do not claim the artifact was
 executed or audited; rely on the required submission attestations for build and
@@ -258,6 +288,11 @@ repository README remains the source for the actual URLs.
 ## Step 6 - Create a Draft Pull Request
 
 Create one draft pull request.
+
+This repository-owned gh-aw maintenance workflow does not perform the contributor
+open-PR count check or request confirmation. After successful validation and
+allowed catalog/docs file updates, emit the configured draft `create_pull_request`
+safe output regardless of the submitter's or filing account's open PR count.
 
 - New entry branch:
   `community/${{ github.event.issue.number }}-add-<bundle-id>-bundle`
