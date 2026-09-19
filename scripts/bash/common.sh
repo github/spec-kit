@@ -399,7 +399,11 @@ check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 
 _python3_command() {
-    if command -v python3 >/dev/null 2>&1 &&
+    if [[ -n "${SPECKIT_PYTHON:-}" ]] && command -v "$SPECKIT_PYTHON" >/dev/null 2>&1 &&
+        "$SPECKIT_PYTHON" -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1 &&
+        "$SPECKIT_PYTHON" -c 'import yaml' >/dev/null 2>&1; then
+        printf '%s\n' "$SPECKIT_PYTHON"
+    elif command -v python3 >/dev/null 2>&1 &&
         python3 -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then
         printf '%s\n' "python3"
     elif command -v python >/dev/null 2>&1 &&
@@ -407,7 +411,7 @@ _python3_command() {
         printf '%s\n' "python"
     elif command -v py >/dev/null 2>&1 &&
         py -3 -c 'import sys' >/dev/null 2>&1; then
-        printf '%s\n' "py -3"
+        printf '%s\n' "py" "-3"
     else
         return 1
     fi
@@ -415,10 +419,12 @@ _python3_command() {
 
 _sorted_extension_ids() {
     local ext_dir="$1"
-    local python_spec
-    if python_spec=$(_python3_command); then
-        local -a python_cmd
-        read -r -a python_cmd <<< "$python_spec"
+    local -a python_cmd=()
+    local _python_cmd_line
+    while IFS= read -r _python_cmd_line; do
+        python_cmd+=("$_python_cmd_line")
+    done < <(_python3_command)
+    if [ "${#python_cmd[@]}" -gt 0 ]; then
         local py_stderr sorted_ids
         py_stderr=$(mktemp)
         if sorted_ids=$(SPECKIT_EXTENSIONS="$ext_dir" "${python_cmd[@]}" -c "
@@ -513,11 +519,11 @@ resolve_template() {
     local presets_dir="$repo_root/.specify/presets"
     if [ -d "$presets_dir" ]; then
         local registry_file="$presets_dir/.registry"
-        local python_spec=""
         local -a python_cmd=()
-        if python_spec=$(_python3_command); then
-            read -r -a python_cmd <<< "$python_spec"
-        fi
+        local _python_cmd_line
+        while IFS= read -r _python_cmd_line; do
+            python_cmd+=("$_python_cmd_line")
+        done < <(_python3_command)
         if [ -f "$registry_file" ] && [ "${#python_cmd[@]}" -gt 0 ]; then
             # Read preset IDs sorted by priority (lower number = higher precedence).
             # The python3 call is wrapped in an if-condition so that set -e does not
@@ -636,11 +642,11 @@ resolve_template_content() {
         local registry_file="$presets_dir/.registry"
         local sorted_presets=""
         local registry_parsed=false
-        local python_spec=""
         local -a python_cmd=()
-        if python_spec=$(_python3_command); then
-            read -r -a python_cmd <<< "$python_spec"
-        fi
+        local _python_cmd_line
+        while IFS= read -r _python_cmd_line; do
+            python_cmd+=("$_python_cmd_line")
+        done < <(_python3_command)
         if [ -f "$registry_file" ] && [ "${#python_cmd[@]}" -gt 0 ]; then
             if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" "${python_cmd[@]}" -c "
 import json, re, sys, os
