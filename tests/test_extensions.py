@@ -5770,7 +5770,7 @@ class TestExtensionCatalog:
         key-presence check and then crash with ``AttributeError: 'list' object
         has no attribute 'items'`` deep inside ``_get_merged_extensions``. The
         sibling integration catalog reader already validates both the root
-        object and the nested mapping (see ``integrations/catalog/__init__.py``); the
+        object and the nested mapping (see ``integrations/catalog.py``); the
         extension catalog must stay consistent.
         """
         from unittest.mock import patch, MagicMock
@@ -6088,7 +6088,7 @@ class TestExtensionCatalog:
         """An unwritable cache dir doesn't fail a successful fetch.
 
         Cache writes are best-effort, mirroring the read side and the
-        ``integrations/catalog/__init__.py`` precedent: if ``mkdir``/``write_text``
+        ``integrations/catalog.py`` precedent: if ``mkdir``/``write_text``
         raises ``OSError`` (read-only checkout, permissions), the
         already-fetched-and-validated payload must still be returned
         rather than surfacing the cache failure to the caller.
@@ -6140,7 +6140,7 @@ class TestExtensionCatalog:
         but it doesn't (and shouldn't) validate every entry inside it — a
         single bad entry in an otherwise-valid catalog should be skipped, not
         crash the whole resolve path. Mirrors the per-entry skip in
-        ``integrations/catalog/__init__.py``: a malformed entry returns no error,
+        ``integrations/catalog.py``: a malformed entry returns no error,
         valid entries continue to merge normally.
         """
         from unittest.mock import patch, MagicMock

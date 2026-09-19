@@ -157,12 +157,6 @@ subcommand. For example, an `update/` directory would incorrectly suggest an
 `extension update ...` subcommand group. Use `_command_update_<phase>.py`
 instead.
 
-When a nested CLI namespace has the same name as an existing domain module,
-convert that module into a package and keep its established domain exports in
-the package `__init__.py`. This preserves imports such as
-`from package.catalog import Catalog` while allowing
-`package/catalog/command_<name>.py` to mirror the CLI namespace.
-
 ## Registration
 
 Command registration remains centralized at the command-group boundary.
