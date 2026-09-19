@@ -1,7 +1,8 @@
-"""Integration registry for AI coding assistants.
+"""Integration registry and domain API for AI coding assistants.
 
 Each integration is a self-contained subpackage that handles setup/teardown
-for a specific AI assistant (Copilot, Claude, Gemini, etc.).
+for a specific AI assistant (Copilot, Claude, Gemini, etc.). CLI adapters live
+in ``command_*.py`` modules, with nested catalog commands under ``catalog/``.
 """
 
 from __future__ import annotations

@@ -3820,7 +3820,7 @@ class ExtensionCatalog(CatalogStackBase):
         here and then crash with ``AttributeError: 'list' object has no
         attribute 'items'`` deep inside ``_get_merged_extensions``. The
         sibling integration catalog reader already guards both the root
-        object and the nested mapping (see ``integrations/catalog.py``);
+        object and the nested mapping (see ``integrations/catalog/__init__.py``);
         the extension catalog must stay consistent so a malformed payload
         surfaces as the user-facing ``Invalid catalog format`` error
         instead of a raw Python traceback.
@@ -4039,7 +4039,7 @@ class ExtensionCatalog(CatalogStackBase):
 
             # Save to cache. Both files are explicitly UTF-8 to match the
             # ``read_text(encoding="utf-8")`` on the read side and the
-            # ``integrations/catalog.py`` precedent (see the cache write
+            # ``integrations/catalog/__init__.py`` precedent (see the cache write
             # helpers in ``CatalogCache`` there). Without this, platforms
             # whose default encoding isn't UTF-8 would write locale-encoded
             # bytes that the read path can't decode, forcing an unnecessary
@@ -4119,7 +4119,7 @@ class ExtensionCatalog(CatalogStackBase):
                 # catalog. Skip non-mapping entries here so a payload like
                 # ``{"extensions": {"foo": [], "bar": {...}}}`` still merges
                 # the valid entries without crashing on ``**ext_data``.
-                # Mirrors ``integrations/catalog.py:245``.
+                # Mirrors ``integrations/catalog/__init__.py:245``.
                 if not isinstance(ext_data, dict):
                     continue
                 if ext_id not in merged:  # Higher-priority catalog wins
@@ -4237,7 +4237,7 @@ class ExtensionCatalog(CatalogStackBase):
 
             # Save to cache. Explicit UTF-8 on both writes mirrors the
             # ``read_text(encoding="utf-8")`` on the read side and the
-            # ``integrations/catalog.py`` precedent — otherwise platforms
+            # ``integrations/catalog/__init__.py`` precedent — otherwise platforms
             # whose default encoding isn't UTF-8 would write locale-encoded
             # bytes the read path can't decode, forcing an unnecessary
             # refetch on every invocation. Like the read side, the write

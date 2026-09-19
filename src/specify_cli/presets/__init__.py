@@ -4565,7 +4565,7 @@ class PresetCatalog:
         then crash with ``AttributeError: 'list' object has no attribute
         'items'`` deep inside ``_get_merged_packs``. The sibling
         integration catalog reader already guards both the root object and
-        the nested mapping (see ``integrations/catalog.py``); the preset
+        the nested mapping (see ``integrations/catalog/__init__.py``); the preset
         catalog must stay consistent so a malformed payload surfaces as
         the user-facing ``Invalid preset catalog format`` error instead of
         a raw Python traceback.
@@ -4868,7 +4868,7 @@ class PresetCatalog:
 
             # Both files are written explicitly as UTF-8 to match the
             # ``read_text(encoding="utf-8")`` on the read side and the
-            # ``integrations/catalog.py`` precedent. Without this,
+            # ``integrations/catalog/__init__.py`` precedent. Without this,
             # platforms whose default encoding isn't UTF-8 would write
             # locale-encoded bytes the read path can't decode, forcing an
             # unnecessary refetch on every invocation. The write itself
@@ -4923,7 +4923,7 @@ class PresetCatalog:
                     # so a payload like ``{"presets": {"foo": [], "bar":
                     # {...}}}`` still merges the valid entries without
                     # crashing on ``**pack_data``. Mirrors
-                    # ``integrations/catalog.py:245``.
+                    # ``integrations/catalog/__init__.py:245``.
                     if not isinstance(pack_data, dict):
                         continue
                     pack_data_with_catalog = {**pack_data, "_catalog_name": entry.name, "_install_allowed": entry.install_allowed}
@@ -5040,7 +5040,7 @@ class PresetCatalog:
 
             # Save to cache. Explicit UTF-8 on both writes mirrors the
             # ``read_text(encoding="utf-8")`` on the read side and the
-            # ``integrations/catalog.py`` precedent — otherwise platforms
+            # ``integrations/catalog/__init__.py`` precedent — otherwise platforms
             # whose default encoding isn't UTF-8 would write
             # locale-encoded bytes the read path can't decode, forcing an
             # unnecessary refetch on every invocation. Like the read

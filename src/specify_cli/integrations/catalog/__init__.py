@@ -1,10 +1,13 @@
-"""Integration catalog — discovery, validation, and upgrade support.
+"""Integration catalog domain API and nested CLI registration.
 
 Provides:
 - ``IntegrationCatalogEntry`` — single catalog source metadata.
 - ``IntegrationCatalog``      — fetches, caches, and searches integration
   catalogs (built-in + community).
 - ``IntegrationDescriptor``   — loads and validates ``integration.yml``.
+
+The ``specify integration catalog`` handlers live in adjacent
+``command_*.py`` modules.
 """
 
 from __future__ import annotations
@@ -18,11 +21,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import typer
 import yaml
 from packaging import version as pkg_version
 
-from .._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
-from ..catalogs import CatalogEntry, CatalogStackBase
+from ..._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
+from ...catalogs import CatalogEntry, CatalogStackBase
 
 
 # ---------------------------------------------------------------------------
@@ -876,3 +880,19 @@ class IntegrationDescriptor:
             for chunk in iter(lambda: fh.read(8192), b""):
                 h.update(chunk)
         return f"sha256:{h.hexdigest()}"
+
+
+catalog_app = typer.Typer(
+    name="catalog",
+    help="Manage integration catalog sources",
+    add_completion=False,
+)
+
+
+def register(app: typer.Typer) -> None:
+    """Attach the catalog command group to the integration Typer app."""
+    from . import command_list  # noqa: F401 — registers handler via decorator
+    from . import command_add  # noqa: F401 — registers handler via decorator
+    from . import command_remove  # noqa: F401 — registers handler via decorator
+
+    app.add_typer(catalog_app, name="catalog")
