@@ -4461,7 +4461,7 @@ class TestSelfTestPreset:
         self, project_dir, temp_dir
     ):
         """Removing a convention layer does not overwrite edited generated content."""
-        from specify_cli.commands.init import ensure_constitution_from_template
+        from specify_cli.command_init import ensure_constitution_from_template
 
         templates_dir = project_dir / ".specify" / "templates"
         (templates_dir / "constitution-template.md").write_text("# Core Constitution\n")
@@ -12722,7 +12722,7 @@ class TestEnsureConstitutionResolverAware:
         return preset_dir
 
     def test_seeds_from_core_when_no_preset(self, project_dir):
-        from specify_cli.commands.init import ensure_constitution_from_template
+        from specify_cli.command_init import ensure_constitution_from_template
 
         self._core_constitution(project_dir)
         ensure_constitution_from_template(project_dir)
@@ -12733,7 +12733,7 @@ class TestEnsureConstitutionResolverAware:
         assert (memory.parent / ".constitution-template.json").exists()
 
     def test_seeds_from_preset_when_installed(self, project_dir):
-        from specify_cli.commands.init import ensure_constitution_from_template
+        from specify_cli.command_init import ensure_constitution_from_template
 
         self._core_constitution(project_dir)
         manager = PresetManager(project_dir)
@@ -12750,7 +12750,7 @@ class TestEnsureConstitutionResolverAware:
         assert "[PROJECT_NAME]" not in content
 
     def test_preserves_existing_memory(self, project_dir):
-        from specify_cli.commands.init import ensure_constitution_from_template
+        from specify_cli.command_init import ensure_constitution_from_template
 
         self._core_constitution(project_dir)
         memory = project_dir / ".specify" / "memory" / "constitution.md"
@@ -12763,7 +12763,7 @@ class TestEnsureConstitutionResolverAware:
         assert memory.read_text() == authored
 
     def test_preserves_edited_generated_memory(self, project_dir):
-        from specify_cli.commands.init import ensure_constitution_from_template
+        from specify_cli.command_init import ensure_constitution_from_template
 
         self._core_constitution(project_dir)
         ensure_constitution_from_template(project_dir)
@@ -12777,7 +12777,7 @@ class TestEnsureConstitutionResolverAware:
         assert memory.read_text() == authored
 
     def test_composes_wrap_strategy_when_ensuring(self, project_dir, temp_dir):
-        from specify_cli.commands.init import ensure_constitution_from_template
+        from specify_cli.command_init import ensure_constitution_from_template
 
         self._core_constitution(project_dir)
         manager = PresetManager(project_dir)

@@ -1,4 +1,4 @@
-"""specify init command."""
+"""CLI adapter for ``specify init``."""
 
 from __future__ import annotations
 
@@ -15,18 +15,18 @@ from rich.live import Live
 from rich.markup import escape as _escape_markup
 from rich.panel import Panel
 
-from .._agent_config import (
+from ._agent_config import (
     AGENT_CONFIG,
     SCRIPT_TYPE_CHOICES,
     resolve_default_init_integration,
 )
-from .._assets import (
+from ._assets import (
     _locate_bundled_preset,
     _locate_bundled_workflow,
     get_speckit_version,
 )
-from .._console import StepTracker, console, select_with_arrows, show_banner
-from .._utils import check_tool
+from ._console import StepTracker, console, select_with_arrows, show_banner
+from ._utils import check_tool
 
 
 def _stdin_is_interactive() -> bool:
@@ -108,9 +108,9 @@ def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_ve
     """
     from urllib.parse import urlparse
 
-    from .._assets import _locate_bundled_extension
-    from ..extensions import ExtensionCatalog, ExtensionError, ExtensionManager
-    from ..extensions._commands import (
+    from ._assets import _locate_bundled_extension
+    from .extensions import ExtensionCatalog, ExtensionError, ExtensionManager
+    from .extensions._commands import (
         _resolve_catalog_extension,
         install_extension_from_url,
     )
@@ -164,7 +164,7 @@ def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_ve
             return f"{manifest.name} v{manifest.version} installed"
 
     if ext_info.get("bundled") and not ext_info.get("download_url"):
-        from ..extensions import REINSTALL_COMMAND
+        from .extensions import REINSTALL_COMMAND
 
         raise ValueError(
             f"Extension '{resolved_id}' is bundled with spec-kit but not found in the installed package. "
@@ -219,7 +219,7 @@ def ensure_constitution_from_template(
     constitution) can seed the memory file. When nothing overrides it, the
     resolver falls through to the core template.
     """
-    from ..presets import _materialize_constitution_template
+    from .presets import _materialize_constitution_template
 
     memory_constitution = project_path / ".specify" / "memory" / "constitution.md"
 
@@ -380,24 +380,24 @@ def register(app: typer.Typer) -> None:
             specify init my-project --extension https://example.com/extensions/my-ext.zip --trust-extension-urls  # URL extension (non-interactive)
         """
         # Lazy imports to avoid circular dependency — __init__.py imports this module
-        from .. import (
+        from . import (
             _install_shared_infra_or_exit,
             _print_cli_warning,
             ensure_executable_scripts,
             save_init_options,
         )
-        from ..integration_runtime import (
+        from .integration_runtime import (
             invoke_prefix_for_integration as _invoke_prefix_for_integration,
             with_integration_setting as _with_integration_setting,
         )
-        from ..integrations._commands import (
+        from .integrations._commands import (
             _parse_integration_options,
             _write_integration_json,
         )
 
         show_banner()
 
-        from ..integrations import INTEGRATION_REGISTRY, get_integration
+        from .integrations import INTEGRATION_REGISTRY, get_integration
 
         if integration:
             resolved_integration = get_integration(integration)
@@ -667,7 +667,7 @@ def register(app: typer.Typer) -> None:
         ) as live:
             tracker.attach_refresh(lambda: live.update(tracker.render()))
             try:
-                from ..integrations.manifest import IntegrationManifest
+                from .integrations.manifest import IntegrationManifest
 
                 tracker.start("integration")
                 manifest = IntegrationManifest(
@@ -684,7 +684,7 @@ def register(app: typer.Typer) -> None:
                     if extra:
                         integration_parsed_options.update(extra)
 
-                from ..events import resolve_events
+                from .events import resolve_events
                 events_map = resolve_events(
                     resolved_integration.key,
                     resolved_integration.config,
@@ -702,7 +702,7 @@ def register(app: typer.Typer) -> None:
                 manifest.save()
 
                 if force:
-                    from ..integrations._helpers import (
+                    from .integrations._helpers import (
                         _register_extensions_for_agent,
                         _register_presets_for_agent,
                     )
@@ -769,8 +769,8 @@ def register(app: typer.Typer) -> None:
                 try:
                     bundled_wf = _locate_bundled_workflow("speckit")
                     if bundled_wf:
-                        from ..workflows.catalog import WorkflowRegistry
-                        from ..workflows.engine import WorkflowDefinition
+                        from .workflows.catalog import WorkflowRegistry
+                        from .workflows.engine import WorkflowDefinition
 
                         wf_registry = WorkflowRegistry(project_path)
                         if wf_registry.is_installed("speckit"):
@@ -823,7 +823,7 @@ def register(app: typer.Typer) -> None:
 
                 if preset:
                     try:
-                        from ..presets import PresetCatalog, PresetError, PresetManager
+                        from .presets import PresetCatalog, PresetError, PresetManager
 
                         preset_manager = PresetManager(project_path)
                         speckit_ver = get_speckit_version()
@@ -849,7 +849,7 @@ def register(app: typer.Typer) -> None:
                                 elif pack_info.get("bundled") and not pack_info.get(
                                     "download_url"
                                 ):
-                                    from ..extensions import REINSTALL_COMMAND
+                                    from .extensions import REINSTALL_COMMAND
 
                                     console.print(
                                         f"[yellow]Warning:[/yellow] Preset '{preset}' is bundled with spec-kit "
@@ -895,7 +895,7 @@ def register(app: typer.Typer) -> None:
 
                 # Install extensions specified via --extension
                 if extensions:
-                    from ..extensions._commands import _refresh_events_and_warn
+                    from .extensions._commands import _refresh_events_and_warn
 
                     speckit_ver = get_speckit_version()
                     any_extension_installed = False
@@ -1093,7 +1093,7 @@ def register(app: typer.Typer) -> None:
             step_num += 1
         usage_label = "skills" if native_skill_mode else "slash commands"
 
-        from .._invocation_style import (
+        from ._invocation_style import (
             is_dollar_skills_agent as _is_dollar_skills_agent,
             is_slash_skills_agent as _is_slash_skills_agent,
         )

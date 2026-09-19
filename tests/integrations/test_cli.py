@@ -133,7 +133,7 @@ class TestInitIntegrationFlag:
         from typer.testing import CliRunner
         from specify_cli import app
         import specify_cli
-        import specify_cli.commands.init as init_mod
+        import specify_cli.command_init as init_mod
 
         monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
 
@@ -166,7 +166,7 @@ class TestInitIntegrationFlag:
         """
         from typer.testing import CliRunner
         from specify_cli import app
-        import specify_cli.commands.init as init_mod
+        import specify_cli.command_init as init_mod
 
         monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
 
@@ -217,7 +217,7 @@ class TestInitIntegrationFlag:
         """
         from typer.testing import CliRunner
         from specify_cli import app
-        import specify_cli.commands.init as init_mod
+        import specify_cli.command_init as init_mod
 
         monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
 
@@ -286,7 +286,7 @@ class TestInitIntegrationFlag:
         # hardcoded constant (guards the picker wiring against regression).
         from typer.testing import CliRunner
         from specify_cli import app
-        import specify_cli.commands.init as init_mod
+        import specify_cli.command_init as init_mod
 
         monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
         monkeypatch.setenv("SPECKIT_INTEGRATION_DEFAULT", "gemini")
@@ -347,7 +347,7 @@ class TestInitIntegrationFlag:
         an exit-1 --force error."""
         from typer.testing import CliRunner
         from specify_cli import app
-        import specify_cli.commands.init as init_mod
+        import specify_cli.command_init as init_mod
 
         # Simulate an interactive terminal so the Abort is treated as a cancel.
         monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
@@ -1805,7 +1805,7 @@ class TestExtensionFlag:
             # Patch get_speckit_version to return a stable (non-dev) version so that
             # the extension compatibility check (SpecifierSet(">=0.2.0")) passes.
             with patch(
-                "specify_cli.commands.init.get_speckit_version",
+                "specify_cli.command_init.get_speckit_version",
                 return_value="0.8.2",
             ):
                 result = runner.invoke(app, [
@@ -1837,7 +1837,7 @@ class TestExtensionFlag:
         from types import SimpleNamespace
 
         import specify_cli._assets as assets
-        import specify_cli.commands.init as init_module
+        import specify_cli.command_init as init_module
         from specify_cli.extensions import ExtensionCatalog, ExtensionManager
 
         project = tmp_path / "project"
@@ -2000,7 +2000,7 @@ class TestExtensionFlag:
         from unittest.mock import patch
 
         with patch(
-            "specify_cli.commands.init._stdin_is_interactive", return_value=False
+            "specify_cli.command_init._stdin_is_interactive", return_value=False
         ), patch("specify_cli.authentication.http.open_url") as mock_open:
             project, result = self._run_init(
                 tmp_path,
@@ -2025,7 +2025,7 @@ class TestExtensionFlag:
         """
         from unittest.mock import patch
 
-        import specify_cli.commands.init as init_mod
+        import specify_cli.command_init as init_mod
 
         monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
 
@@ -2070,7 +2070,7 @@ class TestExtensionFlag:
         from unittest.mock import patch
 
         from specify_cli import _locate_bundled_extension
-        import specify_cli.commands.init as init_mod
+        import specify_cli.command_init as init_mod
 
         bundled_git = _locate_bundled_extension("git")
         assert bundled_git is not None, "bundled git extension not found"
@@ -2179,7 +2179,7 @@ class TestExtensionFlag:
             return fd
 
         with patch(
-            "specify_cli.commands.init._stdin_is_interactive", return_value=True
+            "specify_cli.command_init._stdin_is_interactive", return_value=True
         ), patch("typer.confirm", return_value=True), patch(
             "specify_cli.authentication.http.open_url",
             return_value=FakeResponse(zip_bytes),

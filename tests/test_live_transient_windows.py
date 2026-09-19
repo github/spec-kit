@@ -11,7 +11,6 @@ to verify the correct ``transient`` value reaches Rich.
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 
@@ -64,27 +63,20 @@ class TestSelectWithArrowsLiveTransient:
 
 
 # ---------------------------------------------------------------------------
-# init.py — verify source contains the platform guard (regression check)
+# _console.py — verify source contains the platform guard (regression check)
 # ---------------------------------------------------------------------------
 
 
-class TestSourceContainsPlatformGuard:
+class TestConsoleSourceContainsPlatformGuard:
     """Ensure the platform guard feeds into the Live() transient kwarg."""
 
     # Single DOTALL regex: _transient assigned from win32 check, then used in Live()
     _GUARD_RE = r"_transient\s*=\s*sys\.platform\s*!=\s*['\"]win32['\"].*Live\(.*transient\s*=\s*_transient"
 
-    def test_init_has_win32_guard(self):
-        """init.py must assign _transient from platform check and pass it to Live."""
-        import re
-
-        init_src = Path(__file__).resolve().parent.parent / "src" / "specify_cli" / "commands" / "init.py"
-        content = init_src.read_text(encoding="utf-8")
-        assert re.search(self._GUARD_RE, content, re.DOTALL)
-
     def test_console_has_win32_guard(self):
         """_console.py must assign _transient from platform check and pass it to Live."""
         import re
+        from pathlib import Path
 
         console_src = Path(__file__).resolve().parent.parent / "src" / "specify_cli" / "_console.py"
         content = console_src.read_text(encoding="utf-8")

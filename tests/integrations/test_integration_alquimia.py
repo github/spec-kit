@@ -203,10 +203,10 @@ class TestAlquimiaAIIntegration:
             runner = CliRunner()
             with (
                 patch(
-                    "specify_cli.commands.init._stdin_is_interactive", return_value=True
+                    "specify_cli.command_init._stdin_is_interactive", return_value=True
                 ),
                 patch(
-                    "specify_cli.commands.init.select_with_arrows",
+                    "specify_cli.command_init.select_with_arrows",
                     return_value="alquimia",
                 ),
             ):
