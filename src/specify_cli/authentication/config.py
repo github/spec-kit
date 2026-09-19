@@ -25,13 +25,14 @@ class AuthConfigEntry:
     auth: str
     token: str | None = None
     token_env: str | None = None
-    # Username half of a Basic credential (required for auth="basic",
-    # e.g. Bitbucket API tokens / app passwords)
-    username: str | None = None
     # Azure AD service-principal fields
     tenant_id: str | None = None
     client_id: str | None = None
     client_secret_env: str | None = None
+    # Username half of a Basic credential (required for auth="basic",
+    # e.g. Bitbucket Atlassian API tokens). Appended last so existing
+    # positional constructions keep their parameter positions.
+    username: str | None = None
 
 
 def _default_config_path() -> Path:

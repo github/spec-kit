@@ -162,6 +162,19 @@ class TestLoadAuthConfig:
         # Stored normalized, matching token_env/tenant_id handling.
         assert entries[0].username == "you@example.com"
 
+    def test_username_field_is_appended_after_azure_fields(self):
+        # `username` was added to AuthConfigEntry after the Azure AD fields so
+        # a positional construction written before it existed still maps its
+        # sixth argument to tenant_id (not to username).
+        entry = AuthConfigEntry(
+            ("dev.azure.com",), "azure-devops", "azure-ad",
+            None, None, "tid", "cid", "SECRET",
+        )
+        assert entry.tenant_id == "tid"
+        assert entry.client_id == "cid"
+        assert entry.client_secret_env == "SECRET"
+        assert entry.username is None
+
     def test_basic_without_username_raises(self, tmp_path):
         cfg = tmp_path / "auth.json"
         cfg.write_text(json.dumps({
@@ -969,6 +982,21 @@ class TestBitbucketAuth:
         # would otherwise become a valid-looking header with an empty user.
         with pytest.raises(ValueError, match="<username>:<secret>"):
             BitbucketAuth().auth_headers("just-a-secret", "basic")
+
+    @pytest.mark.parametrize("credential", [":secret", "user:", ":"])
+    def test_basic_headers_reject_empty_half(self, credential):
+        # A colon alone is not enough: ":secret" is exactly the empty-user
+        # credential the guard exists to block, and "user:" has no secret.
+        with pytest.raises(ValueError, match="both parts non-empty"):
+            BitbucketAuth().auth_headers(credential, "basic")
+
+    def test_basic_headers_preserve_colons_inside_secret(self):
+        # Only the first colon separates the halves; a secret containing ':'
+        # must be encoded intact.
+        credential = "you@example.com:se:cr:et"
+        headers = BitbucketAuth().auth_headers(credential, "basic")
+        expected = base64.b64encode(credential.encode("utf-8")).decode("ascii")
+        assert headers == {"Authorization": f"Basic {expected}"}
 
     def test_unsupported_scheme_raises(self):
         with pytest.raises(ValueError, match="does not support auth scheme"):

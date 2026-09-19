@@ -41,12 +41,17 @@ class BitbucketAuth(AuthProvider):
         if auth_scheme == "bearer":
             return {"Authorization": f"Bearer {token}"}
         if auth_scheme == "basic":
-            # Guard the internal contract: a bare secret here would silently
-            # produce a well-formed header with an empty username and a 401.
-            if ":" not in token:
+            # Guard the internal contract: both halves must be present. A bare
+            # secret, ":<secret>", or "<username>:" would otherwise become a
+            # well-formed header with an empty user or secret and a 401.
+            # partition() splits on the first colon only, so a secret that
+            # itself contains ':' is preserved intact.
+            username, sep, secret = token.partition(":")
+            if not sep or not username or not secret:
                 raise ValueError(
                     "BitbucketAuth 'basic' expects a '<username>:<secret>' "
-                    "credential as produced by resolve_token()"
+                    "credential with both parts non-empty, as produced by "
+                    "resolve_token()"
                 )
             encoded = base64.b64encode(token.encode("utf-8")).decode("ascii")
             return {"Authorization": f"Basic {encoded}"}
