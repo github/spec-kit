@@ -91,8 +91,20 @@ def _run_update(project_dir: Path, ext_id: str):
         )
 
 
-def test_bundled_ids_present():
-    assert _bundled_ids(), "expected bundled extensions with in-repo sources"
+def test_drifted_extensions_are_covered():
+    """The parametrized tests below draw their cases from the live catalog, so
+    an extension that lost its ``bundled`` flag, its catalog entry, or its
+    in-repo manifest would silently drop out of them and the
+    ``DRIFTED_BEFORE_BUMP`` guard inside would never run for it. Pin the
+    coverage itself: every extension known to have drifted must still be a
+    bundled, in-repo catalog entry. De-bundling one of them is a deliberate
+    decision that should update this set, not a silent loss of coverage."""
+    covered = set(_bundled_ids())
+    missing = DRIFTED_BEFORE_BUMP - covered
+    assert not missing, (
+        f"{sorted(missing)} drifted before #4345 but are no longer bundled, in-repo "
+        f"catalog entries, so the update-delivery tests no longer cover them"
+    )
 
 
 @pytest.mark.parametrize("ext_id", _bundled_ids())
