@@ -1,4 +1,4 @@
-"""Tests for events module: integration runtime events."""
+"""Tests for the event domain and integration runtime hooks."""
 
 from __future__ import annotations
 

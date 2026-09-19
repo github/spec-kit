@@ -1,6 +1,6 @@
 """`specify event run` must read piped stdin without crashing.
 
-`event_run` (src/specify_cli/commands/event.py) capped its stdin read at 1
+`event_run` (src/specify_cli/events/command_run.py) capped its stdin read at 1
 MiB to prevent a DoS (#3857), but the truncation check read a `.eof`
 attribute that does not exist on any Python file-like object (including
 `sys.stdin`) — every piped-stdin invocation raised `AttributeError` instead
@@ -22,7 +22,7 @@ import typer
 from typer.testing import CliRunner
 
 from specify_cli import app
-from specify_cli.commands.event import event_run
+from specify_cli.events.command_run import event_run
 
 
 def test_event_run_reads_piped_stdin_payload():
@@ -71,7 +71,7 @@ def test_event_run_tty_uses_empty_object(monkeypatch):
         def isatty(self):
             return True
 
-    monkeypatch.setattr("specify_cli.commands.event.sys.stdin", FakeTtyStdin())
+    monkeypatch.setattr("specify_cli.events.command_run.sys.stdin", FakeTtyStdin())
 
     with patch(
         "specify_cli.events.resolve_and_run_event_command", return_value=0
