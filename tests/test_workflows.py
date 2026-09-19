@@ -7721,6 +7721,40 @@ class TestRunState:
             RunState.load("requested-run", project_dir)
 
     @pytest.mark.parametrize(
+        "bad_current_step_index",
+        ["not-a-number", 1.5, -1, [0], {"index": 0}, True],
+    )
+    def test_load_rejects_invalid_current_step_index(
+        self, project_dir, bad_current_step_index
+    ):
+        """Reject non-integer and negative resume indices at load time.
+
+        ``bool`` is covered explicitly because it subclasses ``int``.
+        """
+        from specify_cli.workflows.engine import RunState
+
+        run_dir = (
+            project_dir / ".specify" / "workflows" / "runs" / "bad-index-run"
+        )
+        run_dir.mkdir(parents=True)
+        (run_dir / "state.json").write_text(
+            json.dumps(
+                {
+                    "run_id": "bad-index-run",
+                    "workflow_id": "test-workflow",
+                    "status": "paused",
+                    "current_step_index": bad_current_step_index,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(
+            ValueError, match="'current_step_index' must be a non-negative integer"
+        ):
+            RunState.load("bad-index-run", project_dir)
+
+    @pytest.mark.parametrize(
         ("installed_workflow_id", "installed_registry_root"),
         [
             ("", None),
@@ -17409,6 +17443,40 @@ steps:
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
         assert "Invalid run state" in result.output
+
+    def test_resume_rejects_out_of_range_current_step_index(
+        self, project_dir, monkeypatch
+    ):
+        """An out-of-range positive index must fail cleanly, not silently
+        complete the run with no steps executed.
+
+        ``resume()`` slices ``definition.steps[state.current_step_index:]``;
+        for any index >= len(steps) that slice is an empty list, so the run
+        would otherwise finish with status "completed" having executed
+        nothing.
+        """
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        run_id = self._install_and_run_gated(runner, app, project_dir)
+        state_path = (
+            project_dir / ".specify" / "workflows" / "runs" / run_id / "state.json"
+        )
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+        data["current_step_index"] = 5
+        state_path.write_text(json.dumps(data), encoding="utf-8")
+
+        result = runner.invoke(app, ["workflow", "resume", run_id])
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Invalid run state" in result.output
+        assert "out of range" in result.output
+
+        reloaded = json.loads(state_path.read_text(encoding="utf-8"))
+        assert reloaded["status"] == "paused"
 
     def test_resume_legacy_run_respects_current_disabled_state(
         self, project_dir, monkeypatch
