@@ -3540,6 +3540,26 @@ Real body starts here.
                 "my-ext",
                 "Run .specify/extensions/my-ext/scripts/tool.sh",
             ),
+            (
+                "--template=../../templates/spec.md",
+                None,
+                "--template=.specify/templates/spec.md",
+            ),
+            (
+                "SCRIPT=../../scripts/bash/run.sh",
+                None,
+                "SCRIPT=.specify/scripts/bash/run.sh",
+            ),
+            (
+                "--template=templates/spec.md",
+                None,
+                "--template=.specify/templates/spec.md",
+            ),
+            (
+                "SCRIPT=scripts/bash/run.sh",
+                "my-ext",
+                "SCRIPT=.specify/extensions/my-ext/scripts/bash/run.sh",
+            ),
         ]
 
         for text, ext_id, expected in samples:
@@ -3553,13 +3573,14 @@ Real body starts here.
             assert ".specify.specify/" not in thrice
 
     def test_rewrite_project_relative_paths_various_delimiters(self):
-        """Paths enclosed by backticks, quotes, brackets, and parens should be rewritten."""
+        """Paths enclosed by backticks, quotes, brackets, parens, and = should be rewritten."""
         from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
 
         body = (
             "Inline `scripts/bash/run.sh` and \"scripts/bash/run.sh\" and 'scripts/bash/run.sh'\n"
             "Parens (scripts/bash/run.sh) and brackets [scripts/bash/run.sh]\n"
             "Braces {scripts/bash/run.sh} and angles <scripts/bash/run.sh>\n"
+            "Flag --template=../../templates/spec.md and assign SCRIPT=../../scripts/bash/run.sh\n"
             "Start of text: scripts/bash/run.sh\n"
         )
         rewritten = AgentCommandRegistrar.rewrite_project_relative_paths(body)
@@ -3571,6 +3592,8 @@ Real body starts here.
         assert "[.specify/scripts/bash/run.sh]" in rewritten
         assert "{.specify/scripts/bash/run.sh}" in rewritten
         assert "<.specify/scripts/bash/run.sh>" in rewritten
+        assert "--template=.specify/templates/spec.md" in rewritten
+        assert "SCRIPT=.specify/scripts/bash/run.sh" in rewritten
         assert rewritten.splitlines()[-1] == "Start of text: .specify/scripts/bash/run.sh"
 
         # Verify idempotency on multiline text with diverse delimiters

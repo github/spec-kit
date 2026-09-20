@@ -208,7 +208,7 @@ class CommandRegistrar:
         )
 
         pattern = re.compile(
-            r"""(^|[\s`"'(\[{<])(\.specify/|(?:\.\./)+|(?:\.?/))?(scripts|memory|templates)/"""
+            r"""(^|[\s`"'(\[{<=])(\.specify/|(?:\.\./)+|(?:\.?/))?(scripts|memory|templates)/"""
         )
 
         def _replace(m: re.Match) -> str:
