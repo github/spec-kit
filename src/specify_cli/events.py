@@ -2251,6 +2251,8 @@ def _remove_vibe_toml_entries(dst: Path) -> bool:
     """Remove Specify-marked Vibe TOML hook entries; delete the file if now empty.
 
     Returns True if the file was deleted (no user content remained).
+
+    Leaves an unowned file untouched when no Specify-marked hook was removed.
     """
     if not dst.exists():
         return False
@@ -2272,6 +2274,8 @@ def _remove_vibe_toml_entries(dst: Path) -> bool:
         existing,
         flags=re.DOTALL,
     )
+    if cleaned == existing:
+        return False
     # If only whitespace/comments remain, the file had no user content
     stripped = "\n".join(
         line for line in cleaned.splitlines()

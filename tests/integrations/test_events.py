@@ -1046,6 +1046,75 @@ class TestTomlNoOpMerge:
         assert not config_path.exists()
 
 
+class TestVibeTomlNoOpRemoval:
+    """An unowned Vibe hooks.toml must survive no-op event cleanup intact."""
+
+    _FIXED_MTIME_NS = 1_700_000_000_123_456_789
+
+    def _user_hooks_file(self, tmp_path, content):
+        path = tmp_path / ".vibe" / "hooks.toml"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(content)
+        os.utime(path, ns=(self._FIXED_MTIME_NS, self._FIXED_MTIME_NS))
+        return path, path.stat().st_mtime_ns
+
+    def _assert_untouched(self, path, original, original_mtime_ns):
+        assert path.exists()
+        assert path.read_bytes() == original
+        assert path.stat().st_mtime_ns == original_mtime_ns
+
+    def test_empty_events_leave_user_crlf_file_untracked_and_untouched(self, tmp_path):
+        from specify_cli.integrations import get_integration
+
+        integration = get_integration("vibe")
+        manifest = _claude_manifest(tmp_path)
+        original = b'user_option = "keep"\r\nsecond_option = true'
+        path, original_mtime_ns = self._user_hooks_file(tmp_path, original)
+
+        install_integration_events(integration, tmp_path, manifest, {})
+
+        self._assert_untouched(path, original, original_mtime_ns)
+        manifest.record_existing.assert_not_called()
+
+    def test_empty_events_preserve_comments_only_file(self, tmp_path):
+        from specify_cli.integrations import get_integration
+
+        original = b"# maintained by the user\n# no hooks yet\n"
+        path, original_mtime_ns = self._user_hooks_file(tmp_path, original)
+
+        install_integration_events(
+            get_integration("vibe"), tmp_path, _claude_manifest(tmp_path), {}
+        )
+
+        self._assert_untouched(path, original, original_mtime_ns)
+
+    def test_empty_events_preserve_whitespace_only_file(self, tmp_path):
+        from specify_cli.integrations import get_integration
+
+        original = b"\r\n \t\r\n"
+        path, original_mtime_ns = self._user_hooks_file(tmp_path, original)
+
+        install_integration_events(
+            get_integration("vibe"), tmp_path, _claude_manifest(tmp_path), {}
+        )
+
+        self._assert_untouched(path, original, original_mtime_ns)
+
+    def test_forced_teardown_preserves_unowned_file_with_manifest_claim(self, tmp_path):
+        from specify_cli.integrations import get_integration
+
+        integration = get_integration("vibe")
+        original = b'user_option = "keep"\r\n'
+        path, original_mtime_ns = self._user_hooks_file(tmp_path, original)
+        manifest = IntegrationManifest(integration.key, tmp_path, version="test")
+        manifest.record_existing(".vibe/hooks.toml")
+        manifest.save()
+
+        integration.teardown(tmp_path, manifest, force=True)
+
+        self._assert_untouched(path, original, original_mtime_ns)
+
+
 # -- Opencode TS Plugin merging ---------------------------------------------
 
 class TestOpencodePluginMerging:
