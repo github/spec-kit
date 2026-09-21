@@ -36,9 +36,6 @@ Adding Spec Kit to an established codebase? Start with the
 
 <div class="pillar-card">
 
-<!-- Pillar headings stay at h3: docs/template/public/main.css styles
-     `.pillar-card h3`, including the per-card accent colors. -->
-<!-- markdownlint-disable-next-line MD001 -->
 ### Spec-driven by default
 
 The core SDD process ships ready to use: **Specify → Plan → Tasks → Implement → Converge**.
