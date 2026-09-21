@@ -26,8 +26,6 @@ specify extension add github
 specify extension remove github
 ```
 
-`specify extension disable github` is not a substitute. It turns off this extension's hooks and events, but it leaves the installed command and skill files in place, so `/speckit.github.taskstoissues` can still be invoked. To make the command unavailable, remove the extension.
-
 ## Commands
 
 | Command                        | Description                                                          |
