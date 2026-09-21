@@ -2996,7 +2996,7 @@ class TestDispatcherManifestClaimDroppedOnRetain:
 
         # Simulate the upgrade path: a fresh manifest (like
         # IntegrationManifest(key, project_root, version=...) in
-        # _migrate_commands) that never recorded the dispatcher.
+        # integration upgrade path) that never recorded the dispatcher.
         fresh = IntegrationManifest(claude.key, tmp_path, version="test")
         assert EVENTS_DISPATCHER_REL not in fresh.files
         install_integration_events(claude, tmp_path, fresh, {})

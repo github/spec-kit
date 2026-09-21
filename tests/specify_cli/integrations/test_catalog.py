@@ -1,14 +1,13 @@
-"""Tests for the integration catalog system (catalog.py)."""
+"""Tests for the integration package's catalog domain API."""
 
 import json
-import os
 
 import pytest
 import yaml
 
 from tests.http_helpers import route_opener_open_through_urlopen  # noqa: F401
 
-from specify_cli.integrations.catalog import (
+from specify_cli.integrations import (
     IntegrationCatalog,
     IntegrationCatalogEntry,
     IntegrationCatalogError,
@@ -335,11 +334,11 @@ class TestCatalogFetch:
     ):
         """Regression: _fetch_single_catalog must use read_response_limited
         with MAX_JSON_METADATA_BYTES, not unbounded resp.read()."""
-        from specify_cli.integrations.catalog import (
+        from specify_cli.integrations import (
             IntegrationCatalog,
             IntegrationCatalogError,
         )
-        import specify_cli.integrations.catalog as catalog_module
+        import specify_cli.integrations as catalog_module
 
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("USERPROFILE", str(tmp_path))
@@ -380,7 +379,7 @@ class TestCatalogFetch:
 
         monkeypatch.setattr(_auth_http.urllib.request, "urlopen", fake_urlopen)
 
-        from specify_cli.integrations.catalog import IntegrationCatalogEntry
+        from specify_cli.integrations import IntegrationCatalogEntry
 
         entry = IntegrationCatalogEntry(
             url="https://example.com/catalog.json",
@@ -766,142 +765,6 @@ class TestIntegrationDescriptor:
 # ---------------------------------------------------------------------------
 
 
-class TestIntegrationListCatalog:
-    """Test ``specify integration list --catalog``."""
-
-    def _init_project(self, tmp_path):
-        """Create a minimal spec-kit project."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        runner = CliRunner()
-        project = tmp_path / "proj"
-        project.mkdir()
-        old = os.getcwd()
-        try:
-            os.chdir(project)
-            result = runner.invoke(app, [
-                "init", "--here",
-                "--integration", "copilot",
-                "--script", "sh",
-                "--ignore-agent-tools",
-            ], catch_exceptions=False)
-        finally:
-            os.chdir(old)
-        assert result.exit_code == 0, result.output
-        return project
-
-    def test_list_catalog_flag(self, tmp_path, monkeypatch):
-        """--catalog should show catalog entries."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        runner = CliRunner()
-        project = self._init_project(tmp_path)
-
-        catalog = {
-            "schema_version": "1.0",
-            "updated_at": "2026-01-01T00:00:00Z",
-            "integrations": {
-                "test-agent": {
-                    "id": "test-agent",
-                    "name": "Test Agent",
-                    "version": "1.0.0",
-                    "description": "A test agent",
-                    "tags": ["cli"],
-                },
-            },
-        }
-
-        import specify_cli.authentication.http as _auth_http
-
-        class FakeResponse:
-            def __init__(self, data, url=""):
-                self._data = json.dumps(data).encode()
-                self._url = url if isinstance(url, str) else url.full_url
-                self._offset = 0
-
-            def read(self, size=-1):
-                if size == -1:
-                    chunk = self._data[self._offset:]
-                    self._offset = len(self._data)
-                else:
-                    chunk = self._data[self._offset:self._offset + size]
-                    self._offset += len(chunk)
-                return chunk
-
-            def geturl(self):
-                return self._url
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                pass
-
-        monkeypatch.setattr(_auth_http.urllib.request, "urlopen",
-                            lambda req, timeout=10: FakeResponse(catalog, req if isinstance(req, str) else req.full_url))
-
-        old = os.getcwd()
-        try:
-            os.chdir(project)
-            result = runner.invoke(app, ["integration", "list", "--catalog"])
-        finally:
-            os.chdir(old)
-
-        assert result.exit_code == 0
-        assert "test-agent" in result.output
-        assert "Test Agent" in result.output
-
-    def test_list_without_catalog_still_works(self, tmp_path):
-        """Default list (no --catalog) works as before."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        runner = CliRunner()
-        project = self._init_project(tmp_path)
-
-        old = os.getcwd()
-        try:
-            os.chdir(project)
-            result = runner.invoke(app, ["integration", "list"])
-        finally:
-            os.chdir(old)
-
-        assert result.exit_code == 0
-        assert "copilot" in result.output
-        assert "installed" in result.output
-
-    def test_catalog_list_escapes_rich_markup(self, tmp_path, monkeypatch):
-        """User-editable catalog name/url/description must not be parsed as Rich markup."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.integrations.catalog import IntegrationCatalog
-        runner = CliRunner()
-        project = self._init_project(tmp_path)
-
-        configs = [
-            {
-                "name": "Bracket [Catalog]",
-                "url": "https://example.com/[cat].json",
-                "description": "desc [with] brackets",
-                "install_allowed": True,
-            },
-        ]
-        monkeypatch.setattr(
-            IntegrationCatalog,
-            "get_project_catalog_configs",
-            lambda self: [dict(c) for c in configs],
-        )
-
-        old = os.getcwd()
-        try:
-            os.chdir(project)
-            result = runner.invoke(app, ["integration", "catalog", "list"])
-        finally:
-            os.chdir(old)
-
-        assert result.exit_code == 0, result.output
-        assert "Bracket [Catalog]" in result.output
-        assert "https://example.com/[cat].json" in result.output
-        assert "desc [with] brackets" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -909,159 +772,6 @@ class TestIntegrationListCatalog:
 # ---------------------------------------------------------------------------
 
 
-class TestIntegrationUpgrade:
-    """Test ``specify integration upgrade``."""
-
-    def _init_project(self, tmp_path, integration="copilot"):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        runner = CliRunner()
-        project = tmp_path / "proj"
-        project.mkdir()
-        old = os.getcwd()
-        try:
-            os.chdir(project)
-            result = runner.invoke(app, [
-                "init", "--here",
-                "--integration", integration,
-                "--script", "sh",
-                "--ignore-agent-tools",
-            ], catch_exceptions=False)
-        finally:
-            os.chdir(old)
-        assert result.exit_code == 0, result.output
-        return project
-
-    def test_upgrade_requires_speckit_project(self, tmp_path):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        runner = CliRunner()
-        old = os.getcwd()
-        try:
-            os.chdir(tmp_path)
-            result = runner.invoke(app, ["integration", "upgrade"])
-        finally:
-            os.chdir(old)
-        assert result.exit_code != 0
-        assert "Not a Spec Kit project" in result.output
-
-    def test_upgrade_no_integration_installed(self, tmp_path):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        runner = CliRunner()
-        project = tmp_path / "proj"
-        project.mkdir()
-        (project / ".specify").mkdir()
-        old = os.getcwd()
-        try:
-            os.chdir(project)
-            result = runner.invoke(app, ["integration", "upgrade"])
-        finally:
-            os.chdir(old)
-        assert result.exit_code == 0
-        assert "No integration is currently installed" in result.output
-
-    def test_upgrade_succeeds(self, tmp_path):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        runner = CliRunner()
-        project = self._init_project(tmp_path, "copilot")
-
-        old = os.getcwd()
-        try:
-            os.chdir(project)
-            result = runner.invoke(app, ["integration", "upgrade"], catch_exceptions=False)
-        finally:
-            os.chdir(old)
-        assert result.exit_code == 0
-        assert "upgraded successfully" in result.output
-
-    def test_upgrade_blocks_on_modified_files(self, tmp_path):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        runner = CliRunner()
-        project = self._init_project(tmp_path, "copilot")
-
-        # Modify a tracked file so the manifest hash won't match
-        manifest_path = project / ".specify" / "integrations" / "copilot.manifest.json"
-        assert manifest_path.exists(), "Manifest should exist after init"
-        manifest_data = json.loads(manifest_path.read_text())
-        tracked_files = manifest_data.get("files", {})
-        assert tracked_files, "Manifest should track at least one file"
-        first_rel = next(iter(tracked_files))
-        target_file = project / first_rel
-        assert target_file.exists(), f"Tracked file {first_rel} should exist"
-        target_file.write_text("MODIFIED CONTENT\n")
-
-        old = os.getcwd()
-        try:
-            os.chdir(project)
-            result = runner.invoke(app, ["integration", "upgrade"])
-        finally:
-            os.chdir(old)
-        assert result.exit_code != 0
-        assert "modified" in result.output.lower()
-
-    def test_upgrade_force_overwrites_modified(self, tmp_path):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        runner = CliRunner()
-        project = self._init_project(tmp_path, "copilot")
-
-        # Modify a tracked file
-        manifest_path = project / ".specify" / "integrations" / "copilot.manifest.json"
-        manifest_data = json.loads(manifest_path.read_text())
-        tracked_files = manifest_data.get("files", {})
-        assert tracked_files, "Manifest should track at least one file"
-        first_rel = next(iter(tracked_files))
-        target_file = project / first_rel
-        assert target_file.exists(), f"Tracked file {first_rel} should exist"
-        target_file.write_text("MODIFIED CONTENT\n")
-
-        old = os.getcwd()
-        try:
-            os.chdir(project)
-            result = runner.invoke(app, ["integration", "upgrade", "--force"], catch_exceptions=False)
-        finally:
-            os.chdir(old)
-        assert result.exit_code == 0
-        assert "upgraded successfully" in result.output
-
-    def test_upgrade_wrong_integration_key(self, tmp_path):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        runner = CliRunner()
-        project = self._init_project(tmp_path, "copilot")
-
-        old = os.getcwd()
-        try:
-            os.chdir(project)
-            result = runner.invoke(app, ["integration", "upgrade", "claude"])
-        finally:
-            os.chdir(old)
-        assert result.exit_code != 0
-        assert "not installed" in result.output
-
-    def test_upgrade_no_manifest(self, tmp_path):
-        """Upgrade with missing manifest suggests fresh install."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        runner = CliRunner()
-        project = self._init_project(tmp_path, "copilot")
-
-        # Remove manifest
-        manifest_path = project / ".specify" / "integrations" / "copilot.manifest.json"
-        if manifest_path.exists():
-            manifest_path.unlink()
-
-        old = os.getcwd()
-        try:
-            os.chdir(project)
-            result = runner.invoke(app, ["integration", "upgrade"])
-        finally:
-            os.chdir(old)
-        assert result.exit_code == 0
-        assert "Nothing to upgrade" in result.output
 
 
 # ---------------------------------------------------------------------------

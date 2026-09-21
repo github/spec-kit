@@ -1,4 +1,5 @@
-"""specify integration scaffold command handler."""
+"""The ``specify integration scaffold`` command."""
+
 from __future__ import annotations
 
 from enum import Enum
@@ -7,7 +8,7 @@ from pathlib import Path
 import typer
 
 from .._console import console
-from ..integration_scaffold import supported_integration_scaffold_types
+from ._command_scaffold_generation import supported_integration_scaffold_types
 from ._commands import integration_app
 
 
@@ -30,7 +31,7 @@ def integration_scaffold(
     ),
 ):
     """Create a minimal built-in integration package and test skeleton."""
-    from ..integration_scaffold import scaffold_integration
+    from ._command_scaffold_generation import scaffold_integration
 
     # scaffold targets the Spec Kit *source* repo layout (_is_spec_kit_repo_root),
     # not a .specify/ member project, so SPECIFY_INIT_DIR does not apply here.

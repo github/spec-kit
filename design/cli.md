@@ -148,6 +148,12 @@ extensions/
 The nested package's `__init__.py` owns its Typer application and registration.
 Shared helpers for that nested surface can live in `_helpers.py`.
 
+Creating a nested CLI package does not transfer same-named domain behavior into
+that package. If an existing domain module collides with a new nested command
+namespace, keep the implementation in the parent domain package (or a focused
+domain module there). Preserve an established import path through thin
+compatibility exports from the nested package when required.
+
 Do not add a nested `_commands.py` merely for symmetry. Create one only when
 the nested group develops substantial shared command infrastructure that no
 longer fits cleanly in `__init__.py` and `_helpers.py`.
@@ -208,10 +214,30 @@ The primary `test_command_<name>.py` suite verifies the public command surface.
 Phase-specific suites verify detailed invariants without obscuring the primary
 command behavior.
 
-Not every test belongs in the mirrored command tree:
+Domain source remains in the parent package's `__init__.py` or a focused
+domain module without the `command_` prefix. Its mirrored tests use the domain
+subject name, for example:
 
-- Domain model, registry, manager, and catalog behavior remains in domain test
-  suites such as `tests/test_extensions.py`.
+```text
+src/specify_cli/integrations/__init__.py      # catalog domain API
+tests/specify_cli/integrations/test_catalog.py
+
+src/specify_cli/integrations/command_search.py
+tests/specify_cli/integrations/test_command_search.py
+```
+
+Do not put `test_<domain>.py` under a nested command directory merely because
+the domain has the same name as that CLI namespace. The nested directory is
+reserved for `test_command_<name>.py` suites that exercise its actual
+subcommands.
+
+Not every test is a command test, even when it belongs in the mirrored package
+tree:
+
+- Domain model, registry, manager, and catalog behavior belongs at the parent
+  package level, not under a nested command namespace and not in
+  `test_command_*.py`. Existing consolidated domain suites such as
+  `tests/test_extensions.py` may remain in place until separately reorganized.
 - Cross-domain CLI contracts remain with the broader integration tests.
 - Shared fixtures belong in the narrowest `conftest.py` that serves all of
   their consumers.

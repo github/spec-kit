@@ -1,62 +1,11 @@
-"""Tests for integration scaffolding commands."""
+"""Tests for the integration scaffold generation phase."""
 
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
-from specify_cli import app
-from specify_cli.integration_scaffold import scaffold_integration
-from tests.conftest import strip_ansi
-
-
-runner = CliRunner()
-
-
-def _repo_root(tmp_path: Path) -> Path:
-    root = tmp_path / "spec-kit"
-    (root / "src" / "specify_cli" / "integrations").mkdir(parents=True)
-    (root / "tests" / "integrations").mkdir(parents=True)
-    (root / "pyproject.toml").write_text("[project]\nname = \"specify-cli\"\n", encoding="utf-8")
-    (root / "src" / "specify_cli" / "__init__.py").write_text("", encoding="utf-8")
-    (root / "src" / "specify_cli" / "integrations" / "__init__.py").write_text(
-        "",
-        encoding="utf-8",
-    )
-    return root
-
-
-def test_integration_scaffold_creates_markdown_files(tmp_path, monkeypatch):
-    root = _repo_root(tmp_path)
-    monkeypatch.chdir(root)
-
-    result = runner.invoke(app, [
-        "integration", "scaffold", "my-agent",
-        "--type", "markdown",
-    ], catch_exceptions=False)
-
-    output = strip_ansi(result.output)
-    integration_file = root / "src" / "specify_cli" / "integrations" / "my_agent" / "__init__.py"
-    test_file = root / "tests" / "integrations" / "test_integration_my_agent.py"
-
-    assert result.exit_code == 0
-    assert integration_file.exists()
-    assert test_file.exists()
-    assert "Created integration scaffold: my-agent" in output
-    assert "Register MyAgentIntegration" in output
-
-    content = integration_file.read_text(encoding="utf-8")
-    assert "class MyAgentIntegration(MarkdownIntegration):" in content
-    assert 'key = "my-agent"' in content
-    assert '"folder": ".my-agent/"' in content
-    assert '"extension": ".md"' in content
-    assert "multi_install_safe = False" in content
-
-    test_content = test_file.read_text(encoding="utf-8")
-    assert "from specify_cli.integrations.my_agent import MyAgentIntegration" in test_content
-    assert 'assert integration.registrar_config["dir"] == ".my-agent/commands"' in test_content
-    assert "assert integration.multi_install_safe is False" in test_content
-
+from specify_cli.integrations._command_scaffold_generation import scaffold_integration
+from tests.specify_cli.integrations._scaffold_helpers import integration_repo_root as _repo_root
 
 @pytest.mark.parametrize(
     ("integration_type", "base_class", "commands_subdir", "args", "extension"),
@@ -85,44 +34,6 @@ def test_scaffold_type_templates(
     assert f'"args": "{args}"' in content
     assert f'"extension": "{extension}"' in content
     assert "multi_install_safe = False" in content
-
-
-def test_integration_scaffold_rejects_unknown_type_before_scaffolding(tmp_path, monkeypatch):
-    root = _repo_root(tmp_path)
-    monkeypatch.chdir(root)
-
-    result = runner.invoke(app, [
-        "integration", "scaffold", "my-agent",
-        "--type", "xml",
-    ])
-
-    output = strip_ansi(result.output)
-    assert result.exit_code == 2
-    assert "Invalid value for '--type'" in output
-    assert not (root / "src" / "specify_cli" / "integrations" / "my_agent").exists()
-
-
-def test_integration_scaffold_reports_filesystem_errors_cleanly(tmp_path, monkeypatch):
-    root = _repo_root(tmp_path)
-    monkeypatch.chdir(root)
-
-    import specify_cli.integration_scaffold as scaffold_module
-
-    def boom(*args, **kwargs):
-        raise PermissionError("Permission denied: read-only checkout")
-
-    monkeypatch.setattr(scaffold_module, "scaffold_integration", boom)
-
-    result = runner.invoke(app, [
-        "integration", "scaffold", "my-agent",
-        "--type", "markdown",
-    ], catch_exceptions=False)
-
-    output = strip_ansi(result.output)
-    assert result.exit_code == 1
-    assert "Error:" in output
-    assert "Permission denied" in output
-
 
 def test_scaffold_refuses_invalid_key(tmp_path):
     root = _repo_root(tmp_path)
@@ -220,19 +131,3 @@ def test_scaffold_refuses_symlinked_target_directory(tmp_path):
         scaffold_integration(root, "my-agent", "markdown")
 
     assert not (outside / "my_agent").exists()
-
-
-def test_integration_scaffold_accepts_uppercase_type(tmp_path, monkeypatch):
-    root = _repo_root(tmp_path)
-    monkeypatch.chdir(root)
-
-    result = runner.invoke(app, [
-        "integration", "scaffold", "my-agent",
-        "--type", "YAML",
-    ], catch_exceptions=False)
-
-    assert result.exit_code == 0, strip_ansi(result.output)
-    content = (
-        root / "src" / "specify_cli" / "integrations" / "my_agent" / "__init__.py"
-    ).read_text(encoding="utf-8")
-    assert "class MyAgentIntegration(YamlIntegration):" in content
