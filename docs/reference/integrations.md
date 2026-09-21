@@ -37,6 +37,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Muse Code](https://dev.meta.ai/docs/muse-code)                                     | `muse`           | Skills-based integration; installs skills into `.agents/skills` and invokes them as `/speckit-<command>`                                   |
 | [Oh My Pi](https://www.npmjs.com/package/@oh-my-pi/pi-coding-agent)                  | `omp`            | Installs slash commands into `.omp/commands`                                                                                               |
 | [opencode](https://opencode.ai/)                                                     | `opencode`       |                                                                                                                                           |
+| [OpenHands](https://github.com/OpenHands/OpenHands-CLI) | `openhands` | Skills in `.openhands/skills/`; `/speckit-<command>` keyword triggers; headless CLI dispatch. |
 | [Pi Coding Agent](https://pi.dev)                                                    | `pi`             | Pi doesn't have MCP support out of the box, so `taskstoissues` won't work as intended. MCP support can be added via [extensions](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent#extensions) |
 | [Qoder CLI](https://qoder.com/cli)                                                   | `qodercli`       |                                                                                                                                           |
 | [Qwen Code](https://github.com/QwenLM/qwen-code)                                     | `qwen`           |                                                                                                                                           |
@@ -67,6 +68,30 @@ Use the form exposed by your agent. Copilot's default skills are installed under
 `.github/skills/`; its opt-in commands layout is selected with
 `--integration-options="--commands"`. In that layout, Copilot CLI can select an
 agent through `/agents` or address it directly in a prompt.
+
+## OpenHands
+
+```bash
+specify init my-project --integration openhands --script py
+cd my-project
+openhands
+```
+
+Use `/speckit-specify <feature description>` to activate the generated skill.
+Spec Kit uses the supported `.openhands/skills/` directory to keep its installed
+files separate from other integrations. OpenHands gives `.agents/skills/`
+precedence when a same-named skill exists there; avoid duplicate Spec Kit skills
+across these directories. See the [OpenHands skills documentation](https://docs.openhands.dev/overview/skills).
+The optional `agent-context` extension maps OpenHands to `AGENTS.md`.
+
+Dispatch runs `openhands --headless -t <prompt>` and adds `--json` for captured
+JSONL output. Headless mode automatically approves actions. The CLI has no
+`--model` flag: configure the model in OpenHands settings, or export `LLM_MODEL`
+and set `SPECKIT_INTEGRATION_OPENHANDS_EXTRA_ARGS=--override-with-envs`.
+Passing Spec Kit's model override raises an actionable error.
+See the [OpenHands CLI reference](https://docs.openhands.dev/openhands/usage/cli/command-reference).
+Run from the project root and ensure the agent workspace has the selected script
+runtime (`python3` for `--script py`, Bash for `--script sh`).
 
 ## List Available Integrations
 
@@ -316,6 +341,7 @@ The currently declared multi-install safe integrations are:
 | `kiro-cli` | `.kiro/prompts` |
 | `lingma` | `.lingma/skills` |
 | `omp` | `.omp/commands` |
+| `openhands` | `.openhands/skills` |
 | `pi` | `.pi/prompts` |
 | `qodercli` | `.qoder/skills` |
 | `qwen` | `.qwen/commands` |

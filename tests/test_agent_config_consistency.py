@@ -44,6 +44,7 @@ ISSUE_TEMPLATE_AGENT_KEYS = [
     "muse",
     "omp",
     "opencode",
+    "openhands",
     "pi",
     "qodercli",
     "qwen",

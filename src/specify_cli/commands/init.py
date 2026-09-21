@@ -1039,6 +1039,7 @@ def register(app: typer.Typer) -> None:
             or grok_skill_mode
             or dsh_skill_mode
             or bob_skill_mode
+            or selected_ai == "openhands"
         )
 
         if codex_skill_mode:

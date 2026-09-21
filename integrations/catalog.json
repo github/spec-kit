@@ -129,6 +129,15 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli", "alibaba"]
     },
+    "openhands": {
+      "id": "openhands",
+      "name": "OpenHands",
+      "version": "1.0.0",
+      "description": "OpenHands CLI integration with project-local skills",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "skills"]
+    },
     "opencode": {
       "id": "opencode",
       "name": "opencode",

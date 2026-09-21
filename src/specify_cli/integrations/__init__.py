@@ -78,6 +78,7 @@ def _register_builtins() -> None:
     from .muse import MuseIntegration
     from .omp import OmpIntegration
     from .opencode import OpencodeIntegration
+    from .openhands import OpenhandsIntegration
     from .pi import PiIntegration
     from .qodercli import QodercliIntegration
     from .qwen import QwenIntegration
@@ -121,6 +122,7 @@ def _register_builtins() -> None:
     _register(MuseIntegration())
     _register(OmpIntegration())
     _register(OpencodeIntegration())
+    _register(OpenhandsIntegration())
     _register(PiIntegration())
     _register(QodercliIntegration())
     _register(QwenIntegration())
