@@ -66,3 +66,49 @@ def test_parse_constraint_empty_is_permissive():
     from specify_cli.bundler.lib.versioning import parse_constraint
 
     assert str(parse_constraint("")) == ""
+
+
+@pytest.mark.parametrize(
+    "constraint",
+    [
+        ">=1.0.0\n<2.0.0\n",   # a YAML block literal, as loaded
+        ">=1.0\n.0",
+        "a\nb",
+    ],
+    ids=["yaml_block_literal", "split_version", "garbage"],
+)
+def test_constraint_with_an_embedded_newline_reports_a_bundler_error(constraint):
+    """A clause containing a newline must be reported, not crash.
+
+    `_SPECIFIER_CLAUSE` is anchored with `^`/`$` and `.` does not cross
+    newlines, so such a clause does not match at all and `match.groups()`
+    raised a raw `AttributeError` — escaping `parse_constraint`'s contract to
+    surface bad input as a `BundlerError`. A YAML block literal reaches this
+    with no exotic input at all:
+
+        requires:
+          speckit_version: |
+            >=1.0.0
+            <2.0.0
+    """
+    from specify_cli.bundler.lib.versioning import parse_constraint
+
+    with pytest.raises(BundlerError, match="Invalid version constraint"):
+        parse_constraint(constraint)
+
+
+@pytest.mark.parametrize(
+    "constraint,expected",
+    [
+        (">=1.0.0", ">=1.0.0"),
+        (">=v1.0.0", ">=1.0.0"),
+        ("~=1.2", "~=1.2"),
+        (">=1.0.0\n", ">=1.0.0"),   # trailing newline is still stripped
+        ("\n>=1.0.0", ">=1.0.0"),   # leading newline too
+    ],
+)
+def test_valid_constraints_are_unaffected(constraint, expected):
+    """Only clauses that genuinely fail to match change behaviour."""
+    from specify_cli.bundler.lib.versioning import parse_constraint
+
+    assert str(parse_constraint(constraint)) == expected
