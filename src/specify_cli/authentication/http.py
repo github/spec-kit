@@ -65,9 +65,13 @@ def _hostname_in_hosts(hostname: str, hosts: tuple[str, ...]) -> bool:
 RedirectValidator = Callable[[str, str], None]
 
 
+class RedirectPolicyError(urllib.error.URLError):
+    """A redirect rejected because it violates the client's security policy."""
+
+
 def _validate_strict_redirect(old_url: str, new_url: str) -> None:
     if not is_safe_download_redirect(old_url, new_url):
-        raise urllib.error.URLError(
+        raise RedirectPolicyError(
             f"unsafe redirect to {new_url}: target must use HTTPS with a hostname, "
             "must not enter a local target from a remote host, and may use HTTP only "
             "within loopback (for example localhost, 127.0.0.1, ::1)"
@@ -100,7 +104,7 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
         except ValueError as exc:
             # Malformed redirect target (e.g. unterminated IPv6 bracket).
             # Surface as URLError so callers' download error handling applies.
-            raise urllib.error.URLError(f"malformed redirect URL: {exc}") from exc
+            raise RedirectPolicyError(f"malformed redirect URL: {exc}") from exc
 
         if self._redirect_validator is not None:
             self._redirect_validator(req.full_url, newurl)

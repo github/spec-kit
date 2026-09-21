@@ -229,6 +229,19 @@ def test_wheel_packages_community_bundle_catalog():
     )
 
 
+def test_wheel_packages_firstparty_bundle_catalog():
+    repo_root = Path(__file__).parents[2]
+    with (repo_root / "pyproject.toml").open("rb") as pyproject_file:
+        pyproject = tomllib.load(pyproject_file)
+
+    force_include = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"][
+        "force-include"
+    ]
+    assert force_include["bundles/catalog.json"] == (
+        "specify_cli/core_pack/bundles/catalog.json"
+    )
+
+
 def test_catalog_entry_rejects_string_tags():
     from specify_cli.bundler.models.catalog import CatalogEntry
 

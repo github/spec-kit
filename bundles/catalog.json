@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-09-10T00:00:00Z",
+  "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/bundles/catalog.json",
+  "bundles": {
+    "bugfix": {
+      "id": "bugfix",
+      "name": "Guided Bug Fix",
+      "version": "1.0.0",
+      "role": "developer",
+      "description": "Orchestrated bug triage: assess a bug report, review behind a human gate, apply the fix, and verify with tests.",
+      "author": "GitHub",
+      "license": "MIT",
+      "download_url": "https://raw.githubusercontent.com/github/spec-kit/main/bundles/bugfix/bundle.yml",
+      "repository": "https://github.com/github/spec-kit",
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "extensions": 1,
+        "presets": 0,
+        "steps": 0,
+        "workflows": 1
+      },
+      "tags": ["bug", "triage", "workflow", "qa"],
+      "verified": true
+    },
+    "assess": {
+      "id": "assess",
+      "name": "Idea Assessment Pipeline",
+      "version": "1.0.0",
+      "role": "developer",
+      "description": "Idea triage before Spec-Driven Development: intake, research, define, shape, decide with a verdict review gate; surviving ideas hand off manually to specify.",
+      "author": "GitHub",
+      "license": "MIT",
+      "download_url": "https://raw.githubusercontent.com/github/spec-kit/main/bundles/assess/bundle.yml",
+      "repository": "https://github.com/github/spec-kit",
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "extensions": 1,
+        "presets": 0,
+        "steps": 0,
+        "workflows": 1
+      },
+      "tags": ["assessment", "discovery", "triage", "product"],
+      "verified": true
+    }
+  }
+}
