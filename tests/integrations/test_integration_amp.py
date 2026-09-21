@@ -64,6 +64,18 @@ class TestAmpIntegration(MarkdownIntegrationTests):
         assert "-m" not in args
         assert "gpt-5" not in args
 
+    def test_build_exec_args_accepts_project_root(self, tmp_path):
+        """Workflow dispatch may provide a project root to every integration."""
+        integration = get_integration(self.KEY)
+
+        args = integration.build_exec_args(
+            "check the project",
+            output_json=False,
+            project_root=tmp_path,
+        )
+
+        assert args == ["amp", "--execute", "check the project"]
+
     def test_build_exec_args_applies_extra_args_before_execute(self, monkeypatch):
         """Operator-injected flags precede `--execute` so they stay global.
 
