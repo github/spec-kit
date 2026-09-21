@@ -1075,3 +1075,39 @@ def test_bundle_download_rejects_oversized_response(project: Path, monkeypatch):
     # Rich may wrap the message across lines; normalise whitespace before checking.
     output_flat = " ".join(result.output.split())
     assert "exceeds maximum size of 100 bytes" in output_flat
+
+
+@pytest.mark.parametrize(
+    "recorded,expected",
+    [
+        ("copilot", "copilot"),
+        ("  copilot  ", "copilot"),   # padded: previously returned verbatim
+        ("   ", None),               # whitespace-only: previously truthy
+        ("\t\n", None),
+        ("", None),
+        (None, None),
+        (5, None),
+    ],
+    ids=["plain", "padded", "spaces", "tabs", "empty", "null", "non_string"],
+)
+def test_active_integration_matches_the_canonical_key_reader(
+    tmp_path: Path, recorded, expected
+):
+    """`active_integration` must normalize the way the canonical reader does.
+
+    Its own comment says it matches `integration_state`'s reader, but that
+    reader runs every value through `clean_integration_key`, while this one
+    only checked `isinstance(value, str) and value`. A whitespace-only key is
+    truthy, so it was returned as a real integration *and* suppressed the
+    "not determinable" fallback; a padded key was returned verbatim and
+    matches no registered integration.
+    """
+    from specify_cli.bundler.lib.project import active_integration
+
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    (project / ".specify" / "integration.json").write_text(
+        json.dumps({"default_integration": recorded}), encoding="utf-8"
+    )
+
+    assert active_integration(project) == expected
