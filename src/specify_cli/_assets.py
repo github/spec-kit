@@ -32,6 +32,9 @@ def _repo_root() -> Path:
     return Path(__file__).parent.parent.parent
 
 
+ROOT_DIR = _repo_root()
+
+
 def _locate_bundled_extension(extension_id: str) -> Path | None:
     """Return the path to a bundled extension, or None.
 
