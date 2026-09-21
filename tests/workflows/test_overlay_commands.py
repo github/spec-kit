@@ -698,6 +698,59 @@ class TestOverlayCli:
         assert result.exit_code == 0, result.output
         assert step_id in result.output
 
+    def test_workflow_resolve_header_states_the_equal_priority_tiebreak(
+        self, project_dir, monkeypatch
+    ):
+        """The layer header must not contradict the attribution beneath it.
+
+        The list is sorted by (priority, source) ascending, which puts the
+        winning layer first only while priorities DIFFER. On a tie the sort is
+        alphabetical while the merge gives the conflict to the LAST id, so a
+        bare "highest precedence first" label stated the opposite of the
+        outcome printed directly below it — in the one command whose job is
+        explaining which overlay won.
+        """
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "build", "type": "command", "command": "echo BASE"}],
+            },
+        )
+        for overlay_id in ("alpha", "beta"):
+            _write_overlay(
+                project_dir,
+                "wf",
+                overlay_id,
+                {
+                    "id": overlay_id,
+                    "extends": "wf",
+                    "priority": 10,
+                    "edits": [
+                        {
+                            "operation": "replace",
+                            "anchor": "build",
+                            "step": {
+                                "id": "build",
+                                "type": "command",
+                                "command": f"echo FROM-{overlay_id.upper()}",
+                            },
+                        }
+                    ],
+                },
+            )
+
+        result = runner.invoke(app, ["workflow", "resolve", "wf"])
+
+        assert result.exit_code == 0, result.output
+        output = " ".join(result.output.split())
+        # alpha is listed first, but beta is the layer that actually wins.
+        assert "build: project:beta" in output, output
+        assert "on equal priority the last ID wins" in output, output
+
     def test_workflow_resolve_equal_priority_layers_sort_by_source(self, project_dir, monkeypatch):
         """Equal-priority overlays are listed alphabetically by source."""
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
