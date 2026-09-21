@@ -1,3 +1,8 @@
+"""Security and rollback tests for ``_command_update_transaction``.
+
+The primary command tests live in ``test_command_update.py``.
+"""
+
 from specify_cli.extensions import ExtensionManager, ExtensionRegistry, ExtensionCatalog
 from pathlib import Path
 import pytest
