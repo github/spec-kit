@@ -858,7 +858,22 @@ class RunState:
             installed_origin_tracked=has_installed_workflow_id,
         )
         state.status = RunStatus(state_data["status"])
-        state.current_step_index = state_data.get("current_step_index", 0)
+
+        # Validate the index shape before restoring it. The upper bound cannot
+        # be checked until resume() loads the workflow definition and is handled
+        # there. Reject bool explicitly because it subclasses int; otherwise a
+        # malformed value could fail during slicing or resume from the wrong step.
+        current_step_index = state_data.get("current_step_index", 0)
+        if (
+            isinstance(current_step_index, bool)
+            or not isinstance(current_step_index, int)
+            or current_step_index < 0
+        ):
+            raise ValueError(
+                "Invalid run state: 'current_step_index' must be a "
+                f"non-negative integer, got {current_step_index!r}"
+            )
+        state.current_step_index = current_step_index
         state.current_step_id = state_data.get("current_step_id")
         state.step_results = state_data.get("step_results", {})
         state.workflow_dir = state_data.get("workflow_dir")
@@ -1101,6 +1116,21 @@ class WorkflowEngine:
             definition = WorkflowDefinition.from_yaml(run_copy)
         else:
             definition = self.load_workflow(state.workflow_id)
+
+        # RunState.load() rejects a non-int/negative current_step_index but
+        # can't check the upper bound — the step count isn't known until the
+        # workflow definition is loaded, above. An out-of-range positive
+        # index (e.g. a hand-edited state.json) would otherwise slice
+        # definition.steps[state.current_step_index:] into an empty list
+        # below, silently completing the run without executing any step.
+        if state.current_step_index >= len(definition.steps):
+            msg = (
+                "Invalid run state: 'current_step_index' "
+                f"({state.current_step_index}) is out of range for "
+                f"workflow {state.workflow_id!r} with {len(definition.steps)} "
+                "step(s)."
+            )
+            raise ValueError(msg)
 
         dispatch_default_errors = _dispatch_default_errors(definition)
         if dispatch_default_errors:
