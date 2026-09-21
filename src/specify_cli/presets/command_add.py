@@ -368,7 +368,7 @@ def preset_add(
         # exits, so one call here covers --dev, --from, and catalog installs
         # alike. Warns rather than fails: the preset is installed and its
         # overrides fall through to the core workflow without the extension.
-        _warn_unmet_extension_dependencies(manager, manifest)
+        _commands._warn_unmet_extension_dependencies(manager, manifest)
 
     except PresetCompatibilityError as e:
         console.print(f"[red]Compatibility Error:[/red] {_escape_markup(str(e))}")

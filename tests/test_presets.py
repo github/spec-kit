@@ -13,7 +13,6 @@ Tests cover:
 import pytest
 import io
 import json
-import tempfile
 import tarfile
 import shutil
 import zipfile
@@ -37,6 +36,7 @@ from specify_cli.presets import (
     VALID_PRESET_TEMPLATE_TYPES,
 )
 from specify_cli.extensions import ExtensionRegistry
+from tests.specify_cli.presets import _fixtures
 from tests.specify_cli.presets._helpers import (
     CORE_TEMPLATE_NAMES,
     SELF_TEST_PRESET_DIR,
@@ -45,99 +45,10 @@ from tests.specify_cli.presets._helpers import (
     make_convention_constitution_preset as _make_convention_constitution_preset,
 )
 
-
-# ===== Fixtures =====
-
-
-@pytest.fixture
-def temp_dir():
-    """Create a temporary directory for tests."""
-    tmpdir = tempfile.mkdtemp()
-    yield Path(tmpdir)
-    shutil.rmtree(tmpdir)
-
-
-@pytest.fixture
-def valid_pack_data():
-    """Valid preset manifest data."""
-    return {
-        "schema_version": "1.0",
-        "preset": {
-            "id": "test-pack",
-            "name": "Test Preset",
-            "version": "1.0.0",
-            "description": "A test preset",
-            "author": "Test Author",
-            "repository": "https://github.com/test/test-pack",
-            "license": "MIT",
-        },
-        "requires": {
-            "speckit_version": ">=0.1.0",
-        },
-        "provides": {
-            "templates": [
-                {
-                    "type": "template",
-                    "name": "spec-template",
-                    "file": "templates/spec-template.md",
-                    "description": "Custom spec template",
-                    "replaces": "spec-template",
-                }
-            ]
-        },
-        "tags": ["testing", "example"],
-    }
-
-
-@pytest.fixture
-def pack_dir(temp_dir, valid_pack_data):
-    """Create a complete preset directory structure."""
-    p_dir = temp_dir / "test-pack"
-    p_dir.mkdir()
-
-    # Write manifest
-    manifest_path = p_dir / "preset.yml"
-    with open(manifest_path, 'w') as f:
-        yaml.dump(valid_pack_data, f)
-
-    # Create templates directory
-    templates_dir = p_dir / "templates"
-    templates_dir.mkdir()
-
-    # Write template file
-    tmpl_file = templates_dir / "spec-template.md"
-    tmpl_file.write_text("# Custom Spec Template\n\nThis is a custom template.\n")
-
-    return p_dir
-
-
-@pytest.fixture
-def project_dir(temp_dir):
-    """Create a mock spec-kit project directory."""
-    proj_dir = temp_dir / "project"
-    proj_dir.mkdir()
-
-    # Create .specify directory
-    specify_dir = proj_dir / ".specify"
-    specify_dir.mkdir()
-
-    # Create templates directory with core templates
-    templates_dir = specify_dir / "templates"
-    templates_dir.mkdir()
-
-    # Create core spec-template
-    core_spec = templates_dir / "spec-template.md"
-    core_spec.write_text("# Core Spec Template\n")
-
-    # Create core plan-template
-    core_plan = templates_dir / "plan-template.md"
-    core_plan.write_text("# Core Plan Template\n")
-
-    # Create commands subdirectory
-    commands_dir = templates_dir / "commands"
-    commands_dir.mkdir()
-
-    return proj_dir
+temp_dir = _fixtures.temp_dir
+valid_pack_data = _fixtures.valid_pack_data
+pack_dir = _fixtures.pack_dir
+project_dir = _fixtures.project_dir
 
 
 # ===== PresetManifest Tests =====

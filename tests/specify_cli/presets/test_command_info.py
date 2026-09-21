@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar
 
@@ -9,10 +7,13 @@ import yaml
 
 from specify_cli.presets import (
     PresetCatalog,
-    PresetCatalogEntry,
     PresetManager,
 )
 from tests.conftest import strip_ansi
+from tests.specify_cli.presets._helpers import (
+    default_catalog_entries,
+    seed_catalog,
+)
 
 
 class TestPresetInfoTags:
@@ -25,33 +26,6 @@ class TestPresetInfoTags:
     this with ``str(t) for t in ...`` — presets must match.
     """
 
-    def _seed_catalog(self, project_dir, tags, extra=None):
-        catalog = PresetCatalog(project_dir)
-        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
-        pack = {
-            "name": "Numeric Tags",
-            "description": "Preset with non-string tags",
-            "version": "1.0.0",
-            "tags": tags,
-        }
-        if extra:
-            pack.update(extra)
-        catalog_data = {
-            "schema_version": "1.0",
-            "presets": {
-                "numeric-tags": pack,
-            },
-        }
-        catalog.cache_file.write_text(json.dumps(catalog_data))
-        catalog.cache_metadata_file.write_text(
-            json.dumps(
-                {
-                    "cached_at": datetime.now(UTC).isoformat(),
-                }
-            )
-        )
-        return catalog
-
     def test_info_renders_non_string_tags(self, project_dir):
         from unittest.mock import patch
 
@@ -59,15 +33,8 @@ class TestPresetInfoTags:
 
         from specify_cli import app
 
-        catalog = self._seed_catalog(project_dir, [1, 2])
-        default_only = [
-            PresetCatalogEntry(
-                url=catalog.DEFAULT_CATALOG_URL,
-                name="default",
-                priority=1,
-                install_allowed=True,
-            )
-        ]
+        catalog = seed_catalog(project_dir, [1, 2])
+        default_only = default_catalog_entries(catalog)
 
         with (
             patch.object(Path, "cwd", return_value=project_dir),
@@ -81,16 +48,6 @@ class TestPresetInfoTags:
         plain = strip_ansi(result.output)
         assert "Tags:        1, 2" in plain
 
-    def _default_only(self, catalog):
-        return [
-            PresetCatalogEntry(
-                url=catalog.DEFAULT_CATALOG_URL,
-                name="default",
-                priority=1,
-                install_allowed=True,
-            )
-        ]
-
     def test_info_tolerates_non_list_tags(self, project_dir):
         """``preset info`` must not crash rendering a scalar ``tags:`` value."""
         from unittest.mock import patch
@@ -99,14 +56,14 @@ class TestPresetInfoTags:
 
         from specify_cli import app
 
-        catalog = self._seed_catalog(project_dir, 5)
+        catalog = seed_catalog(project_dir, 5)
 
         with (
             patch.object(Path, "cwd", return_value=project_dir),
             patch.object(
                 PresetCatalog,
                 "get_active_catalogs",
-                return_value=self._default_only(catalog),
+                return_value=default_catalog_entries(catalog),
             ),
         ):
             result = CliRunner().invoke(app, ["preset", "info", "numeric-tags"])

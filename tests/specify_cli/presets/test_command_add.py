@@ -5,7 +5,7 @@ import json
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import ANY, MagicMock
 
 import pytest
 import yaml
@@ -252,6 +252,38 @@ class TestPresetAdd:
         preset_add(preset_id="catalog-preset", from_url=None, dev=None, priority=7)
 
         assert captured == {"priority": 7, "catalog_name": "preset-catalog"}
+
+    def test_preset_add_uses_legacy_dependency_warning_seam(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        """The extracted handler must honor patches at the legacy helper path."""
+        from specify_cli.presets import _commands as preset_commands
+
+        manifest = SimpleNamespace(name="Test Preset", version="1.0.0")
+        warning = MagicMock()
+        monkeypatch.setattr(
+            "specify_cli._require_specify_project", lambda: project_dir
+        )
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "1.0.0")
+        monkeypatch.setattr(
+            PresetManager,
+            "install_from_directory",
+            lambda _self, _path, _version, _priority: manifest,
+        )
+        monkeypatch.setattr(
+            preset_commands,
+            "_warn_unmet_extension_dependencies",
+            warning,
+        )
+
+        preset_commands.preset_add(
+            preset_id=None,
+            from_url=None,
+            dev=str(pack_dir),
+            priority=10,
+        )
+
+        warning.assert_called_once_with(ANY, manifest)
 
     def test_preset_add_from_url_rejects_insecure_redirect(
         self, project_dir, monkeypatch

@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import json
 import warnings
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
 
-from specify_cli.presets import PresetManager, PresetManifest
+from specify_cli.presets import (
+    PresetCatalog,
+    PresetCatalogEntry,
+    PresetManager,
+    PresetManifest,
+)
 
 REPO_ROOT = Path(__file__).parents[3]
 SELF_TEST_PRESET_DIR = REPO_ROOT / "presets" / "self-test"
@@ -24,6 +31,48 @@ CORE_TEMPLATE_NAMES = [
     "checklist-template",
     "constitution-template",
 ]
+
+
+def seed_catalog(
+    project_dir: Path,
+    tags: object,
+    extra: dict[str, object] | None = None,
+) -> PresetCatalog:
+    """Seed cached catalog metadata used by search and info command tests."""
+    catalog = PresetCatalog(project_dir)
+    catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+    pack = {
+        "name": "Numeric Tags",
+        "description": "Preset with non-string tags",
+        "version": "1.0.0",
+        "tags": tags,
+    }
+    if extra:
+        pack.update(extra)
+    catalog.cache_file.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "presets": {"numeric-tags": pack},
+            }
+        )
+    )
+    catalog.cache_metadata_file.write_text(
+        json.dumps({"cached_at": datetime.now(UTC).isoformat()})
+    )
+    return catalog
+
+
+def default_catalog_entries(catalog: PresetCatalog) -> list[PresetCatalogEntry]:
+    """Return the default catalog as the only active catalog."""
+    return [
+        PresetCatalogEntry(
+            url=catalog.DEFAULT_CATALOG_URL,
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+    ]
 
 
 def install_self_test_preset(
