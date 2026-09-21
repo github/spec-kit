@@ -530,6 +530,11 @@ _register_integration_cmds(app)
 from .commands.event import register as _register_event_cmds  # noqa: E402
 _register_event_cmds(app)
 
+
+# ===== Project Configuration Commands =====
+from .commands.config import register as _register_config_cmds  # noqa: E402
+_register_config_cmds(app)
+
 # Re-export selected helpers to preserve the public import surface.
 from .integrations._helpers import (  # noqa: E402
     _clear_init_options_for_integration as _clear_init_options_for_integration,

@@ -29,15 +29,19 @@ def save_init_options(project_path: Path, options: dict[str, Any]) -> None:
     )
 
 
-def load_init_options(project_path: Path) -> dict[str, Any]:
-    """Load persisted init options, returning an empty dict when unavailable."""
+def load_init_options(project_path: Path, *, strict: bool = False) -> dict[str, Any]:
+    """Load init options; strict mode rejects unreadable or invalid existing files."""
     path = project_path / INIT_OPTIONS_FILE
-    if not path.exists():
+    if not path.exists() and not (strict and path.is_symlink()):
         return {}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError, UnicodeError):
+        if strict:
+            raise
         return {}
+    if strict and not isinstance(payload, dict):
+        raise ValueError("Initialization options must be a JSON object")
     return payload if isinstance(payload, dict) else {}
 
 
