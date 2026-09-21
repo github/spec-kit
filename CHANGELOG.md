@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.0.9] - 2026-09-21
+
+### Changed
+
+- fix(integrations): dispatch Amp via execute mode (#4581)
+- feat(bundles): first-party bugfix and assess bundles with bundled workflows (#4504)
+- fix(workflows): reject a non-integer or out-of-range current_step_index in RunState resume (#4325)
+- fix(extensions): ignore non-mapping extension.yml `config` section (#4323)
+- fix(workflows): keep an overlay's `replace` when the same overlay also inserts on that anchor (#4140)
+- Refactor extension CLI command structure (#4641)
+- fix(workflows): exempt bug-fix from PR-count confirmation (#4636)
+- fix: allow community submission archive validation (#4622)
+- fix: clarify converge assessment of completion claims (#4621)
+- fix(workflows): exempt catalog automation from PR-count confirmation (#4607)
+- Update Ralph Loop extension to v1.5.0 (#4593)
+- [extension] Add AgentPay Pre-Pay Audit extension to community catalog (#4611)
+- Update Keel Connect extension to v2.3.1 (#4632)
+- chore(deps): bump the codeql-action group with 2 updates (#4623)
+- Update DocGuard extension to v0.41.6 (#4633)
+- fix: skip codex config.toml rewrite when there's nothing to merge (#4564)
+- fix(agy): support --model, --add-dir workspace, and pre-prompt extra args (#4481)
+- Remove a dead case pattern in common.sh (SC2221/SC2222) (#4605)
+- fix: support SKILL.md rendering for the generic integration (#4562)
+- chore: release 1.0.8, begin 1.0.9.dev0 development (#4619)
+
 ## [1.0.8] - 2026-09-17
 
 ### Changed
