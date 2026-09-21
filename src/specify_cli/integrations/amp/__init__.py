@@ -1,6 +1,7 @@
 """Amp CLI integration."""
 
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 from ..base import MarkdownIntegration
@@ -30,6 +31,7 @@ class AmpIntegration(MarkdownIntegration):
         output_json: bool = True,
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         self.validate_runtime_config(integration_args, integration_options)
         args = [self._resolve_executable()]
