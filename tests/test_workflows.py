@@ -416,6 +416,29 @@ class TestExpressions:
         # …but an intentional empty-string element is still preserved.
         assert evaluate_expression("{{ ['', 'a'] }}", ctx) == ["", "a"]
 
+    def test_list_literal_followed_by_index_is_not_misparsed_as_one_literal(self):
+        """A list literal immediately followed by an index suffix, e.g.
+        ``[1,2,3][1]``, both starts with ``[`` and ends with ``]`` -- the
+        same shape as a genuine single list literal. Naively stripping the
+        outer brackets from ``[1,2,3][1]`` yields ``1,2,3][1``, which then
+        silently evaluates to ``[1, 2, None]`` instead of raising or
+        resolving the index. It must not be misclassified as one literal;
+        falling through to unresolvable (``None``) is safe, unlike silently
+        returning a wrong-looking list.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext()
+        assert evaluate_expression("{{ [1,2,3][1] }}", ctx) is None
+        assert evaluate_expression("{{ [1,2][0] }}", ctx) is None
+        # Genuine list literals -- including ones a bracket-depth scan must
+        # still recognize as ending exactly at the final character -- are
+        # unaffected.
+        assert evaluate_expression("{{ [1, 2, 3] }}", ctx) == [1, 2, 3]
+        assert evaluate_expression("{{ [[1, 2], 3] }}", ctx) == [[1, 2], 3]
+        assert evaluate_expression("{{ ['a]', 'b'] }}", ctx) == ["a]", "b"]
+
     def test_operator_splitting_is_quote_aware(self):
         from specify_cli.workflows.expressions import (
             evaluate_condition,
