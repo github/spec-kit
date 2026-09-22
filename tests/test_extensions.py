@@ -5537,7 +5537,7 @@ class TestExtensionCatalog:
         return ExtensionCatalog(project_dir)
 
     def _inject_github_config(self, monkeypatch, token_env="GH_TOKEN"):
-        from tests.auth_helpers import inject_github_config
+        from tests.specify_cli.authentication.helpers import inject_github_config
         inject_github_config(monkeypatch, token_env)
 
     def test_make_request_no_token_no_auth_header(self, temp_dir, monkeypatch):

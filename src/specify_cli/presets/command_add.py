@@ -217,7 +217,7 @@ def preset_add(
             with tempfile.TemporaryDirectory() as tmpdir:
                 archive_path = Path(tmpdir) / "preset.archive"
                 try:
-                    from specify_cli._github_http import (
+                    from specify_cli.authentication.github_http import (
                         resolve_github_release_asset_api_url,
                     )
                     from specify_cli.authentication.http import github_provider_hosts

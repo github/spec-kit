@@ -1,4 +1,4 @@
-"""Tests for the authentication provider registry and config-driven HTTP helpers.
+"""Tests for the authentication domain registry and config-driven HTTP helpers.
 
 Covers:
 - Config loading (auth.json parsing, validation, permission warning)

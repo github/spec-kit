@@ -1,4 +1,4 @@
-"""Shared GitHub HTTP request helpers.
+"""GitHub-specific HTTP request helpers for the authentication domain.
 
 Provides ``build_github_request()`` for attaching GITHUB_TOKEN / GH_TOKEN
 credentials to requests targeting GitHub-hosted domains, and
@@ -107,7 +107,7 @@ def resolve_github_release_asset_api_url(
     Args:
         download_url: The URL to resolve.
         open_url_fn: A callable compatible with
-            ``specify_cli.authentication.http.open_url`` used for the
+            :func:`specify_cli.authentication.http.open_url` used for the
             authenticated release-metadata lookup.
         timeout: Per-request timeout in seconds.
         github_hosts: Host patterns to treat as GitHub Enterprise Server.
@@ -117,7 +117,7 @@ def resolve_github_release_asset_api_url(
     import json
     import urllib.error
 
-    from specify_cli._download_security import read_response_limited
+    from .._download_security import read_response_limited
 
     # Accessing ``.hostname`` (like ``.port`` below) raises ValueError on a
     # malformed authority, e.g. an invalid bracketed IPv6 host

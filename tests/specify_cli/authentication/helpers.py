@@ -1,4 +1,4 @@
-"""Shared test helpers for authentication config injection."""
+"""Shared authentication-domain test helpers."""
 
 from __future__ import annotations
 

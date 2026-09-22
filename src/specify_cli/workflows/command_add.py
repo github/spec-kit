@@ -303,7 +303,7 @@ def workflow_add(
                 cli.console.print("Cancelled")
                 raise cli.typer.Exit(0)
 
-        from specify_cli._github_http import (
+        from specify_cli.authentication.github_http import (
             resolve_github_release_asset_api_url as _resolve_gh_asset,
         )
         from specify_cli.authentication.http import (
