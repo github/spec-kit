@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from specify_cli import app
 
-from tests.self_upgrade_helpers import (
+from tests.specify_cli.self_upgrade_helpers import (
     mock_urlopen_response,
     route_opener_open_through_urlopen,  # noqa: F401 (autouse fixture)
     runner,

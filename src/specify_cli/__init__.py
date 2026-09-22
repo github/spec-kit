@@ -70,10 +70,10 @@ from ._utils import (
 )
 from ._version import (
     GITHUB_API_LATEST as GITHUB_API_LATEST,
-    self_app as _self_app,
-    self_check as self_check,
-    self_upgrade as self_upgrade,
 )
+from .selfs import self_app as _self_app
+from .selfs import self_check as self_check
+from .selfs import self_upgrade as self_upgrade
 from ._agent_config import (
     AGENT_CONFIG as AGENT_CONFIG,
     DEFAULT_INIT_INTEGRATION as DEFAULT_INIT_INTEGRATION,
