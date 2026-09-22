@@ -1813,8 +1813,10 @@ class WorkflowEngine:
                     output, item_alias_records = run_item(
                         item_idx, context, local_only=parent_local_only
                     )
-                    if parent_local_only and parent_alias_records is not None:
-                        parent_alias_records.update(item_alias_records)
+if parent_local_only:
+    context.steps.update(item_alias_records)
+    if parent_alias_records is not None:
+        parent_alias_records.update(item_alias_records)
                     results.append(output)
                     if state.status in halting:
                         break
