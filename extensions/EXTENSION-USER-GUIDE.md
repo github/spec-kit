@@ -202,6 +202,13 @@ Jira Integration (v1.0.0)
 
 When an extension is removed, its corresponding skills are also cleaned up automatically. Pre-existing skills that were manually customized are never overwritten.
 
+For portable cross-command calls, extension authors should use tokens such as
+`__SPECKIT_COMMAND_PLAN__` or `__SPECKIT_COMMAND_MEMORY-MD_PREPARE-CONTEXT__`.
+These resolve to the selected integration's invocation syntax. When generating
+skills, legacy literal calls such as `/speckit.memory-md.prepare-context` are
+also converted (for example, to `$speckit-memory-md-prepare-context` for Codex).
+Canonical command IDs and file paths retain their original spelling.
+
 ---
 
 ## Using Extensions
