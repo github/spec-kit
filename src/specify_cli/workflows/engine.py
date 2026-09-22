@@ -948,7 +948,7 @@ class WorkflowEngine:
         ValueError:
             If the workflow YAML is invalid.
         """
-        from .overlays import WorkflowResolver
+        from .overlay import WorkflowResolver
 
         path = Path(source).expanduser()
 

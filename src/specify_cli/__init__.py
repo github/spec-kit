@@ -592,12 +592,11 @@ _register_workflow_cmds(app)
 # Re-exported at the package root because bundler primitives import these
 # handlers via ``from specify_cli import workflow_*`` (and tests monkeypatch
 # ``specify_cli.workflow_add``). Keep these names resolvable from the root.
-from .workflows._commands import (  # noqa: E402,F401
-    workflow_add,
-    workflow_remove,
-    workflow_step_add,
-    workflow_step_remove,
-)
+from .workflows.command_add import workflow_add  # noqa: E402,F401
+from .workflows.command_remove import workflow_remove  # noqa: E402,F401
+from .workflows.step.command_add import workflow_step_add  # noqa: E402,F401
+from .workflows.step.command_remove import workflow_step_remove  # noqa: E402,F401
+
 
 def main():
     # On Windows the default stdout/stderr code page (e.g. cp1252) cannot encode

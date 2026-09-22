@@ -7,14 +7,14 @@ from typing import Any
 
 import pytest
 
-from specify_cli.workflows.overlays.merge import (
+from specify_cli.workflows.overlay.merge import (
     ComposedStep,
     OverlayLayer,
     find_step,
     merge_steps,
     validate_edits,
 )
-from specify_cli.workflows.overlays.schema import Overlay, OverlayEdit
+from specify_cli.workflows.overlay.schema import Overlay, OverlayEdit
 
 
 def _step(id: str, **kwargs: Any) -> dict[str, Any]:  # noqa: A002

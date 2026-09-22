@@ -1,4 +1,4 @@
-"""Workflow overlay resolver — composes installed workflows from layers."""
+"""Workflow overlay resolver."""
 
 from __future__ import annotations
 
