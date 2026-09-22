@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.0.10] - 2026-09-22
+
+### Changed
+
+- fix(workflows): stop list-literal-then-index expressions silently corrupting (#4572)
+- chore: refactor self command domain (#4685)
+- fix(integrations): stop frontmatter injection gluing onto a missing trailing newline (#4570)
+- chore: refactor event domain layout (#4683)
+- Fix #4345 (2/4): patch-bump drifted bundled extension versions and sync the catalog (#4394)
+- fix(workflows): validate persisted step result shapes (#4399)
+- chore: organize authentication domain (#4678)
+- feat: report the OpenSSL runtime in `specify version` (#4556)
+- fix(agy): enhance Antigravity CLI compatibility and execution flags (#4612)
+- refactor: organize workflow CLI commands (#4673)
+- docs: add star history chart (#4672)
+- refactor: organize artifact CLI commands (#4671)
+- fix(workflows): refuse `overlay add` that would overwrite a different overlay (#4141)
+- refactor: reorganize bundle CLI commands (#4663)
+- refactor: organize integration CLI commands (#4662)
+- refactor: organize preset CLI commands (#4657)
+- fix(integrations): declare OpencodeIntegration multi_install_safe (#4620) (#4625)
+- [preset] Update Autonomous Run Governance preset to v0.4.4 (#4586)
+- Add `preset update` convenience wrapper (#4599)
+- chore: release 1.0.9, begin 1.0.10.dev0 development (#4658)
+
 ## [1.0.9] - 2026-09-21
 
 ### Changed
