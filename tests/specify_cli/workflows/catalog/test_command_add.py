@@ -28,3 +28,22 @@ def test_workflow_catalog_add_persists_named_source(project_dir, monkeypatch):
         and config["url"] == "https://example.com/workflows.json"
         for config in configs
     )
+
+
+def test_workflow_catalog_add_reports_unchanged(project_dir, monkeypatch):
+    monkeypatch.chdir(project_dir)
+    args = [
+        "workflow",
+        "catalog",
+        "add",
+        "https://example.com/workflows.json",
+        "--name",
+        "local",
+    ]
+
+    runner = CliRunner()
+    assert runner.invoke(app, args).exit_code == 0
+    unchanged = runner.invoke(app, args)
+
+    assert unchanged.exit_code == 0, unchanged.output
+    assert "already configured" in unchanged.output

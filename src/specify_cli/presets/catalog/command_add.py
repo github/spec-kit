@@ -75,9 +75,19 @@ def preset_catalog_add(
     safe_name = _escape_markup(str(name))
     safe_url = _escape_markup(str(url))
 
+    entry = {
+        "name": name,
+        "url": url,
+        "priority": priority,
+        "install_allowed": install_allowed,
+        "description": description,
+    }
+
     # Check for duplicate name
     for existing in catalogs:
         if isinstance(existing, dict) and existing.get("name") == name:
+            if existing == entry:
+                return
             console.print(
                 f"[yellow]Warning:[/yellow] A catalog named '{safe_name}' already exists."
             )
@@ -86,15 +96,7 @@ def preset_catalog_add(
             )
             raise typer.Exit(1)
 
-    catalogs.append(
-        {
-            "name": name,
-            "url": url,
-            "priority": priority,
-            "install_allowed": install_allowed,
-            "description": description,
-        }
-    )
+    catalogs.append(entry)
 
     config["catalogs"] = catalogs
     config_path.write_text(

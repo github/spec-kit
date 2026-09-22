@@ -27,6 +27,13 @@ def test_catalog_add_and_remove(project: Path):
         app, ["bundle", "catalog", "add", str(catalog), "--id", "local"]
     )
     assert added.exit_code == 0, added.output
+    assert "Added catalog" in added.output
+
+    unchanged = runner.invoke(
+        app, ["bundle", "catalog", "add", str(catalog), "--id", "local"]
+    )
+    assert unchanged.exit_code == 0, unchanged.output
+    assert "already configured" in unchanged.output
 
     listed = runner.invoke(app, ["bundle", "catalog", "list"])
     assert "local" in listed.output

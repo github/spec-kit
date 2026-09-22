@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Optional
 
 import typer
+from rich.markup import escape as _rich_escape
 
 from ..._console import console
 from . import catalog_app
@@ -32,11 +33,17 @@ def integration_catalog_add(
     normalized_url = url.strip()
 
     try:
-        catalog.add_catalog(normalized_url, name)
+        status = catalog.add_catalog(normalized_url, name)
     except IntegrationCatalogError as exc:
         # Covers both URL validation (base class) and config-file validation
         # (IntegrationValidationError subclass).
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
 
-    console.print(f"[green]✓[/green] Catalog source added: {normalized_url}")
+    safe_url = _rich_escape(normalized_url)
+    if status == "unchanged":
+        console.print(
+            f"[green]✓[/green] Catalog source already configured: {safe_url}"
+        )
+    else:
+        console.print(f"[green]✓[/green] Catalog source added: {safe_url}")

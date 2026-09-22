@@ -23,6 +23,28 @@ from tests.integrations.test_cli import _normalize_cli_output
 class TestExtensionCatalogAddCLI:
     """CLI tests for ``specify extension catalog add``."""
 
+    def test_catalog_add_is_idempotent_for_identical_entry(self, tmp_path):
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        args = [
+            "extension",
+            "catalog",
+            "add",
+            "https://example.com/catalog.json",
+            "--name",
+            "community",
+        ]
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            assert runner.invoke(app, args).exit_code == 0
+            config_path = project_dir / ".specify" / "extension-catalogs.yml"
+            original = config_path.read_bytes()
+            assert runner.invoke(app, args).exit_code == 0
+            assert config_path.read_bytes() == original
+            assert runner.invoke(app, [*args, "--priority", "11"]).exit_code == 1
+
     def test_catalog_add_escapes_url_markup(self, tmp_path):
         """Catalog add should render user-supplied URLs literally."""
         from specify_cli import app
