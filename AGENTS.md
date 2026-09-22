@@ -8,6 +8,14 @@
 
 The toolkit supports multiple AI coding assistants, allowing teams to use their preferred tools while maintaining consistent project structure and development practices.
 
+## Repository Design References
+
+Before adding or reorganizing Specify CLI commands, read
+[Specify CLI Command Architecture](design/cli.md). It defines command-module
+naming, private command phases, nested command groups, registration ownership,
+mirrored tests, and the rationale for making the CLI structure predictable for
+both humans and coding agents.
+
 ---
 
 ## Quickstart — Add a New Integration in 5 Steps

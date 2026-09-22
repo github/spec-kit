@@ -32,7 +32,7 @@ def test_script_type_choices_includes_python():
 
 
 def test_workflow_init_valid_script_types_includes_python():
-    from specify_cli.workflows.steps.init import VALID_SCRIPT_TYPES
+    from specify_cli.workflows.step.init import VALID_SCRIPT_TYPES
     assert "py" in VALID_SCRIPT_TYPES
     # Negative: an unknown variant is not accepted.
     assert "rb" not in VALID_SCRIPT_TYPES

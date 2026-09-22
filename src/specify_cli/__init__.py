@@ -311,6 +311,15 @@ def resolve_active_skills_dir(project_root: Path) -> Path | None:
     if not isinstance(agent, str) or not agent:
         return None
 
+    # generic's output directory is a runtime --commands-dir CLI option, not
+    # a static per-agent folder (its config["folder"] is None), so there is
+    # no directory extension/preset skill registration could safely resolve
+    # here even when the project was scaffolded with --skills. Registration
+    # stays disabled for generic in both layouts, matching flat-mode generic
+    # (which never persists ai_skills=True and so never reaches this point).
+    if agent == "generic":
+        return None
+
     ai_skills_enabled = _is_ai_skills_enabled(opts)
     if not ai_skills_enabled and agent != "kimi":
         return None
@@ -489,6 +498,18 @@ def version(
     info_table.add_row("Platform", platform.system())
     info_table.add_row("Architecture", platform.machine())
     info_table.add_row("OS Version", platform.version())
+    # The OpenSSL runtime the interpreter actually loaded. HTTPS failure
+    # reports (#4433) hinge on which OpenSSL is in play, and on Windows it is
+    # not obvious from the outside, so surface it here. An interpreter built
+    # without the ssl extension skips the row rather than failing the command.
+    try:
+        import ssl
+
+        openssl_version = getattr(ssl, "OPENSSL_VERSION", "")
+    except ImportError:
+        openssl_version = ""
+    if openssl_version:
+        info_table.add_row("OpenSSL", openssl_version)
 
     panel = Panel(
         info_table,
@@ -569,8 +590,8 @@ _register_artifact_cmds(app)
 
 # ===== Bundle Commands =====
 
-# Bundler subcommand group (specify bundle ...) — see commands/bundle/.
-from .commands.bundle import register as _register_bundle_cmds  # noqa: E402
+# Bundle subcommand group (specify bundle ...) — see bundles/_commands.py.
+from .bundles._commands import register as _register_bundle_cmds  # noqa: E402
 _register_bundle_cmds(app)
 
 
@@ -583,12 +604,11 @@ _register_workflow_cmds(app)
 # Re-exported at the package root because bundler primitives import these
 # handlers via ``from specify_cli import workflow_*`` (and tests monkeypatch
 # ``specify_cli.workflow_add``). Keep these names resolvable from the root.
-from .workflows._commands import (  # noqa: E402,F401
-    workflow_add,
-    workflow_remove,
-    workflow_step_add,
-    workflow_step_remove,
-)
+from .workflows.command_add import workflow_add  # noqa: E402,F401
+from .workflows.command_remove import workflow_remove  # noqa: E402,F401
+from .workflows.step.command_add import workflow_step_add  # noqa: E402,F401
+from .workflows.step.command_remove import workflow_step_remove  # noqa: E402,F401
+
 
 def main():
     # On Windows the default stdout/stderr code page (e.g. cp1252) cannot encode

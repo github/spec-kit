@@ -11,8 +11,8 @@ import yaml
 from specify_cli.workflows import BUILTIN_STEP_TYPES, get_step_type
 from specify_cli.workflows.base import RunStatus, StepContext, StepStatus
 from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine, validate_workflow
-from specify_cli.workflows.overlays import WorkflowResolver
-from specify_cli.workflows.steps.slot import SlotStep
+from specify_cli.workflows.overlay import WorkflowResolver
+from specify_cli.workflows.step.slot import SlotStep
 
 
 def _workflow_data(steps: list[dict[str, object]]) -> dict[str, object]:

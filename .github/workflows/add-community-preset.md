@@ -10,11 +10,18 @@ on:
 
 tools:
   edit:
-  bash: ["echo", "cat", "head", "tail", "grep", "wc", "sort", "python3", "jq", "date"]
+  bash: ["echo", "cat", "head", "tail", "grep", "wc", "sort", "python3", "jq", "date", "curl"]
   github:
     toolsets: [issues, repos]
     min-integrity: none
   web-fetch:
+
+network:
+  allowed:
+    - defaults
+    - github.com
+    - codeload.github.com
+    - release-assets.githubusercontent.com
 
 permissions:
   contents: read
@@ -186,6 +193,13 @@ preset** — not just any file named `README.md`, and not a product/framework pi
     check when the field is absent.
   - Verify a GitHub release exists for that tag.
 
+Use `curl` for binary downloads, follow HTTPS redirects with
+`--location --proto '=https' --proto-redir '=https'`, and bound the request with
+`--max-time 60`. Save the archive under `/tmp/gh-aw/` and inspect the final
+HTTP status with `--write-out '%{http_code}'`. A blocked or failed download
+must not count as a passed check; repository/release metadata is not a
+substitute for fetching the archive. Never execute downloaded content.
+
 ### 2f. Submission checklists
 - Confirm that all required checkboxes in the Testing Checklist and Submission
   Requirements sections are checked (`[x]`)
@@ -309,6 +323,11 @@ Find the existing row and update any changed fields in-place.
 ## Step 6 — Create Pull Request
 
 Create a pull request with the changes. Use this branch naming convention:
+
+This repository-owned gh-aw maintenance workflow does not perform the contributor
+open-PR count check or request confirmation. After successful validation and
+allowed catalog/docs file updates, emit the configured draft `create_pull_request`
+safe output regardless of the submitter's or filing account's open PR count.
 
 - **New preset:** `add-<preset-id>-preset`
 - **Update:** `update-<preset-id>-preset`

@@ -937,6 +937,115 @@ class TestTomlUnreadableConfig:
         assert config_path.read_bytes() == user_bytes
 
 
+class TestTomlNoOpMerge:
+    """#4563: installing with no resolved events must leave a pre-existing,
+    Specify-unowned config.toml byte-for-byte untouched.
+
+    This is the real ``specify integration install codex`` repro: a project
+    with no Codex-specific event hooks configured resolves to ``events={}``
+    (see ``resolve_events``), which routes through
+    ``install_integration_events``'s empty-map branch into
+    ``_remove_native_event_hooks`` -> ``_remove_toml_entries`` — not through
+    ``_merge_toml_fragment``, which only runs when there is at least one
+    supported, non-empty event to merge. ``_remove_toml_entries`` computed
+    ``cleaned`` via a regex strip and then unconditionally called
+    ``dst.write_text(cleaned, ...)`` even when ``cleaned == existing`` (no
+    Specify-marked blocks present), which (through Python's text-mode
+    newline translation on read/write) silently changed the file's
+    line-ending convention on Windows — turning a clean install into a
+    spurious git diff with no semantic change.
+    """
+
+    def test_no_events_leaves_existing_config_untouched(self, tmp_path):
+        from specify_cli.integrations.codex import CodexIntegration
+
+        integration = CodexIntegration()
+        manifest = _claude_manifest(tmp_path)
+        config_path = tmp_path / ".codex" / "config.toml"
+        config_path.parent.mkdir(parents=True)
+        original_bytes = b"project_doc_max_bytes = 200000"
+        config_path.write_bytes(original_bytes)
+        mtime_before = config_path.stat().st_mtime_ns
+
+        # The real no-extensions-installed shape: resolve_events() returns an
+        # empty map when no built-in defaults, extensions, or overrides
+        # contribute any handlers.
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {},
+        )
+
+        assert config_path.read_bytes() == original_bytes
+        # An unconditional rewrite can reproduce identical bytes on Linux
+        # (text-mode newline translation is a no-op when the platform line
+        # separator is already "\n"), so byte equality alone doesn't catch
+        # the defect here; assert the file was never even opened for
+        # writing, which is what actually mangles line endings on Windows.
+        assert config_path.stat().st_mtime_ns == mtime_before
+        manifest.record_existing.assert_not_called()
+
+    def test_comments_only_config_untouched_on_teardown(self, tmp_path):
+        """The no-op guard must run before the empty/comments-only deletion
+        branch: a comments-only file has no Specify-owned blocks to strip,
+        so ``cleaned == existing`` and the file must be left in place, not
+        unlinked as if it were an empty stub."""
+        from specify_cli.integrations.codex import CodexIntegration
+
+        integration = CodexIntegration()
+        manifest = _claude_manifest(tmp_path)
+        config_path = tmp_path / ".codex" / "config.toml"
+        config_path.parent.mkdir(parents=True)
+        original_bytes = b"# managed by the user, not Specify\n# second comment line\n"
+        config_path.write_bytes(original_bytes)
+        mtime_before = config_path.stat().st_mtime_ns
+
+        install_integration_events(integration, tmp_path, manifest, {})
+
+        assert config_path.exists(), "comments-only user config was deleted"
+        assert config_path.read_bytes() == original_bytes
+        assert config_path.stat().st_mtime_ns == mtime_before
+        manifest.record_existing.assert_not_called()
+
+    def test_blank_config_untouched_on_teardown(self, tmp_path):
+        """Same as above for a whitespace-only pre-existing file."""
+        from specify_cli.integrations.codex import CodexIntegration
+
+        integration = CodexIntegration()
+        manifest = _claude_manifest(tmp_path)
+        config_path = tmp_path / ".codex" / "config.toml"
+        config_path.parent.mkdir(parents=True)
+        original_bytes = b"\n\n"
+        config_path.write_bytes(original_bytes)
+        mtime_before = config_path.stat().st_mtime_ns
+
+        install_integration_events(integration, tmp_path, manifest, {})
+
+        assert config_path.exists(), "blank user config was deleted"
+        assert config_path.read_bytes() == original_bytes
+        assert config_path.stat().st_mtime_ns == mtime_before
+        manifest.record_existing.assert_not_called()
+
+    def test_owned_only_config_still_deleted_on_teardown(self, tmp_path):
+        """The unchanged-content guard must not defeat the existing cleanup:
+        when the file contains only a Specify-owned block that teardown
+        actually strips, ``cleaned != existing`` and the resulting
+        comments/whitespace-only remainder is still deleted (#14)."""
+        from specify_cli.integrations.codex import CodexIntegration
+
+        integration = CodexIntegration()
+        manifest = _claude_manifest(tmp_path)
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"pre_tool_use": [{"command": "speckit.tdd.validate"}]},
+        )
+        config_path = tmp_path / ".codex" / "config.toml"
+        assert config_path.is_file()
+
+        remove_integration_events(integration, tmp_path, manifest)
+
+        assert not config_path.exists()
+
+
 # -- Opencode TS Plugin merging ---------------------------------------------
 
 class TestOpencodePluginMerging:
@@ -1328,10 +1437,11 @@ class TestCommandRunner:
         argv = _resolve_event_command_argv(template, tmp_path, None)
         assert argv is None
 
-    def test_ps_variant_prefixed_with_powershell_launcher(self, tmp_path):
+    def test_ps_variant_prefixed_with_powershell_launcher(self, tmp_path, monkeypatch):
         """S6: the ps variant prefixes argv with pwsh/powershell -File so
         subprocess.run(shell=False) can execute the .ps1 script."""
         from specify_cli.events import _resolve_event_command_argv
+        import shutil as _shutil
 
         cmd_dir = tmp_path / ".specify" / "templates" / "commands"
         cmd_dir.mkdir(parents=True)
@@ -1346,6 +1456,13 @@ class TestCommandRunner:
         ps_dir = tmp_path / ".specify" / "scripts" / "powershell"
         ps_dir.mkdir(parents=True)
         (ps_dir / "boot.ps1").write_text("exit 0\n", encoding="utf-8")
+
+        # The argv contract under test does not depend on a real PowerShell
+        # install; pin the launcher (mirroring the no-launcher sibling below)
+        # so the test runs on platforms without pwsh/powershell on PATH.
+        monkeypatch.setattr(
+            _shutil, "which", lambda name: "/usr/bin/pwsh" if name == "pwsh" else None
+        )
 
         argv = _resolve_event_command_argv(cmd_dir / "boot.md", tmp_path, None)
         assert argv is not None
@@ -2879,7 +2996,7 @@ class TestDispatcherManifestClaimDroppedOnRetain:
 
         # Simulate the upgrade path: a fresh manifest (like
         # IntegrationManifest(key, project_root, version=...) in
-        # _migrate_commands) that never recorded the dispatcher.
+        # integration upgrade path) that never recorded the dispatcher.
         fresh = IntegrationManifest(claude.key, tmp_path, version="test")
         assert EVENTS_DISPATCHER_REL not in fresh.files
         install_integration_events(claude, tmp_path, fresh, {})

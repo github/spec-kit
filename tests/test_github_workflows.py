@@ -56,6 +56,12 @@ COMMUNITY_SUBMISSION_WORKFLOWS = (
         "Do not modify any other files",
     ),
 )
+REPOSITORY_OWNED_DRAFT_PR_EXEMPTION = (
+    "This repository-owned gh-aw maintenance workflow does not perform the contributor "
+    "open-PR count check or request confirmation. After successful validation and "
+    "allowed catalog/docs file updates, emit the configured draft `create_pull_request` "
+    "safe output regardless of the submitter's or filing account's open PR count."
+)
 
 
 def _publish_workflow_steps() -> dict[str, dict[str, object]]:
@@ -440,8 +446,15 @@ def test_community_upgrade_preserves_activation_and_permission_guards(kind):
 def test_community_upgrade_preserves_scoped_draft_pr_contract(
     kind, label, catalog_file, docs_file, instruction
 ):
-    source_text, _, source, compiled = _agentic_workflow(f"add-community-{kind}")
+    source_text, compiled_text, source, compiled = _agentic_workflow(
+        f"add-community-{kind}"
+    )
     assert instruction in source_text
+    assert REPOSITORY_OWNED_DRAFT_PR_EXEMPTION in " ".join(source_text.split())
+    assert (
+        f"{{{{#runtime-import .github/workflows/add-community-{kind}.md}}}}"
+        in compiled_text
+    )
     outputs = _safe_output_config(compiled)
     expected_outputs = {
         "add_comment", "add_labels", "create_pull_request", "noop",
@@ -580,6 +593,98 @@ def _frontmatter(source_text: str) -> dict:
         raise AssertionError("workflow source is missing YAML frontmatter")
     _, frontmatter, _ = source_text.split("---", 2)
     return yaml.safe_load(frontmatter)
+
+
+def _community_submission_agent_run(workflow: str) -> str:
+    compiled = WORKFLOWS_DIR / f"add-community-{workflow}.lock.yml"
+    steps = yaml.safe_load(compiled.read_text(encoding="utf-8"))["jobs"]["agent"][
+        "steps"
+    ]
+    return next(
+        step["run"]
+        for step in steps
+        if step["name"] == "Execute GitHub Copilot CLI"
+    )
+
+
+def _community_submission_harness_command(workflow: str) -> str:
+    agent_run = _community_submission_agent_run(workflow)
+    lines = [
+        line
+        for line in agent_run.splitlines()
+        if "copilot_harness.cjs" in line and not line.lstrip().startswith("#")
+    ]
+    assert len(lines) == 1, (
+        f"{workflow} must have exactly one executable Copilot harness command"
+    )
+    return lines[0]
+
+
+def test_community_submission_archive_fetch_tool_is_allowed():
+    """Archive checks must not require an interactive curl permission grant."""
+    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+        source = WORKFLOWS_DIR / f"add-community-{workflow}.md"
+        bash_tools = _frontmatter(source.read_text(encoding="utf-8"))["tools"]["bash"]
+
+        assert "curl" in bash_tools, f"{workflow} cannot fetch binary archives"
+        assert "*" not in bash_tools
+        harness_command = _community_submission_harness_command(workflow)
+        assert "shell(curl:*)" in harness_command
+        assert "--allow-all-tools" not in harness_command
+
+
+def test_community_submission_archive_redirect_hosts_are_allowed():
+    """Each accepted ZIP URL pattern must work through the restricted firewall."""
+    download_hosts_by_workflow = {
+        "extension": {
+            "github.com",
+            "codeload.github.com",
+            "release-assets.githubusercontent.com",
+        },
+        "preset": {
+            "github.com",
+            "codeload.github.com",
+            "release-assets.githubusercontent.com",
+        },
+        "bundle": {
+            "github.com",
+            "release-assets.githubusercontent.com",
+        },
+    }
+    all_download_hosts = set().union(*download_hosts_by_workflow.values())
+    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+        source = WORKFLOWS_DIR / f"add-community-{workflow}.md"
+        config = _frontmatter(source.read_text(encoding="utf-8"))
+        download_hosts = download_hosts_by_workflow[workflow]
+
+        assert set(config.get("network", {}).get("allowed", [])) == {
+            "defaults",
+            *download_hosts,
+        }, f"{workflow} must allow only the required download hosts plus defaults"
+        agent_run = _community_submission_agent_run(workflow)
+        for host in all_download_hosts:
+            if host in download_hosts:
+                assert f'\\"{host}\\"' in agent_run
+            else:
+                assert f'\\"{host}\\"' not in agent_run
+
+
+def test_community_submission_archive_fetch_requires_direct_evidence():
+    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+        source_text = (WORKFLOWS_DIR / f"add-community-{workflow}.md").read_text(
+            encoding="utf-8"
+        )
+
+        assert "Use `curl` for binary downloads" in source_text
+        assert "--location --proto '=https' --proto-redir '=https'" in source_text
+        assert "`--max-time 60`" in source_text
+        assert "`--write-out '%{http_code}'`" in source_text
+        assert (
+            "A blocked or failed download\n"
+            "must not count as a passed check; repository/release metadata is not a\n"
+            "substitute for fetching the archive."
+        ) in source_text
+        assert "Never execute downloaded content." in source_text
 
 
 def test_community_submission_threat_detection_is_fail_closed():
@@ -845,6 +950,20 @@ def test_bug_workflow_upgrade_preserves_runtime_and_negative_guards(name):
     } == expected_actions
 
 
+def test_bug_fix_exempts_maintenance_from_pr_count_confirmation():
+    source_text, compiled_text, _, _ = _agentic_workflow("bug-fix")
+    publication = source_text.split("## Step 6", 1)[1].split("## Step 7", 1)[0]
+    exemption = (
+        "This repository-owned gh-aw maintenance workflow does not perform the "
+        "contributor open-PR count check or request confirmation. After completing "
+        "the assessment-scoped remediation and local checks above, emit the "
+        "configured draft `create_pull_request` safe output regardless of the "
+        "submitter's or filing account's open PR count."
+    )
+    assert exemption in " ".join(publication.split())
+    assert "{{#runtime-import .github/workflows/bug-fix.md}}" in compiled_text
+
+
 def test_bug_fix_upgrade_preserves_scoped_draft_pr_contract():
     source_text, _, source, compiled = _agentic_workflow("bug-fix")
     create_pr = _safe_output_config(compiled)["create_pull_request"]
@@ -891,6 +1010,10 @@ def test_bug_fix_upgrade_preserves_scoped_draft_pr_contract():
         "**Stay within the files the assessment named**",
         "record it explicitly in the PR body under **Deviations from Assessment**",
         "Use the `create-pull-request` safe output to open a **draft** PR",
+        (
+            "The harness handles branching, committing, and pushing from the "
+            "working tree you edited — you do not run `git` yourself."
+        ),
         "Use `Refs` (not `Closes`)",
         "Add **exactly one** status label per run when the label exists",
     ):

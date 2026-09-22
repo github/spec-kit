@@ -4,6 +4,10 @@ Extension Manager for Spec Kit
 Handles installation, removal, and management of Spec Kit extensions.
 Extensions are modular packages that add commands and functionality to spec-kit
 without bloating the core framework.
+
+CLI handlers live in ``command_*.py`` modules, registered through
+``_commands.py``. Command-private phases use ``_command_<name>_*.py``;
+nested catalog handlers live under ``catalog/``.
 """
 
 from __future__ import annotations
@@ -3789,11 +3793,12 @@ class ExtensionCatalog(CatalogStackBase):
     ) -> Optional[str]:
         """Resolve a GitHub release asset URL to its API asset URL.
 
-        Delegates to the shared helper in :mod:`specify_cli._github_http`,
+        Delegates to the shared helper in
+        :mod:`specify_cli.authentication.github_http`,
         passing the ``github`` provider hosts from ``auth.json`` so GitHub
         Enterprise Server release assets resolve via ``/api/v3``.
         """
-        from specify_cli._github_http import resolve_github_release_asset_api_url
+        from specify_cli.authentication.github_http import resolve_github_release_asset_api_url
         from specify_cli.authentication.http import github_provider_hosts
 
         return resolve_github_release_asset_api_url(
@@ -4568,7 +4573,25 @@ class ConfigManager:
             return {}
 
         manifest_data = self._load_yaml_config(manifest_path)
-        return manifest_data.get("config", {}).get("defaults", {})
+        # _load_yaml_config already coerces a non-mapping *root* to {}, but
+        # extension.yml's top-level 'config' key is unvalidated by
+        # ExtensionManifest (only 'provides.config' is checked there -- a
+        # different field). A manifest author's ``config: []`` or
+        # ``config: "oops"`` therefore reaches here as a dict whose 'config'
+        # value is a list/str, and the unguarded chained .get() raised a bare
+        # AttributeError ('list'/'str' object has no attribute 'get') instead
+        # of degrading like every other malformed-shape config source in this
+        # class. That crash was swallowed by should_execute_hook's blanket
+        # except, so a hook's 'config.x is set' condition silently and
+        # permanently evaluated to False for the extension -- mirroring the
+        # 'jira-config.yml' non-mapping-root case TestConfigManagerNonMappingYaml
+        # already covers for _get_project_config/_get_local_config, one level
+        # deeper in the manifest's own 'config' section.
+        config_section = manifest_data.get("config", {})
+        if not isinstance(config_section, dict):
+            return {}
+        defaults = config_section.get("defaults", {})
+        return defaults if isinstance(defaults, dict) else {}
 
     def _get_project_config(self) -> Dict[str, Any]:
         """Get project-level configuration.
