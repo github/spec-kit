@@ -24,11 +24,67 @@ def _src(source_id, url, priority=1, policy="install-allowed"):
     )
 
 
-def test_builtin_catalog_resolves_offline():
+def test_builtin_default_catalog_resolves_first_party_bundles_offline():
     fetcher = make_catalog_fetcher(allow_network=False)
     stack = CatalogStack([_src("default", "builtin://default")], fetcher)
-    # Built-in default ships empty; search works without network and returns [].
-    assert stack.search() == []
+    # Built-in default now ships the first-party bundles bugfix and assess.
+    results = {r.entry.id: r for r in stack.search()}
+    assert set(results) == {"bugfix", "assess"}
+    assert all(r.source.id == "default" and r.install_allowed for r in results.values())
+
+    resolved = stack.resolve("bugfix")
+    assert resolved.entry.id == "bugfix"
+    assert resolved.install_allowed is True
+
+    resolved = stack.resolve("assess")
+    assert resolved.entry.id == "assess"
+    assert resolved.install_allowed is True
+
+
+@pytest.mark.parametrize(
+    "source_id, builtin_id, builtin_priority, project_priority",
+    [
+        pytest.param("default", "builtin://default", 1, 10, id="default"),
+        pytest.param("community", "builtin://community", 20, 30, id="community"),
+    ],
+)
+def test_builtin_catalog_failure_does_not_block_lower_priority_source(
+    monkeypatch, source_id, builtin_id, builtin_priority, project_priority
+):
+    from specify_cli.bundler.services import adapters
+
+    def fail_http_get_json(source_id, url):
+        raise adapters._CatalogUnavailable("repository unavailable")
+
+    monkeypatch.setattr(
+        "specify_cli.bundler.services.adapters._http_get_json", fail_http_get_json
+    )
+    monkeypatch.setattr(
+        "specify_cli.bundler.services.adapters._load_packaged_catalog",
+        lambda filename: {"schema_version": "1.0", "bundles": {}},
+    )
+
+    project = _src(
+        "project", "https://example.com/catalog.json", priority=project_priority
+    )
+    fetcher = make_catalog_fetcher(allow_network=True)
+
+    def fetch_project(source):
+        if source.id == "project":
+            return {
+                "schema_version": "1.0",
+                "bundles": {"company": catalog_entry_dict("company")},
+            }
+        return fetcher(source)
+
+    stack = CatalogStack(
+        [_src(source_id, builtin_id, priority=builtin_priority), project],
+        fetch_project,
+    )
+
+    with pytest.warns(UserWarning, match="packaged snapshot"):
+        resolved = stack.resolve("company")
+    assert resolved.source.id == "project"
 
 
 def test_builtin_community_catalog_resolves_from_packaged_snapshot_offline():

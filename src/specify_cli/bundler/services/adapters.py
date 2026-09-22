@@ -10,7 +10,11 @@ These wire the bundler's injectable seams to the real environment:
 """
 from __future__ import annotations
 
+import http.client
 import re
+import ssl
+import urllib.error
+import warnings
 from pathlib import Path
 from urllib.parse import ParseResult, urlparse
 from urllib.request import url2pathname
@@ -26,19 +30,38 @@ COMMUNITY_CATALOG_URL = (
     "https://raw.githubusercontent.com/github/spec-kit/main/"
     "bundles/catalog.community.json"
 )
+FIRSTPARTY_CATALOG_URL = (
+    "https://raw.githubusercontent.com/github/spec-kit/main/"
+    "bundles/catalog.json"
+)
 
-# The default catalog is reserved for first-party bundles. The community
-# catalog is loaded from the repository online and from the packaged snapshot
-# offline so discovery remains useful without network access.
-_BUILTIN_CATALOGS: dict[str, dict] = {
-    "builtin://default": {
-        "schema_version": "1.0",
-        "catalog_url": "builtin://default",
-        "bundles": {},
-    },
+# Built-in catalogs are resolved directly by URL. ``builtin://default`` is the
+# repository-shipped first-party bundle catalog; ``builtin://community`` is the
+# community catalog. Both are fetched from the repository online and fall back
+# to the packaged wheel snapshot offline so discovery works without network.
+_BUILTIN_REPOSITORY_URLS: dict[str, str] = {
+    "builtin://default": FIRSTPARTY_CATALOG_URL,
+    "builtin://community": COMMUNITY_CATALOG_URL,
+}
+_BUILTIN_PACKAGED_SNAPSHOTS: dict[str, str] = {
+    "builtin://default": "catalog.json",
+    "builtin://community": "catalog.community.json",
 }
 
 HTTP_TIMEOUT_SECONDS = 10
+_TRANSIENT_HTTP_STATUS_CODES = (408, 429)
+
+
+class _CatalogUnavailable(BundlerError):
+    """A built-in catalog could not be reached (transport/availability failure).
+
+    Marks only transient fetch failures — connection/DNS errors, timeouts,
+    truncated responses, and availability HTTP responses (408, 429, 5xx) — so
+    the built-in catalog fallback does not swallow content or security
+    validation failures (malformed JSON, oversized or non-UTF-8 bodies, unsafe
+    redirects, TLS certificate verification failures, other HTTP 4xx).
+    """
+
 
 # Windows absolute paths like ``C:\catalog.json`` parse with a single-letter
 # ``scheme`` under urlparse; treat them as local files rather than URLs.
@@ -99,15 +122,16 @@ def _validate_remote_url(source_id: str, url: str) -> None:
         )
 
 
-def _load_packaged_community_catalog() -> dict:
+def _load_packaged_catalog(filename: str) -> dict:
+    """Load a packaged bundle catalog snapshot from the wheel or repo root."""
     core_pack = _locate_core_pack()
     path = (
-        core_pack / "bundles" / "catalog.community.json"
+        core_pack / "bundles" / filename
         if core_pack is not None
-        else _repo_root() / "bundles" / "catalog.community.json"
+        else _repo_root() / "bundles" / filename
     )
     if not path.is_file():
-        raise BundlerError(f"Bundled community catalog not found: {path}")
+        raise BundlerError(f"Bundled catalog not found: {path}")
     return loads_json(path.read_text(encoding="utf-8"), origin=str(path))
 
 
@@ -132,14 +156,30 @@ def make_catalog_fetcher(*, allow_network: bool = True):
         scheme = parsed.scheme.lower()
 
         if scheme == "builtin":
-            if url == "builtin://community":
-                if allow_network:
-                    return _http_get_json(source.id, COMMUNITY_CATALOG_URL)
-                return _load_packaged_community_catalog()
-            payload = _BUILTIN_CATALOGS.get(url)
-            if payload is None:
+            repository_url = _BUILTIN_REPOSITORY_URLS.get(url)
+            if repository_url is None:
                 raise BundlerError(f"Unknown built-in catalog '{url}'.")
-            return payload
+            snapshot_name = _BUILTIN_PACKAGED_SNAPSHOTS[url]
+            if allow_network:
+                try:
+                    return _http_get_json(source.id, repository_url)
+                except _CatalogUnavailable as exc:
+                    # Built-in catalogs remain usable when the repository is
+                    # temporarily unavailable; the packaged snapshot is the
+                    # authoritative offline fallback. Only transient fetch
+                    # failures take this path -- content/security validation
+                    # errors propagate so a malformed response is never masked.
+                    warnings.warn(
+                        f"Built-in catalog '{url}' is unavailable ({exc}); "
+                        "using the packaged snapshot.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                    try:
+                        return _load_packaged_catalog(snapshot_name)
+                    except BundlerError as snapshot_exc:
+                        raise snapshot_exc from exc
+            return _load_packaged_catalog(snapshot_name)
 
         if scheme == "file":
             path = _file_url_to_path(parsed)
@@ -178,7 +218,7 @@ def _http_get_json(source_id: str, url: str) -> dict:
     HTTPS/host guarantee from ``_validate_remote_url`` is preserved end to end
     rather than only on the initial URL.
     """
-    from ...authentication.http import open_url
+    from ...authentication.http import RedirectPolicyError, open_url
 
     def _validate_redirect(_old_url: str, new_url: str) -> None:
         _validate_remote_url(source_id, new_url)
@@ -198,8 +238,63 @@ def _http_get_json(source_id: str, url: str) -> dict:
                 label=f"bundle catalog '{source_id}'",
             ).decode("utf-8")
     except BundlerError:
+        # Size limits, redirect/URL validation: content or security failures,
+        # never transient -- must not be downgraded to availability.
         raise
-    except Exception as exc:  # noqa: BLE001
+    except ssl.SSLCertVerificationError as exc:
+        # TLS certificate verification is a security check, not a transient
+        # availability failure: never mask it with the packaged snapshot. Some
+        # call paths raise this directly (it subclasses OSError).
+        raise BundlerError(
+            f"Failed to fetch catalog from {url}: {exc}"
+        ) from exc
+    except RedirectPolicyError as exc:
+        # Unsafe/malformed redirects are security failures and must surface as
+        # a hard error instead of being downgraded to catalog unavailability.
+        raise BundlerError(
+            f"Failed to fetch catalog from {url}: {exc}"
+        ) from exc
+    except urllib.error.HTTPError as exc:
+        # urllib raises HTTPError for any non-2xx status; only transient
+        # server-side availability responses (408, 429, 5xx) fall back to the
+        # snapshot. Any other 4xx (404, 403, ...) is definitive and must
+        # surface as a hard error.
+        if exc.code in _TRANSIENT_HTTP_STATUS_CODES or exc.code >= 500:
+            raise _CatalogUnavailable(
+                f"Failed to fetch catalog from {url}: HTTP {exc.code} {exc.reason}"
+            ) from exc
+        raise BundlerError(
+            f"Failed to fetch catalog from {url}: HTTP {exc.code} {exc.reason}"
+        ) from exc
+    except urllib.error.URLError as exc:
+        # urllib wraps a TLS handshake failure as URLError(reason=<ssl error>);
+        # a certificate-verification failure is a security failure, not a
+        # transient availability problem, so it must not use the snapshot.
+        if isinstance(exc.reason, ssl.SSLCertVerificationError):
+            raise BundlerError(
+                f"Failed to fetch catalog from {url}: {exc.reason}"
+            ) from exc
+        raise _CatalogUnavailable(
+            f"Failed to fetch catalog from {url}: {exc.reason}"
+        ) from exc
+    except (TimeoutError, OSError) as exc:
+        # socket.timeout is TimeoutError; OSError covers connection resets and
+        # other low-level transport failures not wrapped in URLError.
+        raise _CatalogUnavailable(
+            f"Failed to fetch catalog from {url}: {exc}"
+        ) from exc
+    except http.client.IncompleteRead as exc:
+        # A chunked response truncated mid-read is a transport failure, not a
+        # definitive or content error, so it should use the packaged snapshot.
+        raise _CatalogUnavailable(
+            f"Failed to fetch catalog from {url}: incomplete read ({exc})"
+        ) from exc
+    except UnicodeDecodeError as exc:
+        # A non-UTF-8 body is a malformed response, not an availability issue.
+        raise BundlerError(
+            f"Failed to fetch catalog from {url}: response was not valid UTF-8 ({exc})"
+        ) from exc
+    except Exception as exc:
         raise BundlerError(f"Failed to fetch catalog from {url}: {exc}") from exc
     return loads_json(raw, origin=final_url)
 

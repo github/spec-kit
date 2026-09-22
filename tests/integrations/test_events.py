@@ -1437,10 +1437,11 @@ class TestCommandRunner:
         argv = _resolve_event_command_argv(template, tmp_path, None)
         assert argv is None
 
-    def test_ps_variant_prefixed_with_powershell_launcher(self, tmp_path):
+    def test_ps_variant_prefixed_with_powershell_launcher(self, tmp_path, monkeypatch):
         """S6: the ps variant prefixes argv with pwsh/powershell -File so
         subprocess.run(shell=False) can execute the .ps1 script."""
         from specify_cli.events import _resolve_event_command_argv
+        import shutil as _shutil
 
         cmd_dir = tmp_path / ".specify" / "templates" / "commands"
         cmd_dir.mkdir(parents=True)
@@ -1455,6 +1456,13 @@ class TestCommandRunner:
         ps_dir = tmp_path / ".specify" / "scripts" / "powershell"
         ps_dir.mkdir(parents=True)
         (ps_dir / "boot.ps1").write_text("exit 0\n", encoding="utf-8")
+
+        # The argv contract under test does not depend on a real PowerShell
+        # install; pin the launcher (mirroring the no-launcher sibling below)
+        # so the test runs on platforms without pwsh/powershell on PATH.
+        monkeypatch.setattr(
+            _shutil, "which", lambda name: "/usr/bin/pwsh" if name == "pwsh" else None
+        )
 
         argv = _resolve_event_command_argv(cmd_dir / "boot.md", tmp_path, None)
         assert argv is not None
@@ -2988,7 +2996,7 @@ class TestDispatcherManifestClaimDroppedOnRetain:
 
         # Simulate the upgrade path: a fresh manifest (like
         # IntegrationManifest(key, project_root, version=...) in
-        # _migrate_commands) that never recorded the dispatcher.
+        # integration upgrade path) that never recorded the dispatcher.
         fresh = IntegrationManifest(claude.key, tmp_path, version="test")
         assert EVENTS_DISPATCHER_REL not in fresh.files
         install_integration_events(claude, tmp_path, fresh, {})

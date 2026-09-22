@@ -591,6 +591,40 @@ class TestMergeStepsAncestorConflicts:
         with pytest.raises(ValueError, match="ancestor"):
             merge_steps(base, [_layer(overlay, "project:ov")])
 
+    @pytest.mark.parametrize(
+        "insert_op", ["insert_after", "insert_before"], ids=["after", "before"]
+    )
+    def test_replace_parent_with_trailing_insert_still_conflicts(self, insert_op):
+        """A rescued parent `replace` must still be seen by the conflict guard.
+
+        The guard reads the anchor's fate through `_winning_fate_edit`, the same
+        rule `_traverse_and_apply` uses. Were it to read `anchor_edits[-1]`
+        instead, the trailing insert would be the parent's apparent fate --
+        and `_check_anchor_conflicts` skips inserts, because they leave the
+        ancestor intact -- so this replace-plus-descendant conflict would go
+        undetected and the subtree would be replaced out from under the
+        descendant edit.
+
+        Every other conflict test ends the parent's edits with `replace` or
+        `remove`, so they pass under either rule; only a trailing insert tells
+        the two apart.
+        """
+        parent_id = "if-step"
+        child_id = "then-child"
+        base = [self._if_step(parent_id, child_id)]
+        overlay = Overlay(
+            id="ov",
+            extends="wf",
+            priority=10,
+            edits=[
+                OverlayEdit("replace", parent_id, _step("new-parent")),
+                OverlayEdit(insert_op, parent_id, _step("beside-parent")),
+                OverlayEdit("remove", child_id),
+            ],
+        )
+        with pytest.raises(ValueError, match="ancestor"):
+            merge_steps(base, [_layer(overlay, "project:ov")])
+
     def test_conflict_across_multiple_overlays_raises(self):
         """Conflict is detected even when conflicting anchors come from different overlays."""
         parent_id = "if-step"
@@ -733,3 +767,166 @@ class TestMergeStepsIdCollision:
         assert sources.get("b") == "project:ov", (
             f"expected 'project:ov' but got {sources.get('b')!r}"
         )
+
+
+class TestMergeStepsSameOverlayFateEdits:
+    """An overlay's `replace` must survive its own trailing insert.
+
+    `_traverse_and_apply` decided an anchor's fate with `edits[-1]`, which
+    treats declaration order *inside one overlay file* as a precedence signal.
+    Priority is a per-overlay property, so two edits from the same overlay have
+    no priority relation to break — yet a trailing `insert_after` reverted the
+    anchor to the base step and discarded that overlay's own `replace`.
+
+    `remove` is explicitly out of scope: it destroys the anchor, so an insert
+    relative to it cannot also apply. Layers combining `remove` with a trailing
+    insert — with or without a `replace` alongside — keep their pre-existing
+    behaviour, as `test_remove_then_insert_after_same_overlay_is_unchanged` and
+    `test_replace_and_remove_with_trailing_insert_is_unchanged` pin.
+    """
+
+    @pytest.mark.parametrize(
+        "insert_op,expected_ids",
+        [
+            ("insert_after", ["implement", "lint", "tail"]),
+            ("insert_before", ["lint", "implement", "tail"]),
+        ],
+        ids=["after", "before"],
+    )
+    def test_replace_then_insert_same_overlay_keeps_replacement(
+        self, insert_op, expected_ids
+    ):
+        """The rescue covers both insert operations, not just `insert_after`.
+
+        `_winning_fate_edit` treats `insert_after` and `insert_before` alike, so
+        both are pinned here; the pre-existing `insert_before` tests use
+        separate layers and never reach this same-overlay branch.
+        """
+        base = [_step("implement"), _step("tail")]
+        overlay = Overlay(
+            id="ov",
+            extends="wf",
+            priority=10,
+            edits=[
+                OverlayEdit(
+                    "replace", "implement",
+                    {**_step("implement"), "command": "custom.impl"},
+                ),
+                OverlayEdit(insert_op, "implement", _step("lint")),
+            ],
+        )
+
+        steps, _ = merge_steps(base, [_layer(overlay, "project:ov")])
+
+        assert [s["id"] for s in steps] == expected_ids
+        by_id = {s["id"]: s for s in steps}
+        assert by_id["implement"]["command"] == "custom.impl"
+
+    def test_replace_and_insert_order_inside_one_overlay_is_irrelevant(self):
+        """Both declaration orders must produce the same result."""
+        base = [_step("implement"), _step("tail")]
+        replace_edit = OverlayEdit(
+            "replace", "implement", {**_step("implement"), "command": "custom.impl"}
+        )
+        insert_edit = OverlayEdit("insert_after", "implement", _step("lint"))
+
+        first, _ = merge_steps(
+            base,
+            [_layer(Overlay(id="ov", extends="wf", priority=10, edits=[replace_edit, insert_edit]), "project:ov")],
+        )
+        second, _ = merge_steps(
+            base,
+            [_layer(Overlay(id="ov", extends="wf", priority=10, edits=[insert_edit, replace_edit]), "project:ov")],
+        )
+
+        assert [(s["id"], s.get("command")) for s in first] == [
+            (s["id"], s.get("command")) for s in second
+        ]
+
+    def test_remove_then_insert_after_same_overlay_is_unchanged(self):
+        """`remove` is deliberately not rescued: it destroys the anchor, so an
+        insert relative to it cannot also apply. That combination keeps its
+        existing behaviour; only `replace` is rescued."""
+        base = [_step("implement"), _step("tail")]
+        overlay = Overlay(
+            id="ov",
+            extends="wf",
+            priority=10,
+            edits=[
+                OverlayEdit("remove", "implement"),
+                OverlayEdit("insert_after", "implement", _step("lint")),
+            ],
+        )
+
+        steps, _ = merge_steps(base, [_layer(overlay, "project:ov")])
+
+        assert [s["id"] for s in steps] == ["implement", "lint", "tail"]
+
+    @pytest.mark.parametrize(
+        "order",
+        ["replace_first", "remove_first"],
+    )
+    def test_replace_and_remove_with_trailing_insert_is_unchanged(self, order):
+        """A layer asking for two incompatible fates keeps the old outcome.
+
+        The rescue applies only to an unambiguous replace-plus-insert layer. If
+        the winning layer also declared a `remove` on the anchor it is asking
+        for two incompatible fates, and choosing one is the separate question
+        this change deliberately does not answer — so the trailing-insert
+        outcome is preserved and the base step survives, exactly as it did
+        before the rescue existed. Pinned in both declaration orders so the
+        rescue cannot start honouring whichever of the two happens to come
+        first.
+        """
+        base = [_step("implement"), _step("tail")]
+        replace_edit = OverlayEdit(
+            "replace", "implement", {**_step("implement"), "command": "custom.impl"}
+        )
+        remove_edit = OverlayEdit("remove", "implement")
+        fate_edits = (
+            [replace_edit, remove_edit]
+            if order == "replace_first"
+            else [remove_edit, replace_edit]
+        )
+        overlay = Overlay(
+            id="ov",
+            extends="wf",
+            priority=10,
+            edits=[
+                *fate_edits,
+                OverlayEdit("insert_after", "implement", _step("lint")),
+            ],
+        )
+
+        steps, _ = merge_steps(base, [_layer(overlay, "project:ov")])
+
+        assert [s["id"] for s in steps] == ["implement", "lint", "tail"]
+        # The base step, not the replacement: the ambiguous layer is left alone.
+        by_id = {s["id"]: s for s in steps}
+        assert by_id["implement"].get("command") != "custom.impl"
+
+    def test_higher_priority_insert_only_overlay_keeps_base_step(self):
+        """A later layer that only inserts must NOT resurrect a lower layer's
+        replace — the fate still comes from the winning layer."""
+        base = [_step("implement")]
+        replacer = Overlay(
+            id="low", extends="wf", priority=5,
+            edits=[OverlayEdit(
+                "replace", "implement",
+                {**_step("implement"), "command": "low.impl"},
+            )],
+        )
+        inserter = Overlay(
+            id="high", extends="wf", priority=10,
+            edits=[OverlayEdit("insert_after", "implement", _step("lint"))],
+        )
+
+        steps, _ = merge_steps(
+            base,
+            [_layer(replacer, "project:low"), _layer(inserter, "project:high")],
+        )
+
+        by_id = {s["id"]: s for s in steps}
+        # The insert-only layer wins the anchor, so the base step survives.
+        assert by_id["implement"]["command"] == "speckit.specify"
+        assert "lint" in by_id
