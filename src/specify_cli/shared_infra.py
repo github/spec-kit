@@ -278,7 +278,10 @@ def _write_shared_bytes(
         _ensure_safe_shared_destination(project_path, dest)
         os.replace(temp_path, dest)
     finally:
-        temp_path.unlink(missing_ok=True)
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 _BASH_FORMAT_COMMAND_RE = re.compile(
