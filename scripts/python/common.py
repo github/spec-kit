@@ -402,6 +402,7 @@ class _NonNativeYAMLValue:
 
 _NON_NATIVE_MARKER_KEY = "$speckit_non_native"
 _DELEGATED_YAML_TIMEOUT_SECONDS = 120
+_YAML_RUNTIME_UNRESOLVED = object()
 _UV_YAML_COMMAND = (
     "uv",
     "run",
@@ -550,7 +551,9 @@ def _import_yaml() -> object | None:
 
 
 def _preset_template_layer(
-    preset_dir: Path, template_name: str
+    preset_dir: Path,
+    template_name: str,
+    yaml_runtime: object = _YAML_RUNTIME_UNRESOLVED,
 ) -> tuple[Path, str] | None:
     """Return the preset template path and composition strategy."""
     manifest_path = preset_dir / "preset.yml"
@@ -559,7 +562,7 @@ def _preset_template_layer(
     if not manifest_path.is_file():
         return (conventional, "replace") if conventional is not None else None
 
-    yaml = _import_yaml()
+    yaml = _import_yaml() if yaml_runtime is _YAML_RUNTIME_UNRESOLVED else yaml_runtime
     if yaml is None:
         raise TemplateResolutionError(
             "PyYAML is required to resolve preset template composition"
@@ -651,8 +654,19 @@ def resolve_template_content(template_name: str, repo_root: Path) -> str | None:
         return compose_from_base()
 
     presets_dir = repo_root / ".specify" / "presets"
+    yaml_runtime: object = _YAML_RUNTIME_UNRESOLVED
     for preset_id in _sorted_preset_ids(presets_dir):
-        layer = _preset_template_layer(presets_dir / preset_id, template_name)
+        preset_dir = presets_dir / preset_id
+        if (
+            yaml_runtime is _YAML_RUNTIME_UNRESOLVED
+            and (preset_dir / "preset.yml").is_file()
+        ):
+            yaml_runtime = _import_yaml()
+        layer = _preset_template_layer(
+            preset_dir,
+            template_name,
+            yaml_runtime,
+        )
         if layer is not None:
             layers.append(layer)
             if layer[1] == "replace":

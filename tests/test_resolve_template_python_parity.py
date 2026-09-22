@@ -766,6 +766,10 @@ def test_all_variants_use_isolated_uv_when_python_candidates_lack_yaml(
     (blocker / "yaml.py").write_text(
         "raise ImportError('ambient yaml blocker')\n", encoding="utf-8"
     )
+    (repo / "yaml.py").write_text(
+        "raise ImportError('working-directory yaml blocker')\n",
+        encoding="utf-8",
+    )
     env["PYTHONPATH"] = str(blocker)
     py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
 
@@ -787,7 +791,7 @@ def test_all_variants_use_isolated_uv_when_python_candidates_lack_yaml(
         for line in uv_log.read_text(encoding="utf-8").splitlines()
     ]
     assert invocations
-    assert len(invocations) >= len(results) * 2
+    assert len(invocations) == len(results) * 4
     assert all(
         invocation
         == [
