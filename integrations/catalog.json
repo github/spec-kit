@@ -304,10 +304,10 @@
       "id": "agy",
       "name": "Antigravity",
       "version": "1.0.0",
-      "description": "Antigravity IDE skills-based integration",
+      "description": "Antigravity CLI and IDE skills-based integration",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
-      "tags": ["ide", "skills"]
+      "tags": ["cli", "ide", "skills"]
     },
     "generic": {
       "id": "generic",
