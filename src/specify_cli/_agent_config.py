@@ -35,8 +35,8 @@ def resolve_default_init_integration() -> str:
     (``SPECKIT_INTEGRATION_DEFAULT``).  When it names a registered integration
     key, that key is returned; otherwise the hardcoded
     :data:`DEFAULT_INIT_INTEGRATION` (``"copilot"``) is used.  An invalid value
-    emits a warning to stderr rather than silently falling back, so operators
-    can tell a typo from an intentional default.
+    emits a warning through the ``logging`` module rather than silently
+    falling back, so operators can tell a typo from an intentional default.
     """
     override = (os.environ.get(DEFAULT_INIT_INTEGRATION_ENV_VAR) or "").strip()
     if not override:
