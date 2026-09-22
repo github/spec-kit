@@ -382,7 +382,7 @@ def _validate_manifest_template_entry(entry: object) -> None:
 
 
 class _DelegatedYAMLError(Exception):
-    """Raised when a SPECKIT_PYTHON-delegated manifest parse fails."""
+    """Raised when a SPECKIT_PYTHON_EXECUTABLE-delegated manifest parse fails."""
 
 
 class _NonNativeYAMLValue:
@@ -408,11 +408,12 @@ def _delegated_yaml_object_hook(obj: dict) -> object:
 
 
 class _DelegatedYAML:
-    """``yaml.safe_load`` proxy that shells out to SPECKIT_PYTHON.
+    """``yaml.safe_load`` proxy that shells out to SPECKIT_PYTHON_EXECUTABLE.
 
-    Used when this interpreter lacks PyYAML but SPECKIT_PYTHON names one
-    that has it (e.g. a `uv tool install` / `pipx` venv invisible to the
-    bare `python3` a script is launched with). See #4443.
+    Used when this interpreter lacks PyYAML but SPECKIT_PYTHON_EXECUTABLE
+    (or the deprecated SPECKIT_PYTHON alias) names one that has it (e.g. a
+    `uv tool install` / `pipx` venv invisible to the bare `python3` a script
+    is launched with). See #4443.
     """
 
     YAMLError = _DelegatedYAMLError
@@ -462,22 +463,24 @@ class _DelegatedYAML:
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise _DelegatedYAMLError(
-                f"SPECKIT_PYTHON could not parse the manifest: {exc}"
+                f"SPECKIT_PYTHON_EXECUTABLE could not parse the manifest: {exc}"
             ) from exc
         if proc.returncode != 0:
             raise _DelegatedYAMLError(
-                proc.stderr.strip() or "SPECKIT_PYTHON could not parse the manifest"
+                proc.stderr.strip()
+                or "SPECKIT_PYTHON_EXECUTABLE could not parse the manifest"
             )
         try:
             return json.loads(proc.stdout, object_hook=_delegated_yaml_object_hook)
         except json.JSONDecodeError as exc:
             raise _DelegatedYAMLError(
-                f"SPECKIT_PYTHON returned invalid JSON: {exc}"
+                f"SPECKIT_PYTHON_EXECUTABLE returned invalid JSON: {exc}"
             ) from exc
 
 
 def _import_yaml() -> object | None:
-    """Import PyYAML, delegating to SPECKIT_PYTHON if this interpreter lacks it."""
+    """Import PyYAML, delegating to SPECKIT_PYTHON_EXECUTABLE (or the
+    deprecated SPECKIT_PYTHON alias) if this interpreter lacks it."""
     try:
         import yaml
 
@@ -485,7 +488,9 @@ def _import_yaml() -> object | None:
     except ImportError:
         pass
 
-    python_override = os.environ.get("SPECKIT_PYTHON")
+    python_override = os.environ.get("SPECKIT_PYTHON_EXECUTABLE") or os.environ.get(
+        "SPECKIT_PYTHON"
+    )
     if not python_override:
         return None
     try:

@@ -731,6 +731,43 @@ def test_all_variants_fall_back_when_speckit_python_lacks_pyyaml(
     )
 
 
+@requires_bash
+def test_all_variants_prefer_speckit_python_executable_when_both_set(
+    tmp_path: Path,
+) -> None:
+    """SPECKIT_PYTHON_EXECUTABLE is the canonical override and must take
+    precedence over the deprecated SPECKIT_PYTHON alias when both are set
+    (#4445). PATH's own `python3` is also PyYAML-less, so composition can
+    only succeed if SPECKIT_PYTHON_EXECUTABLE (not the PyYAML-less
+    SPECKIT_PYTHON) is the interpreter actually selected.
+    """
+    repo, expected = _setup_repo(tmp_path)
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+    no_yaml_bin = no_yaml_exe.parent
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+
+    env = clean_env()
+    env["SPECKIT_PYTHON_EXECUTABLE"] = sys.executable
+    env["SPECKIT_PYTHON"] = str(no_yaml_exe)
+    env["PATH"] = f"{no_yaml_bin}{os.pathsep}{env.get('PATH', '')}"
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env),
+        run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, env))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)
+        == {"TEMPLATE_NAME": TEMPLATE, "TEMPLATE_CONTENT": expected}
+        for result in results
+    )
+
+
 def test_clean_env_strips_pythonpath(monkeypatch: pytest.MonkeyPatch) -> None:
     """A ``--without-pip`` venv still honors an inherited `PYTHONPATH`, so a
     leaked `PYTHONPATH` pointing at a directory with PyYAML would let the
@@ -742,14 +779,17 @@ def test_clean_env_strips_pythonpath(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_clean_env_strips_speckit_python(monkeypatch: pytest.MonkeyPatch) -> None:
-    """An ambient `SPECKIT_PYTHON` in the host/CI environment would otherwise
-    survive into every baseline built from `clean_env()`, silently bypassing
-    the blocked/default interpreter that tests like
-    `test_all_variants_fail_when_yaml_parser_is_unavailable` rely on. Tests
-    that exercise the override set it explicitly after calling
-    `clean_env()` (#4445)."""
+    """An ambient `SPECKIT_PYTHON`/`SPECKIT_PYTHON_EXECUTABLE` in the
+    host/CI environment would otherwise survive into every baseline built
+    from `clean_env()`, silently bypassing the blocked/default interpreter
+    that tests like `test_all_variants_fail_when_yaml_parser_is_unavailable`
+    rely on. Tests that exercise the override set it explicitly after
+    calling `clean_env()` (#4445)."""
     monkeypatch.setenv("SPECKIT_PYTHON", "/somewhere/with/yaml")
-    assert "SPECKIT_PYTHON" not in clean_env()
+    monkeypatch.setenv("SPECKIT_PYTHON_EXECUTABLE", "/somewhere/else/with/yaml")
+    env = clean_env()
+    assert "SPECKIT_PYTHON" not in env
+    assert "SPECKIT_PYTHON_EXECUTABLE" not in env
 
 
 @requires_bash
@@ -1046,6 +1086,26 @@ def test_python_variant_rejects_speckit_python_override_without_python_3(
     monkeypatch.setattr(python_common.subprocess, "run", fake_run)
 
     assert python_common._import_yaml() is None
+
+
+def test_python_variant_prefers_speckit_python_executable_over_deprecated_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`SPECKIT_PYTHON_EXECUTABLE` is the canonical override; the deprecated
+    `SPECKIT_PYTHON` alias must only be consulted when it is unset (#4445)."""
+    monkeypatch.setitem(sys.modules, "yaml", None)
+    monkeypatch.setenv("SPECKIT_PYTHON_EXECUTABLE", "/canonical/python3")
+    monkeypatch.setenv("SPECKIT_PYTHON", "/deprecated/python3")
+
+    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(python_common.subprocess, "run", fake_run)
+
+    delegate = python_common._import_yaml()
+
+    assert isinstance(delegate, python_common._DelegatedYAML)
+    assert delegate._python_exe == "/canonical/python3"
 
 
 def test_python_variant_skips_yaml_probe_for_manifest_less_preset(

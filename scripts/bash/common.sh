@@ -399,10 +399,13 @@ check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 
 _python3_command() {
-    if [[ -n "${SPECKIT_PYTHON:-}" ]] && command -v "$SPECKIT_PYTHON" >/dev/null 2>&1 &&
-        "$SPECKIT_PYTHON" -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1 &&
-        "$SPECKIT_PYTHON" -c 'import yaml' >/dev/null 2>&1; then
-        printf '%s\n' "$SPECKIT_PYTHON"
+    # SPECKIT_PYTHON_EXECUTABLE is the canonical override; SPECKIT_PYTHON is
+    # kept as a deprecated fallback (still used by update-agent-context.sh).
+    local override="${SPECKIT_PYTHON_EXECUTABLE:-${SPECKIT_PYTHON:-}}"
+    if [[ -n "$override" ]] && command -v "$override" >/dev/null 2>&1 &&
+        "$override" -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1 &&
+        "$override" -c 'import yaml' >/dev/null 2>&1; then
+        printf '%s\n' "$override"
     elif command -v python3 >/dev/null 2>&1 &&
         python3 -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then
         printf '%s\n' "python3"
