@@ -22,7 +22,12 @@ if (-not $TemplateName) {
 . "$PSScriptRoot/common.ps1"
 
 $repoRoot = Get-RepoRoot
-$templateContent = Resolve-TemplateContent -TemplateName $TemplateName -RepoRoot $repoRoot
+try {
+    $templateContent = Resolve-TemplateContent -TemplateName $TemplateName -RepoRoot $repoRoot
+} catch {
+    [Console]::Error.WriteLine("ERROR: $($_.Exception.Message)")
+    exit 1
+}
 if ($null -eq $templateContent) {
     [Console]::Error.WriteLine("ERROR: Could not resolve required $TemplateName from the template override stack for $repoRoot")
     exit 1

@@ -19,6 +19,8 @@ from tests.parity_helpers import (
     install_composition_stack,
     install_scripts,
     json_stdout,
+    make_fake_uv,
+    make_python_candidate_shims,
     make_repo,
     make_yaml_less_venv,
     ps_cmd,
@@ -35,6 +37,21 @@ def _setup_repo(tmp_path: Path) -> tuple[Path, str]:
     install_scripts(repo, SCRIPT)
     expected = install_composition_stack(repo, TEMPLATE, "# Core\n")
     return repo, expected
+
+
+def _yaml_fallback_env(
+    tmp_path: Path,
+    python_executable: Path,
+    *,
+    fail_uv: bool = False,
+) -> tuple[dict[str, str], Path]:
+    shim_dir = tmp_path / "yaml-runtime-bin"
+    uv_log = tmp_path / "uv-invocations.jsonl"
+    make_python_candidate_shims(shim_dir, python_executable)
+    make_fake_uv(shim_dir, uv_log, fail=fail_uv)
+    env = clean_env()
+    env["PATH"] = f"{shim_dir}{os.pathsep}{env.get('PATH', '')}"
+    return env, uv_log
 
 
 @requires_bash
@@ -630,26 +647,32 @@ def test_all_variants_fail_when_yaml_parser_is_unavailable(
     tmp_path: Path,
 ) -> None:
     repo, _ = _setup_repo(tmp_path)
-    blocker = tmp_path / "blocker"
-    blocker.mkdir()
-    (blocker / "yaml.py").write_text(
-        "raise ImportError('simulated missing PyYAML')\n",
-        encoding="utf-8",
-    )
-    env = clean_env()
-    env["PYTHONPATH"] = str(blocker)
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+    env, uv_log = _yaml_fallback_env(tmp_path, no_yaml_exe, fail_uv=True)
+    env["SPECKIT_PYTHON"] = str(no_yaml_exe)
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
 
     results = [
-        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env),
-        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env),
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env, timeout=30),
+        run(
+            [str(no_yaml_exe), str(py_script), TEMPLATE, "--json"],
+            repo,
+            env,
+            timeout=30,
+        ),
     ]
     if HAS_POWERSHELL:
         results.append(
-            run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, env)
+            run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, env, timeout=30)
         )
 
     assert all(result.returncode != 0 for result in results)
     assert all(result.stdout == "" for result in results)
+    assert all("Traceback" not in result.stderr for result in results)
+    assert all("PyYAML" in result.stderr for result in results)
+    assert all(len(result.stderr.splitlines()) <= 2 for result in results)
+    assert uv_log.is_file()
+    assert len(uv_log.read_text(encoding="utf-8").splitlines()) == len(results)
 
 
 @requires_bash
@@ -662,24 +685,10 @@ def test_all_variants_honor_speckit_python_override_when_yaml_missing(
     repo, expected = _setup_repo(tmp_path)
 
     no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
-    no_yaml_bin = no_yaml_exe.parent
-
     py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
-
-    baseline_env = clean_env()
-    baseline_env.pop("SPECKIT_PYTHON", None)
-    baseline_env["PATH"] = f"{no_yaml_bin}{os.pathsep}{baseline_env.get('PATH', '')}"
-    baseline_results = [
-        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, baseline_env),
-        run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, baseline_env),
-    ]
-    if HAS_POWERSHELL:
-        baseline_results.append(
-            run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, baseline_env)
-        )
-    assert all(result.returncode != 0 for result in baseline_results)
-
-    override_env = dict(baseline_env)
+    override_env, uv_log = _yaml_fallback_env(
+        tmp_path, no_yaml_exe, fail_uv=True
+    )
     override_env["SPECKIT_PYTHON"] = sys.executable
     override_results = [
         run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, override_env),
@@ -696,6 +705,7 @@ def test_all_variants_honor_speckit_python_override_when_yaml_missing(
         == {"TEMPLATE_NAME": TEMPLATE, "TEMPLATE_CONTENT": expected}
         for result in override_results
     )
+    assert not uv_log.exists()
 
 
 @requires_bash
@@ -714,11 +724,54 @@ def test_all_variants_fall_back_when_speckit_python_lacks_pyyaml(
 
     no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
 
-    env = clean_env()
+    env, uv_log = _yaml_fallback_env(
+        tmp_path, Path(sys.executable), fail_uv=True
+    )
     env["SPECKIT_PYTHON"] = str(no_yaml_exe)
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env, timeout=30),
+        run(
+            [str(no_yaml_exe), str(py_script), TEMPLATE, "--json"],
+            repo,
+            env,
+            timeout=30,
+        ),
+    ]
+    if HAS_POWERSHELL:
+        results.append(
+            run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, env, timeout=30)
+        )
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)
+        == {"TEMPLATE_NAME": TEMPLATE, "TEMPLATE_CONTENT": expected}
+        for result in results
+    )
+    assert not uv_log.exists()
+
+
+@requires_bash
+def test_all_variants_use_isolated_uv_when_python_candidates_lack_yaml(
+    tmp_path: Path,
+) -> None:
+    repo, expected = _setup_repo(tmp_path)
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+    env, uv_log = _yaml_fallback_env(tmp_path, no_yaml_exe)
+    env["SPECKIT_PYTHON"] = str(no_yaml_exe)
+    blocker = tmp_path / "ambient-pythonpath"
+    blocker.mkdir()
+    (blocker / "yaml.py").write_text(
+        "raise ImportError('ambient yaml blocker')\n", encoding="utf-8"
+    )
+    env["PYTHONPATH"] = str(blocker)
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
 
     results = [
         run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env),
+        run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env),
     ]
     if HAS_POWERSHELL:
         results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, env))
@@ -729,6 +782,71 @@ def test_all_variants_fall_back_when_speckit_python_lacks_pyyaml(
         == {"TEMPLATE_NAME": TEMPLATE, "TEMPLATE_CONTENT": expected}
         for result in results
     )
+    invocations = [
+        json.loads(line)
+        for line in uv_log.read_text(encoding="utf-8").splitlines()
+    ]
+    assert invocations
+    assert len(invocations) >= len(results) * 2
+    assert all(
+        invocation
+        == [
+            "run",
+            "--isolated",
+            "--no-project",
+            "--with",
+            "pyyaml==6.0.3",
+            "python",
+        ]
+        for invocation in invocations
+    )
+
+
+def test_python_variant_accepts_multi_element_delegated_command() -> None:
+    delegated_yaml = python_common._DelegatedYAML([sys.executable, "-I"])
+    assert delegated_yaml.safe_load("value: ok\n") == {"value": "ok"}
+
+
+@requires_bash
+def test_all_variants_skip_uv_for_manifest_less_preset(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    preset = repo / ".specify" / "presets" / "plain-pack" / "templates"
+    preset.mkdir(parents=True)
+    (preset / f"{TEMPLATE}.md").write_text("# Plain preset\n", encoding="utf-8")
+    registry = repo / ".specify" / "presets" / ".registry"
+    registry.write_text(
+        '{"presets":{"plain-pack":{"enabled":true,"priority":1}}}\n',
+        encoding="utf-8",
+    )
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+    env, uv_log = _yaml_fallback_env(tmp_path, no_yaml_exe)
+    env["SPECKIT_PYTHON"] = str(no_yaml_exe)
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env),
+        run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, env))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["TEMPLATE_CONTENT"] == "# Plain preset\n"
+        for result in results
+    )
+    assert not uv_log.exists()
+
+
+def test_generated_common_files_contain_yaml_runtime_marker() -> None:
+    marker = "SPECKIT_YAML_RUNTIME_FALLBACK=1"
+    paths = (
+        Path("scripts/bash/common.sh"),
+        Path("scripts/powershell/common.ps1"),
+        Path("scripts/python/common.py"),
+    )
+    assert all(marker in path.read_text(encoding="utf-8") for path in paths)
 
 
 def test_clean_env_strips_pythonpath(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1037,6 +1155,7 @@ def test_python_variant_rejects_speckit_python_override_without_python_3(
     falling back to a working interpreter (#4445)."""
     monkeypatch.setitem(sys.modules, "yaml", None)
     monkeypatch.setenv("SPECKIT_PYTHON", "/fake/python2")
+    monkeypatch.setattr(python_common.shutil, "which", lambda _: None)
 
     def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
         code = cmd[2]

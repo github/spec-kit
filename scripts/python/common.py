@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -399,6 +401,16 @@ class _NonNativeYAMLValue:
 
 
 _NON_NATIVE_MARKER_KEY = "$speckit_non_native"
+_DELEGATED_YAML_TIMEOUT_SECONDS = 120
+_UV_YAML_COMMAND = (
+    "uv",
+    "run",
+    "--isolated",
+    "--no-project",
+    "--with",
+    "pyyaml==6.0.3",
+    "python",
+)
 
 
 def _delegated_yaml_object_hook(obj: dict) -> object:
@@ -408,76 +420,82 @@ def _delegated_yaml_object_hook(obj: dict) -> object:
 
 
 class _DelegatedYAML:
-    """``yaml.safe_load`` proxy that shells out to SPECKIT_PYTHON.
+    """``yaml.safe_load`` proxy that shells out to a PyYAML-capable Python.
 
-    Used when this interpreter lacks PyYAML but SPECKIT_PYTHON names one
-    that has it (e.g. a `uv tool install` / `pipx` venv invisible to the
-    bare `python3` a script is launched with). See #4443.
+    Used when this interpreter lacks PyYAML but another validated command can
+    provide it, including an isolated uv environment. See #4443.
     """
 
     YAMLError = _DelegatedYAMLError
 
-    def __init__(self, python_exe: str) -> None:
-        self._python_exe = python_exe
+    def __init__(self, python_command: Sequence[str]) -> None:
+        self._python_command = tuple(python_command)
 
     def safe_load(self, text: str) -> object:
-        child_env = dict(os.environ, PYTHONIOENCODING="utf-8")
+        child_env = dict(
+            os.environ,
+            PYTHONIOENCODING="utf-8",
+            PYTHONSAFEPATH="1",
+            PYTHONUTF8="1",
+        )
+        if self._python_command[1:] == _UV_YAML_COMMAND[1:]:
+            child_env.pop("PYTHONPATH", None)
+        delegated_parser = (
+            "import sys, json, yaml\n"
+            "def _default(value):\n"
+            f"    return {{'{_NON_NATIVE_MARKER_KEY}': True}}\n"
+            "def _stringify_keys(obj, stack=None):\n"
+            "    if stack is None:\n"
+            "        stack = set()\n"
+            "    if isinstance(obj, (dict, list, tuple)):\n"
+            "        if id(obj) in stack:\n"
+            f"            return {{'{_NON_NATIVE_MARKER_KEY}': True}}\n"
+            "        stack.add(id(obj))\n"
+            "        try:\n"
+            "            if isinstance(obj, dict):\n"
+            "                return {\n"
+            "                    (k if isinstance(k, (str, int, float, bool)) or k is None else str(k)): _stringify_keys(v, stack)\n"
+            "                    for k, v in obj.items()\n"
+            "                }\n"
+            "            return [_stringify_keys(v, stack) for v in obj]\n"
+            "        finally:\n"
+            "            stack.discard(id(obj))\n"
+            "    return obj\n"
+            "try:\n"
+            "    data = yaml.safe_load(sys.stdin.read())\n"
+            "except yaml.YAMLError as exc:\n"
+            "    print(str(exc), file=sys.stderr)\n"
+            "    sys.exit(1)\n"
+            "json.dump(_stringify_keys(data), sys.stdout, default=_default)"
+        )
         try:
             proc = subprocess.run(
-                [
-                    self._python_exe,
-                    "-c",
-                    "import sys, json, yaml\n"
-                    "def _default(value):\n"
-                    f"    return {{'{_NON_NATIVE_MARKER_KEY}': True}}\n"
-                    "def _stringify_keys(obj, stack=None):\n"
-                    "    if stack is None:\n"
-                    "        stack = set()\n"
-                    "    if isinstance(obj, (dict, list, tuple)):\n"
-                    "        if id(obj) in stack:\n"
-                    f"            return {{'{_NON_NATIVE_MARKER_KEY}': True}}\n"
-                    "        stack.add(id(obj))\n"
-                    "        try:\n"
-                    "            if isinstance(obj, dict):\n"
-                    "                return {\n"
-                    "                    (k if isinstance(k, (str, int, float, bool)) or k is None else str(k)): _stringify_keys(v, stack)\n"
-                    "                    for k, v in obj.items()\n"
-                    "                }\n"
-                    "            return [_stringify_keys(v, stack) for v in obj]\n"
-                    "        finally:\n"
-                    "            stack.discard(id(obj))\n"
-                    "    return obj\n"
-                    "try:\n"
-                    "    data = yaml.safe_load(sys.stdin.read())\n"
-                    "except yaml.YAMLError as exc:\n"
-                    "    print(str(exc), file=sys.stderr)\n"
-                    "    sys.exit(1)\n"
-                    "json.dump(_stringify_keys(data), sys.stdout, default=_default)",
-                ],
+                [*self._python_command, "-c", delegated_parser],
                 input=text,
                 capture_output=True,
                 encoding="utf-8",
                 env=child_env,
-                timeout=10,
+                timeout=_DELEGATED_YAML_TIMEOUT_SECONDS,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise _DelegatedYAMLError(
-                f"SPECKIT_PYTHON could not parse the manifest: {exc}"
+                f"Python could not parse the manifest: {exc}"
             ) from exc
         if proc.returncode != 0:
             raise _DelegatedYAMLError(
-                proc.stderr.strip() or "SPECKIT_PYTHON could not parse the manifest"
+                proc.stderr.strip() or "Python could not parse the manifest"
             )
         try:
             return json.loads(proc.stdout, object_hook=_delegated_yaml_object_hook)
         except json.JSONDecodeError as exc:
             raise _DelegatedYAMLError(
-                f"SPECKIT_PYTHON returned invalid JSON: {exc}"
+                f"Python returned invalid JSON: {exc}"
             ) from exc
 
 
+# SPECKIT_YAML_RUNTIME_FALLBACK=1
 def _import_yaml() -> object | None:
-    """Import PyYAML, delegating to SPECKIT_PYTHON if this interpreter lacks it."""
+    """Import PyYAML or delegate to the first validated Python command."""
     try:
         import yaml
 
@@ -485,24 +503,50 @@ def _import_yaml() -> object | None:
     except ImportError:
         pass
 
+    candidates: list[tuple[str, ...]] = []
     python_override = os.environ.get("SPECKIT_PYTHON")
-    if not python_override:
-        return None
-    try:
-        probe = subprocess.run(
-            [
-                python_override,
-                "-c",
-                "import sys, yaml\nraise SystemExit(sys.version_info.major != 3)",
-            ],
-            capture_output=True,
-            timeout=10,
+    if python_override:
+        candidates.append((python_override,))
+    for executable in ("python3", "python"):
+        resolved = shutil.which(executable)
+        if resolved:
+            candidates.append((resolved,))
+    py_launcher = shutil.which("py")
+    if py_launcher:
+        candidates.append((py_launcher, "-3"))
+    uv_executable = shutil.which("uv")
+    if uv_executable:
+        candidates.append((uv_executable, *_UV_YAML_COMMAND[1:]))
+
+    seen: set[tuple[str, ...]] = set()
+    for command in candidates:
+        if command in seen:
+            continue
+        seen.add(command)
+        probe_env = dict(
+            os.environ,
+            PYTHONIOENCODING="utf-8",
+            PYTHONSAFEPATH="1",
+            PYTHONUTF8="1",
         )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if probe.returncode != 0:
-        return None
-    return _DelegatedYAML(python_override)
+        if command[1:] == _UV_YAML_COMMAND[1:]:
+            probe_env.pop("PYTHONPATH", None)
+        try:
+            probe = subprocess.run(
+                [
+                    *command,
+                    "-c",
+                    "import sys, yaml\nraise SystemExit(sys.version_info.major != 3)",
+                ],
+                capture_output=True,
+                env=probe_env,
+                timeout=_DELEGATED_YAML_TIMEOUT_SECONDS,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if probe.returncode == 0:
+            return _DelegatedYAML(command)
+    return None
 
 
 def _preset_template_layer(

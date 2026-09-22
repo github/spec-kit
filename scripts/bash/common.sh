@@ -400,8 +400,7 @@ check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" |
 
 _python3_command() {
     if [[ -n "${SPECKIT_PYTHON:-}" ]] && command -v "$SPECKIT_PYTHON" >/dev/null 2>&1 &&
-        "$SPECKIT_PYTHON" -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1 &&
-        "$SPECKIT_PYTHON" -c 'import yaml' >/dev/null 2>&1; then
+        "$SPECKIT_PYTHON" -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then
         printf '%s\n' "$SPECKIT_PYTHON"
     elif command -v python3 >/dev/null 2>&1 &&
         python3 -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then
@@ -412,6 +411,28 @@ _python3_command() {
     elif command -v py >/dev/null 2>&1 &&
         py -3 -c 'import sys' >/dev/null 2>&1; then
         printf '%s\n' "py" "-3"
+    else
+        return 1
+    fi
+}
+
+# SPECKIT_YAML_RUNTIME_FALLBACK=1
+_python3_yaml_command() {
+    if [[ -n "${SPECKIT_PYTHON:-}" ]] && command -v "$SPECKIT_PYTHON" >/dev/null 2>&1 &&
+        PYTHONSAFEPATH=1 "$SPECKIT_PYTHON" -c 'import sys, yaml; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then
+        printf '%s\n' "$SPECKIT_PYTHON"
+    elif command -v python3 >/dev/null 2>&1 &&
+        PYTHONSAFEPATH=1 python3 -c 'import sys, yaml; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then
+        printf '%s\n' "python3"
+    elif command -v python >/dev/null 2>&1 &&
+        PYTHONSAFEPATH=1 python -c 'import sys, yaml; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then
+        printf '%s\n' "python"
+    elif command -v py >/dev/null 2>&1 &&
+        PYTHONSAFEPATH=1 py -3 -c 'import sys, yaml; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then
+        printf '%s\n' "py" "-3"
+    elif command -v uv >/dev/null 2>&1 &&
+        PYTHONPATH= PYTHONSAFEPATH=1 uv run --isolated --no-project --with pyyaml==6.0.3 python -c 'import sys, yaml; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then
+        printf '%s\n' "uv" "run" "--isolated" "--no-project" "--with" "pyyaml==6.0.3" "python"
     else
         return 1
     fi
@@ -643,6 +664,8 @@ resolve_template_content() {
         local sorted_presets=""
         local registry_parsed=false
         local -a python_cmd=()
+        local -a yaml_cmd=()
+        local yaml_cmd_resolved=false
         local _python_cmd_line
         while IFS= read -r _python_cmd_line; do
             python_cmd+=("$_python_cmd_line")
@@ -688,15 +711,25 @@ except Exception:
                 local manifest="$presets_dir/$preset_id/preset.yml"
                 local manifest_declared=false
                 if [ -f "$manifest" ]; then
-                    if [ "${#python_cmd[@]}" -eq 0 ]; then
+                    if [ "$yaml_cmd_resolved" = false ]; then
+                        while IFS= read -r _python_cmd_line; do
+                            yaml_cmd+=("$_python_cmd_line")
+                        done < <(_python3_yaml_command)
+                        yaml_cmd_resolved=true
+                    fi
+                    if [ "${#yaml_cmd[@]}" -eq 0 ]; then
                         echo "Error: Python 3 and PyYAML are required to resolve preset template composition" >&2
                         return 2
                     fi
                     local result
                     local py_stderr
                     local parse_status
+                    local -a yaml_env=("PYTHONSAFEPATH=1")
+                    if [ "${yaml_cmd[0]}" = "uv" ]; then
+                        yaml_env+=("PYTHONPATH=")
+                    fi
                     py_stderr=$(mktemp)
-                    if result=$(SPECKIT_MANIFEST="$manifest" SPECKIT_TMPL="$template_name" "${python_cmd[@]}" -c "
+                    if result=$(env "${yaml_env[@]}" PYTHONIOENCODING=utf-8 SPECKIT_MANIFEST="$manifest" SPECKIT_TMPL="$template_name" "${yaml_cmd[@]}" -c "
 import sys, os
 try:
     import yaml

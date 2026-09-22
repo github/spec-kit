@@ -121,6 +121,81 @@ def make_yaml_less_venv(venv_dir: Path) -> Path:
     return exe
 
 
+def make_python_candidate_shims(bin_dir: Path, python_executable: Path) -> None:
+    """Shadow python3, python, and py with one known interpreter."""
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    runner = bin_dir / "python_candidate_runner.py"
+    runner.write_text(
+        "import os\n"
+        "import sys\n"
+        "args = sys.argv[1:]\n"
+        "if args[:1] == ['-3']:\n"
+        "    args = args[1:]\n"
+        f"python_executable = {str(python_executable)!r}\n"
+        "os.execv(python_executable, [python_executable, *args])\n",
+        encoding="utf-8",
+    )
+    for name in ("python3", "python", "py"):
+        shim = bin_dir / name
+        shim.write_text(
+            f'#!/bin/sh\nexec "{sys.executable}" "{runner}" "$@"\n',
+            encoding="utf-8",
+        )
+        shim.chmod(0o755)
+        if os.name == "nt":
+            (bin_dir / f"{name}.cmd").write_text(
+                f'@"{sys.executable}" "{runner}" %*\r\n',
+                encoding="utf-8",
+            )
+
+
+def make_fake_uv(
+    bin_dir: Path,
+    log_file: Path,
+    *,
+    fail: bool = False,
+) -> None:
+    """Install a uv stub that validates the pinned fallback argv."""
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    runner = bin_dir / "fake_uv_runner.py"
+    runner.write_text(
+        "import json\n"
+        "import os\n"
+        "import sys\n"
+        "from pathlib import Path\n"
+        "expected = [\n"
+        "    'run', '--isolated', '--no-project', '--with',\n"
+        "    'pyyaml==6.0.3', 'python',\n"
+        "]\n"
+        "args = sys.argv[1:]\n"
+        "if args[:len(expected)] != expected:\n"
+        "    print(f'unexpected uv arguments: {args!r}', file=sys.stderr)\n"
+        "    raise SystemExit(64)\n"
+        "if os.environ.get('PYTHONPATH'):\n"
+        "    print('uv fallback inherited PYTHONPATH', file=sys.stderr)\n"
+        "    raise SystemExit(65)\n"
+        f"log_file = Path({str(log_file)!r})\n"
+        "with log_file.open('a', encoding='utf-8') as stream:\n"
+        "    stream.write(json.dumps(args[:len(expected)]) + '\\n')\n"
+        f"if {fail!r}:\n"
+        "    raise SystemExit(42)\n"
+        f"python_executable = {sys.executable!r}\n"
+        "os.execv(python_executable, [python_executable, *args[len(expected):]])\n",
+        encoding="utf-8",
+    )
+    shim = bin_dir / "uv"
+    shim.write_text(
+        f'#!/bin/sh\nexec "{sys.executable}" "{runner}" "$@"\n',
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    if os.name == "nt":
+        (bin_dir / "uv.cmd").write_text(
+            f'@"{sys.executable}" "{runner}" %*\r\n',
+            encoding="utf-8",
+        )
+
+
 def collation_range_locale() -> str | None:
     """A locale whose ``[a-z]`` bracket range is collation-ordered, or ``None``.
 
