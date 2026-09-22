@@ -81,18 +81,21 @@ def test_resolve_default_init_integration_whitespace_trimmed(monkeypatch):
 
 
 def test_resolve_default_init_integration_invalid_warns_and_falls_back(
-    monkeypatch, capsys
+    monkeypatch, caplog
 ):
+    import logging
+
     from specify_cli._agent_config import (
         DEFAULT_INIT_INTEGRATION,
         DEFAULT_INIT_INTEGRATION_ENV_VAR,
         resolve_default_init_integration,
     )
     monkeypatch.setenv(DEFAULT_INIT_INTEGRATION_ENV_VAR, "not-a-real-agent")
-    assert resolve_default_init_integration() == DEFAULT_INIT_INTEGRATION
-    captured = capsys.readouterr()
-    assert "not-a-real-agent" in captured.err
-    assert DEFAULT_INIT_INTEGRATION_ENV_VAR in captured.err
+    with caplog.at_level(logging.WARNING):
+        assert resolve_default_init_integration() == DEFAULT_INIT_INTEGRATION
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("not-a-real-agent" in message for message in messages)
+    assert any(DEFAULT_INIT_INTEGRATION_ENV_VAR in message for message in messages)
 
 
 def test_resolve_default_init_integration_re_exported_from_init():
