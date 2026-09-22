@@ -28,13 +28,10 @@ Or install globally:
 
 import os
 import sys
-import json
 from pathlib import Path
 
 import typer
-from rich.panel import Panel
 from rich.align import Align
-from rich.table import Table
 from .shared_infra import (
     install_shared_infra as _install_shared_infra_impl,
     refresh_shared_templates as _refresh_shared_templates_impl,
@@ -389,137 +386,19 @@ SKILL_DESCRIPTIONS = {
 }
 
 
-# ===== init command =====
-# Moved to commands/init.py — registered here to preserve CLI surface.
-from .commands import init as _init_cmd  # noqa: E402
-_init_cmd.register(app)
+# ===== Root Commands =====
 
+from . import command_check as _command_check  # noqa: E402
+from . import command_init as _command_init  # noqa: E402
+from . import command_version as _command_version  # noqa: E402
 
-@app.command()
-def check():
-    """Check that all required tools are installed."""
-    show_banner()
-    console.print("[bold]Checking for installed tools...[/bold]\n")
+_command_init.register(app)
+_command_check.register(app)
+_command_version.register(app)
 
-    tracker = StepTracker("Check Available Tools")
-
-    agent_results = {}
-    for agent_key, agent_config in AGENT_CONFIG.items():
-        if agent_key == "generic":
-            continue  # Generic is not a real agent to check
-        agent_name = agent_config["name"]
-        requires_cli = agent_config["requires_cli"]
-
-        tracker.add(agent_key, agent_name)
-
-        if requires_cli:
-            agent_results[agent_key] = check_tool(agent_key, tracker=tracker)
-        else:
-            # IDE-based agent - skip CLI check and mark as optional
-            tracker.skip(agent_key, "IDE-based, no CLI check")
-            agent_results[agent_key] = False  # Don't count IDE agents as "found"
-
-    # Check VS Code variants (not in agent config)
-    tracker.add("code", "Visual Studio Code")
-    check_tool("code", tracker=tracker)
-
-    tracker.add("code-insiders", "Visual Studio Code Insiders")
-    check_tool("code-insiders", tracker=tracker)
-
-    console.print(tracker.render())
-
-    console.print("\n[bold green]Specify CLI is ready to use![/bold green]")
-
-    if not any(agent_results.values()):
-        console.print("[dim]Tip: Install a coding agent for the best experience[/dim]")
-
-    console.print("[dim]Tip: Run 'specify self check' to verify you have the latest CLI version[/dim]")
-
-
-def _feature_capabilities() -> dict[str, bool]:
-    """Return stable local CLI capability flags for humans and agents."""
-    return {
-        "controlled_multi_install_integrations": True,
-        "integration_use_command": True,
-        "multi_install_safe_registry_metadata": True,
-        "integration_upgrade_command": True,
-        "self_check_command": True,
-        "workflow_catalog": True,
-        "bundled_templates": True,
-    }
-
-
-@app.command()
-def version(
-    features: bool = typer.Option(
-        False,
-        "--features",
-        help="Show local CLI feature capabilities.",
-    ),
-    json_output: bool = typer.Option(
-        False,
-        "--json",
-        help="Emit feature capabilities as JSON. Requires --features.",
-    ),
-):
-    """Display version and system information."""
-    import platform
-
-    cli_version = get_speckit_version()
-
-    if json_output and not features:
-        console.print("[red]Error:[/red] --json requires --features.")
-        raise typer.Exit(1)
-
-    if features:
-        capabilities = _feature_capabilities()
-        if json_output:
-            payload = {"version": cli_version, "features": capabilities}
-            console.print(json.dumps(payload, indent=2))
-            return
-
-        console.print(f"Spec Kit CLI: {cli_version}")
-        console.print()
-        console.print("Features:")
-        for key, enabled in capabilities.items():
-            label = key.replace("_", " ")
-            console.print(f"- {label}: {'yes' if enabled else 'no'}")
-        return
-
-    show_banner()
-
-    info_table = Table(show_header=False, box=None, padding=(0, 2))
-    info_table.add_column("Key", style="cyan", justify="right")
-    info_table.add_column("Value", style="white")
-
-    info_table.add_row("CLI Version", cli_version)
-    info_table.add_row("", "")
-    info_table.add_row("Python", platform.python_version())
-    info_table.add_row("Platform", platform.system())
-    info_table.add_row("Architecture", platform.machine())
-    info_table.add_row("OS Version", platform.version())
-    # The OpenSSL runtime the interpreter actually loaded. HTTPS failure
-    # reports (#4433) hinge on which OpenSSL is in play, and on Windows it is
-    # not obvious from the outside, so surface it here. An interpreter built
-    # without the ssl extension skips the row rather than failing the command.
-    try:
-        import ssl
-
-        openssl_version = getattr(ssl, "OPENSSL_VERSION", "")
-    except ImportError:
-        openssl_version = ""
-    if openssl_version:
-        info_table.add_row("OpenSSL", openssl_version)
-
-    panel = Panel(
-        info_table,
-        title="[bold cyan]Specify CLI Information[/bold cyan]",
-        border_style="cyan",
-        padding=(1, 2)
-    )
-
-    console.print(panel)
-    console.print()
+# Preserve root imports for handlers that were previously defined here.
+check = _command_check.check
+version = _command_version.version
 
 app.add_typer(_self_app, name="self")
 

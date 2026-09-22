@@ -1,6 +1,6 @@
-"""`specify init` must render user-supplied values literally, not as Rich markup.
+"""Tests for the ``specify init`` command adapter.
 
-`commands/init.py` interpolated the project name, `--integration`/`--script`
+`command_init.py` interpolated the project name, `--integration`/`--script`
 values and paths straight into Rich markup f-strings. A name containing a
 tag-shaped bracket run was therefore consumed as markup:
 
@@ -16,6 +16,7 @@ escapes user-controlled display values; init.py was the outlier.
 
 from __future__ import annotations
 
+import importlib
 import os
 import re
 import subprocess
@@ -25,11 +26,45 @@ import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
-from specify_cli.commands.init import _shell_quote_arg
+from specify_cli.command_init import _shell_quote_arg
 
 from tests.conftest import requires_bash
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def test_command_init_importable():
+    mod = importlib.import_module("specify_cli.command_init")
+    assert hasattr(mod, "register")
+    assert callable(mod.register)
+
+
+def test_transitional_commands_package_removed():
+    import specify_cli
+
+    package_root = Path(specify_cli.__file__).parent
+    assert not (package_root / "commands" / "__init__.py").exists()
+    assert not (package_root / "commands" / "init.py").exists()
+
+
+def test_init_command_registered():
+    callback_names = [
+        cmd.callback.__name__ for cmd in app.registered_commands if cmd.callback
+    ]
+    assert callback_names == ["init", "check", "version"]
+
+
+def test_init_has_win32_guard():
+    """init.py must assign _transient from platform check and pass it to Live."""
+    import specify_cli
+
+    init_src = Path(specify_cli.__file__).parent / "command_init.py"
+    content = init_src.read_text(encoding="utf-8")
+    guard = (
+        r"_transient\s*=\s*sys\.platform\s*!=\s*['\"]win32['\"].*"
+        r"Live\(.*transient\s*=\s*_transient"
+    )
+    assert re.search(guard, content, re.DOTALL)
 
 
 def _strip(text: str) -> str:
