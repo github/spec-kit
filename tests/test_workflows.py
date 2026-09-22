@@ -968,6 +968,96 @@ class TestExpressions:
 
 # ===== Integration Dispatch Tests =====
 
+class TestConditionRemediation:
+    """Regression coverage for safe condition-correction advice."""
+
+    @pytest.mark.parametrize(
+        ("condition", "expected"),
+        [
+            ("inputs.ready", '"{{ inputs.ready }}"'),
+            ("{{ inputs.ready", '"{{ inputs.ready }}"'),
+            ("prefix {{ inputs.ready }} suffix", '"{{ prefix inputs.ready suffix }}"'),
+            ("inputs.name == '}}'", '"{{ inputs.name == \'}}\' }}"'),
+            ("", '"{{ }}"'),
+            ("inputs.name == \"Miyazaki\"", '"{{ inputs.name == \\"Miyazaki\\" }}"'),
+        ],
+    )
+    def test_correction_is_yaml_safe_and_removes_stray_delimiters(
+        self, condition, expected
+    ):
+        from specify_cli.workflows.expressions import format_condition_correction
+
+        corrected = format_condition_correction(condition)
+        assert corrected == expected
+        assert yaml.safe_load(corrected).startswith("{{")
+
+    @pytest.mark.parametrize(
+        ("condition", "reason"),
+        [
+            ("", "there is no expression here to wrap"),
+            ("inputs.name == 'unfinished", "quote opened in it is never closed"),
+            ("inputs.values[0", "brackets do not balance"),
+            ("inputs.name ==", "operator in it is missing an operand"),
+            ("unknown.value == 'x'", "not one of the namespace roots"),
+            ("inputs.name | unknown_filter", "evaluator rejects it"),
+        ],
+    )
+    def test_remediation_refuses_unsafe_corrections(self, condition, reason):
+        from specify_cli.workflows.expressions import format_condition_remediation
+
+        remediation = format_condition_remediation(condition)
+        assert remediation.startswith("No correction is offered because")
+        assert reason in remediation
+
+    @pytest.mark.parametrize(
+        "condition",
+        [
+            "inputs.ready",
+            "inputs.count > 0 and inputs.name == 'Ada'",
+            "steps.emit.output.stdout | from_json",
+            "item[0] == 'first'",
+        ],
+    )
+    def test_remediation_offers_only_evaluator_compatible_corrections(self, condition):
+        from specify_cli.workflows.expressions import format_condition_remediation
+
+        remediation = format_condition_remediation(condition)
+        assert remediation == (
+            "Wrap the expression: "
+            f'"{{{{ {condition} }}}}".'
+        )
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("inputs.a == inputs.b ==", True),
+            ("and inputs.ready", True),
+            ("inputs.ready or", True),
+            ("not inputs.ready", False),
+            ("inputs.tags |", True),
+            ("inputs.ready", False),
+        ],
+    )
+    def test_incomplete_operand_detection_covers_operator_positions(self, text, expected):
+        from specify_cli.workflows.expressions import _has_incomplete_operand
+
+        assert _has_incomplete_operand(text) is expected
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("inputs.f(]", True),
+            ("inputs.f('[)')", False),
+            ("inputs.f([0])", False),
+            ("inputs.f(", True),
+        ],
+    )
+    def test_bracket_validation_ignores_quoted_operands(self, text, expected):
+        from specify_cli.workflows.expressions import _has_unbalanced_bracket
+
+        assert _has_unbalanced_bracket(text) is expected
+
+
 class TestBuildExecArgs:
     """Test build_exec_args for CLI-based integrations."""
 
