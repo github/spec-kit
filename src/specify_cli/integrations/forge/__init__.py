@@ -106,9 +106,10 @@ class ForgeIntegration(MarkdownIntegration):
 
         ``MarkdownIntegration``'s default appends ``--model`` and
         ``--output-format``, neither of which exists in the Forge CLI (see
-        issue #4666) — every dispatched command/prompt step exits 2 at
-        argument parsing. Forge only accepts ``-p/--prompt``; ``model`` is
-        deliberately dropped rather than remapped, since Forge selects it
+        issue #4666) — a dispatched step exits 2 at argument parsing
+        whenever either flag ends up appended (a configured ``model``, or
+        ``output_json=True``). Forge only accepts ``-p/--prompt``; ``model``
+        is deliberately dropped rather than remapped, since Forge selects it
         out of band via ``forge config set model`` and its ``--agent`` flag
         selects an agent ID, not a model.
         """
