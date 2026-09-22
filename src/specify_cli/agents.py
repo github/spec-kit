@@ -207,20 +207,25 @@ class CommandRegistrar:
             else ".specify/scripts/"
         )
 
-        # ``../`` is an explicit repo-relative signal and is matched without
-        # the delimiter allowlist. A lookbehind only rejects identifier/dot
-        # glue (``not../scripts/``, ``..../scripts/``). Bare ``scripts/`` /
-        # ``memory/`` / ``templates/`` still require a recognized boundary
-        # so tokens such as ``myscripts/`` are not rewritten.
+        # Two or more ``../`` segments are the repo-root signal used by
+        # command templates (``../../scripts/...``) and are matched without
+        # the delimiter allowlist. A single ``../`` stays untouched: from a
+        # nested command file it means one directory up, which is not the
+        # repository root and must not be routed to ``.specify/scripts/``.
+        # A lookbehind only rejects identifier/dot glue (``not../scripts/``,
+        # ``..../scripts/``). Bare ``scripts/`` / ``memory/`` / ``templates/``
+        # still require a recognized boundary so tokens such as
+        # ``myscripts/`` are not rewritten.
         pattern = re.compile(
-            r"""(?:(?<![.\w])(?P<parent>(?:\.\./)+)|(?P<boundary>^|[\s`"'(\[{<=])(?P<rel>\.specify/|(?:\.?/))?)(?P<target>scripts|memory|templates)/"""
+            r"""(?:(?<![.\w])(?P<parent>(?:\.\./){2,})|(?P<boundary>^|[\s`"'(\[{<=])(?P<rel>\.specify/|(?:\.?/))?)(?P<target>scripts|memory|templates)/"""
         )
 
         def _replace(m: re.Match) -> str:
             target = m.group("target")
 
             if m.group("parent"):
-                # Explicit repo-relative path always maps to root .specify/<target>/
+                # Two or more ../ segments always map to root .specify/<target>/,
+                # including when extension_id would otherwise make scripts/ local.
                 return f".specify/{target}/"
 
             prefix = m.group("boundary")

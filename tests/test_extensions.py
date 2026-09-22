@@ -3604,10 +3604,13 @@ Real body starts here.
     def test_rewrite_project_relative_paths_punctuation_and_shell_operator_boundaries(self):
         """Parent-relative paths rewrite after punctuation/shell operators.
 
-        ``../`` is an explicit repo-relative signal and must not depend on the
-        delimiter allowlist. Bare ``scripts/`` / ``templates/`` / ``memory/``
-        paths still require a recognized boundary so ``myscripts/`` and
-        ``run;scripts/`` stay untouched.
+        Two or more ``../`` segments are a repo-root signal and must not
+        depend on the delimiter allowlist. A single ``../`` stays untouched,
+        including when ``extension_id`` is set, so it is not routed to root
+        ``.specify/scripts/`` or to extension-local scripts. Bare
+        ``scripts/`` / ``templates/`` / ``memory/`` paths still require a
+        recognized boundary so ``myscripts/`` and ``run;scripts/`` stay
+        untouched.
         """
         from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
 
@@ -3637,6 +3640,12 @@ Real body starts here.
             # ``../`` must not match inside an identifier or extra dots.
             ("not../scripts/a.sh", None, "not../scripts/a.sh"),
             ("..../scripts/a.sh", None, "..../scripts/a.sh"),
+            # One ``../`` is one directory up, not the repository root.
+            ("Run ../scripts/a.sh", None, "Run ../scripts/a.sh"),
+            ("Run ../scripts/a.sh", "my-ext", "Run ../scripts/a.sh"),
+            ("run;../scripts/a.sh", "my-ext", "run;../scripts/a.sh"),
+            ("Read ../memory/constitution.md", "my-ext", "Read ../memory/constitution.md"),
+            ("Read ../templates/spec.md", "my-ext", "Read ../templates/spec.md"),
         ]
 
         for text, ext_id, expected in samples:
