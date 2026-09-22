@@ -51,7 +51,7 @@ def test_init_command_registered():
     callback_names = [
         cmd.callback.__name__ for cmd in app.registered_commands if cmd.callback
     ]
-    assert "init" in callback_names
+    assert callback_names == ["init", "check", "version"]
 
 
 def test_init_has_win32_guard():
