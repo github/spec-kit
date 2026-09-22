@@ -1,9 +1,15 @@
-"""Agent runtime events for integrations.
+"""Agent runtime events and the ``specify event`` command group.
 
 Provides:
 - ``resolve_events`` — layered event resolution (CLI flag → YAML override → extension-declared → built-in).
 - ``collect_extension_events`` — scan installed extension.yml files for ``events:``.
 - ``install_integration_events`` / ``remove_integration_events`` — entry points called from ``IntegrationBase.setup()`` / ``teardown()``.
+
+The singular CLI namespace intentionally maps to the plural Python package.
+``specify_cli.events`` is an established domain API and monkeypatch boundary,
+so preserving it takes precedence over matching the CLI spelling on disk.
+``command_run`` contains the nested CLI adapter; this module owns the domain
+API, Typer application, and registration.
 """
 
 from __future__ import annotations
@@ -21,12 +27,19 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Any
 
 import yaml
+import typer
 
 if TYPE_CHECKING:
-    from .integrations.base import IntegrationBase
-    from .integrations.manifest import IntegrationManifest
+    from ..integrations.base import IntegrationBase
+    from ..integrations.manifest import IntegrationManifest
 
 logger = logging.getLogger(__name__)
+
+event_app = typer.Typer(
+    name="event",
+    help="Manage and execute event-driven commands",
+    add_completion=False,
+)
 
 # -- Constants -------------------------------------------------------------
 
@@ -526,7 +539,7 @@ def _find_command_template(command_name: str, project_root: Path) -> tuple[Path 
     # on-disk fallback below.
     disabled_ids = _disabled_extension_ids(project_root)
     try:
-        from .extensions import ExtensionManager
+        from ..extensions import ExtensionManager
         manager = ExtensionManager(project_root)
         for ext_id in sorted(manager.registry.keys()):
             if ext_id in disabled_ids:
@@ -572,7 +585,7 @@ def _find_command_template(command_name: str, project_root: Path) -> tuple[Path 
     #    templates/commands). The previous bespoke inspect.getfile() math
     #    pointed at core_pack/templates/commands, which never exists in a
     #    wheel build (force-include maps templates/commands -> core_pack/commands).
-    from ._assets import _locate_core_pack, _repo_root
+    from .._assets import _locate_core_pack, _repo_root
     core_pack = _locate_core_pack()
     candidate_dirs = [
         core_pack / "commands" if core_pack is not None else None,
@@ -626,7 +639,7 @@ def _resolve_event_command_argv(
     ``.py``, the platform shell otherwise). Returns ``None`` if no runnable
     script is declared.
     """
-    from .integrations.base import IntegrationBase
+    from ..integrations.base import IntegrationBase
 
     try:
         content = template_path.read_text(encoding="utf-8")
@@ -730,7 +743,7 @@ def _load_project_script_type(project_root: Path) -> str:
     """
     default = "ps" if platform.system().lower().startswith("win") else "sh"
     try:
-        from ._init_options import load_init_options
+        from .._init_options import load_init_options
         opts = load_init_options(project_root)
         if isinstance(opts, dict):
             script = opts.get("script")
@@ -885,7 +898,7 @@ def _validate_resolved_event(event_name: str, handlers: list[dict[str, Any]]) ->
     #17). Malformed-but-skipable entries are already dropped by
     ``_normalize_handlers``.
     """
-    from .extensions import ValidationError
+    from ..extensions import ValidationError
 
     if event_name not in CANONICAL_EVENTS:
         raise ValidationError(
@@ -1039,7 +1052,7 @@ def _disabled_extension_ids(project_root: Path) -> set[str]:
     disabled extension after its config file was preserved (e.g. a JSONC
     parse failure that skipped native cleanup).
     """
-    from .extensions import ExtensionRegistry
+    from ..extensions import ExtensionRegistry
 
     exts_dir = project_root / ".specify" / "extensions"
     disabled_ids: set[str] = set()
@@ -1075,7 +1088,7 @@ def collect_extension_events(project_root: Path) -> ResolvedEvents:
     obsolete name and ``_find_command_template`` could not match it, leaving
     the hook silently inert.
     """
-    from .extensions import ExtensionManager
+    from ..extensions import ExtensionManager
 
     events: ResolvedEvents = {}
     exts_dir = project_root / ".specify" / "extensions"
@@ -1143,7 +1156,7 @@ def _resolve_interpreter(project_root: Path) -> str:
     commands honor the project venv and never hard-code ``python3`` (which is
     commonly absent on Windows even when ``py.exe``/``python.exe`` exist).
     """
-    from .integrations.base import IntegrationBase
+    from ..integrations.base import IntegrationBase
     return IntegrationBase.resolve_python_interpreter(project_root)
 
 
@@ -1686,9 +1699,9 @@ def _other_event_integrations_reference_dispatcher(
     for the dispatcher path so uninstalling one multi-install event-capable
     integration doesn't delete the dispatcher the others still rely on.
     """
-    from .integrations._helpers import _read_integration_json
-    from .integrations.manifest import IntegrationManifest
-    from .integration_state import installed_integration_keys
+    from ..integrations._helpers import _read_integration_json
+    from ..integrations.manifest import IntegrationManifest
+    from ..integration_state import installed_integration_keys
 
     state = _read_integration_json(project_root)
     for key in installed_integration_keys(state):
@@ -1763,7 +1776,7 @@ def remove_integration_events(
 
 def events_stale_exclusions(integration_key: str) -> set[str]:
     """Return project-relative paths to protect from stale cleanup."""
-    from .integrations import get_integration
+    from ..integrations import get_integration
     integration = get_integration(integration_key)
     if not integration:
         return set()
@@ -1813,10 +1826,10 @@ def refresh_integration_events(project_root: Path) -> None:
     the lifecycle command can't claim the extension was fully deactivated
     while a stale native hook may still be active (R3).
     """
-    from .integrations import get_integration
-    from .integrations._helpers import _read_integration_json, _resolve_integration_options
-    from .integrations.manifest import IntegrationManifest
-    from .integration_state import installed_integration_keys
+    from ..integrations import get_integration
+    from ..integrations._helpers import _read_integration_json, _resolve_integration_options
+    from ..integrations.manifest import IntegrationManifest
+    from ..integration_state import installed_integration_keys
 
     state = _read_integration_json(project_root)
     failures: list[tuple[str, str]] = []
@@ -1863,7 +1876,7 @@ def refresh_integration_events(project_root: Path) -> None:
 
 def validate_events(data: dict[str, Any]) -> None:
     """Validate ``events`` field in extension manifest data."""
-    from .extensions import ValidationError
+    from ..extensions import ValidationError
 
     events = data.get("events")
     if "events" in data and not isinstance(events, dict):
@@ -1911,7 +1924,7 @@ def has_events(data: dict[str, Any]) -> bool:
 
 def _toml_quote(value: str) -> str:
     """Render *value* as a TOML basic string via the shared escaper."""
-    from ._toml_string import escape_toml_basic
+    from .._toml_string import escape_toml_basic
     return escape_toml_basic(value)
 
 
@@ -2547,7 +2560,7 @@ def _ensure_safe_destination(dst: Path) -> None:
     outside the repo would redirect writes to external files). Then validates
     lexical containment so ``..`` traversal is also rejected.
     """
-    from .agents import CommandRegistrar
+    from ..agents import CommandRegistrar
 
     # Walk each component so a symlinked ancestor (e.g. ``.claude`` → outside)
     # cannot be silently followed. Mirrors IntegrationManifest.record_existing.
@@ -2619,3 +2632,10 @@ def _has_marker(entry: Any) -> bool:
     if isinstance(inner, list):
         return any(_has_marker(h) for h in inner)
     return False
+
+
+def register(app: typer.Typer) -> None:
+    """Attach the event command group to the root application."""
+    from . import command_run  # noqa: F401 -- registers handler
+
+    app.add_typer(event_app, name="event")

@@ -1,16 +1,13 @@
-"""specify event * command handlers."""
+"""CLI adapter for ``specify event run``."""
 
 from __future__ import annotations
 
 from pathlib import Path
 import sys
+
 import typer
 
-event_app = typer.Typer(
-    name="event",
-    help="Manage and execute event-driven commands",
-    add_completion=False,
-)
+from . import event_app
 
 
 @event_app.command("run")
@@ -22,7 +19,7 @@ def event_run(
     ),
 ):
     """Resolve and run an event-driven command script with stdin payload."""
-    from ..events import resolve_and_run_event_command
+    from . import resolve_and_run_event_command
 
     # Read payload from stdin if available (capped at 1 MiB to prevent DoS).
     MAX_STDIN_BYTES = 1 * 1024 * 1024
@@ -55,7 +52,3 @@ def event_run(
         command_name, event_name, payload, project_root, timeout=timeout
     )
     raise typer.Exit(code=exit_code)
-
-
-def register(app: typer.Typer) -> None:
-    app.add_typer(event_app, name="event")
