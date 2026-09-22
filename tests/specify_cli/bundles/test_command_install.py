@@ -16,6 +16,7 @@ from specify_cli.bundles.manifest import BundleManifest
 from specify_cli.bundles.packager import build_bundle
 from tests.specify_cli.bundles.helpers import (
     FakeInstaller,
+    bundled_extension_version,
     catalog_entry_dict,
     make_project,
     valid_manifest_dict,
@@ -151,7 +152,12 @@ def test_install_bundled_extension_from_zip_offline(tmp_path: Path):
                 },
                 "requires": {"speckit_version": ">=0.1.0"},
                 "provides": {
-                    "extensions": [{"id": "agent-context", "version": "1.0.0"}]
+                    "extensions": [
+                        {
+                            "id": "agent-context",
+                            "version": bundled_extension_version("agent-context"),
+                        }
+                    ]
                 },
             }
         ),
@@ -482,7 +488,12 @@ def _build_mini(tmp_path: Path) -> Path:
                 },
                 "requires": {"speckit_version": ">=0.1.0"},
                 "provides": {
-                    "extensions": [{"id": "agent-context", "version": "1.0.0"}]
+                    "extensions": [
+                        {
+                            "id": "agent-context",
+                            "version": bundled_extension_version("agent-context"),
+                        }
+                    ]
                 },
             }
         ),
