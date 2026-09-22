@@ -117,18 +117,13 @@ def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_ve
 
     manager = ExtensionManager(project_path)
 
-    # --- URL ---
-    parsed = urlparse(ext_spec)
-    if parsed.scheme in ("http", "https"):
-        try:
-            manifest = install_extension_from_url(
-                manager, project_path, ext_spec, speckit_version
-            )
-        except ExtensionError as exc:
-            raise ValueError(str(exc)) from exc
-        return f"{manifest.name} v{manifest.version} installed"
-
     # --- Local path ---
+    # Checked before URL parsing below: on Windows, a single-letter drive
+    # prefix (e.g. "C://[my-extension]") parses as a URL with scheme "c",
+    # and urlparse() eagerly validates a bracketed authority on Python 3.14
+    # (raising ValueError from the call itself, before .hostname is ever
+    # touched). Parsing this as a URL first would misreport a valid local
+    # directory as a malformed extension URL instead of installing it.
     if ext_spec.startswith(("./", "../", "/", "~/", ".\\", "..\\")) or Path(ext_spec).is_absolute():
         source_path = Path(ext_spec).expanduser().resolve()
         if not source_path.exists():
@@ -136,6 +131,32 @@ def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_ve
         if not (source_path / "extension.yml").exists():
             raise ValueError(f"No extension.yml found in {source_path}")
         manifest = manager.install_from_directory(source_path, speckit_version)
+        return f"{manifest.name} v{manifest.version} installed"
+
+    # --- URL ---
+    # A malformed authority (e.g. an unterminated IPv6 bracket
+    # "https://[not-an-ip]/x.zip") makes urlparse() raise ValueError eagerly
+    # on Python 3.14; on 3.11-3.13 urlparse() itself succeeds and the same
+    # authority only raises lazily when .hostname/.port is accessed. This
+    # function's contract is to raise a clean ValueError the caller can
+    # display as a tracker error; without guarding both cases, the raw
+    # urllib message (e.g. "'not-an-ip' does not appear to be an IPv4 or
+    # IPv6 address") leaked through instead. Mirrors the guard every other
+    # URL-accepting extension/preset/workflow entry point already has
+    # (#3435 lineage).
+    try:
+        parsed = urlparse(ext_spec)
+        _ = parsed.hostname
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError(f"Malformed extension URL: {ext_spec}") from exc
+    if parsed.scheme in ("http", "https"):
+        try:
+            manifest = install_extension_from_url(
+                manager, project_path, ext_spec, speckit_version
+            )
+        except ExtensionError as exc:
+            raise ValueError(str(exc)) from exc
         return f"{manifest.name} v{manifest.version} installed"
 
     # --- Bundled extension name or catalog ID ---
