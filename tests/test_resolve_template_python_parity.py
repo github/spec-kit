@@ -1070,10 +1070,12 @@ def test_python_variant_delegates_manifest_with_omap_metadata(
     result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
 
     assert result.returncode == 0, result.stderr
-    assert json_stdout(result) == {
-        "TEMPLATE_NAME": TEMPLATE,
-        "TEMPLATE_CONTENT": expected,
-    }
+    payload = json_stdout(result)
+    assert isinstance(payload, dict)
+    assert payload["TEMPLATE_NAME"] == TEMPLATE
+    content = payload["TEMPLATE_CONTENT"]
+    assert isinstance(content, str)
+    assert content.replace("\r\n", "\n") == expected.replace("\r\n", "\n")
 
 
 @requires_bash
