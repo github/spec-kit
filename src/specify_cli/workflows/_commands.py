@@ -152,7 +152,6 @@ def _resolve_installed_workflow_ownership(
         _resolve_installed_workflow_ownership as resolver,
     )
     return resolver(source_path, err)
-    return resolver(source_path, err)
 
 
 _WORKFLOW_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
