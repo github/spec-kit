@@ -334,3 +334,53 @@ class TestVibeUserInvocable:
             assert parsed.get("disable-model-invocation") is False, (
                 f"{f.parent.name}/SKILL.md is missing disable-model-invocation: false in frontmatter"
             )
+
+
+class TestVibeInjectFrontmatterFlagNoTrailingNewline:
+    """`_inject_frontmatter_flag` must not corrupt content whose closing
+    frontmatter delimiter is the file's last line with no trailing newline.
+
+    `post_process_skill_content` calls this helper on content from
+    "external skill generators (presets, extensions)" (per the base
+    class's docstring) -- not guaranteed to end with a trailing newline.
+    Without a newline after the injected line, the injected text glues
+    onto the closing `---`, destroying the delimiter.
+    """
+
+    def test_single_call_keeps_delimiter_on_its_own_line(self):
+        from specify_cli.integrations.vibe import VibeIntegration
+
+        content = "---\nname: x\n---"
+        result = VibeIntegration._inject_frontmatter_flag(
+            content, "user-invocable"
+        )
+        assert result == "---\nname: x\nuser-invocable: true\n---"
+
+    def test_chained_calls_both_apply(self):
+        """The exact sequence `post_process_skill_content` runs: a second
+        injected key must still land, not be silently dropped because the
+        first call already destroyed the closing `---` line."""
+        from specify_cli.integrations.vibe import VibeIntegration
+
+        content = "---\nname: x\n---"
+        result = VibeIntegration._inject_frontmatter_flag(
+            content, "user-invocable"
+        )
+        result = VibeIntegration._inject_frontmatter_flag(
+            result, "disable-model-invocation", "false"
+        )
+        assert result == (
+            "---\nname: x\nuser-invocable: true\n"
+            "disable-model-invocation: false\n---"
+        )
+
+    def test_preserves_crlf_line_endings(self):
+        """When the closing delimiter *does* end with \\r\\n, the injected
+        line must reuse that EOL rather than switching the file to LF."""
+        from specify_cli.integrations.vibe import VibeIntegration
+
+        content = "---\r\nname: x\r\n---\r\n"
+        result = VibeIntegration._inject_frontmatter_flag(
+            content, "user-invocable"
+        )
+        assert result == "---\r\nname: x\r\nuser-invocable: true\r\n---\r\n"
