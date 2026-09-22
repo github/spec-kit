@@ -207,22 +207,28 @@ class CommandRegistrar:
             else ".specify/scripts/"
         )
 
+        # ``../`` is an explicit repo-relative signal and is matched without
+        # the delimiter allowlist. A lookbehind only rejects identifier/dot
+        # glue (``not../scripts/``, ``..../scripts/``). Bare ``scripts/`` /
+        # ``memory/`` / ``templates/`` still require a recognized boundary
+        # so tokens such as ``myscripts/`` are not rewritten.
         pattern = re.compile(
-            r"""(^|[\s`"'(\[{<=])(\.specify/|(?:\.\./)+|(?:\.?/))?(scripts|memory|templates)/"""
+            r"""(?:(?<![.\w])(?P<parent>(?:\.\./)+)|(?P<boundary>^|[\s`"'(\[{<=])(?P<rel>\.specify/|(?:\.?/))?)(?P<target>scripts|memory|templates)/"""
         )
 
         def _replace(m: re.Match) -> str:
-            prefix = m.group(1)
-            rel = m.group(2)
-            target = m.group(3)
+            target = m.group("target")
+
+            if m.group("parent"):
+                # Explicit repo-relative path always maps to root .specify/<target>/
+                return f".specify/{target}/"
+
+            prefix = m.group("boundary")
+            rel = m.group("rel")
 
             if rel == ".specify/":
                 # Already normalized to project structure
                 return m.group(0)
-
-            if rel and rel.startswith("../"):
-                # Explicit repo-relative path always maps to root .specify/<target>/
-                return f"{prefix}.specify/{target}/"
 
             # Top-level or ./ path
             if target == "scripts":

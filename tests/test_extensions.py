@@ -3601,6 +3601,54 @@ Real body starts here.
         assert again == rewritten
         assert ".specify/.specify/" not in again
 
+    def test_rewrite_project_relative_paths_punctuation_and_shell_operator_boundaries(self):
+        """Parent-relative paths rewrite after punctuation/shell operators.
+
+        ``../`` is an explicit repo-relative signal and must not depend on the
+        delimiter allowlist. Bare ``scripts/`` / ``templates/`` / ``memory/``
+        paths still require a recognized boundary so ``myscripts/`` and
+        ``run;scripts/`` stay untouched.
+        """
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        samples = [
+            ("run;../../scripts/a.sh", None, "run;.specify/scripts/a.sh"),
+            ("path:../../templates/a.md", None, "path:.specify/templates/a.md"),
+            ("run&&../../scripts/a.sh", None, "run&&.specify/scripts/a.sh"),
+            ("run||../../scripts/a.sh", None, "run||.specify/scripts/a.sh"),
+            ("cmd|../../scripts/a.sh", None, "cmd|.specify/scripts/a.sh"),
+            ("x,../../memory/constitution.md", None, "x,.specify/memory/constitution.md"),
+            ("run;../../../scripts/a.sh", None, "run;.specify/scripts/a.sh"),
+            (
+                "run;../../scripts/a.sh",
+                "my-ext",
+                "run;.specify/scripts/a.sh",
+            ),
+            (
+                "foo/../../scripts/a.sh",
+                None,
+                "foo/.specify/scripts/a.sh",
+            ),
+            # Bare paths still need a recognized boundary.
+            ("run;scripts/a.sh", None, "run;scripts/a.sh"),
+            ("path:templates/a.md", None, "path:templates/a.md"),
+            ("run&&scripts/a.sh", None, "run&&scripts/a.sh"),
+            ("myscripts/a.sh", None, "myscripts/a.sh"),
+            # ``../`` must not match inside an identifier or extra dots.
+            ("not../scripts/a.sh", None, "not../scripts/a.sh"),
+            ("..../scripts/a.sh", None, "..../scripts/a.sh"),
+        ]
+
+        for text, ext_id, expected in samples:
+            once = AgentCommandRegistrar.rewrite_project_relative_paths(
+                text, extension_id=ext_id
+            )
+            assert once == expected, text
+            twice = AgentCommandRegistrar.rewrite_project_relative_paths(
+                once, extension_id=ext_id
+            )
+            assert twice == expected, text
+
     def test_rewrite_project_relative_paths_non_string_or_empty(self):
         """Non-string and falsy inputs should be returned as-is."""
         from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
