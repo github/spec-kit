@@ -578,8 +578,8 @@ _register_artifact_cmds(app)
 
 # ===== Bundle Commands =====
 
-# Bundler subcommand group (specify bundle ...) — see commands/bundle/.
-from .commands.bundle import register as _register_bundle_cmds  # noqa: E402
+# Bundle subcommand group (specify bundle ...) — see bundles/_commands.py.
+from .bundles._commands import register as _register_bundle_cmds  # noqa: E402
 _register_bundle_cmds(app)
 
 
