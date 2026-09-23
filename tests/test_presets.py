@@ -12346,6 +12346,229 @@ class TestCollectAllLayers:
         assert layers[1]["strategy"] == "replace"
 
 
+class TestResolveScriptChain:
+    """Test PresetResolver.resolve_script_chain() (#4551).
+
+    Unlike resolve_content(), which splices script content together
+    ahead of time, this returns the ordered *files* a runtime
+    continuation dispatcher walks hop by hop, so priority/enablement
+    changes take effect without re-splicing.
+    """
+
+    def test_missing_script_returns_empty(self, project_dir):
+        resolver = PresetResolver(project_dir)
+        assert resolver.resolve_script_chain("does-not-exist") == []
+
+    def test_single_core_layer(self, project_dir):
+        """A script with no overrides resolves to a one-entry chain."""
+        core_script = (
+            project_dir / ".specify" / "templates" / "scripts" / "solo-script.sh"
+        )
+        core_script.parent.mkdir(parents=True, exist_ok=True)
+        core_script.write_text("echo core\n")
+
+        resolver = PresetResolver(project_dir)
+        chain = resolver.resolve_script_chain("solo-script")
+        assert chain == [core_script]
+
+    def test_wrap_over_core_orders_top_first(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        core_script = (
+            project_dir / ".specify" / "templates" / "scripts" / "wrapped.sh"
+        )
+        core_script.parent.mkdir(parents=True, exist_ok=True)
+        core_script.write_text("echo core\n")
+
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir,
+            valid_pack_data,
+            "wrap-pack",
+            "echo before\n$CORE_SCRIPT\necho after\n",
+            strategy="wrap",
+            template_type="script",
+            template_name="wrapped",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        chain = resolver.resolve_script_chain("wrapped")
+        assert len(chain) == 2
+        assert chain[0].read_text().startswith("echo before")
+        assert chain[1] == core_script
+
+    def test_replace_layer_terminates_chain(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A "replace" layer wins outright; nothing below it is reachable."""
+        core_script = (
+            project_dir / ".specify" / "templates" / "scripts" / "overridden.sh"
+        )
+        core_script.parent.mkdir(parents=True, exist_ok=True)
+        core_script.write_text("echo core\n")
+
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir,
+            valid_pack_data,
+            "replace-pack",
+            "echo replaced\n",
+            strategy="replace",
+            template_type="script",
+            template_name="overridden",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        chain = resolver.resolve_script_chain("overridden")
+        assert len(chain) == 1
+        assert chain[0].read_text() == "echo replaced\n"
+
+    def test_no_replace_base_returns_empty(self, project_dir, temp_dir, valid_pack_data):
+        """A wrap-only stack with no core/replace layer can't terminate."""
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir,
+            valid_pack_data,
+            "dangling-wrap",
+            "echo before\n$CORE_SCRIPT\n",
+            strategy="wrap",
+            template_type="script",
+            template_name="dangling",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        assert resolver.resolve_script_chain("dangling") == []
+
+    def test_priority_change_reorders_chain_without_reinstall(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """Changing priority alone (no reinstall) must reorder the next
+        resolve_script_chain() call — this is the property the runtime
+        dispatcher relies on to avoid re-materializing on every
+        enable/disable/set-priority change."""
+        core_script = (
+            project_dir / ".specify" / "templates" / "scripts" / "reorder-me.sh"
+        )
+        core_script.parent.mkdir(parents=True, exist_ok=True)
+        core_script.write_text("echo core\n")
+
+        manager = PresetManager(project_dir)
+        for pid, prio in [("layer-a", 5), ("layer-b", 10)]:
+            pack_dir = _create_pack(
+                temp_dir,
+                valid_pack_data,
+                pid,
+                f"echo {pid} before\n$CORE_SCRIPT\necho {pid} after\n",
+                strategy="wrap",
+                template_type="script",
+                template_name="reorder-me",
+            )
+            manager.install_from_directory(pack_dir, "0.1.5", priority=prio)
+
+        resolver = PresetResolver(project_dir)
+        chain_before = resolver.resolve_script_chain("reorder-me")
+        assert "layer-a" in str(chain_before[0])
+
+        manager.registry.update("layer-a", {"priority": 20})
+
+        chain_after = resolver.resolve_script_chain("reorder-me")
+        assert "layer-b" in str(chain_after[0])
+        assert "layer-a" in str(chain_after[1])
+
+
+class TestScriptChainReconciliation:
+    """Test PresetManager._reconcile_script_chain() (#4551).
+
+    Verifies the canonical ``.specify/scripts/bash/<name>.sh`` file that
+    agents actually invoke: a plain copy when there's nothing to
+    compose, and a fixed continuation dispatcher stub when there is.
+    """
+
+    def _canonical(self, project_dir, name):
+        return project_dir / ".specify" / "scripts" / "bash" / f"{name}.sh"
+
+    def test_install_replace_script_copies_content_verbatim(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir,
+            valid_pack_data,
+            "override-only",
+            "echo overridden\n",
+            strategy="replace",
+            template_type="script",
+            template_name="plain-override",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        canonical = self._canonical(project_dir, "plain-override")
+        assert canonical.is_file()
+        assert canonical.read_text() == "echo overridden\n"
+
+    def test_install_wrap_script_writes_dispatcher_stub(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        core_script = (
+            project_dir / ".specify" / "templates" / "scripts" / "stub-target.sh"
+        )
+        core_script.parent.mkdir(parents=True, exist_ok=True)
+        core_script.write_text("echo core\n")
+
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir,
+            valid_pack_data,
+            "stub-pack",
+            "echo before\n$CORE_SCRIPT\necho after\n",
+            strategy="wrap",
+            template_type="script",
+            template_name="stub-target",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        canonical = self._canonical(project_dir, "stub-target")
+        content = canonical.read_text()
+        assert "specify preset script-chain \"stub-target\"" in content
+        assert "SPECKIT_SCRIPT_CONTINUATION" in content
+        assert "CORE_SCRIPT" in content
+        # The dispatcher carries no stack-specific data (no reference to
+        # "stub-pack" or the resolved core path) — it resolves fresh at
+        # every invocation instead.
+        assert "stub-pack" not in content
+
+    def test_remove_last_composing_preset_reverts_to_core_copy(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        core_script = (
+            project_dir / ".specify" / "templates" / "scripts" / "revert-me.sh"
+        )
+        core_script.parent.mkdir(parents=True, exist_ok=True)
+        core_script.write_text("echo core\n")
+
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir,
+            valid_pack_data,
+            "revert-pack",
+            "echo before\n$CORE_SCRIPT\n",
+            strategy="wrap",
+            template_type="script",
+            template_name="revert-me",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        canonical = self._canonical(project_dir, "revert-me")
+        assert "SPECKIT_SCRIPT_CONTINUATION" in canonical.read_text()
+
+        manager.remove("revert-pack")
+
+        assert canonical.read_text() == "echo core\n"
+
+
 class TestRemoveReconciliation:
     """Test that removing a preset re-registers the next layer's command."""
 

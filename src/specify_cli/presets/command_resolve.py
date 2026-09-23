@@ -11,6 +11,45 @@ from .._console import console
 from ._commands import preset_app
 
 
+@preset_app.command("script-chain", hidden=True)
+def preset_script_chain(
+    script_name: str = typer.Argument(
+        ..., help="Script name to resolve (e.g., setup-plan)"
+    ),
+):
+    """Print the resolved script continuation chain, one path per line.
+
+    Internal command consumed by the generated script continuation
+    dispatcher and runner (see ``PresetResolver.resolve_script_chain``);
+    not intended for interactive use. Output is the ordered chain of
+    file paths from highest priority to the terminating "replace" layer,
+    one absolute path per line, with no other output.
+    """
+    from .. import _require_specify_project
+    from . import PresetResolver
+
+    if re.fullmatch(r"[a-z0-9-]+", script_name) is None:
+        typer.echo(
+            f"Error: invalid script name '{script_name}'; "
+            "use lowercase letters, digits, and hyphens",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    project_root = _require_specify_project()
+    resolver = PresetResolver(project_root)
+    chain = resolver.resolve_script_chain(script_name)
+    if not chain:
+        typer.echo(
+            f"Error: could not resolve a script chain for '{script_name}'",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    for path in chain:
+        typer.echo(str(path))
+
+
 @preset_app.command("resolve")
 def preset_resolve(
     template_name: str = typer.Argument(
