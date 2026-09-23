@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 from specify_cli.bundler import BundlerError
-from specify_cli.bundles.packager import build_bundle
+from specify_cli.bundles.packager import MAX_ZIP_MEMBER_BYTES, build_bundle
 from tests.specify_cli.bundles.helpers import valid_manifest_dict
 
 
@@ -234,3 +234,66 @@ def test_toctou_stat_read_consistency(tmp_path: Path):
     assert content == b"\x00\x01\x02\x03"
     assert modes["assets/data.bin"] == 0o644
     assert modes["README.md"] == 0o644
+
+
+def test_oversized_file_is_rejected(tmp_path: Path):
+    """A file exceeding MAX_ZIP_MEMBER_BYTES must be rejected."""
+    bundle = _make_bundle(tmp_path / "b")
+    large = bundle / "assets" / "large.bin"
+    large.parent.mkdir(parents=True, exist_ok=True)
+    large.write_bytes(b"\x00" * (MAX_ZIP_MEMBER_BYTES + 1))
+
+    with pytest.raises(BundlerError, match="exceeds"):
+        build_bundle(bundle, output_dir=tmp_path / "out")
+
+
+def test_boundary_size_file_is_accepted(tmp_path: Path):
+    """A file exactly at MAX_ZIP_MEMBER_BYTES must be accepted."""
+    bundle = _make_bundle(tmp_path / "b")
+    boundary = bundle / "assets" / "boundary.bin"
+    boundary.parent.mkdir(parents=True, exist_ok=True)
+    boundary.write_bytes(b"\x00" * MAX_ZIP_MEMBER_BYTES)
+
+    result = build_bundle(bundle, output_dir=tmp_path / "out")
+    with zipfile.ZipFile(result.artifact_path) as archive:
+        content = archive.read("assets/boundary.bin")
+    assert len(content) == MAX_ZIP_MEMBER_BYTES
+
+
+def test_oversized_file_does_not_corrupt_output(tmp_path: Path):
+    """When an oversized file is rejected, the output path must not contain
+    a partial/corrupt archive — it should either not exist or contain the
+    previous valid artifact (if any)."""
+    bundle = _make_bundle(tmp_path / "b", extra_files={"good.txt": "ok"})
+
+    # First build succeeds.
+    out_dir = tmp_path / "out"
+    first = build_bundle(bundle, output_dir=out_dir)
+    first_bytes = first.artifact_path.read_bytes()
+
+    # Add an oversized file.
+    large = bundle / "assets" / "large.bin"
+    large.parent.mkdir(parents=True, exist_ok=True)
+    large.write_bytes(b"\x00" * (MAX_ZIP_MEMBER_BYTES + 1))
+
+    # Second build fails — but the original artifact must remain intact.
+    with pytest.raises(BundlerError, match="exceeds"):
+        build_bundle(bundle, output_dir=out_dir)
+
+    assert first.artifact_path.exists()
+    assert first.artifact_path.read_bytes() == first_bytes
+
+
+def test_temp_file_cleaned_up_on_failure(tmp_path: Path):
+    """No .tmp files must remain in the output directory after a failed build."""
+    bundle = _make_bundle(tmp_path / "b")
+    large = bundle / "assets" / "large.bin"
+    large.parent.mkdir(parents=True, exist_ok=True)
+    large.write_bytes(b"\x00" * (MAX_ZIP_MEMBER_BYTES + 1))
+
+    out_dir = tmp_path / "out"
+    with pytest.raises(BundlerError):
+        build_bundle(bundle, output_dir=out_dir)
+
+    tmp_files = list(out_dir.glob("*.tmp"))
+    assert tmp_files == [], f"Leftover temp files: {tmp_files}"
