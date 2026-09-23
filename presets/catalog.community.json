@@ -429,13 +429,14 @@
     "intake-authoring-governance": {
       "name": "Intake Authoring Governance",
       "id": "intake-authoring-governance",
-      "version": "0.3.1",
+      "version": "0.3.4",
       "description": "Governs traceable intake CRUD, language-aware requirements collections, bounded public HTTPS sources, and explicitly approved single or series authoring.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/archive/refs/tags/v0.3.1.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/archive/refs/tags/v0.3.4.zip",
+      "sha256": "b08c1128756f7fc56de8deb98f9e1cb859b5f76063b39843e395aaed2b440214",
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/blob/v0.3.1/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/blob/v0.3.4/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
@@ -443,7 +444,7 @@
       "provides": {
         "templates": 13,
         "commands": 5,
-        "scripts": 7
+        "scripts": 9
       },
       "tags": [
         "intake",
@@ -453,7 +454,7 @@
         "migration"
       ],
       "created_at": "2026-07-22T00:00:00Z",
-      "updated_at": "2026-08-14T00:00:00Z"
+      "updated_at": "2026-09-23T00:00:00Z"
     },
     "intake-review-governance": {
       "name": "Intake Review Governance",
