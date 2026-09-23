@@ -957,11 +957,12 @@
     "specassay": {
       "name": "SpecAssay",
       "id": "specassay",
-      "version": "0.4.12",
+      "version": "0.5.1",
       "description": "Appends durable-ID, Carries, and SpecAssay vocabulary onto Spec Kit spec, tasks, and constitution templates.",
       "author": "Rik Dryfoos",
       "repository": "https://github.com/rdryfoos/specassay",
-      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.4.12/specassay-preset-0.4.12.zip",
+      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.1/specassay-preset-0.5.1.zip",
+      "sha256": "41e5b5e807bbb2b7d4d90253886122416109465af023d85a110cd522c16848fc",
       "homepage": "https://github.com/rdryfoos/specassay",
       "documentation": "https://github.com/rdryfoos/specassay/blob/main/presets/specassay/README.md",
       "license": "MIT",
@@ -979,7 +980,7 @@
         "sdd"
       ],
       "created_at": "2026-08-14T00:00:00Z",
-      "updated_at": "2026-08-21T00:00:00Z"
+      "updated_at": "2026-09-23T00:00:00Z"
     },
     "test-first-governance": {
       "name": "Test-First Governance",
