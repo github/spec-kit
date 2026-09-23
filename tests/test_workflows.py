@@ -7030,6 +7030,192 @@ steps:
         assert state.step_results["fan:item2:0:leaf:0"]["output"]["marker"] == "x"
         assert state.step_results["fan:item2:1:leaf:0"]["output"]["marker"] == "y"
 
+    def test_sequential_fan_out_nested_in_concurrent_item_visible_to_later_sibling(
+        self, tmp_path
+    ):
+        """A sequential fan-out nested inside a concurrently-running outer
+        item must publish its bare-id alias into that outer item's private
+        steps view, not only into its accumulator.
+
+        Each inner item runs against a throwaway snapshot of the outer
+        item's view (it inherits the outer isolation), so unless the alias
+        is copied back into the outer view after each inner item, a step
+        that follows the nested fan-out inside the SAME outer item cannot
+        resolve ``steps.leaf`` at all -- while the concurrent inner path
+        already publishes it there.
+        """
+        from specify_cli.workflows.base import (
+            RunStatus,
+            StepBase,
+            StepContext,
+            StepResult,
+            StepStatus,
+        )
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+        from specify_cli.workflows.steps.fan_out import FanOutStep
+        from specify_cli.workflows.steps.if_then import IfThenStep
+
+        class _WriteStep(StepBase):
+            type_key = "write"
+
+            def execute(self, config, context):
+                return StepResult(
+                    status=StepStatus.COMPLETED, output={"v": context.item}
+                )
+
+        class _ReadStep(StepBase):
+            type_key = "read"
+
+            def execute(self, config, context):
+                leaf = context.steps.get("leaf") or {}
+                return StepResult(
+                    status=StepStatus.COMPLETED,
+                    output={"seen": (leaf.get("output") or {}).get("v")},
+                )
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        context = StepContext()
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        registry = {
+            "if": IfThenStep(),
+            "fan-out": FanOutStep(),
+            "write": _WriteStep(),
+            "read": _ReadStep(),
+        }
+        template = {
+            "id": "item",
+            "type": "if",
+            "condition": "true",
+            "then": [
+                {
+                    "id": "inner",
+                    "type": "fan-out",
+                    "items": "{{ ['p'] }}",
+                    "max_concurrency": 1,
+                    "step": {"id": "leaf", "type": "write"},
+                },
+                {"id": "read", "type": "read"},
+            ],
+        }
+        engine._run_fan_out(["x", "y"], template, "fan", context, state, registry, 2)
+
+        assert state.status == RunStatus.RUNNING
+        assert state.step_results["fan:read:0"]["output"]["seen"] == "p"
+        assert state.step_results["fan:read:1"]["output"]["seen"] == "p"
+
+    @pytest.mark.parametrize("max_concurrency", [1, 2])
+    def test_fan_out_alias_kept_from_earlier_item_not_run_by_last(
+        self, project_dir, max_concurrency
+    ):
+        """A bare-id alias written only by an EARLIER item must survive.
+
+        Here only item "a" takes the branch that runs ``leaf``. The
+        sequential path leaves ``steps.leaf`` pointing at "a" (the latest
+        item that actually ran it); the concurrent path used to publish
+        only the last item's alias map, so ``leaf`` vanished entirely.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "fan-out-earlier-alias"
+  name: "Fan Out Earlier Alias"
+  version: "1.0.0"
+steps:
+  - id: fan
+    type: fan-out
+    items: "{{{{ ['a', 'b'] }}}}"
+    max_concurrency: {max_concurrency}
+    step:
+      id: item
+      type: if
+      condition: "{{{{ item == 'a' }}}}"
+      then:
+        - id: leaf
+          type: shell
+          run: "echo {{{{ item }}}}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        assert "fan:leaf:1" not in state.step_results
+        assert state.step_results["fan:leaf:0"]["output"]["stdout"] == "a\n"
+        assert state.step_results["leaf"]["output"]["stdout"] == "a\n"
+
+    def test_concurrent_fan_out_on_resume_never_writes_step_results_unlocked(
+        self, tmp_path
+    ):
+        """On resume ``context.steps`` IS ``state.step_results``; a concurrent
+        fan-out item must not mirror its namespaced results into it outside
+        the run lock (racing another worker's ``state.save()``).
+
+        The run lock is swapped for one that records its owning thread, and
+        ``step_results`` for a dict that records every top-level write made
+        by a thread that does not hold that lock -- deterministic, unlike
+        trying to provoke the actual ``dictionary changed size`` race.
+        """
+        import threading
+
+        from specify_cli.workflows.base import (
+            RunStatus,
+            StepBase,
+            StepContext,
+            StepResult,
+            StepStatus,
+        )
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+
+        class _OwnedLock:
+            def __init__(self):
+                self._lock = threading.Lock()
+                self.owner = None
+
+            def __enter__(self):
+                self._lock.acquire()
+                self.owner = threading.get_ident()
+                return self
+
+            def __exit__(self, *exc):
+                self.owner = None
+                self._lock.release()
+
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        lock = _OwnedLock()
+        state._lock = lock
+        unlocked_writes = []
+
+        class _WatchedDict(dict):
+            def __setitem__(self, key, value):
+                if lock.owner != threading.get_ident():
+                    unlocked_writes.append(key)
+                super().__setitem__(key, value)
+
+        state.step_results = _WatchedDict()
+
+        class _NoopStep(StepBase):
+            type_key = "noop"
+
+            def execute(self, config, context):
+                return StepResult(status=StepStatus.COMPLETED, output={})
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        # Mirrors resume(): the live context shares the persisted dict.
+        context = StepContext(steps=state.step_results)
+        engine._run_fan_out(
+            ["a", "b"], {"id": "leaf", "type": "noop"}, "fan", context, state,
+            {"noop": _NoopStep()}, 2,
+        )
+
+        assert "fan:leaf:0" in state.step_results
+        assert "fan:leaf:1" in state.step_results
+        assert unlocked_writes == []
+
     def test_do_while_loop_runs_to_max_when_condition_stays_true(self, project_dir):
         """Do-while loop must still run to max_iterations when the condition
         never becomes false.

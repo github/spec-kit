@@ -1782,13 +1782,18 @@ class WorkflowEngine:
                     for orig in restore_missing:
                         original_steps.pop(orig, None)
             steps_view = item_steps if local_only else item_ctx.steps
-            if local_only:
+            if local_only and original_steps is not state.step_results:
                 for new_id in id_map:
                     if new_id in steps_view:
                         # Publish the namespaced (disjoint, per-item) result
                         # into the truly-shared steps dict explicitly — safe
                         # even under concurrency since each item only ever
-                        # writes its own namespaced keys here.
+                        # writes its own namespaced keys here. Skipped when
+                        # that dict IS ``state.step_results`` (a resume run —
+                        # see ``_record_result``): _record_result already
+                        # wrote every namespaced key there under the run
+                        # lock, and an unlocked write here could race another
+                        # worker's ``state.save()`` iterating it.
                         original_steps[new_id] = steps_view[new_id]
             # Read back through the local view, not the outer closure —
             # clearer and robust if StepContext copying ever stops sharing
@@ -1813,10 +1818,17 @@ class WorkflowEngine:
                     output, item_alias_records = run_item(
                         item_idx, context, local_only=parent_local_only
                     )
-if parent_local_only:
-    context.steps.update(item_alias_records)
-    if parent_alias_records is not None:
-        parent_alias_records.update(item_alias_records)
+                    if parent_local_only:
+                        # run_item discarded this item's private snapshot, so
+                        # publish its aliases into the enclosing item's own
+                        # steps view too (not just its accumulator) — a later
+                        # sibling of this nested fan-out, still inside the
+                        # enclosing item, must resolve ``steps.<inner-id>``
+                        # exactly as it would after a concurrent nested
+                        # fan-out (see the post-join publish below).
+                        context.steps.update(item_alias_records)
+                        if parent_alias_records is not None:
+                            parent_alias_records.update(item_alias_records)
                     results.append(output)
                     if state.status in halting:
                         break
@@ -1924,14 +1936,21 @@ if parent_local_only:
                         other.cancel()
                     break
 
-        # Apply exactly one item's bare-id aliases — deterministically the
-        # last item in item order (the halting item, if any, else the last
-        # one collected) — now that the pool has joined and this runs
-        # single-threaded again, so it can never race a concurrently-running
-        # item the way writing it during run_item would.
+        # Apply the bare-id aliases of every collected item (up to and
+        # including the halting item, if any), folded in item order so each
+        # id resolves to the LATEST item in item order that actually wrote
+        # it — the same outcome as the sequential path's immediate writes.
+        # Folding (rather than taking only the last item's map) matters when
+        # an item-dependent branch runs a step in an earlier item but not in
+        # the last one. This runs after the pool has joined, single-threaded
+        # again, so it can never race a concurrently-running item the way
+        # writing it during run_item would.
         last_idx = halt[0] if halt is not None else (collected - 1 if collected else None)
         if last_idx is not None:
-            for orig_id, data in alias_slots[last_idx].items():
+            merged_aliases: dict[str, dict[str, Any]] = {}
+            for item_aliases in alias_slots[: last_idx + 1]:
+                merged_aliases.update(item_aliases)
+            for orig_id, data in merged_aliases.items():
                 if parent_local_only:
                     # Nested inside an already-isolated enclosing item (see
                     # the ``parent_local_only`` docstring above): the
