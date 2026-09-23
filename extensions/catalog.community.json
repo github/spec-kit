@@ -5805,6 +5805,10 @@
             "required": true
           },
           {
+            "name": "pyyaml",
+            "required": true
+          },
+          {
             "name": "uv",
             "required": false
           },
