@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-15T00:00:00Z",
+  "updated_at": "2026-09-23T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -658,6 +658,39 @@
       ],
       "created_at": "2026-04-09T00:00:00Z",
       "updated_at": "2026-04-09T00:00:00Z"
+    },
+    "niem": {
+      "name": "NIEM Information Exchanges",
+      "id": "niem",
+      "version": "1.0.1",
+      "description": "Adds evidence-based NIEM exchange modeling to the core, assess, and bugfix processes while preserving their commands, artifacts, and scope.",
+      "author": "mnriem",
+      "repository": "https://github.com/mnriem/spec-kit-presets",
+      "download_url": "https://github.com/mnriem/spec-kit-presets/releases/download/niem-v1.0.1/niem.zip",
+      "sha256": "9a6340f780cabb42bdf48fa1b4dd398e4771ece6ce622df45fe714704e6f3089",
+      "homepage": "https://github.com/mnriem/spec-kit-presets",
+      "documentation": "https://github.com/mnriem/spec-kit-presets/blob/main/niem/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=1.0.4",
+        "extensions": [
+          "assess",
+          "bug"
+        ]
+      },
+      "provides": {
+        "templates": 7,
+        "commands": 18
+      },
+      "tags": [
+        "niem",
+        "interoperability",
+        "data-modeling",
+        "assess",
+        "bugfix"
+      ],
+      "created_at": "2026-09-23T00:00:00Z",
+      "updated_at": "2026-09-23T00:00:00Z"
     },
     "openup-governance": {
       "name": "OpenUP Governance",
