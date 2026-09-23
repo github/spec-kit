@@ -899,6 +899,7 @@ def test_community_submission_archive_fetch_tool_is_allowed():
         harness_command = _community_submission_harness_command(workflow)
         for arg in args:
             assert arg in harness_command
+        assert "shell(cat)" in harness_command
         assert "shell(curl:*)" in harness_command
         assert "shell(sha256sum)" in harness_command
         for unrestricted in ("--allow-all-urls", "--allow-all-tools", "--yolo"):
@@ -944,13 +945,22 @@ def test_community_submission_archive_fetch_requires_direct_evidence():
         assert "Use `curl` for binary downloads" in source_text
         command = re.search(r"```bash\n(curl [^\n]+)\n```", source_text)
         assert command is not None
-        assert command[1].endswith(" 'VALIDATED_DOWNLOAD_URL'")
+        assert command[1].endswith('"$(cat /tmp/gh-aw/validated_download_url.txt)"')
+        assert "VALIDATED_DOWNLOAD_URL" not in source_text
         assert shlex.split(command[1]) == [
             "curl", "--location", "--proto", "=https", "--proto-redir", "=https",
             "--max-time", "60", "--silent", "--show-error",
             "--write-out", "%{http_code}",
-            "--output", "/tmp/gh-aw/community-archive.zip", "VALIDATED_DOWNLOAD_URL",
+            "--output", "/tmp/gh-aw/community-archive.zip",
+            "$(cat /tmp/gh-aw/validated_download_url.txt)",
         ]
+        prose = " ".join(source_text.split())
+        assert (
+            "use the edit tool (not a shell command) to write the exact URL "
+            "as one line plus a trailing newline to `/tmp/gh-aw/validated_download_url.txt`"
+        ) in prose
+        assert "Do not interpolate issue values into shell commands" in prose
+        assert "The fixed, double-quoted `$(cat ...)` above is the only command substitution allowed" in prose
         assert "sha256sum /tmp/gh-aw/community-archive.zip" in source_text
         assert "Run the download and checksum as separate shell calls" in source_text
         assert (
@@ -963,6 +973,64 @@ def test_community_submission_archive_fetch_requires_direct_evidence():
             "Compute SHA-256 only after a successful download with final HTTP 200."
             in source_text
         )
+
+
+_COMMUNITY_DOWNLOAD_URL_CASES = [
+    ("https://github.com/owner/repo/archive/refs/tags/v1.2.3.zip", True),
+    ("https://github.com/owner/repo/releases/download/aide-v1.2.3/aide_1.2.3.zip", True),
+    ("https://github.com/owner/repo/releases/download/v1.2.3/a%27%20%24%28b%29.zip", True),
+    ("https://github.com/owner/repo/releases/download/v1.2.3/a'; printf x > injected; echo 'b.zip", False),
+    ('https://github.com/owner/repo/releases/download/v1.2.3/a"; printf x > injected; echo "b.zip', False),
+    ("https://github.com/owner/repo/releases/download/v1.2.3/$(printf x > injected)`printf x > injected`.zip", False),
+    ("https://github.com/owner/repo/releases/download/v1.2.3/a\r\n; printf x > injected | cat & echo *.zip", False),
+]
+
+
+@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize(("url", "allowed"), _COMMUNITY_DOWNLOAD_URL_CASES)
+def test_community_download_documented_character_allowlist(kind, url, allowed):
+    """Exercise the documented regex, not an agent's adherence to the instructions."""
+    source_text, _, _, _ = _agentic_workflow(f"add-community-{kind}")
+    instructions = source_text.split("Use `curl` for binary downloads.", 1)[1].split(
+        "```bash", 1
+    )[0]
+    pattern = re.search(r"require the entire URL to match `([^`]+)`", instructions)
+    assert pattern is not None
+    assert pattern[1] == "^[A-Za-z0-9._~%/:-]+$"
+    assert (re.fullmatch(pattern[1], url) is not None) is allowed
+    prose = " ".join(instructions.split())
+    assert "After the URL passes the pinning checks" in prose
+    assert "require the entire URL to match" in prose
+    assert "Reject disallowed characters as a submission failure without fetching the URL." in prose
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("url", [url for url, _ in _COMMUNITY_DOWNLOAD_URL_CASES])
+def test_community_download_command_treats_url_file_as_data(kind, url, tmp_path):
+    """Even data rejected by the documented allowlist cannot become shell syntax."""
+    source_text, _, _, _ = _agentic_workflow(f"add-community-{kind}")
+    command = re.search(r"```bash\n(curl [^\n]+)\n```", source_text)
+    assert command is not None
+    (tmp_path / "validated_download_url.txt").write_text(
+        url + "\n", encoding="utf-8", newline="\n",
+    )
+    # Redirect only the fixed input path; capture curl argv without network access.
+    script = 'curl() { printf "%s\\0" "$@"; }\n' + command[1].replace(
+        "/tmp/gh-aw/validated_download_url.txt", "validated_download_url.txt",
+    )
+    bash = shutil.which("bash")
+    assert bash is not None
+    result = subprocess.run(
+        [bash, "--noprofile", "--norc", "-c", script],
+        cwd=tmp_path, capture_output=True, check=False, timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == b""
+    assert result.stdout.decode("utf-8").split("\0") == [
+        *shlex.split(command[1])[1:-1], url, "",
+    ]
+    assert not (tmp_path / "injected").exists()
 
 
 def test_community_submission_threat_detection_is_fail_closed():
