@@ -1,6 +1,10 @@
 """Goose integration — open source AI agent (Agentic AI Foundation)."""
 
 from __future__ import annotations
+from pathlib import Path
+
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from ..base import YamlIntegration
 
@@ -27,6 +31,9 @@ class GooseIntegration(YamlIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         """Build CLI arguments for non-interactive ``goose`` execution.
 
@@ -50,6 +57,7 @@ class GooseIntegration(YamlIntegration):
         the agent's own resolver. Any other prompt -- including Goose's own
         session commands such as ``/help`` or ``/plan`` -- goes to ``-t``.
         """
+        self.validate_runtime_config(integration_args, integration_options)
         args = [self._resolve_executable(), "run"]
         # Extra args are applied first, matching the opencode / codex /
         # cursor-agent ordering. Positional parity only, NOT precedence:

@@ -1,6 +1,10 @@
 """Oh My Pi (omp) coding agent integration."""
 
 from __future__ import annotations
+from pathlib import Path
+
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from ..base import MarkdownIntegration
 
@@ -28,6 +32,9 @@ class OmpIntegration(MarkdownIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         # Diverges from MarkdownIntegration.build_exec_args because OMP's
         # CLI parser treats `-p`/`--print` as a boolean (one-shot mode) and
@@ -35,6 +42,7 @@ class OmpIntegration(MarkdownIntegration):
         # can1357/oh-my-pi. JSON output is selected via `--mode json`.
         if not self.config or not self.config.get("requires_cli"):
             return None
+        self.validate_runtime_config(integration_args, integration_options)
         args = [self._resolve_executable(), "--print"]
         self._apply_extra_args_env_var(args)
         if model:

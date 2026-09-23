@@ -809,7 +809,7 @@ except Exception as exc:
                 local candidate=""
                 if [ -n "$manifest_file" ]; then
                     case "$manifest_file" in
-                        /*|*../*|../*) manifest_file="" ;;
+                        /*|*../*) manifest_file="" ;;
                     esac
                 fi
                 if [ -n "$manifest_file" ]; then

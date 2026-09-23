@@ -15,6 +15,10 @@ See: https://github.com/deepseek-ai/deepseek-harness
 """
 
 from __future__ import annotations
+from pathlib import Path
+
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from ..base import SkillsIntegration
 
@@ -46,6 +50,9 @@ class DshIntegration(SkillsIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         """Build non-interactive CLI args for DSH.
 
@@ -58,6 +65,7 @@ class DshIntegration(SkillsIntegration):
         an interactive session would. The CLI has no structured-JSON output
         flag, so ``output_json`` and ``model`` are ignored.
         """
+        self.validate_runtime_config(integration_args, integration_options)
         args = [self._resolve_executable(), "--profile", "headless"]
         self._apply_extra_args_env_var(args)
         args.append(prompt)

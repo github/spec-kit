@@ -8,7 +8,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | ------------------------------------------------------------------------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | [Alquimia AI](https://docs.alquimia.ai)                                              | `alquimia`       | Skills-based integration; installs skills into `.alquimia/skills` and invokes them as `/speckit-<command>`                                |
 | [Amp](https://ampcode.com/)                                                          | `amp`            |                                                                                                                                           |
-| [Antigravity (agy)](https://antigravity.google/)                                     | `agy`            | Skills-based integration; skills are installed automatically                                                                               |
+| [Antigravity (agy)](https://antigravity.google/)                                     | `agy`            | Skills-based integration; installs skills into `.agents/skills/` and invokes them as `/speckit-<command>`. In headless non-interactive runs, automatic tool approval via `--dangerously-skip-permissions` can be enabled by setting `SPECKIT_AGY_ALLOW_ALL_TOOLS=1` or `SPECKIT_INTEGRATION_AGY_ALLOW_ALL_TOOLS=1`. |
 | [Auggie CLI](https://docs.augmentcode.com/cli/overview)                              | `auggie`         |                                                                                                                                           |
 | [Claude Code](https://www.anthropic.com/claude-code)                                 | `claude`         | Skills-based integration; installs skills in `.claude/skills`                                                                              |
 | [Cline](https://github.com/cline/cline)                                              | `cline`          | IDE-based agent                                                                                                                           |
@@ -46,7 +46,27 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Trae](https://www.trae.ai/)                                                         | `trae`           | Skills-based integration; skills are installed automatically                                                                               |
 | [ZCode](https://zcode.z.ai/)                                                         | `zcode`          | Skills-based integration; installs skills into `.zcode/skills/` and invokes them as `$speckit-<command>`                                  |
 | [Zed](https://zed.dev/)                                                              | `zed`            | Skills-based integration; installs skills into `.agents/skills` and invokes them as `/speckit-<command>`                                  |
-| Generic                                                                              | `generic`        | Bring your own agent — use `--integration generic --integration-options="--commands-dir <path>"` for AI coding agents not listed above     |
+| Generic                                                                              | `generic`        | Bring your own agent — use `--integration generic --integration-options="--commands-dir <path>"` for AI coding agents not listed above; add `--skills` for the `speckit-<name>/SKILL.md` layout |
+
+## Command Invocation
+
+Invoke Spec Kit's process steps inside your coding agent, not in the terminal.
+In GitHub Copilot's default mode, these are skills you invoke in the agent's
+chat. CLI installation and setup commands are separate terminal operations.
+The steps are the same across integrations, but their spelling depends on the
+agent and its installed mode:
+
+| Integration or mode | SDD example | Extension example |
+| --- | --- | --- |
+| GitHub Copilot, default skills mode | `/speckit-specify` | `/speckit-bug-assess` |
+| Dotted slash-command notation used in the references | `/speckit.specify` | `/speckit.bug.assess` |
+| Codex, Command Code, ZCode skills | `$speckit-specify` | `$speckit-bug-assess` |
+| Kimi skills | `/skill:speckit-specify` | `/skill:speckit-bug-assess` |
+
+Use the form exposed by your agent. Copilot's default skills are installed under
+`.github/skills/`; its opt-in commands layout is selected with
+`--integration-options="--commands"`. In that layout, Copilot CLI can select an
+agent through `/agents` or address it directly in a prompt.
 
 ## List Available Integrations
 
@@ -237,6 +257,7 @@ Some integrations accept additional options via `--integration-options`:
 | Integration | Option              | Description                                                    |
 | ----------- | ------------------- | -------------------------------------------------------------- |
 | `generic`   | `--commands-dir`    | Required. Directory for command files                          |
+| `generic`   | `--skills`          | Render commands as `speckit-<name>/SKILL.md` directories under `--commands-dir` instead of flat `speckit.<name>.md` files. Command references and next-step guidance switch to `/speckit-<name>`. Generic's output directory is a runtime option rather than a static per-agent folder, so this does not enable extension/preset add-on skill registration in either layout. |
 | `kimi`      | `--migrate-legacy`  | Migrate legacy `.kimi/skills/` installs to `.kimi-code/skills/` (including dotted→hyphenated skill naming, e.g. `speckit.xxx` → `speckit-xxx`) |
 | `copilot`   | `--commands`        | Scaffold `.github/agents/*.agent.md` commands with `.github/prompts/*.prompt.md` companions and merge `.vscode/settings.json` instead of using the default skills layout. |
 | `copilot`   | `--skills`          | Force the default skills layout, overriding an existing commands layout during an explicit migration. |
@@ -245,6 +266,7 @@ Example:
 
 ```bash
 specify integration install generic --integration-options="--commands-dir .myagent/cmds"
+specify integration install generic --integration-options="--commands-dir .myagent/skills --skills"
 ```
 
 ## Scaffold a New Integration
@@ -294,6 +316,7 @@ The currently declared multi-install safe integrations are:
 | `kiro-cli` | `.kiro/prompts` |
 | `lingma` | `.lingma/skills` |
 | `omp` | `.omp/commands` |
+| `opencode` | `.opencode/commands` |
 | `pi` | `.pi/prompts` |
 | `qodercli` | `.qoder/skills` |
 | `qwen` | `.qwen/commands` |

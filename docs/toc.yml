@@ -11,10 +11,16 @@
   items:
     - name: Installation
       href: installation.md
-    - name: Quick Start
+    - name: Spec-Driven Development
       href: quickstart.md
+    - name: Bug Fixing
+      href: guides/bugfix.md
+    - name: Idea Assessment
+      href: guides/assessment.md
     - name: Existing Projects
       href: guides/existing-projects.md
+    - name: Customize or Bring Your Own
+      href: guides/customization.md
     - name: Upgrade
       href: upgrade.md
     - name: Install uv
@@ -41,6 +47,8 @@
       href: reference/extensions.md
     - name: Presets
       href: reference/presets.md
+    - name: Artifacts
+      href: reference/artifacts.md
     - name: Workflows
       href: reference/workflows.md
     - name: Bundles
@@ -49,6 +57,8 @@
       href: reference/agentic-sdd.md
     - name: Agentic Bug Fix
       href: reference/agentic-bugfix.md
+    - name: Agentic Idea Assessment
+      href: reference/agentic-assessment.md
     - name: Authentication
       href: reference/authentication.md
 
@@ -71,6 +81,8 @@
       href: local-development.md
     - name: Evolving Specs
       href: guides/evolving-specs.md
+    - name: Contract-Driven Development
+      href: guides/contract-driven-development.md
     - name: Monorepos
       href: guides/monorepo.md
 

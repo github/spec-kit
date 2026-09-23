@@ -9,6 +9,10 @@ See: https://docs.factory.ai/cli/configuration/skills
 """
 
 from __future__ import annotations
+from pathlib import Path
+
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from ..base import SkillsIntegration
 
@@ -90,6 +94,9 @@ class DroidIntegration(SkillsIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         """Build CLI arguments for non-interactive ``droid`` execution.
 
@@ -109,6 +116,7 @@ class DroidIntegration(SkillsIntegration):
         canonical one, so operators can still override ``--model`` or
         ``--output-format``.
         """
+        self.validate_runtime_config(integration_args, integration_options)
         if not self.config or not self.config.get("requires_cli"):
             return None
         args = [

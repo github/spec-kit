@@ -8,6 +8,10 @@ See: https://dev.meta.ai/docs/muse-code
 """
 
 from __future__ import annotations
+from pathlib import Path
+
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from ..base import IntegrationOption, SkillsIntegration
 
@@ -50,10 +54,14 @@ class MuseIntegration(SkillsIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         # Muse Code uses ``muse exec "<prompt>"`` for non-interactive mode.
         # Resolve argv[0] via the shared executable resolver so operators can
         # override the binary with SPECKIT_INTEGRATION_MUSE_EXECUTABLE.
+        self.validate_runtime_config(integration_args, integration_options)
         args: list[str] = [self._resolve_executable(), "exec", prompt]
         self._apply_extra_args_env_var(args)
         if model:

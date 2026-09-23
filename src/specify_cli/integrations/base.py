@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 from abc import ABC
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -245,6 +246,9 @@ class IntegrationBase(ABC):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         """Build CLI arguments for non-interactive execution.
 
@@ -254,7 +258,37 @@ class IntegrationBase(ABC):
 
         Subclasses for CLI-based integrations should override this.
         """
+        self.validate_runtime_config(integration_args, integration_options)
         return None
+
+    def validate_runtime_config(
+        self,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+    ) -> None:
+        """Validate per-step CLI configuration for this integration.
+
+        Runtime configuration is deliberately separate from :meth:`options`,
+        which describes install-time ``--integration-options`` accepted by
+        ``specify init`` and the integration management commands. Integrations
+        opt in by overriding this hook and translating the validated values in
+        :meth:`build_exec_args` (or a custom :meth:`dispatch_command`).
+
+        The default accepts empty configuration for backward compatibility and
+        rejects non-empty values instead of silently ignoring a misspelled or
+        unsupported runtime option.
+        """
+        if integration_args:
+            raise ValueError(
+                f"Integration {self.key!r} does not support per-step "
+                "'integration_args'."
+            )
+        if integration_options:
+            option_names = ", ".join(sorted(str(key) for key in integration_options))
+            raise ValueError(
+                f"Integration {self.key!r} does not support per-step "
+                f"'integration_options' ({option_names})."
+            )
 
     def _resolve_executable(self) -> str:
         """Return the executable for this integration's CLI tool.
@@ -336,6 +370,29 @@ class IntegrationBase(ABC):
             invocation = f"{invocation} {args}"
         return invocation
 
+    def _build_dispatch_prompt(
+        self,
+        command_name: str,
+        args: str,
+        project_root: Path | None,
+    ) -> str:
+        """Return the dispatch prompt, given the target *project_root*.
+
+        Seam for integrations whose invocation depends on the project's
+        on-disk layout.  ``build_command_invocation()`` is a two-argument
+        contract implemented by every integration, so widening it to carry a
+        *project_root* would change a broad public surface for the sake of
+        the one caller that needs it.  Dispatch is that caller: it alone
+        knows which project the command is being run against, so dual-mode
+        integrations (e.g. Bob) resolve the layout here instead.
+
+        The default ignores *project_root* and preserves the previous
+        behaviour exactly.
+
+        See issue #4491.
+        """
+        return self.build_command_invocation(command_name, args)
+
     def dispatch_command(
         self,
         command_name: str,
@@ -345,15 +402,19 @@ class IntegrationBase(ABC):
         model: str | None = None,
         timeout: int = 600,
         stream: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Dispatch a Spec Kit command through this integration's CLI.
 
         By default this builds a slash-command invocation with
-        ``build_command_invocation()`` and passes that prompt to
+        ``_build_dispatch_prompt()`` -- which defers to
+        ``build_command_invocation()`` unless the integration needs the
+        *project_root* to decide -- and passes that prompt to
         ``build_exec_args()`` to construct the CLI command line.
         Integrations with custom dispatch behavior can override
-        ``build_command_invocation()``, ``build_exec_args()``, or
-        ``dispatch_command()`` directly.
+        ``build_command_invocation()``, ``_build_dispatch_prompt()``,
+        ``build_exec_args()``, or ``dispatch_command()`` directly.
 
         When *stream* is ``True`` (the default), stdout and stderr are
         piped directly to the terminal so the user sees live output.
@@ -365,11 +426,17 @@ class IntegrationBase(ABC):
         """
         import subprocess
 
-        prompt = self.build_command_invocation(command_name, args)
+        self.validate_runtime_config(integration_args, integration_options)
+        prompt = self._build_dispatch_prompt(command_name, args, project_root)
         # When streaming to the terminal, request text output so the
         # user sees readable output instead of raw JSONL events.
         exec_args = self.build_exec_args(
-            prompt, model=model, output_json=not stream
+            prompt,
+            model=model,
+            output_json=not stream,
+            integration_args=integration_args,
+            integration_options=integration_options,
+            project_root=project_root,
         )
 
         if exec_args is None:
@@ -1025,7 +1092,11 @@ class MarkdownIntegration(IntegrationBase):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
+        self.validate_runtime_config(integration_args, integration_options)
         if not self.config or not self.config.get("requires_cli"):
             return None
         args = [self._resolve_executable(), "-p", prompt]
@@ -1116,7 +1187,11 @@ class TomlIntegration(IntegrationBase):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
+        self.validate_runtime_config(integration_args, integration_options)
         if not self.config or not self.config.get("requires_cli"):
             return None
         args = [self._resolve_executable(), "-p", prompt]
@@ -1585,7 +1660,11 @@ class SkillsIntegration(IntegrationBase):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
+        self.validate_runtime_config(integration_args, integration_options)
         if not self.config or not self.config.get("requires_cli"):
             return None
         args = [self._resolve_executable(), "-p", prompt]
