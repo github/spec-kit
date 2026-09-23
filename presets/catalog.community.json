@@ -469,7 +469,7 @@
       "documentation": "https://github.com/gdakuzak/spec-kit-preset-db-standards/blob/main/README.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": "0.1.0"
+        "speckit_version": ">=0.1.0"
       },
       "provides": {
         "templates": 4,
