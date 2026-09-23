@@ -1808,6 +1808,52 @@
       "created_at": "2026-08-17T00:00:00Z",
       "updated_at": "2026-08-17T00:00:00Z"
     },
+    "design": {
+      "name": "Spec Kit Design System",
+      "id": "design",
+      "description": "Give it an RFC. It runs the Spec Kit workflow and implements the change using your design system.",
+      "author": "artursopelnik",
+      "version": "0.1.0",
+      "download_url": "https://github.com/artursopelnik/spec-kit-design-system/archive/refs/tags/v0.1.0.zip",
+      "sha256": "787047d6a52399a7092f8bccca9268fc67f17de66723675fc83a9cd72604de4e",
+      "repository": "https://github.com/artursopelnik/spec-kit-design-system",
+      "homepage": "https://github.com/artursopelnik/spec-kit-design-system",
+      "documentation": "https://github.com/artursopelnik/spec-kit-design-system/blob/main/README.md",
+      "changelog": "https://github.com/artursopelnik/spec-kit-design-system/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0,<2.0.0",
+        "tools": [
+          {
+            "name": "python3",
+            "version": ">=3.9",
+            "required": true
+          },
+          {
+            "name": "bash",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 3
+      },
+      "tags": [
+        "design-system",
+        "design-tokens",
+        "accessibility",
+        "autonomous",
+        "reuse"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-23T00:00:00Z",
+      "updated_at": "2026-09-23T00:00:00Z"
+    },
     "ears": {
       "name": "EARS Requirements Syntax",
       "id": "ears",
