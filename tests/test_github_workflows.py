@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -144,6 +147,116 @@ def _safe_output_config(compiled: dict) -> dict:
         compiled["jobs"]["safe_outputs"]["steps"], "Process Safe Outputs"
     )
     return json.loads(step["env"]["GH_AW_SAFE_OUTPUTS_HANDLER_CONFIG"])
+
+
+def _bundle_success_label_step() -> dict:
+    _, _, source, _ = _agentic_workflow("add-community-bundle")
+    return _workflow_step(
+        source["jobs"]["conclusion"]["pre-steps"],
+        "Mark bundle submission passed after PR creation",
+    )
+
+
+def test_bundle_success_labels_run_after_successful_pr_publication():
+    _, _, _, compiled = _agentic_workflow("add-community-bundle")
+    step = _bundle_success_label_step()
+    conclusion = compiled["jobs"]["conclusion"]
+    assert "safe_outputs" in conclusion["needs"]
+    assert conclusion["permissions"]["issues"] == "write"
+    assert step["if"] == (
+        "needs.safe_outputs.result == 'success' && "
+        "needs.safe_outputs.outputs.created_pr_number != ''"
+    )
+    assert _workflow_step(conclusion["steps"], step["name"]) == step
+    assert compiled["jobs"]["safe_outputs"]["outputs"]["created_pr_number"] == (
+        "${{ steps.process_safe_outputs.outputs.created_pr_number }}"
+    )
+    assert compiled["jobs"]["agent"]["permissions"]["issues"] == "read"
+
+
+def _run_bundle_success_labels(result, pr_number, labels, fail_api=""):
+    step = _bundle_success_label_step()
+    harness = r"""
+const fs = require('node:fs');
+const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+const labels = new Set(input.labels);
+const calls = [];
+const context = {repo: {owner: 'test-owner', repo: 'test-repo'}, payload: {issue: {number: 22}}};
+const record = (api, args) => {
+  calls.push({api, args});
+  if (api === input.fail_api) throw new Error(`API failure: ${api}`);
+};
+const github = {
+  rest: {issues: {
+    listLabelsOnIssue: 'listLabelsOnIssue',
+    removeLabel: async args => { record('removeLabel', args); labels.delete(args.name); },
+    addLabels: async args => { record('addLabels', args); args.labels.forEach(x => labels.add(x)); }
+  }},
+  paginate: async (api, args) => { record(api, args); return [...labels].map(name => ({name})); }
+};
+const needs = {safe_outputs: {result: input.result, outputs: {created_pr_number: input.pr_number}}};
+const shouldRun = new Function('needs', `return ${input.condition}`)(needs);
+(async () => {
+  let error = null;
+  try {
+    if (shouldRun) {
+      const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
+      await new AsyncFunction('github', 'context', input.script)(github, context);
+    }
+  } catch (e) { error = e.message; }
+  console.log(JSON.stringify({labels: [...labels].sort(), calls, error}));
+})();
+"""
+    completed = subprocess.run(
+        ["node", "-e", harness],
+        input=json.dumps({
+            "condition": step["if"], "script": step["with"]["script"],
+            "result": result, "pr_number": pr_number, "labels": labels, "fail_api": fail_api,
+        }),
+        capture_output=True, text=True, check=True,
+    )
+    return json.loads(completed.stdout)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+@pytest.mark.parametrize("labels", [
+    ["bundle-submission", "validation-failed"],
+    ["bundle-submission", "validation-failed", "needs-info", "triaged"],
+    ["bundle-submission", "validation-passed"],
+])
+def test_bundle_success_labels_correct_omitted_agent_updates(labels):
+    result = _run_bundle_success_labels("success", "37", labels)
+    assert result["error"] is None
+    assert result["labels"] == sorted(
+        (set(labels) - {"validation-failed", "needs-info"}) | {"validation-passed"}
+    )
+    assert result["calls"][-1]["api"] == "addLabels"
+    for call in result["calls"]:
+        assert call["args"]["owner"] == "test-owner"
+        assert call["args"]["repo"] == "test-repo"
+        assert call["args"]["issue_number"] == 22
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+@pytest.mark.parametrize(("status", "pr_number"), [
+    ("success", ""), ("failure", ""), ("failure", "37"),
+    ("cancelled", "37"), ("skipped", ""),
+])
+def test_bundle_success_labels_do_not_run_without_successful_publication(status, pr_number):
+    labels = ["bundle-submission", "validation-failed"]
+    result = _run_bundle_success_labels(status, pr_number, labels)
+    assert result == {"labels": sorted(labels), "calls": [], "error": None}
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+@pytest.mark.parametrize("fail_api", ["listLabelsOnIssue", "removeLabel", "addLabels"])
+def test_bundle_success_labels_surface_api_errors(fail_api):
+    result = _run_bundle_success_labels(
+        "success", "37", ["bundle-submission", "validation-failed"], fail_api
+    )
+    assert result["error"] == f"API failure: {fail_api}"
+    assert result["calls"][-1]["api"] == fail_api
+    assert "validation-passed" not in result["labels"]
 
 
 def test_github_actions_are_pinned_to_full_commit_shas():
@@ -353,7 +466,8 @@ def test_community_upgrade_uses_established_runtime_defaults(kind):
     assert metadata["compiler_version"] == "v0.88.7"
     assert metadata["engine_versions"] == {"copilot": "1.0.80"}
     assert metadata["strict"] is True
-    assert "engine" not in source
+    assert set(source["engine"]) == {"id", "args"}
+    assert source["engine"]["id"] == "copilot"
 
     info = _workflow_step(
         compiled["jobs"]["activation"]["steps"], "Generate agentic run info"
@@ -459,17 +573,19 @@ def test_community_upgrade_preserves_scoped_draft_pr_contract(
     expected_outputs = {
         "add_comment", "add_labels", "create_pull_request", "noop",
         "create_report_incomplete_issue", "missing_data", "missing_tool",
-        "report_incomplete",
+        "report_incomplete", "remove_labels",
     }
     expected_source_outputs = {
-        "add-comment", "add-labels", "create-pull-request", "noop", "threat-detection"
+        "add-comment", "add-labels", "create-pull-request", "noop",
+        "threat-detection", "remove-labels",
     }
-    if kind == "bundle":
-        expected_outputs.add("remove_labels")
-        expected_source_outputs.add("remove-labels")
-        assert outputs["remove_labels"]["allowed"] == source["safe-outputs"][
-            "remove-labels"
-        ]["allowed"] == ["validation-passed", "validation-failed", "needs-info"]
+    removable_labels = (
+        ["validation-passed", "validation-failed", "needs-info"]
+        if kind == "bundle" else ["validation-passed", "validation-failed"]
+    )
+    assert outputs["remove_labels"]["allowed"] == source["safe-outputs"][
+        "remove-labels"
+    ]["allowed"] == removable_labels
     assert set(outputs) == expected_outputs
     assert set(source["safe-outputs"]) == expected_source_outputs
     assert outputs["add_comment"] == source["safe-outputs"]["add-comment"] == {"max": 2}
@@ -565,6 +681,151 @@ def test_community_submission_workflows_require_tag_pinned_download_urls():
             )
 
 
+@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+def test_community_checksum_instructions_preserve_submitted_digest(kind):
+    source_text, _, _, _ = _agentic_workflow(f"add-community-{kind}")
+    parsing = source_text.split("## Step 1", 1)[1].split("## Step 2", 1)[0]
+    prose = " ".join(parsing.split())
+    form = yaml.safe_load(
+        (REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / f"{kind}_submission.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    form_ids = {field["id"] for field in form["body"] if "id" in field}
+    documented_ids = set(re.findall(r"^\| [^|\n]+ \| `([^`]+)` \|", parsing, re.MULTILINE))
+    assert documented_ids <= form_ids
+    assert "not a dedicated issue-form input" in prose
+    assert "manually appended `### SHA-256` heading" in prose
+    assert "### SHA-256 (sha256)" in prose
+    assert "from the submitted issue, not release metadata or the computed digest" in prose
+    assert "exactly 64 hexadecimal characters" in prose
+    if kind == "preset":
+        assert "Proposed Catalog Entry" not in parsing
+    else:
+        assert "the `sha256` field in the Proposed Catalog Entry" in prose
+        assert "If both sources supply a checksum, they must agree" in prose
+
+    comparison = source_text.split("Compute SHA-256 only after", 1)[1].split(
+        "A blocked or failed download", 1
+    )[0]
+    comparison_prose = " ".join(comparison.split())
+    assert "EXPECTED_SHA256  /tmp/gh-aw/community-archive.zip" in source_text
+    assert "the validated `submitted_sha256`" in comparison_prose
+    assert "Never replace a mismatching submitted checksum" in comparison_prose
+    assert "A `FAILED` checksum comparison is a Failed outcome" in comparison_prose
+    assert (
+        "remove `validation-passed`, add `validation-failed`, and stop "
+        "without catalog/docs edits or a PR."
+    ) in comparison_prose
+    assert "Require exit code 0 and an `OK` result" in comparison_prose
+    assert "If no checksum was submitted, skip the comparison" in comparison_prose
+    assert "sha256sum /tmp/gh-aw/community-archive.zip" in comparison
+    assert "record its digest as `actual_sha256`" in comparison_prose
+
+
+@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+def test_community_catalog_records_computed_checksum_only_after_validation(kind):
+    source_text, _, _, _ = _agentic_workflow(f"add-community-{kind}")
+    catalog = source_text.split("## Step 4", 1)[1].split("## Step 5", 1)[0]
+    prose = " ".join(catalog.split())
+    assert '"sha256": "<actual_sha256>"' in catalog
+    assert (
+        "For both new entries and updates, only after every required validation "
+        "passes, set `sha256` to `actual_sha256` from the downloaded archive."
+    ) in prose
+    assert "Do this even when no checksum was submitted." in prose
+    assert "Replace any previous catalog digest; do not reuse a digest from an older archive." in prose
+    assert "A submitted mismatch must fail validation before this step" in prose
+
+
+@pytest.mark.skipif(shutil.which("sha256sum") is None, reason="sha256sum not available")
+@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("case", ["matching", "mismatch", "malformed"])
+def test_community_checksum_command_rejects_invalid_digest(kind, case, tmp_path):
+    source_text, _, _, _ = _agentic_workflow(f"add-community-{kind}")
+    command = re.search(r"```bash\n(sha256sum --check[^\n]+)\n```", source_text)
+    assert command is not None
+    args = shlex.split(command[1])
+    assert args == [
+        "sha256sum", "--check", "--strict", "/tmp/gh-aw/community-archive.sha256",
+    ]
+    manifest = re.search(
+        r"```text\n(EXPECTED_SHA256  /tmp/gh-aw/community-archive.zip)\n```", source_text
+    )
+    assert manifest is not None
+    archive = tmp_path / "community-archive.zip"
+    archive.write_bytes(b"community archive fixture\n")
+    expected = {
+        "matching": hashlib.sha256(archive.read_bytes()).hexdigest(),
+        "mismatch": "0" * 64,
+        "malformed": "not-a-sha256",
+    }[case]
+    checksum_file = tmp_path / "community-archive.sha256"
+    checksum_file.write_text(
+        manifest[1].replace("EXPECTED_SHA256", expected).replace(
+            "/tmp/gh-aw/community-archive.zip", archive.name
+        ) + "\n",
+        encoding="utf-8", newline="\n",
+    )
+    executable = shutil.which("sha256sum")
+    assert executable is not None
+    result = subprocess.run(
+        [executable, *args[1:-1], checksum_file.name],
+        cwd=tmp_path, capture_output=True, text=True, check=False,
+    )
+    if case == "matching":
+        assert result.returncode == 0, result.stderr
+        assert f"{archive.name}: OK" in result.stdout
+    else:
+        assert result.returncode != 0
+        assert f"{archive.name}: OK" not in result.stdout
+        if case == "mismatch":
+            assert result.stdout.strip() == f"{archive.name}: FAILED"
+
+
+@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+def test_community_archive_permission_failures_are_not_submission_failures(kind):
+    source_text, _, source, compiled = _agentic_workflow(f"add-community-{kind}")
+    outcome = source_text.split("### Validation outcome\n", 1)[1].split(
+        "\n## Step 3", 1
+    )[0]
+    assert re.findall(r"^#### (.+)$", outcome, re.MULTILINE) == [
+        "Blocked", "Failed", "Passed",
+    ]
+    intro, blocked, failed, passed = re.split(r"\n#### [^\n]+\n", outcome)
+    assert " ".join(intro.split()) == (
+        "Choose exactly one outcome below, in order. A check that could not run "
+        "is incomplete, not a passed check or a confirmed submission defect."
+    )
+    assert "validation is blocked by the workflow environment" in blocked
+    assert "Do not ask the submitter to change a URL or resubmit solely" in blocked
+    assert "Do not add `validation-failed` or `needs-info` solely for an" in blocked
+    assert "If independent submission checks failed, report those separately" in blocked
+    assert "and apply `validation-failed` for those failures only." in blocked
+    assert "Remove `validation-passed`" in blocked
+    assert " ".join(blocked.split()).endswith(
+        "Stop processing here without editing catalog/docs files or opening a PR. "
+        "Do not evaluate the Failed or Passed outcomes below."
+    )
+    assert " ".join(failed.split()).startswith(
+        "If there are no environment blockers and a completed check found a "
+        "submission defect:"
+    )
+    assert "Remove `validation-passed`" in failed
+    assert " ".join(passed.split()).startswith(
+        "If there are no environment blockers and every required check completed "
+        "and passed:"
+    )
+    assert re.search(
+        r"remove `validation-failed`.*add (?:the )?`validation-passed`",
+        passed, re.IGNORECASE | re.DOTALL,
+    )
+    assert "validation-failed" in source["safe-outputs"]["remove-labels"]["allowed"]
+    assert "validation-failed" in _safe_output_config(compiled)["remove_labels"]["allowed"]
+    assert "validation-passed" in source["safe-outputs"]["remove-labels"]["allowed"]
+    assert "validation-passed" in _safe_output_config(compiled)["remove_labels"]["allowed"]
+
+
 def test_community_submission_allowed_files_do_not_include_other_catalogs_or_docs():
     allowed_by_workflow = {
         workflow: set(
@@ -621,52 +882,58 @@ def _community_submission_harness_command(workflow: str) -> str:
 
 
 def test_community_submission_archive_fetch_tool_is_allowed():
-    """Archive checks must not require an interactive curl permission grant."""
+    """Archive checks must not require interactive tool or URL permission grants."""
     for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
         source = WORKFLOWS_DIR / f"add-community-{workflow}.md"
-        bash_tools = _frontmatter(source.read_text(encoding="utf-8"))["tools"]["bash"]
+        config = _frontmatter(source.read_text(encoding="utf-8"))
+        bash_tools = config["tools"]["bash"]
 
-        assert "curl" in bash_tools, f"{workflow} cannot fetch binary archives"
+        assert {"curl", "sha256sum"} <= set(bash_tools)
         assert "*" not in bash_tools
+        urls = [
+            f"https://{host}" for host in config["network"]["allowed"]
+            if host != "defaults"
+        ]
+        args = [f"--allow-url={url}" for url in urls]
+        assert config["engine"] == {"id": "copilot", "args": args}
         harness_command = _community_submission_harness_command(workflow)
+        for arg in args:
+            assert arg in harness_command
+        assert "shell(cat)" in harness_command
         assert "shell(curl:*)" in harness_command
-        assert "--allow-all-tools" not in harness_command
+        assert "shell(sha256sum)" in harness_command
+        for unrestricted in ("--allow-all-urls", "--allow-all-tools", "--yolo"):
+            assert unrestricted not in harness_command
+        assert re.search(r"--allow-all(?:\s|$)", harness_command) is None
+        assert re.findall(r"--allow-url[= ]([^\s'\"]+)", harness_command) == urls
 
 
 def test_community_submission_archive_redirect_hosts_are_allowed():
     """Each accepted ZIP URL pattern must work through the restricted firewall."""
-    download_hosts_by_workflow = {
-        "extension": {
-            "github.com",
-            "codeload.github.com",
-            "release-assets.githubusercontent.com",
-        },
-        "preset": {
-            "github.com",
-            "codeload.github.com",
-            "release-assets.githubusercontent.com",
-        },
-        "bundle": {
-            "github.com",
-            "release-assets.githubusercontent.com",
-        },
-    }
-    all_download_hosts = set().union(*download_hosts_by_workflow.values())
+    download_hosts = [
+        "github.com",
+        "codeload.github.com",
+        "release-assets.githubusercontent.com",
+        "raw.githubusercontent.com",
+    ]
     for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
         source = WORKFLOWS_DIR / f"add-community-{workflow}.md"
         config = _frontmatter(source.read_text(encoding="utf-8"))
-        download_hosts = download_hosts_by_workflow[workflow]
 
-        assert set(config.get("network", {}).get("allowed", [])) == {
-            "defaults",
-            *download_hosts,
+        assert config["network"] == {
+            "allowed": ["defaults", *download_hosts],
         }, f"{workflow} must allow only the required download hosts plus defaults"
         agent_run = _community_submission_agent_run(workflow)
-        for host in all_download_hosts:
-            if host in download_hosts:
-                assert f'\\"{host}\\"' in agent_run
-            else:
-                assert f'\\"{host}\\"' not in agent_run
+        match = re.search(r'\\"network\\":(\{.*?\}),\\"apiProxy\\"', agent_run)
+        assert match is not None
+        network = json.loads(match[1].replace(r'\"', '"'))
+        assert set(download_hosts) <= set(network["allowDomains"])
+        assert all("*" not in domain for domain in network["allowDomains"])
+        assert not {
+            "example.com", "gitlab.com", "localhost", "127.0.0.1",
+            "169.254.169.254", "metadata.google.internal",
+        } & set(network["allowDomains"])
+        assert network["isolation"] is True
 
 
 def test_community_submission_archive_fetch_requires_direct_evidence():
@@ -676,15 +943,94 @@ def test_community_submission_archive_fetch_requires_direct_evidence():
         )
 
         assert "Use `curl` for binary downloads" in source_text
-        assert "--location --proto '=https' --proto-redir '=https'" in source_text
-        assert "`--max-time 60`" in source_text
-        assert "`--write-out '%{http_code}'`" in source_text
+        command = re.search(r"```bash\n(curl [^\n]+)\n```", source_text)
+        assert command is not None
+        assert command[1].endswith('"$(cat /tmp/gh-aw/validated_download_url.txt)"')
+        assert "VALIDATED_DOWNLOAD_URL" not in source_text
+        assert shlex.split(command[1]) == [
+            "curl", "--location", "--proto", "=https", "--proto-redir", "=https",
+            "--max-time", "60", "--silent", "--show-error",
+            "--write-out", "%{http_code}",
+            "--output", "/tmp/gh-aw/community-archive.zip",
+            "$(cat /tmp/gh-aw/validated_download_url.txt)",
+        ]
+        prose = " ".join(source_text.split())
         assert (
-            "A blocked or failed download\n"
-            "must not count as a passed check; repository/release metadata is not a\n"
+            "use the edit tool (not a shell command) to write the exact URL "
+            "as one line plus a trailing newline to `/tmp/gh-aw/validated_download_url.txt`"
+        ) in prose
+        assert "Do not interpolate issue values into shell commands" in prose
+        assert "The fixed, double-quoted `$(cat ...)` above is the only command substitution allowed" in prose
+        assert "sha256sum /tmp/gh-aw/community-archive.zip" in source_text
+        assert "Run the download and checksum as separate shell calls" in source_text
+        assert (
+            "A blocked or failed download "
+            "must not count as a passed check; repository/release metadata is not a "
             "substitute for fetching the archive."
-        ) in source_text
+        ) in " ".join(source_text.split())
         assert "Never execute downloaded content." in source_text
+        assert (
+            "Compute SHA-256 only after a successful download with final HTTP 200."
+            in source_text
+        )
+
+
+_COMMUNITY_DOWNLOAD_URL_CASES = [
+    ("https://github.com/owner/repo/archive/refs/tags/v1.2.3.zip", True),
+    ("https://github.com/owner/repo/releases/download/aide-v1.2.3/aide_1.2.3.zip", True),
+    ("https://github.com/owner/repo/releases/download/v1.2.3/a%27%20%24%28b%29.zip", True),
+    ("https://github.com/owner/repo/releases/download/v1.2.3/a'; printf x > injected; echo 'b.zip", False),
+    ('https://github.com/owner/repo/releases/download/v1.2.3/a"; printf x > injected; echo "b.zip', False),
+    ("https://github.com/owner/repo/releases/download/v1.2.3/$(printf x > injected)`printf x > injected`.zip", False),
+    ("https://github.com/owner/repo/releases/download/v1.2.3/a\r\n; printf x > injected | cat & echo *.zip", False),
+]
+
+
+@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize(("url", "allowed"), _COMMUNITY_DOWNLOAD_URL_CASES)
+def test_community_download_documented_character_allowlist(kind, url, allowed):
+    """Exercise the documented regex, not an agent's adherence to the instructions."""
+    source_text, _, _, _ = _agentic_workflow(f"add-community-{kind}")
+    instructions = source_text.split("Use `curl` for binary downloads.", 1)[1].split(
+        "```bash", 1
+    )[0]
+    pattern = re.search(r"require the entire URL to match `([^`]+)`", instructions)
+    assert pattern is not None
+    assert pattern[1] == "^[A-Za-z0-9._~%/:-]+$"
+    assert (re.fullmatch(pattern[1], url) is not None) is allowed
+    prose = " ".join(instructions.split())
+    assert "After the URL passes the pinning checks" in prose
+    assert "require the entire URL to match" in prose
+    assert "Reject disallowed characters as a submission failure without fetching the URL." in prose
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("url", [url for url, _ in _COMMUNITY_DOWNLOAD_URL_CASES])
+def test_community_download_command_treats_url_file_as_data(kind, url, tmp_path):
+    """Even data rejected by the documented allowlist cannot become shell syntax."""
+    source_text, _, _, _ = _agentic_workflow(f"add-community-{kind}")
+    command = re.search(r"```bash\n(curl [^\n]+)\n```", source_text)
+    assert command is not None
+    (tmp_path / "validated_download_url.txt").write_text(
+        url + "\n", encoding="utf-8", newline="\n",
+    )
+    # Redirect only the fixed input path; capture curl argv without network access.
+    script = 'curl() { printf "%s\\0" "$@"; }\n' + command[1].replace(
+        "/tmp/gh-aw/validated_download_url.txt", "validated_download_url.txt",
+    )
+    bash = shutil.which("bash")
+    assert bash is not None
+    result = subprocess.run(
+        [bash, "--noprofile", "--norc", "-c", script],
+        cwd=tmp_path, capture_output=True, check=False, timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == b""
+    assert result.stdout.decode("utf-8").split("\0") == [
+        *shlex.split(command[1])[1:-1], url, "",
+    ]
+    assert not (tmp_path / "injected").exists()
 
 
 def test_community_submission_threat_detection_is_fail_closed():
