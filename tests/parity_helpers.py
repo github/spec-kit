@@ -196,7 +196,7 @@ def install_composition_stack(
     """Install wrap/prepend/append presets over a core template."""
     templates = repo / ".specify" / "templates"
     templates.mkdir(parents=True, exist_ok=True)
-    (templates / f"{template_name}.md").write_text(core_content, encoding="utf-8")
+    (templates / f"{template_name}.md").write_bytes(core_content.encode("utf-8"))
 
     layers = [
         ("wrap-pack", 1, "wrap", "## Wrapper\n{CORE_TEMPLATE}\n## End\n"),
@@ -211,7 +211,7 @@ def install_composition_stack(
         preset_dir = repo / ".specify" / "presets" / preset_id
         template_dir = preset_dir / "templates"
         template_dir.mkdir(parents=True)
-        (template_dir / f"{template_name}.md").write_text(content, encoding="utf-8")
+        (template_dir / f"{template_name}.md").write_bytes(content.encode("utf-8"))
         (preset_dir / "preset.yml").write_text(
             "provides:\n"
             "  templates:\n"
