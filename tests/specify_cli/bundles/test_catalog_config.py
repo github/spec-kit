@@ -63,10 +63,128 @@ def test_add_source_persists_absolute_local_path(tmp_path: Path, monkeypatch):
     catalog.write_text("{}", encoding="utf-8")
 
     monkeypatch.chdir(project)
-    source = cc.add_source(project, "sub/cat.json", policy="install-allowed", priority=50)
+    source, status = cc.add_source(
+        project, "sub/cat.json", policy="install-allowed", priority=50
+    )
 
+    assert status == "added"
     assert Path(source.url).is_absolute()
     assert Path(source.url) == catalog.resolve()
+
+
+def test_add_source_normalizes_existing_entry_for_idempotency(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    cc._write(
+        project,
+        [
+            {
+                "id": " example ",
+                "url": " https://example.com/catalog.json ",
+                "priority": "50",
+                "install_policy": "install-allowed",
+                "metadata": "preserved",
+            }
+        ],
+    )
+    original = cc._config_path(project).read_bytes()
+
+    source, status = cc.add_source(
+        project,
+        "https://example.com/catalog.json",
+        policy="install-allowed",
+        priority=50,
+        source_id="example",
+    )
+
+    assert status == "unchanged"
+    assert source.id == "example"
+    assert cc._config_path(project).read_bytes() == original
+
+
+def test_add_source_rejects_partial_identity_matches(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    cc.add_source(
+        project,
+        "https://example.com/catalog.json",
+        policy="install-allowed",
+        priority=50,
+        source_id="example",
+    )
+
+    with pytest.raises(BundlerError, match="already exists"):
+        cc.add_source(
+            project,
+            "https://example.com/other.json",
+            policy="install-allowed",
+            priority=50,
+            source_id="example",
+        )
+    with pytest.raises(BundlerError, match="already exists"):
+        cc.add_source(
+            project,
+            "https://example.com/catalog.json",
+            policy="install-allowed",
+            priority=50,
+            source_id="different",
+        )
+
+
+def test_add_source_uses_existing_id_when_id_is_omitted(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    first, _ = cc.add_source(
+        project,
+        "https://example.com/catalog.json",
+        policy="install-allowed",
+        priority=50,
+        source_id="custom",
+    )
+
+    second, status = cc.add_source(
+        project,
+        "https://example.com/catalog.json",
+        policy="install-allowed",
+        priority=50,
+    )
+
+    assert status == "unchanged"
+    assert second == first
+
+
+def test_add_source_prefers_url_match_over_derived_id_collision(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    cc._write(
+        project,
+        [
+            {
+                "id": "example-com-target",
+                "url": "https://other.example/catalog.json",
+                "priority": 50,
+                "install_policy": "install-allowed",
+            },
+            {
+                "id": "custom",
+                "url": "https://example.com/target.json",
+                "priority": 50,
+                "install_policy": "install-allowed",
+            },
+        ],
+    )
+    original = cc._config_path(project).read_bytes()
+
+    source, status = cc.add_source(
+        project,
+        "https://example.com/target.json",
+        policy="install-allowed",
+        priority=50,
+    )
+
+    assert status == "unchanged"
+    assert source.id == "custom"
+    assert cc._config_path(project).read_bytes() == original
 
 
 def test_remove_source_accepts_relative_local_path(tmp_path: Path, monkeypatch):
@@ -234,7 +352,10 @@ def test_add_source_allows_local_path_with_colon(tmp_path: Path, monkeypatch):
     (project / ".specify").mkdir(parents=True)
     monkeypatch.chdir(project)
     # A relative path containing ':' but no '://' is still a local path.
-    source = cc.add_source(project, "weird:name.json", policy="install-allowed", priority=50)
+    source, status = cc.add_source(
+        project, "weird:name.json", policy="install-allowed", priority=50
+    )
+    assert status == "added"
     assert source.url.endswith("weird:name.json") or "weird" in source.url
 
 
@@ -248,7 +369,13 @@ def test_add_source_rejects_plain_http_for_non_localhost(tmp_path: Path):
 def test_add_source_allows_http_for_localhost(tmp_path: Path):
     project = tmp_path / "proj"
     (project / ".specify").mkdir(parents=True)
-    source = cc.add_source(project, "http://localhost:8080/c.json", policy="install-allowed", priority=50)
+    source, status = cc.add_source(
+        project,
+        "http://localhost:8080/c.json",
+        policy="install-allowed",
+        priority=50,
+    )
+    assert status == "added"
     assert source.url == "http://localhost:8080/c.json"
 
 

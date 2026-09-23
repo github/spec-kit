@@ -18,9 +18,17 @@ def workflow_step_catalog_add(
 
     catalog = StepCatalog(project_root)
     try:
-        catalog.add_catalog(url, name)
+        status = catalog.add_catalog(url, name)
     except StepValidationError as exc:
         cli.console.print(f"[red]Error:[/red] {exc}")
         raise cli.typer.Exit(1)
 
-    cli.console.print(f"[green]✓[/green] Step catalog source added: {url}")
+    safe_url = cli._escape_markup(url.strip())
+    if status == "unchanged":
+        cli.console.print(
+            f"[green]✓[/green] Step catalog source already configured: {safe_url}"
+        )
+    else:
+        cli.console.print(
+            f"[green]✓[/green] Step catalog source added: {safe_url}"
+        )

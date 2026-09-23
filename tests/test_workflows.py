@@ -8901,14 +8901,28 @@ class TestWorkflowCatalog:
         new = next(c for c in data["catalogs"] if c["url"] == "https://b.example.com/c.json")
         assert new["priority"] == 1  # max(inf coerced to 0) + 1
 
-    def test_add_catalog_duplicate_rejected(self, project_dir):
+    def test_add_catalog_normalizes_stored_url_for_idempotency(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
 
         catalog = WorkflowCatalog(project_dir)
-        catalog.add_catalog("https://example.com/catalog.json")
+        assert (
+            catalog.add_catalog("https://example.com/catalog.json", "mine")
+            == "added"
+        )
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        data["catalogs"][0]["url"] = "  https://example.com/catalog.json  "
+        config_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+        original = config_path.read_bytes()
+
+        assert (
+            catalog.add_catalog("https://example.com/catalog.json", "mine")
+            == "unchanged"
+        )
+        assert config_path.read_bytes() == original
 
         with pytest.raises(WorkflowValidationError, match="already configured"):
-            catalog.add_catalog("https://example.com/catalog.json")
+            catalog.add_catalog("https://example.com/catalog.json", "different")
 
     def test_remove_catalog(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog
@@ -9643,14 +9657,28 @@ class TestStepCatalog:
 
         assert config_path.read_text(encoding="utf-8") == original
 
-    def test_add_catalog_duplicate_rejected(self, project_dir):
+    def test_add_catalog_normalizes_stored_url_for_idempotency(self, project_dir):
         from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
 
         catalog = StepCatalog(project_dir)
-        catalog.add_catalog("https://example.com/steps.json")
+        assert (
+            catalog.add_catalog("https://example.com/steps.json", "mine")
+            == "added"
+        )
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        data["catalogs"][0]["url"] = "  https://example.com/steps.json  "
+        config_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+        original = config_path.read_bytes()
+
+        assert (
+            catalog.add_catalog("https://example.com/steps.json", "mine")
+            == "unchanged"
+        )
+        assert config_path.read_bytes() == original
 
         with pytest.raises(StepValidationError, match="already configured"):
-            catalog.add_catalog("https://example.com/steps.json")
+            catalog.add_catalog("https://example.com/steps.json", "different")
 
     def test_remove_catalog(self, project_dir):
         from specify_cli.workflows.step.catalog import StepCatalog
