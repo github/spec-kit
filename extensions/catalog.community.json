@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-18T00:00:00Z",
+  "updated_at": "2026-09-23T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -5780,6 +5780,60 @@
       "stars": 0,
       "created_at": "2026-04-25T00:00:00Z",
       "updated_at": "2026-04-25T00:00:00Z"
+    },
+    "threatspec": {
+      "name": "ThreatSpec — Threat Modeling & Security Traceability",
+      "id": "threatspec",
+      "description": "STRIDE and AI/ML threat modeling with threat-to-test traceability and security convergence",
+      "author": "hupe1980",
+      "version": "0.1.0",
+      "download_url": "https://github.com/hupe1980/spec-kit-threatspec/archive/refs/tags/v0.1.0.zip",
+      "sha256": "6003b667e01e51a4637e4b6c2f2cea644674449f5bd2e7ed9301d3459a5a9c40",
+      "repository": "https://github.com/hupe1980/spec-kit-threatspec",
+      "homepage": "https://github.com/hupe1980/spec-kit-threatspec",
+      "documentation": "https://github.com/hupe1980/spec-kit-threatspec/blob/main/README.md",
+      "changelog": "https://github.com/hupe1980/spec-kit-threatspec/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0",
+        "tools": [
+          {
+            "name": "python",
+            "version": ">=3.8",
+            "required": true
+          },
+          {
+            "name": "pyyaml",
+            "required": true
+          },
+          {
+            "name": "uv",
+            "required": false
+          },
+          {
+            "name": "jsonschema",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 7
+      },
+      "tags": [
+        "security",
+        "threat-modeling",
+        "llm",
+        "agentic",
+        "traceability"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-23T00:00:00Z",
+      "updated_at": "2026-09-23T00:00:00Z"
     },
     "tldr": {
       "name": "Spec Kit TLDR",
