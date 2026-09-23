@@ -4,7 +4,6 @@
 # dependencies = [
 #     "typer",
 #     "rich",
-#     "platformdirs",
 #     "readchar",
 #     "json5",
 #     "pyyaml",
