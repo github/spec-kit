@@ -196,15 +196,12 @@ def add_source(
         },
         Scope.PROJECT,
     )
+    id_collision = False
     for existing in catalogs:
         existing_source = CatalogSource.from_dict(existing, Scope.PROJECT)
-        if (
-            existing_source.id == requested_source.id
-            or existing_source.url == requested_source.url
-        ):
+        if existing_source.url == requested_source.url:
             if (
-                existing_source.url == requested_source.url
-                and (not requested_id or existing_source.id == requested_source.id)
+                (not requested_id or existing_source.id == requested_source.id)
                 and existing_source.priority == requested_source.priority
                 and existing_source.install_policy is requested_source.install_policy
             ):
@@ -212,6 +209,13 @@ def add_source(
             raise BundlerError(
                 f"Catalog source '{resolved_id}' (or url) already exists in this project."
             )
+        if existing_source.id == requested_source.id:
+            id_collision = True
+
+    if id_collision:
+        raise BundlerError(
+            f"Catalog source '{resolved_id}' (or url) already exists in this project."
+        )
 
     entry = requested_source.to_dict()
     catalogs.append(entry)

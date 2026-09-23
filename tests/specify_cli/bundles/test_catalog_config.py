@@ -153,6 +153,40 @@ def test_add_source_uses_existing_id_when_id_is_omitted(tmp_path: Path):
     assert second == first
 
 
+def test_add_source_prefers_url_match_over_derived_id_collision(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    cc._write(
+        project,
+        [
+            {
+                "id": "example-com-target",
+                "url": "https://other.example/catalog.json",
+                "priority": 50,
+                "install_policy": "install-allowed",
+            },
+            {
+                "id": "custom",
+                "url": "https://example.com/target.json",
+                "priority": 50,
+                "install_policy": "install-allowed",
+            },
+        ],
+    )
+    original = cc._config_path(project).read_bytes()
+
+    source, status = cc.add_source(
+        project,
+        "https://example.com/target.json",
+        policy="install-allowed",
+        priority=50,
+    )
+
+    assert status == "unchanged"
+    assert source.id == "custom"
+    assert cc._config_path(project).read_bytes() == original
+
+
 def test_remove_source_accepts_relative_local_path(tmp_path: Path, monkeypatch):
     """add_source stores a local path as an absolute url, so remove_source must
     accept the same relative path the caller added; otherwise `remove ./cat.json`
