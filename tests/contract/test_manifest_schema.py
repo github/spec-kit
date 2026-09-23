@@ -8,8 +8,8 @@ from __future__ import annotations
 import pytest
 
 from specify_cli.bundler import BundlerError
-from specify_cli.bundler.models.manifest import BundleManifest
-from tests.bundler_helpers import valid_manifest_dict
+from specify_cli.bundles.manifest import BundleManifest
+from tests.specify_cli.bundles.helpers import valid_manifest_dict
 
 
 def test_valid_manifest_has_no_structural_errors():

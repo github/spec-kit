@@ -5,8 +5,8 @@ Two public entry points:
 * :meth:`ArtifactCatalog.list_artifacts` — flat inventory (id, name, kind, description).
 * :meth:`ArtifactCatalog.get_artifact_info` — one row plus its full ordered stack.
 
-Everything else in this module is internal machinery. Callers outside
-:mod:`specify_cli.artifacts._commands` should not import the private helpers.
+Everything else in this module is internal machinery. Callers outside the
+artifact command modules should not import the private helpers.
 """
 
 from __future__ import annotations

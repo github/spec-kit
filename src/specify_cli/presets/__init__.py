@@ -4542,7 +4542,7 @@ class PresetCatalog:
         Passes the ``github`` provider hosts from ``auth.json`` so GitHub
         Enterprise Server release assets resolve via ``/api/v3``.
         """
-        from specify_cli._github_http import resolve_github_release_asset_api_url
+        from specify_cli.authentication.github_http import resolve_github_release_asset_api_url
         from specify_cli.authentication.http import github_provider_hosts
 
         return resolve_github_release_asset_api_url(

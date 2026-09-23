@@ -11,6 +11,24 @@ These demonstrate packaging a role-based setup, not filled generated feature
 specs; for end-to-end usage examples, see
 [community walkthroughs](../community/walkthroughs.md).
 
+## First-party Bundles
+
+Spec Kit ships a first-party bundle catalog in `bundles/catalog.json`. These bundles are curated, marked `verified: true`, and resolve through the built-in `builtin://default` catalog source.
+
+| Bundle    | Role        | Components                                            | Use case                                |
+| --------- | ----------- | ----------------------------------------------------- | --------------------------------------- |
+| `bugfix`  | `developer` | `bug` extension + `bugfix` workflow                   | Guided assess → gate → fix → test       |
+| `assess`  | `developer` | `assess` extension + `assess` workflow                | Idea triage before Spec-Driven Development |
+
+Install a first-party bundle the same way you install any bundle (`add` is an alias for `install`):
+
+```bash
+specify bundle install bugfix
+specify bundle add assess
+```
+
+The first-party catalog is fetched from the repository online and falls back to the packaged wheel snapshot offline so discovery works without network access. A local bundle manifest can install bundled extensions and workflows with `--offline`. Catalog-discovered bundle manifests still resolve from their `download_url`, so `specify bundle add <id>` requires network today; fully offline catalog installation is tracked as follow-up work.
+
 ## Search Available Bundles
 
 ```bash
@@ -146,7 +164,10 @@ If your bundle references components from non-default catalogs, document those c
 
 ## Manage Catalog Sources
 
-Bundles are discovered through a priority-ordered stack of catalog sources (project, user, and built-in scopes).
+Bundles are discovered through a priority-ordered stack of catalog sources (project, user, and built-in scopes). The built-in sources are:
+
+- `builtin://default` — first-party bundles shipped in `bundles/catalog.json` (`bugfix`, `assess`, ...), install-allowed.
+- `builtin://community` — community submissions in `bundles/catalog.community.json`, discovery-only.
 
 Each source has an install policy. `install-allowed` sources can be installed
 from; `discovery-only` sources appear in `search` and `info` but refuse

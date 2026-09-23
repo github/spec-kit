@@ -6,8 +6,12 @@ Vibe uses ``.vibe/skills/speckit-<name>/SKILL.md`` layout (enforced since v2.0.0
 
 from __future__ import annotations
 
+import json
+import logging
+import os
+import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ..base import IntegrationOption, SkillsIntegration
 from ..manifest import IntegrationManifest
@@ -25,6 +29,13 @@ from ..._utils import dump_frontmatter
 # command opts into ``context: fork``. The injection mechanism below stays in
 # place so a future command can be added here when that holds true.
 FORK_CONTEXT_COMMANDS: dict[str, dict[str, str]] = {}
+
+# Keep the native Vibe timeout slightly longer than the dispatcher's inner
+# timeout so Vibe does not terminate the dispatcher before it can reap its
+# child process.
+VIBE_EVENT_TIMEOUT_BUFFER = 5
+
+logger = logging.getLogger(__name__)
 
 
 class VibeIntegration(SkillsIntegration):
@@ -115,7 +126,13 @@ class VibeIntegration(SkillsIntegration):
             if dash_count == 1 and stripped.startswith(f"{key}:"):
                 return content
 
-        # Inject before the closing --- of frontmatter
+        # Inject before the closing --- of frontmatter. Preserve the
+        # existing EOL style, but default to "\n" (rather than "") when the
+        # closing delimiter is the last line of the file with no trailing
+        # newline -- otherwise the injected text glues onto the "---"
+        # (e.g. "user-invocable: true---"), destroying the delimiter so a
+        # later call's pre-scan/injection never finds a second "---" and
+        # silently drops that key entirely.
         out: list[str] = []
         dash_count = 0
         injected = False
@@ -129,7 +146,7 @@ class VibeIntegration(SkillsIntegration):
                     elif line.endswith("\n"):
                         eol = "\n"
                     else:
-                        eol = ""
+                        eol = "\n"
                     out.append(f"{key}: {value}{eol}")
                     injected = True
             out.append(line)
@@ -194,3 +211,144 @@ class VibeIntegration(SkillsIntegration):
         )
 
         return super().setup(project_root, manifest, parsed_options=parsed_options, **opts)
+
+    @staticmethod
+    def _hook_target_os() -> str:
+        """Return the shell Vibe uses for hook commands on this host."""
+        return "cmd" if os.name == "nt" else "host"
+
+    @staticmethod
+    def _toml_quote(value: str) -> str:
+        """Render a TOML basic string without exposing Vibe syntax to events."""
+        return json.dumps(value)
+
+    @staticmethod
+    def _managed_hooks_pattern() -> re.Pattern[str]:
+        """Match one Vibe ``[[hooks]]`` block carrying our ownership marker."""
+        return re.compile(
+            r"\[\[hooks\]\]\n(?:(?!\[\[hooks\]\]).)*?speckit_marker = true\n*",
+            re.DOTALL,
+        )
+
+    def merge_vibe_event_hooks(
+        self,
+        project_root: Path,
+        events: dict[str, list[dict[str, Any]]],
+        *,
+        build_dispatcher_command: Callable[[str, str, str, Any], str],
+        native_timeout: Callable[[Any], int],
+        ensure_safe_destination: Callable[[Path], None],
+    ) -> bool:
+        """Render and merge managed Vibe hooks without disturbing user content.
+
+        This intentionally lives on Vibe rather than in shared events: Vibe's
+        flat TOML schema, supported fields, unique-name rule, native shell
+        quoting, and ownership-marker cleanup are all Vibe-specific.
+        """
+        lines: list[str] = []
+        used_names: set[str] = set()
+        for event, handlers in events.items():
+            native = self.CANONICAL_TO_NATIVE[event]
+            for config in handlers:
+                command = config.get("command", "")
+                dispatcher_command = build_dispatcher_command(
+                    command,
+                    event,
+                    self._hook_target_os(),
+                    config.get("timeout", 60),
+                )
+                command_stem = command.split(".")[-1] if command else "unknown"
+                command_stem = re.sub(r"[^A-Za-z0-9_-]+", "-", command_stem) or "unknown"
+                base_name = f"speckit-{native}-{command_stem}"
+                hook_name = base_name
+                suffix = 2
+                while hook_name in used_names:
+                    hook_name = f"{base_name}-{suffix}"
+                    suffix += 1
+                used_names.add(hook_name)
+
+                lines.extend(
+                    [
+                        "[[hooks]]",
+                        f"name = {self._toml_quote(hook_name)}",
+                        f"type = {self._toml_quote(native)}",
+                    ]
+                )
+                matcher = config.get("matcher", "*")
+                if matcher and matcher != "*" and native in ("pre_tool", "post_tool"):
+                    lines.append(f"match = {self._toml_quote('re:' + matcher)}")
+                lines.extend(
+                    [
+                        f"command = {self._toml_quote(dispatcher_command)}",
+                        f"timeout = {native_timeout(config.get('timeout', 60) + VIBE_EVENT_TIMEOUT_BUFFER)}",
+                        "speckit_marker = true",
+                        "",
+                    ]
+                )
+        return self._merge_managed_hooks(
+            project_root / self.events_config_file,
+            "\n".join(lines),
+            ensure_safe_destination=ensure_safe_destination,
+        )
+
+    def remove_vibe_event_hooks(
+        self,
+        project_root: Path,
+        *,
+        ensure_safe_destination: Callable[[Path], None],
+    ) -> bool:
+        """Remove only Specify-owned Vibe hooks and delete an owned-only file."""
+        path = project_root / self.events_config_file
+        if not path.exists():
+            return False
+        ensure_safe_destination(path)
+        try:
+            existing = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            logger.warning(
+                "Could not read %s (it may be unreadable or not UTF-8); "
+                "skipping event-config cleanup to preserve user content.",
+                path,
+            )
+            logger.debug("Read error detail: %s", exc)
+            return False
+
+        cleaned = self._managed_hooks_pattern().sub("", existing)
+        if cleaned == existing:
+            return False
+        non_comment_content = "\n".join(
+            line
+            for line in cleaned.splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        )
+        if not non_comment_content:
+            path.unlink(missing_ok=True)
+            return True
+        path.write_text(cleaned, encoding="utf-8")
+        return False
+
+    def _merge_managed_hooks(
+        self,
+        path: Path,
+        fragment: str,
+        *,
+        ensure_safe_destination: Callable[[Path], None],
+    ) -> bool:
+        """Replace managed entries while retaining every unowned byte sequence."""
+        ensure_safe_destination(path)
+        existing = ""
+        if path.exists():
+            try:
+                existing = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                logger.warning(
+                    "Could not read %s (it may be unreadable or not UTF-8); "
+                    "skipping event-config merge to preserve user content.",
+                    path,
+                )
+                logger.debug("Read error detail: %s", exc)
+                return False
+        cleaned = self._managed_hooks_pattern().sub("", existing)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(cleaned.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
+        return True

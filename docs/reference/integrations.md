@@ -8,7 +8,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | ------------------------------------------------------------------------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | [Alquimia AI](https://docs.alquimia.ai)                                              | `alquimia`       | Skills-based integration; installs skills into `.alquimia/skills` and invokes them as `/speckit-<command>`                                |
 | [Amp](https://ampcode.com/)                                                          | `amp`            |                                                                                                                                           |
-| [Antigravity (agy)](https://antigravity.google/)                                     | `agy`            | Skills-based integration; skills are installed automatically                                                                               |
+| [Antigravity (agy)](https://antigravity.google/)                                     | `agy`            | Skills-based integration; installs skills into `.agents/skills/` and invokes them as `/speckit-<command>`. In headless non-interactive runs, automatic tool approval via `--dangerously-skip-permissions` can be enabled by setting `SPECKIT_AGY_ALLOW_ALL_TOOLS=1` or `SPECKIT_INTEGRATION_AGY_ALLOW_ALL_TOOLS=1`. |
 | [Auggie CLI](https://docs.augmentcode.com/cli/overview)                              | `auggie`         |                                                                                                                                           |
 | [Claude Code](https://www.anthropic.com/claude-code)                                 | `claude`         | Skills-based integration; installs skills in `.claude/skills`                                                                              |
 | [Cline](https://github.com/cline/cline)                                              | `cline`          | IDE-based agent                                                                                                                           |
@@ -316,6 +316,7 @@ The currently declared multi-install safe integrations are:
 | `kiro-cli` | `.kiro/prompts` |
 | `lingma` | `.lingma/skills` |
 | `omp` | `.omp/commands` |
+| `opencode` | `.opencode/commands` |
 | `pi` | `.pi/prompts` |
 | `qodercli` | `.qoder/skills` |
 | `qwen` | `.qwen/commands` |
