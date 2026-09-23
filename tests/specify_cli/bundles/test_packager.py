@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import stat
 import zipfile
 from pathlib import Path
 
@@ -297,3 +298,38 @@ def test_temp_file_cleaned_up_on_failure(tmp_path: Path):
 
     tmp_files = list(out_dir.glob("*.tmp"))
     assert tmp_files == [], f"Leftover temp files: {tmp_files}"
+
+
+def test_leftover_staging_file_is_not_packaged(tmp_path: Path):
+    """A leftover mkstemp staging file from a prior killed build must never be
+    collected — even with the default out_dir (the bundle source tree)."""
+    bundle = _make_bundle(
+        tmp_path / "b",
+        extra_files={"demo-bundle-1.2.0-abcd1234.tmp": "partial"},
+    )
+    result = build_bundle(bundle)
+    with zipfile.ZipFile(result.artifact_path) as archive:
+        names = set(archive.namelist())
+    assert "demo-bundle-1.2.0-abcd1234.tmp" not in names
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_artifact_is_world_readable_after_build(tmp_path: Path):
+    """A fresh build must publish a 0644 artifact, not the 0600 mode that
+    mkstemp() creates the staging file with."""
+    bundle = _make_bundle(tmp_path / "b")
+    result = build_bundle(bundle, output_dir=tmp_path / "out")
+    assert stat.S_IMODE(result.artifact_path.stat().st_mode) == 0o644
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_rebuild_preserves_existing_artifact_mode(tmp_path: Path):
+    """A rebuild must keep a pre-existing artifact's mode instead of resetting
+    it (publishing pipelines may have chmod'd the artifact deliberately)."""
+    bundle = _make_bundle(tmp_path / "b")
+    out_dir = tmp_path / "out"
+    first = build_bundle(bundle, output_dir=out_dir)
+    os.chmod(first.artifact_path, 0o640)
+
+    second = build_bundle(bundle, output_dir=out_dir)
+    assert stat.S_IMODE(second.artifact_path.stat().st_mode) == 0o640

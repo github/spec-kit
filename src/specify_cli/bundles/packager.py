@@ -82,8 +82,20 @@ def build_bundle(
         rf"^{re.escape(manifest.bundle.id)}-"
         r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\.zip$"
     )
+    # A leftover mkstemp staging file (<id>-<version>-<random>.tmp) from a
+    # previous killed build may sit inside out_dir — which defaults to the
+    # bundle source tree — and must never be re-packaged as a member.
+    staging_re = re.compile(
+        rf"^{re.escape(manifest.bundle.id)}-"
+        r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?"
+        r"-[0-9A-Za-z_]+\.tmp$"
+    )
     files = _collect_files(
-        bundle_dir, skip=artifact_path, skip_dir=skip_dir, artifact_re=artifact_re
+        bundle_dir,
+        skip=artifact_path,
+        skip_dir=skip_dir,
+        artifact_re=artifact_re,
+        staging_re=staging_re,
     )
 
     # Build into a temporary sibling and atomically replace the final path only
@@ -129,6 +141,16 @@ def build_bundle(
                     archive.writestr(info, content)
 
         # All members written successfully — atomically replace the final path.
+        # mkstemp() creates the staging file 0600 (owner-only) and os.replace()
+        # preserves that mode, which would silently publish every rebuild as an
+        # unreadable-to-others archive (a direct ZipFile(path, "w") write used
+        # to produce 0666 & ~umask).  Set an intentional mode first: a rebuild
+        # keeps the existing artifact's mode so publishing pipelines that
+        # chmod'd it are not overridden; a fresh build gets 0644.
+        if artifact_path.exists():
+            os.chmod(tmp_path, artifact_path.stat().st_mode & 0o777)
+        else:
+            os.chmod(tmp_path, 0o644)
         os.replace(tmp_path, artifact_path)
     except BaseException:
         # Clean up the temporary file on any failure (exception, interrupt, etc.)
@@ -151,6 +173,7 @@ def _collect_files(
     skip: Path,
     skip_dir: Path | None = None,
     artifact_re: re.Pattern[str] | None = None,
+    staging_re: re.Pattern[str] | None = None,
 ) -> list[Path]:
     collected: list[Path] = []
     # followlinks=False so a symlinked directory is never descended into,
@@ -175,6 +198,9 @@ def _collect_files(
                 continue
             if artifact_re is not None and artifact_re.match(name):
                 # A prior build artifact for this bundle — never re-package it.
+                continue
+            if staging_re is not None and staging_re.match(name):
+                # A leftover packager staging file — never re-package it.
                 continue
             if path.is_symlink():
                 # Skip symlinked files to avoid escaping the bundle directory.
