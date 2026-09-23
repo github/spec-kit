@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json  # noqa: F401
 import os  # noqa: F401
 import shutil  # noqa: F401
@@ -1280,6 +1281,78 @@ class TestIntegrationUpgradeDetailed:
         ])
         assert result.exit_code == 0, result.output
         assert "Preset upgrade body" in skill_file.read_text(encoding="utf-8")
+
+    def test_upgrade_force_syncs_manifest_hash_for_preset_overridden_skill(
+        self, tmp_path
+    ):
+        """Regression for #4696.
+
+        A preset overriding a core command that renders as a skill
+        (e.g. ``speckit.tasks`` for ``codex``/``claude``) is rewritten by
+        ``_register_presets_for_agent`` *after* ``new_manifest.save()`` during
+        ``integration upgrade --force``. Without a post-registration resync,
+        the manifest keeps the base template's hash for that skill file, so
+        ``integration status`` immediately reports it as modified and a
+        subsequent ``upgrade`` (without ``--force``) is blocked.
+        """
+        import yaml
+
+        project = _init_project(tmp_path, "claude")
+
+        preset_src = tmp_path / "tasks-preset"
+        (preset_src / "commands").mkdir(parents=True)
+        (preset_src / "commands" / "speckit.tasks.md").write_text(
+            "---\ndescription: Tasks override\n---\nPreset tasks body\n",
+            encoding="utf-8",
+        )
+        manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "tasks-preset",
+                "name": "Tasks Preset",
+                "version": "1.0.0",
+                "description": "Preset overriding speckit.tasks",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.tasks",
+                        "file": "commands/speckit.tasks.md",
+                    }
+                ]
+            },
+        }
+        (preset_src / "preset.yml").write_text(
+            yaml.dump(manifest), encoding="utf-8"
+        )
+
+        result = _run_in_project(project, ["preset", "add", "--dev", str(preset_src)])
+        assert result.exit_code == 0, result.output
+
+        skill_rel = ".claude/skills/speckit-tasks/SKILL.md"
+        skill_file = project / skill_rel
+        assert "Preset tasks body" in skill_file.read_text(encoding="utf-8")
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "claude",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        manifest_path = project / ".specify" / "integrations" / "claude.manifest.json"
+        recorded_hash = json.loads(manifest_path.read_text(encoding="utf-8"))["files"][skill_rel]
+        actual_hash = hashlib.sha256(skill_file.read_bytes()).hexdigest()
+        assert recorded_hash == actual_hash, (
+            "manifest hash for the preset-overridden skill must match the "
+            "file `_register_presets_for_agent` just wrote"
+        )
+
+        status_result = _run_in_project(project, ["integration", "status"])
+        assert "Integration status: OK" in status_result.output, status_result.output
+        assert "Modified managed files: 0" in status_result.output
+        assert "managed-files-modified" not in status_result.output
 
     def test_upgrade_non_active_agent_preserves_active_agent_skills(self, tmp_path):
         """Upgrading a non-active agent must not touch the active agent's skills.
