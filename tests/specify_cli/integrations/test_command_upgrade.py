@@ -1354,6 +1354,65 @@ class TestIntegrationUpgradeDetailed:
         assert "Modified managed files: 0" in status_result.output
         assert "managed-files-modified" not in status_result.output
 
+    def test_resync_manifest_warns_on_per_file_failure_and_keeps_going(
+        self, tmp_path, capsys
+    ):
+        """A single file's rehash failure must warn, not vanish silently.
+
+        ``_resync_manifest_after_registration`` best-effort-skips files it
+        can't rehash, but a skip that produces no warning leaves the user
+        with a stale hash and no signal that the manifest wasn't fully
+        synchronized. Rehashing must also continue for the remaining files.
+        """
+        from specify_cli.integrations._helpers import (
+            _resync_manifest_after_registration,
+        )
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / "ok.md").write_text("ok content\n", encoding="utf-8")
+        (project / "bad.md").write_text("bad content\n", encoding="utf-8")
+
+        manifest = IntegrationManifest("claude", project, version="test")
+        manifest.record_existing("ok.md")
+        manifest.record_existing("bad.md")
+        stale_hash = manifest._files["bad.md"]
+        manifest.save()
+
+        # Both files' bytes changed on disk after the manifest was saved
+        # (simulating registration overwriting them), but only "bad.md"
+        # fails to rehash.
+        (project / "ok.md").write_text("ok content v2\n", encoding="utf-8")
+        (project / "bad.md").write_text("bad content v2\n", encoding="utf-8")
+
+        real_record_existing = IntegrationManifest.record_existing
+
+        def fake_record_existing(self, rel_path, **kwargs):
+            if str(rel_path) == "bad.md":
+                raise OSError("permission denied")
+            return real_record_existing(self, rel_path, **kwargs)
+
+        import unittest.mock as mock
+
+        with mock.patch.object(
+            IntegrationManifest, "record_existing", fake_record_existing
+        ):
+            _resync_manifest_after_registration(
+                manifest, "claude", continuing="Continuing."
+            )
+
+        captured = strip_ansi(capsys.readouterr().out)
+        assert "Warning:" in captured
+        assert "bad.md" in captured
+
+        reloaded = json.loads(manifest.manifest_path.read_text(encoding="utf-8"))
+        ok_hash = hashlib.sha256(
+            (project / "ok.md").read_bytes()
+        ).hexdigest()
+        assert reloaded["files"]["ok.md"] == ok_hash
+        assert reloaded["files"]["bad.md"] == stale_hash
+
     def test_upgrade_non_active_agent_preserves_active_agent_skills(self, tmp_path):
         """Upgrading a non-active agent must not touch the active agent's skills.
 

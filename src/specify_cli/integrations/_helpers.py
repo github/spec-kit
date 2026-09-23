@@ -508,7 +508,16 @@ def _resync_manifest_after_registration(
             try:
                 new_manifest.record_existing(rel)
                 changed = True
-            except (ValueError, OSError):
+            except (ValueError, OSError) as file_err:
+                from .. import _print_cli_warning
+
+                _print_cli_warning(
+                    "resync manifest hash for",
+                    "file",
+                    str(rel),
+                    file_err,
+                    continuing="Continuing with the remaining files.",
+                )
                 continue
         if changed:
             new_manifest.save()
