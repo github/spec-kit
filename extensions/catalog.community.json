@@ -5052,8 +5052,9 @@
       "id": "specassay-check",
       "description": "Gate 2 refuses silent gaps and emits a trace-manifest (`trace-manifest.json`).",
       "author": "Rik Dryfoos",
-      "version": "0.4.12",
-      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.4.12/specassay-check-0.4.12.zip",
+      "version": "0.5.1",
+      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.1/specassay-check-0.5.1.zip",
+      "sha256": "874728251c850e84d71f7a94dbdc326073703a8b408690d87a62b68d43dc6eff",
       "repository": "https://github.com/rdryfoos/specassay",
       "homepage": "https://www.specassay.com",
       "documentation": "https://github.com/rdryfoos/specassay/blob/main/extensions/specassay-check/README.md",
@@ -5062,7 +5063,7 @@
       "category": "visibility",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.14.0",
+        "speckit_version": ">=0.14.0,<2.0.0",
         "tools": [
           {
             "name": "bash",
@@ -5076,7 +5077,7 @@
         ]
       },
       "provides": {
-        "commands": 2,
+        "commands": 5,
         "hooks": 1
       },
       "tags": [
@@ -5090,7 +5091,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-13T00:00:00Z",
-      "updated_at": "2026-08-21T00:00:00Z"
+      "updated_at": "2026-09-23T00:00:00Z"
     },
     "specjudge": {
       "name": "SpecJudge — right-size the model before you implement",
