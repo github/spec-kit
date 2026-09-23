@@ -36,10 +36,18 @@ class TestGenericIntegration:
     def test_options_include_commands_dir(self):
         i = get_integration("generic")
         opts = i.options()
-        assert len(opts) == 1
+        assert len(opts) == 2
         assert opts[0].name == "--commands-dir"
         assert opts[0].required is True
         assert opts[0].is_flag is False
+
+    def test_options_include_skills_flag(self):
+        i = get_integration("generic")
+        opts = i.options()
+        skills_opt = next(o for o in opts if o.name == "--skills")
+        assert skills_opt.is_flag is True
+        assert skills_opt.required is False
+        assert skills_opt.default is False
 
     # -- Setup / teardown -------------------------------------------------
 
@@ -211,6 +219,101 @@ class TestGenericIntegration:
             cmd_files = [f for f in created if "scripts" not in f.parts]
             assert len(cmd_files) > 0
 
+    # -- Skills mode --------------------------------------------------------
+
+    def test_setup_writes_skill_md_when_skills_flag_set(self, tmp_path):
+        i = get_integration("generic")
+        m = IntegrationManifest("generic", tmp_path)
+        created = i.setup(
+            tmp_path, m,
+            parsed_options={"commands_dir": ".myagent/skills", "skills": True},
+        )
+        skill_files = [f for f in created if "scripts" not in f.parts]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            assert f.name == "SKILL.md"
+            assert f.parent.name.startswith("speckit-")
+            assert f.parent.parent == tmp_path / ".myagent" / "skills"
+
+    def test_skill_content_has_expected_frontmatter(self, tmp_path):
+        i = get_integration("generic")
+        m = IntegrationManifest("generic", tmp_path)
+        i.setup(
+            tmp_path, m,
+            parsed_options={"commands_dir": ".myagent/skills", "skills": True},
+        )
+        plan_skill = tmp_path / ".myagent" / "skills" / "speckit-plan" / "SKILL.md"
+        assert plan_skill.exists()
+        content = plan_skill.read_text(encoding="utf-8")
+        assert content.startswith("---\n")
+        assert 'name: "speckit-plan"' in content
+        assert "description:" in content
+        assert "compatibility:" in content
+        assert "{SCRIPT}" not in content
+        assert "__AGENT__" not in content
+        assert "__SPECKIT_COMMAND_" not in content
+
+    def test_skill_content_has_hook_command_note(self, tmp_path):
+        """SKILL.md bodies get the shared dot-to-hyphen hook invocation
+        note, matching what SkillsIntegration.setup() produces for other
+        skills-format agents (e.g. Claude)."""
+        i = get_integration("generic")
+        m = IntegrationManifest("generic", tmp_path)
+        i.setup(
+            tmp_path, m,
+            parsed_options={"commands_dir": ".myagent/skills", "skills": True},
+        )
+        constitution_skill = (
+            tmp_path / ".myagent" / "skills" / "speckit-constitution" / "SKILL.md"
+        )
+        assert constitution_skill.exists()
+        content = constitution_skill.read_text(encoding="utf-8")
+        assert (
+            "replace dots (`.`) with hyphens (`-`)" in content
+        ), "generic --skills output is missing the hook-invocation note"
+        assert "`speckit.git.commit` → `/speckit-git-commit`" in content
+
+    def test_skills_flag_false_keeps_flat_markdown(self, tmp_path):
+        """Without --skills, behavior is unchanged: flat speckit.<name>.md files."""
+        i = get_integration("generic")
+        m = IntegrationManifest("generic", tmp_path)
+        created = i.setup(
+            tmp_path, m,
+            parsed_options={"commands_dir": ".myagent/commands", "skills": False},
+        )
+        cmd_files = [f for f in created if "scripts" not in f.parts]
+        assert len(cmd_files) > 0
+        for f in cmd_files:
+            assert f.name.endswith(".md")
+            assert f.name.startswith("speckit.")
+            assert f.parent == tmp_path / ".myagent" / "commands"
+
+    def test_skill_files_tracked_in_manifest(self, tmp_path):
+        i = get_integration("generic")
+        m = IntegrationManifest("generic", tmp_path)
+        created = i.setup(
+            tmp_path, m,
+            parsed_options={"commands_dir": ".myagent/skills", "skills": True},
+        )
+        for f in created:
+            rel = f.resolve().relative_to(tmp_path.resolve()).as_posix()
+            assert rel in m.files, f"{rel} not tracked in manifest"
+
+    def test_skills_install_uninstall_roundtrip(self, tmp_path):
+        i = get_integration("generic")
+        m = IntegrationManifest("generic", tmp_path)
+        created = i.install(
+            tmp_path, m,
+            parsed_options={"commands_dir": ".myagent/skills", "skills": True},
+        )
+        assert len(created) > 0
+        m.save()
+        for f in created:
+            assert f.exists()
+        removed, skipped = i.uninstall(tmp_path, m)
+        assert len(removed) == len(created)
+        assert skipped == []
+
     # -- Context section ---------------------------------------------------
 
     def test_setup_does_not_write_context_section(self, tmp_path):
@@ -363,6 +466,94 @@ class TestGenericIntegration:
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"
         )
+
+    # -- Skills-mode alignment (separator, next-steps, add-on registration) --
+
+    def test_effective_invoke_separator_tracks_skills_flag(self, tmp_path):
+        """The separator used to render shared templates and next-step
+        guidance must match the layout ``setup()`` actually writes."""
+        i = get_integration("generic")
+        assert i.effective_invoke_separator({"skills": True}, tmp_path) == "-"
+        assert i.effective_invoke_separator({"skills": False}, tmp_path) == "."
+        assert i.effective_invoke_separator(None, tmp_path) == "."
+
+    def test_shared_template_and_next_steps_use_hyphen_in_skills_mode(self, tmp_path):
+        """End-to-end: with --skills, shared templates and the printed next
+        steps must reference /speckit-plan (the layout actually generated),
+        not the nonexistent flat /speckit.plan."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "generic-skills-e2e"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(app, [
+                "init", "--here", "--integration", "generic",
+                "--integration-options=--commands-dir .myagent/skills --skills",
+                "--script", "sh",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0, f"init failed: {result.output}"
+
+        plan_template = project / ".specify" / "templates" / "plan-template.md"
+        content = plan_template.read_text(encoding="utf-8")
+        assert "__SPECKIT_COMMAND_PLAN__" not in content
+        assert "/speckit-plan" in content
+        assert "/speckit.plan" not in content
+
+        assert "/speckit-plan" in result.output
+        assert "/speckit.plan" not in result.output
+
+    def test_shared_template_and_next_steps_use_dot_without_skills_flag(
+        self, tmp_path
+    ):
+        """Regression guard: default flat-mode generic is unchanged — shared
+        templates and next steps still reference the flat /speckit.plan."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "generic-flat-e2e"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(app, [
+                "init", "--here", "--integration", "generic",
+                "--integration-options=--commands-dir .myagent/commands",
+                "--script", "sh",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0, f"init failed: {result.output}"
+
+        plan_template = project / ".specify" / "templates" / "plan-template.md"
+        content = plan_template.read_text(encoding="utf-8")
+        assert "/speckit.plan" in content
+        assert "/speckit-plan" not in content
+
+        assert "/speckit.plan" in result.output
+        assert "/speckit-plan" not in result.output
+
+    def test_generic_skills_mode_does_not_register_addon_skills_elsewhere(
+        self, tmp_path
+    ):
+        """Copilot review (PR #4562): a generic --skills project persists
+        ai_skills=True, but generic's output directory is a runtime
+        --commands-dir option, not a static per-agent folder — there is no
+        directory extension/preset skill registration could safely resolve.
+        resolve_active_skills_dir() must stay disabled for generic rather
+        than silently falling back to .agents/skills."""
+        from specify_cli import resolve_active_skills_dir
+        from specify_cli._init_options import save_init_options
+
+        save_init_options(
+            tmp_path, {"ai": "generic", "ai_skills": True}
+        )
+        assert resolve_active_skills_dir(tmp_path) is None
+        assert not (tmp_path / ".agents" / "skills").exists()
 
     def test_complete_file_inventory_ps(self, tmp_path):
         """Every file produced by specify init --integration generic --integration-options=--commands-dir ... --script ps."""

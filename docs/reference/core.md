@@ -61,6 +61,24 @@ specify init my-project --integration copilot --preset compliance
 >
 > **Symlinked project roots.** `SPECIFY_INIT_DIR` relocates *where* the project is, not *how* a command treats symlinks: each command keeps its existing cwd-path stance. Commands that traverse and write project files through broad input paths (`bundle`, `workflow run <file>`) refuse a symlinked `.specify/` to preserve write confinement. Other project-scoped commands keep their existing behavior when `SPECIFY_INIT_DIR` points at a project root, which may include following a symlinked `.specify/`.
 
+## Naming Features with the Helper Scripts
+
+When calling the bundled `create-new-feature` helper scripts directly, generated
+names retain only ASCII letters and digits. A description entirely in a non-Latin
+script, or made only of punctuation, can therefore produce an empty suffix such
+as `001-`. The scripts warn on stderr when this happens, including during a dry
+run; JSON output remains parseable.
+
+Keep the original description and supply a readable ASCII short name:
+
+```bash
+bash .specify/scripts/bash/create-new-feature.sh --json --short-name user-auth "添加用户"
+```
+
+The Python helper also accepts `--short-name`; the PowerShell helper uses
+`-ShortName`. A supplied short name is cleaned by the same rules, so it must
+contain at least one ASCII letter or digit.
+
 ## Check Installed Tools
 
 ```bash

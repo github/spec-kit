@@ -79,7 +79,7 @@ When a `gate` step pauses execution, the engine persists `current_step_index` an
 
 ## Step Types
 
-The engine ships with 12 built-in step types, each in its own subpackage under `src/specify_cli/workflows/steps/`:
+The engine ships with 12 built-in step types, each in its own subpackage under `src/specify_cli/workflows/step/`:
 
 | Type Key | Class | Purpose | Returns `next_steps`? |
 |----------|-------|---------|-----------------------|

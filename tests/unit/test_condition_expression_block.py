@@ -26,9 +26,9 @@ from specify_cli.workflows.expressions import (
     _WORD_OPERATORS,
     format_condition_remediation,
 )
-from specify_cli.workflows.steps.do_while import DoWhileStep
-from specify_cli.workflows.steps.if_then import IfThenStep
-from specify_cli.workflows.steps.while_loop import WhileStep
+from specify_cli.workflows.step.do_while import DoWhileStep
+from specify_cli.workflows.step.if_then import IfThenStep
+from specify_cli.workflows.step.while_loop import WhileStep
 
 STEP_CLASSES = [IfThenStep, WhileStep, DoWhileStep]
 

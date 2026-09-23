@@ -44,18 +44,18 @@ def get_step_type(type_key: str) -> StepBase | None:
 
 def _register_builtin_steps() -> None:
     """Register all built-in step types."""
-    from .steps.command import CommandStep
-    from .steps.do_while import DoWhileStep
-    from .steps.fan_in import FanInStep
-    from .steps.fan_out import FanOutStep
-    from .steps.gate import GateStep
-    from .steps.if_then import IfThenStep
-    from .steps.init import InitStep
-    from .steps.prompt import PromptStep
-    from .steps.shell import ShellStep
-    from .steps.slot import SlotStep
-    from .steps.switch import SwitchStep
-    from .steps.while_loop import WhileStep
+    from .step.command import CommandStep
+    from .step.do_while import DoWhileStep
+    from .step.fan_in import FanInStep
+    from .step.fan_out import FanOutStep
+    from .step.gate import GateStep
+    from .step.if_then import IfThenStep
+    from .step.init import InitStep
+    from .step.prompt import PromptStep
+    from .step.shell import ShellStep
+    from .step.slot import SlotStep
+    from .step.switch import SwitchStep
+    from .step.while_loop import WhileStep
 
     _register_step(CommandStep())
     _register_step(DoWhileStep())

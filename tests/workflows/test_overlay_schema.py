@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from specify_cli.workflows.overlays.schema import (
+from specify_cli.workflows.overlay.schema import (
     OverlayEdit,
     validate_overlay_yaml,
 )

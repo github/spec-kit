@@ -68,6 +68,7 @@ class TestIntegrationBase:
             parameters = inspect.signature(integration.build_exec_args).parameters
             assert "integration_args" in parameters, key
             assert "integration_options" in parameters, key
+            assert "project_root" in parameters, key
 
     def test_unsupported_exec_builders_reject_runtime_config_directly(self):
         from specify_cli.integrations import INTEGRATION_REGISTRY
