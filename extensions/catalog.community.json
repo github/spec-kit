@@ -4997,6 +4997,7 @@
       "author": "Rik Dryfoos",
       "version": "0.5.1",
       "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.1/specassay-check-0.5.1.zip",
+      "sha256": "874728251c850e84d71f7a94dbdc326073703a8b408690d87a62b68d43dc6eff",
       "repository": "https://github.com/rdryfoos/specassay",
       "homepage": "https://www.specassay.com",
       "documentation": "https://github.com/rdryfoos/specassay/blob/main/extensions/specassay-check/README.md",
