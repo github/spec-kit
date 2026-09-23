@@ -1111,3 +1111,43 @@ def test_active_integration_matches_the_canonical_key_reader(
     )
 
     assert active_integration(project) == expected
+
+
+@pytest.mark.parametrize(
+    "recorded,expected",
+    [
+        ({"default_integration": "   ", "integration": "copilot"}, "copilot"),
+        ({"default_integration": "\t\n", "integration": "  copilot  "}, "copilot"),
+        ({"default_integration": 5, "integration": "copilot"}, "copilot"),
+        ({"integration": "   ", "id": "claude"}, "claude"),
+        ({"default_integration": "   ", "integration": "   "}, None),
+        ({"default_integration": "cursor", "integration": "copilot"}, "cursor"),
+    ],
+    ids=[
+        "blank_default",
+        "blank_default_padded_legacy",
+        "non_string_default",
+        "blank_legacy_falls_to_id",
+        "all_blank",
+        "precedence_kept",
+    ],
+)
+def test_active_integration_cleans_each_candidate_before_selecting(
+    tmp_path: Path, recorded, expected
+):
+    """Each candidate must be cleaned before selection, not just the winner.
+
+    A raw `or` chain selects a whitespace-only `default_integration` (truthy)
+    and then normalizes it to None, losing the valid legacy key behind it —
+    while `normalize_integration_state` does
+    `clean_integration_key(default) or legacy_key` and falls through.
+    """
+    from specify_cli.bundler.lib.project import active_integration
+
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    (project / ".specify" / "integration.json").write_text(
+        json.dumps(recorded), encoding="utf-8"
+    )
+
+    assert active_integration(project) == expected

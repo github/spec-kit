@@ -92,18 +92,23 @@ def active_integration(project_root: Path) -> str | None:
         # about resolving a marker that carries only ``default_integration``
         # (hand-edited, or written by anything that follows the canonical
         # reader's shape). ``integration``/``id``/``active`` stay as fallbacks.
-        value = (
-            data.get("default_integration")
-            or data.get("integration")
-            or data.get("id")
-            or data.get("active")
-        )
-        # Normalize through the same helper the canonical reader uses rather
-        # than re-implementing the check. ``isinstance(value, str) and value``
-        # accepted a whitespace-only key as a real one -- truthy, so it also
-        # suppressed the "not determinable" fallback -- and returned a padded
-        # key verbatim, which matches no registered integration:
-        #     '  copilot  ' -> '  copilot  '   (canonical: 'copilot')
-        #     '   '         -> '   '           (canonical: None)
-        return clean_integration_key(value)
+        # Clean EACH candidate before selecting it, rather than picking the
+        # first truthy raw value and normalizing only that one. A raw ``or``
+        # chain selects a whitespace-only ``default_integration`` (truthy) and
+        # then normalizes it to ``None``, losing the valid legacy key behind
+        # it -- whereas ``normalize_integration_state`` does
+        # ``clean_integration_key(data.get("default_integration")) or
+        # legacy_key`` and falls through:
+        #     {"default_integration": "   ", "integration": "copilot"}
+        #         raw-then-clean -> None      canonical -> 'copilot'
+        #
+        # Normalizing through the shared helper also fixes the original
+        # divergence: ``isinstance(value, str) and value`` accepted a
+        # whitespace-only key as real -- truthy, so it suppressed the "not
+        # determinable" fallback -- and returned a padded key verbatim, which
+        # matches no registered integration.
+        for field in ("default_integration", "integration", "id", "active"):
+            cleaned = clean_integration_key(data.get(field))
+            if cleaned:
+                return cleaned
     return None
