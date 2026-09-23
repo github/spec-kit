@@ -71,7 +71,15 @@ def catalog_add(
     # Check for duplicate name
     for existing in catalogs:
         if isinstance(existing, dict) and existing.get("name") == name:
-            if existing == entry:
+            if all(
+                existing.get(field) == entry[field]
+                for field in (
+                    "url",
+                    "priority",
+                    "install_allowed",
+                    "description",
+                )
+            ):
                 return
             _commands.console.print(
                 f"[yellow]Warning:[/yellow] A catalog named '{safe_name}' already exists."

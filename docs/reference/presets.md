@@ -161,6 +161,8 @@ specify preset catalog add <url>
 
 Adds a catalog to the project's `.specify/preset-catalogs.yml`.
 
+Re-adding the same named catalog with identical settings succeeds without changing the configuration; different settings are rejected.
+
 ### Remove a Catalog
 
 ```bash

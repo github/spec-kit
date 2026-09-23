@@ -196,6 +196,8 @@ specify bundle catalog add <url>
 
 Registers a project-scoped catalog source and persists it.
 
+Re-adding the same source with the same ID, URL, policy, and priority succeeds without changing the configuration; different settings are rejected.
+
 ### Remove a Catalog Source
 
 ```bash

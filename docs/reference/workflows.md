@@ -405,6 +405,8 @@ specify workflow catalog add <url>
 
 Adds a custom catalog URL to the project's `.specify/workflow-catalogs.yml`.
 
+Re-adding the same workflow or step catalog URL with the same name succeeds without changing the configuration; a different name is rejected.
+
 ### Remove a Catalog
 
 ```bash
