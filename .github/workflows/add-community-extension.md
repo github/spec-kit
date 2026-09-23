@@ -8,9 +8,17 @@ on:
     names: [extension-submission]
   skip-bots: [github-actions, copilot, dependabot]
 
+engine:
+  id: copilot
+  args:
+    - --allow-url=https://github.com
+    - --allow-url=https://codeload.github.com
+    - --allow-url=https://release-assets.githubusercontent.com
+    - --allow-url=https://raw.githubusercontent.com
+
 tools:
   edit:
-  bash: ["echo", "cat", "head", "tail", "grep", "wc", "sort", "python3", "jq", "date", "curl"]
+  bash: ["echo", "cat", "head", "tail", "grep", "wc", "sort", "python3", "jq", "date", "curl", "sha256sum"]
   github:
     toolsets: [issues, repos]
     min-integrity: none
@@ -22,6 +30,7 @@ network:
     - github.com
     - codeload.github.com
     - release-assets.githubusercontent.com
+    - raw.githubusercontent.com
 
 permissions:
   contents: read
@@ -53,6 +62,8 @@ safe-outputs:
   add-labels:
     allowed: [extension-submission, validation-passed, validation-failed, needs-info]
     max: 3
+  remove-labels:
+    allowed: [validation-passed, validation-failed]
 ---
 
 # Add Community Extension from Issue Submission
@@ -100,6 +111,15 @@ The issue body uses GitHub's issue form format. Each field appears under a
 heading matching the field label (e.g., `### Extension ID` followed by the
 value). Parse accordingly.
 
+The optional checksum is free-form submission data, not a dedicated issue-form input.
+Extract `submitted_sha256` from the submitted issue, not release metadata or the
+computed digest. Accept a manually appended `### SHA-256` heading (including
+`### SHA-256 (sha256)`) or the `sha256` field in the Proposed Catalog Entry.
+If both sources supply a checksum, they must agree after trimming whitespace
+and normalizing hexadecimal case. A supplied checksum must contain exactly 64
+hexadecimal characters; malformed or conflicting values are submission failures,
+not an absent checksum.
+
 ## Step 2 — Validate the Submission
 
 Run **all** of the following validation checks. Collect all results before
@@ -142,11 +162,40 @@ deciding pass/fail:
     check when the field is absent.
   - Verify a GitHub release exists for that tag.
 
-Use `curl` for binary downloads, follow HTTPS redirects with
-`--location --proto '=https' --proto-redir '=https'`, and bound the request with
-`--max-time 60`. Save the archive under `/tmp/gh-aw/` and inspect the final
-HTTP status with `--write-out '%{http_code}'`. A blocked or failed download
-must not count as a passed check; repository/release metadata is not a
+Use `curl` for binary downloads. After the URL passes the pinning checks, replace
+`VALIDATED_DOWNLOAD_URL` below with that exact URL, safely shell-quoted. Treat
+issue values as data, never as executable shell syntax:
+
+```bash
+curl --location --proto '=https' --proto-redir '=https' --max-time 60 --silent --show-error --write-out '%{http_code}' --output /tmp/gh-aw/community-archive.zip 'VALIDATED_DOWNLOAD_URL'
+```
+
+Run the download and checksum as separate shell calls, without `mkdir`, command
+substitution, pipelines, or chained commands. `/tmp/gh-aw/` already exists.
+Compute SHA-256 only after a successful download with final HTTP 200.
+Use `sha256sum /tmp/gh-aw/community-archive.zip` to record its digest as `actual_sha256`.
+If no checksum was submitted, skip the comparison without failing validation.
+Otherwise, use the edit tool to write `/tmp/gh-aw/community-archive.sha256` with
+exactly this one line and a trailing newline, replacing `EXPECTED_SHA256` with
+the validated `submitted_sha256` (two spaces before the fixed archive path):
+
+```text
+EXPECTED_SHA256  /tmp/gh-aw/community-archive.zip
+```
+
+Run this comparison as a separate shell call:
+
+```bash
+sha256sum --check --strict /tmp/gh-aw/community-archive.sha256
+```
+
+Require exit code 0 and an `OK` result before marking the checksum check passed.
+A `FAILED` checksum comparison is a Failed outcome: report the submitted and
+actual digests, remove `validation-passed`, add `validation-failed`, and stop
+without catalog/docs edits or a PR. Never replace a mismatching submitted checksum
+with the computed or release-metadata digest. A command that cannot run or read
+the archive is Blocked, not a successful comparison.
+A blocked or failed download must not count as a passed check; repository/release metadata is not a
 substitute for fetching the archive. Never execute downloaded content.
 
 ### 2e. Submission checklists
@@ -155,15 +204,40 @@ substitute for fetching the archive. Never execute downloaded content.
 
 ### Validation outcome
 
-If **any** validation fails:
+Choose exactly one outcome below, in order. A check that could not run is
+incomplete, not a passed check or a confirmed submission defect.
+
+#### Blocked
+
+If a permission denial, sandbox/network restriction, timeout, or service outage
+prevents a required check, validation is blocked by the workflow environment:
+- Comment with the attempted URL, exact error, and workflow run link, asking a
+  maintainer to investigate and rerun validation.
+- Do not ask the submitter to change a URL or resubmit solely
+  because the workflow could not perform the check.
+- Remove `validation-passed`. Do not add `validation-failed` or `needs-info` solely for an
+  environment blocker. Do not describe unperformed checks as passed.
+- If independent submission checks failed, report those separately
+  and apply `validation-failed` for those failures only. An observed HTTP 404
+  or a checksum mismatch is a submission failure, not a permission failure.
+- Stop processing here without editing catalog/docs files or opening a PR.
+  Do not evaluate the Failed or Passed outcomes below.
+
+#### Failed
+
+If there are no environment blockers and a completed check found a submission defect:
 1. Add a comment on the issue listing each failed check with a clear explanation
    of what's wrong and how to fix it
-2. Add the `validation-failed` label
-3. **Stop — do not proceed further**
+2. Remove `validation-passed`
+3. Add the `validation-failed` label
+4. **Stop — do not proceed further**
 
-If all validations pass:
-1. Add the `validation-passed` label
-2. Continue to Step 3
+#### Passed
+
+If there are no environment blockers and every required check completed and passed:
+1. Remove `validation-failed`
+2. Add the `validation-passed` label
+3. Continue to Step 3
 
 ## Step 3 — Determine Add vs Update
 
@@ -176,6 +250,12 @@ Search `extensions/catalog.community.json` for the extension ID.
 ## Step 4 — Update `extensions/catalog.community.json`
 
 Edit `extensions/catalog.community.json` to add or update the extension entry.
+
+For both new entries and updates, only after every required validation passes,
+set `sha256` to `actual_sha256` from the downloaded archive. Do this even when no
+checksum was submitted. Replace any previous catalog digest; do not reuse a digest
+from an older archive. A submitted mismatch must fail validation before this step;
+writing the computed digest must never be used to bypass that failure.
 
 ### For a new extension
 
@@ -191,6 +271,7 @@ Insert the entry in **alphabetical order by extension ID** within the
     "author": "<author>",
     "version": "<version>",
     "download_url": "<download_url>",
+    "sha256": "<actual_sha256>",
     "repository": "<repository>",
     "homepage": "<homepage or repository>",
     "documentation": "<documentation or repository README>",
