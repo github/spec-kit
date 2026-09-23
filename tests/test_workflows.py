@@ -2621,10 +2621,20 @@ class TestInitStep:
         assert result.status == StepStatus.FAILED
         assert result.error is not None
         assert result.error.strip() != "SystemExit: 1"
-        assert result.output["stderr"].strip() != "SystemExit: 1"
-        # The real diagnostic reaches the caller.
+
+        # The real diagnostic reaches the caller...
         collapsed = " ".join(result.error.split())
         assert "no-such-agent" in collapsed or "Unknown" in collapsed, collapsed
+
+        # ...and reaches a downstream step reading steps.<id>.output.stderr.
+        # Asserting only "not the old sentinel" was too weak: an EMPTY stderr
+        # satisfies that while still carrying no diagnostic at all, which is
+        # exactly what dropping the synthesized detail left behind under
+        # click >= 8.2 (separate streams, init prints through Rich to stdout).
+        stderr = " ".join(result.output["stderr"].split())
+        assert stderr, "output.stderr must not be empty for a failed init"
+        assert stderr != "SystemExit: 1"
+        assert "no-such-agent" in stderr or "Unknown" in stderr, stderr
 
     def test_unexpected_crash_still_reports_its_exception(self, monkeypatch, tmp_path):
         """The branch's original purpose is preserved for a genuine crash.

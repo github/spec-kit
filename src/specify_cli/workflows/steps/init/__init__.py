@@ -312,6 +312,17 @@ class InitStep(StepBase):
         ):
             detail = f"{type(result.exception).__name__}: {result.exception}"
             stderr = f"{stderr}\n{detail}".strip() if stderr else detail
+        elif result.exit_code != 0 and not stderr.strip():
+            # Ordinary failure with no real stderr: under click >= 8.2 the
+            # streams are separate and ``init`` prints its diagnostics through
+            # Rich to stdout, so ``result.stderr`` is genuinely empty. Merely
+            # dropping the synthesized "SystemExit: 1" would leave
+            # ``steps.<id>.output.stderr`` empty -- still no diagnostic for a
+            # downstream step to read, and still contrary to the contract above
+            # ("treat stdout as stderr so workflows can consistently read
+            # steps.<id>.output.stderr for error details"). Carry the captured
+            # output across, matching what the older-Click branch already does.
+            stderr = stdout.strip()
 
         return (result.exit_code, stdout, stderr)
 
