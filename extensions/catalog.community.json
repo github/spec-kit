@@ -5005,7 +5005,7 @@
       "category": "visibility",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.14.0",
+        "speckit_version": ">=0.14.0,<2.0.0",
         "tools": [
           {
             "name": "bash",
