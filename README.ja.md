@@ -23,7 +23,7 @@ Spec Kitは、AIコーディングエージェントに構造化されたプロ�
 
 | やりたいこと | プロセス | 成果 |
 | --- | --- | --- |
-| 機能やアプリケーションを構築する | [仕様駆動開発](#仕様駆動開発) | 計画・実装・収束を経て完成した仕様 |
+| 機能やアプリケーションを構築する | [仕様駆動開発](#仕様駆動開発) | 計画・実装・収束まで一貫して活用される仕様 |
 | 不具合のある動作を診断し、修正する | [バグ修正](#バグ修正) | 評価された原因、範囲を絞った修正、記録された検証 |
 | アイデアに投資する価値があるか判断する | [アイデア評価](#アイデア評価) | 根拠に基づく、進める(go)・要確認・中止のいずれかの決定 |
 
@@ -35,7 +35,7 @@ Spec Kitは、AIコーディングエージェントに構造化されたプロ�
 ## はじめる
 
 Linux、macOS、またはWindows上で、**Python 3.11以降**、**[uv](https://github.github.io/spec-kit/install/uv.html)**、および対応するAIコーディングエージェントが必要です。
-**CLIのみのセットアップ**を行う場合は、ターミナルで以下のコマンドを実行してSpec Kitをインストールし、プロジェクトを作成してください。
+**CLIのみのセットアップ**を行う場合は、ターミナルで以下のコマンドを実行してSpec Kitをインストールし、プロジェクトを作成してください:
 
 ```bash
 uv tool install specify-cli
@@ -45,7 +45,7 @@ cd my-project
 
 <a id="-対応しているaiコーディングエージェント"></a>
 
-この例では **GitHub Copilotのデフォルトのスキルモード** を使用しています。他の対応エージェントを使う場合は、`copilot` をお使いのエージェントの[エージェント識別子](https://github.github.io/spec-kit/reference/integrations.html)に置き換えてください。
+この例では **GitHub Copilotのデフォルトのスキルモード** を使用しています。他の対応エージェントを使う場合は、`copilot` をお使いのエージェントの[連携キー](https://github.github.io/spec-kit/reference/integrations.html)に置き換えてください。
 
 すでにコードがありますか？[既存プロジェクト向けガイド](https://github.github.io/spec-kit/guides/existing-projects.html)を参照してください。バージョン固定でのインストール、その他のインストーラー、CI、トラブルシューティングについては[インストールガイド](https://github.github.io/spec-kit/installation.html)を、既存のインストールを更新する場合は[アップグレードガイド](https://github.github.io/spec-kit/upgrade.html)を参照してください。
 
@@ -108,7 +108,7 @@ specify extension add bug
 
 ## アイデア評価
 
-そのアイデアがソフトウェアになるかどうかにかかわらず、アイデアにコミットする前に根拠を集めます。この独立したプロセスは、ソースコードが存在しないプロジェクトでも機能します。
+そのアイデアがソフトウェアになるかどうかにかかわらず、アイデアを進めると決める前に根拠を集めます。この独立したプロセスは、ソースコードが存在しないプロジェクトでも機能します。
 
 **CLIセットアップ(ターミナル):** プロジェクトディレクトリでオプトイン方式の拡張機能をインストールします:
 
@@ -158,6 +158,22 @@ specify extension add assess
 - [SDDの理念](https://github.github.io/spec-kit/concepts/sdd.html)、[完全な方法論](./spec-driven.md)、[既存の仕様の進化](https://github.github.io/spec-kit/guides/evolving-specs.html)
 - [紹介動画](https://github.github.io/spec-kit/quickstart.html#video-overview) と [プロジェクトの歴史](https://github.github.io/spec-kit/history.html)
 - [Spec KitはSpec Kit自身をどう使っているか](./CONTRIBUTING.md#does-spec-kit-use-spec-kit)
+
+## スター数の推移
+
+<p align="center">
+    <a href="https://www.star-history.com/#github/spec-kit&Date">
+        <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=github%2Fspec-kit&type=Date&theme=dark"/>
+            <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=github%2Fspec-kit&type=Date"/>
+            <img src="https://api.star-history.com/svg?repos=github%2Fspec-kit&type=Date" alt="Spec Kitのスター推移チャート"/>
+        </picture>
+    </a>
+</p>
+
+<p align="center">
+    <em>Spec Kitを輝かせてくれる、すべての皆さんに感謝します。</em>
+</p>
 
 <a id="-サポート"></a>
 
