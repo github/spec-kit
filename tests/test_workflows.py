@@ -3003,7 +3003,6 @@ steps:
         choice = GateStep._prompt("Review the spec.", ["approve", "reject"])
         assert choice == "approve"
 
-    @pytest.mark.parametrize("interrupt", [KeyboardInterrupt, EOFError])
     @pytest.mark.parametrize(
         "options",
         [
@@ -3013,53 +3012,93 @@ steps:
         ],
         ids=["reject_last", "reject_first", "reject_middle"],
     )
-    def test_interrupted_prompt_never_approves(
-        self, monkeypatch, options, interrupt
-    ):
-        """Ctrl+C / Ctrl+D at a gate must not resolve to an approving option.
+    def test_eof_at_prompt_never_approves(self, monkeypatch, options):
+        """Ctrl+D at a gate must not resolve to an approving option.
 
         `_prompt` returned `options[-1]`, assuming the reject option is last.
         `validate` only requires that *some* option is 'reject'/'abort', never
         that it is last, so `options: [approve, reject, request-changes]`
-        validates clean and an interrupt returned 'request-changes' — which
-        `execute` does not classify as a rejection, so the gate reported
-        COMPLETED and the run walked past the human review.
+        validates clean and EOF returned 'request-changes' — which `execute`
+        does not classify as a rejection, so the gate reported COMPLETED and
+        the run walked past the human review.
         """
         from specify_cli.workflows.steps.gate import GateStep
 
         _force_gate_stdin(monkeypatch, tty=True)
 
         def _boom(_prompt=""):
-            raise interrupt
+            raise EOFError
 
         monkeypatch.setattr("builtins.input", _boom)
 
         assert GateStep._prompt("Approve the plan?", options) == "reject"
 
-    def test_interrupted_prompt_without_a_reject_option_keeps_last(
-        self, monkeypatch
-    ):
+    def test_eof_without_a_reject_option_keeps_last(self, monkeypatch):
         """With no reject/abort option declared, the last option is still used."""
         from specify_cli.workflows.steps.gate import GateStep
 
         _force_gate_stdin(monkeypatch, tty=True)
 
         def _boom(_prompt=""):
-            raise KeyboardInterrupt
+            raise EOFError
 
         monkeypatch.setattr("builtins.input", _boom)
 
         assert GateStep._prompt("Pick one.", ["yes", "no"]) == "no"
 
-    def test_interrupted_gate_step_does_not_complete(self, monkeypatch):
-        """The step-level consequence: the gate must not report COMPLETED."""
+    def test_ctrl_c_propagates_rather_than_becoming_a_verdict(self, monkeypatch):
+        """Ctrl+C is not a gate decision — it must reach the engine.
+
+        `WorkflowEngine` turns a propagated KeyboardInterrupt into
+        `RunStatus.PAUSED` plus a `workflow_interrupted` event, so the operator
+        can resume. Swallowing it here produced a *decision* instead: the reject
+        branch fired `on_reject`, usually aborting the whole run — the one
+        outcome an interrupted reviewer did not choose.
+        """
+        from specify_cli.workflows.steps.gate import GateStep
+
+        _force_gate_stdin(monkeypatch, tty=True)
+
+        def _boom(_prompt=""):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr("builtins.input", _boom)
+
+        with pytest.raises(KeyboardInterrupt):
+            GateStep._prompt("Approve the plan?", ["approve", "reject"])
+
+    def test_ctrl_c_at_a_gate_step_propagates(self, monkeypatch):
+        """The step level must not convert it either — `execute` lets it through."""
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext
+
+        _force_gate_stdin(monkeypatch, tty=True)
+
+        def _boom(_prompt=""):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr("builtins.input", _boom)
+
+        with pytest.raises(KeyboardInterrupt):
+            GateStep().execute(
+                {
+                    "id": "review",
+                    "message": "Approve the plan?",
+                    "options": ["approve", "reject", "request-changes"],
+                    "on_reject": "abort",
+                },
+                StepContext(),
+            )
+
+    def test_eof_at_a_gate_step_records_a_rejection(self, monkeypatch):
+        """EOF still yields a verdict: there is no operator left to resume."""
         from specify_cli.workflows.steps.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         _force_gate_stdin(monkeypatch, tty=True)
 
         def _boom(_prompt=""):
-            raise KeyboardInterrupt
+            raise EOFError
 
         monkeypatch.setattr("builtins.input", _boom)
 
@@ -3075,6 +3114,51 @@ steps:
 
         assert result.status is StepStatus.FAILED
         assert result.output["choice"] == "reject"
+
+    def test_ctrl_c_at_a_gate_pauses_the_run(self, tmp_path, monkeypatch):
+        """End to end: Ctrl+C at a gate pauses the run, it does not abort it.
+
+        This is the contract the split exists to honour. Previously the reject
+        fallback fired `on_reject: abort`, so an interrupted reviewer lost the
+        run instead of being able to `specify workflow resume` it.
+        """
+        import yaml
+        from specify_cli.workflows.engine import WorkflowEngine, RunStatus
+
+        workflows = tmp_path / ".specify" / "workflows" / "demo"
+        workflows.mkdir(parents=True)
+        (workflows / "workflow.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "workflow": {"id": "demo", "name": "D", "version": "1.0.0"},
+                    "steps": [
+                        {
+                            "id": "review",
+                            "type": "gate",
+                            "message": "Approve?",
+                            "options": ["approve", "reject"],
+                            "on_reject": "abort",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        _force_gate_stdin(monkeypatch, tty=True)
+
+        def _boom(_prompt=""):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr("builtins.input", _boom)
+
+        engine = WorkflowEngine(tmp_path)
+        state = engine.execute(engine.load_workflow("demo"))
+
+        assert state.status is RunStatus.PAUSED
+        events = [e.get("event") for e in state.log_entries if isinstance(e, dict)]
+        assert "workflow_interrupted" in events, events
 
     def test_interactive_prompt_missing_show_file_does_not_crash(
         self, tmp_path, monkeypatch, capsys
