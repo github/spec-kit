@@ -1413,6 +1413,63 @@ class TestIntegrationUpgradeDetailed:
         assert reloaded["files"]["ok.md"] == ok_hash
         assert reloaded["files"]["bad.md"] == stale_hash
 
+    def test_resync_manifest_probe_error_does_not_abort_remaining_files(
+        self, tmp_path, capsys
+    ):
+        """An ``OSError`` from the pre-rehash filesystem probes must warn
+        and continue, not abort the whole resync loop.
+
+        ``is_symlink()``/``is_file()`` run before the per-file ``try`` that
+        wraps ``record_existing()``. If one of those probes raises (e.g. an
+        inaccessible path), it must not jump past the remaining files in
+        ``new_manifest.files`` and leave their hashes stale.
+        """
+        from specify_cli.integrations._helpers import (
+            _resync_manifest_after_registration,
+        )
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / "bad.md").write_text("bad content\n", encoding="utf-8")
+        (project / "ok.md").write_text("ok content\n", encoding="utf-8")
+
+        manifest = IntegrationManifest("claude", project, version="test")
+        manifest.record_existing("bad.md")
+        manifest.record_existing("ok.md")
+        manifest.save()
+
+        # Both files' bytes changed on disk after the manifest was saved
+        # (simulating registration overwriting them), but "bad.md" fails
+        # during the pre-rehash filesystem probe, not during rehashing.
+        (project / "bad.md").write_text("bad content v2\n", encoding="utf-8")
+        (project / "ok.md").write_text("ok content v2\n", encoding="utf-8")
+
+        real_is_file = Path.is_file
+
+        def fake_is_file(self):
+            if self.name == "bad.md":
+                raise OSError("permission denied")
+            return real_is_file(self)
+
+        import unittest.mock as mock
+
+        with mock.patch.object(Path, "is_file", fake_is_file):
+            _resync_manifest_after_registration(
+                manifest, "claude", continuing="Continuing."
+            )
+
+        captured = strip_ansi(capsys.readouterr().out)
+        assert "Warning:" in captured
+        assert "bad.md" in captured
+
+        reloaded = json.loads(manifest.manifest_path.read_text(encoding="utf-8"))
+        ok_hash = hashlib.sha256((project / "ok.md").read_bytes()).hexdigest()
+        assert reloaded["files"]["ok.md"] == ok_hash, (
+            "a probe error on an earlier file must not abort rehashing of "
+            "the remaining tracked files"
+        )
+
     def test_upgrade_non_active_agent_preserves_active_agent_skills(self, tmp_path):
         """Upgrading a non-active agent must not touch the active agent's skills.
 

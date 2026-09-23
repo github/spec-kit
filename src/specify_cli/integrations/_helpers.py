@@ -503,9 +503,9 @@ def _resync_manifest_after_registration(
         changed = False
         for rel in new_manifest.files:
             abs_path = new_manifest.project_root / rel
-            if abs_path.is_symlink() or not abs_path.is_file():
-                continue
             try:
+                if abs_path.is_symlink() or not abs_path.is_file():
+                    continue
                 new_manifest.record_existing(rel)
                 changed = True
             except (ValueError, OSError) as file_err:
