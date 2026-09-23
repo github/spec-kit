@@ -1,0 +1,14 @@
+# Bug Triage Workflow Extension Configuration
+# Copied to .specify/extensions/bug/bug-config.yml on install
+
+# Auto-create a GitHub issue immediately after `speckit.bug.assess` writes the
+# assessment (the "report" phase). When false (default), assess only SUGGESTS
+# the issue step; pass `--issue` to assess to trigger it for a single run.
+auto_create_issue: false
+
+# Branch prefix used by `speckit.bug.fix --branch` / `--worktree`.
+# The fix branch is named `<branch_prefix>/<slug>` (e.g. `fix/login-timeout`).
+branch_prefix: "fix"
+
+# Default Git host used when creating issues/PRs. Only "github" is supported today.
+default_host: github
