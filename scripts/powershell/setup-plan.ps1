@@ -20,6 +20,11 @@ if ($Help) {
     exit 0
 }
 
+if ($RemainingArgs.Count -gt 0) {
+    [Console]::Error.WriteLine("ERROR: Unknown option '$($RemainingArgs[0])'")
+    exit 1
+}
+
 # Load common functions
 . "$PSScriptRoot/common.ps1"
 
@@ -71,13 +76,13 @@ if ($Json) {
     $result = [PSCustomObject]@{
         FEATURE_SPEC = $paths.FEATURE_SPEC
         IMPL_PLAN = $paths.IMPL_PLAN
-        SPECS_DIR = $paths.FEATURE_DIR
+        FEATURE_DIR = $paths.FEATURE_DIR
         BRANCH = $paths.CURRENT_BRANCH
     }
     $result | ConvertTo-Json -Compress
 } else {
     Write-Output "FEATURE_SPEC: $($paths.FEATURE_SPEC)"
     Write-Output "IMPL_PLAN: $($paths.IMPL_PLAN)"
-    Write-Output "SPECS_DIR: $($paths.FEATURE_DIR)"
+    Write-Output "FEATURE_DIR: $($paths.FEATURE_DIR)"
     Write-Output "BRANCH: $($paths.CURRENT_BRANCH)"
 }

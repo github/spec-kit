@@ -169,6 +169,13 @@ get_feature_paths() {
         no_persist=true
         shift
     fi
+    # SPECIFY_FEATURE_NO_PERSIST is the environment-level equivalent of --no-persist,
+    # letting an orchestrator (multi-agent runner, CI matrix) guarantee that no
+    # script invocation in the process tree writes .specify/feature.json, even
+    # scripts that don't pass --no-persist themselves (#4128).
+    if [[ "${SPECIFY_FEATURE_NO_PERSIST:-}" == "1" || "${SPECIFY_FEATURE_NO_PERSIST:-}" == "true" ]]; then
+        no_persist=true
+    fi
 
     # Split decl/assignment so a SPECIFY_INIT_DIR validation failure in
     # get_repo_root propagates as a hard error instead of being masked by `local`.
@@ -770,7 +777,7 @@ except Exception as exc:
                 local candidate=""
                 if [ -n "$manifest_file" ]; then
                     case "$manifest_file" in
-                        /*|*../*|../*) manifest_file="" ;;
+                        /*|*../*) manifest_file="" ;;
                     esac
                 fi
                 if [ -n "$manifest_file" ]; then
@@ -902,12 +909,20 @@ except Exception as exc:
                     *'{CORE_TEMPLATE}'*) ;;
                     *) echo "Error: wrap strategy missing {CORE_TEMPLATE} placeholder" >&2; return 2 ;;
                 esac
-                while [[ "$layer_content" == *'{CORE_TEMPLATE}'* ]]; do
-                    local before="${layer_content%%\{CORE_TEMPLATE\}*}"
-                    local after="${layer_content#*\{CORE_TEMPLATE\}}"
-                    layer_content="${before}${content}${after}"
+                # Consume the wrapper left to right instead of rewriting it in
+                # place. Rewriting re-scanned the string just modified, so base
+                # content holding a literal {CORE_TEMPLATE} reintroduced the
+                # token every pass and the loop never terminated. Advancing over
+                # ``rest`` bounds the work by the tokens in the original wrapper
+                # and leaves inserted content untouched, matching the single-pass
+                # semantics of .Replace()/.replace() in the PowerShell and Python
+                # ports.
+                local wrapped="" rest="$layer_content"
+                while [[ "$rest" == *'{CORE_TEMPLATE}'* ]]; do
+                    wrapped="${wrapped}${rest%%\{CORE_TEMPLATE\}*}${content}"
+                    rest="${rest#*\{CORE_TEMPLATE\}}"
                 done
-                content="$layer_content"
+                content="${wrapped}${rest}"
                 ;;
             *) echo "Error: unknown strategy '$strat'" >&2; return 2 ;;
         esac

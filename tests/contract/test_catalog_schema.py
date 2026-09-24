@@ -11,7 +11,7 @@ from pathlib import Path
 
 import yaml
 
-from specify_cli.bundler.models.catalog import (
+from specify_cli.bundles.catalogs import (
     BUILTIN_DEFAULT_STACK,
     CatalogSource,
     InstallPolicy,
@@ -21,7 +21,7 @@ from specify_cli.bundler.models.catalog import (
 )
 from specify_cli.bundler import BundlerError
 import pytest
-from tests.bundler_helpers import catalog_entry_dict, catalog_payload, make_project
+from tests.specify_cli.bundles.helpers import catalog_entry_dict, catalog_payload, make_project
 
 
 def test_non_integer_source_priority_raises_actionable_error():
@@ -229,8 +229,21 @@ def test_wheel_packages_community_bundle_catalog():
     )
 
 
+def test_wheel_packages_firstparty_bundle_catalog():
+    repo_root = Path(__file__).parents[2]
+    with (repo_root / "pyproject.toml").open("rb") as pyproject_file:
+        pyproject = tomllib.load(pyproject_file)
+
+    force_include = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"][
+        "force-include"
+    ]
+    assert force_include["bundles/catalog.json"] == (
+        "specify_cli/core_pack/bundles/catalog.json"
+    )
+
+
 def test_catalog_entry_rejects_string_tags():
-    from specify_cli.bundler.models.catalog import CatalogEntry
+    from specify_cli.bundles.catalogs import CatalogEntry
 
     data = catalog_entry_dict("demo")
     data["tags"] = "not-a-list"
@@ -238,8 +251,17 @@ def test_catalog_entry_rejects_string_tags():
         CatalogEntry.from_dict(data)
 
 
+def test_catalog_entry_rejects_non_string_tag_members():
+    from specify_cli.bundles.catalogs import CatalogEntry
+
+    data = catalog_entry_dict("demo")
+    data["tags"] = ["valid", 1]
+    with pytest.raises(BundlerError, match="'tags' must be a list of strings"):
+        CatalogEntry.from_dict(data)
+
+
 def test_catalog_entry_rejects_non_boolean_verified():
-    from specify_cli.bundler.models.catalog import CatalogEntry
+    from specify_cli.bundles.catalogs import CatalogEntry
 
     data = catalog_entry_dict("demo")
     data["verified"] = "false"  # truthy string must not mark the entry verified
@@ -283,7 +305,7 @@ def test_load_payload_rejects_missing_entry_id():
 
 
 def test_catalog_entry_rejects_non_mapping_requires():
-    from specify_cli.bundler.models.catalog import CatalogEntry
+    from specify_cli.bundles.catalogs import CatalogEntry
 
     data = catalog_entry_dict("demo")
     data["requires"] = "speckit>=0.1"
@@ -292,12 +314,29 @@ def test_catalog_entry_rejects_non_mapping_requires():
 
 
 def test_catalog_entry_rejects_non_mapping_provides():
-    from specify_cli.bundler.models.catalog import CatalogEntry
+    from specify_cli.bundles.catalogs import CatalogEntry
 
     data = catalog_entry_dict("demo")
     data["provides"] = "extensions"
     with pytest.raises(BundlerError, match="'provides' must be a mapping"):
         CatalogEntry.from_dict(data)
+
+
+def test_load_payload_rejects_unsupported_schema_version():
+    payload = catalog_payload({"demo": catalog_entry_dict("demo")})
+    payload["schema_version"] = "2.0"
+
+    with pytest.raises(BundlerError, match="Unsupported catalog schema version"):
+        load_catalog_payload(payload)
+
+
+def test_load_payload_accepts_matching_or_absent_schema_version():
+    payload = catalog_payload({"demo": catalog_entry_dict("demo")})
+    payload["schema_version"] = "1.5"
+    assert "demo" in load_catalog_payload(payload)
+
+    payload.pop("schema_version")
+    assert "demo" in load_catalog_payload(payload)
 
 
 @pytest.mark.parametrize("field", ["requires", "provides"])
@@ -306,7 +345,7 @@ def test_catalog_entry_rejects_falsy_non_mapping(field, bad):
     # `or {}` coerced a FALSY non-mapping ([], '', 0, False) to {} before the
     # isinstance guard, silently accepting a corrupt entry; only absent/None
     # means "not present". Mirrors the manifest requires/provides guard.
-    from specify_cli.bundler.models.catalog import CatalogEntry
+    from specify_cli.bundles.catalogs import CatalogEntry
 
     data = catalog_entry_dict("demo")
     data[field] = bad

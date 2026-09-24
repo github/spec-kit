@@ -1,0 +1,145 @@
+"""If/Then/Else step — conditional branching."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
+from specify_cli.workflows.expressions import (
+    condition_has_malformed_expression_block,
+    condition_is_interpolated_to_text,
+    condition_is_never_evaluated,
+    format_condition_remediation,
+    evaluate_condition,
+)
+
+
+class IfThenStep(StepBase):
+    """Branch based on a boolean condition expression.
+
+    Both ``then:`` and ``else:`` contain inline step arrays — full step
+    definitions, not ID references.
+    """
+
+    type_key = "if"
+
+    def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
+        condition = config.get("condition", False)
+        result = evaluate_condition(condition, context)
+
+        if result:
+            branch_name = "then"
+            branch = config.get("then", [])
+        else:
+            branch_name = "else"
+            branch = config.get("else", [])
+
+        # The engine does not auto-validate step config (see
+        # ``WorkflowEngine.load_workflow``), and it feeds ``next_steps`` straight
+        # into ``_execute_steps`` which iterates them as step mappings. A
+        # non-list branch (a single mapping or scalar authoring mistake) would
+        # otherwise be iterated element-wise — a dict yields its string keys, a
+        # str its characters — and crash the whole run with AttributeError on
+        # ``.get()``. ``validate`` already rejects a non-list branch; fail this
+        # step loudly on an unvalidated run instead, mirroring the switch/fan-out
+        # steps. A missing ``else`` defaults to ``[]`` and stays valid.
+        if branch is None and branch_name == "else":
+            branch = []
+        elif not isinstance(branch, list):
+            return StepResult(
+                status=StepStatus.FAILED,
+                output={"condition_result": result},
+                error=(
+                    f"If step {config.get('id', '?')!r}: {branch_name!r} must be "
+                    f"a list of steps, got {type(branch).__name__}."
+                ),
+            )
+
+        return StepResult(
+            status=StepStatus.COMPLETED,
+            output={"condition_result": result},
+            next_steps=branch,
+        )
+
+    def validate(self, config: dict[str, Any]) -> list[str]:
+        errors = super().validate(config)
+        if "condition" not in config:
+            errors.append(
+                f"If step {config.get('id', '?')!r} is missing 'condition' field."
+            )
+        elif not isinstance(config["condition"], (str, bool)):
+            # execute() feeds 'condition' to evaluate_condition(), which first
+            # delegates to evaluate_expression() -- that returns a non-string
+            # unchanged -- and then coerces the result with bool(). So a
+            # list/dict/number condition silently resolves to its truthiness
+            # (e.g. condition: [1, 2] is always True) with no error, branching
+            # wrongly on an authoring mistake. Reject those at validation,
+            # mirroring the prompt/shell/command 'must be a string' checks.
+            #
+            # A literal ``bool`` stays valid: an unquoted ``condition: false``
+            # is idiomatic YAML, evaluate_condition() already resolves it
+            # exactly (bool passthrough, then a no-op bool()), and this step
+            # itself defaults ``condition`` to ``False``. "true"/"false" and an
+            # expression like "{{ ... }}" are strings, so they stay valid too.
+            errors.append(
+                f"If step {config.get('id', '?')!r}: 'condition' must be a "
+                f"string or boolean, got {type(config['condition']).__name__}."
+            )
+        elif condition_is_never_evaluated(config["condition"]):
+            # A string condition with no ``{{ }}`` block is never evaluated:
+            # evaluate_expression() returns it unchanged and bool() then makes
+            # any non-empty text true. `condition: inputs.count > 100` reads as
+            # a real comparison but always takes ``then``. This is the same
+            # silent-truthiness mistake the list/dict branch above rejects, and
+            # GitHub Actions accepts a bare expression in `if:`, so it is easy
+            # to write by habit.
+            errors.append(
+                f"If step {config.get('id', '?')!r}: 'condition' "
+                f"{config['condition']!r} is not a single complete '{{{{ }}}}' block, so "
+                "it is never evaluated as an expression and is always true. "
+                + format_condition_remediation(config["condition"])
+            )
+        elif condition_has_malformed_expression_block(config["condition"]):
+            # Different fault, different advice. Here the block is *not* skipped:
+            # _interpolate_expressions cannot close it with its quote-aware scan, so it
+            # falls back to the first raw close and evaluates whatever that truncated.
+            # `{{ inputs.missing | default('oops }}` reaches the filter parser and raises
+            # ValueError at run time, so reporting it as "always true" would be wrong
+            # twice over: it is evaluated, and it does not end up true.
+            errors.append(
+                f"If step {config.get('id', '?')!r}: 'condition' "
+                f"{config['condition']!r} opens a '{{{{' the interpolator cannot "
+                "close, so it falls back to the first raw '}}' and evaluates a "
+                "truncated expression instead of the one written. Balance the "
+                "delimiters and quotes."
+            )
+        elif condition_is_interpolated_to_text(config["condition"]):
+            # Third fault, third message. The braces are here and they close, but they
+            # do not cover the whole condition, so evaluate_expression takes its text
+            # path rather than the typed one: each block is substituted into the
+            # surrounding string and the result is coerced by bool(). Two blocks joined
+            # by `and` render "False and False", which is true. No paste-ready
+            # correction is offered: there is no single right rewrite, because only the
+            # author knows which grouping the operators were meant to have.
+            errors.append(
+                f"If step {config.get('id', '?')!r}: 'condition' "
+                f"{config['condition']!r} holds more than one '{{{{ }}}}' block, or "
+                "text around one, so it is substituted into a string and coerced by "
+                "bool() instead of being evaluated. Put the whole expression inside a "
+                "single '{{ }}' block."
+            )
+        if "then" not in config:
+            errors.append(
+                f"If step {config.get('id', '?')!r} is missing 'then' field."
+            )
+        then_branch = config.get("then", [])
+        if not isinstance(then_branch, list):
+            errors.append(
+                f"If step {config.get('id', '?')!r}: 'then' must be a list of steps."
+            )
+        else_branch = config.get("else")
+        if else_branch is not None and not isinstance(else_branch, list):
+            errors.append(
+                f"If step {config.get('id', '?')!r}: 'else' must be a list of steps."
+            )
+        return errors

@@ -274,8 +274,7 @@ When releasing a new version:
 A: The main catalog is for public extensions only. For private extensions:
 
 - Host your own catalog.json file
-- Users add your catalog: `specify extension add-catalog https://your-domain.com/catalog.json`
-- Not yet implemented - coming in Phase 4
+- In a Spec Kit project, users add your catalog: `specify extension catalog add https://your-domain.com/catalog.json --name private-catalog`
 
 ### Q: How long does review take?
 

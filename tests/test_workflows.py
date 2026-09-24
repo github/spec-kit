@@ -4,7 +4,7 @@ Covers:
 - Step registry & auto-discovery
 - Base classes (StepBase, StepContext, StepResult)
 - Expression engine
-- All 10 built-in step types
+- All 12 built-in step types
 - Workflow definition loading & validation
 - Workflow engine execution & state persistence
 - Workflow catalog & registry
@@ -18,9 +18,7 @@ import os
 import shutil
 import stat
 import sys
-import tarfile
 import tempfile
-import zipfile
 from pathlib import Path
 
 import pytest
@@ -108,7 +106,7 @@ class TestStepRegistry:
 
         expected = {
             "command", "shell", "prompt", "gate", "if", "switch",
-            "while", "do-while", "fan-out", "fan-in", "init",
+            "while", "do-while", "fan-out", "fan-in", "init", "slot",
         }
         assert expected.issubset(set(STEP_REGISTRY.keys()))
 
@@ -126,7 +124,7 @@ class TestStepRegistry:
 
     def test_register_step_duplicate_raises(self):
         from specify_cli.workflows import _register_step
-        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.step.command import CommandStep
 
         with pytest.raises(KeyError, match="already registered"):
             _register_step(CommandStep())
@@ -417,6 +415,29 @@ class TestExpressions:
         assert evaluate_expression("{{ [1,, 2] }}", ctx) == [1, 2]
         # …but an intentional empty-string element is still preserved.
         assert evaluate_expression("{{ ['', 'a'] }}", ctx) == ["", "a"]
+
+    def test_list_literal_followed_by_index_is_not_misparsed_as_one_literal(self):
+        """A list literal immediately followed by an index suffix, e.g.
+        ``[1,2,3][1]``, both starts with ``[`` and ends with ``]`` -- the
+        same shape as a genuine single list literal. Naively stripping the
+        outer brackets from ``[1,2,3][1]`` yields ``1,2,3][1``, which then
+        silently evaluates to ``[1, 2, None]`` instead of raising or
+        resolving the index. It must not be misclassified as one literal;
+        falling through to unresolvable (``None``) is safe, unlike silently
+        returning a wrong-looking list.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext()
+        assert evaluate_expression("{{ [1,2,3][1] }}", ctx) is None
+        assert evaluate_expression("{{ [1,2][0] }}", ctx) is None
+        # Genuine list literals -- including ones a bracket-depth scan must
+        # still recognize as ending exactly at the final character -- are
+        # unaffected.
+        assert evaluate_expression("{{ [1, 2, 3] }}", ctx) == [1, 2, 3]
+        assert evaluate_expression("{{ [[1, 2], 3] }}", ctx) == [[1, 2], 3]
+        assert evaluate_expression("{{ ['a]', 'b'] }}", ctx) == ["a]", "b"]
 
     def test_operator_splitting_is_quote_aware(self):
         from specify_cli.workflows.expressions import (
@@ -710,6 +731,74 @@ class TestExpressions:
                 "{{ inputs.tags | join(',') extra }}",
                 StepContext(inputs={"tags": ["a", "b"]}),
             )
+
+    def test_filter_on_a_comparison_operand_is_refused(self):
+        """A filter mixed with a comparison must be reported, not guessed at.
+
+        The pipe is detected before the operators, so
+        `count > limit | default(5)` evaluated `count > limit` first and then
+        applied `default` to the resulting bool — a no-op — silently returning
+        the comparison against the *unfiltered* operand (False, where the author
+        meant `10 > 5` = True).
+
+        This is the mirror of a filter followed by a comparison
+        (`default('7') > '5'`), which this module already refuses rather than
+        guessing at the intended precedence. Both are now refused the same way.
+        """
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"count": 10, "name": "x"})
+        with pytest.raises(ValueError, match="ambiguous filter precedence"):
+            evaluate_expression("{{ inputs.count > inputs.limit | default(5) }}", ctx)
+        with pytest.raises(ValueError, match="ambiguous filter precedence"):
+            evaluate_expression(
+                '{{ inputs.name == inputs.other | default("x") }}', ctx
+            )
+        with pytest.raises(ValueError, match="ambiguous filter precedence"):
+            evaluate_expression("{{ inputs.a and inputs.b | default(1) }}", ctx)
+
+    def test_filter_after_a_unary_not_is_refused(self):
+        """Unary `not` mis-binds the same way and must be caught too.
+
+        `not` is a leading prefix rather than an infix token (the parser tests
+        it with `expr.startswith("not ")`), so it has no surrounding space for
+        the operator scan to match. Without an explicit check,
+        `not inputs.missing | default(1)` evaluated `not inputs.missing` first
+        and applied `default` to that boolean — a no-op — silently returning
+        True where the author meant `not 1` = False.
+        """
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"value": 0, "flag": True})
+        with pytest.raises(ValueError, match="ambiguous filter precedence"):
+            evaluate_expression("{{ not inputs.missing | default(1) }}", ctx)
+        with pytest.raises(ValueError, match="ambiguous filter precedence"):
+            evaluate_expression("{{ not inputs.value | default(1) }}", ctx)
+        # A `not` that follows and/or is already caught by that token.
+        with pytest.raises(ValueError, match="ambiguous filter precedence"):
+            evaluate_expression(
+                "{{ inputs.flag and not inputs.value | default(1) }}", ctx
+            )
+        # Plain unary `not`, with no filter, is untouched.
+        assert evaluate_expression("{{ not inputs.value }}", ctx) is True
+        assert evaluate_expression("{{ not inputs.flag }}", ctx) is False
+
+    def test_plain_filters_and_chains_are_unaffected(self):
+        """Only a filter mixed with an operator is refused."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"items": ["a", "b"], "count": 10, "name": "x"})
+        assert evaluate_expression("{{ inputs.missing | default(5) }}", ctx) == 5
+        assert evaluate_expression('{{ inputs.items | join(", ") }}', ctx) == "a, b"
+        assert evaluate_expression("{{ inputs.items | contains('a') }}", ctx) is True
+        # Operators without a filter, and filters without an operator, both fine.
+        assert evaluate_expression("{{ inputs.count > 5 }}", ctx) is True
+        assert evaluate_expression('{{ inputs.name == "x" }}', ctx) is True
 
     def test_chained_filters_apply_left_to_right(self):
         # Filters chain: each filter's result feeds the next. `map` yields a
@@ -1010,7 +1099,7 @@ class TestCommandStep:
 
     def test_execute_basic(self):
         from unittest.mock import patch
-        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.step.command import CommandStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = CommandStep()
@@ -1023,17 +1112,211 @@ class TestCommandStep:
             "command": "speckit.specify",
             "input": {"args": "{{ inputs.name }}"},
         }
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+        with patch("specify_cli.workflows.step.command.shutil.which", return_value=None):
             result = step.execute(config, ctx)
         assert result.status == StepStatus.FAILED
         assert result.output["command"] == "speckit.specify"
         assert result.output["integration"] == "claude"
         assert result.output["input"]["args"] == "login"
 
+    def test_per_step_integration_config_is_resolved_and_isolated(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step.command import CommandStep
+
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append((args, kwargs))
+            return type("Result", (), {"returncode": 0})()
+
+        monkeypatch.delenv(
+            "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
+        )
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: (
+                "/usr/bin/docker-agent"
+                if name in {"docker-agent", "/usr/bin/docker-agent"}
+                else None
+            ),
+        )
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        step = CommandStep()
+        context = StepContext(
+            inputs={"config": "./review.yaml", "agent": "reviewer"},
+            project_root=str(tmp_path),
+        )
+        first = step.execute(
+            {
+                "id": "review",
+                "command": "speckit.plan",
+                "integration": "docker-agent",
+                "integration_args": ["{{ inputs.config }}"],
+                "integration_options": {
+                    "agent": "{{ inputs.agent }}",
+                    "safety": "balanced",
+                },
+            },
+            context,
+        )
+        second = step.execute(
+            {
+                "id": "implement",
+                "command": "speckit.implement",
+                "integration": "docker-agent",
+                "integration_args": ["./implement.yaml"],
+                "integration_options": {"agent": "implementer"},
+            },
+            context,
+        )
+
+        assert first.status is StepStatus.COMPLETED
+        assert second.status is StepStatus.COMPLETED
+        assert first.output["integration_args"] == ["./review.yaml"]
+        assert first.output["integration_options"] == {
+            "agent": "reviewer",
+            "safety": "balanced",
+        }
+        assert calls[0][0] == [
+            "/usr/bin/docker-agent",
+            "run",
+            "--exec",
+            "./review.yaml",
+            "--agent",
+            "reviewer",
+            "--safety",
+            "balanced",
+            "--",
+            "/speckit-plan",
+        ]
+        assert calls[1][0] == [
+            "/usr/bin/docker-agent",
+            "run",
+            "--exec",
+            "./implement.yaml",
+            "--agent",
+            "implementer",
+            "--",
+            "/speckit-implement",
+        ]
+        assert calls[0][1]["cwd"] == str(tmp_path)
+        assert calls[1][1]["cwd"] == str(tmp_path)
+
+    @pytest.mark.parametrize(
+        ("step_model", "default_model", "expected_model"),
+        [
+            ("step/model", "workflow/model", "step/model"),
+            (None, "workflow/model", "workflow/model"),
+        ],
+    )
+    def test_docker_agent_uses_one_effective_model(
+        self,
+        tmp_path,
+        monkeypatch,
+        step_model,
+        default_model,
+        expected_model,
+    ):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step.command import CommandStep
+
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append(args)
+            return type("Result", (), {"returncode": 0})()
+
+        monkeypatch.delenv(
+            "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
+        )
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: (
+                "/usr/bin/docker-agent"
+                if name in {"docker-agent", "/usr/bin/docker-agent"}
+                else None
+            ),
+        )
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        config = {
+            "id": "implement",
+            "command": "speckit.implement",
+            "integration": "docker-agent",
+            "integration_args": ["./agent.yaml"],
+        }
+        if step_model is not None:
+            config["model"] = step_model
+
+        result = CommandStep().execute(
+            config,
+            StepContext(
+                default_model=default_model,
+                project_root=str(tmp_path),
+            ),
+        )
+
+        assert result.status is StepStatus.COMPLETED
+        assert calls[0].count("--model") == 1
+        assert calls[0][calls[0].index("--model") + 1] == expected_model
+
+    def test_unsupported_runtime_config_fails_with_actionable_error(self):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step.command import CommandStep
+
+        result = CommandStep().execute(
+            {
+                "id": "review",
+                "command": "speckit.plan",
+                "integration": "claude",
+                "integration_options": {"saftey": "balanced"},
+            },
+            StepContext(),
+        )
+
+        assert result.status is StepStatus.FAILED
+        assert result.output["dispatched"] is False
+        assert "does not support per-step 'integration_options'" in (
+            result.error or ""
+        )
+        assert "saftey" in (result.error or "")
+
+    def test_validate_rejects_malformed_runtime_config(self):
+        from specify_cli.workflows.step.command import CommandStep
+
+        step = CommandStep()
+        errors = step.validate(
+            {
+                "id": "review",
+                "command": "speckit.plan",
+                "integration_args": "./agent.yaml",
+                "integration_options": ["agent", "root"],
+            }
+        )
+
+        assert any("'integration_args' must be a list" in error for error in errors)
+        assert any(
+            "'integration_options' must be a mapping" in error for error in errors
+        )
+
+        errors = step.validate(
+            {
+                "id": "review",
+                "command": "speckit.plan",
+                "integration_args": [42],
+                "integration_options": {1: "root"},
+            }
+        )
+        assert any("'integration_args[0]' must be a string" in error for error in errors)
+        assert any("keys must be strings" in error for error in errors)
+
     def test_try_dispatch_resolves_rovodev_via_acli(self, tmp_path):
         """When acli is installed, rovodev dispatch succeeds via acli."""
         from unittest.mock import patch, MagicMock
-        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.step.command import CommandStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = CommandStep()
@@ -1052,7 +1335,7 @@ class TestCommandStep:
         mock_result.stdout = ""
         mock_result.stderr = ""
 
-        with patch("specify_cli.workflows.steps.command.shutil.which",
+        with patch("specify_cli.workflows.step.command.shutil.which",
                     lambda name: "/usr/bin/acli" if name == "acli" else None), \
              patch("subprocess.run", return_value=mock_result):
             result = step.execute(config, ctx)
@@ -1062,14 +1345,14 @@ class TestCommandStep:
         assert result.output["exit_code"] == 0
 
     def test_validate_missing_command(self):
-        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.step.command import CommandStep
 
         step = CommandStep()
         errors = step.validate({"id": "test"})
         assert any("missing 'command'" in e for e in errors)
 
     def test_validate_rejects_non_mapping_input_and_options(self):
-        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.step.command import CommandStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = CommandStep()
@@ -1104,7 +1387,7 @@ class TestCommandStep:
         a validated run — and feeds 'model' into the CLI argv. Mirrors the
         'command'/'input'/'options' type checks.
         """
-        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.step.command import CommandStep
 
         step = CommandStep()
         errs = step.validate({"id": "c", "command": "/x", "integration": bad})
@@ -1115,7 +1398,7 @@ class TestCommandStep:
     def test_validate_accepts_none_and_expression_integration_model(self):
         """An explicit YAML-null (inherit default) or a '{{ ... }}' expression
         integration/model stays valid — only literal non-strings are rejected."""
-        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.step.command import CommandStep
 
         step = CommandStep()
         assert step.validate(
@@ -1131,7 +1414,7 @@ class TestCommandStep:
         ) == []
 
     def test_validate_rejects_non_string_command(self):
-        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.step.command import CommandStep
 
         step = CommandStep()
         # execute() passes 'command' to build_command_invocation(), which does
@@ -1146,7 +1429,7 @@ class TestCommandStep:
 
     def test_execute_non_string_command_fails_cleanly(self):
         from unittest.mock import patch
-        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.step.command import CommandStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = CommandStep()
@@ -1156,7 +1439,7 @@ class TestCommandStep:
         # resolvable integration + installed CLI so, absent the guard, dispatch
         # would actually be attempted and the crash would fire.
         ctx = StepContext(default_integration="claude")
-        with patch("specify_cli.workflows.steps.command.shutil.which",
+        with patch("specify_cli.workflows.step.command.shutil.which",
                    return_value="/usr/bin/claude"):
             for bad in (None, ["a", "b"], 5, {"x": 1}):
                 result = step.execute(
@@ -1169,7 +1452,7 @@ class TestCommandStep:
         """On an unvalidated run, an unhashable 'integration' would crash
         get_integration() (dict.get on a list) with a raw TypeError. execute()
         must fail the step with the contract error instead."""
-        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.step.command import CommandStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = CommandStep()
@@ -1197,7 +1480,7 @@ class TestCommandStep:
         configured default the step would silently dispatch using the wrong
         integration instead of surfacing the contract error. The default is set
         here so a regression dispatches rather than fails-not-possible."""
-        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.step.command import CommandStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = CommandStep()
@@ -1216,7 +1499,7 @@ class TestCommandStep:
 
     def test_step_override_integration(self):
         from unittest.mock import patch
-        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.step.command import CommandStep
         from specify_cli.workflows.base import StepContext
 
         step = CommandStep()
@@ -1227,7 +1510,7 @@ class TestCommandStep:
             "integration": "gemini",
             "input": {},
         }
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+        with patch("specify_cli.workflows.step.command.shutil.which", return_value=None):
             result = step.execute(config, ctx)
         assert result.output["integration"] == "gemini"
 
@@ -1235,7 +1518,7 @@ class TestCommandStep:
         """A non-string integration (e.g. a list from an expression that resolved
         to one) must FAIL the step cleanly, not crash the run with
         'TypeError: unhashable type: list' from get_integration's dict lookup."""
-        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.step.command import CommandStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = CommandStep()
@@ -1248,7 +1531,7 @@ class TestCommandStep:
 
     def test_step_override_model(self):
         from unittest.mock import patch
-        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.step.command import CommandStep
         from specify_cli.workflows.base import StepContext
 
         step = CommandStep()
@@ -1259,13 +1542,13 @@ class TestCommandStep:
             "model": "opus-4",
             "input": {},
         }
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+        with patch("specify_cli.workflows.step.command.shutil.which", return_value=None):
             result = step.execute(config, ctx)
         assert result.output["model"] == "opus-4"
 
     def test_options_merge(self):
         from unittest.mock import patch
-        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.step.command import CommandStep
         from specify_cli.workflows.base import StepContext
 
         step = CommandStep()
@@ -1276,7 +1559,7 @@ class TestCommandStep:
             "options": {"thinking-budget": 32768},
             "input": {},
         }
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+        with patch("specify_cli.workflows.step.command.shutil.which", return_value=None):
             result = step.execute(config, ctx)
         assert result.output["options"]["max-tokens"] == 8000
         assert result.output["options"]["thinking-budget"] == 32768
@@ -1284,7 +1567,7 @@ class TestCommandStep:
     def test_dispatch_not_attempted_without_cli(self):
         """When the CLI tool is not installed, step should fail."""
         from unittest.mock import patch
-        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.step.command import CommandStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = CommandStep()
@@ -1298,7 +1581,7 @@ class TestCommandStep:
             "command": "speckit.specify",
             "input": {"args": "{{ inputs.name }}"},
         }
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+        with patch("specify_cli.workflows.step.command.shutil.which", return_value=None):
             result = step.execute(config, ctx)
         assert result.status == StepStatus.FAILED
         assert result.output["dispatched"] is False
@@ -1307,7 +1590,7 @@ class TestCommandStep:
     def test_dispatch_with_mock_cli(self, tmp_path, monkeypatch):
         """When the CLI is installed, dispatch invokes the command by name."""
         from unittest.mock import patch, MagicMock
-        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.step.command import CommandStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = CommandStep()
@@ -1327,7 +1610,7 @@ class TestCommandStep:
         mock_result.stdout = '{"result": "done"}'
         mock_result.stderr = ""
 
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value="/usr/local/bin/claude"), \
+        with patch("specify_cli.workflows.step.command.shutil.which", return_value="/usr/local/bin/claude"), \
              patch("specify_cli.integrations.base.shutil.which", return_value="/usr/local/bin/claude"), \
              patch("subprocess.run", return_value=mock_result) as mock_run:
             result = step.execute(config, ctx)
@@ -1347,7 +1630,7 @@ class TestCommandStep:
     def test_dispatch_uses_executable_override_for_fallback_preflight(self, tmp_path, monkeypatch):
         """Command preflight falls back to build_exec_args() argv[0]."""
         from unittest.mock import MagicMock, patch
-        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.step.command import CommandStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         monkeypatch.setenv("SPECKIT_INTEGRATION_CLAUDE_EXECUTABLE", "/opt/claude")
@@ -1374,7 +1657,7 @@ class TestCommandStep:
         mock_result.stdout = '{"result": "done"}'
         mock_result.stderr = ""
 
-        with patch("specify_cli.workflows.steps.command.shutil.which", side_effect=fake_which), \
+        with patch("specify_cli.workflows.step.command.shutil.which", side_effect=fake_which), \
              patch("subprocess.run", return_value=mock_result) as mock_run:
             result = step.execute(config, ctx)
 
@@ -1388,7 +1671,7 @@ class TestCommandStep:
     def test_dispatch_failure_returns_failed_status(self, tmp_path):
         """When the CLI exits non-zero, the step should fail."""
         from unittest.mock import patch, MagicMock
-        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.step.command import CommandStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = CommandStep()
@@ -1408,7 +1691,7 @@ class TestCommandStep:
         mock_result.stdout = ""
         mock_result.stderr = "API error"
 
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value="/usr/local/bin/claude"), \
+        with patch("specify_cli.workflows.step.command.shutil.which", return_value="/usr/local/bin/claude"), \
              patch("specify_cli.integrations.base.shutil.which", return_value="/usr/local/bin/claude"), \
              patch("subprocess.run", return_value=mock_result):
             result = step.execute(config, ctx)
@@ -1423,7 +1706,7 @@ class TestPromptStep:
 
     def test_execute_basic(self):
         from unittest.mock import patch
-        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.step.prompt import PromptStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = PromptStep()
@@ -1436,7 +1719,7 @@ class TestPromptStep:
             "type": "prompt",
             "prompt": "Review {{ inputs.file }} for security issues",
         }
-        with patch("specify_cli.workflows.steps.prompt.shutil.which", return_value=None):
+        with patch("specify_cli.workflows.step.prompt.shutil.which", return_value=None):
             result = step.execute(config, ctx)
         assert result.status == StepStatus.FAILED
         assert result.output["prompt"] == "Review auth.py for security issues"
@@ -1446,7 +1729,7 @@ class TestPromptStep:
     def test_execute_non_string_integration_fails_cleanly(self):
         """A non-string integration must FAIL the step cleanly, not crash with
         'TypeError: unhashable type: list' from get_integration's dict lookup."""
-        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.step.prompt import PromptStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = PromptStep()
@@ -1459,7 +1742,7 @@ class TestPromptStep:
 
     def test_execute_with_step_integration(self):
         from unittest.mock import patch
-        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.step.prompt import PromptStep
         from specify_cli.workflows.base import StepContext
 
         step = PromptStep()
@@ -1470,13 +1753,13 @@ class TestPromptStep:
             "prompt": "Summarize the codebase",
             "integration": "gemini",
         }
-        with patch("specify_cli.workflows.steps.prompt.shutil.which", return_value=None):
+        with patch("specify_cli.workflows.step.prompt.shutil.which", return_value=None):
             result = step.execute(config, ctx)
         assert result.output["integration"] == "gemini"
 
     def test_execute_with_model(self):
         from unittest.mock import patch
-        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.step.prompt import PromptStep
         from specify_cli.workflows.base import StepContext
 
         step = PromptStep()
@@ -1487,14 +1770,14 @@ class TestPromptStep:
             "prompt": "hello",
             "model": "opus-4",
         }
-        with patch("specify_cli.workflows.steps.prompt.shutil.which", return_value=None):
+        with patch("specify_cli.workflows.step.prompt.shutil.which", return_value=None):
             result = step.execute(config, ctx)
         assert result.output["model"] == "opus-4"
 
     def test_try_dispatch_resolves_rovodev_via_acli(self, tmp_path):
         """When acli is installed, rovodev prompt dispatch succeeds via acli."""
         from unittest.mock import patch, MagicMock
-        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.step.prompt import PromptStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = PromptStep()
@@ -1513,7 +1796,7 @@ class TestPromptStep:
         mock_result.stdout = ""
         mock_result.stderr = ""
 
-        with patch("specify_cli.workflows.steps.prompt.shutil.which",
+        with patch("specify_cli.workflows.step.prompt.shutil.which",
                     lambda name: "/usr/bin/acli" if name == "acli" else None), \
              patch("subprocess.run", return_value=mock_result):
             result = step.execute(config, ctx)
@@ -1533,7 +1816,7 @@ class TestPromptStep:
         IntegrationBase.dispatch_command -- resolves argv[0] and works.
         """
         from unittest.mock import patch, MagicMock
-        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.step.prompt import PromptStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = PromptStep()
@@ -1547,7 +1830,7 @@ class TestPromptStep:
         mock_result.stderr = ""
 
         with patch(
-            "specify_cli.workflows.steps.prompt.shutil.which",
+            "specify_cli.workflows.step.prompt.shutil.which",
             lambda name: resolved,
         ), patch("subprocess.run", return_value=mock_result) as run:
             result = step.execute(config, ctx)
@@ -1559,7 +1842,7 @@ class TestPromptStep:
 
     def test_dispatch_with_mock_cli(self, tmp_path):
         from unittest.mock import patch, MagicMock
-        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.step.prompt import PromptStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = PromptStep()
@@ -1578,7 +1861,7 @@ class TestPromptStep:
         mock_result.stdout = "Here is the explanation"
         mock_result.stderr = ""
 
-        with patch("specify_cli.workflows.steps.prompt.shutil.which", return_value="/usr/local/bin/claude"), \
+        with patch("specify_cli.workflows.step.prompt.shutil.which", return_value="/usr/local/bin/claude"), \
              patch("subprocess.run", return_value=mock_result):
             result = step.execute(config, ctx)
 
@@ -1589,7 +1872,7 @@ class TestPromptStep:
     def test_dispatch_uses_executable_override_for_fallback_preflight(self, tmp_path, monkeypatch):
         """Prompt preflight falls back to build_exec_args() argv[0]."""
         from unittest.mock import MagicMock, patch
-        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.step.prompt import PromptStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         monkeypatch.setenv("SPECKIT_INTEGRATION_CLAUDE_EXECUTABLE", "/opt/claude")
@@ -1615,7 +1898,7 @@ class TestPromptStep:
         mock_result.stdout = "Here is the explanation"
         mock_result.stderr = ""
 
-        with patch("specify_cli.workflows.steps.prompt.shutil.which", side_effect=fake_which), \
+        with patch("specify_cli.workflows.step.prompt.shutil.which", side_effect=fake_which), \
              patch("subprocess.run", return_value=mock_result) as mock_run:
             result = step.execute(config, ctx)
 
@@ -1627,7 +1910,7 @@ class TestPromptStep:
         assert call_args[0][0][2] == "Explain this code"
 
     def test_validate_missing_prompt(self):
-        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.step.prompt import PromptStep
 
         step = PromptStep()
         errors = step.validate({"id": "test"})
@@ -1642,14 +1925,14 @@ class TestPromptStep:
         the model as instructions — silently wrong. Mirrors the shell-step
         'run' type check.
         """
-        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.step.prompt import PromptStep
 
         step = PromptStep()
         errors = step.validate({"id": "p", "prompt": bad_prompt})
         assert any("'prompt' must be a string" in e for e in errors)
 
     def test_validate_valid(self):
-        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.step.prompt import PromptStep
 
         step = PromptStep()
         errors = step.validate({"id": "test", "prompt": "do something"})
@@ -1657,7 +1940,7 @@ class TestPromptStep:
 
     def test_validate_accepts_expression_prompt(self):
         """A '{{ ... }}' expression prompt is a str, so it stays valid."""
-        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.step.prompt import PromptStep
 
         step = PromptStep()
         errors = step.validate(
@@ -1672,7 +1955,7 @@ class TestPromptStep:
         execute() passes 'integration' to get_integration(), which uses it as a
         dict key — an unhashable list/dict raises a raw TypeError there, even on
         a validated run — and feeds 'model' into the CLI argv."""
-        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.step.prompt import PromptStep
 
         step = PromptStep()
         errs = step.validate({"id": "p", "prompt": "hi", "integration": bad})
@@ -1683,7 +1966,7 @@ class TestPromptStep:
     def test_validate_accepts_none_and_expression_integration_model(self):
         """An explicit YAML-null (inherit default) or a '{{ ... }}' expression
         integration/model stays valid — only literal non-strings are rejected."""
-        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.step.prompt import PromptStep
 
         step = PromptStep()
         assert step.validate(
@@ -1702,7 +1985,7 @@ class TestPromptStep:
         """On an unvalidated run, an unhashable 'integration' would crash
         get_integration() (dict.get on a dict) with a raw TypeError. execute()
         must fail the step with the contract error instead."""
-        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.step.prompt import PromptStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = PromptStep()
@@ -1728,7 +2011,7 @@ class TestPromptStep:
         configured default the step would silently dispatch using the wrong
         integration instead of surfacing the contract error. The default is set
         here so a regression dispatches rather than fails-not-possible."""
-        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.step.prompt import PromptStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = PromptStep()
@@ -1756,7 +2039,7 @@ class TestPromptStep:
         ``subprocess.run()`` — raise ``OverflowError``, so the guard has to
         catch that rather than let it escape as the crash it exists to stop.
         """
-        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.step.prompt import PromptStep
 
         step = PromptStep()
         errors = step.validate(
@@ -1770,7 +2053,7 @@ class TestPromptStep:
     @pytest.mark.parametrize("good", [300, 5, 0.5])
     def test_validate_accepts_valid_timeout(self, good):
         """A positive int/float timeout — and an absent one — stay valid."""
-        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.step.prompt import PromptStep
 
         step = PromptStep()
         for config in (
@@ -1793,7 +2076,7 @@ class TestPromptStep:
         import subprocess
         from unittest.mock import patch
 
-        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.step.prompt import PromptStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         def fail_if_called(*args, **kwargs):
@@ -1809,7 +2092,7 @@ class TestPromptStep:
         # too large to convert to float raises OverflowError.
         for bad in ("30", True, float("nan"), 0, -5, ["30"], 10**400):
             with patch(
-                "specify_cli.workflows.steps.prompt.shutil.which",
+                "specify_cli.workflows.step.prompt.shutil.which",
                 return_value="/opt/claude",
             ):
                 result = step.execute(
@@ -1824,6 +2107,42 @@ class TestPromptStep:
                 )
             assert result.status is StepStatus.FAILED, bad
             assert "'timeout' must be a positive number" in (result.error or ""), bad
+
+    def test_try_dispatch_threads_project_root(self):
+        """PromptStep._try_dispatch must pass context.project_root to build_exec_args."""
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from specify_cli.workflows.base import StepContext
+        from specify_cli.workflows.step.prompt import PromptStep
+
+        step = PromptStep()
+        ctx = StepContext(project_root="/fake/project/root", default_integration="dummy")
+
+        mock_impl = MagicMock()
+        mock_impl.key = "dummy"
+        mock_impl.build_exec_args.return_value = ["dummy", "args"]
+        mock_get_integration = MagicMock(return_value=mock_impl)
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+
+        with patch("specify_cli.integrations.get_integration", mock_get_integration), \
+             patch("specify_cli.workflows.step.prompt.shutil.which", return_value="/opt/dummy"), \
+             patch("subprocess.run", return_value=mock_result):
+            step.execute(
+                {"id": "p", "type": "prompt", "prompt": "hi", "integration": "dummy"},
+                ctx,
+            )
+
+        mock_impl.build_exec_args.assert_called_once_with(
+            "hi",
+            model=None,
+            output_json=False,
+            project_root=Path("/fake/project/root"),
+        )
 
 
 class TestShellStep:
@@ -1841,7 +2160,7 @@ class TestShellStep:
         return f'"{sys.executable}" "{script}"'
 
     def test_execute_echo(self):
-        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.step.shell import ShellStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = ShellStep()
@@ -1853,7 +2172,7 @@ class TestShellStep:
         assert "hello" in result.output["stdout"]
 
     def test_execute_failure(self):
-        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.step.shell import ShellStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = ShellStep()
@@ -1865,7 +2184,7 @@ class TestShellStep:
         assert result.error is not None
 
     def test_validate_missing_run(self):
-        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.step.shell import ShellStep
 
         step = ShellStep()
         errors = step.validate({"id": "test"})
@@ -1878,21 +2197,21 @@ class TestShellStep:
         execute() str()-coerces run and invokes it under shell=True, so a
         null or list run would otherwise run the Python repr as a command.
         """
-        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.step.shell import ShellStep
 
         step = ShellStep()
         errors = step.validate({"id": "s", "run": bad_run})
         assert any("'run' must be a string" in e for e in errors)
 
     def test_validate_accepts_string_and_expression_run(self):
-        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.step.shell import ShellStep
 
         step = ShellStep()
         assert step.validate({"id": "s", "run": "echo hi"}) == []
         assert step.validate({"id": "s", "run": "{{ steps.x.output }}"}) == []
 
     def test_output_format_json_exposes_data(self, tmp_path):
-        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.step.shell import ShellStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = ShellStep()
@@ -1910,7 +2229,7 @@ class TestShellStep:
         assert result.output["exit_code"] == 0  # raw keys still present
 
     def test_output_format_json_invalid_stdout_fails(self, tmp_path):
-        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.step.shell import ShellStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = ShellStep()
@@ -1925,7 +2244,7 @@ class TestShellStep:
         assert "output_format: json" in (result.error or "")
 
     def test_no_output_format_keeps_raw_output_only(self, tmp_path):
-        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.step.shell import ShellStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = ShellStep()
@@ -1941,7 +2260,7 @@ class TestShellStep:
         assert "data" not in result.output
 
     def test_validate_rejects_unknown_output_format(self):
-        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.step.shell import ShellStep
 
         step = ShellStep()
         errors = step.validate({"id": "emit", "run": "exit 0", "output_format": "yaml"})
@@ -1952,7 +2271,7 @@ class TestShellStep:
         threaded through to ``subprocess.run`` (issue #3327)."""
         import subprocess
 
-        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.step.shell import ShellStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         captured: dict[str, object] = {}
@@ -1975,7 +2294,7 @@ class TestShellStep:
         """Omitting ``timeout:`` preserves the historical 300s default."""
         import subprocess
 
-        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.step.shell import ShellStep
         from specify_cli.workflows.base import StepContext
 
         captured: dict[str, object] = {}
@@ -1996,7 +2315,7 @@ class TestShellStep:
         hardcoded 300."""
         import subprocess
 
-        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.step.shell import ShellStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         def fake_run(*args, **kwargs):
@@ -2017,7 +2336,7 @@ class TestShellStep:
         otherwise crash subprocess.run() and take down the whole run."""
         import subprocess
 
-        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.step.shell import ShellStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         def fail_if_called(*args, **kwargs):
@@ -2035,7 +2354,7 @@ class TestShellStep:
             assert "'timeout' must be a positive number" in (result.error or "")
 
     def test_validate_rejects_non_positive_timeout(self):
-        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.step.shell import ShellStep
 
         step = ShellStep()
         for bad in (0, -30):
@@ -2043,7 +2362,7 @@ class TestShellStep:
             assert any("'timeout' must be a positive number" in e for e in errors)
 
     def test_validate_rejects_non_numeric_timeout(self):
-        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.step.shell import ShellStep
 
         step = ShellStep()
         # A string and a bool are both invalid (bool is an int subclass but a
@@ -2053,7 +2372,7 @@ class TestShellStep:
             assert any("'timeout' must be a positive number" in e for e in errors)
 
     def test_validate_rejects_non_finite_timeout(self):
-        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.step.shell import ShellStep
 
         step = ShellStep()
         # inf/nan are floats and slip past a plain ``> 0`` check (``nan <= 0``
@@ -2077,7 +2396,7 @@ class TestShellStep:
         value is genuinely invalid rather than merely unrepresentable here.
         The prompt step already catches this (PR #3847).
         """
-        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.step.shell import ShellStep
 
         step = ShellStep()
         for bad in (10**400, -(10**400)):
@@ -2117,7 +2436,7 @@ class TestShellStep:
         """
         import subprocess
 
-        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.step.shell import ShellStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         def fail_if_called(*args, **kwargs):
@@ -2133,7 +2452,7 @@ class TestShellStep:
             assert "'timeout' must be a positive number" in (result.error or ""), bad
 
     def test_validate_accepts_positive_numeric_timeout(self):
-        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.step.shell import ShellStep
 
         step = ShellStep()
         for good in (1, 300, 1800, 12.5):
@@ -2173,7 +2492,7 @@ class _FakeSys:
 
 
 def _force_gate_stdin(monkeypatch, *, tty: bool):
-    from specify_cli.workflows.steps import gate as gate_module
+    from specify_cli.workflows.step import gate as gate_module
 
     monkeypatch.setattr(gate_module, "sys", _FakeSys(tty=tty))
 
@@ -2184,13 +2503,13 @@ class TestInitStep:
     def test_docstring_lists_every_valid_script_type(self):
         # The `script` field docstring must not contradict the step's own
         # VALID_SCRIPT_TYPES (which includes 'py'); validate() accepts all three.
-        from specify_cli.workflows.steps.init import InitStep, VALID_SCRIPT_TYPES
+        from specify_cli.workflows.step.init import InitStep, VALID_SCRIPT_TYPES
 
         for script_type in VALID_SCRIPT_TYPES:
             assert f"``{script_type}``" in InitStep.__doc__
 
     def test_builds_here_argv_and_bootstraps(self, tmp_path):
-        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.step.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = InitStep()
@@ -2221,7 +2540,7 @@ class TestInitStep:
         which ``_resolve_bool`` turned into False, dropping the flag and
         re-enabling the agent-CLI presence check for an unattended run.
         """
-        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.step.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = InitStep()
@@ -2243,7 +2562,7 @@ class TestInitStep:
 
     def test_explicit_false_ignore_agent_tools_is_honoured(self, tmp_path):
         """An explicit ``false`` must still opt in to the agent-CLI check."""
-        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.step.init import InitStep
         from specify_cli.workflows.base import StepContext
 
         step = InitStep()
@@ -2263,7 +2582,7 @@ class TestInitStep:
         assert "--ignore-agent-tools" not in result.output["argv"]
 
     def test_default_integration_falls_back_to_workflow_default(self, tmp_path):
-        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.step.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = InitStep()
@@ -2280,7 +2599,7 @@ class TestInitStep:
         # With no step-level and no workflow-level default, the resolved
         # SPECKIT_INTEGRATION_DEFAULT value must drive both output.integration
         # and the argv passed to init (guards against reverting to the constant).
-        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.step.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         monkeypatch.setenv("SPECKIT_INTEGRATION_DEFAULT", "gemini")
@@ -2295,7 +2614,7 @@ class TestInitStep:
         assert "--integration" in argv and "gemini" in argv
 
     def test_project_name_creates_subdirectory(self, tmp_path):
-        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.step.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = InitStep()
@@ -2314,7 +2633,7 @@ class TestInitStep:
         assert (tmp_path / "demo" / ".specify").is_dir()
 
     def test_invalid_integration_fails(self, tmp_path):
-        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.step.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = InitStep()
@@ -2333,7 +2652,7 @@ class TestInitStep:
         assert result.error is not None
 
     def test_non_empty_current_dir_without_force_fails_fast(self, tmp_path):
-        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.step.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         (tmp_path / "existing.txt").write_text("data")
@@ -2351,7 +2670,7 @@ class TestInitStep:
         assert not (tmp_path / ".specify").exists()
 
     def test_engine_owned_dirs_do_not_trigger_non_empty_check(self, tmp_path):
-        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.step.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         # Simulate the engine creating its run-state directory before steps run
@@ -2372,7 +2691,7 @@ class TestInitStep:
         assert "--force" in result.output["argv"]
 
     def test_default_integration_when_none_provided(self, tmp_path):
-        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.step.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = InitStep()
@@ -2386,7 +2705,7 @@ class TestInitStep:
         assert result.output["integration"] == "copilot"
 
     def test_integration_options_passed_through(self, tmp_path):
-        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.step.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = InitStep()
@@ -2409,14 +2728,14 @@ class TestInitStep:
         assert result.output["integration_options"] == "--skills"
 
     def test_validate_rejects_bad_script(self):
-        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.step.init import InitStep
 
         step = InitStep()
         errors = step.validate({"id": "bootstrap", "script": "bogus"})
         assert any("'script' must be 'sh' or 'ps'" in e for e in errors)
 
     def test_validate_accepts_valid(self):
-        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.step.init import InitStep
 
         step = InitStep()
         assert step.validate({"id": "bootstrap", "script": "sh"}) == []
@@ -2429,7 +2748,7 @@ class TestGateStep:
         # The docstring must not contradict validate()/execute(): on_reject
         # accepts 'abort', 'skip', AND 'retry' (execute() has a dedicated
         # retry -> PAUSED branch), but the summary omitted 'retry'.
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
 
         for behaviour in ("abort", "skip", "retry"):
             assert behaviour in GateStep.__doc__
@@ -2443,7 +2762,7 @@ class TestGateStep:
         _force_gate_stdin(monkeypatch, tty=False)
 
     def test_execute_returns_paused(self):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = GateStep()
@@ -2463,7 +2782,7 @@ class TestGateStep:
         "inputs", [{}, {"spec_verdict": None}, {"spec_verdict": ""}]
     )
     def test_missing_or_empty_verdict_input_uses_existing_pause_behavior(self, inputs):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         result = GateStep().execute(
@@ -2480,7 +2799,7 @@ class TestGateStep:
 
     @pytest.mark.parametrize("inputs", [{}, {"spec_verdict": ""}])
     def test_missing_or_empty_verdict_input_prompts_on_tty(self, monkeypatch, inputs):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         _force_gate_stdin(monkeypatch, tty=True)
@@ -2500,7 +2819,7 @@ class TestGateStep:
         assert result.output["choice"] == "approve"
 
     def test_verdict_input_uses_canonical_option_spelling(self):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         result = GateStep().execute(
@@ -2520,7 +2839,7 @@ class TestGateStep:
         [(42, "must be a string"), ("maybe", "does not match")],
     )
     def test_invalid_verdict_input_value_fails(self, value, error_fragment):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         result = GateStep().execute(
@@ -2536,7 +2855,7 @@ class TestGateStep:
         assert error_fragment in (result.error or "")
 
     def test_verdict_input_fails_inside_fan_out_context(self):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         result = GateStep().execute(
@@ -2598,7 +2917,7 @@ steps:
 
     @pytest.mark.parametrize("invalid_value", ["", 42, None])
     def test_validate_invalid_verdict_input(self, invalid_value):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
 
         errors = GateStep().validate({
             "id": "review",
@@ -2618,7 +2937,7 @@ steps:
     def test_reject_verdict_input_preserves_reject_behavior(
         self, on_reject, status, aborted
     ):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
         from specify_cli.workflows.base import StepContext
 
         context = StepContext(inputs={"spec_verdict": "reject"})
@@ -2639,14 +2958,14 @@ steps:
         )
 
     def test_validate_missing_message(self):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
 
         step = GateStep()
         errors = step.validate({"id": "test", "options": ["approve"]})
         assert any("missing 'message'" in e for e in errors)
 
     def test_validate_invalid_on_reject(self):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
 
         step = GateStep()
         errors = step.validate({
@@ -2670,7 +2989,7 @@ steps:
         verb, a non-string, or a bare ``on_reject:`` (which yields None, since
         ``config.get(k, default)`` does not replace an explicit null).
         """
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         result = GateStep().execute(
@@ -2691,7 +3010,7 @@ steps:
         error, not crash: the reject-choice check calls o.lower() on each option,
         which previously raised AttributeError on a non-string option and broke
         validate_workflow's 'return errors, never raise' contract."""
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
 
         step = GateStep()
         # on_reject defaults to "abort", which triggers the option-text check.
@@ -2704,7 +3023,7 @@ steps:
         assert any("must be strings" in e for e in errors)
 
     def test_interactive_prompt_renders_show_file(self, tmp_path, monkeypatch, capsys):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         review = tmp_path / "spec.md"
@@ -2732,7 +3051,7 @@ steps:
         """A Unicode digit int() can't parse — e.g. the superscript '²', which
         str.isdigit() accepts but int() rejects — must be treated as an invalid
         choice, not crash the prompt loop with an uncaught ValueError."""
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
 
         _force_gate_stdin(monkeypatch, tty=True)
         inputs = iter(["²", "1"])  # superscript-two, then a real "1"
@@ -2744,7 +3063,7 @@ steps:
     def test_interactive_prompt_missing_show_file_does_not_crash(
         self, tmp_path, monkeypatch, capsys
     ):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         missing = tmp_path / "does-not-exist.md"
@@ -2768,7 +3087,7 @@ steps:
     def test_non_interactive_show_file_still_pauses_without_reading(
         self, tmp_path, monkeypatch
     ):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         review = tmp_path / "spec.md"
@@ -2798,14 +3117,14 @@ steps:
         assert result.output["show_file"] == str(review)
 
     def test_read_show_file_empty(self, tmp_path):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
 
         empty = tmp_path / "empty.md"
         empty.write_text("", encoding="utf-8")
         assert GateStep._read_show_file(str(empty)) == ["(file is empty)"]
 
     def test_read_show_file_truncates_large_file(self, tmp_path):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
 
         big = tmp_path / "big.md"
         big.write_text(
@@ -2818,7 +3137,7 @@ steps:
         assert "truncated" in rendered[-1]
 
     def test_read_show_file_invalid_path_does_not_raise(self):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
 
         # An embedded NUL byte makes the OS reject the path with ValueError
         # before any I/O; it must degrade to a notice, not crash the prompt.
@@ -2827,7 +3146,7 @@ steps:
         assert rendered[0].startswith("(could not read file:")
 
     def test_read_show_file_strips_control_chars(self, tmp_path):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
 
         # A file with ANSI/control bytes must not inject escapes into the
         # terminal; ESC and other C0 controls are stripped, tab is kept.
@@ -2838,7 +3157,7 @@ steps:
         assert "\x1b" not in rendered[0] and "\x07" not in rendered[0]
 
     def test_compose_prompt_sanitizes_show_file_path(self):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
 
         # The displayed path header (and the read-error notice it produces)
         # must not carry escapes even when the path string itself contains
@@ -2849,7 +3168,7 @@ steps:
         assert "evil[2Jpath.md:" in out
 
     def test_interactive_non_string_message_renders(self, monkeypatch, capsys):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         # A YAML numeric literal reaches the prompt as a non-string; it must
@@ -2865,7 +3184,7 @@ steps:
         assert result.status == StepStatus.COMPLETED
 
     def test_templated_show_file_resolving_to_non_string_is_coerced(self):
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         # A single-expression template can resolve to a non-string (e.g. a
@@ -2897,7 +3216,7 @@ steps:
         ``TypeError`` (``enumerate``/``len`` on a non-iterable) or ``KeyError``
         (indexing a dict), crashing the whole workflow. Mirrors the switch
         'cases' and command 'input' unvalidated-execute guards."""
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         # Force an interactive TTY so the crash-prone _prompt path is reached;
@@ -2920,7 +3239,7 @@ steps:
         would reach the reject test ``choice.lower()`` and raise a raw
         ``AttributeError`` at run time. ``validate`` reports "must be strings";
         ``execute`` must fail cleanly on an unvalidated run too."""
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         _force_gate_stdin(monkeypatch, tty=True)
@@ -2939,7 +3258,7 @@ steps:
         A malformed ``options`` should surface as FAILED in CI (non-TTY) rather
         than PAUSING and only crashing later when an operator resumes on a real
         terminal."""
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         # Autouse fixture already forces non-TTY stdin.
@@ -2955,7 +3274,7 @@ class TestIfThenStep:
     """Test the if/then/else step type."""
 
     def test_execute_then_branch(self):
-        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.step.if_then import IfThenStep
         from specify_cli.workflows.base import StepContext
 
         step = IfThenStep()
@@ -2972,7 +3291,7 @@ class TestIfThenStep:
         assert result.next_steps[0]["id"] == "a"
 
     def test_execute_else_branch(self):
-        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.step.if_then import IfThenStep
         from specify_cli.workflows.base import StepContext
 
         step = IfThenStep()
@@ -2988,7 +3307,7 @@ class TestIfThenStep:
         assert result.next_steps[0]["id"] == "b"
 
     def test_validate_missing_condition(self):
-        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.step.if_then import IfThenStep
 
         step = IfThenStep()
         errors = step.validate({"id": "test", "then": []})
@@ -3000,7 +3319,7 @@ class TestIfThenStep:
         # evaluate_expression, and evaluate_condition then bool()-coerces it, so
         # it silently resolves to its truthiness (e.g. [1, 2] is always True)
         # instead of erroring on the authoring mistake.
-        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.step.if_then import IfThenStep
 
         step = IfThenStep()
         errors = step.validate({"id": "test", "condition": bad, "then": []})
@@ -3015,7 +3334,7 @@ class TestIfThenStep:
         ],
     )
     def test_validate_accepts_string_or_bool_condition(self, good):
-        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.step.if_then import IfThenStep
 
         step = IfThenStep()
         errors = step.validate({"id": "test", "condition": good, "then": []})
@@ -3033,7 +3352,7 @@ class TestIfThenStep:
         AttributeError on ``.get()``, taking down the whole run. Mirrors the
         switch/fan-out non-list handling.
         """
-        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.step.if_then import IfThenStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = IfThenStep()
@@ -3053,7 +3372,7 @@ class TestIfThenStep:
         condition is false, so a non-list ``else`` reaches ``next_steps`` and
         would crash the engine's step iteration on an unvalidated run.
         """
-        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.step.if_then import IfThenStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = IfThenStep()
@@ -3073,7 +3392,7 @@ class TestIfThenStep:
         normalize it to an empty branch (COMPLETED) rather than failing a
         validator-approved workflow when the condition is false.
         """
-        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.step.if_then import IfThenStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = IfThenStep()
@@ -3093,7 +3412,7 @@ class TestIfThenStep:
         malformed else-branch pass validation only to be silently skipped at
         runtime. ``then`` is already strictly validated; ``else`` must match.
         """
-        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.step.if_then import IfThenStep
 
         step = IfThenStep()
         errors = step.validate(
@@ -3108,7 +3427,7 @@ class TestIfThenStep:
         ``else`` is set explicitly here (including ``else: None``) so the
         explicit-None case is exercised, not just the missing-key case.
         """
-        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.step.if_then import IfThenStep
 
         step = IfThenStep()
         errors = step.validate(
@@ -3118,7 +3437,7 @@ class TestIfThenStep:
 
     def test_validate_accepts_missing_else(self):
         """A missing 'else' key stays valid (no else branch)."""
-        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.step.if_then import IfThenStep
 
         step = IfThenStep()
         errors = step.validate({"id": "i", "condition": "true", "then": []})
@@ -3137,7 +3456,7 @@ class TestSwitchStep:
         while still reporting COMPLETED. There is no `trim` filter, so a
         workflow author cannot strip it themselves.
         """
-        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.step.switch import SwitchStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         config = {
@@ -3160,7 +3479,7 @@ class TestSwitchStep:
 
     def test_execute_still_falls_through_for_a_genuine_mismatch(self):
         """Stripping must not make unrelated values match."""
-        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.step.switch import SwitchStep
         from specify_cli.workflows.base import StepContext
 
         config = {
@@ -3178,7 +3497,7 @@ class TestSwitchStep:
         assert [s["id"] for s in result.next_steps] == ["fallback"]
 
     def test_execute_matches_case(self):
-        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.step.switch import SwitchStep
         from specify_cli.workflows.base import StepContext
 
         step = SwitchStep()
@@ -3199,7 +3518,7 @@ class TestSwitchStep:
         assert result.next_steps[0]["id"] == "plan"
 
     def test_execute_falls_to_default(self):
-        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.step.switch import SwitchStep
         from specify_cli.workflows.base import StepContext
 
         step = SwitchStep()
@@ -3219,7 +3538,7 @@ class TestSwitchStep:
         assert result.next_steps[0]["id"] == "fallback"
 
     def test_execute_no_default_no_match(self):
-        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.step.switch import SwitchStep
         from specify_cli.workflows.base import StepContext
 
         step = SwitchStep()
@@ -3247,7 +3566,7 @@ class TestSwitchStep:
         AttributeError and took down the whole run instead of failing this step.
         Mirrors the fan-out step's non-list ``items`` handling.
         """
-        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.step.switch import SwitchStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = SwitchStep()
@@ -3278,7 +3597,7 @@ class TestSwitchStep:
         ``.get()``, taking down the whole run. Mirrors the non-mapping
         ``cases`` guard.
         """
-        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.step.switch import SwitchStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = SwitchStep()
@@ -3305,7 +3624,7 @@ class TestSwitchStep:
         case matches, so a non-list ``default`` reaches ``next_steps`` and would
         crash the engine's step iteration on an unvalidated run.
         """
-        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.step.switch import SwitchStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = SwitchStep()
@@ -3333,7 +3652,7 @@ class TestSwitchStep:
         must normalize it to an empty branch (COMPLETED) rather than failing a
         validator-approved workflow.
         """
-        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.step.switch import SwitchStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = SwitchStep()
@@ -3352,7 +3671,7 @@ class TestSwitchStep:
         assert result.next_steps == (ok_default or [])
 
     def test_validate_missing_expression(self):
-        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.step.switch import SwitchStep
 
         step = SwitchStep()
         errors = step.validate({"id": "test", "cases": {}})
@@ -3367,7 +3686,7 @@ class TestSwitchStep:
         reported COMPLETED with `matched_case: "__default__"` having dispatched
         nothing.
         """
-        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.step.switch import SwitchStep
 
         step = SwitchStep()
 
@@ -3383,7 +3702,7 @@ class TestSwitchStep:
 
     def test_validate_accepts_an_empty_cases_mapping(self):
         """An explicitly declared but empty `cases:` is still a declaration."""
-        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.step.switch import SwitchStep
 
         errors = SwitchStep().validate(
             {"id": "route", "expression": "{{ inputs.x }}", "cases": {}}
@@ -3391,7 +3710,7 @@ class TestSwitchStep:
         assert not any("missing 'cases'" in e for e in errors), errors
 
     def test_validate_invalid_cases_and_default(self):
-        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.step.switch import SwitchStep
 
         step = SwitchStep()
         errors = step.validate({
@@ -3408,7 +3727,7 @@ class TestWhileStep:
     """Test the while loop step type."""
 
     def test_execute_condition_true(self):
-        from specify_cli.workflows.steps.while_loop import WhileStep
+        from specify_cli.workflows.step.while_loop import WhileStep
         from specify_cli.workflows.base import StepContext
 
         step = WhileStep()
@@ -3426,7 +3745,7 @@ class TestWhileStep:
         assert len(result.next_steps) == 1
 
     def test_execute_condition_false(self):
-        from specify_cli.workflows.steps.while_loop import WhileStep
+        from specify_cli.workflows.step.while_loop import WhileStep
         from specify_cli.workflows.base import StepContext
 
         step = WhileStep()
@@ -3455,7 +3774,7 @@ class TestWhileStep:
         the engine's step iteration on an unvalidated run. Mirrors the
         if/switch/fan-out non-list handling.
         """
-        from specify_cli.workflows.steps.while_loop import WhileStep
+        from specify_cli.workflows.step.while_loop import WhileStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = WhileStep()
@@ -3472,7 +3791,7 @@ class TestWhileStep:
         """A false condition never dispatches the body, so a non-list ``steps``
         stays benign — the step completes without touching ``next_steps``.
         """
-        from specify_cli.workflows.steps.while_loop import WhileStep
+        from specify_cli.workflows.step.while_loop import WhileStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = WhileStep()
@@ -3485,16 +3804,43 @@ class TestWhileStep:
         assert result.next_steps == []
 
     def test_validate_missing_fields(self):
-        from specify_cli.workflows.steps.while_loop import WhileStep
+        from specify_cli.workflows.step.while_loop import WhileStep
 
         step = WhileStep()
         errors = step.validate({"id": "test", "steps": []})
         assert any("missing 'condition'" in e for e in errors)
         # max_iterations is optional (defaults to 10)
 
+    def test_validate_requires_steps_body(self):
+        """A while loop with no body must be rejected, not silently a no-op.
+
+        Without this, ``step:`` written instead of ``steps:`` -- an easy slip,
+        since fan-out's payload key really is the singular ``step:`` -- passed
+        ``specify workflow validate`` with zero errors, and then reported
+        COMPLETED at run time while returning no ``next_steps``, so the loop
+        never ran even once.
+        """
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step.while_loop import WhileStep
+
+        step = WhileStep()
+        config = {
+            "id": "retry",
+            "condition": "true",
+            # The mistype: singular 'step' instead of 'steps'.
+            "step": {"id": "x", "type": "command", "command": "echo"},
+        }
+        errors = step.validate(config)
+        assert errors == ["While step 'retry' is missing 'steps' field."], errors
+
+        # Demonstrates why it matters: execution is a silent no-op.
+        result = step.execute(config, StepContext())
+        assert result.status == StepStatus.COMPLETED
+        assert result.next_steps == []
+
     @pytest.mark.parametrize("bad", [["a", "b"], {"k": "v"}, 5, 1.5])
     def test_validate_rejects_non_string_non_bool_condition(self, bad):
-        from specify_cli.workflows.steps.while_loop import WhileStep
+        from specify_cli.workflows.step.while_loop import WhileStep
 
         step = WhileStep()
         errors = step.validate({"id": "test", "condition": bad, "steps": []})
@@ -3504,14 +3850,14 @@ class TestWhileStep:
     def test_validate_accepts_string_or_bool_condition(self, good):
         # ``condition: false`` unquoted is idiomatic YAML and is this step's own
         # default, so a literal bool must not be rejected.
-        from specify_cli.workflows.steps.while_loop import WhileStep
+        from specify_cli.workflows.step.while_loop import WhileStep
 
         step = WhileStep()
         errors = step.validate({"id": "test", "condition": good, "steps": []})
         assert not any("'condition' must be a" in e for e in errors), good
 
     def test_validate_invalid_max_iterations(self):
-        from specify_cli.workflows.steps.while_loop import WhileStep
+        from specify_cli.workflows.step.while_loop import WhileStep
 
         step = WhileStep()
         errors = step.validate({"id": "test", "condition": "{{ true }}", "max_iterations": 0, "steps": []})
@@ -3528,7 +3874,7 @@ class TestDoWhileStep:
     """Test the do-while loop step type."""
 
     def test_execute_always_runs_once(self):
-        from specify_cli.workflows.steps.do_while import DoWhileStep
+        from specify_cli.workflows.step.do_while import DoWhileStep
         from specify_cli.workflows.base import StepContext
 
         step = DoWhileStep()
@@ -3545,7 +3891,7 @@ class TestDoWhileStep:
         assert result.output["condition"] == "{{ false }}"
 
     def test_execute_with_true_condition(self):
-        from specify_cli.workflows.steps.do_while import DoWhileStep
+        from specify_cli.workflows.step.do_while import DoWhileStep
         from specify_cli.workflows.base import StepContext
 
         step = DoWhileStep()
@@ -3562,7 +3908,7 @@ class TestDoWhileStep:
         assert result.output["max_iterations"] == 5
 
     def test_validate_rejects_bool_max_iterations(self):
-        from specify_cli.workflows.steps.do_while import DoWhileStep
+        from specify_cli.workflows.step.do_while import DoWhileStep
 
         step = DoWhileStep()
         # bool is an int subclass; `max_iterations: true` must be rejected.
@@ -3577,7 +3923,7 @@ class TestDoWhileStep:
         assert ok == [], ok
 
     def test_execute_empty_steps(self):
-        from specify_cli.workflows.steps.do_while import DoWhileStep
+        from specify_cli.workflows.step.do_while import DoWhileStep
         from specify_cli.workflows.base import StepContext
 
         step = DoWhileStep()
@@ -3604,7 +3950,7 @@ class TestDoWhileStep:
         ``next_steps`` and would crash the engine's step iteration on an
         unvalidated run. Mirrors the if/switch/fan-out non-list handling.
         """
-        from specify_cli.workflows.steps.do_while import DoWhileStep
+        from specify_cli.workflows.step.do_while import DoWhileStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = DoWhileStep()
@@ -3617,16 +3963,35 @@ class TestDoWhileStep:
         assert result.next_steps == []
 
     def test_validate_missing_fields(self):
-        from specify_cli.workflows.steps.do_while import DoWhileStep
+        from specify_cli.workflows.step.do_while import DoWhileStep
 
         step = DoWhileStep()
         errors = step.validate({"id": "test", "steps": []})
         assert any("missing 'condition'" in e for e in errors)
         # max_iterations is optional (defaults to 10)
 
+    def test_validate_requires_steps_body(self):
+        """A do-while with no body must be rejected, not silently a no-op.
+
+        The step's own docstring promises "The first invocation always returns
+        the nested steps for execution" -- with no body it validated clean and
+        then returned none, so the loop never ran even once.
+        """
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step.do_while import DoWhileStep
+
+        step = DoWhileStep()
+        config = {"id": "refine", "condition": "true", "max_iterations": 3}
+        errors = step.validate(config)
+        assert errors == ["Do-while step 'refine' is missing 'steps' field."], errors
+
+        result = step.execute(config, StepContext())
+        assert result.status == StepStatus.COMPLETED
+        assert result.next_steps == []
+
     @pytest.mark.parametrize("bad", [["a", "b"], {"k": "v"}, 5, 1.5])
     def test_validate_rejects_non_string_non_bool_condition(self, bad):
-        from specify_cli.workflows.steps.do_while import DoWhileStep
+        from specify_cli.workflows.step.do_while import DoWhileStep
 
         step = DoWhileStep()
         errors = step.validate({"id": "test", "condition": bad, "steps": []})
@@ -3636,14 +4001,14 @@ class TestDoWhileStep:
     def test_validate_accepts_string_or_bool_condition(self, good):
         # ``condition: false`` unquoted is idiomatic YAML; evaluate_condition
         # resolves a literal bool exactly, so it must not be rejected.
-        from specify_cli.workflows.steps.do_while import DoWhileStep
+        from specify_cli.workflows.step.do_while import DoWhileStep
 
         step = DoWhileStep()
         errors = step.validate({"id": "test", "condition": good, "steps": []})
         assert not any("'condition' must be a" in e for e in errors), good
 
     def test_validate_steps_not_list(self):
-        from specify_cli.workflows.steps.do_while import DoWhileStep
+        from specify_cli.workflows.step.do_while import DoWhileStep
 
         step = DoWhileStep()
         errors = step.validate({
@@ -3659,7 +4024,7 @@ class TestFanOutStep:
     """Test the fan-out step type."""
 
     def test_execute_with_items(self):
-        from specify_cli.workflows.steps.fan_out import FanOutStep
+        from specify_cli.workflows.step.fan_out import FanOutStep
         from specify_cli.workflows.base import StepContext
 
         step = FanOutStep()
@@ -3680,7 +4045,7 @@ class TestFanOutStep:
         assert result.output["max_concurrency"] == 3
 
     def test_execute_non_list_items_fails_loudly(self):
-        from specify_cli.workflows.steps.fan_out import FanOutStep
+        from specify_cli.workflows.step.fan_out import FanOutStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = FanOutStep()
@@ -3696,7 +4061,7 @@ class TestFanOutStep:
         assert result.output["item_count"] == 0
 
     def test_execute_empty_list_items_is_valid(self):
-        from specify_cli.workflows.steps.fan_out import FanOutStep
+        from specify_cli.workflows.step.fan_out import FanOutStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = FanOutStep()
@@ -3721,7 +4086,7 @@ class TestFanOutStep:
         AttributeError there and took down the whole run. Mirrors the fan-out
         non-list ``items`` guard and the switch non-dict ``cases`` guard.
         """
-        from specify_cli.workflows.steps.fan_out import FanOutStep
+        from specify_cli.workflows.step.fan_out import FanOutStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = FanOutStep()
@@ -3744,7 +4109,7 @@ class TestFanOutStep:
             assert result.output["step_template"] == {}
 
     def test_validate_missing_fields(self):
-        from specify_cli.workflows.steps.fan_out import FanOutStep
+        from specify_cli.workflows.step.fan_out import FanOutStep
 
         step = FanOutStep()
         errors = step.validate({"id": "test"})
@@ -3752,7 +4117,7 @@ class TestFanOutStep:
         assert any("missing 'step'" in e for e in errors)
 
     def test_validate_step_not_mapping(self):
-        from specify_cli.workflows.steps.fan_out import FanOutStep
+        from specify_cli.workflows.step.fan_out import FanOutStep
 
         step = FanOutStep()
         for bad_step in ("not-a-dict", ["impl"], 5, None):
@@ -3768,7 +4133,7 @@ class TestFanInStep:
     """Test the fan-in step type."""
 
     def test_execute_collects_results(self):
-        from specify_cli.workflows.steps.fan_in import FanInStep
+        from specify_cli.workflows.step.fan_in import FanInStep
         from specify_cli.workflows.base import StepContext
 
         step = FanInStep()
@@ -3787,7 +4152,7 @@ class TestFanInStep:
         assert result.output["results"][0]["item_count"] == 2
 
     def test_execute_multiple_wait_for(self):
-        from specify_cli.workflows.steps.fan_in import FanInStep
+        from specify_cli.workflows.step.fan_in import FanInStep
         from specify_cli.workflows.base import StepContext
 
         step = FanInStep()
@@ -3808,7 +4173,7 @@ class TestFanInStep:
         assert result.output["results"][1]["file"] == "b.md"
 
     def test_execute_missing_wait_for_step(self):
-        from specify_cli.workflows.steps.fan_in import FanInStep
+        from specify_cli.workflows.step.fan_in import FanInStep
         from specify_cli.workflows.base import StepContext
 
         step = FanInStep()
@@ -3834,7 +4199,7 @@ class TestFanInStep:
         "silent empty result + COMPLETED" wiring bug the engine's fan-in
         validation warns against. Mirrors the fan-out non-list ``items`` guard.
         """
-        from specify_cli.workflows.steps.fan_in import FanInStep
+        from specify_cli.workflows.step.fan_in import FanInStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = FanInStep()
@@ -3858,7 +4223,7 @@ class TestFanInStep:
         check even ran. The step still returned COMPLETED, so downstream
         ``steps.<id>.output.<key>`` resolved to None and interpolated as "".
         """
-        from specify_cli.workflows.steps.fan_in import FanInStep
+        from specify_cli.workflows.step.fan_in import FanInStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = FanInStep()
@@ -3872,7 +4237,7 @@ class TestFanInStep:
 
     def test_execute_explicit_null_output_stays_valid(self):
         """An explicit ``output:`` (YAML null) is valid, matching ``validate``."""
-        from specify_cli.workflows.steps.fan_in import FanInStep
+        from specify_cli.workflows.step.fan_in import FanInStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = FanInStep()
@@ -3898,7 +4263,7 @@ class TestFanInStep:
         list-shape guard exists to prevent. Mirrors the engine's
         ``test_non_string_wait_for_entry_is_rejected`` load-time check.
         """
-        from specify_cli.workflows.steps.fan_in import FanInStep
+        from specify_cli.workflows.step.fan_in import FanInStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = FanInStep()
@@ -3911,14 +4276,14 @@ class TestFanInStep:
         assert result.output["results"] == []
 
     def test_validate_empty_wait_for(self):
-        from specify_cli.workflows.steps.fan_in import FanInStep
+        from specify_cli.workflows.step.fan_in import FanInStep
 
         step = FanInStep()
         errors = step.validate({"id": "test", "wait_for": []})
         assert any("non-empty list" in e for e in errors)
 
     def test_validate_wait_for_not_list(self):
-        from specify_cli.workflows.steps.fan_in import FanInStep
+        from specify_cli.workflows.step.fan_in import FanInStep
 
         step = FanInStep()
         errors = step.validate({"id": "test", "wait_for": "not-a-list"})
@@ -3928,7 +4293,7 @@ class TestFanInStep:
     def test_validate_rejects_non_mapping_output(self, bad_output):
         """A non-mapping 'output' must be rejected: execute() would otherwise
         silently coerce it to {} and drop the declared aggregation keys."""
-        from specify_cli.workflows.steps.fan_in import FanInStep
+        from specify_cli.workflows.step.fan_in import FanInStep
 
         step = FanInStep()
         errors = step.validate(
@@ -3937,7 +4302,7 @@ class TestFanInStep:
         assert any("'output' must be a mapping" in e for e in errors)
 
     def test_validate_accepts_mapping_or_absent_output(self):
-        from specify_cli.workflows.steps.fan_in import FanInStep
+        from specify_cli.workflows.step.fan_in import FanInStep
 
         step = FanInStep()
         assert step.validate(
@@ -5409,7 +5774,7 @@ steps:
 """
         definition = WorkflowDefinition.from_string(yaml_str)
         engine = WorkflowEngine(project_dir)
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+        with patch("specify_cli.workflows.step.command.shutil.which", return_value=None):
             state = engine.execute(definition, {"name": "login"})
 
         assert state.status == RunStatus.FAILED
@@ -7385,7 +7750,7 @@ steps:
 """)
         engine = WorkflowEngine(project_dir)
         with patch(
-            "specify_cli.workflows.steps.command.shutil.which",
+            "specify_cli.workflows.step.command.shutil.which",
             return_value=None,
         ):
             state = engine.execute(definition, run_id="cafef00d")
@@ -7687,7 +8052,7 @@ steps:
         from specify_cli.workflows.base import StepResult
 
         with patch(
-            "specify_cli.workflows.steps.gate.GateStep.execute",
+            "specify_cli.workflows.step.gate.GateStep.execute",
             return_value=StepResult(output={"approved": True}),
         ):
             state = engine.resume(state.run_id)
@@ -7993,7 +8358,7 @@ steps:
         """
         from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
         from specify_cli.workflows.base import RunStatus
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
 
         # Force the gate step into interactive mode and feed a "reject"
         # choice so the abort path actually runs in the test env (default
@@ -8037,7 +8402,7 @@ steps:
         """
         from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
         from specify_cli.workflows.base import RunStatus
-        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.step.gate import GateStep
 
         # `_prompt` echoes the option's original casing, so the operator
         # picking "Reject" hands `execute` the capitalised string.
@@ -8257,7 +8622,70 @@ class TestRunState:
         assert loaded.workflow_id == "test-workflow"
         assert loaded.status == RunStatus.RUNNING
         assert loaded.inputs == {"name": "login"}
-        assert "step-one" in loaded.step_results
+        assert loaded.step_results == state.step_results
+
+    @pytest.mark.parametrize("invalid_step_results", [None, [], "invalid", 1, True])
+    def test_load_rejects_non_object_step_results(
+        self, project_dir, invalid_step_results
+    ):
+        """Persisted step results must be a JSON object."""
+        from specify_cli.workflows.engine import RunState
+
+        state = RunState(
+            run_id="invalid-results",
+            workflow_id="test-workflow",
+            project_root=project_dir,
+        )
+        state.save()
+        state_path = state.runs_dir / "state.json"
+        state_data = json.loads(state_path.read_text(encoding="utf-8"))
+        state_data["step_results"] = invalid_step_results
+        state_path.write_text(json.dumps(state_data), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="step_results.*JSON object"):
+            RunState.load("invalid-results", project_dir)
+
+    @pytest.mark.parametrize("invalid_result", [None, [], "invalid", 1, True])
+    def test_load_rejects_non_object_step_result_records(
+        self, project_dir, invalid_result
+    ):
+        """Each persisted step result must be a JSON object."""
+        from specify_cli.workflows.engine import RunState
+
+        state = RunState(
+            run_id="invalid-record",
+            workflow_id="test-workflow",
+            project_root=project_dir,
+        )
+        state.save()
+        state_path = state.runs_dir / "state.json"
+        state_data = json.loads(state_path.read_text(encoding="utf-8"))
+        state_data["step_results"] = {"step-one": invalid_result}
+        state_path.write_text(json.dumps(state_data), encoding="utf-8")
+
+        with pytest.raises(
+            ValueError,
+            match="step_results record 'step-one' must be a JSON object",
+        ):
+            RunState.load("invalid-record", project_dir)
+
+    def test_load_defaults_missing_step_results_for_legacy_state(self, project_dir):
+        """Legacy states without step results load with an empty mapping."""
+        from specify_cli.workflows.engine import RunState
+
+        state = RunState(
+            run_id="legacy-results",
+            workflow_id="test-workflow",
+            project_root=project_dir,
+        )
+        state.save()
+        state_path = state.runs_dir / "state.json"
+        state_data = json.loads(state_path.read_text(encoding="utf-8"))
+        state_data.pop("step_results")
+        state_path.write_text(json.dumps(state_data), encoding="utf-8")
+
+        loaded = RunState.load("legacy-results", project_dir)
+        assert loaded.step_results == {}
 
     def test_load_not_found(self, project_dir):
         from specify_cli.workflows.engine import RunState
@@ -8293,6 +8721,40 @@ class TestRunState:
             match="stored run_id 'other-run' does not match requested run_id 'requested-run'",
         ):
             RunState.load("requested-run", project_dir)
+
+    @pytest.mark.parametrize(
+        "bad_current_step_index",
+        ["not-a-number", 1.5, -1, [0], {"index": 0}, True],
+    )
+    def test_load_rejects_invalid_current_step_index(
+        self, project_dir, bad_current_step_index
+    ):
+        """Reject non-integer and negative resume indices at load time.
+
+        ``bool`` is covered explicitly because it subclasses ``int``.
+        """
+        from specify_cli.workflows.engine import RunState
+
+        run_dir = (
+            project_dir / ".specify" / "workflows" / "runs" / "bad-index-run"
+        )
+        run_dir.mkdir(parents=True)
+        (run_dir / "state.json").write_text(
+            json.dumps(
+                {
+                    "run_id": "bad-index-run",
+                    "workflow_id": "test-workflow",
+                    "status": "paused",
+                    "current_step_index": bad_current_step_index,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(
+            ValueError, match="'current_step_index' must be a non-negative integer"
+        ):
+            RunState.load("bad-index-run", project_dir)
 
     @pytest.mark.parametrize(
         ("installed_workflow_id", "installed_registry_root"),
@@ -8632,6 +9094,71 @@ steps:
         assert len(runs) == 1
         assert runs[0]["workflow_id"] == "good-run"
 
+    def test_list_skips_invalid_utf8_with_valid_sibling(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        bad_dir = runs_dir / "bad-utf8"
+        bad_dir.mkdir(parents=True)
+        (bad_dir / "state.json").write_bytes(b"\xff\xfe invalid utf8")
+
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "good-run-utf8"
+  name: "Good Run UTF8"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    type: shell
+    run: "echo test"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        engine.execute(definition)
+
+        runs = engine.list_runs()
+        assert len(runs) == 1
+        assert runs[0]["workflow_id"] == "good-run-utf8"
+
+    def test_list_skips_oserror_with_valid_sibling(self, project_dir, monkeypatch):
+        import builtins
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        bad_dir = runs_dir / "bad-oserror"
+        bad_dir.mkdir(parents=True)
+        state_file = bad_dir / "state.json"
+        state_file.write_text('{"run_id": "bad"}', encoding="utf-8")
+
+        original_open = builtins.open
+
+        def _mock_open(path, *args, **kwargs):
+            if str(path).endswith("state.json") and "bad-oserror" in str(path):
+                raise OSError("permission denied")
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", _mock_open)
+
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "good-run-oserror"
+  name: "Good Run OSError"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    type: shell
+    run: "echo test"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        engine.execute(definition)
+
+        runs = engine.list_runs()
+        assert len(runs) == 1
+        assert runs[0]["workflow_id"] == "good-run-oserror"
+
 
 # ===== Workflow Registry Tests =====
 
@@ -8803,7 +9330,8 @@ class TestWorkflowCatalog:
     def test_non_mapping_cache_metadata_is_invalid(
         self, project_dir, catalog_type
     ):
-        from specify_cli.workflows.catalog import StepCatalog, WorkflowCatalog
+        from specify_cli.workflows.catalog import WorkflowCatalog
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         catalog_cls = WorkflowCatalog if catalog_type == "workflow" else StepCatalog
         catalog = catalog_cls(project_dir)
@@ -8867,12 +9395,8 @@ class TestWorkflowCatalog:
         import io
 
         from specify_cli.authentication import http as auth_http
-        from specify_cli.workflows.catalog import (
-            StepCatalog,
-            StepCatalogEntry,
-            WorkflowCatalog,
-            WorkflowCatalogEntry,
-        )
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowCatalogEntry
+        from specify_cli.workflows.step.catalog import StepCatalog, StepCatalogEntry
 
         catalog_cls = WorkflowCatalog if catalog_type == "workflow" else StepCatalog
         entry_cls = (
@@ -9295,14 +9819,28 @@ class TestWorkflowCatalog:
         new = next(c for c in data["catalogs"] if c["url"] == "https://b.example.com/c.json")
         assert new["priority"] == 1  # max(inf coerced to 0) + 1
 
-    def test_add_catalog_duplicate_rejected(self, project_dir):
+    def test_add_catalog_normalizes_stored_url_for_idempotency(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
 
         catalog = WorkflowCatalog(project_dir)
-        catalog.add_catalog("https://example.com/catalog.json")
+        assert (
+            catalog.add_catalog("https://example.com/catalog.json", "mine")
+            == "added"
+        )
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        data["catalogs"][0]["url"] = "  https://example.com/catalog.json  "
+        config_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+        original = config_path.read_bytes()
+
+        assert (
+            catalog.add_catalog("https://example.com/catalog.json", "mine")
+            == "unchanged"
+        )
+        assert config_path.read_bytes() == original
 
         with pytest.raises(WorkflowValidationError, match="already configured"):
-            catalog.add_catalog("https://example.com/catalog.json")
+            catalog.add_catalog("https://example.com/catalog.json", "different")
 
     def test_remove_catalog(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog
@@ -9326,6 +9864,18 @@ class TestWorkflowCatalog:
 
         with pytest.raises(WorkflowValidationError, match="out of range"):
             catalog.remove_catalog(5)
+
+    @pytest.mark.parametrize("bad", [[], False, 0, ""])
+    def test_remove_catalog_rejects_falsy_non_mapping_config(
+        self, project_dir, bad
+    ):
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.write_text(yaml.safe_dump(bad), encoding="utf-8")
+
+        with pytest.raises(WorkflowValidationError, match="expected a mapping"):
+            WorkflowCatalog(project_dir).remove_catalog(0)
 
     def test_get_catalog_configs(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog
@@ -9510,7 +10060,7 @@ class TestStepRegistryCustom:
     """Test StepRegistry operations for custom step types."""
 
     def test_add_and_get(self, project_dir):
-        from specify_cli.workflows.catalog import StepRegistry
+        from specify_cli.workflows.step.catalog import StepRegistry
 
         registry = StepRegistry(project_dir)
         registry.add("deploy", {"name": "Deploy", "version": "1.0.0", "type_key": "deploy"})
@@ -9521,7 +10071,7 @@ class TestStepRegistryCustom:
         assert "installed_at" in entry
 
     def test_add_does_not_mutate_input_metadata(self, project_dir):
-        from specify_cli.workflows.catalog import StepRegistry
+        from specify_cli.workflows.step.catalog import StepRegistry
 
         registry = StepRegistry(project_dir)
         metadata = {
@@ -9538,7 +10088,7 @@ class TestStepRegistryCustom:
         assert registry.get("deploy")["nested"]["key"] == "original"
 
     def test_remove(self, project_dir):
-        from specify_cli.workflows.catalog import StepRegistry
+        from specify_cli.workflows.step.catalog import StepRegistry
 
         registry = StepRegistry(project_dir)
         registry.add("deploy", {"name": "Deploy", "type_key": "deploy"})
@@ -9548,14 +10098,14 @@ class TestStepRegistryCustom:
         assert not registry.is_installed("deploy")
 
     def test_remove_missing_returns_false(self, project_dir):
-        from specify_cli.workflows.catalog import StepRegistry
+        from specify_cli.workflows.step.catalog import StepRegistry
 
         registry = StepRegistry(project_dir)
         removed = registry.remove("nonexistent")
         assert removed is False
 
     def test_list(self, project_dir):
-        from specify_cli.workflows.catalog import StepRegistry
+        from specify_cli.workflows.step.catalog import StepRegistry
 
         registry = StepRegistry(project_dir)
         registry.add("step-a", {"name": "A", "type_key": "step-a"})
@@ -9566,7 +10116,7 @@ class TestStepRegistryCustom:
         assert "step-b" in installed
 
     def test_is_installed(self, project_dir):
-        from specify_cli.workflows.catalog import StepRegistry
+        from specify_cli.workflows.step.catalog import StepRegistry
 
         registry = StepRegistry(project_dir)
         assert not registry.is_installed("missing")
@@ -9575,7 +10125,7 @@ class TestStepRegistryCustom:
         assert registry.is_installed("exists")
 
     def test_persistence(self, project_dir):
-        from specify_cli.workflows.catalog import StepRegistry
+        from specify_cli.workflows.step.catalog import StepRegistry
 
         registry1 = StepRegistry(project_dir)
         registry1.add("deploy", {"name": "Deploy", "type_key": "deploy"})
@@ -9584,7 +10134,7 @@ class TestStepRegistryCustom:
         assert registry2.is_installed("deploy")
 
     def test_corrupted_registry_resets(self, project_dir):
-        from specify_cli.workflows.catalog import StepRegistry
+        from specify_cli.workflows.step.catalog import StepRegistry
 
         registry = StepRegistry(project_dir)
         registry.steps_dir.mkdir(parents=True, exist_ok=True)
@@ -9596,7 +10146,7 @@ class TestStepRegistryCustom:
 
     def test_registry_missing_steps_key_resets(self, project_dir):
         """Valid JSON but missing 'steps' key should not crash add/get."""
-        from specify_cli.workflows.catalog import StepRegistry
+        from specify_cli.workflows.step.catalog import StepRegistry
         import json as _json
 
         registry = StepRegistry(project_dir)
@@ -9616,7 +10166,7 @@ class TestStepRegistryCustom:
     @pytest.mark.skipif(sys.platform == "win32", reason="chmod not reliable on Windows")
     def test_registry_unreadable_file_resets(self, project_dir):
         """OSError reading the registry file should fall back to default."""
-        from specify_cli.workflows.catalog import StepRegistry
+        from specify_cli.workflows.step.catalog import StepRegistry
         import json as _json
 
         registry = StepRegistry(project_dir)
@@ -9641,7 +10191,7 @@ class TestStepRegistryCustom:
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_registry_load_refuses_symlinked_steps_dir(self, project_dir):
         """A symlinked steps directory must not be read from (defense-in-depth)."""
-        from specify_cli.workflows.catalog import StepRegistry
+        from specify_cli.workflows.step.catalog import StepRegistry
         import json as _json
 
         outside = project_dir.parent / "outside-steps"
@@ -9659,7 +10209,7 @@ class TestStepRegistryCustom:
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_registry_save_refuses_symlinked_steps_dir(self, project_dir):
         """save() must refuse symlinked registry paths (defense-in-depth)."""
-        from specify_cli.workflows.catalog import StepRegistry, StepValidationError
+        from specify_cli.workflows.step.catalog import StepRegistry, StepValidationError
 
         outside = project_dir.parent / "outside-steps-save"
         outside.mkdir(parents=True, exist_ok=True)
@@ -9685,7 +10235,7 @@ class TestStepCatalog:
     def test_falsy_non_mapping_config_rejected(self, project_dir, body):
         """A FALSY non-mapping top level had the same ``or {}`` coercion, which
         bypassed the isinstance guard. It must raise like a truthy non-mapping."""
-        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
 
         config_path = project_dir / ".specify" / "step-catalogs.yml"
         config_path.write_text(body, encoding="utf-8")
@@ -9699,7 +10249,7 @@ class TestStepCatalog:
     def test_falsy_non_list_catalogs_rejected(self, project_dir, body):
         """...and the same nested guard: a FALSY non-list ``catalogs:`` value must
         raise rather than being swallowed as "no catalogs"."""
-        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
 
         config_path = project_dir / ".specify" / "step-catalogs.yml"
         config_path.write_text(body, encoding="utf-8")
@@ -9715,7 +10265,7 @@ class TestStepCatalog:
         """An empty document, explicit null, or absent/empty ``catalogs:`` stays a
         valid no-op — the layer contributes nothing and resolution falls
         through."""
-        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         config_path = project_dir / ".specify" / "step-catalogs.yml"
         config_path.write_text(body, encoding="utf-8")
@@ -9723,7 +10273,7 @@ class TestStepCatalog:
         assert catalog._load_catalog_config(config_path) is None
 
     def test_default_catalogs(self, project_dir, monkeypatch):
-        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         monkeypatch.setattr(Path, "home", lambda: project_dir)
         monkeypatch.delenv("SPECKIT_STEP_CATALOG_URL", raising=False)
@@ -9734,7 +10284,7 @@ class TestStepCatalog:
         assert entries[1].name == "community"
 
     def test_env_var_override(self, project_dir, monkeypatch):
-        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         monkeypatch.setenv("SPECKIT_STEP_CATALOG_URL", "https://example.com/step-catalog.json")
         catalog = StepCatalog(project_dir)
@@ -9744,7 +10294,7 @@ class TestStepCatalog:
         assert entries[0].url == "https://example.com/step-catalog.json"
 
     def test_project_level_config(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         config_path = project_dir / ".specify" / "step-catalogs.yml"
         config_path.write_text(yaml.dump({
@@ -9765,7 +10315,7 @@ class TestStepCatalog:
     def test_config_priority_bool_or_inf_rejected(self, project_dir, bad_priority):
         """`priority: true`/`.inf` in a step-catalog config raise a clean
         validation error instead of coercing to 1 / crashing with OverflowError."""
-        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
 
         config_path = project_dir / ".specify" / "step-catalogs.yml"
         config_path.write_text(yaml.dump({
@@ -9781,14 +10331,14 @@ class TestStepCatalog:
             catalog.get_active_catalogs()
 
     def test_validate_url_http_rejected(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
 
         catalog = StepCatalog(project_dir)
         with pytest.raises(StepValidationError, match="HTTPS"):
             catalog._validate_catalog_url("http://evil.com/step-catalog.json")
 
     def test_validate_url_localhost_http_allowed(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         catalog = StepCatalog(project_dir)
         # Should not raise
@@ -9807,7 +10357,7 @@ class TestStepCatalog:
         ValueError past the command handler (which only catches
         StepValidationError). Mirrors specify_cli.catalogs (#3435).
         """
-        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
 
         catalog = StepCatalog(project_dir)
         with pytest.raises(StepValidationError, match="malformed"):
@@ -9827,7 +10377,7 @@ class TestStepCatalog:
         ``entry.url`` is valid so validation only trips on the redirect target.
         Mirrors specify_cli.catalogs (#3435).
         """
-        from specify_cli.workflows.catalog import (
+        from specify_cli.workflows.step.catalog import (
             StepCatalog,
             StepCatalogEntry,
             StepCatalogError,
@@ -9871,7 +10421,7 @@ class TestStepCatalog:
         INTERMEDIATE hop — closing the https -> http -> attacker-https chain a
         terminal-URL-only check would miss. Mirrors presets/extensions
         (#3523 / #3524)."""
-        from specify_cli.workflows.catalog import (
+        from specify_cli.workflows.step.catalog import (
             StepCatalog,
             StepCatalogEntry,
             StepCatalogError,
@@ -9905,8 +10455,8 @@ class TestStepCatalog:
         self, project_dir, monkeypatch
     ):
         from specify_cli.authentication import http as auth_http
-        from specify_cli.workflows import catalog as catalog_module
-        from specify_cli.workflows.catalog import (
+        from specify_cli.workflows.step import catalog as catalog_module
+        from specify_cli.workflows.step.catalog import (
             StepCatalog,
             StepCatalogEntry,
             StepCatalogError,
@@ -9958,7 +10508,7 @@ class TestStepCatalog:
         assert not catalog.cache_dir.exists()
 
     def test_add_catalog(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         catalog = StepCatalog(project_dir)
         catalog.add_catalog("https://example.com/new-steps.json", "my-steps")
@@ -9973,7 +10523,7 @@ class TestStepCatalog:
         """Step-catalog add_catalog() must not crash when an existing entry has a
         `priority: .inf` (int(float('inf')) is an OverflowError) — _coerce_priority
         treats it as 0 and the add succeeds."""
-        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         config_path = project_dir / ".specify" / "step-catalogs.yml"
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -9995,7 +10545,7 @@ class TestStepCatalog:
 
     def test_add_catalog_empty_yaml_file(self, project_dir):
         """An empty YAML config file should be treated as empty, not corrupted."""
-        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         config_path = project_dir / ".specify" / "step-catalogs.yml"
         config_path.write_text("", encoding="utf-8")
@@ -10008,17 +10558,48 @@ class TestStepCatalog:
         assert len(data["catalogs"]) == 1
         assert data["catalogs"][0]["url"] == "https://example.com/steps.json"
 
-    def test_add_catalog_duplicate_rejected(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+    @pytest.mark.parametrize("bad", [[], False, 0, ""])
+    def test_add_catalog_rejects_falsy_non_mapping_config(
+        self, project_dir, bad
+    ):
+        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        original = yaml.safe_dump(bad)
+        config_path.write_text(original, encoding="utf-8")
+
+        with pytest.raises(StepValidationError, match="expected a mapping"):
+            StepCatalog(project_dir).add_catalog(
+                "https://example.com/steps.json", "my-steps"
+            )
+
+        assert config_path.read_text(encoding="utf-8") == original
+
+    def test_add_catalog_normalizes_stored_url_for_idempotency(self, project_dir):
+        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
 
         catalog = StepCatalog(project_dir)
-        catalog.add_catalog("https://example.com/steps.json")
+        assert (
+            catalog.add_catalog("https://example.com/steps.json", "mine")
+            == "added"
+        )
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        data["catalogs"][0]["url"] = "  https://example.com/steps.json  "
+        config_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+        original = config_path.read_bytes()
+
+        assert (
+            catalog.add_catalog("https://example.com/steps.json", "mine")
+            == "unchanged"
+        )
+        assert config_path.read_bytes() == original
 
         with pytest.raises(StepValidationError, match="already configured"):
-            catalog.add_catalog("https://example.com/steps.json")
+            catalog.add_catalog("https://example.com/steps.json", "different")
 
     def test_remove_catalog(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         catalog = StepCatalog(project_dir)
         catalog.add_catalog("https://example.com/s1.json", "first")
@@ -10032,7 +10613,7 @@ class TestStepCatalog:
         assert len(data["catalogs"]) == 1
 
     def test_remove_catalog_invalid_index(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
 
         catalog = StepCatalog(project_dir)
         catalog.add_catalog("https://example.com/s1.json")
@@ -10040,15 +10621,27 @@ class TestStepCatalog:
         with pytest.raises(StepValidationError, match="out of range"):
             catalog.remove_catalog(5)
 
+    @pytest.mark.parametrize("bad", [[], False, 0, ""])
+    def test_remove_catalog_rejects_falsy_non_mapping_config(
+        self, project_dir, bad
+    ):
+        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        config_path.write_text(yaml.safe_dump(bad), encoding="utf-8")
+
+        with pytest.raises(StepValidationError, match="expected a mapping"):
+            StepCatalog(project_dir).remove_catalog(0)
+
     def test_remove_catalog_no_config(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
 
         catalog = StepCatalog(project_dir)
         with pytest.raises(StepValidationError, match="No step catalog config file found"):
             catalog.remove_catalog(0)
 
     def test_add_catalog_wraps_write_oserror(self, project_dir, monkeypatch):
-        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
         import builtins
 
         catalog = StepCatalog(project_dir)
@@ -10065,7 +10658,7 @@ class TestStepCatalog:
             catalog.add_catalog("https://example.com/new-steps.json", "my-steps")
 
     def test_remove_catalog_wraps_write_oserror(self, project_dir, monkeypatch):
-        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
         import builtins
 
         catalog = StepCatalog(project_dir)
@@ -10083,7 +10676,7 @@ class TestStepCatalog:
             catalog.remove_catalog(0)
 
     def test_get_catalog_configs(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         catalog = StepCatalog(project_dir)
         configs = catalog.get_catalog_configs()
@@ -10092,7 +10685,7 @@ class TestStepCatalog:
         assert isinstance(configs[0]["install_allowed"], bool)
 
     def test_search_with_mock_catalog(self, project_dir, monkeypatch):
-        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         mock_data = {
             "schema_version": "1.0",
@@ -10127,7 +10720,7 @@ class TestStepCatalog:
 
     def test_search_with_non_string_fields(self, project_dir, monkeypatch):
         """Non-string catalog fields (e.g. integer id) must not raise TypeError."""
-        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         catalog = StepCatalog(project_dir)
         monkeypatch.setattr(catalog, "_get_merged_steps", lambda **kw: {
@@ -10151,7 +10744,7 @@ class TestStepCatalog:
 
     def test_get_merged_steps_normalizes_list_ids_to_strings(self, project_dir, monkeypatch):
         """List-based catalog entries with non-string ids must be normalized."""
-        from specify_cli.workflows.catalog import StepCatalog, StepCatalogEntry
+        from specify_cli.workflows.step.catalog import StepCatalog, StepCatalogEntry
 
         catalog = StepCatalog(project_dir)
         entry = StepCatalogEntry(
@@ -10176,7 +10769,7 @@ class TestStepCatalog:
 
     def test_get_step_info_returns_entry_or_none(self, project_dir, monkeypatch):
         """get_step_info returns matching entry or None for missing ids."""
-        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         catalog = StepCatalog(project_dir)
         monkeypatch.setattr(catalog, "_get_merged_steps", lambda **kw: {
@@ -10409,1597 +11002,20 @@ class PkgStep(StepBase):
 
 # ===== CLI Step Remove Tests =====
 
-class TestWorkflowStepRemoveCLI:
-    """Test the 'specify workflow step remove' CLI command edge cases."""
 
-    def test_remove_orphaned_directory(self, project_dir, monkeypatch):
-        """step remove works when directory exists but registry entry is missing.
 
-        This covers the case where the registry was reset due to corruption.
-        """
-        from typer.testing import CliRunner
-        from specify_cli import app
 
-        monkeypatch.chdir(project_dir)
 
-        # Create an orphaned step directory (no registry entry)
-        step_dir = project_dir / ".specify" / "workflows" / "steps" / "orphan-step"
-        step_dir.mkdir(parents=True)
-        (step_dir / "step.yml").write_text(
-            "step:\n  type_key: orphan-step\n", encoding="utf-8"
-        )
-        (step_dir / "__init__.py").write_text("", encoding="utf-8")
 
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "step", "remove", "orphan-step"])
 
-        assert result.exit_code == 0, result.output
-        assert not step_dir.exists()
-        # Warning should be printed about missing registry entry
-        assert "Warning" in result.output or "warning" in result.output.lower()
 
-    def test_remove_not_installed(self, project_dir, monkeypatch):
-        """step remove fails cleanly when neither directory nor registry entry exist."""
-        from typer.testing import CliRunner
-        from specify_cli import app
 
-        monkeypatch.chdir(project_dir)
 
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "step", "remove", "ghost-step"])
 
-        assert result.exit_code != 0
-        assert "not installed" in result.output
 
-    def test_remove_registered_step(self, project_dir, monkeypatch):
-        """step remove works normally when both directory and registry entry exist."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import StepRegistry
 
-        monkeypatch.chdir(project_dir)
 
-        # Set up a registered step with a directory
-        registry = StepRegistry(project_dir)
-        registry.add("my-step", {"name": "My Step", "type_key": "my-step", "version": "1.0.0"})
-        step_dir = project_dir / ".specify" / "workflows" / "steps" / "my-step"
-        step_dir.mkdir(parents=True)
-        (step_dir / "step.yml").write_text(
-            "step:\n  type_key: my-step\n", encoding="utf-8"
-        )
-        (step_dir / "__init__.py").write_text("", encoding="utf-8")
 
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "step", "remove", "my-step"])
-
-        assert result.exit_code == 0, result.output
-        assert not step_dir.exists()
-        registry2 = StepRegistry(project_dir)
-        assert not registry2.is_installed("my-step")
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_remove_rejects_symlinked_steps_base_dir(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        outside = project_dir.parent / "outside-steps"
-        outside.mkdir(parents=True, exist_ok=True)
-        steps_link = project_dir / ".specify" / "workflows" / "steps"
-        steps_link.symlink_to(outside, target_is_directory=True)
-
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "step", "remove", "my-step"])
-
-        assert result.exit_code != 0
-        assert "Refusing to use symlinked step directory" in result.output
-
-
-class TestWorkflowRemoveGuard:
-    def test_remove_rejects_traversal_registry_key(self, project_dir, monkeypatch):
-        """A corrupted registry key must not let remove delete outside workflows/."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        registry = WorkflowRegistry(project_dir)
-        registry.add("../outside", {"name": "Bad"})
-        outside = project_dir / ".specify" / "outside"
-        outside.mkdir()
-        sentinel = outside / "keep.txt"
-        sentinel.write_text("keep", encoding="utf-8")
-
-        monkeypatch.chdir(project_dir)
-        result = CliRunner().invoke(app, ["workflow", "remove", "../outside"])
-
-        assert result.exit_code != 0
-        assert "Invalid workflow ID" in result.output
-        assert sentinel.read_text(encoding="utf-8") == "keep"
-
-    @pytest.mark.parametrize("workflow_id", ["overlays", "runs", "steps"])
-    def test_remove_rejects_reserved_storage_ids(
-        self, project_dir, monkeypatch, workflow_id
-    ):
-        """Reserved workflow storage directories must never be removable workflows."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        registry = WorkflowRegistry(project_dir)
-        registry.add(workflow_id, {"name": "Bad"})
-        reserved_dir = project_dir / ".specify" / "workflows" / workflow_id
-        reserved_dir.mkdir(exist_ok=True)
-        sentinel = reserved_dir / "keep.txt"
-        sentinel.write_text("keep", encoding="utf-8")
-
-        monkeypatch.chdir(project_dir)
-        result = CliRunner().invoke(app, ["workflow", "remove", workflow_id])
-
-        assert result.exit_code != 0
-        assert "Invalid workflow ID" in result.output
-        assert sentinel.read_text(encoding="utf-8") == "keep"
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_remove_refuses_symlinked_workflow_dir(self, project_dir, monkeypatch):
-        """A symlinked workflow directory must not let remove delete its target."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        registry = WorkflowRegistry(project_dir)
-        registry.add("test-wf", {"name": "Test"})
-        outside = project_dir / "outside-workflow-remove-target"
-        outside.mkdir(exist_ok=True)
-        sentinel = outside / "keep.txt"
-        sentinel.write_text("keep", encoding="utf-8")
-        (project_dir / ".specify" / "workflows" / "test-wf").symlink_to(
-            outside, target_is_directory=True
-        )
-
-        monkeypatch.chdir(project_dir)
-        result = CliRunner().invoke(app, ["workflow", "remove", "test-wf"])
-
-        assert result.exit_code != 0
-        assert "symlinked .specify/workflows/test-wf" in result.output
-        assert sentinel.read_text(encoding="utf-8") == "keep"
-        assert WorkflowRegistry(project_dir).is_installed("test-wf")
-
-    def test_remove_refuses_non_directory_workflow_path(self, project_dir, monkeypatch):
-        """A file at the workflow path must fail cleanly instead of crashing."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        registry = WorkflowRegistry(project_dir)
-        registry.add("test-wf", {"name": "Test"})
-        workflow_path = project_dir / ".specify" / "workflows" / "test-wf"
-        workflow_path.write_text("not a directory", encoding="utf-8")
-
-        monkeypatch.chdir(project_dir)
-        result = CliRunner().invoke(app, ["workflow", "remove", "test-wf"])
-
-        assert result.exit_code != 0
-        assert "exists but is not a directory" in result.output
-        assert workflow_path.read_text(encoding="utf-8") == "not a directory"
-        assert WorkflowRegistry(project_dir).is_installed("test-wf")
-
-    @pytest.mark.parametrize("error_type", [OSError, TypeError, ValueError])
-    def test_remove_registry_save_failure_preserves_files_and_registry(
-        self, project_dir, monkeypatch, error_type
-    ):
-        """If persisting the registry removal fails, the workflow's files must
-        not have already been deleted: the CLI must not delete files before the
-        registry successfully records the removal, and it must fail cleanly."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        registry = WorkflowRegistry(project_dir)
-        registry.add("test-wf", {"name": "Test", "version": "1.0.0"})
-        workflow_dir = project_dir / ".specify" / "workflows" / "test-wf"
-        workflow_dir.mkdir(parents=True, exist_ok=True)
-        (workflow_dir / "workflow.yml").write_text("keep-me", encoding="utf-8")
-
-        def boom(self):
-            raise error_type("save failed")
-
-        monkeypatch.chdir(project_dir)
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(WorkflowRegistry, "save", boom)
-            result = CliRunner().invoke(app, ["workflow", "remove", "test-wf"])
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert result.output.strip() != ""
-        # Files must survive a registry-save failure.
-        assert (workflow_dir / "workflow.yml").read_text(encoding="utf-8") == "keep-me"
-        # The on-disk registry must still claim the workflow installed.
-        assert WorkflowRegistry(project_dir).is_installed("test-wf")
-        # The directory must be restored to its exact original location, with
-        # no leftover staging directory from the stage/restore-on-failure
-        # sequence.
-        entries = [
-            p.name
-            for p in (project_dir / ".specify" / "workflows").iterdir()
-            if p.name != "workflow-registry.json"
-        ]
-        assert entries == ["test-wf"]
-
-    def test_remove_staged_cleanup_failure_reports_warning_not_error(
-        self, project_dir, monkeypatch
-    ):
-        """The directory is staged (atomically renamed out of
-        .specify/workflows/<id>) *before* the registry write, and the actual
-        deletion of the staged directory only happens *after* the registry
-        has already durably recorded the removal. If that final deletion
-        fails, the registry write already succeeded and must stand -- an
-        "Error: Failed to remove..." message at that point would contradict
-        the registry, which is exactly the incoherent state this staging
-        order exists to prevent. It must be reported as a cleanup warning,
-        and the command must still succeed."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        registry = WorkflowRegistry(project_dir)
-        registry.add("test-wf", {"name": "Test", "version": "1.0.0"})
-        workflow_dir = project_dir / ".specify" / "workflows" / "test-wf"
-        workflow_dir.mkdir(parents=True, exist_ok=True)
-        (workflow_dir / "workflow.yml").write_text("keep-me", encoding="utf-8")
-
-        def boom(*args, **kwargs):
-            raise OSError("permission denied")
-
-        monkeypatch.chdir(project_dir)
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("shutil.rmtree", boom)
-            result = CliRunner().invoke(app, ["workflow", "remove", "test-wf"])
-
-        assert result.exit_code == 0
-        assert "Warning" in result.output
-        # The registry write already committed -- it must stand.
-        assert not WorkflowRegistry(project_dir).is_installed("test-wf")
-        # The original install path is gone (staged away before the registry
-        # write ever ran); only a leftover staged directory remains, never
-        # at the original path the registry/CLI would treat as installed.
-        assert not workflow_dir.exists()
-        leftovers = [
-            p
-            for p in (project_dir / ".specify" / "workflows").iterdir()
-            if p.name != "workflow-registry.json"
-        ]
-        assert len(leftovers) == 1
-        assert (leftovers[0] / "workflow.yml").read_text(encoding="utf-8") == "keep-me"
-
-    def test_remove_stage_restore_failure_escapes_rich_markup(
-        self, temp_dir, monkeypatch
-    ):
-        """When the registry write fails (already rolled back in-memory by
-        WorkflowRegistry.remove()) and the attempt to rename the staged
-        directory back to its original location also fails, both the
-        restore exception and the registry-update exception interpolated
-        into these warning/error messages must be escaped like every other
-        error path here."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        project_dir = temp_dir / "weird[project]"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-        (project_dir / ".specify" / "workflows").mkdir()
-
-        registry = WorkflowRegistry(project_dir)
-        registry.add("test-wf", {"name": "Test", "version": "1.0.0"})
-        workflow_dir = project_dir / ".specify" / "workflows" / "test-wf"
-        workflow_dir.mkdir(parents=True, exist_ok=True)
-        (workflow_dir / "workflow.yml").write_text("keep-me", encoding="utf-8")
-
-        def save_boom(self):
-            raise OSError("[reg] disk full")
-
-        real_rename = os.rename
-        rename_calls = {"n": 0}
-
-        def rename_boom(src, dst):
-            rename_calls["n"] += 1
-            if rename_calls["n"] == 1:
-                # Allow the initial stage-out rename to succeed so the
-                # restore-back rename (the second call) is what fails.
-                return real_rename(src, dst)
-            raise OSError("[stage] permission denied")
-
-        monkeypatch.chdir(project_dir)
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(WorkflowRegistry, "save", save_boom)
-            mp.setattr(os, "rename", rename_boom)
-            result = CliRunner().invoke(app, ["workflow", "remove", "test-wf"])
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        output_compact = "".join(result.output.split())
-        assert "[stage]permissiondenied" in output_compact
-        assert "[reg]diskfull" in output_compact
-
-
-class TestWorkflowAddCaseInsensitiveSuffix:
-    """`workflow add` must detect a local YAML file case-insensitively, matching
-    `workflow run` (_commands.py:workflow_run) and the engine loader
-    (engine.py:WorkflowEngine.load_workflow), which both use `.suffix.lower()`.
-    Without it, `workflow run Sample.YAML` works but `workflow add Sample.YAML`
-    fails — an add/run inconsistency for an uppercase extension."""
-
-    def test_plain_path_accepts_uppercase_extension(self, temp_dir, monkeypatch, sample_workflow_yaml):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
-        src = temp_dir / "Sample.YAML"
-        src.write_text(sample_workflow_yaml, encoding="utf-8")
-
-        monkeypatch.chdir(temp_dir)
-        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
-
-        # Before the fix: `.suffix in (...)` is case-sensitive, so ".YAML" is not
-        # recognized as a local file; the path falls through to catalog lookup
-        # and fails. After the fix it installs like the lowercase happy path.
-        assert result.exit_code == 0, result.output
-        assert "installed" in result.output
-
-    def test_dev_path_accepts_uppercase_extension(self, temp_dir, monkeypatch, sample_workflow_yaml):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
-        src = temp_dir / "Sample.YAML"
-        src.write_text(sample_workflow_yaml, encoding="utf-8")
-
-        monkeypatch.chdir(temp_dir)
-        result = CliRunner().invoke(app, ["workflow", "add", "--dev", str(src)])
-
-        # Before the fix the --dev branch rejects ".YAML" with
-        # "--dev source must be a workflow YAML file ...".
-        assert result.exit_code == 0, result.output
-        assert "installed" in result.output
-
-    def test_lowercase_extension_still_installs(self, temp_dir, monkeypatch, sample_workflow_yaml):
-        """Happy path (lowercase .yml) is unchanged by the case-normalization."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
-        src = temp_dir / "sample.yml"
-        src.write_text(sample_workflow_yaml, encoding="utf-8")
-
-        monkeypatch.chdir(temp_dir)
-        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
-
-        assert result.exit_code == 0, result.output
-        assert "installed" in result.output
-
-
-class TestWorkflowInfoStepGraph:
-    """`workflow info` must render each step as `→ <id> [<type>]` with LITERAL
-    brackets. Rich parses an unescaped `[<type>]` as a style tag and silently
-    swallows it, so the step type would vanish from the output."""
-
-    def test_step_type_rendered_in_literal_brackets(self, temp_dir, monkeypatch):
-        import types
-
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.engine import WorkflowEngine
-
-        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
-
-        fake = types.SimpleNamespace(
-            name="My WF", id="my-wf", version="1.0.0", author="", description="",
-            default_integration=None, inputs={},
-            steps=[{"id": "step-one", "type": "gate"}],
-        )
-        monkeypatch.setattr(WorkflowEngine, "load_workflow", lambda self, wid: fake)
-        monkeypatch.chdir(temp_dir)
-
-        result = CliRunner().invoke(app, ["workflow", "info", "my-wf"])
-
-        assert result.exit_code == 0, result.output
-        assert "step-one" in result.output
-        # The step type must survive as a literal bracketed token, not be eaten
-        # by Rich as an unknown style tag.
-        assert "[gate]" in result.output
-
-    def test_definition_metadata_fields_escaped(self, temp_dir, monkeypatch):
-        """Every metadata field printed from the workflow definition (name,
-        description, author, integration, input name/type) is untrusted
-        workflow.yml content. An unescaped `[...]` in any of them would be
-        parsed as a Rich style tag and silently swallowed, so bracketed text
-        must survive literally in the output."""
-        import types
-
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.engine import WorkflowEngine
-
-        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
-
-        fake = types.SimpleNamespace(
-            name="My [WF]",
-            id="my-wf",
-            version="1.0.0 [beta]",
-            author="Jane [Doe]",
-            description="Does [stuff] nicely",
-            default_integration="claude [code]",
-            inputs={"in [put]": {"type": "str [ing]", "required": True}},
-            steps=[],
-        )
-        monkeypatch.setattr(WorkflowEngine, "load_workflow", lambda self, wid: fake)
-        monkeypatch.chdir(temp_dir)
-
-        result = CliRunner().invoke(app, ["workflow", "info", "my-wf"])
-
-        assert result.exit_code == 0, result.output
-        # Each bracketed token must render literally rather than be consumed as
-        # an unknown Rich style tag.
-        assert "My [WF]" in result.output
-        assert "1.0.0 [beta]" in result.output
-        assert "Jane [Doe]" in result.output
-        assert "Does [stuff] nicely" in result.output
-        assert "claude [code]" in result.output
-        assert "in [put]" in result.output
-        assert "str [ing]" in result.output
-
-    def test_catalog_metadata_fields_escaped(self, temp_dir, monkeypatch):
-        """When the workflow is only found in the catalog (not on disk), its
-        catalog-derived fields (name, description, tags) are untrusted too and
-        must be escaped so bracketed content renders literally."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.engine import WorkflowEngine
-        from specify_cli.workflows import catalog as catalog_mod
-
-        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
-
-        def _not_on_disk(self, wid):
-            raise FileNotFoundError(wid)
-
-        monkeypatch.setattr(WorkflowEngine, "load_workflow", _not_on_disk)
-        monkeypatch.setattr(
-            catalog_mod.WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "name": "Cat [WF]",
-                "version": "2.0.0 [rc]",
-                "description": "From [catalog]",
-                "tags": ["a [b]", "c [d]"],
-            },
-        )
-        monkeypatch.chdir(temp_dir)
-
-        result = CliRunner().invoke(app, ["workflow", "info", "cat-wf"])
-
-        assert result.exit_code == 0, result.output
-        assert "Cat [WF]" in result.output
-        assert "2.0.0 [rc]" in result.output
-        assert "From [catalog]" in result.output
-        assert "a [b]" in result.output
-        assert "c [d]" in result.output
-
-    def test_not_found_id_escaped(self, temp_dir, monkeypatch):
-        """When the workflow is neither on disk nor in the catalog, the
-        not-found error echoes the requested ID. That ID is user input, so a
-        bracketed value must render literally instead of being parsed (and
-        swallowed) as a Rich style tag."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.engine import WorkflowEngine
-        from specify_cli.workflows import catalog as catalog_mod
-
-        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
-
-        def _not_on_disk(self, wid):
-            raise FileNotFoundError(wid)
-
-        monkeypatch.setattr(WorkflowEngine, "load_workflow", _not_on_disk)
-        monkeypatch.setattr(
-            catalog_mod.WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: None,
-        )
-        monkeypatch.chdir(temp_dir)
-
-        result = CliRunner().invoke(app, ["workflow", "info", "ghost [wf]"])
-
-        assert result.exit_code == 1, result.output
-        assert "not found" in result.output
-        # The bracketed ID must survive literally, not be eaten as markup.
-        assert "ghost [wf]" in result.output
-
-
-class TestWorkflowAddSymlinkGuard:
-    def test_add_malformed_ipv6_url_exits_cleanly(self, temp_dir, monkeypatch):
-        """A malformed IPv6 URL must produce a clean error, not a ValueError traceback."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        (temp_dir / ".specify").mkdir(exist_ok=True)
-        monkeypatch.chdir(temp_dir)
-        result = CliRunner().invoke(
-            app,
-            ["workflow", "add", "https://[::1/wf.yaml"],
-            catch_exceptions=True,
-        )
-
-        assert result.exit_code == 1
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "Invalid URL" in result.output
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_add_refuses_symlinked_specify(self, temp_dir, monkeypatch):
-        """workflow add must refuse a symlinked .specify (writes could escape root)."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        outside = temp_dir.parent / "outside-specify-target"
-        (outside / "workflows").mkdir(parents=True, exist_ok=True)
-        (temp_dir / ".specify").symlink_to(outside, target_is_directory=True)
-
-        monkeypatch.chdir(temp_dir)
-        result = CliRunner().invoke(app, ["workflow", "add", "anything.yml"])
-
-        assert result.exit_code != 0
-        assert "symlinked .specify" in result.output
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_add_refuses_symlinked_workflows_dir(self, temp_dir, monkeypatch):
-        """workflow add must refuse a symlinked .specify/workflows directory."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        (temp_dir / ".specify").mkdir()
-        outside = temp_dir.parent / "outside-workflows-target"
-        outside.mkdir(parents=True, exist_ok=True)
-        (temp_dir / ".specify" / "workflows").symlink_to(outside, target_is_directory=True)
-
-        monkeypatch.chdir(temp_dir)
-        result = CliRunner().invoke(app, ["workflow", "add", "anything.yml"])
-
-        assert result.exit_code != 0
-        assert "symlinked .specify/workflows" in result.output
-
-    def test_add_escapes_rich_markup_in_validation_errors(self, temp_dir, monkeypatch):
-        """User-controlled YAML values in validation errors must not be parsed as Rich markup."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
-        src = temp_dir / "incoming.yml"
-        src.write_text(
-            """
-schema_version: "1.0"
-workflow:
-  id: "markup-wf"
-  name: "Markup"
-  version: "[bold]bad[/bold]"
-
-steps:
-  - id: step-one
-    command: speckit.specify
-""",
-            encoding="utf-8",
-        )
-
-        monkeypatch.chdir(temp_dir)
-        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
-
-        assert result.exit_code != 0
-        assert "[bold]bad[/bold]" in result.output
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_add_refuses_symlinked_id_dir(self, temp_dir, monkeypatch, sample_workflow_yaml):
-        """A symlinked <id> install dir must not let a copy escape the project root."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
-        outside = temp_dir.parent / "outside-id-target"
-        outside.mkdir(parents=True, exist_ok=True)
-        # <id> from the YAML below is "test-workflow"; plant it as a symlink.
-        (temp_dir / ".specify" / "workflows" / "test-workflow").symlink_to(
-            outside, target_is_directory=True
-        )
-        src = temp_dir / "incoming.yml"
-        src.write_text(sample_workflow_yaml, encoding="utf-8")
-
-        monkeypatch.chdir(temp_dir)
-        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
-
-        assert result.exit_code != 0
-        # No write-through: the symlink target stays empty.
-        assert not (outside / "workflow.yml").exists()
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_add_refuses_symlinked_workflow_yml_leaf(self, temp_dir, monkeypatch, sample_workflow_yaml):
-        """A symlinked <id>/workflow.yml must not let copy2 write through the link."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        id_dir = temp_dir / ".specify" / "workflows" / "test-workflow"
-        id_dir.mkdir(parents=True)
-        outside_file = temp_dir.parent / "outside-leaf-target.yml"
-        outside_file.write_text("original\n", encoding="utf-8")
-        (id_dir / "workflow.yml").symlink_to(outside_file)
-        src = temp_dir / "incoming.yml"
-        src.write_text(sample_workflow_yaml, encoding="utf-8")
-
-        monkeypatch.chdir(temp_dir)
-        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
-
-        assert result.exit_code != 0
-        # Rich may wrap the message; assert on the unbroken path fragment.
-        assert "test-workflow/workflow.yml" in result.output
-        assert "symlinked" in result.output
-        # The link target content is untouched.
-        assert outside_file.read_text(encoding="utf-8") == "original\n"
-
-    def test_add_refuses_non_directory_id(self, temp_dir, monkeypatch, sample_workflow_yaml):
-        """An <id> path that already exists as a file must fail cleanly, not crash."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        wf_dir = temp_dir / ".specify" / "workflows"
-        wf_dir.mkdir(parents=True)
-        (wf_dir / "test-workflow").write_text("not a dir", encoding="utf-8")
-        src = temp_dir / "incoming.yml"
-        src.write_text(sample_workflow_yaml, encoding="utf-8")
-
-        monkeypatch.chdir(temp_dir)
-        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
-
-        assert result.exit_code != 0
-        assert "exists but is not a directory" in result.output
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-
-    def test_add_refuses_workflow_yml_as_directory(self, temp_dir, monkeypatch, sample_workflow_yaml):
-        """A pre-existing <id>/workflow.yml *directory* must fail cleanly, not crash."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        id_dir = temp_dir / ".specify" / "workflows" / "test-workflow"
-        id_dir.mkdir(parents=True)
-        # Plant workflow.yml as a directory so a later write/copy2 would raise
-        # IsADirectoryError without the explicit non-file guard.
-        (id_dir / "workflow.yml").mkdir()
-        src = temp_dir / "incoming.yml"
-        src.write_text(sample_workflow_yaml, encoding="utf-8")
-
-        monkeypatch.chdir(temp_dir)
-        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
-
-        assert result.exit_code != 0
-        assert "test-workflow/workflow.yml" in result.output
-        assert "is not a file" in result.output
-        # Clean exit, not an unhandled IsADirectoryError traceback.
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-
-    def test_safe_workflow_id_dir_escapes_markup_in_invalid_id(self, temp_dir, capsys):
-        """A traversal <id> carrying Rich markup must be escaped, not interpreted."""
-        import typer
-        from specify_cli.workflows._commands import _safe_workflow_id_dir
-
-        workflows_dir = temp_dir / ".specify" / "workflows"
-        workflows_dir.mkdir(parents=True)
-        # Traversal (so the "Invalid workflow ID" branch fires) plus markup.
-        with pytest.raises(typer.Exit):
-            _safe_workflow_id_dir(workflows_dir, "../[red]evil[/red]")
-
-        out = capsys.readouterr().out
-        # Literal bracketed text survives; Rich did not consume it as a tag.
-        assert "[red]evil[/red]" in out
-
-    def test_add_rejects_reserved_overlay_storage_id(self, temp_dir, monkeypatch):
-        """workflow add must not install into the overlay storage directory."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
-        overlay_file = temp_dir / "incoming.yml"
-        overlay_file.write_text(
-            """
-schema_version: "1.0"
-workflow:
-  id: "overlays"
-  name: "Bad Workflow"
-  version: "1.0.0"
-steps:
-  - id: step-one
-    command: speckit.specify
-""".strip()
-            + "\n",
-            encoding="utf-8",
-        )
-
-        monkeypatch.chdir(temp_dir)
-        result = CliRunner().invoke(app, ["workflow", "add", str(overlay_file)])
-
-        assert result.exit_code != 0
-        assert "Invalid workflow ID" in result.output
-        assert not (temp_dir / ".specify" / "workflows" / "overlays" / "workflow.yml").exists()
-
-    @pytest.mark.parametrize(
-        "workflow_id",
-        [
-            "overlays",
-            "runs",
-            "steps",
-            "nested/workflow",
-            "nested\\workflow",
-            "bad id",
-            " bad-id",
-            "bad-id ",
-        ],
-    )
-    def test_safe_workflow_id_dir_rejects_reserved_or_non_segment_ids(
-        self, temp_dir, workflow_id, capsys
-    ):
-        """Install IDs must not collide with workflow internals or create nested paths."""
-        import typer
-        from specify_cli.workflows._commands import _safe_workflow_id_dir
-
-        workflows_dir = temp_dir / ".specify" / "workflows"
-        workflows_dir.mkdir(parents=True)
-
-        with pytest.raises(typer.Exit):
-            _safe_workflow_id_dir(workflows_dir, workflow_id)
-
-        assert "Invalid workflow ID" in capsys.readouterr().out
-        assert not (workflows_dir / workflow_id).exists()
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_list_refuses_symlinked_runs_dir(self, temp_dir, monkeypatch):
-        """workflow commands using the project shim must refuse symlinked run storage."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
-        outside = temp_dir.parent / "outside-runs-target"
-        outside.mkdir(parents=True, exist_ok=True)
-        (temp_dir / ".specify" / "workflows" / "runs").symlink_to(
-            outside, target_is_directory=True
-        )
-
-        monkeypatch.chdir(temp_dir)
-        result = CliRunner().invoke(app, ["workflow", "list"])
-
-        assert result.exit_code != 0
-        assert "symlinked .specify/workflows/runs" in result.output
-
-
-class TestWorkflowStepRichMarkup:
-    """Step discovery commands render metadata as literal text."""
-
-    METADATA = {
-        "id": "[magenta]step-id[/magenta]",
-        "name": "[red]Step Name[/red]",
-        "version": "[green]1.0.0[/green]",
-        "author": "[yellow]Author[/yellow]",
-        "description": "[blue]Description[/blue]",
-    }
-
-    def test_search_escapes_catalog_metadata(
-        self, project_dir, monkeypatch
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import StepCatalog
-
-        metadata = dict(self.METADATA)
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(
-            StepCatalog, "search", lambda _catalog, query=None: [metadata]
-        )
-
-        result = CliRunner().invoke(app, ["workflow", "step", "search"])
-
-        assert result.exit_code == 0, result.output
-        assert metadata["name"] in result.output
-        assert metadata["id"] in result.output
-        assert metadata["version"] in result.output
-        assert metadata["description"] in result.output
-
-    def test_info_escapes_catalog_metadata(
-        self, project_dir, monkeypatch
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import StepCatalog, StepRegistry
-
-        metadata = dict(self.METADATA)
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(StepRegistry, "get", lambda _registry, step_id: None)
-        monkeypatch.setattr(
-            StepCatalog,
-            "get_step_info",
-            lambda _catalog, step_id: metadata,
-        )
-
-        result = CliRunner().invoke(
-            app, ["workflow", "step", "info", metadata["id"]]
-        )
-
-        assert result.exit_code == 0, result.output
-        for value in metadata.values():
-            assert value in result.output
-
-    def test_info_escapes_missing_step_id(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import StepCatalog, StepRegistry
-
-        step_id = "[red]missing[/red]"
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(StepRegistry, "get", lambda _registry, step_id: None)
-        monkeypatch.setattr(
-            StepCatalog,
-            "get_step_info",
-            lambda _catalog, step_id: None,
-        )
-
-        result = CliRunner().invoke(
-            app, ["workflow", "step", "info", step_id]
-        )
-
-        assert result.exit_code == 1, result.output
-        assert step_id in result.output
-
-    def test_list_escapes_installed_metadata(
-        self, project_dir, monkeypatch
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import StepRegistry
-
-        metadata = dict(self.METADATA)
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(
-            StepRegistry,
-            "list",
-            lambda _registry: {metadata["id"]: metadata},
-        )
-
-        result = CliRunner().invoke(app, ["workflow", "step", "list"])
-
-        assert result.exit_code == 0, result.output
-        assert metadata["name"] in result.output
-        assert metadata["id"] in result.output
-        assert metadata["version"] in result.output
-
-
-class TestWorkflowStepAddCLI:
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_add_rejects_symlinked_steps_base_dir(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import StepCatalog
-
-        monkeypatch.chdir(project_dir)
-        outside = project_dir.parent / "outside-steps"
-        outside.mkdir(parents=True, exist_ok=True)
-        steps_link = project_dir / ".specify" / "workflows" / "steps"
-        steps_link.symlink_to(outside, target_is_directory=True)
-
-        def _fake_get_step_info(self, step_id):
-            return {
-                "id": step_id,
-                "name": "Test Step",
-                "url": "https://example.com/step.yml",
-                "init_url": "https://example.com/__init__.py",
-                "_install_allowed": True,
-            }
-
-        monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
-
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "step", "add", "my-step"])
-
-        assert result.exit_code != 0
-        assert "Refusing to use symlinked step directory" in result.output
-
-    def test_add_rejects_oversized_step_response(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows import _commands as wf_commands
-        from specify_cli.workflows.catalog import StepCatalog
-        from specify_cli.authentication import http as auth_http
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(wf_commands, "_MAX_WORKFLOW_YAML_BYTES", 100)
-        monkeypatch.setattr(
-            StepCatalog,
-            "get_step_info",
-            lambda self, step_id: {
-                "id": step_id,
-                "name": "Test Step",
-                "url": "https://example.com/step.yml",
-                "init_url": "https://example.com/__init__.py",
-                "_install_allowed": True,
-            },
-        )
-
-        class _FakeResponse:
-            def __init__(self, url):
-                self.url = url
-                self.body = b"x" * 500
-                self.offset = 0
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def getheader(self, name):
-                return None
-
-            def geturl(self):
-                return self.url
-
-            def read(self, size=-1):
-                if size < 0:
-                    size = len(self.body) - self.offset
-                chunk = self.body[self.offset : self.offset + size]
-                self.offset += len(chunk)
-                return chunk
-
-        monkeypatch.setattr(
-            auth_http,
-            "open_url",
-            lambda url, timeout=30, redirect_validator=None: _FakeResponse(url),
-        )
-
-        result = CliRunner().invoke(
-            app, ["workflow", "step", "add", "my-step"]
-        )
-
-        assert result.exit_code != 0
-        assert (
-            "responseexceedsthe100-byteworkflowsizelimit"
-            in "".join(result.output.split())
-        )
-        assert not (
-            project_dir / ".specify" / "workflows" / "steps" / "my-step"
-        ).exists()
-
-    @pytest.mark.parametrize(
-        ("catalog_fields", "expected"),
-        [
-            ({"url": 123}, "malformed step.yml URL"),
-            (
-                {
-                    "step_yml_url": [],
-                    "url": "https://example.com/step.yml",
-                },
-                "malformed step.yml URL",
-            ),
-            (
-                {
-                    "url": "https://example.com/step.yml",
-                    "init_url": 123,
-                },
-                "malformed __init__.py URL",
-            ),
-        ],
-    )
-    def test_add_rejects_non_string_required_urls_before_network(
-        self, project_dir, monkeypatch, catalog_fields, expected
-    ):
-        from typer.testing import CliRunner
-
-        from specify_cli import app
-        from specify_cli.authentication import http as auth_http
-        from specify_cli.workflows.catalog import StepCatalog
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(
-            StepCatalog,
-            "get_step_info",
-            lambda self, step_id: {
-                "id": step_id,
-                "name": "Test Step",
-                "_install_allowed": True,
-                **catalog_fields,
-            },
-        )
-        monkeypatch.setattr(
-            auth_http,
-            "open_url",
-            lambda *args, **kwargs: (_ for _ in ()).throw(
-                AssertionError("download should not start")
-            ),
-        )
-
-        result = CliRunner().invoke(
-            app, ["workflow", "step", "add", "my-step"]
-        )
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert expected in result.output
-        assert not (
-            project_dir / ".specify" / "workflows" / "steps" / "my-step"
-        ).exists()
-
-    @pytest.mark.parametrize(
-        ("alias", "protected_name"),
-        [
-            ("./step.yml", "step.yml"),
-            ("step.yml/", "step.yml"),
-            ("STEP.YML", "step.yml"),
-            (".\\step.yml", "step.yml"),
-            ("./__init__.py", "__init__.py"),
-            ("__init__.py/", "__init__.py"),
-            ("__INIT__.PY", "__init__.py"),
-            (".\\__init__.py", "__init__.py"),
-        ],
-    )
-    def test_add_does_not_overwrite_required_files_through_path_aliases(
-        self, project_dir, monkeypatch, alias, protected_name
-    ):
-        from typer.testing import CliRunner
-
-        from specify_cli import app
-        from specify_cli.authentication import http as auth_http
-        from specify_cli.workflows.catalog import StepCatalog
-
-        monkeypatch.chdir(project_dir)
-        alias_url = "https://example.com/overwrite"
-        monkeypatch.setattr(
-            StepCatalog,
-            "get_step_info",
-            lambda self, step_id: {
-                "id": step_id,
-                "name": "Test Step",
-                "url": "https://example.com/step.yml",
-                "init_url": "https://example.com/__init__.py",
-                "_install_allowed": True,
-                "extra_files": {alias: alias_url},
-            },
-        )
-        bodies = {
-            "https://example.com/step.yml": b"step:\n  type_key: my-step\n",
-            "https://example.com/__init__.py": b"# trusted init\n",
-        }
-        requested_urls: list[str] = []
-
-        class _FakeResponse:
-            def __init__(self, url):
-                self.url = url
-                self.body = bodies[url]
-                self.offset = 0
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def geturl(self):
-                return self.url
-
-            def read(self, size=-1):
-                if size < 0:
-                    size = len(self.body) - self.offset
-                chunk = self.body[self.offset : self.offset + size]
-                self.offset += len(chunk)
-                return chunk
-
-        def fake_open_url(url, timeout=30, redirect_validator=None):
-            requested_urls.append(url)
-            return _FakeResponse(url)
-
-        monkeypatch.setattr(auth_http, "open_url", fake_open_url)
-
-        result = CliRunner().invoke(
-            app, ["workflow", "step", "add", "my-step"]
-        )
-
-        assert result.exit_code == 0, result.output
-        assert alias_url not in requested_urls
-        installed_dir = (
-            project_dir / ".specify" / "workflows" / "steps" / "my-step"
-        )
-        assert (installed_dir / protected_name).read_bytes() == bodies[
-            f"https://example.com/{protected_name}"
-        ]
-
-    def test_add_rejects_too_many_package_files_before_network(
-        self, project_dir, monkeypatch
-    ):
-        from typer.testing import CliRunner
-
-        from specify_cli import app
-        from specify_cli.authentication import http as auth_http
-        from specify_cli.workflows import _commands as workflow_commands
-        from specify_cli.workflows.catalog import StepCatalog
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(workflow_commands, "_MAX_STEP_PACKAGE_FILES", 3)
-        monkeypatch.setattr(
-            StepCatalog,
-            "get_step_info",
-            lambda self, step_id: {
-                "id": step_id,
-                "name": "Test Step",
-                "url": "https://example.com/step.yml",
-                "init_url": "https://example.com/__init__.py",
-                "_install_allowed": True,
-                "extra_files": {
-                    "one.py": "https://example.com/one.py",
-                    "two.py": "https://example.com/two.py",
-                },
-            },
-        )
-        monkeypatch.setattr(
-            auth_http,
-            "open_url",
-            lambda *args, **kwargs: (_ for _ in ()).throw(
-                AssertionError("download should not start")
-            ),
-        )
-
-        result = CliRunner().invoke(
-            app, ["workflow", "step", "add", "my-step"]
-        )
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "exceeding the 3-file limit" in result.output
-        steps_dir = project_dir / ".specify" / "workflows" / "steps"
-        assert not (steps_dir / "my-step").exists()
-        assert list(steps_dir.glob("speckit_step_tmp_*")) == []
-
-    def test_add_rejects_package_over_cumulative_size_and_cleans_staging(
-        self, project_dir, monkeypatch
-    ):
-        from typer.testing import CliRunner
-
-        from specify_cli import app
-        from specify_cli.authentication import http as auth_http
-        from specify_cli.workflows import _commands as workflow_commands
-        from specify_cli.workflows.catalog import StepCatalog
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(workflow_commands, "_MAX_STEP_PACKAGE_BYTES", 40)
-        monkeypatch.setattr(
-            StepCatalog,
-            "get_step_info",
-            lambda self, step_id: {
-                "id": step_id,
-                "name": "Test Step",
-                "url": "https://example.com/step.yml",
-                "init_url": "https://example.com/__init__.py",
-                "_install_allowed": True,
-                "extra_files": {
-                    "helper.py": "https://example.com/helper.py",
-                },
-            },
-        )
-
-        bodies = {
-            "https://example.com/step.yml": b"step:\n  type_key: my-step\n",
-            "https://example.com/__init__.py": b"# init\n",
-            "https://example.com/helper.py": b"0123456789",
-        }
-
-        class _FakeResponse:
-            def __init__(self, url):
-                self.url = url
-                self.body = bodies[url]
-                self.offset = 0
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def getheader(self, name):
-                return None
-
-            def geturl(self):
-                return self.url
-
-            def read(self, size=-1):
-                if size < 0:
-                    size = len(self.body) - self.offset
-                chunk = self.body[self.offset : self.offset + size]
-                self.offset += len(chunk)
-                return chunk
-
-        monkeypatch.setattr(
-            auth_http,
-            "open_url",
-            lambda url, timeout=30, redirect_validator=None: _FakeResponse(url),
-        )
-
-        result = CliRunner().invoke(
-            app, ["workflow", "step", "add", "my-step"]
-        )
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "40-byte total size limit" in result.output
-        steps_dir = project_dir / ".specify" / "workflows" / "steps"
-        assert not (steps_dir / "my-step").exists()
-        assert list(steps_dir.glob("speckit_step_tmp_*")) == []
-
-    def test_add_rejects_non_string_extra_files_key(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import StepCatalog
-        from specify_cli.authentication import http as auth_http
-
-        monkeypatch.chdir(project_dir)
-
-        def _fake_get_step_info(self, step_id):
-            return {
-                "id": step_id,
-                "name": "Test Step",
-                "url": "https://example.com/step.yml",
-                "init_url": "https://example.com/__init__.py",
-                "_install_allowed": True,
-                "extra_files": {
-                    123: "https://example.com/helper.py",
-                },
-            }
-
-        class _FakeResponse:
-            def __init__(self, url: str):
-                self.url = url
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def read(self, size=-1):
-                if getattr(self, "_read", False):
-                    return b""
-                self._read = True
-                if self.url.endswith("/step.yml"):
-                    return b"step:\n  type_key: my-step\n"
-                return b""
-
-            def geturl(self):
-                return self.url
-
-        def _fake_open_url(url, timeout=30, redirect_validator=None):
-            return _FakeResponse(url)
-
-        monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
-        monkeypatch.setattr(auth_http, "open_url", _fake_open_url)
-
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "step", "add", "my-step"])
-
-        assert result.exit_code != 0
-        assert "non-string path key" in result.output
-
-    @pytest.mark.parametrize(
-        "rel_path,expected",
-        [
-            ("", "empty or non-string path key"),
-            (".", "not a valid relative file path"),
-            ("..", "not a valid relative file path"),
-            ("sub/../x", "not a valid relative file path"),
-        ],
-    )
-    def test_add_rejects_invalid_extra_files_path(
-        self, project_dir, monkeypatch, rel_path, expected
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import StepCatalog
-        from specify_cli.authentication import http as auth_http
-
-        monkeypatch.chdir(project_dir)
-
-        def _fake_get_step_info(self, step_id):
-            return {
-                "id": step_id,
-                "name": "Test Step",
-                "url": "https://example.com/step.yml",
-                "init_url": "https://example.com/__init__.py",
-                "_install_allowed": True,
-                "extra_files": {rel_path: "https://example.com/helper.py"},
-            }
-
-        class _FakeResponse:
-            def __init__(self, url: str):
-                self.url = url
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def read(self, size=-1):
-                if getattr(self, "_read", False):
-                    return b""
-                self._read = True
-                if self.url.endswith("/step.yml"):
-                    return b"step:\n  type_key: my-step\n"
-                return b""
-
-            def geturl(self):
-                return self.url
-
-        def _fake_open_url(url, timeout=30, redirect_validator=None):
-            return _FakeResponse(url)
-
-        monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
-        monkeypatch.setattr(auth_http, "open_url", _fake_open_url)
-
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "step", "add", "my-step"])
-
-        assert result.exit_code != 0
-        assert expected in result.output
-
-    def test_add_rejects_non_string_extra_files_url(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import StepCatalog
-        from specify_cli.authentication import http as auth_http
-
-        monkeypatch.chdir(project_dir)
-
-        def _fake_get_step_info(self, step_id):
-            return {
-                "id": step_id,
-                "name": "Test Step",
-                "url": "https://example.com/step.yml",
-                "init_url": "https://example.com/__init__.py",
-                "_install_allowed": True,
-                "extra_files": {"helper.py": None},
-            }
-
-        class _FakeResponse:
-            def __init__(self, url: str):
-                self.url = url
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def read(self, size=-1):
-                if getattr(self, "_read", False):
-                    return b""
-                self._read = True
-                if self.url.endswith("/step.yml"):
-                    return b"step:\n  type_key: my-step\n"
-                return b""
-
-            def geturl(self):
-                return self.url
-
-        def _fake_open_url(url, timeout=30, redirect_validator=None):
-            return _FakeResponse(url)
-
-        monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
-        monkeypatch.setattr(auth_http, "open_url", _fake_open_url)
-
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "step", "add", "my-step"])
-
-        assert result.exit_code != 0
-        assert "empty or non-string URL" in result.output
-
-
-class TestWorkflowJsonOutput:
-    """Test the --json machine-readable output for run/resume/status."""
-
-    _WF = """
-schema_version: "1.0"
-workflow:
-  id: "json-wf"
-  name: "JSON WF"
-  version: "1.0.0"
-steps:
-  - id: ask
-    type: gate
-    message: "Review"
-    options: [approve, reject]
-  - id: after
-    type: shell
-    run: "echo done"
-"""
-
-    _WF_DONE = """
-schema_version: "1.0"
-workflow:
-  id: "json-done"
-  name: "JSON Done"
-  version: "1.0.0"
-steps:
-  - id: only
-    type: shell
-    run: "echo done"
-"""
-
-    _WF_FAIL = """
-schema_version: "1.0"
-workflow:
-  id: "json-fail"
-  name: "JSON Fail"
-  version: "1.0.0"
-steps:
-  - id: boom
-    type: shell
-    run: "exit 3"
-"""
-
-    def _write_wf(self, project_dir, text, name):
-        path = project_dir / f"{name}.yml"
-        path.write_text(text, encoding="utf-8")
-        return path
-
-    def _invoke(self, project_dir, args):
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            return runner.invoke(app, args, catch_exceptions=False)
-
-    def test_run_json_completed(self, project_dir):
-        wf = self._write_wf(project_dir, self._WF_DONE, "done")
-        result = self._invoke(project_dir, ["workflow", "run", str(wf), "--json"])
-        assert result.exit_code == 0
-        payload = json.loads(result.stdout)
-        assert payload["workflow_id"] == "json-done"
-        assert payload["status"] == "completed"
-        assert "run_id" in payload
-
-    def test_run_json_paused(self, project_dir):
-        wf = self._write_wf(project_dir, self._WF, "gated")
-        result = self._invoke(project_dir, ["workflow", "run", str(wf), "--json"])
-        assert result.exit_code == 0
-        payload = json.loads(result.stdout)
-        assert payload["status"] == "paused"
-        assert payload["current_step_id"] == "ask"
-        assert payload["current_step_index"] == 0
-
-    def test_run_json_failed_includes_error(self, project_dir):
-        # A run that ends in `failed` (a step failing, not an exception) must
-        # carry the persisted step error in the JSON payload so external
-        # callers get a reason, not a bare {"status": "failed"}.
-        wf = self._write_wf(project_dir, self._WF_FAIL, "boom")
-        result = self._invoke(project_dir, ["workflow", "run", str(wf), "--json"])
-        assert result.exit_code != 0
-        payload = json.loads(result.stdout)
-        assert payload["status"] == "failed"
-        assert payload.get("error")
-
-    def test_status_json_failed_includes_error(self, project_dir):
-        # `status --json` reuses the shared payload, so a failed run inspected
-        # after the fact surfaces the same error text as `run`/`resume`.
-        wf = self._write_wf(project_dir, self._WF_FAIL, "boom2")
-        rid = json.loads(
-            self._invoke(
-                project_dir, ["workflow", "run", str(wf), "--json"]
-            ).stdout
-        )["run_id"]
-        status = json.loads(
-            self._invoke(
-                project_dir, ["workflow", "status", rid, "--json"]
-            ).stdout
-        )
-        assert status["status"] == "failed"
-        assert status.get("error")
-
-    def test_run_json_completed_omits_error(self, project_dir):
-        # Successful runs must not carry an `error` key at all.
-        wf = self._write_wf(project_dir, self._WF_DONE, "noerr")
-        payload = json.loads(
-            self._invoke(
-                project_dir, ["workflow", "run", str(wf), "--json"]
-            ).stdout
-        )
-        assert payload["status"] == "completed"
-        assert "error" not in payload
-
-    def test_run_json_output_has_no_markup_or_ansi(self, project_dir):
-        wf = self._write_wf(project_dir, self._WF_DONE, "clean")
-        out = self._invoke(
-            project_dir, ["workflow", "run", str(wf), "--json"]
-        ).stdout
-        # Machine output must be exactly the JSON object: no Rich markup
-        # tags and no ANSI escape sequences leaking in.
-        assert "\x1b[" not in out
-        assert "[/" not in out
-        assert out.strip() == json.dumps(json.loads(out), indent=2)
-
-    def test_run_default_output_is_human_not_json(self, project_dir):
-        wf = self._write_wf(project_dir, self._WF_DONE, "done2")
-        result = self._invoke(project_dir, ["workflow", "run", str(wf)])
-        assert result.exit_code == 0
-        assert "Running workflow" in result.stdout
-        with pytest.raises(json.JSONDecodeError):
-            json.loads(result.stdout)
-
-    def test_status_json_single_and_list(self, project_dir):
-        wf = self._write_wf(project_dir, self._WF, "gated2")
-        run = json.loads(
-            self._invoke(project_dir, ["workflow", "run", str(wf), "--json"]).stdout
-        )
-        rid = run["run_id"]
-
-        single = json.loads(
-            self._invoke(project_dir, ["workflow", "status", rid, "--json"]).stdout
-        )
-        assert single["run_id"] == rid
-        assert single["status"] == "paused"
-        assert single["steps"]["ask"] == "paused"
-        # status --json carries the same step-position fields as run/resume
-        # so automation never has to branch on which command produced it.
-        assert single["current_step_id"] == run["current_step_id"]
-        assert single["current_step_index"] == run["current_step_index"]
-
-        listing = json.loads(
-            self._invoke(project_dir, ["workflow", "status", "--json"]).stdout
-        )
-        assert any(r["run_id"] == rid for r in listing["runs"])
-
-    def test_resume_json(self, project_dir):
-        wf = self._write_wf(project_dir, self._WF, "gated3")
-        rid = json.loads(
-            self._invoke(project_dir, ["workflow", "run", str(wf), "--json"]).stdout
-        )["run_id"]
-        # Non-interactive resume re-runs the gate, which pauses again.
-        resumed = json.loads(
-            self._invoke(project_dir, ["workflow", "resume", rid, "--json"]).stdout
-        )
-        assert resumed["run_id"] == rid
-        assert resumed["status"] == "paused"
-
-    def test_json_redirect_keeps_stdout_clean(self, capfd):
-        # While a workflow runs under --json, steps can still write to stdout:
-        # the gate step prints its prompt and the prompt step runs a
-        # subprocess that inherits the stdout fd. Both must be redirected to
-        # stderr so the JSON object on stdout stays parseable. capfd captures
-        # at the file-descriptor level, so it sees the subprocess output too.
-        import subprocess
-        import sys as _sys
-        from specify_cli.workflows._commands import _stdout_to_stderr_when
-
-        print("STDOUT_BEFORE")
-        with _stdout_to_stderr_when(True):
-            print("PY_LEAK")  # Python-level write (gate-style)
-            subprocess.run(  # inherited-fd write (prompt-style)
-                [_sys.executable, "-c", "print('SUBPROC_LEAK')"],
-                check=True,
-            )
-        print("STDOUT_AFTER")
-
-        out, err = capfd.readouterr()
-        # stdout keeps only what was written outside the guarded block.
-        assert "STDOUT_BEFORE" in out and "STDOUT_AFTER" in out
-        assert "PY_LEAK" not in out and "SUBPROC_LEAK" not in out
-        # The step output is preserved on stderr, not discarded.
-        assert "PY_LEAK" in err and "SUBPROC_LEAK" in err
-
-    def test_json_redirect_inactive_is_noop(self, capfd):
-        from specify_cli.workflows._commands import _stdout_to_stderr_when
-
-        with _stdout_to_stderr_when(False):
-            print("VISIBLE_ON_STDOUT")
-        out, _ = capfd.readouterr()
-        assert "VISIBLE_ON_STDOUT" in out
 
 
 class TestResumeWithInputs:
@@ -12057,6 +11073,57 @@ steps:
     verdict_input: spec_verdict
 """
 
+    _WF_RUNTIME_CONFIG = """
+schema_version: "1.0"
+workflow:
+  id: "resume-runtime-config-wf"
+  name: "Resume Runtime Config WF"
+  version: "1.0.0"
+inputs:
+  config:
+    type: string
+    default: "./initial-agent.yaml"
+  agent_name:
+    type: string
+    default: "initial-root"
+  model_name:
+    type: string
+    default: "initial/model"
+steps:
+  - id: implement
+    type: command
+    command: speckit.implement
+    integration: docker-agent
+    integration_args:
+      - "{{ inputs.config }}"
+    integration_options:
+      agent: "{{ inputs.agent_name }}"
+      safety: balanced
+    model: "{{ inputs.model_name }}"
+"""
+
+    _WF_DYNAMIC_INTEGRATION = """
+schema_version: "1.0"
+workflow:
+  id: "resume-dynamic-integration-wf"
+  name: "Resume Dynamic Integration WF"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: docker-agent
+  config:
+    type: string
+    default: "./initial-agent.yaml"
+steps:
+  - id: implement
+    type: command
+    command: speckit.implement
+    integration: "{{ inputs.integration }}"
+    integration_args:
+      - "{{ inputs.config }}"
+"""
+
     def _engine(self, project_dir):
         from specify_cli.workflows.engine import WorkflowEngine
         return WorkflowEngine(project_dir)
@@ -12088,6 +11155,102 @@ steps:
         resumed = engine.resume(state.run_id)
         assert resumed.status == RunStatus.FAILED  # still "exit 1"
         assert resumed.inputs["cmd"] == "exit 1"
+
+    def test_resume_re_resolves_complete_integration_config(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import WorkflowDefinition
+
+        calls = []
+        return_codes = iter((1, 0))
+
+        def fake_run(args, **kwargs):
+            calls.append(args)
+            return type("Result", (), {"returncode": next(return_codes)})()
+
+        monkeypatch.delenv(
+            "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
+        )
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: (
+                "/usr/bin/docker-agent"
+                if name in {"docker-agent", "/usr/bin/docker-agent"}
+                else None
+            ),
+        )
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        definition = WorkflowDefinition.from_string(self._WF_RUNTIME_CONFIG)
+        engine = self._engine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status is RunStatus.FAILED
+        assert state.step_results["implement"]["integration_args"] == [
+            "./initial-agent.yaml"
+        ]
+        assert state.step_results["implement"]["integration_options"] == {
+            "agent": "initial-root",
+            "safety": "balanced",
+        }
+
+        resumed = engine.resume(
+            state.run_id,
+            {
+                "config": "./changed-on-resume.yaml",
+                "agent_name": "changed-root",
+                "model_name": "changed/model",
+            },
+        )
+
+        assert resumed.status is RunStatus.COMPLETED
+        assert resumed.inputs["config"] == "./changed-on-resume.yaml"
+        assert len(calls) == 2
+        assert "./initial-agent.yaml" in calls[0]
+        assert "./changed-on-resume.yaml" in calls[1]
+        assert "./initial-agent.yaml" not in calls[1]
+        assert calls[1][calls[1].index("--agent") + 1] == "changed-root"
+        assert calls[1][calls[1].index("--model") + 1] == "changed/model"
+
+    def test_resume_does_not_mix_new_integration_with_old_runtime_config(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import WorkflowDefinition
+
+        monkeypatch.delenv(
+            "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
+        )
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: (
+                "/usr/bin/docker-agent"
+                if name in {"docker-agent", "/usr/bin/docker-agent"}
+                else None
+            ),
+        )
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda *args, **kwargs: type("Result", (), {"returncode": 1})(),
+        )
+
+        definition = WorkflowDefinition.from_string(self._WF_DYNAMIC_INTEGRATION)
+        engine = self._engine(project_dir)
+        state = engine.execute(definition)
+        assert state.status is RunStatus.FAILED
+
+        resumed = engine.resume(
+            state.run_id,
+            {"integration": "claude", "config": "./changed-on-resume.yaml"},
+        )
+
+        assert resumed.status is RunStatus.FAILED
+        step_result = resumed.step_results["implement"]
+        assert step_result["integration"] == "claude"
+        assert step_result["integration_args"] == ["./changed-on-resume.yaml"]
+        assert "Integration 'claude'" in (step_result["error"] or "")
+        assert "./initial-agent.yaml" not in str(step_result)
 
     def test_resume_merges_and_coerces_typed_input(self, project_dir):
         import json as _json
@@ -12182,2033 +11345,20 @@ steps:
         assert completed.status == RunStatus.COMPLETED
         assert completed.step_results["gate"]["output"]["choice"] == "approve"
 
-    def test_cli_resume_input_invalid_format_errors(self, project_dir):
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-        from specify_cli.workflows.engine import WorkflowDefinition
 
-        definition = WorkflowDefinition.from_string(self._WF_NUM)
-        state = self._engine(project_dir).execute(definition)
 
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(
-                app, ["workflow", "resume", state.run_id, "--input", "bogus"]
-            )
-        assert result.exit_code == 1
-        assert "Invalid input format" in result.stdout
 
 
-class TestWorkflowAddUrlResolution:
-    """CLI-level tests for workflow add <url> GitHub release URL resolution."""
 
-    VALID_WORKFLOW_YAML = """
-schema_version: "1.0"
-workflow:
-  id: "test-wf"
-  name: "Test Workflow"
-  version: "1.0.0"
-  description: "A test workflow"
-steps:
-  - id: step-one
-    type: shell
-    run: "echo hello"
-"""
 
-    def test_workflow_add_from_github_release_url_resolves_and_downloads(self, project_dir):
-        """'workflow add <github-release-url>' resolves to API asset URL."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
 
-        captured_urls = []
 
-        class FakeResponse:
-            def __init__(self, data, url=None):
-                self._data = data
-                self._pos = 0
-                self._url = url or "https://api.github.com/repos/org/repo/releases/assets/42"
 
-            def read(self, size=-1):
-                if size < 0:
-                    size = len(self._data) - self._pos
-                out = self._data[self._pos : self._pos + size]
-                self._pos += len(out)
-                return out
 
-            def geturl(self):
-                return self._url
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
-        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
-            captured_urls.append(
-                (url, extra_headers, timeout, redirect_validator)
-            )
-            if "releases/tags/" in url:
-                return FakeResponse(json.dumps({
-                    "assets": [{"name": "workflow.yml", "url": "https://api.github.com/repos/org/repo/releases/assets/42"}]
-                }).encode())
-            return FakeResponse(self.VALID_WORKFLOW_YAML.encode())
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
-            result = runner.invoke(app, [
-                "workflow", "add",
-                "https://github.com/org/repo/releases/download/v1.0/workflow.yml",
-            ])
-
-        assert result.exit_code == 0, result.output
-        assert "Test Workflow" in result.output
-        # First call resolves the release tag with timeout=30
-        tag_calls = [
-            (url, headers, timeout, validator)
-            for url, headers, timeout, validator in captured_urls
-            if "releases/tags/" in url
-        ]
-        assert len(tag_calls) == 1
-        assert tag_calls[0][2] == 30  # timeout matches download timeout
-        assert tag_calls[0][3] is not None
-        # Second call downloads from the resolved asset URL with octet-stream
-        asset_calls = [
-            (url, headers, timeout, validator)
-            for url, headers, timeout, validator in captured_urls
-            if "releases/assets/" in url
-        ]
-        assert len(asset_calls) >= 1
-        assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
-
-    def test_workflow_add_from_direct_api_asset_url_passes_through(self, project_dir):
-        """'workflow add <api-asset-url>' uses URL directly with octet-stream."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        captured_urls = []
-
-        class FakeResponse:
-            def __init__(self, data, url=None):
-                self._data = data
-                self._pos = 0
-                self._url = url or "https://api.github.com/repos/org/repo/releases/assets/42"
-
-            def read(self, size=-1):
-                if size < 0:
-                    size = len(self._data) - self._pos
-                out = self._data[self._pos : self._pos + size]
-                self._pos += len(out)
-                return out
-
-            def geturl(self):
-                return self._url
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
-        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
-            captured_urls.append((url, extra_headers))
-            return FakeResponse(self.VALID_WORKFLOW_YAML.encode())
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
-            result = runner.invoke(app, [
-                "workflow", "add",
-                "https://api.github.com/repos/org/repo/releases/assets/42",
-            ])
-
-        assert result.exit_code == 0, result.output
-        # Should go directly to the asset URL with Accept header
-        assert len(captured_urls) == 1
-        assert captured_urls[0][0] == "https://api.github.com/repos/org/repo/releases/assets/42"
-        assert captured_urls[0][1] == {"Accept": "application/octet-stream"}
-
-    def test_workflow_add_catalog_based_resolves_github_release_url(self, project_dir):
-        """'workflow add <id>' with catalog GitHub release URL resolves via API."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        captured_urls = []
-
-        class FakeResponse:
-            def __init__(self, data, url=None):
-                self._data = data
-                self._pos = 0
-                self._url = url or "https://api.github.com/repos/org/repo/releases/assets/55"
-
-            def read(self, size=-1):
-                if size < 0:
-                    size = len(self._data) - self._pos
-                out = self._data[self._pos : self._pos + size]
-                self._pos += len(out)
-                return out
-
-            def geturl(self):
-                return self._url
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
-        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
-            captured_urls.append((url, extra_headers, redirect_validator))
-            if "releases/tags/" in url:
-                return FakeResponse(json.dumps({
-                    "assets": [{"name": "workflow.yml", "url": "https://api.github.com/repos/org/repo/releases/assets/55"}]
-                }).encode())
-            # Use workflow YAML with id matching catalog key
-            wf_yaml = """
-schema_version: "1.0"
-workflow:
-  id: "my-wf"
-  name: "My Workflow"
-  version: "1.0.0"
-  description: "A catalog workflow"
-steps:
-  - id: step-one
-    type: shell
-    run: "echo hello"
-"""
-            return FakeResponse(wf_yaml.encode())
-
-        fake_catalog_info = {
-            "id": "my-wf",
-            "name": "My Workflow",
-            "version": "1.0.0",
-            "url": "https://github.com/org/repo/releases/download/v2.0/workflow.yml",
-            "_install_allowed": True,
-        }
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url), \
-             patch("specify_cli.workflows.catalog.WorkflowCatalog.get_workflow_info", return_value=fake_catalog_info):
-            result = runner.invoke(app, ["workflow", "add", "my-wf"])
-
-        assert result.exit_code == 0, result.output
-        # Should resolve via releases/tags API
-        tag_calls = [
-            (url, validator)
-            for url, _, validator in captured_urls
-            if "releases/tags/" in url
-        ]
-        assert len(tag_calls) == 1
-        assert "releases/tags/v2.0" in tag_calls[0][0]
-        assert tag_calls[0][1] is not None
-        # Should download from resolved asset URL with octet-stream
-        asset_calls = [
-            (url, headers)
-            for url, headers, _ in captured_urls
-            if "releases/assets/" in url
-        ]
-        assert len(asset_calls) >= 1
-        assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
-
-    def test_workflow_add_from_ghes_release_url_resolves_via_api_v3(self, project_dir, monkeypatch):
-        """'workflow add <ghes-release-url>' resolves via GHES /api/v3 endpoint."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-        from specify_cli.authentication import http as _auth_http
-        from specify_cli.authentication.config import AuthConfigEntry
-
-        monkeypatch.setattr(_auth_http, "_config_override", [
-            AuthConfigEntry(hosts=("ghes.example",), provider="github", auth="bearer", token="t"),
-        ])
-
-        captured_urls = []
-
-        class FakeResponse:
-            def __init__(self, data, url=None):
-                self._data = data
-                self._pos = 0
-                self._url = url or "https://ghes.example/api/v3/repos/org/repo/releases/assets/42"
-
-            def read(self, size=-1):
-                if size < 0:
-                    size = len(self._data) - self._pos
-                out = self._data[self._pos : self._pos + size]
-                self._pos += len(out)
-                return out
-
-            def geturl(self):
-                return self._url
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
-        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
-            captured_urls.append((url, extra_headers))
-            if "releases/tags/" in url:
-                return FakeResponse(json.dumps({
-                    "assets": [{"name": "workflow.yml", "url": "https://ghes.example/api/v3/repos/org/repo/releases/assets/42"}]
-                }).encode())
-            return FakeResponse(self.VALID_WORKFLOW_YAML.encode())
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
-            result = runner.invoke(app, [
-                "workflow", "add",
-                "https://ghes.example/org/repo/releases/download/v1.0/workflow.yml",
-            ])
-
-        assert result.exit_code == 0, result.output
-        # Tag lookup must use the GHES /api/v3 endpoint
-        assert any("ghes.example/api/v3/repos/org/repo/releases/tags/v1.0" in url for url, _ in captured_urls)
-        # Asset download must carry Accept: application/octet-stream
-        asset_calls = [(url, h) for url, h in captured_urls if "releases/assets/" in url]
-        assert len(asset_calls) >= 1
-        assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
-
-    def test_workflow_add_catalog_based_ghes_release_url_resolves_via_api_v3(self, project_dir, monkeypatch):
-        """'workflow add <id>' with a GHES catalog URL resolves via /api/v3."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-        from specify_cli.authentication import http as _auth_http
-        from specify_cli.authentication.config import AuthConfigEntry
-
-        monkeypatch.setattr(_auth_http, "_config_override", [
-            AuthConfigEntry(hosts=("ghes.example",), provider="github", auth="bearer", token="t"),
-        ])
-
-        captured_urls = []
-
-        class FakeResponse:
-            def __init__(self, data, url=None):
-                self._data = data
-                self._pos = 0
-                self._url = url or "https://ghes.example/api/v3/repos/org/repo/releases/assets/55"
-
-            def read(self, size=-1):
-                if size < 0:
-                    size = len(self._data) - self._pos
-                out = self._data[self._pos : self._pos + size]
-                self._pos += len(out)
-                return out
-
-            def geturl(self):
-                return self._url
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
-        ghes_wf_yaml = """
-schema_version: "1.0"
-workflow:
-  id: "my-wf"
-  name: "My GHES Workflow"
-  version: "1.0.0"
-  description: "A GHES catalog workflow"
-steps:
-  - id: step-one
-    type: shell
-    run: "echo hello"
-"""
-
-        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
-            captured_urls.append((url, extra_headers))
-            if "releases/tags/" in url:
-                return FakeResponse(json.dumps({
-                    "assets": [{"name": "workflow.yml", "url": "https://ghes.example/api/v3/repos/org/repo/releases/assets/55"}]
-                }).encode())
-            return FakeResponse(ghes_wf_yaml.encode())
-
-        fake_catalog_info = {
-            "id": "my-wf",
-            "name": "My GHES Workflow",
-            "version": "1.0.0",
-            "url": "https://ghes.example/org/repo/releases/download/v2.0/workflow.yml",
-            "_install_allowed": True,
-        }
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url), \
-             patch("specify_cli.workflows.catalog.WorkflowCatalog.get_workflow_info", return_value=fake_catalog_info):
-            result = runner.invoke(app, ["workflow", "add", "my-wf"])
-
-        assert result.exit_code == 0, result.output
-        # Tag lookup must use GHES /api/v3
-        tag_calls = [url for url, _ in captured_urls if "releases/tags/" in url]
-        assert len(tag_calls) == 1
-        assert "ghes.example/api/v3/repos/org/repo/releases/tags/v2.0" in tag_calls[0]
-        # Asset download must carry Accept: application/octet-stream
-        asset_calls = [(url, h) for url, h in captured_urls if "releases/assets/" in url]
-        assert len(asset_calls) >= 1
-        assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
-
-
-class TestWorkflowStepStartProgressLine:
-    """The `run`/`resume` step-progress line must render the step id literally.
-
-    The line is built as `  ▸ [<id>] <label> …`, so Rich parsed the bracketed id
-    as a style tag: it silently swallowed the id (the only identifying content
-    on the line), applied it as formatting when the id happened to be a real
-    style like `bold`, and raised MarkupError — failing the whole run — when the
-    id formed a closing tag such as `/`. `validate_workflow` places no charset
-    restriction on step ids, so all of these are accepted workflows.
-    """
-
-    def _write(self, tmp_path, step_id):
-        path = tmp_path / "wf.yml"
-        path.write_text(
-            'schema_version: "1.0"\n'
-            "workflow:\n"
-            '  id: "probe-wf"\n'
-            '  name: "Probe"\n'
-            '  version: "1.0.0"\n'
-            "steps:\n"
-            f'  - id: "{step_id}"\n'
-            "    type: shell\n"
-            '    run: "exit 0"\n',
-            encoding="utf-8",
-        )
-        return path
-
-    @pytest.mark.parametrize("step_id", ["greet", "bold", "a]b"])
-    def test_progress_line_shows_step_id(self, tmp_path, monkeypatch, step_id):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(tmp_path)
-        result = CliRunner().invoke(
-            app, ["workflow", "run", str(self._write(tmp_path, step_id))]
-        )
-        assert result.exit_code == 0, result.stdout
-        assert f"[{step_id}]" in result.stdout
-
-    def test_step_id_forming_a_closing_tag_does_not_fail_the_run(
-        self, tmp_path, monkeypatch
-    ):
-        """`id: "/"` raised MarkupError from inside the progress callback, which
-        surfaced as a failed run with no step results."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(tmp_path)
-        result = CliRunner().invoke(
-            app, ["workflow", "run", str(self._write(tmp_path, "/"))]
-        )
-        assert result.exit_code == 0, result.stdout
-        assert "Status: completed" in result.stdout
-        assert "[/]" in result.stdout
-
-    def test_resume_progress_line_shows_step_id(self, tmp_path, monkeypatch):
-        """`workflow resume` installs its own copy of the same callback, so it
-        needs independent coverage — a one-line fix would miss the twin."""
-        import json as _json
-
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(tmp_path)
-        path = tmp_path / "wf.yml"
-        path.write_text(
-            'schema_version: "1.0"\n'
-            "workflow:\n"
-            '  id: "probe-resume"\n'
-            '  name: "Probe"\n'
-            '  version: "1.0.0"\n'
-            "steps:\n"
-            "  - id: boom\n"
-            "    type: shell\n"
-            '    run: "exit 1"\n',
-            encoding="utf-8",
-        )
-        runner = CliRunner()
-        first = runner.invoke(app, ["workflow", "run", str(path), "--json"])
-        run_id = _json.loads(first.stdout).get("run_id")
-        assert run_id
-
-        resumed = runner.invoke(app, ["workflow", "resume", run_id])
-        assert "[boom]" in resumed.stdout
-
-
-class TestWorkflowRunExitCodes:
-    """CLI-level tests for the run/resume process exit codes."""
-
-    _WF_OK = """
-schema_version: "1.0"
-workflow:
-  id: "exit-ok"
-  name: "Exit OK"
-  version: "1.0.0"
-steps:
-  - id: fine
-    type: shell
-    run: "exit 0"
-"""
-
-    _WF_FAIL = """
-schema_version: "1.0"
-workflow:
-  id: "exit-fail"
-  name: "Exit Fail"
-  version: "1.0.0"
-steps:
-  - id: boom
-    type: shell
-    run: "exit 1"
-"""
-
-    def _write(self, tmp_path, content):
-        path = tmp_path / "wf.yml"
-        path.write_text(content, encoding="utf-8")
-        return path
-
-    def test_run_completed_exits_zero(self, tmp_path, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(tmp_path)
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "run", str(self._write(tmp_path, self._WF_OK))])
-        assert result.exit_code == 0
-        assert "Status: completed" in result.stdout
-
-    def test_run_failed_exits_nonzero(self, tmp_path, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(tmp_path)
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "run", str(self._write(tmp_path, self._WF_FAIL))])
-        assert "Status: failed" in result.stdout
-        assert result.exit_code == 1
-
-    def test_run_failed_exits_nonzero_with_json(self, tmp_path, monkeypatch):
-        import json as _json
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(tmp_path)
-        runner = CliRunner()
-        result = runner.invoke(
-            app,
-            ["workflow", "run", str(self._write(tmp_path, self._WF_FAIL)), "--json"],
-        )
-        assert result.exit_code == 1, result.stdout
-        payload = _json.loads(result.stdout)
-        assert payload["status"] == "failed"
-
-    def test_resume_failed_run_exits_nonzero(self, tmp_path, monkeypatch):
-        # End-to-end coverage for the `workflow resume` exit-code mapping:
-        # resuming a run whose outcome is still `failed` must exit non-zero,
-        # mirroring `workflow run`. Resume re-executes the failed step, which
-        # fails again, so the resumed outcome stays `failed`.
-        import json as _json
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / ".specify").mkdir()  # `workflow resume` requires a project
-        runner = CliRunner()
-        run = runner.invoke(
-            app,
-            ["workflow", "run", str(self._write(tmp_path, self._WF_FAIL)), "--json"],
-        )
-        assert run.exit_code == 1, run.stdout
-        run_id = _json.loads(run.stdout)["run_id"]
-
-        resumed = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
-        assert resumed.exit_code == 1, resumed.stdout
-        payload = _json.loads(resumed.stdout)
-        assert payload["status"] == "failed"
-
-    _WF_GATE_INVALID_VERDICT = """
-schema_version: "1.0"
-workflow:
-  id: "gate-invalid-verdict"
-  name: "Gate Invalid Verdict"
-  version: "1.0.0"
-inputs:
-  review_verdict:
-    type: string
-    default: ""
-steps:
-  - id: review
-    type: gate
-    message: "Approve the review?"
-    options: [approve, reject]
-    on_reject: abort
-    verdict_input: review_verdict
-"""
-
-    _WF_GATE_INVALID_TYPE = """
-schema_version: "1.0"
-workflow:
-  id: "gate-invalid-type"
-  name: "Gate Invalid Type"
-  version: "1.0.0"
-inputs:
-  review_verdict:
-    type: number
-    default: 1
-steps:
-  - id: review
-    type: gate
-    message: "Approve the review?"
-    options: [approve, reject]
-    on_reject: abort
-    verdict_input: review_verdict
-"""
-
-    _WF_GATE_ABORT = """
-schema_version: "1.0"
-workflow:
-  id: "gate-abort"
-  name: "Gate Abort"
-  version: "1.0.0"
-inputs:
-  review_verdict:
-    type: string
-    default: ""
-steps:
-  - id: review
-    type: gate
-    message: "Approve the review?"
-    options: [approve, reject]
-    on_reject: abort
-    verdict_input: review_verdict
-"""
-
-    def test_run_invalid_verdict_prints_error(self, tmp_path, monkeypatch):
-        """Invalid verdict value prints explanatory error in human output."""
-        import re
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(tmp_path)
-        runner = CliRunner()
-        result = runner.invoke(
-            app,
-            [
-                "workflow",
-                "run",
-                str(self._write(tmp_path, self._WF_GATE_INVALID_VERDICT)),
-                "--input",
-                "review_verdict=maybe",
-            ],
-        )
-        assert result.exit_code == 1
-        assert "Status: failed" in result.stdout
-        # Normalize whitespace to handle Rich console line wrapping
-        normalized = re.sub(r"\s+", " ", result.stdout)
-        assert "does not match any configured option" in normalized
-
-    def test_run_invalid_verdict_type_prints_error(self, tmp_path, monkeypatch):
-        """Non-string verdict value prints explanatory error in human output."""
-        import re
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(tmp_path)
-        runner = CliRunner()
-        result = runner.invoke(
-            app,
-            ["workflow", "run", str(self._write(tmp_path, self._WF_GATE_INVALID_TYPE))],
-        )
-        assert result.exit_code == 1
-        assert "Status: failed" in result.stdout
-        # Normalize whitespace to handle Rich console line wrapping
-        normalized = re.sub(r"\s+", " ", result.stdout)
-        assert "must be a string" in normalized
-
-    def test_run_gate_abort_prints_status_and_error(self, tmp_path, monkeypatch):
-        """Gate abort prints Status: aborted and the rejection message."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(tmp_path)
-        runner = CliRunner()
-        result = runner.invoke(
-            app,
-            [
-                "workflow",
-                "run",
-                str(self._write(tmp_path, self._WF_GATE_ABORT)),
-                "--input",
-                "review_verdict=reject",
-            ],
-        )
-        assert result.exit_code == 1
-        assert "Status: aborted" in result.stdout
-        assert "Gate rejected by user" in result.stdout
-
-    def test_run_gate_abort_json_includes_error(self, tmp_path, monkeypatch):
-        """Gate abort --json includes the rejection message in the error field."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(tmp_path)
-        runner = CliRunner()
-        result = runner.invoke(
-            app,
-            [
-                "workflow",
-                "run",
-                str(self._write(tmp_path, self._WF_GATE_ABORT)),
-                "--input",
-                "review_verdict=reject",
-                "--json",
-            ],
-        )
-        assert result.exit_code == 1
-        payload = json.loads(result.stdout)
-        assert payload["status"] == "aborted"
-        assert "Gate rejected by user" in (payload.get("error") or "")
-
-
-class TestWorkflowRunGateOutcomeJson:
-    """CLI-level tests: the --json payload surfaces gate pauses."""
-
-    _WF_GATE = """
-schema_version: "1.0"
-workflow:
-  id: "gate-json"
-  name: "Gate JSON"
-  version: "1.0.0"
-steps:
-  - id: review
-    type: gate
-    message: "Approve the thing?"
-    options: ["approve", "reject"]
-"""
-
-    _WF_PLAIN = """
-schema_version: "1.0"
-workflow:
-  id: "plain-json"
-  name: "Plain JSON"
-  version: "1.0.0"
-steps:
-  - id: fine
-    type: shell
-    run: "exit 0"
-"""
-
-    def _run_json(self, tmp_path, monkeypatch, content, *, expected_exit=0):
-        import json as _json
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        path = tmp_path / "wf.yml"
-        path.write_text(content, encoding="utf-8")
-        monkeypatch.chdir(tmp_path)
-        result = CliRunner().invoke(app, ["workflow", "run", str(path), "--json"])
-        # Assert the expected exit code before parsing so a real failure
-        # surfaces the actual output instead of an opaque JSON decode error.
-        # A terminal run still emits its JSON payload, then exits non-zero on
-        # ``failed``/``aborted`` (see ``_run_outcome_exit_code``), so callers
-        # pass the expected code. Use ``result.output`` for the message:
-        # under ``--json`` step output is redirected off stdout, so the useful
-        # diagnostics live there.
-        assert result.exit_code == expected_exit, result.output
-        return _json.loads(result.stdout)
-
-    def test_gate_pause_carries_gate_block(self, tmp_path, monkeypatch):
-        # CliRunner stdin is not a TTY, so the gate pauses for resume.
-        payload = self._run_json(tmp_path, monkeypatch, self._WF_GATE)
-        assert payload["status"] == "paused"
-        assert payload["gate"] == {
-            "step_id": "review",
-            "message": "Approve the thing?",
-            "options": ["approve", "reject"],
-            "choice": None,
-        }
-
-    def test_completed_run_has_no_gate_block(self, tmp_path, monkeypatch):
-        payload = self._run_json(tmp_path, monkeypatch, self._WF_PLAIN)
-        assert payload["status"] == "completed"
-        assert "gate" not in payload
-
-    def test_gate_abort_carries_gate_block(self, tmp_path, monkeypatch):
-        # An interactive gate the operator rejects ends the run as `aborted`
-        # (on_reject defaults to abort), not `paused`. The JSON surface must
-        # still carry the gate block with the recorded choice so an
-        # orchestrator can see *why* the run stopped. A gate abort emits the
-        # payload and then exits non-zero (aborted → exit 1), so the helper
-        # is told to expect exit code 1.
-        from specify_cli.workflows.steps.gate import GateStep
-
-        _force_gate_stdin(monkeypatch, tty=True)
-        monkeypatch.setattr(
-            GateStep, "_prompt", staticmethod(lambda _msg, _opts: "reject")
-        )
-        payload = self._run_json(
-            tmp_path, monkeypatch, self._WF_GATE, expected_exit=1
-        )
-        assert payload["status"] == "aborted"
-        assert payload["gate"] == {
-            "step_id": "review",
-            "message": "Approve the thing?",
-            "options": ["approve", "reject"],
-            "choice": "reject",
-        }
-
-    def test_gate_block_emitted_only_when_run_rests_at_gate(self):
-        # A run rests *on* a gate only while `paused` (awaiting a decision) or
-        # `aborted` (gate rejected with on_reject: abort). current_step_id is
-        # not cleared afterwards, so a `completed`/`failed` run whose last
-        # executed step was a gate must NOT surface a stale gate block.
-        from types import SimpleNamespace
-        from specify_cli.workflows._commands import _gate_outcome
-
-        gate_step = {
-            "type": "gate",
-            "output": {
-                "message": "m",
-                "options": ["approve", "reject"],
-                "choice": "reject",
-            },
-        }
-
-        def _state(status):
-            return SimpleNamespace(
-                status=SimpleNamespace(value=status),
-                current_step_id="review",
-                step_results={"review": gate_step},
-            )
-
-        assert _gate_outcome(_state("completed")) is None
-        assert _gate_outcome(_state("failed")) is None
-        assert _gate_outcome(_state("paused")) is not None
-        assert _gate_outcome(_state("aborted")) is not None
-
-    def test_gate_block_message_coerced_to_string(self):
-        # message may be a non-string YAML literal (e.g. a number); the JSON
-        # surface normalises it so the emitted schema stays stable.
-        from types import SimpleNamespace
-        from specify_cli.workflows._commands import _gate_outcome
-
-        state = SimpleNamespace(
-            status=SimpleNamespace(value="paused"),
-            current_step_id="review",
-            step_results={
-                "review": {
-                    "type": "gate",
-                    "output": {"message": 12.5, "options": ["ok"], "choice": None},
-                }
-            },
-        )
-        assert _gate_outcome(state)["message"] == "12.5"
-
-    def test_gate_block_options_coerced_to_strings(self):
-        # options may be non-string / non-list literals in an unvalidated
-        # workflow; the JSON surface always normalises them to list[str] | None
-        # so the emitted schema is stable regardless of the input shape.
-        from types import SimpleNamespace
-        from specify_cli.workflows._commands import _gate_outcome
-
-        def _options_payload(options):
-            state = SimpleNamespace(
-                status=SimpleNamespace(value="paused"),
-                current_step_id="review",
-                step_results={
-                    "review": {
-                        "type": "gate",
-                        "output": {
-                            "message": "m",
-                            "options": options,
-                            "choice": None,
-                        },
-                    }
-                },
-            )
-            return _gate_outcome(state)["options"]
-
-        assert _options_payload([1, 2.5]) == ["1", "2.5"]  # list
-        assert _options_payload(("approve", "reject")) == ["approve", "reject"]  # tuple
-        assert _options_payload("approve") == ["approve"]  # bare scalar, not iterated
-        assert _options_payload(7) == ["7"]  # numeric scalar
-        assert _options_payload(None) is None  # absent stays absent
-
-    def test_gate_block_choice_coerced_to_string(self):
-        # An unvalidated gate can record a non-string choice; the JSON
-        # surface normalises it to str (and keeps None = no decision yet),
-        # consistent with the message/options normalization.
-        from types import SimpleNamespace
-        from specify_cli.workflows._commands import _gate_outcome
-
-        def _choice_payload(choice):
-            state = SimpleNamespace(
-                status=SimpleNamespace(value="paused"),
-                current_step_id="review",
-                step_results={
-                    "review": {
-                        "type": "gate",
-                        "output": {"message": "m", "options": ["ok"], "choice": choice},
-                    }
-                },
-            )
-            return _gate_outcome(state)["choice"]
-
-        assert _choice_payload(None) is None  # no decision yet
-        assert _choice_payload("reject") == "reject"  # normal string passes through
-        assert _choice_payload(2) == "2"  # non-string coerced
-
-    def test_gate_block_detected_without_type_field(self):
-        # A run paused by an older version has no persisted step `type`. The
-        # gate is still detected by its unique output signature (`on_reject`),
-        # so resume surfaces the gate block instead of silently dropping it.
-        from types import SimpleNamespace
-        from specify_cli.workflows._commands import _gate_outcome
-
-        state = SimpleNamespace(
-            status=SimpleNamespace(value="paused"),
-            current_step_id="review",
-            step_results={
-                "review": {
-                    # no "type" key — pre-dates the field being persisted
-                    "output": {
-                        "message": "Approve?",
-                        "options": ["approve", "reject"],
-                        "on_reject": "abort",
-                        "choice": None,
-                    },
-                }
-            },
-        )
-        gate = _gate_outcome(state)
-        assert gate is not None
-        assert gate["step_id"] == "review"
-        assert gate["options"] == ["approve", "reject"]
-
-    def test_non_gate_step_without_type_is_not_a_gate(self):
-        # A typeless record lacking the gate signature must NOT be mistaken for
-        # a gate (the fallback keys off `on_reject`, which only GateStep writes).
-        from types import SimpleNamespace
-        from specify_cli.workflows._commands import _gate_outcome
-
-        state = SimpleNamespace(
-            status=SimpleNamespace(value="paused"),
-            current_step_id="run-tests",
-            step_results={
-                "run-tests": {"output": {"exit_code": 0, "stdout": "ok"}},
-            },
-        )
-        assert _gate_outcome(state) is None
-
-
-class TestWorkflowAddNonStringScalars:
-    """`workflow add` reports clean errors for non-string YAML scalars (#3420)."""
-
-    @pytest.mark.parametrize(
-        ("field_yaml", "expected"),
-        [
-            ('id: 123\n  name: "Probe"\n  version: "1.0.0"', "workflow.id"),
-            ('id: "probe"\n  name: "Probe"\n  version: 1.0', "workflow.version"),
-        ],
-    )
-    def test_add_reports_validation_error_not_traceback(
-        self, project_dir, monkeypatch, field_yaml, expected
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        wf = project_dir / "workflow.yml"
-        wf.write_text(
-            "schema_version: \"1.0\"\n"
-            f"workflow:\n  {field_yaml}\n"
-            "steps:\n  - id: s1\n    type: shell\n    run: \"echo hi\"\n",
-            encoding="utf-8",
-        )
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "add", str(wf)])
-        assert result.exit_code == 1
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert expected in result.output
-
-    def test_add_non_string_step_id_reports_validation_error(
-        self, project_dir, monkeypatch
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        wf = project_dir / "workflow.yml"
-        wf.write_text(
-            "workflow:\n  id: \"probe\"\n  name: \"Probe\"\n  version: \"1.0.0\"\n"
-            "steps:\n  - id: 123\n    type: shell\n    run: \"echo hi\"\n",
-            encoding="utf-8",
-        )
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "add", str(wf)])
-        assert result.exit_code == 1
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "Step ID" in result.output
 
 
 class TestWorkflowCliAlignment:
     """CLI alignment with extension/preset commands (#2342)."""
-
-    WORKFLOW_YAML = """
-schema_version: "1.0"
-workflow:
-  id: "align-wf"
-  name: "Align Workflow"
-  version: "{version}"
-  description: "CLI alignment test workflow"
-steps:
-  - id: step-one
-    type: shell
-    run: "echo hello"
-"""
-
-    def _write_workflow_dir(self, base, version="1.0.0"):
-        d = base / "wf-src"
-        d.mkdir(parents=True, exist_ok=True)
-        (d / "workflow.yml").write_text(
-            self.WORKFLOW_YAML.format(version=version), encoding="utf-8"
-        )
-        return d
-
-    def _archive_workflow_dir(self, source_dir, archive_path, nested=False):
-        prefix = Path("align-wf-v1") if nested else Path()
-        if archive_path.name.lower().endswith(".zip"):
-            with zipfile.ZipFile(archive_path, "w") as archive:
-                for file_path in source_dir.rglob("*"):
-                    if file_path.is_file():
-                        archive.write(
-                            file_path,
-                            prefix / file_path.relative_to(source_dir),
-                        )
-        else:
-            with tarfile.open(archive_path, "w:gz") as archive:
-                for file_path in source_dir.rglob("*"):
-                    if file_path.is_file():
-                        archive.add(
-                            file_path,
-                            arcname=prefix / file_path.relative_to(source_dir),
-                        )
-
-    def _install_dev(self, runner, app, project_dir):
-        src = self._write_workflow_dir(project_dir)
-        result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
-        assert result.exit_code == 0, result.output
-        return src
-
-    # -- add --dev -----------------------------------------------------
-
-    def test_add_dev_directory_installs(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        self._install_dev(runner, app, project_dir)
-        assert WorkflowRegistry(project_dir).is_installed("align-wf")
-
-    def test_add_local_directory_preserves_package_files(
-        self, project_dir, monkeypatch
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        source = self._write_workflow_dir(project_dir)
-        (source / "scripts").mkdir()
-        (source / "scripts" / "helper.sh").write_text("echo helper\n")
-
-        result = CliRunner().invoke(app, ["workflow", "add", str(source)])
-
-        assert result.exit_code == 0, result.output
-        installed = project_dir / ".specify" / "workflows" / "align-wf"
-        assert (installed / "scripts" / "helper.sh").read_text() == "echo helper\n"
-
-    @pytest.mark.parametrize("suffix", [".zip", ".tar.gz", ".tgz"])
-    @pytest.mark.parametrize("nested", [False, True])
-    def test_add_local_archive_preserves_package_files(
-        self, project_dir, monkeypatch, suffix, nested
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        source = self._write_workflow_dir(project_dir)
-        (source / "assets").mkdir()
-        (source / "assets" / "message.txt").write_text("hello\n")
-        archive_path = project_dir / f"align-wf{suffix}"
-        self._archive_workflow_dir(source, archive_path, nested=nested)
-
-        result = CliRunner().invoke(app, ["workflow", "add", str(archive_path)])
-
-        assert result.exit_code == 0, result.output
-        installed = project_dir / ".specify" / "workflows" / "align-wf"
-        assert (installed / "assets" / "message.txt").read_text() == "hello\n"
-
-    def test_add_dev_yaml_file_installs(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        src = self._write_workflow_dir(project_dir)
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "add", str(src / "workflow.yml"), "--dev"])
-        assert result.exit_code == 0, result.output
-        assert WorkflowRegistry(project_dir).is_installed("align-wf")
-
-    def test_add_dev_missing_path_errors(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "add", str(project_dir / "missing"), "--dev"])
-        assert result.exit_code != 0
-        assert "--dev" in result.output
-
-    def test_add_dev_dir_without_workflow_yml_errors(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        empty = project_dir / "empty-src"
-        empty.mkdir()
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "add", str(empty), "--dev"])
-        assert result.exit_code != 0
-        assert "No workflow.yml found" in result.output
-
-    def test_add_local_dir_without_workflow_yml_errors(self, project_dir, monkeypatch):
-        """Same as the --dev case, but for the plain local-path fallback (no --dev)."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        empty = project_dir / "empty-src-[bracket]"
-        empty.mkdir()
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "add", str(empty)])
-        assert result.exit_code != 0
-        assert "No workflow.yml found" in result.output
-        assert "[bracket]" in result.output
-
-    def test_add_local_dir_with_workflow_yml_directory_errors_cleanly(self, project_dir, monkeypatch):
-        """Same as the --dev case, but for the plain local-path fallback (no --dev):
-        a directory named workflow.yml must not reach open() and leak IsADirectoryError."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        src_dir = project_dir / "local-wf"
-        (src_dir / "workflow.yml").mkdir(parents=True)
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "add", str(src_dir)])
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "No workflow.yml found" in result.output
-
-    def test_add_yaml_parse_error_escapes_rich_markup(self, project_dir, monkeypatch):
-        """A YAML syntax error can quote the offending line verbatim; brackets in it must not be Rich markup."""
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.engine import WorkflowDefinition
-
-        monkeypatch.chdir(project_dir)
-        bad = project_dir / "bad.yml"
-        bad.write_text("workflow:\n  id: wf\n", encoding="utf-8")
-        runner = CliRunner()
-        with patch.object(
-            WorkflowDefinition,
-            "from_string",
-            side_effect=ValueError('bad snippet: "New [Feature]"'),
-        ):
-            result = runner.invoke(app, ["workflow", "add", str(bad)])
-        assert result.exit_code != 0
-        assert 'bad snippet: "New [Feature]"' in result.output
-
-    # -- add --from ----------------------------------------------------
-
-    class _FakeResponse:
-        def __init__(self, data, url="https://example.com/workflow.yml", headers=None):
-            self._data = data
-            self._url = url
-            self._pos = 0
-            self._headers = headers or {}
-
-        def read(self, amt=None):
-            if amt is None:
-                chunk = self._data[self._pos :]
-                self._pos = len(self._data)
-                return chunk
-            chunk = self._data[self._pos : self._pos + amt]
-            self._pos += len(chunk)
-            return chunk
-
-        def getheader(self, name, default=None):
-            return self._headers.get(name, default)
-
-        def geturl(self):
-            return self._url
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-    @pytest.mark.parametrize("mode", ["dev", "local", "from"])
-    def test_reinstall_preserves_disabled_state(
-        self, project_dir, monkeypatch, mode
-    ):
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        src = self._install_dev(runner, app, project_dir)
-        result = runner.invoke(app, ["workflow", "disable", "align-wf"])
-        assert result.exit_code == 0, result.output
-
-        if mode == "dev":
-            result = runner.invoke(
-                app, ["workflow", "add", str(src), "--dev"]
-            )
-        elif mode == "local":
-            result = runner.invoke(app, ["workflow", "add", str(src)])
-        else:
-            data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
-            with patch(
-                "specify_cli.authentication.http.open_url",
-                side_effect=lambda url, timeout=None, extra_headers=None,
-                redirect_validator=None: self._FakeResponse(data, url),
-            ):
-                result = runner.invoke(
-                    app,
-                    [
-                        "workflow", "add", "align-wf",
-                        "--from", "https://example.com/workflow.yml",
-                    ],
-                    input="y\n",
-                )
-
-        assert result.exit_code == 0, result.output
-        assert WorkflowRegistry(project_dir).get("align-wf")["enabled"] is False
-
-    def test_add_from_url_rejects_oversized_content_length(self, project_dir, monkeypatch):
-        """A --from download must not trust an advertised Content-Length
-        alone by reading the whole body first -- it must reject a response
-        that declares a size over the workflow YAML limit before reading
-        the (potentially huge) body into memory at all."""
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows import _commands as wf_commands
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(wf_commands, "_MAX_WORKFLOW_YAML_BYTES", 100)
-        small_body = b"id: align-wf\n"  # small actual body; Content-Length lies
-        runner = CliRunner()
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                small_body, url, headers={"Content-Length": "1000"}
-            ),
-        ):
-            result = runner.invoke(
-                app,
-                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
-                input="y\n",
-            )
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "exceedingthe100-byteworkflowsizelimit" in "".join(result.output.split())
-
-    def test_add_from_url_requires_default_deny_confirmation(
-        self, project_dir, monkeypatch
-    ):
-        from unittest.mock import patch
-
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=AssertionError("download should not start"),
-        ):
-            result = CliRunner().invoke(
-                app,
-                [
-                    "workflow",
-                    "add",
-                    "align-wf",
-                    "--from",
-                    "https://example.com/workflow.yml",
-                ],
-                input="n\n",
-            )
-
-        assert result.exit_code == 0, result.output
-        assert "Untrusted Source" in result.output
-        assert "Cancelled" in result.output
-
-    def test_add_from_url_rejects_oversized_streamed_body_without_content_length(
-        self, project_dir, monkeypatch
-    ):
-        """A chunked/no-Content-Length response must still be capped by
-        actually counting streamed bytes -- a malicious or misbehaving
-        server cannot bypass the limit merely by omitting or lying about
-        Content-Length."""
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows import _commands as wf_commands
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(wf_commands, "_MAX_WORKFLOW_YAML_BYTES", 100)
-        oversized_body = b"x" * 500  # no Content-Length header at all
-        runner = CliRunner()
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                oversized_body, url
-            ),
-        ):
-            result = runner.invoke(
-                app,
-                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
-                input="y\n",
-            )
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "exceedsthe100-byteworkflowsizelimit" in "".join(result.output.split())
-
-    def test_add_from_url_oversized_streamed_body_leaves_no_temp_file(
-        self, project_dir, monkeypatch, tmp_path
-    ):
-        """A rejected --from download (oversized streamed body, no
-        Content-Length) must not leave the 0-byte NamedTemporaryFile behind:
-        the file is created on disk as soon as it is opened (delete=False),
-        before any bytes are written, so a failure inside the size-limit
-        check must still clean it up rather than merely erroring out."""
-        import tempfile as tempfile_mod
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows import _commands as wf_commands
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(wf_commands, "_MAX_WORKFLOW_YAML_BYTES", 100)
-        scratch_tmp = tmp_path / "scratch-tmp"
-        scratch_tmp.mkdir()
-        monkeypatch.setattr(tempfile_mod, "tempdir", str(scratch_tmp))
-        oversized_body = b"x" * 500  # no Content-Length header at all
-        runner = CliRunner()
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                oversized_body, url
-            ),
-        ):
-            result = runner.invoke(
-                app,
-                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
-                input="y\n",
-            )
-        assert result.exit_code != 0
-        assert "exceedsthe100-byteworkflowsizelimit" in "".join(result.output.split())
-        leaked = list(scratch_tmp.glob("*.yml"))
-        assert leaked == [], f"leaked temp files: {leaked}"
-
-    def test_add_from_url_interrupt_during_read_leaves_no_temp_file(
-        self, project_dir, monkeypatch, tmp_path
-    ):
-        """A KeyboardInterrupt while streaming the response body must still
-        unlink the already-created (delete=False) temp file. Unlike a
-        download ``ValueError``, ``KeyboardInterrupt`` is a ``BaseException``
-        and is not caught by ``except Exception`` -- only a ``BaseException``
-        handler around the temp-file lifetime can clean it up."""
-        import tempfile as tempfile_mod
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows import _commands as wf_commands
-
-        monkeypatch.chdir(project_dir)
-        scratch_tmp = tmp_path / "scratch-tmp"
-        scratch_tmp.mkdir()
-        monkeypatch.setattr(tempfile_mod, "tempdir", str(scratch_tmp))
-
-        def _boom(*args, **kwargs):
-            raise KeyboardInterrupt()
-
-        monkeypatch.setattr(wf_commands, "_read_response_within_limit", _boom)
-        body = b"id: align-wf\n"
-        runner = CliRunner()
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                body, url
-            ),
-        ):
-            result = runner.invoke(
-                app,
-                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
-                input="y\n",
-            )
-        assert result.exit_code != 0
-        leaked = list(scratch_tmp.glob("*.yml"))
-        assert leaked == [], f"leaked temp files: {leaked}"
-
-    def test_add_from_url_oversized_content_length_leaves_no_temp_file(
-        self, project_dir, monkeypatch, tmp_path
-    ):
-        """Same guarantee for the fail-fast Content-Length rejection path:
-        it must not even leave a 0-byte temp file behind."""
-        import tempfile as tempfile_mod
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows import _commands as wf_commands
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(wf_commands, "_MAX_WORKFLOW_YAML_BYTES", 100)
-        scratch_tmp = tmp_path / "scratch-tmp"
-        scratch_tmp.mkdir()
-        monkeypatch.setattr(tempfile_mod, "tempdir", str(scratch_tmp))
-        small_body = b"id: align-wf\n"  # small actual body; Content-Length lies
-        runner = CliRunner()
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                small_body, url, headers={"Content-Length": "1000"}
-            ),
-        ):
-            result = runner.invoke(
-                app,
-                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
-                input="y\n",
-            )
-        assert result.exit_code != 0
-        assert "exceedingthe100-byteworkflowsizelimit" in "".join(result.output.split())
-        leaked = list(scratch_tmp.glob("*.yml"))
-        assert leaked == [], f"leaked temp files: {leaked}"
-
-    def test_add_from_url_download_failure_cleanup_error_preserves_original_error(
-        self, project_dir, monkeypatch, tmp_path
-    ):
-        """The --from download-failure branch's `tmp_path.unlink(missing_ok=
-        True)` can itself raise (e.g. read-only tempdir) before the clean
-        "Failed to download workflow" message is ever printed, replacing it
-        with a raw unhandled OSError. A cleanup failure there must be
-        guarded exactly like the later post-install finally cleanup: warn
-        about the cleanup failure, then still preserve/report the original
-        download error via a clean typer.Exit, never a raw traceback."""
-        import tempfile as tempfile_mod
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows import _commands as wf_commands
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(wf_commands, "_MAX_WORKFLOW_YAML_BYTES", 100)
-        scratch_tmp = tmp_path / "scratch-tmp"
-        scratch_tmp.mkdir()
-        monkeypatch.setattr(tempfile_mod, "tempdir", str(scratch_tmp))
-        oversized_body = b"x" * 500  # no Content-Length header at all
-        runner = CliRunner()
-
-        real_unlink = Path.unlink
-
-        def unlink_boom(self_path, *args, **kwargs):
-            if self_path.suffix == ".yml" and self_path.parent == scratch_tmp:
-                raise OSError("cleanup denied")
-            return real_unlink(self_path, *args, **kwargs)
-
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                oversized_body, url
-            ),
-        ), pytest.MonkeyPatch.context() as mp:
-            mp.setattr(Path, "unlink", unlink_boom)
-            result = runner.invoke(
-                app,
-                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
-                input="y\n",
-            )
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        # Original download error remains present. Normalize whitespace so the
-        # assertion is robust to Rich line-wrapping at narrow terminal widths.
-        normalized_output = "".join(result.output.split())
-        assert "exceedsthe100-byteworkflowsizelimit" in normalized_output
-        # Cleanup failure is reported too, not silently swallowed / crashing.
-        assert "cleanupdenied" in normalized_output
-        assert "Warning" in result.output
-        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
-
-    def test_add_from_url_installs(self, project_dir, monkeypatch):
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
-        runner = CliRunner()
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
-        ):
-            result = runner.invoke(
-                app,
-                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
-                input="y\n",
-            )
-        assert result.exit_code == 0, result.output
-        assert WorkflowRegistry(project_dir).is_installed("align-wf")
-
-    @pytest.mark.parametrize("suffix", [".zip", ".tar.gz", ".tgz"])
-    def test_add_from_url_installs_complete_archive_package(
-        self, project_dir, monkeypatch, suffix
-    ):
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        source = self._write_workflow_dir(project_dir)
-        (source / "assets").mkdir()
-        (source / "assets" / "remote.txt").write_text("remote\n")
-        archive_path = project_dir / f"remote{suffix}"
-        self._archive_workflow_dir(source, archive_path)
-        data = archive_path.read_bytes()
-        url = f"https://example.com/align-wf{suffix}"
-
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda *_args, **_kwargs: self._FakeResponse(data, url),
-        ):
-            result = CliRunner().invoke(
-                app,
-                ["workflow", "add", "align-wf", "--from", url],
-                input="y\n",
-            )
-
-        assert result.exit_code == 0, result.output
-        installed = project_dir / ".specify" / "workflows" / "align-wf"
-        assert (installed / "assets" / "remote.txt").read_text() == "remote\n"
-
-    @pytest.mark.parametrize("suffix", [".zip", ".tar.gz", ".tgz"])
-    def test_add_from_suffixless_url_sniffs_archive(
-        self, project_dir, monkeypatch, suffix
-    ):
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        source = self._write_workflow_dir(project_dir)
-        (source / "assets").mkdir()
-        (source / "assets" / "sniffed.txt").write_text("sniffed\n")
-        archive_path = project_dir / f"remote{suffix}"
-        self._archive_workflow_dir(source, archive_path)
-        data = archive_path.read_bytes()
-        url = "https://example.com/assets/12345"
-
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda *_args, **_kwargs: self._FakeResponse(
-                data,
-                url,
-                {"Content-Type": "application/octet-stream"},
-            ),
-        ):
-            result = CliRunner().invoke(
-                app,
-                ["workflow", "add", "align-wf", "--from", url],
-                input="y\n",
-            )
-
-        assert result.exit_code == 0, result.output
-        installed = project_dir / ".specify" / "workflows" / "align-wf"
-        assert (installed / "assets" / "sniffed.txt").read_text() == "sniffed\n"
-
-    @pytest.mark.parametrize("suffix", [".zip", ".tar.gz", ".tgz"])
-    def test_add_catalog_installs_complete_archive_package_and_sha(
-        self, project_dir, monkeypatch, suffix
-    ):
-        import hashlib
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        monkeypatch.chdir(project_dir)
-        source = self._write_workflow_dir(project_dir)
-        (source / "assets").mkdir()
-        (source / "assets" / "catalog.txt").write_text("catalog\n")
-        archive_path = project_dir / f"catalog{suffix}"
-        self._archive_workflow_dir(source, archive_path, nested=True)
-        data = archive_path.read_bytes()
-        url = f"https://example.com/align-wf{suffix}"
-        info = {
-            "id": "align-wf",
-            "name": "Align Workflow",
-            "version": "1.0.0",
-            "url": url,
-            "sha256": hashlib.sha256(data).hexdigest(),
-            "_install_allowed": True,
-            "_catalog_name": "test",
-        }
-
-        with patch.object(
-            WorkflowCatalog,
-            "get_workflow_info",
-            return_value=info,
-        ), patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda *_args, **_kwargs: self._FakeResponse(data, url),
-        ):
-            result = CliRunner().invoke(app, ["workflow", "add", "align-wf"])
-
-        assert result.exit_code == 0, result.output
-        installed = project_dir / ".specify" / "workflows" / "align-wf"
-        assert (installed / "assets" / "catalog.txt").read_text() == "catalog\n"
-
-    @pytest.mark.parametrize("suffix", [".zip", ".tar.gz", ".tgz"])
-    def test_add_catalog_sniffs_suffixless_archive(
-        self, project_dir, monkeypatch, suffix
-    ):
-        import hashlib
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        monkeypatch.chdir(project_dir)
-        source = self._write_workflow_dir(project_dir)
-        (source / "assets").mkdir()
-        (source / "assets" / "sniffed.txt").write_text("catalog sniffed\n")
-        archive_path = project_dir / f"catalog{suffix}"
-        self._archive_workflow_dir(source, archive_path, nested=True)
-        data = archive_path.read_bytes()
-        url = "https://example.com/assets/67890"
-        info = {
-            "id": "align-wf",
-            "name": "Align Workflow",
-            "version": "1.0.0",
-            "url": url,
-            "sha256": hashlib.sha256(data).hexdigest(),
-            "_install_allowed": True,
-            "_catalog_name": "test",
-        }
-
-        with patch.object(
-            WorkflowCatalog,
-            "get_workflow_info",
-            return_value=info,
-        ), patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda *_args, **_kwargs: self._FakeResponse(
-                data,
-                url,
-                {"Content-Type": "application/octet-stream"},
-            ),
-        ):
-            result = CliRunner().invoke(app, ["workflow", "add", "align-wf"])
-
-        assert result.exit_code == 0, result.output
-        installed = project_dir / ".specify" / "workflows" / "align-wf"
-        assert (
-            installed / "assets" / "sniffed.txt"
-        ).read_text() == "catalog sniffed\n"
-
-    def test_package_registry_failure_restores_before_failed_cleanup(
-        self, project_dir, monkeypatch
-    ):
-        import shutil
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        source = self._write_workflow_dir(project_dir, version="1.0.0")
-        (source / "assets").mkdir()
-        (source / "assets" / "version.txt").write_text("old\n")
-        runner = CliRunner()
-        first = runner.invoke(app, ["workflow", "add", str(source)])
-        assert first.exit_code == 0, first.output
-
-        (source / "workflow.yml").write_text(
-            self.WORKFLOW_YAML.format(version="2.0.0"),
-            encoding="utf-8",
-        )
-        (source / "assets" / "version.txt").write_text("new\n")
-        real_rmtree = shutil.rmtree
-
-        def fail_failed_package_cleanup(path, *args, **kwargs):
-            if ".failed-" in Path(path).name:
-                raise OSError("cleanup denied")
-            return real_rmtree(path, *args, **kwargs)
-
-        with patch.object(
-            WorkflowRegistry,
-            "add",
-            side_effect=OSError("registry save failed"),
-        ), patch(
-            "shutil.rmtree",
-            side_effect=fail_failed_package_cleanup,
-        ):
-            result = runner.invoke(app, ["workflow", "add", str(source)])
-
-        assert result.exit_code == 1, result.output
-        installed = project_dir / ".specify" / "workflows" / "align-wf"
-        assert "1.0.0" in (installed / "workflow.yml").read_text()
-        assert (installed / "assets" / "version.txt").read_text() == "old\n"
-        assert "registry save failed" in result.output
-        assert "cleanup denied" in result.output
-
-    def test_add_from_url_temp_cleanup_failure_after_success_still_exits_zero(
-        self, project_dir, monkeypatch
-    ):
-        """An OSError while deleting the --from download's temp file after
-        _validate_and_install_local() has already committed the file and
-        registry entry must not surface as an unhandled failure for an
-        install that already succeeded -- it must be a warning, exit 0."""
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
-        runner = CliRunner()
-
-        import tempfile
-
-        real_unlink = Path.unlink
-
-        def unlink_boom(self_path, *args, **kwargs):
-            if self_path.suffix == ".yml" and self_path.parent == Path(tempfile.gettempdir()):
-                raise OSError("permission denied")
-            return real_unlink(self_path, *args, **kwargs)
-
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
-        ), pytest.MonkeyPatch.context() as mp:
-            mp.setattr(Path, "unlink", unlink_boom)
-            result = runner.invoke(
-                app,
-                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
-                input="y\n",
-            )
-
-        assert result.exit_code == 0, result.output
-        assert "Warning" in result.output
-        assert "permissiondenied" in "".join(result.output.split())
-        assert WorkflowRegistry(project_dir).is_installed("align-wf")
-
-    def test_add_from_url_id_mismatch_errors(self, project_dir, monkeypatch):
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
-        runner = CliRunner()
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
-        ):
-            result = runner.invoke(
-                app,
-                ["workflow", "add", "other-id", "--from", "https://example.com/workflow.yml"],
-                input="y\n",
-            )
-        assert result.exit_code != 0
-        assert "does not match" in result.output
-        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
-
-    def test_add_from_empty_url_rejected_not_catalog_fallback(self, project_dir, monkeypatch):
-        """--from "" must fail URL validation, not silently install from the catalog."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "add", "align-wf", "--from", ""])
-        assert result.exit_code != 0
-        assert "HTTPS" in result.output
-        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
-
-    def test_add_from_url_non_https_redirect_escapes_rich_markup(self, project_dir, monkeypatch):
-        """A redirect to a non-HTTPS IPv6 literal (legally bracketed) must not be parsed as Rich markup."""
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        redirected_url = "http://[2001:db8::1]/workflow.yml"
-        runner = CliRunner()
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(b"", redirected_url),
-        ):
-            result = runner.invoke(
-                app,
-                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
-                input="y\n",
-            )
-        assert result.exit_code != 0
-        assert redirected_url in result.output
-
-    def test_add_from_rejects_invalid_source_id_without_fetch(self, project_dir, monkeypatch):
-        """--from with a non-workflow-id source (URL, path, uppercase) fails before any network fetch."""
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        calls: list[str] = []
-
-        def _fake_open(url, timeout=None, extra_headers=None, redirect_validator=None):
-            calls.append(url)
-            raise AssertionError(f"network fetch attempted: {url}")
-
-        runner = CliRunner()
-        with patch("specify_cli.authentication.http.open_url", side_effect=_fake_open):
-            for bad_source in ("https://x/y.yml", "./local.yml", "BadCase"):
-                result = runner.invoke(
-                    app,
-                    ["workflow", "add", bad_source, "--from", "https://example.com/workflow.yml"],
-                )
-                assert result.exit_code != 0
-                assert "Invalid workflow ID" in result.output
-        assert calls == []
-
-    # -- search --author -----------------------------------------------
-
-    def test_search_author_filters(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        monkeypatch.chdir(project_dir)
-        workflows = {
-            "wf-a": {"name": "Workflow A", "version": "1.0.0", "description": "", "author": "alice"},
-            "wf-b": {"name": "Workflow B", "version": "1.0.0", "description": "", "author": "bob"},
-        }
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "_get_merged_workflows",
-            lambda self, force_refresh=False: {k: dict(v) for k, v in workflows.items()},
-        )
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "search", "--author", "Alice"])
-        assert result.exit_code == 0, result.output
-        assert "wf-a" in result.output
-        assert "wf-b" not in result.output
-
-    def test_search_escapes_rich_markup_in_catalog_fields(self, project_dir, monkeypatch):
-        """Catalog-derived name/description/tags must not be parsed as Rich markup."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        monkeypatch.chdir(project_dir)
-        workflows = {
-            "wf-a": {
-                "name": "Bracket [Search]",
-                "version": "1.0.0",
-                "description": "desc [with] brackets",
-                "tags": ["tag[1]", "tag2"],
-            },
-        }
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "_get_merged_workflows",
-            lambda self, force_refresh=False: {k: dict(v) for k, v in workflows.items()},
-        )
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "search"])
-        assert result.exit_code == 0, result.output
-        assert "Bracket [Search]" in result.output
-        assert "desc [with] brackets" in result.output
-        assert "tag[1]" in result.output
-
-    def test_search_and_info_tolerate_non_list_tags(self, project_dir, monkeypatch):
-        """A scalar ``tags:`` value must not crash the search/info display.
-
-        ``WorkflowCatalog.search`` guards its tag *filter* with
-        ``isinstance(raw_tags, list)``, but the ``workflow search`` and
-        ``workflow info`` display paths only tested truthiness before
-        iterating. ``tags: 5`` is truthy and not iterable, so both raised
-        ``TypeError: 'int' object is not iterable``.
-        """
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        monkeypatch.chdir(project_dir)
-        workflows = {
-            "wf-a": {
-                "name": "Workflow A",
-                "version": "1.0.0",
-                "description": "desc",
-                "tags": 5,
-            },
-        }
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "_get_merged_workflows",
-            lambda self, force_refresh=False: {k: dict(v) for k, v in workflows.items()},
-        )
-        runner = CliRunner()
-        searched = runner.invoke(app, ["workflow", "search"])
-        info = runner.invoke(app, ["workflow", "info", "wf-a"])
-
-        assert searched.exit_code == 0, searched.output
-        assert "Workflow A" in searched.output
-        assert "Tags:" not in searched.output
-
-        assert info.exit_code == 0, info.output
-        assert "Tags:" not in info.output
-
-    def test_catalog_list_escapes_rich_markup(self, project_dir, monkeypatch):
-        """User-editable catalog name/url/description must not be parsed as Rich markup."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        monkeypatch.chdir(project_dir)
-        configs = [
-            {
-                "name": "Bracket [Catalog]",
-                "url": "https://example.com/[cat].json",
-                "description": "desc [with] brackets",
-                "install_allowed": True,
-            },
-        ]
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_catalog_configs",
-            lambda self: [dict(c) for c in configs],
-        )
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "catalog", "list"])
-        assert result.exit_code == 0, result.output
-        assert "Bracket [Catalog]" in result.output
-        assert "https://example.com/[cat].json" in result.output
-        assert "desc [with] brackets" in result.output
-
-    def test_step_catalog_list_escapes_rich_markup(self, project_dir, monkeypatch):
-        """User-editable step-catalog name/url/description must not be parsed as Rich markup."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import StepCatalog
-
-        monkeypatch.chdir(project_dir)
-        configs = [
-            {
-                "name": "Bracket [Step]",
-                "url": "https://example.com/[step].json",
-                "description": "step [with] brackets",
-                "install_allowed": True,
-            },
-        ]
-        monkeypatch.setattr(
-            StepCatalog,
-            "get_catalog_configs",
-            lambda self: [dict(c) for c in configs],
-        )
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "step", "catalog", "list"])
-        assert result.exit_code == 0, result.output
-        assert "Bracket [Step]" in result.output
-        assert "https://example.com/[step].json" in result.output
-        assert "step [with] brackets" in result.output
-
-    # -- update ----------------------------------------------------------
-
-    def test_update_no_workflows_installed(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "update"])
-        assert result.exit_code == 0, result.output
-        assert "No workflows installed" in result.output
-
-    def test_update_not_installed_errors(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "update", "ghost"])
-        assert result.exit_code != 0
-        assert "not installed" in result.output
-
-    def test_update_skips_non_catalog_sources(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        self._install_dev(runner, app, project_dir)
-        result = runner.invoke(app, ["workflow", "update"])
-        assert result.exit_code == 0, result.output
-        assert "re-add to update" in result.output
-        # Every target was skipped — must not claim everything is up to date.
-        assert "No workflows were eligible for update" in result.output
-        assert "up to date!" not in result.output
-
-    def test_update_skip_message_accurate_for_bundled_source(self, project_dir, monkeypatch):
-        """A workflow registered with source "bundled" (e.g. the speckit
-        workflow installed by `specify init`) was never installed from a
-        local path or URL; the skip message must not claim otherwise."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        registry = WorkflowRegistry(project_dir)
-        registry.add(
-            "speckit",
-            {"name": "Speckit", "version": "1.0.0", "source": "bundled"},
-        )
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "update"])
-        assert result.exit_code == 0, result.output
-        assert "local path or URL" not in result.output
-        assert "re-add to update" in result.output
 
     def test_registry_add_rolls_back_memory_on_save_failure(self, project_dir, monkeypatch):
         from specify_cli.workflows.catalog import WorkflowRegistry
@@ -14261,7 +11411,7 @@ steps:
         """StepRegistry.add must treat a corrupted non-dict existing entry as
         absent rather than crash on existing.get() (parity with
         WorkflowRegistry.add)."""
-        from specify_cli.workflows.catalog import StepRegistry
+        from specify_cli.workflows.step.catalog import StepRegistry
 
         registry = StepRegistry(project_dir)
         registry.data["steps"]["my-step"] = "corrupted"
@@ -14405,1570 +11555,6 @@ steps:
         assert not registry.registry_path.is_symlink()
         assert WorkflowRegistry(project_dir).is_installed("first-wf")
 
-    def test_add_dev_dir_with_workflow_yml_directory_errors_cleanly(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        dev_dir = project_dir / "dev-wf"
-        (dev_dir / "workflow.yml").mkdir(parents=True)
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "add", "--dev", str(dev_dir)])
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "No workflow.yml found" in result.output
-
-    @pytest.mark.parametrize("mode", ["dev", "local", "from_url"])
-    def test_add_save_failure_leaves_no_orphan_directory(self, project_dir, monkeypatch, mode):
-        """A registry.add() save failure during a fresh install must not leave
-        an orphaned workflow directory on disk, and must fail with a clean
-        escaped message instead of a raw OSError traceback. Shared by --dev,
-        the plain local-path fallback, and --from since all three funnel
-        through _validate_and_install_local's single install choke point."""
-        import contextlib
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-
-        def boom(self):
-            raise OSError("disk full")
-
-        if mode == "from_url":
-            data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
-            args = ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"]
-            url_patch = patch(
-                "specify_cli.authentication.http.open_url",
-                side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
-            )
-        else:
-            src = self._write_workflow_dir(project_dir)
-            args = ["workflow", "add", str(src)] + (["--dev"] if mode == "dev" else [])
-            url_patch = contextlib.nullcontext()
-
-        with url_patch, pytest.MonkeyPatch.context() as mp:
-            mp.setattr(WorkflowRegistry, "save", boom)
-            result = runner.invoke(
-                app, args, input="y\n" if mode == "from_url" else None
-            )
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert result.output.strip() != ""
-        dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
-        assert not dest_dir.exists()
-        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
-
-    @pytest.mark.parametrize("mode", ["dev", "catalog"])
-    def test_add_non_json_description_rolls_back_transaction(
-        self, project_dir, monkeypatch, mode
-    ):
-        import contextlib
-        from unittest.mock import patch
-
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        data = self.WORKFLOW_YAML.format(version="1.0.0").replace(
-            'description: "CLI alignment test workflow"',
-            "description: 2026-01-02",
-        ).encode()
-
-        if mode == "dev":
-            source = project_dir / "dated-description"
-            source.mkdir()
-            (source / "workflow.yml").write_bytes(data)
-            args = ["workflow", "add", str(source), "--dev"]
-            download = contextlib.nullcontext()
-        else:
-            monkeypatch.setattr(
-                WorkflowCatalog,
-                "get_workflow_info",
-                lambda self, wid: {
-                    "id": wid,
-                    "name": "Align Workflow",
-                    "version": "1.0.0",
-                    "url": "https://example.com/workflow.yml",
-                    "_install_allowed": True,
-                    "_catalog_name": "test-catalog",
-                },
-            )
-            args = ["workflow", "add", "align-wf"]
-            download = patch(
-                "specify_cli.authentication.http.open_url",
-                side_effect=lambda url, timeout=None, extra_headers=None,
-                redirect_validator=None: self._FakeResponse(data, url),
-            )
-
-        with download:
-            result = CliRunner().invoke(app, args)
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "Failed to update workflow registry" in result.output
-        dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
-        assert not dest_dir.exists()
-        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
-
-    @pytest.mark.parametrize("mode", ["dev", "local", "from_url"])
-    def test_add_fresh_install_mkstemp_failure_leaves_no_orphan_directory(
-        self, project_dir, monkeypatch, mode
-    ):
-        """_stage_workflow_file() does mkdir(dest_dir) then mkstemp() inside
-        it. For a fresh install (no prior directory), if mkdir succeeds but
-        mkstemp then fails (disk full/EMFILE/quota), the freshly-created
-        empty dest_dir must not be left orphaned -- it must be removed, and
-        the original mkstemp error must still be reported cleanly."""
-        import contextlib
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-
-        def boom(*args, **kwargs):
-            raise OSError("disk full")
-
-        if mode == "from_url":
-            data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
-            args = ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"]
-            url_patch = patch(
-                "specify_cli.authentication.http.open_url",
-                side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
-            )
-        else:
-            src = self._write_workflow_dir(project_dir)
-            args = ["workflow", "add", str(src)] + (["--dev"] if mode == "dev" else [])
-            url_patch = contextlib.nullcontext()
-
-        with url_patch, pytest.MonkeyPatch.context() as mp:
-            mp.setattr("tempfile.mkstemp", boom)
-            result = runner.invoke(
-                app, args, input="y\n" if mode == "from_url" else None
-            )
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert result.output.strip() != ""
-        dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
-        assert not dest_dir.exists(), "fresh-install dest_dir left orphaned after mkstemp failure"
-        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
-
-    def test_add_reinstall_mkstemp_failure_preserves_preexisting_directory(
-        self, project_dir, monkeypatch
-    ):
-        """A pre-existing (reinstall) dest_dir must never be removed by the
-        mkstemp-failure cleanup -- only a directory _stage_workflow_file
-        itself just created."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        src = self._install_dev(runner, app, project_dir)
-        installed_yaml = project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
-        original_bytes = installed_yaml.read_bytes()
-        original_registry_entry = WorkflowRegistry(project_dir).get("align-wf")
-
-        (src / "workflow.yml").write_text(
-            self.WORKFLOW_YAML.format(version="2.0.0"), encoding="utf-8"
-        )
-
-        def boom(*args, **kwargs):
-            raise OSError("disk full")
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("tempfile.mkstemp", boom)
-            result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert result.output.strip() != ""
-        assert installed_yaml.parent.is_dir()
-        assert installed_yaml.read_bytes() == original_bytes
-        assert WorkflowRegistry(project_dir).get("align-wf") == original_registry_entry
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    @pytest.mark.parametrize("mode", ["dev", "catalog"])
-    def test_stage_write_rejects_swapped_symlink(
-        self, project_dir, monkeypatch, mode
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows import _commands
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        monkeypatch.chdir(project_dir)
-        victim = project_dir / "victim.txt"
-        victim.write_text("untouched", encoding="utf-8")
-
-        real_stage = _commands._stage_workflow_file
-
-        def raced_stage(*args, **kwargs):
-            staged = real_stage(*args, **kwargs)
-            staged_path = getattr(staged, "path", staged)
-            staged_path.unlink()
-            staged_path.symlink_to(victim)
-            return staged
-
-        monkeypatch.setattr(_commands, "_stage_workflow_file", raced_stage)
-
-        if mode == "dev":
-            source = self._write_workflow_dir(project_dir)
-            args = ["workflow", "add", str(source), "--dev"]
-        else:
-            monkeypatch.setattr(
-                WorkflowCatalog,
-                "get_workflow_info",
-                lambda self, wid: {
-                    "id": wid,
-                    "name": "Align Workflow",
-                    "version": "1.0.0",
-                    "url": "https://example.com/workflow.yml",
-                    "_install_allowed": True,
-                    "_catalog_name": "test-catalog",
-                },
-            )
-            data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
-            monkeypatch.setattr(
-                "specify_cli.authentication.http.open_url",
-                lambda url, timeout=None, extra_headers=None,
-                redirect_validator=None: self._FakeResponse(data, url),
-            )
-            args = ["workflow", "add", "align-wf"]
-
-        result = CliRunner().invoke(app, args)
-
-        assert result.exit_code != 0
-        assert victim.read_text(encoding="utf-8") == "untouched"
-
-    def test_local_install_writes_the_same_bytes_it_validates(
-        self, project_dir, monkeypatch
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows import _commands
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        source = self._write_workflow_dir(project_dir)
-        source_file = source / "workflow.yml"
-        validated_content = source_file.read_text(encoding="utf-8")
-        replacement_content = self.WORKFLOW_YAML.format(version="9.9.9")
-
-        real_stage = _commands._stage_workflow_file
-
-        def replace_source_after_validation(*args, **kwargs):
-            staged = real_stage(*args, **kwargs)
-            source_file.write_text(replacement_content, encoding="utf-8")
-            return staged
-
-        monkeypatch.setattr(
-            _commands,
-            "_stage_workflow_file",
-            replace_source_after_validation,
-        )
-
-        result = CliRunner().invoke(
-            app, ["workflow", "add", str(source), "--dev"]
-        )
-
-        assert result.exit_code == 0, result.output
-        installed_file = (
-            project_dir
-            / ".specify"
-            / "workflows"
-            / "align-wf"
-            / "workflow.yml"
-        )
-        assert installed_file.read_text(encoding="utf-8") == validated_content
-        assert WorkflowRegistry(project_dir).get("align-wf")["version"] == "1.0.0"
-
-    def test_add_fresh_install_staged_discard_cleanup_failure_reports_warning(
-        self, project_dir, monkeypatch
-    ):
-        """A genuine fresh-directory rmdir failure must be reported while
-        the original copy failure remains the primary error."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows import _commands
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        src = self._write_workflow_dir(project_dir)
-
-        def copy_boom(self, data):
-            raise OSError("disk full")
-
-        real_rmdir = Path.rmdir
-
-        def rmdir_boom(path):
-            if path.name == "align-wf":
-                raise OSError("cleanup denied")
-            return real_rmdir(path)
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(_commands._StagedWorkflowFile, "write_bytes", copy_boom)
-            mp.setattr(Path, "rmdir", rmdir_boom)
-            result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        # Original install error remains present and primary.
-        assert "disk full" in result.output
-        # Cleanup failure is now reported, not silently swallowed.
-        assert "cleanup denied" in result.output
-        assert "Warning" in result.output
-        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
-
-    def test_add_fresh_install_registry_rollback_cleanup_failure_reports_warning(
-        self, project_dir, monkeypatch
-    ):
-        """A fresh-install rollback directory-removal failure must be
-        reported while the registry-update error remains primary."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        src = self._write_workflow_dir(project_dir)
-
-        def save_boom(self):
-            raise OSError("registry disk full")
-
-        real_rmdir = Path.rmdir
-
-        def rmdir_boom(path):
-            if path.name == "align-wf":
-                raise OSError("cleanup denied")
-            return real_rmdir(path)
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(WorkflowRegistry, "save", save_boom)
-            mp.setattr(Path, "rmdir", rmdir_boom)
-            result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        # Original registry-update error remains present and primary.
-        assert "registry disk full" in result.output
-        # Cleanup failure is now reported, not silently swallowed.
-        assert "cleanup denied" in result.output
-        assert "Warning" in result.output
-
-    def test_add_dev_reinstall_copy_failure_leaves_prior_file_untouched(
-        self, project_dir, monkeypatch
-    ):
-        """A staged descriptor-copy failure cannot touch the prior installed
-        workflow or leave a staging file behind."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows import _commands
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        src = self._install_dev(runner, app, project_dir)
-        installed_yaml = project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
-        original_bytes = installed_yaml.read_bytes()
-        original_registry_entry = WorkflowRegistry(project_dir).get("align-wf")
-
-        # Point --dev at a new version of the same workflow to trigger a
-        # reinstall (overwrite) rather than a fresh install.
-        (src / "workflow.yml").write_text(
-            self.WORKFLOW_YAML.format(version="2.0.0"), encoding="utf-8"
-        )
-
-        def boom(staged, data):
-            # Simulate a truncating partial write followed by an OSError on
-            # the reserved staging inode, mirroring disk exhaustion.
-            os.ftruncate(staged.fd, 0)
-            raise OSError("disk full")
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(_commands._StagedWorkflowFile, "write_bytes", boom)
-            result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert result.output.strip() != ""
-        assert installed_yaml.read_bytes() == original_bytes
-        assert WorkflowRegistry(project_dir).get("align-wf") == original_registry_entry
-        # No orphaned staging file left behind in the workflow directory.
-        leftovers = [p.name for p in installed_yaml.parent.iterdir() if p.name != "workflow.yml"]
-        assert leftovers == []
-
-    def test_add_dev_successful_reinstall_leaves_no_backup_file(
-        self, project_dir, monkeypatch
-    ):
-        """Once registry.add() succeeds, the unique rollback backup must be
-        discarded rather than left as a permanent orphan sibling."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        src = self._install_dev(runner, app, project_dir)
-        workflow_dir = project_dir / ".specify" / "workflows" / "align-wf"
-
-        # Reinstall (overwrite) with a new version -- a successful reinstall,
-        # not a failure path.
-        (src / "workflow.yml").write_text(
-            self.WORKFLOW_YAML.format(version="2.0.0"), encoding="utf-8"
-        )
-        result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
-
-        assert result.exit_code == 0, result.output
-        registry = WorkflowRegistry(project_dir)
-        assert registry.is_installed("align-wf")
-        assert registry.get("align-wf")["version"] == "2.0.0"
-        assert (workflow_dir / "workflow.yml").read_text(encoding="utf-8") == (
-            self.WORKFLOW_YAML.format(version="2.0.0")
-        )
-        leftovers = [p.name for p in workflow_dir.iterdir() if p.name != "workflow.yml"]
-        assert leftovers == [], f"orphan sibling(s) left behind: {leftovers}"
-
-    def test_add_dev_successful_reinstall_backup_cleanup_failure_still_succeeds(
-        self, project_dir, monkeypatch
-    ):
-        """A failure to clean up the now-unneeded backup file after a
-        successful registry.add() must not turn the already-successful
-        install into a reported failure: it must be a warning (exit 0),
-        consistent with workflow_remove's post-commit cleanup semantics."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        src = self._install_dev(runner, app, project_dir)
-
-        (src / "workflow.yml").write_text(
-            self.WORKFLOW_YAML.format(version="2.0.0"), encoding="utf-8"
-        )
-
-        real_unlink = Path.unlink
-
-        def unlink_boom(self_path, *args, **kwargs):
-            if self_path.name.endswith(".bak"):
-                raise OSError("permission denied")
-            return real_unlink(self_path, *args, **kwargs)
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(Path, "unlink", unlink_boom)
-            result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
-
-        assert result.exit_code == 0, result.output
-        assert "Warning" in result.output
-        assert "permissiondenied" in "".join(result.output.split())
-        registry = WorkflowRegistry(project_dir)
-        assert registry.is_installed("align-wf")
-        assert registry.get("align-wf")["version"] == "2.0.0"
-
-    def test_add_dev_reinstall_restore_failure_reports_warning_and_original_error(
-        self, project_dir, monkeypatch
-    ):
-        """The prior file is now restored via an atomic rename (not a
-        content rewrite) when registry.add() fails on a reinstall. If that
-        restore rename itself also fails (e.g. a transient FS issue), it
-        must not silently claim success or crash with a raw traceback: it
-        must report a clear warning about the restore failure in addition
-        to the original clean registry error."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        src = self._install_dev(runner, app, project_dir)
-
-        (src / "workflow.yml").write_text(
-            self.WORKFLOW_YAML.format(version="2.0.0"), encoding="utf-8"
-        )
-
-        def save_boom(self):
-            raise OSError("disk full")
-
-        real_replace = os.replace
-        calls = {"n": 0}
-
-        def replace_boom(src_path, dst_path):
-            # The commit swap for a reinstall makes exactly two os.replace
-            # calls (backup-aside, then staged-into-dest); let both succeed
-            # and only fail the third call -- the post-registry-failure
-            # restore-back rename.
-            calls["n"] += 1
-            if calls["n"] <= 2:
-                return real_replace(src_path, dst_path)
-            raise OSError("permission denied")
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(WorkflowRegistry, "save", save_boom)
-            mp.setattr(os, "replace", replace_boom)
-            result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
-
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        output_compact = "".join(result.output.split())
-        assert "Warning" in result.output
-        assert "diskfull" in output_compact
-        assert "permissiondenied" in output_compact
-
-    def test_add_dev_fresh_install_into_preexisting_empty_dir_cleans_new_file(
-        self, project_dir, monkeypatch
-    ):
-        """When the destination directory already exists but has no
-        workflow.yml (e.g. an empty dir left over from elsewhere), a later
-        registry.add() failure must remove the newly copied file -- the
-        rollback previously did nothing in this case (existed_before=True
-        with no backup bytes), leaving the new file behind -- while leaving
-        the pre-existing directory itself intact."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        src = self._write_workflow_dir(project_dir)
-        dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
-        dest_dir.mkdir(parents=True)  # pre-existing, but empty: no workflow.yml
-
-        def boom(self, *args, **kwargs):
-            raise OSError("disk full")
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(WorkflowRegistry, "add", boom)
-            result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
-
-        assert result.exit_code != 0
-        assert result.output.strip() != ""
-        assert dest_dir.is_dir()
-        assert not (dest_dir / "workflow.yml").exists()
-
-    def test_add_catalog_save_failure_leaves_no_orphan_directory(self, project_dir, monkeypatch):
-        """Same guarantee as the local-install paths, but for a fresh catalog
-        install: a registry.add() failure must clean up the freshly-downloaded
-        directory and fail with a clean escaped message."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "1.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
-
-        def boom(self):
-            raise OSError("disk full")
-
-        runner = CliRunner()
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "specify_cli.authentication.http.open_url",
-                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
-            )
-            mp.setattr(WorkflowRegistry, "save", boom)
-            result = runner.invoke(app, ["workflow", "add", "align-wf"])
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert result.output.strip() != ""
-        dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
-        assert not dest_dir.exists()
-        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
-
-    def test_add_catalog_fresh_install_mkstemp_failure_leaves_no_orphan_directory(
-        self, project_dir, monkeypatch
-    ):
-        """Same guarantee as the local-install fresh-install case, but for a
-        fresh catalog install: if _stage_workflow_file's mkdir succeeds but
-        its mkstemp then fails, the freshly-created empty directory must not
-        be left orphaned."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "1.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
-
-        def boom(*args, **kwargs):
-            raise OSError("disk full")
-
-        runner = CliRunner()
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "specify_cli.authentication.http.open_url",
-                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
-            )
-            mp.setattr("tempfile.mkstemp", boom)
-            result = runner.invoke(app, ["workflow", "add", "align-wf"])
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert result.output.strip() != ""
-        dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
-        assert not dest_dir.exists(), "fresh-install dest_dir left orphaned after mkstemp failure"
-        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
-
-    def test_add_catalog_rejects_oversized_content_length(self, project_dir, monkeypatch):
-        """Catalog installs must share the same size cap as --from: a
-        response that declares an oversized Content-Length is rejected
-        before its body is read into memory, and no orphan directory or
-        registry mutation is left behind."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows import _commands as wf_commands
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(wf_commands, "_MAX_WORKFLOW_YAML_BYTES", 100)
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "1.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        small_body = b"id: align-wf\n"  # actual body is small; header lies
-        runner = CliRunner()
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "specify_cli.authentication.http.open_url",
-                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                    small_body, url, headers={"Content-Length": "1000"}
-                ),
-            )
-            result = runner.invoke(app, ["workflow", "add", "align-wf"])
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "exceedingthe100-byteworkflowsizelimit" in "".join(result.output.split())
-        dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
-        assert not dest_dir.exists()
-        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
-
-    def test_add_catalog_rejects_oversized_streamed_body_without_content_length(
-        self, project_dir, monkeypatch
-    ):
-        """Catalog installs must also cap actual streamed bytes when
-        Content-Length is absent or understated, leaving no orphan
-        directory or registry mutation behind."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows import _commands as wf_commands
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(wf_commands, "_MAX_WORKFLOW_YAML_BYTES", 100)
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "1.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        oversized_body = b"x" * 500  # no Content-Length header at all
-        runner = CliRunner()
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "specify_cli.authentication.http.open_url",
-                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                    oversized_body, url
-                ),
-            )
-            result = runner.invoke(app, ["workflow", "add", "align-wf"])
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "exceedsthe100-byteworkflowsizelimit" in "".join(result.output.split())
-        dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
-        assert not dest_dir.exists()
-        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
-
-    def test_add_catalog_reinstall_save_failure_restores_prior_file(self, project_dir, monkeypatch):
-        """Re-adding an already-installed catalog workflow downloads the new
-        version over the existing install directory. If registry.add() then
-        fails to save, the prior working workflow.yml must be restored
-        byte-for-byte (not left overwritten with the new download, and not
-        deleted like a fresh install) and the registry must remain valid and
-        still point at the original version -- the update path's caller has
-        an outer backup/restore for this, but plain `workflow add` does not,
-        so _install_workflow_from_catalog must handle it itself."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "1.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        source_data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
-        runner = CliRunner()
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "specify_cli.authentication.http.open_url",
-                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                    source_data, url
-                ),
-            )
-            result = runner.invoke(app, ["workflow", "add", "align-wf"])
-        assert result.exit_code == 0, result.output
-
-        dest_file = project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
-        original_data = dest_file.read_bytes()
-
-        new_data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
-
-        def boom(self):
-            raise OSError("disk full")
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "specify_cli.authentication.http.open_url",
-                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                    new_data, url
-                ),
-            )
-            mp.setattr(WorkflowRegistry, "save", boom)
-            result = runner.invoke(app, ["workflow", "add", "align-wf"])
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert result.output.strip() != ""
-        # The prior working install must survive untouched, byte-for-byte.
-        assert dest_file.read_bytes() == original_data
-        registry = WorkflowRegistry(project_dir)
-        assert registry.is_installed("align-wf")
-        assert registry.get("align-wf")["version"] == "1.0.0"
-
-    def test_add_catalog_successful_reinstall_leaves_no_backup_file(
-        self, project_dir, monkeypatch
-    ):
-        """Same orphan-backup gap as the local-install path: a successful
-        catalog reinstall must not leave its unique backup behind once
-        registry.add() durably succeeds."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "1.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        original_data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
-        runner = CliRunner()
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "specify_cli.authentication.http.open_url",
-                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                    original_data, url
-                ),
-            )
-            result = runner.invoke(app, ["workflow", "add", "align-wf"])
-        assert result.exit_code == 0, result.output
-
-        new_data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "specify_cli.authentication.http.open_url",
-                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                    new_data, url
-                ),
-            )
-            result = runner.invoke(app, ["workflow", "add", "align-wf"])
-
-        assert result.exit_code == 0, result.output
-        workflow_dir = project_dir / ".specify" / "workflows" / "align-wf"
-        registry = WorkflowRegistry(project_dir)
-        assert registry.is_installed("align-wf")
-        assert registry.get("align-wf")["version"] == "2.0.0"
-        assert (workflow_dir / "workflow.yml").read_bytes() == new_data
-        leftovers = [p.name for p in workflow_dir.iterdir() if p.name != "workflow.yml"]
-        assert leftovers == [], f"orphan sibling(s) left behind: {leftovers}"
-
-    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
-    def test_add_catalog_fresh_install_uses_project_file_mode(
-        self, project_dir, monkeypatch
-    ):
-        import stat
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "1.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
-
-        previous_umask = os.umask(0o022)
-        try:
-            with pytest.MonkeyPatch.context() as mp:
-                mp.setattr(
-                    "specify_cli.authentication.http.open_url",
-                    lambda url, timeout=None, extra_headers=None,
-                    redirect_validator=None: self._FakeResponse(data, url),
-                )
-                result = CliRunner().invoke(
-                    app, ["workflow", "add", "align-wf"]
-                )
-        finally:
-            os.umask(previous_umask)
-
-        assert result.exit_code == 0, result.output
-        workflow_file = (
-            project_dir
-            / ".specify"
-            / "workflows"
-            / "align-wf"
-            / "workflow.yml"
-        )
-        assert stat.S_IMODE(workflow_file.stat().st_mode) == 0o644
-
-    def test_concurrent_catalog_reinstalls_keep_file_and_registry_aligned(
-        self, project_dir, monkeypatch
-    ):
-        import threading
-        from specify_cli.workflows import _commands
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-        from specify_cli.workflows.engine import WorkflowDefinition
-
-        workflows_dir = project_dir / ".specify" / "workflows"
-        workflow_file = workflows_dir / "align-wf" / "workflow.yml"
-        workflow_file.parent.mkdir(parents=True)
-        workflow_file.write_text(
-            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
-        )
-        WorkflowRegistry(project_dir).add(
-            "align-wf",
-            {
-                "name": "Align Workflow",
-                "version": "1.0.0",
-                "source": "catalog",
-            },
-        )
-
-        versions = {"install-a": "2.0.0", "install-b": "3.0.0"}
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": versions[threading.current_thread().name],
-                "url": (
-                    "https://example.com/"
-                    f"{versions[threading.current_thread().name]}.yml"
-                ),
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        monkeypatch.setattr(
-            "specify_cli.authentication.http.open_url",
-            lambda url, timeout=None, extra_headers=None,
-            redirect_validator=None: self._FakeResponse(
-                self.WORKFLOW_YAML.format(
-                    version=url.rsplit("/", 1)[-1].removesuffix(".yml")
-                ).encode(),
-                url,
-            ),
-        )
-
-        a_committed = threading.Event()
-        b_committed = threading.Event()
-        a_saving = threading.Event()
-        b_saved = threading.Event()
-        real_commit = _commands._commit_workflow_file
-        real_save = WorkflowRegistry.save
-
-        def coordinated_commit(*args, **kwargs):
-            backup = real_commit(*args, **kwargs)
-            if threading.current_thread().name == "install-a":
-                a_committed.set()
-                b_committed.wait(0.5)
-            else:
-                b_committed.set()
-            return backup
-
-        def coordinated_save(registry):
-            if threading.current_thread().name == "install-a":
-                a_saving.set()
-                b_saved.wait(0.5)
-                return real_save(registry)
-            assert a_saving.wait(2)
-            real_save(registry)
-            b_saved.set()
-
-        monkeypatch.setattr(
-            _commands, "_commit_workflow_file", coordinated_commit
-        )
-        monkeypatch.setattr(WorkflowRegistry, "save", coordinated_save)
-
-        errors = []
-
-        def install():
-            try:
-                _commands._install_workflow_from_catalog(
-                    project_dir,
-                    workflows_dir,
-                    "align-wf",
-                )
-            except BaseException as exc:
-                errors.append(exc)
-
-        first = threading.Thread(target=install, name="install-a")
-        second = threading.Thread(target=install, name="install-b")
-        first.start()
-        assert a_committed.wait(2)
-        second.start()
-        first.join(5)
-        second.join(5)
-
-        assert not first.is_alive()
-        assert not second.is_alive()
-        assert errors == []
-        file_version = WorkflowDefinition.from_yaml(workflow_file).version
-        registry_version = WorkflowRegistry(project_dir).get("align-wf")[
-            "version"
-        ]
-        assert file_version == registry_version
-
-    def test_precommit_discard_preserves_concurrent_install(self, project_dir):
-        from specify_cli.workflows import _commands
-
-        workflow_dir = (
-            project_dir / ".specify" / "workflows" / "concurrent-wf"
-        )
-        workflow_dir.mkdir(parents=True)
-        staged_file = workflow_dir / ".workflow.yml.staged.tmp"
-        staged_file.write_text("staged", encoding="utf-8")
-        committed_file = workflow_dir / "workflow.yml"
-        committed_file.write_text("committed", encoding="utf-8")
-
-        _commands._discard_staged_workflow_file(
-            staged_file, workflow_dir, existed_before=False
-        )
-
-        assert committed_file.read_text(encoding="utf-8") == "committed"
-        assert not staged_file.exists()
-
-    def test_fresh_install_rollback_preserves_concurrent_staged_file(
-        self, project_dir
-    ):
-        """A second installer stages before taking the transaction lock, so
-        the first installer's rollback must not recursively remove siblings."""
-        from specify_cli.workflows import _commands
-
-        workflow_dir = (
-            project_dir / ".specify" / "workflows" / "concurrent-wf"
-        )
-        workflow_dir.mkdir(parents=True)
-        committed_file = workflow_dir / "workflow.yml"
-        committed_file.write_text("failed install", encoding="utf-8")
-        concurrent_stage = workflow_dir / ".workflow.yml.concurrent.tmp"
-        concurrent_stage.write_text("next install", encoding="utf-8")
-
-        _commands._rollback_committed_workflow_file(
-            committed_file,
-            workflow_dir,
-            existed_before=False,
-            backup_file=None,
-        )
-
-        assert not committed_file.exists()
-        assert concurrent_stage.read_text(encoding="utf-8") == "next install"
-
-    def test_add_dev_registry_reopen_exit_discards_staged_file(
-        self, project_dir, monkeypatch
-    ):
-        import typer
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows import _commands
-
-        monkeypatch.chdir(project_dir)
-        source_dir = self._write_workflow_dir(project_dir)
-        real_open_registry = _commands._open_workflow_registry
-        calls = 0
-
-        def fail_transaction_reopen(root):
-            nonlocal calls
-            calls += 1
-            if calls == 2:
-                raise typer.Exit(1)
-            return real_open_registry(root)
-
-        monkeypatch.setattr(
-            _commands, "_open_workflow_registry", fail_transaction_reopen
-        )
-        result = CliRunner().invoke(
-            app, ["workflow", "add", str(source_dir), "--dev"]
-        )
-
-        assert result.exit_code != 0
-        assert not (
-            project_dir / ".specify" / "workflows" / "align-wf"
-        ).exists()
-
-    def test_add_catalog_registry_reopen_exit_discards_staged_file(
-        self, project_dir, monkeypatch
-    ):
-        import typer
-        from specify_cli.workflows import _commands
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        workflows_dir = project_dir / ".specify" / "workflows"
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "1.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
-        monkeypatch.setattr(
-            "specify_cli.authentication.http.open_url",
-            lambda url, timeout=None, extra_headers=None,
-            redirect_validator=None: self._FakeResponse(data, url),
-        )
-        monkeypatch.setattr(
-            _commands,
-            "_open_workflow_registry",
-            lambda _root: (_ for _ in ()).throw(typer.Exit(1)),
-        )
-
-        with pytest.raises(typer.Exit):
-            _commands._install_workflow_from_catalog(
-                project_dir,
-                workflows_dir,
-                "align-wf",
-            )
-
-        assert not (workflows_dir / "align-wf").exists()
-
-    def test_remove_serializes_with_concurrent_catalog_install(
-        self, project_dir, monkeypatch
-    ):
-        import threading
-        from specify_cli.workflows import _commands
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-        from specify_cli.workflows.engine import WorkflowDefinition
-
-        workflows_dir = project_dir / ".specify" / "workflows"
-        workflow_file = workflows_dir / "align-wf" / "workflow.yml"
-        workflow_file.parent.mkdir(parents=True)
-        workflow_file.write_text(
-            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
-        )
-        WorkflowRegistry(project_dir).add(
-            "align-wf",
-            {
-                "name": "Align Workflow",
-                "version": "1.0.0",
-                "source": "catalog",
-            },
-        )
-        monkeypatch.setattr(
-            _commands, "_require_specify_project", lambda: project_dir
-        )
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "2.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        new_data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
-        monkeypatch.setattr(
-            "specify_cli.authentication.http.open_url",
-            lambda url, timeout=None, extra_headers=None,
-            redirect_validator=None: self._FakeResponse(new_data, url),
-        )
-
-        removal_ready = threading.Event()
-        install_done = threading.Event()
-        real_remove = WorkflowRegistry.remove
-
-        def coordinated_remove(registry, workflow_id):
-            if threading.current_thread().name == "remove":
-                removal_ready.set()
-                install_done.wait(0.5)
-            return real_remove(registry, workflow_id)
-
-        monkeypatch.setattr(WorkflowRegistry, "remove", coordinated_remove)
-        errors = []
-
-        def remove():
-            try:
-                _commands.workflow_remove("align-wf")
-            except BaseException as exc:
-                errors.append(exc)
-
-        def install():
-            try:
-                _commands._install_workflow_from_catalog(
-                    project_dir,
-                    workflows_dir,
-                    "align-wf",
-                )
-            except BaseException as exc:
-                errors.append(exc)
-            finally:
-                install_done.set()
-
-        remove_thread = threading.Thread(target=remove, name="remove")
-        install_thread = threading.Thread(target=install, name="install")
-        remove_thread.start()
-        assert removal_ready.wait(2)
-        install_thread.start()
-        remove_thread.join(5)
-        install_thread.join(5)
-
-        assert not remove_thread.is_alive()
-        assert not install_thread.is_alive()
-        assert errors == []
-        assert WorkflowDefinition.from_yaml(workflow_file).version == "2.0.0"
-        metadata = WorkflowRegistry(project_dir).get("align-wf")
-        assert metadata["version"] == "2.0.0"
-
-    @pytest.mark.parametrize(
-        ("command_name", "initial_enabled", "expected_enabled"),
-        [
-            ("enable", False, True),
-            ("disable", True, False),
-        ],
-    )
-    def test_toggle_serializes_with_concurrent_catalog_update(
-        self,
-        project_dir,
-        monkeypatch,
-        command_name,
-        initial_enabled,
-        expected_enabled,
-    ):
-        import threading
-        from specify_cli.workflows import _commands
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-        from specify_cli.workflows.engine import WorkflowDefinition
-
-        workflows_dir = project_dir / ".specify" / "workflows"
-        workflow_file = workflows_dir / "align-wf" / "workflow.yml"
-        workflow_file.parent.mkdir(parents=True)
-        workflow_file.write_text(
-            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
-        )
-        WorkflowRegistry(project_dir).add(
-            "align-wf",
-            {
-                "name": "Align Workflow",
-                "version": "1.0.0",
-                "source": "catalog",
-                "enabled": initial_enabled,
-            },
-        )
-        monkeypatch.setattr(
-            _commands, "_require_specify_project", lambda: project_dir
-        )
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "2.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        new_data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
-        monkeypatch.setattr(
-            "specify_cli.authentication.http.open_url",
-            lambda url, timeout=None, extra_headers=None,
-            redirect_validator=None: self._FakeResponse(new_data, url),
-        )
-
-        toggle_ready = threading.Event()
-        update_done = threading.Event()
-        real_add = WorkflowRegistry.add
-
-        def coordinated_add(registry, workflow_id, metadata):
-            if threading.current_thread().name == "toggle":
-                toggle_ready.set()
-                update_done.wait(0.5)
-            return real_add(registry, workflow_id, metadata)
-
-        monkeypatch.setattr(WorkflowRegistry, "add", coordinated_add)
-        errors = []
-
-        def toggle():
-            try:
-                getattr(_commands, f"workflow_{command_name}")("align-wf")
-            except BaseException as exc:
-                errors.append(exc)
-
-        def update():
-            try:
-                _commands._install_workflow_from_catalog(
-                    project_dir,
-                    workflows_dir,
-                    "align-wf",
-                )
-            except BaseException as exc:
-                errors.append(exc)
-            finally:
-                update_done.set()
-
-        toggle_thread = threading.Thread(target=toggle, name="toggle")
-        update_thread = threading.Thread(target=update, name="update")
-        toggle_thread.start()
-        assert toggle_ready.wait(2)
-        update_thread.start()
-        toggle_thread.join(5)
-        update_thread.join(5)
-
-        assert not toggle_thread.is_alive()
-        assert not update_thread.is_alive()
-        assert errors == []
-        assert WorkflowDefinition.from_yaml(workflow_file).version == "2.0.0"
-        metadata = WorkflowRegistry(project_dir).get("align-wf")
-        assert metadata["version"] == "2.0.0"
-        assert metadata.get("enabled", True) is expected_enabled
-
-    def test_add_catalog_reinstall_restore_failure_reports_warning_and_original_error(
-        self, project_dir, monkeypatch
-    ):
-        """Same restore-rename boundary as the local-install path: the
-        prior file is restored via an atomic rename (not a content rewrite)
-        when registry.add() fails on a reinstall. If that restore rename
-        itself also fails, it must report a clear warning in addition to
-        the original clean registry error, never crash or silently claim
-        success."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "1.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        original_data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
-        runner = CliRunner()
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "specify_cli.authentication.http.open_url",
-                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                    original_data, url
-                ),
-            )
-            result = runner.invoke(app, ["workflow", "add", "align-wf"])
-        assert result.exit_code == 0, result.output
-
-        new_data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
-
-        def save_boom(self):
-            raise OSError("disk full")
-
-        real_replace = os.replace
-        calls = {"n": 0}
-
-        def replace_boom(src_path, dst_path):
-            # The commit swap for a reinstall makes exactly two os.replace
-            # calls (backup-aside, then staged-into-dest); let both succeed
-            # and only fail the third call -- the post-registry-failure
-            # restore-back rename.
-            calls["n"] += 1
-            if calls["n"] <= 2:
-                return real_replace(src_path, dst_path)
-            raise OSError("permission denied")
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "specify_cli.authentication.http.open_url",
-                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                    new_data, url
-                ),
-            )
-            mp.setattr(WorkflowRegistry, "save", save_boom)
-            mp.setattr(os, "replace", replace_boom)
-            result = runner.invoke(app, ["workflow", "add", "align-wf"])
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        output_compact = "".join(result.output.split())
-        assert "Warning" in result.output
-        assert "diskfull" in output_compact
-        assert "permissiondenied" in output_compact
-
-    def test_add_catalog_fresh_install_into_preexisting_empty_dir_cleans_new_file(
-        self, project_dir, monkeypatch
-    ):
-        """Same rollback orphan gap as the local-install path, but for a
-        fresh catalog install: a pre-existing empty destination directory
-        (no workflow.yml) sets existed_before=True with no backup bytes, so
-        the rollback previously did nothing on a later failure -- leaving
-        the freshly downloaded workflow.yml behind. It must be removed,
-        leaving the pre-existing directory itself intact."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "1.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
-        dest_dir.mkdir(parents=True)  # pre-existing, but empty: no workflow.yml
-        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
-
-        def boom(self):
-            raise OSError("disk full")
-
-        runner = CliRunner()
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "specify_cli.authentication.http.open_url",
-                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
-            )
-            mp.setattr(WorkflowRegistry, "save", boom)
-            result = runner.invoke(app, ["workflow", "add", "align-wf"])
-
-        assert result.exit_code != 0
-        assert result.output.strip() != ""
-        assert dest_dir.is_dir()
-        assert not (dest_dir / "workflow.yml").exists()
-
-    @pytest.mark.parametrize(
-        "mode", ["redirect_rejected", "download_exception", "invalid_yaml", "id_mismatch"]
-    )
-    def test_add_catalog_reinstall_early_failure_restores_prior_file(
-        self, project_dir, monkeypatch, mode
-    ):
-        """Every _install_workflow_from_catalog failure branch that runs after
-        the mkdir/download step -- not just the registry.add() OSError case
-        -- must route through the same existed-before/backup-aware cleanup:
-        on a reinstall, a redirect rejection, a download exception, invalid
-        YAML, or a workflow-id mismatch must restore the prior working
-        workflow.yml rather than deleting the whole directory. One shared
-        root cause (the cleanup helper), so parametrized over trigger point."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "1.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        source_data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
-        runner = CliRunner()
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "specify_cli.authentication.http.open_url",
-                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                    source_data, url
-                ),
-            )
-            result = runner.invoke(app, ["workflow", "add", "align-wf"])
-        assert result.exit_code == 0, result.output
-
-        dest_file = project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
-        original_data = dest_file.read_bytes()
-
-        if mode == "redirect_rejected":
-            def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
-                return self._FakeResponse(b"irrelevant", "http://evil.example.com/workflow.yml")
-        elif mode == "download_exception":
-            def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
-                raise OSError("network down")
-        elif mode == "invalid_yaml":
-            def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
-                return self._FakeResponse(b": : not valid yaml: [", url)
-        else:  # id_mismatch
-            mismatched_yaml = self.WORKFLOW_YAML.format(version="2.0.0").replace(
-                'id: "align-wf"', 'id: "different-workflow"'
-            )
-
-            def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
-                return self._FakeResponse(mismatched_yaml.encode(), url)
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("specify_cli.authentication.http.open_url", fake_open_url)
-            result = runner.invoke(app, ["workflow", "add", "align-wf"])
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert result.output.strip() != ""
-        assert dest_file.read_bytes() == original_data
-        registry = WorkflowRegistry(project_dir)
-        assert registry.is_installed("align-wf")
-        assert registry.get("align-wf")["version"] == "1.0.0"
-
-    def test_download_redirect_validator_rejects_http_before_follow(self):
-        import urllib.error
-
-        from specify_cli.workflows._commands import _reject_insecure_download_redirect
-
-        with pytest.raises(urllib.error.URLError):
-            _reject_insecure_download_redirect(
-                "https://example.com/wf.yml", "http://evil.example.com/wf.yml"
-            )
-        with pytest.raises(urllib.error.URLError):
-            _reject_insecure_download_redirect(
-                "https://example.com/wf.yml", "http://localhost:8000/wf.yml"
-            )
-        with pytest.raises(urllib.error.URLError):
-            _reject_insecure_download_redirect(
-                "https://example.com/wf.yml", "https://127.0.0.2/wf.yml"
-            )
-        # Allowed: HTTPS anywhere, or loopback HTTP that stays on loopback HTTP.
-        _reject_insecure_download_redirect(
-            "https://example.com/wf.yml", "https://cdn.example.com/wf.yml"
-        )
-        _reject_insecure_download_redirect(
-            "http://localhost:7000/wf.yml", "http://localhost:8000/wf.yml"
-        )
-        _reject_insecure_download_redirect(
-            "http://127.0.0.1/source.yml", "http://127.0.0.1/wf.yml"
-        )
-        _reject_insecure_download_redirect(
-            "http://127.0.0.2/source.yml", "http://127.255.255.254/wf.yml"
-        )
-
-    def test_add_from_url_passes_redirect_validator(self, project_dir, monkeypatch):
-        from unittest.mock import patch
-
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
-        seen: dict[str, object] = {}
-
-        def fake_open(url, timeout=None, extra_headers=None, redirect_validator=None):
-            seen["validator"] = redirect_validator
-            return self._FakeResponse(data, url)
-
-        runner = CliRunner()
-        with patch("specify_cli.authentication.http.open_url", side_effect=fake_open):
-            result = runner.invoke(
-                app,
-                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
-                input="y\n",
-            )
-        assert result.exit_code == 0, result.output
-        from specify_cli.workflows._commands import _reject_insecure_download_redirect
-
-        assert seen["validator"] is _reject_insecure_download_redirect
-
     @pytest.mark.skipif(sys.platform == "win32", reason="chmod mode bits not reliable on Windows")
     def test_registry_save_failure_preserves_file_on_disk(self, project_dir, monkeypatch):
         """A failed dump must not truncate the persisted registry, and must
@@ -15995,2106 +11581,3 @@ steps:
         assert fresh.get("align-wf")["version"] == "1.0.0"
         assert stat.S_IMODE(registry.registry_path.stat().st_mode) == 0o644
         assert not list(registry.workflows_dir.glob("*.tmp"))
-
-    def test_update_mixed_targets_does_not_claim_all_up_to_date(self, project_dir, monkeypatch):
-        """Skipped targets must not be presented as verified up to date."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        self._install_dev(runner, app, project_dir)  # local source → skipped
-        WorkflowRegistry(project_dir).add("catalog-wf", {
-            "name": "Catalog Workflow",
-            "version": "1.0.0",
-            "description": "",
-            "source": "catalog",
-            "url": "https://example.com/workflow.yml",
-        })
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "version": "1.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-            },
-        )
-        result = runner.invoke(app, ["workflow", "update"])
-        assert result.exit_code == 0, result.output
-        assert "All workflows are up to date!" not in result.output
-        assert "All checked workflows are up to date" in result.output
-        assert "skipped" in result.output
-
-    def test_run_refuses_falsy_non_bool_enabled(self, project_dir, monkeypatch):
-        """A falsy non-bool "enabled" (0) shows as disabled in list — run must agree."""
-        import json as json_mod
-
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        self._install_dev(runner, app, project_dir)
-
-        registry = WorkflowRegistry(project_dir)
-        registry.data["workflows"]["align-wf"]["enabled"] = 0
-        registry.registry_path.write_text(json_mod.dumps(registry.data), encoding="utf-8")
-
-        result = runner.invoke(app, ["workflow", "run", "align-wf"])
-        assert result.exit_code != 0
-        assert "disabled" in result.output
-
-    def test_update_installs_newer_catalog_version(self, project_dir, monkeypatch):
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        registry = WorkflowRegistry(project_dir)
-        registry.add("align-wf", {
-            "name": "Align Workflow",
-            "version": "1.0.0",
-            "description": "CLI alignment test workflow",
-            "source": "catalog",
-            "catalog_name": "test-catalog",
-            "url": "https://example.com/workflow.yml",
-        })
-        wf_dir = project_dir / ".specify" / "workflows" / "align-wf"
-        wf_dir.mkdir(parents=True)
-        (wf_dir / "workflow.yml").write_text(
-            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
-        )
-
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "2.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
-        runner = CliRunner()
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
-        ):
-            result = runner.invoke(app, ["workflow", "update"], input="y\n")
-        assert result.exit_code == 0, result.output
-        assert "1.0.0" in result.output and "2.0.0" in result.output
-        meta = WorkflowRegistry(project_dir).get("align-wf")
-        assert meta["version"] == "2.0.0"
-        assert "2.0.0" in (wf_dir / "workflow.yml").read_text(encoding="utf-8")
-
-    def test_update_downloaded_invalid_yaml_escapes_rich_markup(self, project_dir, monkeypatch):
-        """A malformed downloaded workflow can quote the offending line verbatim; escape it before printing."""
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-        from specify_cli.workflows.engine import WorkflowDefinition
-
-        monkeypatch.chdir(project_dir)
-        registry = WorkflowRegistry(project_dir)
-        registry.add("align-wf", {
-            "name": "Align Workflow",
-            "version": "1.0.0",
-            "description": "CLI alignment test workflow",
-            "source": "catalog",
-            "catalog_name": "test-catalog",
-            "url": "https://example.com/workflow.yml",
-        })
-        wf_dir = project_dir / ".specify" / "workflows" / "align-wf"
-        wf_dir.mkdir(parents=True)
-        (wf_dir / "workflow.yml").write_text(
-            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
-        )
-
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "2.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        runner = CliRunner()
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(b"", url),
-        ), patch.object(
-            WorkflowDefinition,
-            "from_string",
-            side_effect=ValueError('bad snippet: "New [Feature]"'),
-        ):
-            result = runner.invoke(app, ["workflow", "update"], input="y\n")
-        assert 'bad snippet: "New [Feature]"' in result.output
-        assert "Failed to update" in result.output
-        # The previously installed workflow must survive a failed update.
-        assert "1.0.0" in (wf_dir / "workflow.yml").read_text(encoding="utf-8")
-
-    def test_update_malformed_catalog_url_fails_cleanly(self, project_dir, monkeypatch):
-        """An unparseable catalog URL (unbalanced IPv6 literal) must not abort the whole update."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        registry = WorkflowRegistry(project_dir)
-        registry.add("align-wf", {
-            "name": "Align Workflow",
-            "version": "1.0.0",
-            "description": "CLI alignment test workflow",
-            "source": "catalog",
-            "catalog_name": "test-catalog",
-            "url": "https://[::1/workflow.yml",
-        })
-        wf_dir = project_dir / ".specify" / "workflows" / "align-wf"
-        wf_dir.mkdir(parents=True)
-        (wf_dir / "workflow.yml").write_text(
-            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
-        )
-
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "2.0.0",
-                "url": "https://[::1/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "update"], input="y\n")
-        assert "malformed install URL" in result.output
-        assert "Failed to update" in result.output
-        # The previously installed workflow must survive.
-        assert "1.0.0" in (wf_dir / "workflow.yml").read_text(encoding="utf-8")
-
-    def test_add_non_string_catalog_url_fails_cleanly(self, project_dir, monkeypatch):
-        """A truthy non-string catalog URL must hit the clean error path, not AttributeError."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "1.0.0",
-                "url": 123,
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "add", "align-wf"])
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "malformed install URL" in result.output
-
-    def test_enable_failed_save_leaves_workflow_disabled(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        self._install_dev(runner, app, project_dir)
-        result = runner.invoke(app, ["workflow", "disable", "align-wf"])
-        assert result.exit_code == 0, result.output
-
-        def boom(self):
-            raise OSError("disk full")
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(WorkflowRegistry, "save", boom)
-            result = runner.invoke(app, ["workflow", "enable", "align-wf"])
-            assert result.exit_code != 0
-
-        assert WorkflowRegistry(project_dir).get("align-wf")["enabled"] is False
-        result = runner.invoke(app, ["workflow", "enable", "align-wf"])
-        assert result.exit_code == 0, result.output
-        assert WorkflowRegistry(project_dir).get("align-wf")["enabled"] is True
-
-    @pytest.mark.parametrize("command", ["enable", "disable"])
-    def test_enable_disable_save_failure_gives_clean_output(
-        self, project_dir, monkeypatch, command
-    ):
-        """A save() failure in enable/disable must produce a clean escaped CLI
-        error, not surface the raw OSError as an unhandled exception. Shared
-        root behavior: both call registry.add() with a fresh mapping and must
-        catch its deliberate OSError the same way."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        self._install_dev(runner, app, project_dir)
-        # disable starts from the enabled default; enable needs a prior disable.
-        starting_enabled = command == "disable"
-        if command == "enable":
-            pre = runner.invoke(app, ["workflow", "disable", "align-wf"])
-            assert pre.exit_code == 0, pre.output
-
-        def boom(self):
-            raise OSError("disk full")
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(WorkflowRegistry, "save", boom)
-            result = runner.invoke(app, ["workflow", command, "align-wf"])
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert result.output.strip() != ""
-        assert (
-            WorkflowRegistry(project_dir).get("align-wf").get("enabled", True)
-            is starting_enabled
-        )
-
-    def test_update_rejects_version_mismatch_from_stale_url(self, project_dir, monkeypatch):
-        """A URL serving a different version than the catalog advertised must fail the update."""
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        WorkflowRegistry(project_dir).add("align-wf", {
-            "name": "Align Workflow",
-            "version": "1.0.0",
-            "description": "CLI alignment test workflow",
-            "source": "catalog",
-            "catalog_name": "test-catalog",
-            "url": "https://example.com/workflow.yml",
-        })
-        wf_dir = project_dir / ".specify" / "workflows" / "align-wf"
-        wf_dir.mkdir(parents=True)
-        (wf_dir / "workflow.yml").write_text(
-            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
-        )
-
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "2.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        # The URL still serves the old 1.0.0 payload.
-        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
-        runner = CliRunner()
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
-        ):
-            result = runner.invoke(app, ["workflow", "update"], input="y\n")
-        assert "does not match the catalog version" in result.output
-        assert "Failed to update" in result.output
-        meta = WorkflowRegistry(project_dir).get("align-wf")
-        assert meta["version"] == "1.0.0"
-        assert "1.0.0" in (wf_dir / "workflow.yml").read_text(encoding="utf-8")
-
-    def test_update_preserves_disabled_state(self, project_dir, monkeypatch):
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        WorkflowRegistry(project_dir).add("align-wf", {
-            "name": "Align Workflow",
-            "version": "1.0.0",
-            "description": "",
-            "source": "catalog",
-            "url": "https://example.com/workflow.yml",
-            "enabled": False,
-        })
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "version": "2.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-            },
-        )
-        data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
-        runner = CliRunner()
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
-        ):
-            result = runner.invoke(app, ["workflow", "update"], input="y\n")
-        assert result.exit_code == 0, result.output
-        meta = WorkflowRegistry(project_dir).get("align-wf")
-        assert meta["version"] == "2.0.0"
-        assert meta["enabled"] is False
-
-    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
-    def test_update_preserves_workflow_file_mode(self, project_dir, monkeypatch):
-        import stat
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        WorkflowRegistry(project_dir).add("align-wf", {
-            "name": "Align Workflow",
-            "version": "1.0.0",
-            "description": "",
-            "source": "catalog",
-            "url": "https://example.com/workflow.yml",
-        })
-        workflow_file = (
-            project_dir
-            / ".specify"
-            / "workflows"
-            / "align-wf"
-            / "workflow.yml"
-        )
-        workflow_file.parent.mkdir(parents=True)
-        workflow_file.write_text(
-            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
-        )
-        workflow_file.chmod(0o640)
-
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "version": "2.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-            },
-        )
-        data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None,
-            redirect_validator=None: self._FakeResponse(data, url),
-        ):
-            result = CliRunner().invoke(
-                app, ["workflow", "update"], input="y\n"
-            )
-
-        assert result.exit_code == 0, result.output
-        assert stat.S_IMODE(workflow_file.stat().st_mode) == 0o640
-
-    def test_update_skips_corrupted_registry_entry(self, project_dir, monkeypatch):
-        import json
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        registry_path = WorkflowRegistry(project_dir).registry_path
-        registry_path.parent.mkdir(parents=True, exist_ok=True)
-        registry_path.write_text(
-            json.dumps({"schema_version": "1.0", "workflows": {"broken": "not-a-dict"}}),
-            encoding="utf-8",
-        )
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "update"])
-        assert result.exit_code == 0, result.output
-        assert "corrupted" in result.output
-
-    def test_list_skips_corrupted_registry_entry(self, project_dir, monkeypatch):
-        import json
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        registry_path = WorkflowRegistry(project_dir).registry_path
-        registry_path.parent.mkdir(parents=True, exist_ok=True)
-        registry_path.write_text(
-            json.dumps(
-                {
-                    "schema_version": "1.0",
-                    "workflows": {
-                        "broken": "not-a-dict",
-                        "ok": {"name": "OK Workflow", "version": "1.0.0"},
-                    },
-                }
-            ),
-            encoding="utf-8",
-        )
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "list"])
-        assert result.exit_code == 0, result.output
-        assert "corrupted" in result.output
-        assert "OK Workflow" in result.output
-
-    def test_list_unreadable_registry_fails_closed_with_clean_error(
-        self, project_dir, monkeypatch
-    ):
-        """An unreadable registry file must produce a clean CLI error, not a
-        raw traceback and not a silent "nothing installed" list -- the latter
-        is exactly the fail-open state a caller could otherwise mistake for
-        "safe to (re)install", overwriting real files. Covers the read/query
-        boundary fix required at every WorkflowRegistry call site."""
-        import builtins
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        self._install_dev(runner, app, project_dir)
-
-        registry_path = WorkflowRegistry(project_dir).registry_path.resolve()
-        real_open = builtins.open
-
-        def _raising_open(file, mode="r", *args, **kwargs):
-            if Path(file).resolve() == registry_path and "r" in mode:
-                raise OSError("simulated read failure")
-            return real_open(file, mode, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "open", _raising_open)
-        result = runner.invoke(app, ["workflow", "list"])
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "Error" in result.output
-
-    def test_list_escapes_rich_markup_in_registry_fields(self, project_dir, monkeypatch):
-        """User-editable name/description/id fields must not be parsed as Rich markup."""
-        import json
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        registry_path = WorkflowRegistry(project_dir).registry_path
-        registry_path.parent.mkdir(parents=True, exist_ok=True)
-        registry_path.write_text(
-            json.dumps(
-                {
-                    "schema_version": "1.0",
-                    "workflows": {
-                        "ok": {
-                            "name": "Bracket [Test]",
-                            "version": "1.0.0",
-                            "description": "desc [with] brackets",
-                        },
-                    },
-                }
-            ),
-            encoding="utf-8",
-        )
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "list"])
-        assert result.exit_code == 0, result.output
-        assert "Bracket [Test]" in result.output
-        assert "desc [with] brackets" in result.output
-
-    def test_update_reports_unsafe_registry_id_per_workflow(self, project_dir, monkeypatch):
-        """An unsafe workflow id in the registry must fail that one entry, not abort the whole update."""
-        import json
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry, WorkflowCatalog
-
-        monkeypatch.chdir(project_dir)
-        registry_path = WorkflowRegistry(project_dir).registry_path
-        registry_path.parent.mkdir(parents=True, exist_ok=True)
-        registry_path.write_text(
-            json.dumps(
-                {
-                    "schema_version": "1.0",
-                    "workflows": {
-                        "../evil": {
-                            "name": "Bad",
-                            "version": "0.0.1",
-                            "source": "catalog",
-                            "url": "https://example.com/evil.yml",
-                        },
-                    },
-                }
-            ),
-            encoding="utf-8",
-        )
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {"version": "9.9.9", "url": "https://example.com/evil.yml", "_install_allowed": True},
-        )
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "update"], input="y\n")
-        assert result.exit_code != 0
-        assert "Failed to update" in result.output
-
-    def test_update_registry_save_failure_restores_prior_file_without_redundant_write(
-        self, project_dir, monkeypatch
-    ):
-        """A registry.add() save failure during `workflow update` must be
-        fully restored by _install_workflow_from_catalog's own atomic
-        rollback (rename-based, not a byte-level rewrite). The outer
-        workflow_update loop must not perform any redundant write of its
-        own onto the destination file -- that write happened only after
-        typer.Exit already unwound, could itself fail/truncate the safely
-        preserved file, and is provably unnecessary here since the inner
-        transaction already restored it via rename."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "1.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        source_data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
-        runner = CliRunner()
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "specify_cli.authentication.http.open_url",
-                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                    source_data, url
-                ),
-            )
-            result = runner.invoke(app, ["workflow", "add", "align-wf"])
-        assert result.exit_code == 0, result.output
-
-        dest_file = project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
-        original_data = dest_file.read_bytes()
-
-        new_data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
-
-        def boom_save(self):
-            raise OSError("disk full")
-
-        dest_writes: list[bytes] = []
-        real_write_bytes = Path.write_bytes
-        resolved_dest_file = dest_file.resolve()
-
-        def tracking_write_bytes(self_path, data, *args, **kwargs):
-            if self_path.resolve() == resolved_dest_file:
-                dest_writes.append(data)
-            return real_write_bytes(self_path, data, *args, **kwargs)
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                WorkflowCatalog,
-                "get_workflow_info",
-                lambda self, wid: {
-                    "id": wid,
-                    "name": "Align Workflow",
-                    "version": "2.0.0",
-                    "url": "https://example.com/workflow.yml",
-                    "_install_allowed": True,
-                    "_catalog_name": "test-catalog",
-                },
-            )
-            mp.setattr(
-                "specify_cli.authentication.http.open_url",
-                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                    new_data, url
-                ),
-            )
-            mp.setattr(WorkflowRegistry, "save", boom_save)
-            mp.setattr(Path, "write_bytes", tracking_write_bytes)
-            result = runner.invoke(app, ["workflow", "update"], input="y\n")
-
-        assert result.exit_code != 0
-        assert "Failed to update" in result.output
-        # No redundant/second write of the destination file was attempted --
-        # the inner atomic commit/rollback (rename-based) is the only thing
-        # that ever touches it.
-        assert dest_writes == []
-        assert dest_file.read_bytes() == original_data
-        registry = WorkflowRegistry(project_dir)
-        assert registry.is_installed("align-wf")
-        assert registry.get("align-wf")["version"] == "1.0.0"
-
-    def test_update_non_json_description_restores_prior_file_and_registry(
-        self, project_dir, monkeypatch
-    ):
-        from unittest.mock import patch
-
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        registry = WorkflowRegistry(project_dir)
-        registry.add(
-            "align-wf",
-            {
-                "name": "Align Workflow",
-                "version": "1.0.0",
-                "description": "",
-                "source": "catalog",
-                "url": "https://example.com/workflow.yml",
-            },
-        )
-        workflow_file = (
-            project_dir
-            / ".specify"
-            / "workflows"
-            / "align-wf"
-            / "workflow.yml"
-        )
-        workflow_file.parent.mkdir(parents=True)
-        original_data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
-        workflow_file.write_bytes(original_data)
-
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "2.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-        invalid_data = self.WORKFLOW_YAML.format(version="2.0.0").replace(
-            'description: "CLI alignment test workflow"',
-            "description: 2026-01-02",
-        ).encode()
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None,
-            redirect_validator=None: self._FakeResponse(invalid_data, url),
-        ):
-            result = CliRunner().invoke(
-                app, ["workflow", "update", "align-wf"], input="y\n"
-            )
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "Failed to update workflow registry" in result.output
-        assert workflow_file.read_bytes() == original_data
-        current = WorkflowRegistry(project_dir).get("align-wf")
-        assert current["version"] == "1.0.0"
-        leftovers = [
-            path.name
-            for path in workflow_file.parent.iterdir()
-            if path.name != "workflow.yml"
-        ]
-        assert leftovers == []
-
-    def test_commit_failure_reports_unrestored_backup_location(
-        self, tmp_path, monkeypatch
-    ):
-        from specify_cli.workflows import _commands
-
-        dest_dir = tmp_path / "align-wf"
-        dest_dir.mkdir()
-        dest_file = dest_dir / "workflow.yml"
-        staged_file = dest_dir / ".workflow.yml.staged"
-        dest_file.write_text("original", encoding="utf-8")
-        staged_file.write_text("replacement", encoding="utf-8")
-
-        real_replace = os.replace
-        calls = 0
-        backup_file = None
-
-        def fail_commit_and_restore(src, dst):
-            nonlocal backup_file, calls
-            calls += 1
-            if calls == 1:
-                backup_file = Path(dst)
-                return real_replace(src, dst)
-            if calls == 2:
-                raise OSError("commit denied")
-            raise OSError("restore denied")
-
-        monkeypatch.setattr(os, "replace", fail_commit_and_restore)
-        with pytest.raises(OSError) as exc_info:
-            _commands._commit_workflow_file(
-                staged_file, dest_file, existed_before=True
-            )
-
-        message = str(exc_info.value)
-        assert "commit denied" in message
-        assert "restore denied" in message
-        assert backup_file is not None
-        assert str(backup_file) in message
-        assert not dest_file.exists()
-        assert backup_file.read_text(encoding="utf-8") == "original"
-
-    def test_commit_keyboard_interrupt_restores_prior_file(
-        self, tmp_path, monkeypatch
-    ):
-        from specify_cli.workflows import _commands
-
-        dest_dir = tmp_path / "align-wf"
-        dest_dir.mkdir()
-        dest_file = dest_dir / "workflow.yml"
-        staged_file = dest_dir / ".workflow.yml.staged"
-        dest_file.write_text("original", encoding="utf-8")
-        staged_file.write_text("replacement", encoding="utf-8")
-
-        real_replace = os.replace
-        calls = 0
-
-        def interrupt_commit(src, dst):
-            nonlocal calls
-            calls += 1
-            if calls == 2:
-                raise KeyboardInterrupt
-            return real_replace(src, dst)
-
-        monkeypatch.setattr(os, "replace", interrupt_commit)
-        with pytest.raises(KeyboardInterrupt):
-            _commands._commit_workflow_file(
-                staged_file, dest_file, existed_before=True
-            )
-
-        assert dest_file.read_text(encoding="utf-8") == "original"
-        assert staged_file.read_text(encoding="utf-8") == "replacement"
-        assert list(dest_dir.glob("*.bak")) == []
-
-    def test_commit_interrupt_after_first_rename_restores_prior_file(
-        self, tmp_path, monkeypatch
-    ):
-        from specify_cli.workflows import _commands
-
-        dest_dir = tmp_path / "align-wf"
-        dest_dir.mkdir()
-        dest_file = dest_dir / "workflow.yml"
-        staged_file = dest_dir / ".workflow.yml.staged"
-        dest_file.write_text("original", encoding="utf-8")
-        staged_file.write_text("replacement", encoding="utf-8")
-
-        real_replace = os.replace
-        calls = 0
-
-        def interrupt_after_replace(src, dst):
-            nonlocal calls
-            calls += 1
-            result = real_replace(src, dst)
-            if calls == 1:
-                raise KeyboardInterrupt
-            return result
-
-        monkeypatch.setattr(os, "replace", interrupt_after_replace)
-        with pytest.raises(KeyboardInterrupt):
-            _commands._commit_workflow_file(
-                staged_file, dest_file, existed_before=True
-            )
-
-        assert dest_file.read_text(encoding="utf-8") == "original"
-        assert staged_file.read_text(encoding="utf-8") == "replacement"
-        assert list(dest_dir.glob("*.bak")) == []
-
-    def test_commit_uses_unique_backup_without_overwriting_existing_sibling(
-        self, tmp_path
-    ):
-        from specify_cli.workflows import _commands
-
-        dest_dir = tmp_path / "align-wf"
-        dest_dir.mkdir()
-        dest_file = dest_dir / "workflow.yml"
-        staged_file = dest_dir / ".workflow.yml.staged"
-        fixed_backup = dest_dir / "workflow.yml.bak"
-        dest_file.write_text("original", encoding="utf-8")
-        staged_file.write_text("replacement", encoding="utf-8")
-        fixed_backup.write_text("diagnostic copy", encoding="utf-8")
-
-        backup_file = _commands._commit_workflow_file(
-            staged_file, dest_file, existed_before=True
-        )
-
-        assert backup_file is not None
-        assert backup_file != fixed_backup
-        assert backup_file.read_text(encoding="utf-8") == "original"
-        assert fixed_backup.read_text(encoding="utf-8") == "diagnostic copy"
-        assert dest_file.read_text(encoding="utf-8") == "replacement"
-
-    @pytest.mark.parametrize(
-        ("replacement_source", "replacement_version"),
-        [("local", "1.0.0"), ("catalog", "1.5.0")],
-    )
-    def test_update_rechecks_registry_after_confirmation(
-        self, project_dir, monkeypatch, replacement_source, replacement_version
-    ):
-        from unittest.mock import patch
-
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows import _commands
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        registry = WorkflowRegistry(project_dir)
-        registry.add(
-            "align-wf",
-            {
-                "name": "Align Workflow",
-                "version": "1.0.0",
-                "description": "",
-                "source": "catalog",
-                "url": "https://example.com/workflow.yml",
-            },
-        )
-        workflow_file = (
-            project_dir
-            / ".specify"
-            / "workflows"
-            / "align-wf"
-            / "workflow.yml"
-        )
-        workflow_file.parent.mkdir(parents=True)
-        workflow_file.write_text(
-            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
-        )
-        replacement_data = self.WORKFLOW_YAML.format(
-            version=replacement_version
-        ).replace(
-            'description: "CLI alignment test workflow"',
-            'description: "concurrent replacement"',
-        ).encode()
-
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "name": "Align Workflow",
-                "version": "2.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-                "_catalog_name": "test-catalog",
-            },
-        )
-
-        def replace_while_confirming(*args, **kwargs):
-            WorkflowRegistry(project_dir).add(
-                "align-wf",
-                {
-                    "name": "Concurrent replacement",
-                    "version": replacement_version,
-                    "description": "",
-                    "source": replacement_source,
-                },
-            )
-            workflow_file.write_bytes(replacement_data)
-            return True
-
-        monkeypatch.setattr(_commands.typer, "confirm", replace_while_confirming)
-        catalog_data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
-        with patch(
-            "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None,
-            redirect_validator=None: self._FakeResponse(catalog_data, url),
-        ):
-            result = CliRunner().invoke(app, ["workflow", "update", "align-wf"])
-
-        assert result.exit_code != 0
-        assert "changed during update" in result.output
-        assert workflow_file.read_bytes() == replacement_data
-        current = WorkflowRegistry(project_dir).get("align-wf")
-        assert current["source"] == replacement_source
-        assert current["version"] == replacement_version
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_resume_rejects_symlinked_cross_project_owner_root(
-        self, project_dir, tmp_path
-    ):
-        from specify_cli.workflows import _commands
-
-        real_owner = tmp_path / "real-owner"
-        real_owner.mkdir()
-        owner_link = tmp_path / "owner-link"
-        owner_link.symlink_to(real_owner, target_is_directory=True)
-
-        with pytest.raises(ValueError, match="unavailable"):
-            _commands._resolve_run_owner_root(str(owner_link), project_dir)
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_resume_rejects_cross_project_owner_with_symlinked_ancestor(
-        self, project_dir, tmp_path
-    ):
-        from specify_cli.workflows import _commands
-
-        real_parent = tmp_path / "real-parent"
-        owner = real_parent / "owner"
-        owner.mkdir(parents=True)
-        parent_link = tmp_path / "parent-link"
-        parent_link.symlink_to(real_parent, target_is_directory=True)
-
-        with pytest.raises(ValueError, match="unavailable"):
-            _commands._resolve_run_owner_root(
-                str(parent_link / "owner"), project_dir
-            )
-
-    def test_enable_disable_corrupted_registry_entry_errors(self, project_dir, monkeypatch):
-        import json
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        registry_path = WorkflowRegistry(project_dir).registry_path
-        registry_path.parent.mkdir(parents=True, exist_ok=True)
-        registry_path.write_text(
-            json.dumps({"schema_version": "1.0", "workflows": {"broken": "not-a-dict"}}),
-            encoding="utf-8",
-        )
-        runner = CliRunner()
-        for cmd in ("enable", "disable"):
-            result = runner.invoke(app, ["workflow", cmd, "broken"])
-            assert result.exit_code != 0
-            assert "corrupted" in result.output
-
-    def test_update_up_to_date_reports_and_exits_zero(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        WorkflowRegistry(project_dir).add("align-wf", {
-            "name": "Align Workflow",
-            "version": "1.0.0",
-            "description": "",
-            "source": "catalog",
-            "url": "https://example.com/workflow.yml",
-        })
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "version": "1.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-            },
-        )
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "update"])
-        assert result.exit_code == 0, result.output
-        assert "Up to date" in result.output
-        assert "All workflows are up to date!" in result.output
-
-    def test_update_restores_backup_on_failed_download(self, project_dir, monkeypatch):
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        WorkflowRegistry(project_dir).add("align-wf", {
-            "name": "Align Workflow",
-            "version": "1.0.0",
-            "description": "",
-            "source": "catalog",
-            "url": "https://example.com/workflow.yml",
-        })
-        wf_dir = project_dir / ".specify" / "workflows" / "align-wf"
-        wf_dir.mkdir(parents=True)
-        original = self.WORKFLOW_YAML.format(version="1.0.0")
-        (wf_dir / "workflow.yml").write_text(original, encoding="utf-8")
-
-        monkeypatch.setattr(
-            WorkflowCatalog,
-            "get_workflow_info",
-            lambda self, wid: {
-                "id": wid,
-                "version": "2.0.0",
-                "url": "https://example.com/workflow.yml",
-                "_install_allowed": True,
-            },
-        )
-
-        def boom(url, timeout=None, extra_headers=None, redirect_validator=None):
-            raise OSError("network down")
-
-        runner = CliRunner()
-        with patch("specify_cli.authentication.http.open_url", side_effect=boom):
-            result = runner.invoke(app, ["workflow", "update"], input="y\n")
-        assert result.exit_code != 0
-        assert "Failed to update" in result.output
-        # Working copy and registry version are untouched
-        assert (wf_dir / "workflow.yml").read_text(encoding="utf-8") == original
-        assert WorkflowRegistry(project_dir).get("align-wf")["version"] == "1.0.0"
-
-    # -- enable / disable ------------------------------------------------
-
-    def test_disable_blocks_run_enable_restores(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        self._install_dev(runner, app, project_dir)
-
-        result = runner.invoke(app, ["workflow", "disable", "align-wf"])
-        assert result.exit_code == 0, result.output
-        assert WorkflowRegistry(project_dir).get("align-wf")["enabled"] is False
-
-        result = runner.invoke(app, ["workflow", "run", "align-wf"])
-        assert result.exit_code != 0
-        assert "disabled" in result.output
-
-        result = runner.invoke(app, ["workflow", "enable", "align-wf"])
-        assert result.exit_code == 0, result.output
-        assert WorkflowRegistry(project_dir).get("align-wf")["enabled"] is True
-
-        result = runner.invoke(app, ["workflow", "run", "align-wf"])
-        assert result.exit_code == 0, result.output
-
-    def test_run_rejects_corrupted_registry_entry(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        self._install_dev(runner, app, project_dir)
-
-        registry = WorkflowRegistry(project_dir)
-        registry.data["workflows"]["align-wf"] = "corrupted"
-        registry.save()
-
-        result = runner.invoke(app, ["workflow", "run", "align-wf"])
-        assert result.exit_code != 0
-        assert "corrupted" in result.output
-
-    def test_run_rejects_corrupt_registry_file(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        self._install_dev(runner, app, project_dir)
-
-        registry_path = WorkflowRegistry(project_dir).registry_path
-        registry_path.write_text("not json", encoding="utf-8")
-
-        result = runner.invoke(app, ["workflow", "run", "align-wf"])
-
-        assert result.exit_code != 0
-        assert "registry" in result.output.lower()
-        assert "corrupt" in result.output.lower()
-
-    def test_disable_blocks_case_variant_installed_path(
-        self, project_dir, monkeypatch
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        self._install_dev(runner, app, project_dir)
-
-        result = runner.invoke(app, ["workflow", "disable", "align-wf"])
-        assert result.exit_code == 0, result.output
-
-        case_variant = (
-            project_dir
-            / ".SPECIFY"
-            / "WORKFLOWS"
-            / "ALIGN-WF"
-            / "workflow.yml"
-        )
-        if not case_variant.is_file():
-            pytest.skip("filesystem is case-sensitive")
-
-        result = runner.invoke(
-            app, ["workflow", "run", str(case_variant)]
-        )
-
-        assert result.exit_code != 0
-        assert "disabled" in result.output
-
-    def test_disable_blocks_run_via_path_equivalent_id(self, project_dir, monkeypatch):
-        """Path-equivalent and newline IDs must not dodge the registry lookup."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        self._install_dev(runner, app, project_dir)
-
-        result = runner.invoke(app, ["workflow", "disable", "align-wf"])
-        assert result.exit_code == 0, result.output
-
-        for spelling in ("align-wf/", "align-wf/.", "align-wf\n"):
-            result = runner.invoke(app, ["workflow", "run", spelling])
-            assert result.exit_code != 0, spelling
-            assert "Invalid workflow ID" in result.output, spelling
-
-        # Direct path to the installed workflow's own YAML must also refuse.
-        installed_yaml = ".specify/workflows/align-wf/workflow.yml"
-        assert (project_dir / installed_yaml).is_file()
-        result = runner.invoke(app, ["workflow", "run", installed_yaml])
-        assert result.exit_code != 0
-        assert "disabled" in result.output
-
-        # Same guard must hold when invoked from outside the project.
-        outside = project_dir.parent / "outside-cwd"
-        outside.mkdir(exist_ok=True)
-        monkeypatch.chdir(outside)
-        result = runner.invoke(
-            app, ["workflow", "run", str(project_dir / installed_yaml)]
-        )
-        assert result.exit_code != 0
-        assert "disabled" in result.output
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_disable_blocks_run_when_installed_yaml_is_symlinked(
-        self, project_dir, monkeypatch
-    ):
-        """A disabled workflow's own workflow.yml being replaced with a symlink
-        must not bypass the disabled check. Resolving the path before mapping
-        it back to its registry owner would follow the symlink out of
-        .specify/workflows, fail to find an owner, and let engine.load_workflow
-        run the original symlink target anyway -- ownership must be
-        determined from the normalized *lexical* path (not resolve()), and a
-        symlinked path component in the installed tree must be refused."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        self._install_dev(runner, app, project_dir)
-
-        result = runner.invoke(app, ["workflow", "disable", "align-wf"])
-        assert result.exit_code == 0, result.output
-
-        installed_yaml = project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
-        external_target = project_dir / "external-workflow.yml"
-        external_target.write_text(
-            self.WORKFLOW_YAML.format(version="9.9.9"), encoding="utf-8"
-        )
-        installed_yaml.unlink()
-        installed_yaml.symlink_to(external_target)
-
-        result = runner.invoke(app, ["workflow", "run", str(installed_yaml)])
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "disabled" in result.output or "symlink" in result.output.lower()
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_alias_rejects_symlinked_workflow_storage_before_resolve(
-        self, project_dir, temp_dir
-    ):
-        import shutil
-        import typer
-        from specify_cli.workflows import _commands
-
-        specify_dir = project_dir / ".specify"
-        shutil.rmtree(specify_dir)
-        redirected = temp_dir / "redirected-storage"
-        workflow_file = redirected / "workflows" / "evil" / "workflow.yml"
-        workflow_file.parent.mkdir(parents=True)
-        workflow_file.write_text(
-            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
-        )
-        specify_dir.symlink_to(redirected, target_is_directory=True)
-        alias = temp_dir / "workflow-alias.yml"
-        alias.symlink_to(
-            project_dir
-            / ".specify"
-            / "workflows"
-            / "evil"
-            / "workflow.yml"
-        )
-
-        with pytest.raises(typer.Exit):
-            _commands._resolve_installed_workflow_ownership(
-                alias, _commands.err_console
-            )
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_run_refuses_symlinked_specify_dir_hiding_disabled_workflow(
-        self, temp_dir, monkeypatch
-    ):
-        """A victim project's own .specify directory being a symlink to an
-        attacker-controlled tree must not bypass the disabled-workflow guard.
-        _reject_unsafe_workflow_storage only checks the *cwd's* project root
-        (unrelated here); the id/leaf symlink-component loop only checks
-        components from the id directory onward, missing .specify/
-        .specify/workflows themselves. The ownership check must reject an
-        unsafe .specify/.specify-workflows for the actual path-derived
-        registry root before ever consulting the registry -- it must not
-        rely on WorkflowRegistry's own symlinked-parent handling, which
-        raises a generic OSError; the ownership guard should surface the
-        specific unsafe-storage error before registry construction."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        victim = temp_dir / "victim"
-        victim.mkdir()
-        attacker_real = temp_dir / "attacker-real"
-        (attacker_real / "workflows" / "evil").mkdir(parents=True)
-        (attacker_real / "workflows" / "evil" / "workflow.yml").write_text(
-            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
-        )
-        (attacker_real / "workflows" / "workflow-registry.json").write_text(
-            json.dumps(
-                {
-                    "schema_version": "1.0",
-                    "workflows": {
-                        "evil": {
-                            "name": "Evil",
-                            "version": "1.0.0",
-                            "source": "dev",
-                            "enabled": False,
-                        }
-                    },
-                }
-            ),
-            encoding="utf-8",
-        )
-        (victim / ".specify").symlink_to(attacker_real)
-
-        unrelated_cwd = temp_dir / "unrelated-cwd"
-        unrelated_cwd.mkdir()
-        monkeypatch.chdir(unrelated_cwd)
-
-        runner = CliRunner()
-        target = victim / ".specify" / "workflows" / "evil" / "workflow.yml"
-        result = runner.invoke(app, ["workflow", "run", str(target)])
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "symlink" in result.output.lower()
-
-    def test_run_nested_installed_paths_uses_nearest_owner(
-        self, temp_dir, monkeypatch
-    ):
-        """A direct workflow.yml path whose lexical segments contain
-        .specify/workflows more than once (an unrelated nested project
-        happens to live beneath an outer installed workflow's own
-        directory tree, reusing the same segment names) must be attributed
-        to its *nearest* (innermost) owning project/ID -- scanning from the
-        start of the path and stopping at the first match would pick the
-        outer project and the wrong workflow ID, gating the run on an
-        unrelated workflow's disabled state instead of the real owner's."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        def _write_registry(workflows_dir, workflow_id, enabled):
-            workflows_dir.mkdir(parents=True, exist_ok=True)
-            (workflows_dir / "workflow-registry.json").write_text(
-                json.dumps(
-                    {
-                        "schema_version": "1.0",
-                        "workflows": {
-                            workflow_id: {
-                                "name": workflow_id,
-                                "version": "1.0.0",
-                                "source": "dev",
-                                "enabled": enabled,
-                            }
-                        },
-                    }
-                ),
-                encoding="utf-8",
-            )
-
-        outer_workflows = temp_dir / "outer-proj" / ".specify" / "workflows"
-        outer_wf_dir = outer_workflows / "outer-wf"
-        outer_wf_dir.mkdir(parents=True)
-        (outer_wf_dir / "workflow.yml").write_text(
-            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
-        )
-        _write_registry(outer_workflows, "outer-wf", enabled=False)
-
-        # An unrelated nested project lives inside the outer workflow's own
-        # directory tree, with its own separate installed workflow.
-        inner_workflows = outer_wf_dir / "nested-proj" / ".specify" / "workflows"
-        inner_wf_dir = inner_workflows / "inner-wf"
-        inner_wf_dir.mkdir(parents=True)
-        (inner_wf_dir / "workflow.yml").write_text(
-            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
-        )
-        _write_registry(inner_workflows, "inner-wf", enabled=True)
-
-        unrelated_cwd = temp_dir / "unrelated-cwd"
-        unrelated_cwd.mkdir()
-        monkeypatch.chdir(unrelated_cwd)
-
-        runner = CliRunner()
-        target = inner_wf_dir / "workflow.yml"
-        result = runner.invoke(app, ["workflow", "run", str(target)])
-        # inner-wf (the actual nearest owner) is enabled -- must run, not
-        # be blocked by the unrelated outer-wf's disabled state.
-        assert result.exit_code == 0, result.output
-
-        # The inverse proves this isn't just ignoring nesting: disabling
-        # the true (nearest) owner must actually block this exact path.
-        _write_registry(inner_workflows, "inner-wf", enabled=False)
-        result = runner.invoke(app, ["workflow", "run", str(target)])
-        assert result.exit_code != 0
-        assert "disabled" in result.output
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_run_blocks_disabled_workflow_via_outward_alias_symlink(
-        self, project_dir, monkeypatch
-    ):
-        """The inverse of the existing inward-symlink case: a path with no
-        .specify/workflows segments at all (e.g. /tmp/alias.yml) that is
-        itself a symlink resolving *into* installed storage must still
-        receive the disabled check. Only checking the lexical path's own
-        segments misses this alias entirely, since it has no such segments
-        to begin with, and would let engine.load_workflow follow the
-        symlink to the disabled workflow's real content unchecked."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        self._install_dev(runner, app, project_dir)
-
-        result = runner.invoke(app, ["workflow", "disable", "align-wf"])
-        assert result.exit_code == 0, result.output
-
-        installed_yaml = (
-            project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
-        )
-        external_dir = project_dir / "outside-alias"
-        external_dir.mkdir()
-        alias = external_dir / "alias.yml"
-        alias.symlink_to(installed_yaml)
-
-        result = runner.invoke(app, ["workflow", "run", str(alias)])
-        assert result.exit_code != 0
-        assert "disabled" in result.output
-
-        result = runner.invoke(app, ["workflow", "enable", "align-wf"])
-        assert result.exit_code == 0, result.output
-        result = runner.invoke(app, ["workflow", "run", str(alias)])
-        assert result.exit_code == 0, result.output
-
-    _GATED_WORKFLOW_YAML = """
-schema_version: "1.0"
-workflow:
-  id: "gated-wf"
-  name: "Gated Workflow"
-  version: "1.0.0"
-steps:
-  - id: ask
-    type: gate
-    message: "Review"
-    options: [approve, reject]
-"""
-
-    def _install_and_run_gated(self, runner, app, project_dir):
-        """Install a gate-step workflow and run it to a paused state.
-
-        Returns the run_id. The gate step pauses without any interactive
-        input, giving a resumable run tied to an installed workflow ID.
-        """
-        src = project_dir / "gated-src"
-        src.mkdir(exist_ok=True)
-        (src / "workflow.yml").write_text(self._GATED_WORKFLOW_YAML, encoding="utf-8")
-        result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
-        assert result.exit_code == 0, result.output
-
-        result = runner.invoke(app, ["workflow", "run", "gated-wf", "--json"])
-        assert result.exit_code == 0, result.output
-        payload = json.loads(result.stdout)
-        assert payload["status"] == "paused"
-        return payload["run_id"]
-
-    def test_unregistered_workflow_shaped_path_is_not_persisted_as_owner(
-        self, project_dir, temp_dir, monkeypatch
-    ):
-        """A direct file is not installed merely because its path resembles
-        installed storage; only registry membership establishes ownership."""
-        import shutil
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        standalone_root = temp_dir / "standalone-project"
-        workflows_dir = standalone_root / ".specify" / "workflows"
-        workflow_file = workflows_dir / "gated-wf" / "workflow.yml"
-        workflow_file.parent.mkdir(parents=True)
-        workflow_file.write_text(self._GATED_WORKFLOW_YAML, encoding="utf-8")
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        run_ids = []
-        for _ in range(2):
-            result = runner.invoke(
-                app, ["workflow", "run", str(workflow_file), "--json"]
-            )
-            assert result.exit_code == 0, result.output
-            run_ids.append(json.loads(result.stdout)["run_id"])
-
-        for run_id in run_ids:
-            state_path = (
-                project_dir
-                / ".specify"
-                / "workflows"
-                / "runs"
-                / run_id
-                / "state.json"
-            )
-            state = json.loads(state_path.read_text(encoding="utf-8"))
-            assert state["installed_workflow_id"] is None
-            assert state["installed_registry_root"] is None
-
-        shutil.rmtree(standalone_root)
-        result = runner.invoke(
-            app, ["workflow", "resume", run_ids[0], "--json"]
-        )
-        assert result.exit_code == 0, result.output
-
-        workflows_dir.mkdir(parents=True)
-        (workflows_dir / "workflow-registry.json").write_text(
-            json.dumps(
-                {
-                    "schema_version": "1.0",
-                    "workflows": {
-                        "gated-wf": {
-                            "name": "Unrelated workflow",
-                            "version": "9.9.9",
-                            "source": "dev",
-                            "enabled": False,
-                        }
-                    },
-                }
-            ),
-            encoding="utf-8",
-        )
-        result = runner.invoke(
-            app, ["workflow", "resume", run_ids[1], "--json"]
-        )
-        assert result.exit_code == 0, result.output
-
-    def test_resume_blocks_when_installed_workflow_disabled(
-        self, project_dir, monkeypatch
-    ):
-        """A run started from an installed workflow must not resume once
-        that workflow is disabled. engine.resume() replays the persisted
-        run directly from disk with no registry awareness at all, so the
-        installed workflow's origin (id + owning registry root) is
-        persisted at run start and re-checked against the registry's
-        *current* state before resuming, mirroring `workflow run`'s
-        disabled guard."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        run_id = self._install_and_run_gated(runner, app, project_dir)
-
-        result = runner.invoke(app, ["workflow", "disable", "gated-wf"])
-        assert result.exit_code == 0, result.output
-
-        result = runner.invoke(app, ["workflow", "resume", run_id])
-        assert result.exit_code != 0
-        assert "disabled" in result.output
-
-        # Re-enabling must unblock the exact same run.
-        result = runner.invoke(app, ["workflow", "enable", "gated-wf"])
-        assert result.exit_code == 0, result.output
-        result = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
-        assert result.exit_code == 0, result.output
-        resumed = json.loads(result.stdout)
-        assert resumed["run_id"] == run_id
-
-    def test_resume_rejects_corrupted_registry_entry(
-        self, project_dir, monkeypatch
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        run_id = self._install_and_run_gated(runner, app, project_dir)
-
-        registry = WorkflowRegistry(project_dir)
-        registry.data["workflows"]["gated-wf"] = "corrupted"
-        registry.save()
-
-        result = runner.invoke(app, ["workflow", "resume", run_id])
-        assert result.exit_code != 0
-        assert "corrupted" in result.output
-
-    def test_resume_preload_io_error_is_reported_cleanly(
-        self, project_dir, monkeypatch
-    ):
-        from unittest.mock import patch
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.engine import RunState
-
-        monkeypatch.chdir(project_dir)
-        with patch.object(
-            RunState, "load", side_effect=OSError("permission [denied]")
-        ):
-            result = CliRunner().invoke(
-                app, ["workflow", "resume", "unreadable-run"]
-            )
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "Resume failed" in result.output
-        assert "permission [denied]" in result.output
-
-    @pytest.mark.parametrize("malformation", ["non-object", "missing-run-id"])
-    def test_resume_preload_rejects_malformed_state_cleanly(
-        self, project_dir, monkeypatch, malformation
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        run_id = self._install_and_run_gated(runner, app, project_dir)
-        state_path = (
-            project_dir / ".specify" / "workflows" / "runs" / run_id / "state.json"
-        )
-
-        if malformation == "non-object":
-            state_path.write_text("[]", encoding="utf-8")
-        else:
-            data = json.loads(state_path.read_text(encoding="utf-8"))
-            data.pop("run_id")
-            state_path.write_text(json.dumps(data), encoding="utf-8")
-
-        result = runner.invoke(app, ["workflow", "resume", run_id])
-
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "Invalid run state" in result.output
-
-    def test_resume_legacy_run_respects_current_disabled_state(
-        self, project_dir, monkeypatch
-    ):
-        """Legacy runs infer same-project registry ownership before resume."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        run_id = self._install_and_run_gated(runner, app, project_dir)
-
-        state_path = (
-            project_dir / ".specify" / "workflows" / "runs" / run_id / "state.json"
-        )
-        data = json.loads(state_path.read_text(encoding="utf-8"))
-        data.pop("installed_workflow_id", None)
-        data.pop("installed_registry_root", None)
-        state_path.write_text(json.dumps(data), encoding="utf-8")
-
-        result = runner.invoke(app, ["workflow", "disable", "gated-wf"])
-        assert result.exit_code == 0, result.output
-
-        result = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
-        assert result.exit_code != 0
-        assert "disabled" in result.output
-
-    def test_resume_migrates_legacy_installed_origin_metadata(
-        self, project_dir, monkeypatch
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        run_id = self._install_and_run_gated(runner, app, project_dir)
-
-        state_path = (
-            project_dir / ".specify" / "workflows" / "runs" / run_id / "state.json"
-        )
-        data = json.loads(state_path.read_text(encoding="utf-8"))
-        data.pop("installed_workflow_id", None)
-        data.pop("installed_registry_root", None)
-        state_path.write_text(json.dumps(data), encoding="utf-8")
-
-        result = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
-        assert result.exit_code == 0, result.output
-
-        migrated = json.loads(state_path.read_text(encoding="utf-8"))
-        assert migrated["installed_workflow_id"] == "gated-wf"
-        assert migrated["installed_registry_root"] is None
-
-    def test_resume_blocks_after_project_moved_following_disable(
-        self, temp_dir, monkeypatch
-    ):
-        """Renaming/moving the entire project after starting a run must not
-        let a subsequent disable-then-resume bypass the guard. Persisting
-        the run's *creation-time absolute* project path would make resume
-        open a now-nonexistent old root (WorkflowRegistry falls back to an
-        empty default there), missing the disabled entry that actually
-        lives in the *current* (moved) project's registry. The common,
-        same-project case must instead re-derive the owning root from the
-        project's current location on every resume."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        import shutil
-
-        project_v1 = temp_dir / "project-v1"
-        (project_v1 / ".specify" / "workflows").mkdir(parents=True)
-        monkeypatch.chdir(project_v1)
-        runner = CliRunner()
-        run_id = self._install_and_run_gated(runner, app, project_v1)
-
-        project_v2 = temp_dir / "project-v2"
-        monkeypatch.chdir(temp_dir)
-        shutil.move(str(project_v1), str(project_v2))
-        monkeypatch.chdir(project_v2)
-
-        result = runner.invoke(app, ["workflow", "disable", "gated-wf"])
-        assert result.exit_code == 0, result.output
-
-        result = runner.invoke(app, ["workflow", "resume", run_id])
-        assert result.exit_code != 0
-        assert "disabled" in result.output
-
-    def test_resume_after_project_moved_still_works_when_enabled(
-        self, temp_dir, monkeypatch
-    ):
-        """The inverse of the move regression: an enabled workflow's run
-        must still resume normally after the project is moved -- the
-        current-project fallback must not itself block legitimate
-        resumes."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        import shutil
-
-        project_v1 = temp_dir / "project-v1-ok"
-        (project_v1 / ".specify" / "workflows").mkdir(parents=True)
-        monkeypatch.chdir(project_v1)
-        runner = CliRunner()
-        run_id = self._install_and_run_gated(runner, app, project_v1)
-
-        project_v2 = temp_dir / "project-v2-ok"
-        monkeypatch.chdir(temp_dir)
-        shutil.move(str(project_v1), str(project_v2))
-        monkeypatch.chdir(project_v2)
-
-        result = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
-        assert result.exit_code == 0, result.output
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_resume_respects_cross_project_registry_root(
-        self, temp_dir, monkeypatch
-    ):
-        """A run started via a direct workflow.yml path belonging to a
-        different project than the cwd used for `workflow run`/`workflow
-        resume` must still gate resuming on *that* owning project's
-        registry, not the cwd project's (which has no entry for this ID
-        at all). This is the genuine cross-project case that must remain
-        unaffected by only special-casing the common same-project one."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        owner_project = temp_dir / "owner-project"
-        (owner_project / ".specify" / "workflows").mkdir(parents=True)
-        monkeypatch.chdir(owner_project)
-        runner = CliRunner()
-        src = owner_project / "gated-src"
-        src.mkdir()
-        (src / "workflow.yml").write_text(self._GATED_WORKFLOW_YAML, encoding="utf-8")
-        result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
-        assert result.exit_code == 0, result.output
-
-        unrelated_cwd = temp_dir / "unrelated-cwd"
-        unrelated_cwd.mkdir()
-        monkeypatch.chdir(unrelated_cwd)
-
-        owner_alias = temp_dir / "owner-project-alias"
-        owner_alias.symlink_to(owner_project, target_is_directory=True)
-        target = owner_alias / ".specify" / "workflows" / "gated-wf" / "workflow.yml"
-        result = runner.invoke(app, ["workflow", "run", str(target), "--json"])
-        assert result.exit_code == 0, result.output
-        run_id = json.loads(result.stdout)["run_id"]
-        state_path = (
-            unrelated_cwd
-            / ".specify"
-            / "workflows"
-            / "runs"
-            / run_id
-            / "state.json"
-        )
-        state = json.loads(state_path.read_text(encoding="utf-8"))
-        assert state["installed_registry_root"] == str(owner_project.resolve())
-
-        monkeypatch.chdir(owner_project)
-        result = runner.invoke(app, ["workflow", "disable", "gated-wf"])
-        assert result.exit_code == 0, result.output
-
-        # Resume must run from unrelated_cwd (where this run's own
-        # state.json actually lives) yet still be blocked by the owner
-        # project's disabled entry.
-        monkeypatch.chdir(unrelated_cwd)
-        result = runner.invoke(app, ["workflow", "resume", run_id])
-        assert result.exit_code != 0
-        assert "disabled" in result.output
-
-    def test_resume_rejects_missing_cross_project_owner_root(
-        self, temp_dir, monkeypatch
-    ):
-        """A vanished explicit cross-project owner cannot be safely
-        rediscovered, so resume must fail closed instead of consulting the
-        unrelated project that stores the run state."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        import shutil
-
-        owner_project = temp_dir / "owner-project-2"
-        (owner_project / ".specify" / "workflows").mkdir(parents=True)
-        monkeypatch.chdir(owner_project)
-        runner = CliRunner()
-        src = owner_project / "gated-src"
-        src.mkdir()
-        (src / "workflow.yml").write_text(self._GATED_WORKFLOW_YAML, encoding="utf-8")
-        result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
-        assert result.exit_code == 0, result.output
-
-        unrelated_cwd = temp_dir / "unrelated-cwd-2"
-        unrelated_cwd.mkdir()
-        monkeypatch.chdir(unrelated_cwd)
-
-        target = owner_project / ".specify" / "workflows" / "gated-wf" / "workflow.yml"
-        result = runner.invoke(app, ["workflow", "run", str(target), "--json"])
-        assert result.exit_code == 0, result.output
-        run_id = json.loads(result.stdout)["run_id"]
-
-        # owner_project vanishes entirely -- its persisted absolute root
-        # is now dangling.
-        shutil.rmtree(owner_project)
-
-        result = runner.invoke(app, ["workflow", "resume", run_id])
-        assert result.exit_code != 0
-        assert "owner" in result.output.lower()
-        assert "unavailable" in result.output.lower()
-
-    @pytest.mark.parametrize(
-        "field, bad_value",
-        [
-            ("installed_workflow_id", 123),
-            ("installed_workflow_id", ["gated-wf"]),
-            ("installed_workflow_id", {"id": "gated-wf"}),
-            ("installed_workflow_id", True),
-            ("installed_workflow_id", ""),
-            ("installed_workflow_id", "gated-wf\n"),
-            ("installed_registry_root", 123),
-            ("installed_registry_root", ["."]),
-            ("installed_registry_root", {"root": "."}),
-            ("installed_registry_root", False),
-            ("installed_registry_root", ""),
-            ("installed_registry_root", "relative-owner"),
-        ],
-    )
-    def test_resume_rejects_malformed_run_state_origin_fields(
-        self, project_dir, monkeypatch, field, bad_value
-    ):
-        """RunState.load() rejects malformed or unsafe origin metadata
-        before registry/path lookups and reports a clean CLI error."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        run_id = self._install_and_run_gated(runner, app, project_dir)
-
-        state_path = (
-            project_dir / ".specify" / "workflows" / "runs" / run_id / "state.json"
-        )
-        data = json.loads(state_path.read_text(encoding="utf-8"))
-        data[field] = bad_value
-        state_path.write_text(json.dumps(data), encoding="utf-8")
-
-        result = runner.invoke(app, ["workflow", "resume", run_id])
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "Error" in result.output
-
-    @pytest.mark.parametrize("command", ["resume", "status"])
-    def test_state_load_errors_escape_rich_markup(
-        self, project_dir, monkeypatch, command
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        run_id = self._install_and_run_gated(runner, app, project_dir)
-
-        state_path = (
-            project_dir / ".specify" / "workflows" / "runs" / run_id / "state.json"
-        )
-        data = json.loads(state_path.read_text(encoding="utf-8"))
-        malicious_status = "[bold red]forged[/bold red]"
-        data["status"] = malicious_status
-        state_path.write_text(json.dumps(data), encoding="utf-8")
-
-        result = runner.invoke(app, ["workflow", command, run_id])
-
-        assert result.exit_code != 0
-        assert malicious_status in result.output
-
-    @pytest.mark.parametrize(
-        "installed_workflow_id, installed_registry_root",
-        [
-            (None, None),
-            ("gated-wf", None),
-        ],
-    )
-    def test_resume_accepts_valid_run_state_origin_fields(
-        self, project_dir, monkeypatch, installed_workflow_id, installed_registry_root
-    ):
-        """Valid installed-origin values continue to load and resume."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        run_id = self._install_and_run_gated(runner, app, project_dir)
-
-        state_path = (
-            project_dir / ".specify" / "workflows" / "runs" / run_id / "state.json"
-        )
-        data = json.loads(state_path.read_text(encoding="utf-8"))
-        data["installed_workflow_id"] = installed_workflow_id
-        data["installed_registry_root"] = installed_registry_root
-        state_path.write_text(json.dumps(data), encoding="utf-8")
-
-        result = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
-        assert result.exit_code == 0, result.output
-
-    @pytest.mark.parametrize(
-        "field, bad_value",
-        [
-            ("installed_workflow_id", 123),
-            ("installed_workflow_id", ["gated-wf"]),
-            ("installed_registry_root", 123),
-            ("installed_registry_root", ["."]),
-        ],
-    )
-    def test_status_rejects_malformed_run_state_origin_fields(
-        self, project_dir, monkeypatch, field, bad_value
-    ):
-        """`workflow status <run_id>` calls RunState.load() same as resume,
-        but only caught FileNotFoundError -- the new type validation there
-        (int/list instead of str-or-null) raises ValueError, which leaked
-        as a raw unhandled traceback instead of `workflow resume`'s clean
-        `[red]Error:[/red] {exc}` + exit 1. Must get the identical clean
-        boundary, leaving the no-run-id list path (and FileNotFoundError
-        behavior) unchanged."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        run_id = self._install_and_run_gated(runner, app, project_dir)
-
-        state_path = (
-            project_dir / ".specify" / "workflows" / "runs" / run_id / "state.json"
-        )
-        data = json.loads(state_path.read_text(encoding="utf-8"))
-        data[field] = bad_value
-        state_path.write_text(json.dumps(data), encoding="utf-8")
-
-        result = runner.invoke(app, ["workflow", "status", run_id])
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "Error" in result.output
-
-    def test_status_run_not_found_unchanged(self, project_dir, monkeypatch):
-        """FileNotFoundError behavior for a nonexistent run_id must remain
-        exactly as before this fix."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        (project_dir / ".specify" / "workflows").mkdir(parents=True, exist_ok=True)
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "status", "nonexistent-run"])
-        assert result.exit_code != 0
-        assert "Run not found: nonexistent-run" in result.output
-
-    def test_status_json_not_found_error_goes_to_stderr(
-        self, project_dir, monkeypatch, capsys
-    ):
-        """Under --json, the not-found/invalid-run error must go to stderr so the
-        stdout JSON stream stays parseable (empty on the error path) — mirroring
-        `workflow run`/`workflow resume`. Before this fix both handlers used the
-        stdout console, corrupting a consumer's json.loads(stdout)."""
-        import typer
-        from specify_cli.workflows import _commands
-
-        (project_dir / ".specify" / "workflows").mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr(
-            _commands, "_require_specify_project", lambda: project_dir
-        )
-        with pytest.raises(typer.Exit) as exc:
-            _commands.workflow_status("does-not-exist", json_output=True)
-        assert exc.value.exit_code == 1
-        captured = capsys.readouterr()
-        assert "Run not found" in captured.err
-        assert "Run not found" not in captured.out
-        # stdout carries no partial/corrupt JSON on the error path.
-        assert captured.out.strip() == ""
-
-    def test_status_json_invalid_run_error_goes_to_stderr(
-        self, project_dir, monkeypatch, capsys
-    ):
-        """The ValueError handler (a malformed/invalid run state) must ALSO route
-        to stderr under --json, not just the FileNotFoundError one — otherwise a
-        regression there would silently corrupt the JSON stream and this suite
-        wouldn't catch it."""
-        import typer
-        from specify_cli.workflows import _commands
-        from specify_cli.workflows.engine import RunState
-
-        (project_dir / ".specify" / "workflows").mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr(
-            _commands, "_require_specify_project", lambda: project_dir
-        )
-
-        def _raise_value_error(*args, **kwargs):
-            raise ValueError("corrupt run state: bad status")
-
-        monkeypatch.setattr(RunState, "load", _raise_value_error)
-
-        with pytest.raises(typer.Exit) as exc:
-            _commands.workflow_status("some-run", json_output=True)
-        assert exc.value.exit_code == 1
-        captured = capsys.readouterr()
-        assert "corrupt run state" in captured.err
-        assert "corrupt run state" not in captured.out
-        assert captured.out.strip() == ""
-
-    def test_status_unreadable_run_state_exits_cleanly(
-        self, project_dir, monkeypatch
-    ):
-        """`workflow status <run_id>` gained a ValueError boundary to match
-        `workflow resume`, but not resume's OSError one -- so an unreadable
-        state.json (bad permissions, a directory in its place, an I/O error)
-        still leaked a raw traceback. exists() is True for a directory, so
-        the guard passes and open() raises OSError."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runs_dir = project_dir / ".specify" / "workflows" / "runs" / "abc123"
-        runs_dir.mkdir(parents=True, exist_ok=True)
-        # A directory where state.json should be: exists() passes, open() fails.
-        (runs_dir / "state.json").mkdir(exist_ok=True)
-
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "status", "abc123"])
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "Error" in result.output
-
-    def test_status_json_unreadable_run_state_error_goes_to_stderr(
-        self, project_dir, monkeypatch, capsys
-    ):
-        """The OSError handler must route to stderr under --json too, so the
-        stdout JSON stream stays parseable -- mirroring the sibling
-        FileNotFoundError/ValueError handlers."""
-        import typer
-        from specify_cli.workflows import _commands
-        from specify_cli.workflows.engine import RunState
-
-        (project_dir / ".specify" / "workflows").mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr(
-            _commands, "_require_specify_project", lambda: project_dir
-        )
-
-        def _raise_os_error(*args, **kwargs):
-            raise PermissionError(13, "Permission denied")
-
-        monkeypatch.setattr(RunState, "load", _raise_os_error)
-
-        with pytest.raises(typer.Exit) as exc:
-            _commands.workflow_status("some-run", json_output=True)
-        assert exc.value.exit_code == 1
-        captured = capsys.readouterr()
-        assert "Permission denied" in captured.err
-        assert "Permission denied" not in captured.out
-        assert captured.out.strip() == ""
-
-    def test_status_no_run_id_list_path_unaffected(self, project_dir, monkeypatch):
-        """The no-run-id list-all-runs path must remain unaffected by the
-        new single-run ValueError boundary."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        (project_dir / ".specify" / "workflows").mkdir(parents=True, exist_ok=True)
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "status"])
-        assert result.exit_code == 0, result.output
-
-    def test_disable_shows_marker_in_list(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        self._install_dev(runner, app, project_dir)
-        runner.invoke(app, ["workflow", "disable", "align-wf"])
-        result = runner.invoke(app, ["workflow", "list"])
-        assert result.exit_code == 0, result.output
-        assert "[disabled]" in result.output
-
-    def test_enable_disable_not_installed_errors(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        for cmd in ("enable", "disable"):
-            result = runner.invoke(app, ["workflow", cmd, "ghost"])
-            assert result.exit_code != 0
-            assert "not installed" in result.output
-
-    def test_enable_disable_idempotent_warnings(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        runner = CliRunner()
-        self._install_dev(runner, app, project_dir)
-
-        result = runner.invoke(app, ["workflow", "enable", "align-wf"])
-        assert result.exit_code == 0
-        assert "already enabled" in result.output
-
-        runner.invoke(app, ["workflow", "disable", "align-wf"])
-        result = runner.invoke(app, ["workflow", "disable", "align-wf"])
-        assert result.exit_code == 0
-        assert "already disabled" in result.output

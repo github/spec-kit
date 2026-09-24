@@ -4,6 +4,10 @@ Extension Manager for Spec Kit
 Handles installation, removal, and management of Spec Kit extensions.
 Extensions are modular packages that add commands and functionality to spec-kit
 without bloating the core framework.
+
+CLI handlers live in ``command_*.py`` modules, registered through
+``_commands.py``. Command-private phases use ``_command_<name>_*.py``;
+nested catalog handlers live under ``catalog/``.
 """
 
 from __future__ import annotations
@@ -1184,21 +1188,54 @@ class ExtensionManager:
 
         return installed_names
 
+    @staticmethod
+    def _normalize_shadow_name(name: str) -> str:
+        """Normalize a command/alias name to its on-disk output form.
+
+        Agent integrations (Cline, Forge, Junie) and the SKILL.md output-name
+        computation (``CommandRegistrar._compute_output_name``) all collapse
+        dots to hyphens and prefix a bare name with ``speckit-``, so
+        ``speckit.taskstoissues``, ``taskstoissues``, and
+        ``speckit-taskstoissues`` are distinct alias spellings that land on
+        the same on-disk command name. Normalize before comparing so all of
+        them are caught, not just the exact dotted spelling.
+        """
+        hyphenated = name.replace(".", "-")
+        if not hyphenated.startswith("speckit-"):
+            hyphenated = f"speckit-{hyphenated}"
+        return hyphenated
+
     def _validate_install_conflicts(self, manifest: ExtensionManifest) -> None:
-        """Reject installs that would shadow core or installed extension commands."""
+        """Reject installs that would shadow core or installed extension commands.
+
+        Primary command names are already namespace-checked against
+        ``CORE_COMMAND_NAMES`` in ``_collect_manifest_command_names``, but
+        aliases are intentionally free-form (see the comment there) and so
+        can only be caught here, by comparing declared names' normalized
+        on-disk form (see ``_normalize_shadow_name``) against core command
+        names rather than relying on ``_get_installed_command_name_map``,
+        which only knows about installed extensions.
+        """
         declared_names = self._collect_manifest_command_names(manifest)
         installed_names = self._get_installed_command_name_map(
             exclude_extension_id=manifest.id
         )
+        core_shadow_names = {
+            self._normalize_shadow_name(f"speckit.{name}") for name in CORE_COMMAND_NAMES
+        }
 
-        collisions = [
-            f"{name} (already provided by extension '{installed_names[name]}')"
-            for name in sorted(declared_names)
-            if name in installed_names
-        ]
+        collisions = []
+        for name in sorted(declared_names):
+            if name in installed_names:
+                collisions.append(
+                    f"{name} (already provided by extension '{installed_names[name]}')"
+                )
+            elif self._normalize_shadow_name(name) in core_shadow_names:
+                collisions.append(f"{name} (conflicts with core command)")
+
         if collisions:
             raise ValidationError(
-                "Extension commands conflict with installed extensions:\n- "
+                "Extension commands conflict with core or installed extension commands:\n- "
                 + "\n- ".join(collisions)
             )
 
@@ -1596,7 +1633,7 @@ class ExtensionManager:
                 )
 
             return re.sub(
-                r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_]*)__", _replacement, body
+                r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_-]*)__", _replacement, body
             )
 
         for cmd_info in manifest.commands:
@@ -1687,6 +1724,7 @@ class ExtensionManager:
                 skill_name,
                 description,
                 f"extension:{manifest.id}",
+                author=manifest.data["extension"].get("author"),
             )
             # Preserve the command's argument-hint in the generated skill,
             # mirroring the core template path (ClaudeIntegration.setup injects
@@ -2052,6 +2090,8 @@ class ExtensionManager:
         priority: int = 10,
         link_commands: bool = False,
         force: bool = False,
+        *,
+        catalog_name: str | None = None,
     ) -> ExtensionManifest:
         """Install extension from a local directory.
 
@@ -2612,11 +2652,19 @@ class ExtensionManager:
                 backup_config_dir.unlink()
 
         # Update registry
+        normalized_catalog_name = (
+            catalog_name.strip() if isinstance(catalog_name, str) else ""
+        )
+        source = (
+            {"kind": "catalog", "catalog": normalized_catalog_name}
+            if normalized_catalog_name
+            else "local"
+        )
         self.registry.add(
             manifest.id,
             {
                 "version": manifest.version,
-                "source": "local",
+                "source": source,
                 "manifest_hash": manifest.get_hash(),
                 "enabled": True,
                 "priority": priority,
@@ -2673,6 +2721,7 @@ class ExtensionManager:
         archive_file: BinaryIO | None = None,
         source_name: str | None = None,
         content_type: str | None = None,
+        catalog_name: str | None = None,
     ) -> ExtensionManifest:
         """Install an extension from a supported archive.
 
@@ -2724,7 +2773,11 @@ class ExtensionManager:
 
             # Install from extracted directory
             return self.install_from_directory(
-                extension_dir, speckit_version, priority=priority, force=force
+                extension_dir,
+                speckit_version,
+                priority=priority,
+                force=force,
+                catalog_name=catalog_name,
             )
 
     def _config_root_is_contained(self, specify_dir: Path) -> bool:
@@ -2880,6 +2933,7 @@ class ExtensionManager:
         archive_file: BinaryIO | None = None,
         source_name: str | None = None,
         content_type: str | None = None,
+        catalog_name: str | None = None,
     ) -> ExtensionManifest:
         """Backward-compatible wrapper for archive installation."""
         return self.install_from_archive(
@@ -2890,6 +2944,7 @@ class ExtensionManager:
             archive_file=archive_file,
             source_name=source_name,
             content_type=content_type,
+            catalog_name=catalog_name,
         )
 
     def remove(self, extension_id: str, keep_config: bool = False) -> bool:
@@ -3490,6 +3545,8 @@ class ExtensionManager:
 
             try:
                 manifest = ExtensionManifest(manifest_path)
+                author = manifest.data["extension"].get("author")
+                hook_count = len(manifest.hooks)
                 result.append(
                     {
                         "id": ext_id,
@@ -3500,7 +3557,15 @@ class ExtensionManager:
                         "priority": normalize_priority(metadata.get("priority")),
                         "installed_at": metadata.get("installed_at"),
                         "command_count": len(manifest.commands),
-                        "hook_count": len(manifest.hooks),
+                        "hook_count": hook_count,
+                        "_json_author": author if isinstance(author, str) and author else None,
+                        "_json_source": metadata.get("source"),
+                        "_json_provides": {
+                            "commands": len(manifest.commands),
+                            "templates": len(manifest.templates),
+                            "scripts": len(manifest.scripts),
+                            "hooks": hook_count,
+                        },
                     }
                 )
             except ValidationError:
@@ -3516,6 +3581,9 @@ class ExtensionManager:
                         "installed_at": metadata.get("installed_at"),
                         "command_count": 0,
                         "hook_count": 0,
+                        "_json_author": None,
+                        "_json_source": metadata.get("source"),
+                        "_json_provides": {"commands": 0, "templates": 0, "scripts": 0, "hooks": 0},
                     }
                 )
 
@@ -3615,6 +3683,7 @@ class CommandRegistrar:
             context_note=context_note,
             link_outputs=link_outputs,
             extension_id=manifest.id,
+            author=manifest.data["extension"].get("author"),
         )
 
     def register_commands_for_all_agents(
@@ -3638,6 +3707,7 @@ class CommandRegistrar:
             create_missing_active_skills_dir=create_missing_active_skills_dir,
             only_agent=only_agent,
             extension_id=manifest.id,
+            author=manifest.data["extension"].get("author"),
         )
 
     def unregister_commands(
@@ -3723,11 +3793,12 @@ class ExtensionCatalog(CatalogStackBase):
     ) -> Optional[str]:
         """Resolve a GitHub release asset URL to its API asset URL.
 
-        Delegates to the shared helper in :mod:`specify_cli._github_http`,
+        Delegates to the shared helper in
+        :mod:`specify_cli.authentication.github_http`,
         passing the ``github`` provider hosts from ``auth.json`` so GitHub
         Enterprise Server release assets resolve via ``/api/v3``.
         """
-        from specify_cli._github_http import resolve_github_release_asset_api_url
+        from specify_cli.authentication.github_http import resolve_github_release_asset_api_url
         from specify_cli.authentication.http import github_provider_hosts
 
         return resolve_github_release_asset_api_url(
@@ -4502,7 +4573,25 @@ class ConfigManager:
             return {}
 
         manifest_data = self._load_yaml_config(manifest_path)
-        return manifest_data.get("config", {}).get("defaults", {})
+        # _load_yaml_config already coerces a non-mapping *root* to {}, but
+        # extension.yml's top-level 'config' key is unvalidated by
+        # ExtensionManifest (only 'provides.config' is checked there -- a
+        # different field). A manifest author's ``config: []`` or
+        # ``config: "oops"`` therefore reaches here as a dict whose 'config'
+        # value is a list/str, and the unguarded chained .get() raised a bare
+        # AttributeError ('list'/'str' object has no attribute 'get') instead
+        # of degrading like every other malformed-shape config source in this
+        # class. That crash was swallowed by should_execute_hook's blanket
+        # except, so a hook's 'config.x is set' condition silently and
+        # permanently evaluated to False for the extension -- mirroring the
+        # 'jira-config.yml' non-mapping-root case TestConfigManagerNonMappingYaml
+        # already covers for _get_project_config/_get_local_config, one level
+        # deeper in the manifest's own 'config' section.
+        config_section = manifest_data.get("config", {})
+        if not isinstance(config_section, dict):
+            return {}
+        defaults = config_section.get("defaults", {})
+        return defaults if isinstance(defaults, dict) else {}
 
     def _get_project_config(self) -> Dict[str, Any]:
         """Get project-level configuration.

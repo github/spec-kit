@@ -1,0 +1,153 @@
+"""Offline-first tests (Constitution Principle IV).
+
+Assert that consume/author flows work with no network access: built-in catalogs
+resolve offline, file:// catalogs resolve offline, and http(s) sources are
+refused (never silently attempted) when network is disabled.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from specify_cli.bundler import BundlerError
+from specify_cli.bundles.catalogs import CatalogSource, InstallPolicy, Scope
+from specify_cli.bundles.adapters import make_catalog_fetcher
+from specify_cli.bundles.catalog_stack import CatalogStack
+from tests.specify_cli.bundles.helpers import catalog_entry_dict, write_catalog_file
+
+
+def _src(source_id, url, priority=1, policy="install-allowed"):
+    return CatalogSource(
+        id=source_id, url=url, priority=priority,
+        install_policy=InstallPolicy(policy), scope=Scope.PROJECT,
+    )
+
+
+def test_builtin_default_catalog_resolves_first_party_bundles_offline():
+    fetcher = make_catalog_fetcher(allow_network=False)
+    stack = CatalogStack([_src("default", "builtin://default")], fetcher)
+    # Built-in default now ships the first-party bundles bugfix and assess.
+    results = {r.entry.id: r for r in stack.search()}
+    assert set(results) == {"bugfix", "assess"}
+    assert all(r.source.id == "default" and r.install_allowed for r in results.values())
+
+    resolved = stack.resolve("bugfix")
+    assert resolved.entry.id == "bugfix"
+    assert resolved.install_allowed is True
+
+    resolved = stack.resolve("assess")
+    assert resolved.entry.id == "assess"
+    assert resolved.install_allowed is True
+
+
+@pytest.mark.parametrize(
+    "source_id, builtin_id, builtin_priority, project_priority",
+    [
+        pytest.param("default", "builtin://default", 1, 10, id="default"),
+        pytest.param("community", "builtin://community", 20, 30, id="community"),
+    ],
+)
+def test_builtin_catalog_failure_does_not_block_lower_priority_source(
+    monkeypatch, source_id, builtin_id, builtin_priority, project_priority
+):
+    from specify_cli.bundles import adapters
+
+    def fail_http_get_json(source_id, url):
+        raise adapters._CatalogUnavailable("repository unavailable")
+
+    monkeypatch.setattr(
+        "specify_cli.bundles.adapters._http_get_json", fail_http_get_json
+    )
+    monkeypatch.setattr(
+        "specify_cli.bundles.adapters._load_packaged_catalog",
+        lambda filename: {"schema_version": "1.0", "bundles": {}},
+    )
+
+    project = _src(
+        "project", "https://example.com/catalog.json", priority=project_priority
+    )
+    fetcher = make_catalog_fetcher(allow_network=True)
+
+    def fetch_project(source):
+        if source.id == "project":
+            return {
+                "schema_version": "1.0",
+                "bundles": {"company": catalog_entry_dict("company")},
+            }
+        return fetcher(source)
+
+    stack = CatalogStack(
+        [_src(source_id, builtin_id, priority=builtin_priority), project],
+        fetch_project,
+    )
+
+    with pytest.warns(UserWarning, match="packaged snapshot"):
+        resolved = stack.resolve("company")
+    assert resolved.source.id == "project"
+
+
+def test_builtin_community_catalog_resolves_from_packaged_snapshot_offline():
+    fetcher = make_catalog_fetcher(allow_network=False)
+    source = _src(
+        "community",
+        "builtin://community",
+        priority=20,
+        policy="discovery-only",
+    )
+    payload = fetcher(source)
+    stack = CatalogStack([source], fetcher)
+
+    assert isinstance(payload.get("bundles"), dict)
+    assert all(
+        result.source.id == "community" and not result.install_allowed
+        for result in stack.search()
+    )
+    assert stack.sources[0].install_allowed is False
+
+
+def test_file_catalog_resolves_offline(tmp_path: Path):
+    catalog_path = tmp_path / "catalog.json"
+    write_catalog_file(catalog_path, {"demo": catalog_entry_dict("demo")})
+    fetcher = make_catalog_fetcher(allow_network=False)
+    stack = CatalogStack([_src("local", str(catalog_path))], fetcher)
+    resolved = stack.resolve("demo")
+    assert resolved.entry.id == "demo"
+
+
+def test_http_source_refused_when_offline():
+    fetcher = make_catalog_fetcher(allow_network=False)
+    stack = CatalogStack([_src("remote", "https://example.com/catalog.json")], fetcher)
+    with pytest.raises(BundlerError, match="Network access disabled"):
+        stack.resolve("anything")
+
+
+def test_missing_file_catalog_errors_offline(tmp_path: Path):
+    fetcher = make_catalog_fetcher(allow_network=False)
+    stack = CatalogStack([_src("local", str(tmp_path / "nope.json"))], fetcher)
+    with pytest.raises(BundlerError):
+        stack.resolve("anything")
+
+
+def test_file_url_catalog_resolves_offline(tmp_path: Path):
+    catalog_path = tmp_path / "catalog.json"
+    write_catalog_file(catalog_path, {"demo": catalog_entry_dict("demo")})
+    fetcher = make_catalog_fetcher(allow_network=False)
+    stack = CatalogStack([_src("local", catalog_path.as_uri())], fetcher)
+    resolved = stack.resolve("demo")
+    assert resolved.entry.id == "demo"
+
+
+def test_plain_http_remote_rejected_before_network():
+    # HTTPS is required for non-localhost catalogs; reject http:// up front.
+    fetcher = make_catalog_fetcher(allow_network=True)
+    stack = CatalogStack([_src("remote", "http://example.com/catalog.json")], fetcher)
+    with pytest.raises(BundlerError, match="must use HTTPS"):
+        stack.resolve("anything")
+
+
+def test_remote_url_without_host_rejected():
+    fetcher = make_catalog_fetcher(allow_network=True)
+    stack = CatalogStack([_src("remote", "https:///catalog.json")], fetcher)
+    with pytest.raises(BundlerError, match="valid URL with a host"):
+        stack.resolve("anything")

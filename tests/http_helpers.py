@@ -28,7 +28,8 @@ def route_opener_open_through_urlopen(monkeypatch):
     modules are built on.
     Delegating ``open()`` to urlopen at call time keeps those patches
     effective; the redirect handler's own behavior is covered by
-    ``TestRedirectStripping`` in test_authentication.py.
+    ``TestRedirectStripping`` in
+    ``tests/specify_cli/authentication/test_authentication.py``.
 
     Import this fixture into a test module to activate it there.
     """

@@ -37,6 +37,7 @@ Consolidated prerequisite checking for Spec-Driven Development workflow.
 
 OPTIONS:
   --json              Output in JSON format
+  --require-spec      Require spec.md to exist (for analysis phase)
   --require-tasks     Require tasks.md to exist (for implementation phase)
   --include-tasks     Include tasks.md in AVAILABLE_DOCS list
   --paths-only        Only output path variables (no prerequisite validation)
@@ -59,6 +60,7 @@ EXAMPLES:
 @dataclass(frozen=True)
 class Args:
     json_mode: bool = False
+    require_spec: bool = False
     require_tasks: bool = False
     include_tasks: bool = False
     paths_only: bool = False
@@ -67,6 +69,7 @@ class Args:
 
 def _parse_args(argv: list[str]) -> Args:
     json_mode = False
+    require_spec = False
     require_tasks = False
     include_tasks = False
     paths_only = False
@@ -77,6 +80,8 @@ def _parse_args(argv: list[str]) -> Args:
         arg = argv[index]
         if arg == "--json":
             json_mode = True
+        elif arg == "--require-spec":
+            require_spec = True
         elif arg == "--require-tasks":
             require_tasks = True
         elif arg == "--include-tasks":
@@ -105,6 +110,7 @@ def _parse_args(argv: list[str]) -> Args:
 
     return Args(
         json_mode=json_mode,
+        require_spec=require_spec,
         require_tasks=require_tasks,
         include_tasks=include_tasks,
         paths_only=paths_only,
@@ -226,6 +232,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: plan.md not found in {paths.feature_dir}", file=sys.stderr)
         print(
             f"Run {format_speckit_command('plan', paths.repo_root)} first to create the implementation plan.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if args.require_spec and not paths.feature_spec.is_file():
+        print(f"ERROR: spec.md not found in {paths.feature_dir}", file=sys.stderr)
+        print(
+            f"Run {format_speckit_command('specify', paths.repo_root)} first to create the feature specification.",
             file=sys.stderr,
         )
         return 1

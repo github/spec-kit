@@ -1,0 +1,62 @@
+schema_version: "1.0"
+workflow:
+  id: "assess"
+  name: "Idea Assessment Pipeline"
+  version: "1.0.0"
+  author: "GitHub"
+  description: "Runs intake → research → define → shape → decide with a verdict review gate before a manual /speckit.specify handoff"
+
+requires:
+  # Matches the composed assess extension's requirement (extensions/assess/extension.yml).
+  speckit_version: ">=0.9.0"
+
+inputs:
+  idea:
+    type: string
+    required: true
+    prompt: "Raw idea (pasted text, URL, ticket, or codebase pointer)"
+  slug:
+    type: string
+    required: true
+    prompt: "Assessment slug (short kebab-case name, e.g. offline-mode)"
+  integration:
+    type: string
+    default: "auto"
+    prompt: "Integration to use (e.g. claude, copilot, gemini; 'auto' uses the project's initialized integration)"
+
+steps:
+  - id: intake
+    command: speckit.assess.intake
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.idea }} slug={{ inputs.slug }}"
+
+  - id: research
+    command: speckit.assess.research
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "slug={{ inputs.slug }}"
+
+  - id: define
+    command: speckit.assess.define
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "slug={{ inputs.slug }}"
+
+  - id: shape
+    command: speckit.assess.shape
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "slug={{ inputs.slug }}"
+
+  - id: decide
+    command: speckit.assess.decide
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "slug={{ inputs.slug }}"
+
+  - id: review-verdict
+    type: gate
+    message: "Review the assessment verdict. A go verdict is handed off manually with the specify command; this workflow stops here."
+    options: [approve, reject]
+    on_reject: abort
