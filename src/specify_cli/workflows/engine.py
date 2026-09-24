@@ -1651,7 +1651,10 @@ class WorkflowEngine:
                         parent_local_only=alias_local_only,
                         parent_alias_records=alias_records,
                     )
-                    context.item = None
+                    # No ``context.item = None`` reset here: _run_fan_out
+                    # restores (sequential) or never touches (concurrent) the
+                    # caller's item, so an enclosing fan-out's item survives
+                    # for later sibling steps.
                     # Preserve original output and add collected results
                     fan_out_output = dict(result.output)
                     fan_out_output["results"] = fan_out_results

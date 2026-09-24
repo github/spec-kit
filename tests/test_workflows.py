@@ -6736,8 +6736,8 @@ steps:
             StepStatus,
         )
         from specify_cli.workflows.engine import RunState, WorkflowEngine
-        from specify_cli.workflows.steps.if_then import IfThenStep
-        from specify_cli.workflows.steps.while_loop import WhileStep
+        from specify_cli.workflows.step.if_then import IfThenStep
+        from specify_cli.workflows.step.while_loop import WhileStep
 
         call_count = {"n": 0}
 
@@ -6813,7 +6813,7 @@ steps:
             StepStatus,
         )
         from specify_cli.workflows.engine import RunState, WorkflowEngine
-        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.step.if_then import IfThenStep
 
         n = 4
         barrier = threading.Barrier(n, timeout=5)
@@ -6882,7 +6882,7 @@ steps:
         )
         from specify_cli.workflows.engine import RunState, WorkflowEngine
         from specify_cli.workflows.expressions import evaluate_expression
-        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.step.if_then import IfThenStep
 
         n = 4
         barrier = threading.Barrier(n, timeout=5)
@@ -7047,7 +7047,7 @@ steps:
             StepStatus,
         )
         from specify_cli.workflows.engine import RunState, WorkflowEngine
-        from specify_cli.workflows.steps.while_loop import WhileStep
+        from specify_cli.workflows.step.while_loop import WhileStep
 
         class _LeafStep(StepBase):
             type_key = "leaf-step"
@@ -7115,7 +7115,7 @@ steps:
         )
         from specify_cli.workflows.engine import RunState, WorkflowEngine
         from specify_cli.workflows.expressions import evaluate_expression
-        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.step.if_then import IfThenStep
 
         class _WriteStep(StepBase):
             type_key = "write"
@@ -7323,8 +7323,8 @@ steps:
             StepStatus,
         )
         from specify_cli.workflows.engine import RunState, WorkflowEngine
-        from specify_cli.workflows.steps.fan_out import FanOutStep
-        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.step.fan_out import FanOutStep
+        from specify_cli.workflows.step.if_then import IfThenStep
 
         # Keyed by id(context): each concurrent outer item runs against its
         # own StepContext replica (see `_run_fan_out.run_isolated`), so this
@@ -7417,8 +7417,8 @@ steps:
             StepStatus,
         )
         from specify_cli.workflows.engine import RunState, WorkflowEngine
-        from specify_cli.workflows.steps.fan_out import FanOutStep
-        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.step.fan_out import FanOutStep
+        from specify_cli.workflows.step.if_then import IfThenStep
 
         class _WriteStep(StepBase):
             type_key = "write"
@@ -7468,6 +7468,71 @@ steps:
         assert state.status == RunStatus.RUNNING
         assert state.step_results["fan:read:0"]["output"]["seen"] == "p"
         assert state.step_results["fan:read:1"]["output"]["seen"] == "p"
+
+    @pytest.mark.parametrize("outer_concurrency", [1, 2])
+    @pytest.mark.parametrize("inner_concurrency", [1, 2])
+    def test_nested_fan_out_keeps_enclosing_item_for_later_sibling(
+        self, tmp_path, outer_concurrency, inner_concurrency
+    ):
+        """A step after a nested fan-out must still see the OUTER item.
+
+        ``_run_fan_out`` already restores (sequential) or never touches
+        (concurrent) the caller's ``context.item``; an extra
+        ``context.item = None`` after the nested call used to wipe the
+        enclosing item, so a later sibling resolved ``{{ item }}`` as None.
+        """
+        from specify_cli.workflows.base import (
+            RunStatus,
+            StepBase,
+            StepContext,
+            StepResult,
+            StepStatus,
+        )
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+        from specify_cli.workflows.step.fan_out import FanOutStep
+        from specify_cli.workflows.step.if_then import IfThenStep
+
+        class _ItemStep(StepBase):
+            type_key = "item"
+
+            def execute(self, config, context):
+                return StepResult(
+                    status=StepStatus.COMPLETED, output={"item": context.item}
+                )
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        context = StepContext()
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        registry = {
+            "if": IfThenStep(),
+            "fan-out": FanOutStep(),
+            "item": _ItemStep(),
+        }
+        template = {
+            "id": "body",
+            "type": "if",
+            "condition": "true",
+            "then": [
+                {
+                    "id": "inner",
+                    "type": "fan-out",
+                    "items": "{{ ['p', 'q'] }}",
+                    "max_concurrency": inner_concurrency,
+                    "step": {"id": "leaf", "type": "item"},
+                },
+                {"id": "after", "type": "item"},
+            ],
+        }
+        engine._run_fan_out(
+            ["x", "y"], template, "fan", context, state, registry,
+            outer_concurrency,
+        )
+
+        assert state.status == RunStatus.RUNNING
+        assert state.step_results["fan:after:0"]["output"]["item"] == "x"
+        assert state.step_results["fan:after:1"]["output"]["item"] == "y"
+        assert context.item is None
 
     @pytest.mark.parametrize("max_concurrency", [1, 2])
     def test_fan_out_alias_kept_from_earlier_item_not_run_by_last(
