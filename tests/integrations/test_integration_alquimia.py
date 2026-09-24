@@ -82,27 +82,26 @@ class TestAlquimiaAIIntegration:
         assert integration.is_skills_mode() is True
         assert integration.is_skills_mode({}, project_root=None) is True
 
-    def test_classified_like_its_skills_only_peers(self):
-        """Alquimia must sit in the same set as the other skills-only agents.
+    def test_classified_as_a_conditional_slash_agent(self):
+        """Alquimia is classified in `CONDITIONAL_SLASH_AGENTS`, not the always set.
 
-        Being a `SkillsIntegration` does not by itself imply always-slash:
-        `ALWAYS_SLASH_AGENTS` (Droid, Grok, Trae, Zed) and
-        `CONDITIONAL_SLASH_AGENTS` are *both* full of `SkillsIntegration`
-        subclasses, and nothing in the code distinguishes them -- the split is
-        a conventional grouping, not a rule the code enforces. For a
-        skills-only integration the two are behaviourally equivalent anyway,
-        since `ai_skills` is always recorded. Alquimia is grouped with the
-        conditionally classified skills-only agents; moving it alone to the
-        always set would split it from five identical peers for no behavioural
-        gain.
+        This asserts Alquimia's own classification only. Being a
+        `SkillsIntegration` does not by itself imply always-slash --
+        `ALWAYS_SLASH_AGENTS` and `CONDITIONAL_SLASH_AGENTS` both contain
+        `SkillsIntegration` subclasses, and the split is a conventional grouping
+        rather than a rule the code enforces. For a skills-only integration the
+        two are behaviourally equivalent anyway, since `ai_skills` is always
+        recorded.
+
+        Other integrations' classification is deliberately NOT asserted here:
+        that would make this suite fail whenever one of them is legitimately
+        reclassified, and any fixed peer list is liable to drift out of date.
         """
         from specify_cli._invocation_style import (
             ALWAYS_SLASH_AGENTS,
             CONDITIONAL_SLASH_AGENTS,
         )
 
-        peers = {"rovodev", "agy", "hermes", "lingma", "vibe"}
-        assert peers <= CONDITIONAL_SLASH_AGENTS
         assert "alquimia" in CONDITIONAL_SLASH_AGENTS
         assert "alquimia" not in ALWAYS_SLASH_AGENTS
 
