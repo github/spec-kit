@@ -1,109 +1,288 @@
-"""Command handler for ``specify workflow step add``."""
+"""Command handler for ``specify workflow step add``.
+
+The registered handler stays a thin orchestrator: it parses options, validates
+them, and dispatches to a per-source private helper (catalog, ``--dev`` local
+directory, and ``--from`` archive URL). All three sources converge on
+``step/installer.py``'s single validation + staged-commit path.
+"""
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from .. import _commands as cli
+from . import _helpers as step_helpers
 from . import step_app
 
-from . import _helpers as step_helpers
+
+def _cleanup_download_tmp_path(tmp_path: cli.Path | None) -> None:
+    """Best-effort unlink of a partially-downloaded step archive temp file.
+
+    A cleanup ``OSError`` must never replace/mask whatever error or interrupt is
+    already propagating -- warn about it and keep going.
+    """
+    if tmp_path is None:
+        return
+    try:
+        tmp_path.unlink(missing_ok=True)
+    except OSError as cleanup_exc:
+        cli.console.print(
+            "[yellow]Warning:[/yellow] Could not remove temporary "
+            f"step download file: {cli._escape_markup(str(cleanup_exc))} "
+            f"(path: {cli._escape_markup(str(tmp_path))})"
+        )
 
 
-@step_app.command("add")
-def workflow_step_add(
-    step_id: str = cli.typer.Argument(..., help="Step type ID from catalog"),
-):
-    """Install a custom step type from the step catalog."""
-    from .catalog import (
-        StepCatalog,
-        StepCatalogError,
-        StepRegistry,
-        StepValidationError,
+def _print_installed(step_id: str, entry: dict) -> None:
+    step_name = entry.get("name") or step_id
+    cli.console.print(f"[green]✓[/green] Step type '{step_name}' ({step_id}) installed")
+    cli.console.print(
+        "  Use [cyan]specify workflow step list[/cyan] to verify the installation."
     )
 
-    project_root = cli._require_specify_project()
+
+def _install_from_dev(
+    project_root: cli.Path, step_id: str, dev: str, *, force: bool
+) -> None:
+    """Install a complete step package from a local directory."""
+    from . import installer
+
+    dev_path = cli.Path(dev).expanduser()
+    if dev_path.is_symlink():
+        raise installer.StepInstallError(
+            f"Refusing to install from a symlinked source directory: '{dev_path}'"
+        )
+    if not dev_path.is_dir():
+        raise installer.StepInstallError(
+            "--dev source must be a directory containing step.yml and "
+            f"__init__.py: '{dev_path}'"
+        )
+
+    entry = installer.install_step_package(
+        project_root, step_id, dev_path, source="local", force=force
+    )
+    _print_installed(step_id, entry)
+
+
+def _install_from_url(
+    project_root: cli.Path, step_id: str, from_url: str, *, force: bool
+) -> None:
+    """Install a step package archive from a direct URL."""
+    import tempfile
+    from urllib.parse import urlparse
+
+    from rich.panel import Panel
+
+    from specify_cli.authentication.github_http import (
+        resolve_github_release_asset_api_url as _resolve_gh_asset,
+    )
+    from specify_cli.authentication.http import (
+        github_provider_hosts as _github_provider_hosts,
+    )
+    from specify_cli.authentication.http import open_url as _open_url
+
+    from . import installer
+
+    try:
+        parsed = urlparse(from_url)
+        hostname = parsed.hostname
+        _ = parsed.port
+    except ValueError:
+        raise installer.StepInstallError(
+            f"Invalid URL: {cli._escape_markup(from_url)}"
+        ) from None
+    if not hostname:
+        raise installer.StepInstallError(
+            f"Invalid URL: {cli._escape_markup(from_url)}"
+        )
+    if not cli.is_https_or_localhost_http(from_url):
+        raise installer.StepInstallError(
+            "URL must use HTTPS for security. HTTP is only allowed for "
+            "loopback URLs."
+        )
+
+    # Reject before the trust prompt and before any network request.
+    installer.check_installable(project_root, step_id, force=force)
+
+    # Prompt BEFORE any request (and before any spinner) so the user can see
+    # and answer it; a declined prompt issues no request and exits 0.
+    cli.console.print()
+    cli.console.print(
+        Panel(
+            "[bold]You are installing a workflow step type directly from an "
+            "external URL.\nA step package contains executable Python.[/bold]\n\n"
+            f"URL: {cli._escape_markup(from_url)}\n\n"
+            "Only install step packages from sources you trust.",
+            title="[bold yellow]⚠ Untrusted Source[/bold yellow]",
+            border_style="yellow",
+            padding=(1, 2),
+        )
+    )
+    cli.console.print()
+    if not cli.typer.confirm("Continue with installation?", default=False):
+        cli.console.print("Cancelled")
+        raise cli.typer.Exit(0)
+
+    download_url = from_url
+    extra_headers = None
+    tmp_path: cli.Path | None = None
+    try:
+        resolved_url = _resolve_gh_asset(
+            from_url,
+            _open_url,
+            timeout=30,
+            github_hosts=_github_provider_hosts(),
+            redirect_validator=cli._reject_insecure_download_redirect,
+        )
+        if resolved_url:
+            download_url = resolved_url
+            extra_headers = {"Accept": "application/octet-stream"}
+
+        with _open_url(
+            download_url,
+            timeout=30,
+            extra_headers=extra_headers,
+            redirect_validator=cli._reject_insecure_download_redirect,
+        ) as resp:
+            final_url = resp.geturl()
+            if not cli.is_https_or_localhost_http(final_url):
+                raise installer.StepInstallError(
+                    f"URL redirected to non-HTTPS: {cli._escape_markup(final_url)}"
+                )
+            content_type = (
+                resp.getheader("Content-Type")
+                if hasattr(resp, "getheader")
+                else None
+            )
+            archive_format = (
+                cli.archive_format_from_name(final_url)
+                or cli.archive_format_from_name(from_url)
+                or cli.archive_format_from_content_type(content_type)
+            )
+            if archive_format is None:
+                raise installer.StepInstallError(
+                    "URL does not reference a supported archive "
+                    "(.zip, .tar.gz, or .tgz)"
+                )
+            downloaded = cli.read_response_limited(
+                resp,
+                error_type=ValueError,
+                label="step archive download",
+            )
+
+        with tempfile.NamedTemporaryFile(
+            suffix=cli.archive_suffix(archive_format), delete=False
+        ) as tmp:
+            tmp_path = cli.Path(tmp.name)
+            tmp.write(downloaded)
+
+        with tempfile.TemporaryDirectory(
+            prefix="speckit-step-archive-"
+        ) as extract_dir:
+            extracted_root = cli.Path(extract_dir)
+            # safe_extract_archive re-detects and confirms the archive bytes.
+            cli.safe_extract_archive(
+                tmp_path,
+                extracted_root,
+                source_name=final_url,
+                content_type=content_type,
+            )
+            package_root = installer.resolve_package_root(extracted_root)
+            entry = installer.install_step_package(
+                project_root,
+                step_id,
+                package_root,
+                source="url",
+                force=force,
+            )
+    except cli.typer.Exit:
+        raise
+    except installer.StepInstallError:
+        raise
+    except Exception as exc:
+        raise installer.StepInstallError(
+            f"Failed to install step from URL: {cli._escape_markup(str(exc))}"
+        ) from exc
+    finally:
+        _cleanup_download_tmp_path(tmp_path)
+
+    _print_installed(step_id, entry)
+
+
+def _install_from_catalog(project_root: cli.Path, step_id: str, *, force: bool) -> None:
+    """Install a step package from the step catalog.
+
+    The catalog fetch (URL/derivation/count preflight) stays a catalog concern;
+    the materialized files are then handed to the shared installer.
+    """
+    import tempfile
+
+    from . import installer
+    from .catalog import StepCatalog, StepCatalogError
 
     catalog = StepCatalog(project_root)
     try:
         info = catalog.get_step_info(step_id)
     except StepCatalogError as exc:
-        cli.console.print(f"[red]Error:[/red] {exc}")
-        raise cli.typer.Exit(1)
+        raise installer.StepInstallError(str(exc)) from exc
 
     if not info:
-        cli.console.print(
-            f"[red]Error:[/red] Step type '{step_id}' not found in catalog"
+        raise installer.StepInstallError(
+            f"Step type '{step_id}' not found in catalog"
         )
-        raise cli.typer.Exit(1)
 
     if not info.get("_install_allowed", True):
         cli.console.print(
-            f"[yellow]Warning:[/yellow] Step type '{step_id}' is from a discovery-only catalog"
+            f"[yellow]Warning:[/yellow] Step type '{step_id}' is from a "
+            "discovery-only catalog"
         )
         cli.console.print("Direct installation is not enabled for this catalog source.")
         raise cli.typer.Exit(1)
 
-    # Reject step IDs that collide with built-in step types
-    from .. import STEP_REGISTRY as _step_reg
-
-    if step_id in _step_reg:
-        cli.console.print(
-            f"[red]Error:[/red] Step type '{step_id}' conflicts with a built-in step type"
-        )
-        raise cli.typer.Exit(1)
-
-    # Reject if already installed
-    registry = StepRegistry(project_root)
-    if registry.is_installed(step_id):
-        cli.console.print(
-            f"[red]Error:[/red] Step type '{step_id}' is already installed. "
-            "Remove it first with: [cyan]specify workflow step remove "
-            f"{step_id}[/cyan]"
-        )
-        raise cli.typer.Exit(1)
+    # Reject built-in collisions and duplicates before any download.
+    installer.check_installable(project_root, step_id, force=force)
 
     declared_step_yml_url = info.get("step_yml_url")
     if declared_step_yml_url is not None and not isinstance(declared_step_yml_url, str):
-        cli.console.print(
-            f"[red]Error:[/red] Catalog entry for '{step_id}' has a malformed "
-            "step.yml URL; expected a non-empty string"
+        raise installer.StepInstallError(
+            f"Catalog entry for '{step_id}' has a malformed step.yml URL; "
+            "expected a non-empty string"
         )
-        raise cli.typer.Exit(1)
     step_yml_url = declared_step_yml_url or info.get("url")
     if step_yml_url is None or (
         isinstance(step_yml_url, str) and not step_yml_url.strip()
     ):
-        cli.console.print(f"[red]Error:[/red] Catalog entry for '{step_id}' has no URL")
-        raise cli.typer.Exit(1)
-    if not isinstance(step_yml_url, str):
-        cli.console.print(
-            f"[red]Error:[/red] Catalog entry for '{step_id}' has a malformed "
-            "step.yml URL; expected a non-empty string"
+        raise installer.StepInstallError(
+            f"Catalog entry for '{step_id}' has no URL"
         )
-        raise cli.typer.Exit(1)
+    if not isinstance(step_yml_url, str):
+        raise installer.StepInstallError(
+            f"Catalog entry for '{step_id}' has a malformed step.yml URL; "
+            "expected a non-empty string"
+        )
 
-    # Derive __init__.py URL: replace trailing step.yml with __init__.py
-    # or use explicit init_url if provided.
+    # Derive __init__.py URL: replace trailing step.yml with __init__.py or use
+    # explicit init_url if provided.
     init_url = info.get("init_url")
     if init_url is not None and (not isinstance(init_url, str) or not init_url.strip()):
-        cli.console.print(
-            f"[red]Error:[/red] Catalog entry for '{step_id}' has a malformed "
-            "__init__.py URL; expected a non-empty string"
+        raise installer.StepInstallError(
+            f"Catalog entry for '{step_id}' has a malformed __init__.py URL; "
+            "expected a non-empty string"
         )
-        raise cli.typer.Exit(1)
     if not init_url:
         if step_yml_url.endswith("step.yml"):
             init_url = step_yml_url[: -len("step.yml")] + "__init__.py"
         else:
-            cli.console.print(
-                f"[red]Error:[/red] Cannot derive __init__.py URL from '{step_yml_url}'. "
-                "Catalog entry should provide 'init_url' or a 'url' ending in 'step.yml'."
+            raise installer.StepInstallError(
+                f"Cannot derive __init__.py URL from '{step_yml_url}'. "
+                "Catalog entry should provide 'init_url' or a 'url' ending in "
+                "'step.yml'."
             )
-            raise cli.typer.Exit(1)
 
     # Preflight the declared file count before creating a staging directory or
-    # issuing any request. The two required files are always part of the package;
-    # duplicate declarations for them in extra_files are ignored below and do
-    # not count twice.
+    # issuing any request. The two required files are always part of the
+    # package; duplicate declarations for them in extra_files are ignored below
+    # and do not count twice.
     extra_files = info.get("extra_files")
     if extra_files is not None and not isinstance(extra_files, dict):
         cli.console.print(
@@ -126,12 +305,11 @@ def workflow_step_add(
         1 for rel_path in (extra_files or {}) if not _is_required_package_file(rel_path)
     )
     package_file_count = 2 + declared_extra_count
-    if package_file_count > step_helpers._MAX_STEP_PACKAGE_FILES:
-        cli.console.print(
-            f"[red]Error:[/red] Step package declares {package_file_count} files, "
-            f"exceeding the {step_helpers._MAX_STEP_PACKAGE_FILES}-file limit"
+    if package_file_count > installer._MAX_STEP_PACKAGE_FILES:
+        raise installer.StepInstallError(
+            f"Step package declares {package_file_count} files, exceeding the "
+            f"{installer._MAX_STEP_PACKAGE_FILES}-file limit"
         )
-        raise cli.typer.Exit(1)
 
     from specify_cli.authentication.http import open_url as _open_url
 
@@ -146,231 +324,127 @@ def workflow_step_add(
                 raise ValueError(f"Redirect to non-HTTPS URL: {final_url}")
             return cli._read_response_within_limit(resp)
 
-    step_helpers._validate_step_id_or_exit(step_id)
-
-    steps_base_dir = step_helpers._resolve_steps_base_dir_or_exit(project_root)
-    step_dir = (steps_base_dir / step_id).resolve()
-    # Defense-in-depth: ensure the resolved directory is a direct child of
-    # steps_base_dir even after symlink resolution.
-    try:
-        rel_parts = step_dir.relative_to(steps_base_dir).parts
-    except ValueError:
-        cli.console.print(f"[red]Error:[/red] Invalid step id '{step_id}'")
-        raise cli.typer.Exit(1)
-    if rel_parts != (step_id,):
-        cli.console.print(f"[red]Error:[/red] Invalid step id '{step_id}'")
-        raise cli.typer.Exit(1)
-
-    import shutil
-    import tempfile
-
-    # Refuse if step_dir already exists (e.g. leftover from a previous failed/manual
-    # install that wasn't registered). The user should remove it before retrying.
-    if step_dir.exists():
-        cli.console.print(
-            f"[red]Error:[/red] Step directory already exists at '{step_dir}'. "
-            f"Remove it manually or use: [cyan]specify workflow step remove {step_id}[/cyan]"
-        )
-        raise cli.typer.Exit(1)
-
-    # Create steps_base_dir now so the staging temp dir is on the same filesystem,
-    # enabling a truly atomic os.rename() below.
-    try:
-        steps_base_dir.mkdir(parents=True, exist_ok=True)
-        tmp_path = cli.Path(
-            tempfile.mkdtemp(prefix="speckit_step_tmp_", dir=steps_base_dir)
-        )
-    except OSError as exc:
-        cli.console.print(
-            f"[red]Error:[/red] Failed to create staging directory: {exc}"
-        )
-        raise cli.typer.Exit(1)
-    try:
+    with tempfile.TemporaryDirectory(prefix="speckit-step-package-") as package_tmp:
+        package_dir = cli.Path(package_tmp)
         try:
             step_yml_content = _safe_fetch(step_yml_url)
             init_py_content = _safe_fetch(init_url)
         except Exception as exc:
-            cli.console.print(f"[red]Error:[/red] Failed to download step files: {exc}")
-            raise cli.typer.Exit(1)
+            raise installer.StepInstallError(
+                f"Failed to download step files: {exc}"
+            ) from exc
 
         package_bytes = len(step_yml_content) + len(init_py_content)
-        if package_bytes > step_helpers._MAX_STEP_PACKAGE_BYTES:
-            cli.console.print(
-                f"[red]Error:[/red] Step package exceeds the "
-                f"{step_helpers._MAX_STEP_PACKAGE_BYTES}-byte total size limit"
+        if package_bytes > installer._MAX_STEP_PACKAGE_BYTES:
+            raise installer.StepInstallError(
+                f"Step package exceeds the "
+                f"{installer._MAX_STEP_PACKAGE_BYTES}-byte total size limit"
             )
-            raise cli.typer.Exit(1)
 
-        # Validate step.yml
         try:
-            import yaml as _yaml
-
-            step_yml_text = step_yml_content.decode("utf-8")
-            # ``safe_load`` returns None for BOTH an empty document and an
-            # explicit null scalar (``null``, ``~``, ``NULL``), so it cannot
-            # tell them apart on its own. ``compose`` yields no node only for
-            # a genuinely empty document.
-            node = _yaml.compose(step_yml_text)
-            meta = _yaml.safe_load(step_yml_text)
-            is_empty_document = node is None or (
-                meta is None
-                and isinstance(node, _yaml.nodes.ScalarNode)
-                and node.value == ""
-                and node.start_mark.index == node.end_mark.index
-            )
-        except Exception as exc:
-            cli.console.print(f"[red]Error:[/red] Invalid step.yml: {exc}")
-            raise cli.typer.Exit(1)
-
-        # Do NOT coerce with ``or {}`` here: that also turns a FALSY non-mapping
-        # (top-level ``[]``, ``false``, ``0``, ``''``, or an explicit ``null``)
-        # into ``{}`` and silently bypasses this shape check, surfacing the
-        # unrelated "missing 'step.type_key'" error below instead of the real
-        # problem. Only a genuinely empty document defaults to ``{}``.
-        if meta is None and is_empty_document:
-            meta = {}
-        elif not isinstance(meta, dict):
-            cli.console.print("[red]Error:[/red] step.yml must be a YAML mapping")
-            raise cli.typer.Exit(1)
-
-        step_meta = meta.get("step", {})
-        if not isinstance(step_meta, dict):
-            cli.console.print(
-                "[red]Error:[/red] step.yml 'step' field must be a mapping"
-            )
-            raise cli.typer.Exit(1)
-        type_key = step_meta.get("type_key", "")
-        if not type_key:
-            cli.console.print(
-                "[red]Error:[/red] step.yml missing 'step.type_key' field"
-            )
-            raise cli.typer.Exit(1)
-
-        if type_key != step_id:
-            cli.console.print(
-                f"[red]Error:[/red] step.yml type_key ({type_key!r}) does not match "
-                f"catalog ID ({step_id!r})"
-            )
-            raise cli.typer.Exit(1)
-
-        # Write the two required files.
-        try:
-            (tmp_path / "step.yml").write_bytes(step_yml_content)
-            (tmp_path / "__init__.py").write_bytes(init_py_content)
+            (package_dir / "step.yml").write_bytes(step_yml_content)
+            (package_dir / "__init__.py").write_bytes(init_py_content)
         except OSError as exc:
-            cli.console.print(
-                f"[red]Error:[/red] Failed to write step files to staging directory: {exc}"
-            )
-            raise cli.typer.Exit(1)
+            raise installer.StepInstallError(
+                f"Failed to write step files to staging directory: {exc}"
+            ) from exc
 
-        # Optionally download additional package files declared in the catalog entry
-        # (e.g. helper modules). Each entry in ``extra_files`` is a mapping of
-        # relative-path → URL. step.yml and __init__.py are ignored here (already
-        # written). Paths are validated to stay within the step package directory to
-        # prevent path-traversal attacks.
+        # Optionally download additional package files declared in the catalog
+        # entry (e.g. helper modules). Each entry in ``extra_files`` is a mapping
+        # of relative-path → URL. Paths are validated to stay within the step
+        # package directory to prevent path-traversal attacks.
         for rel_path, file_url in (extra_files or {}).items():
             if not isinstance(rel_path, str) or not rel_path.strip():
-                cli.console.print(
-                    "[red]Error:[/red] Catalog entry 'extra_files' contains an "
-                    "empty or non-string path key"
+                raise installer.StepInstallError(
+                    "Catalog entry 'extra_files' contains an empty or non-string "
+                    "path key"
                 )
-                raise cli.typer.Exit(1)
             if _is_required_package_file(rel_path):
                 continue  # already written above
-            # Reject dot-path segments ('', '.', '..') that would refer to the
-            # package directory itself (IsADirectoryError) or escape it.
-            rel_parts = cli.Path(rel_path).parts
-            if not rel_parts or any(seg in ("", ".", "..") for seg in rel_parts):
-                cli.console.print(
-                    f"[red]Error:[/red] extra_files path '{rel_path}' is not a "
-                    "valid relative file path"
+            path_parts = cli.Path(rel_path).parts
+            if not path_parts or any(seg in ("", ".", "..") for seg in path_parts):
+                raise installer.StepInstallError(
+                    f"extra_files path '{rel_path}' is not a valid relative file path"
                 )
-                raise cli.typer.Exit(1)
             if not isinstance(file_url, str) or not file_url.strip():
-                cli.console.print(
-                    f"[red]Error:[/red] extra_files entry '{rel_path}' has an "
-                    "empty or non-string URL"
+                raise installer.StepInstallError(
+                    f"extra_files entry '{rel_path}' has an empty or non-string URL"
                 )
-                raise cli.typer.Exit(1)
-            # Resolve both destination and base to handle any symlinks in tmp_path itself,
-            # ensuring the traversal check is robust even on non-canonical paths.
-            resolved_base = tmp_path.resolve()
-            dest = (tmp_path / rel_path).resolve()
+            resolved_base = package_dir.resolve()
+            dest = (package_dir / rel_path).resolve()
             try:
                 dest.relative_to(resolved_base)
             except ValueError:
-                cli.console.print(
-                    f"[red]Error:[/red] extra_files path '{rel_path}' is outside "
-                    "the step package directory"
-                )
-                raise cli.typer.Exit(1)
+                raise installer.StepInstallError(
+                    f"extra_files path '{rel_path}' is outside the step package "
+                    "directory"
+                ) from None
             try:
                 file_content = _safe_fetch(file_url)
             except Exception as exc:
-                cli.console.print(
-                    f"[red]Error:[/red] Failed to download extra file '{rel_path}': {exc}"
-                )
-                raise cli.typer.Exit(1)
+                raise installer.StepInstallError(
+                    f"Failed to download extra file '{rel_path}': {exc}"
+                ) from exc
             package_bytes += len(file_content)
-            if package_bytes > step_helpers._MAX_STEP_PACKAGE_BYTES:
-                cli.console.print(
-                    f"[red]Error:[/red] Step package exceeds the "
-                    f"{step_helpers._MAX_STEP_PACKAGE_BYTES}-byte total size limit"
+            if package_bytes > installer._MAX_STEP_PACKAGE_BYTES:
+                raise installer.StepInstallError(
+                    f"Step package exceeds the "
+                    f"{installer._MAX_STEP_PACKAGE_BYTES}-byte total size limit"
                 )
-                raise cli.typer.Exit(1)
             try:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(file_content)
             except OSError as exc:
-                cli.console.print(
-                    f"[red]Error:[/red] Failed to write extra file '{rel_path}': {exc}"
-                )
-                raise cli.typer.Exit(1)
+                raise installer.StepInstallError(
+                    f"Failed to write extra file '{rel_path}': {exc}"
+                ) from exc
 
-        # Atomically rename the staging directory to the final location.
-        # Both paths are under steps_base_dir (same filesystem), so os.rename()
-        # is atomic on POSIX and won't leave a partially-written directory at
-        # step_dir on failure.
-        try:
-            cli.os.rename(tmp_path, step_dir)
-        except OSError as exc:
-            cli.console.print(
-                f"[red]Error:[/red] Failed to install step '{step_id}': {exc}"
-            )
-            raise cli.typer.Exit(1)
-    finally:
-        # Clean up if the rename hasn't moved tmp_path yet (i.e. on any failure).
-        shutil.rmtree(tmp_path, ignore_errors=True)
-
-    step_name = info.get("name") or step_id
-    step_version = info.get("version") or step_meta.get("version") or "0.0.0"
-
-    # Register in step registry
-    registry = StepRegistry(project_root)
-    try:
-        registry.add(
+        entry = installer.install_step_package(
+            project_root,
             step_id,
-            {
-                "name": step_name,
-                "version": step_version,
-                "description": info.get(
-                    "description", step_meta.get("description", "")
-                ),
-                "author": info.get("author", step_meta.get("author", "")),
-                "source": "catalog",
-                "catalog_name": info.get("_catalog_name", ""),
-                "type_key": type_key,
-            },
+            package_dir,
+            source="catalog",
+            catalog_name=info.get("_catalog_name", ""),
+            catalog_metadata=info,
+            force=force,
         )
-    except StepValidationError as exc:
-        # Roll back the just-installed directory so the system isn't left with
-        # an unregistered step package on disk after a registry write failure
-        # (e.g. read-only filesystem, permission denied).
-        shutil.rmtree(step_dir, ignore_errors=True)
-        cli.console.print(f"[red]Error:[/red] {exc}")
+
+    _print_installed(step_id, entry)
+
+
+@step_app.command("add")
+def workflow_step_add(
+    step_id: str = cli.typer.Argument(..., help="Step type ID"),
+    dev: Annotated[str | None, cli.typer.Option("--dev", help="Install from a local step package directory")] = None,
+    from_url: Annotated[str | None, cli.typer.Option("--from", help="Install from a .zip/.tar.gz/.tgz archive URL")] = None,
+    force: Annotated[bool, cli.typer.Option("--force", help="Replace an existing installation")] = False,
+):
+    """Install a custom step type from the catalog, a local directory, or a URL."""
+    from . import installer
+
+    project_root = cli._require_specify_project()
+
+    if dev is not None and from_url is not None:
+        cli.console.print(
+            "[red]Error:[/red] --dev and --from are mutually exclusive"
+        )
+        raise cli.typer.Exit(1)
+    if dev is not None and not dev.strip():
+        cli.console.print("[red]Error:[/red] --dev value must not be empty")
+        raise cli.typer.Exit(1)
+    if from_url is not None and not from_url.strip():
+        cli.console.print("[red]Error:[/red] --from value must not be empty")
         raise cli.typer.Exit(1)
 
-    cli.console.print(f"[green]✓[/green] Step type '{step_name}' ({step_id}) installed")
-    cli.console.print(
-        "  Use [cyan]specify workflow step list[/cyan] to verify the installation."
-    )
+    step_helpers._validate_step_id_or_exit(step_id)
+
+    try:
+        if dev is not None:
+            _install_from_dev(project_root, step_id, dev, force=force)
+        elif from_url is not None:
+            _install_from_url(project_root, step_id, from_url, force=force)
+        else:
+            _install_from_catalog(project_root, step_id, force=force)
+    except installer.StepInstallError as exc:
+        cli.console.print(f"[red]Error:[/red] {exc}")
+        raise cli.typer.Exit(1) from exc

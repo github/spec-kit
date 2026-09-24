@@ -81,6 +81,8 @@ The source may also be a bundle directory or `.zip` artifact. Refresh uses the s
 
 A local bundle source supplies the manifest, not its component payloads. Components resolved through catalogs still require network access to refresh, even when already installed. Add `--offline` only when the components being installed or refreshed ship with Spec Kit; otherwise the command reports which component needs network access. Re-run without `--offline` to fetch that component through its catalog.
 
+> **Step payloads resolve through the step catalog only.** A bundle's `provides.steps` entries still resolve exclusively through the active step catalogs. Bundle-local `steps/<id>/` payloads and relative `provides.steps[].source` overrides are **not** resolved in this release, so a step declared that way cannot be installed offline. To ship a step with a bundle today, publish it to a step catalog the bundle's users can reach.
+
 ## Update Bundles
 
 ```bash
