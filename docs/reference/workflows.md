@@ -1,6 +1,6 @@
 # Workflows
 
-Workflows automate multi-step Spec-Driven Development processes — chaining commands, prompts, shell steps, and human checkpoints into repeatable sequences. They support conditional logic, loops, fan-out/fan-in, and can be paused and resumed from the exact point of interruption.
+Workflows automate multi-step Spec-Driven Development processes — chaining commands, prompts, shell steps, and human checkpoints into repeatable sequences. They support conditional logic, loops, fan-out/fan-in, composition (running another installed workflow as a scoped subtree), and can be paused and resumed from the exact point of interruption.
 
 ## Run a Workflow
 
@@ -539,8 +539,100 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 | `do-while`   | Execute at least once, then loop on condition    |
 | `fan-out`    | Dispatch a step for each item in a list          |
 | `fan-in`     | Aggregate results from a fan-out step            |
+| `workflow`   | Run an installed workflow as a scoped subtree    |
 
 > **Security note:** a `shell` step runs a local command with **your** privileges. There is no capability sandbox — `requires` is an advisory pre-condition block (spec-kit version, integrations), not a runtime gate, so it does **not** restrict what a step can do. In particular there is no `requires.permissions` capability gate: it is rejected by validation precisely because it would imply a sandbox that does not exist. Review any catalog or downloaded workflow before running it, and use a `gate` step to require explicit approval before sensitive or destructive shell commands.
+
+### Workflow composition (`type: workflow`)
+
+A `workflow` step runs an installed workflow as a **scoped subtree of the
+current run** — there is one run, one run directory, and one process. The
+included workflow behaves like a function call: values cross the boundary only
+through its declared `inputs` and `outputs`.
+
+```yaml
+steps:
+  - id: triage
+    type: prompt
+    prompt: "Select the workflow to run"
+
+  - id: run-selected
+    type: workflow
+    workflow: "{{ steps.triage.output.stdout }}"
+    input:
+      report: "{{ inputs.report }}"
+      slug: "{{ inputs.slug }}"
+```
+
+| Field      | Required | Description |
+| ---------- | -------- | ----------- |
+| `workflow` | yes      | Installed workflow ID, or an expression evaluated in the caller's scope. The resolved value must be a valid ID of a registered, installed, and enabled workflow. Literal IDs are validated at definition time. |
+| `input`    | no       | Mapping of the target's declared input names to values evaluated in the caller's scope. An undeclared name is rejected. Defaults, required, type, and enum rules apply. |
+
+`type: workflow` is an engine facility (like `fan-out`), not a custom-step API.
+The engine owns the nested scope tree; custom steps still receive only a
+`StepContext`.
+
+#### Scope isolation
+
+The included workflow receives a separate expression scope:
+
+- `inputs` contains only the resolved, declared, and validated mapped inputs.
+- `steps` contains only the included workflow's own step results.
+- Caller inputs and caller step results are **not** visible unless explicitly
+  passed through the `input` mapping.
+- Project root, integration defaults, and the run ID remain available as
+  execution infrastructure.
+
+#### Declared outputs
+
+An included workflow exposes values back to its caller only through a top-level
+`outputs` block. Each entry requires a `value` expression evaluated in the
+included workflow's local scope once it completes:
+
+```yaml
+outputs:
+  result:
+    value: "{{ steps.fix.output.stdout }}"
+  tested:
+    value: "{{ steps.test.output.exit_code == 0 }}"
+```
+
+The caller reads them from the workflow step's output:
+
+```yaml
+"{{ steps.run-selected.output.result }}"
+```
+
+Output names must be safe lowercase identifiers and cannot use the reserved
+names `workflow`, `status`, `error`, `aborted`, `integration`, `model`,
+`options`, or `input`. A whole expression preserves its resolved type;
+interpolation mixed with text produces a string. Paused, failed, and aborted
+scopes do not evaluate outputs.
+
+#### Lifecycle and failure handling
+
+The workflow step reports the aggregate outcome of its subtree: all required
+steps complete → `completed`; an included step pauses → the run pauses; an
+included failure (unhandled) → the run fails; an included gate abort → the run
+aborts (`output.aborted: true`). `continue_on_error: true` on the workflow step
+lets the caller continue past an otherwise unhandled included failure; it never
+overrides an abort or bypasses a pause.
+
+#### Resume and composition limits
+
+The resolved target, its composed definition snapshot (including overlays), and
+the validated inputs are persisted with the run. On resume the engine reuses the
+snapshot and resumes at the included scope's local step index; it does not
+re-resolve the target. Editing an installed workflow affects new invocations,
+not a scope already bound within a persisted run. `workflow resume --input`
+updates the **root** workflow's inputs; a composing workflow forwards them by
+mapping them into the child's declared inputs.
+
+Recursive composition is allowed, but cycles are rejected by path (`A -> B -> A`
+fails while `A -> B -> D` and `A -> C -> D` is a legal diamond). Composition is
+limited to 16 included levels; the root is depth 0 and entering depth 17 is
+rejected.
 
 ### Per-Step Integration Configuration
 

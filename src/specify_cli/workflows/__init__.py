@@ -56,6 +56,7 @@ def _register_builtin_steps() -> None:
     from .step.slot import SlotStep
     from .step.switch import SwitchStep
     from .step.while_loop import WhileStep
+    from .step.workflow import WorkflowStep
 
     _register_step(CommandStep())
     _register_step(DoWhileStep())
@@ -69,6 +70,7 @@ def _register_builtin_steps() -> None:
     _register_step(SlotStep())
     _register_step(SwitchStep())
     _register_step(WhileStep())
+    _register_step(WorkflowStep())
 
 
 _register_builtin_steps()

@@ -925,6 +925,25 @@ def _failed_step_error(state: Any) -> str | None:
     return getattr(state, "error", None)
 
 
+def _scope_summary(scopes: Any) -> list[dict[str, Any]]:
+    """Compact nested-scope summary for the machine-readable payload."""
+    summary: list[dict[str, Any]] = []
+    if not isinstance(scopes, dict):
+        return summary
+    for key, record in scopes.items():
+        if not isinstance(record, dict):
+            continue
+        summary.append(
+            {
+                "invocation_id": key,
+                "workflow_id": record.get("workflow_id"),
+                "status": record.get("status"),
+                "scopes": _scope_summary(record.get("workflow_scopes")),
+            }
+        )
+    return summary
+
+
 def _workflow_run_payload(state: Any) -> dict[str, Any]:
     """Machine-readable summary of a run/resume outcome."""
     payload = {
@@ -940,6 +959,11 @@ def _workflow_run_payload(state: Any) -> dict[str, Any]:
     error = _failed_step_error(state)
     if error is not None:
         payload["error"] = error
+    # Only present when composition is in play, so existing payloads stay
+    # byte-for-byte stable for runs without nested scopes.
+    scopes = _scope_summary(getattr(state, "workflow_scopes", None))
+    if scopes:
+        payload["scopes"] = scopes
     return payload
 
 

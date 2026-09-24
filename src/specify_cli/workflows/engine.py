@@ -29,7 +29,16 @@ from ..integration_state import (
     try_read_integration_json,
 )
 from .base import RunStatus, StepContext, StepResult, StepStatus
-
+from .composition import (
+    ExecutionScope,
+    bind_composed_inputs,
+    check_composition_path,
+    deserialize_scope,
+    evaluate_composed_outputs,
+    evaluate_input_mapping,
+    validate_serialized_scopes,
+    validate_workflow_outputs,
+)
 
 # -- Workflow Definition --------------------------------------------------
 
@@ -90,6 +99,10 @@ class WorkflowDefinition:
         # Steps
         self.steps: list[dict[str, Any]] = data.get("steps", [])
 
+        # Declared outputs exposed to a caller when this workflow is composed
+        # into another via a ``type: workflow`` step.
+        self.outputs: dict[str, Any] = data.get("outputs", {})
+
     @classmethod
     def from_yaml(cls, path: Path) -> WorkflowDefinition:
         """Load a workflow definition from a YAML file."""
@@ -140,7 +153,7 @@ def _get_valid_step_types() -> set[str]:
         return set(STEP_REGISTRY.keys())
     return {
         "command", "shell", "prompt", "gate", "if", "init", "slot",
-        "switch", "while", "do-while", "fan-out", "fan-in",
+        "switch", "while", "do-while", "fan-out", "fan-in", "workflow",
     }
 
 
@@ -361,6 +374,12 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
         dict(definition.inputs) if isinstance(definition.inputs, dict) else None
     )
     _validate_steps(definition.steps, seen_ids, errors, input_defs)
+
+    # -- Outputs ----------------------------------------------------------
+    # Declared outputs are only meaningful when this workflow is composed into
+    # another, but the schema is validated unconditionally so an authoring
+    # mistake surfaces at install/validation time.
+    errors.extend(validate_workflow_outputs(definition))
 
     return errors
 
@@ -695,6 +714,10 @@ class RunState:
         self.current_step_index = 0
         self.current_step_id: str | None = None
         self.step_results: dict[str, dict[str, Any]] = {}
+        # Nested composition scopes, keyed by effective invocation id. The
+        # runtime tree lives in ``ExecutionScope`` objects; this is its
+        # serialized persistence form (see ``composition``).
+        self.workflow_scopes: dict[str, dict[str, Any]] = {}
         # Guards step_results mutation and save() so a concurrent fan-out cannot
         # mutate the dict while save() is serializing it (which would raise
         # "dictionary changed size during iteration").
@@ -745,29 +768,39 @@ class RunState:
         nor leave a reader observing a half-written file. Racing writers only
         contend to be last; they never corrupt.
         """
+        with self._lock:
+            self._save_locked()
+
+    def _save_locked(self) -> None:
+        """Serialize and write state; assumes ``self._lock`` is held.
+
+        Split from :meth:`save` so the composed-execution helpers can update a
+        child scope and its caller's step result and then write once, without
+        re-acquiring the non-reentrant run lock.
+        """
         runs_dir = self.runs_dir
         runs_dir.mkdir(parents=True, exist_ok=True)
 
-        with self._lock:
-            # Stamp updated_at inside the lock so the timestamp matches the
-            # snapshot this thread serializes (concurrent savers don't race it).
-            self.updated_at = datetime.now(timezone.utc).isoformat()
-            state_data = {
-                "run_id": self.run_id,
-                "workflow_id": self.workflow_id,
-                "installed_workflow_id": self.installed_workflow_id,
-                "installed_registry_root": self.installed_registry_root,
-                "status": self.status.value,
-                "current_step_index": self.current_step_index,
-                "current_step_id": self.current_step_id,
-                "step_results": self.step_results,
-                "workflow_dir": self.workflow_dir,
-                "created_at": self.created_at,
-                "updated_at": self.updated_at,
-                "error": self.error,
-            }
-            self._atomic_write_json(runs_dir / "state.json", state_data)
-            self._atomic_write_json(runs_dir / "inputs.json", {"inputs": self.inputs})
+        # Stamp updated_at inside the lock so the timestamp matches the
+        # snapshot this thread serializes (concurrent savers don't race it).
+        self.updated_at = datetime.now(timezone.utc).isoformat()
+        state_data = {
+            "run_id": self.run_id,
+            "workflow_id": self.workflow_id,
+            "installed_workflow_id": self.installed_workflow_id,
+            "installed_registry_root": self.installed_registry_root,
+            "status": self.status.value,
+            "current_step_index": self.current_step_index,
+            "current_step_id": self.current_step_id,
+            "step_results": self.step_results,
+            "workflow_scopes": self.workflow_scopes,
+            "workflow_dir": self.workflow_dir,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "error": self.error,
+        }
+        self._atomic_write_json(runs_dir / "state.json", state_data)
+        self._atomic_write_json(runs_dir / "inputs.json", {"inputs": self.inputs})
 
     @staticmethod
     def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
@@ -861,6 +894,11 @@ class RunState:
                     f"{step_id!r} must be a JSON object"
                 )
 
+        # Nested composition scopes. Older state files predate the field, so a
+        # missing key defaults to ``{}`` and those runs keep loading unchanged.
+        workflow_scopes = state_data.get("workflow_scopes", {})
+        validate_serialized_scopes(workflow_scopes)
+
         state = cls(
             run_id=state_data["run_id"],
             workflow_id=workflow_id,
@@ -888,6 +926,7 @@ class RunState:
         state.current_step_index = current_step_index
         state.current_step_id = state_data.get("current_step_id")
         state.step_results = step_results
+        state.workflow_scopes = workflow_scopes
         state.workflow_dir = state_data.get("workflow_dir")
         state.created_at = state_data.get("created_at", "")
         state.updated_at = state_data.get("updated_at", "")
@@ -1080,25 +1119,27 @@ class WorkflowEngine:
             workflow_dir=workflow_dir,
         )
 
+        scope = self._build_root_scope(state, definition)
+
         # Execute steps
         try:
-            self._execute_steps(definition.steps, context, state, STEP_REGISTRY)
+            self._execute_steps(definition.steps, context, scope, STEP_REGISTRY)
         except KeyboardInterrupt:
-            state.status = RunStatus.PAUSED
-            state.append_log({"event": "workflow_interrupted"})
-            state.save()
+            scope.status = RunStatus.PAUSED
+            scope.append_log({"event": "workflow_interrupted"})
+            scope.persist()
             return state
         except Exception as exc:
-            state.status = RunStatus.FAILED
-            state.error = str(exc)
-            state.append_log({"event": "workflow_failed", "error": str(exc)})
-            state.save()
+            scope.status = RunStatus.FAILED
+            scope.error = str(exc)
+            scope.append_log({"event": "workflow_failed", "error": str(exc)})
+            scope.persist()
             raise
 
-        if state.status == RunStatus.RUNNING:
-            state.status = RunStatus.COMPLETED
-        state.append_log({"event": "workflow_finished", "status": state.status.value})
-        state.save()
+        if scope.status == RunStatus.RUNNING:
+            scope.status = RunStatus.COMPLETED
+        scope.append_log({"event": "workflow_finished", "status": scope.status.value})
+        scope.persist()
         return state
 
     def resume(
@@ -1173,6 +1214,9 @@ class WorkflowEngine:
         state.status = RunStatus.RUNNING
         state.save()
 
+        scope = self._build_root_scope(state, definition)
+        scope.rebind_inputs_on_resume = bool(inputs)
+
         # Resume from the current step — re-execute it so gates
         # can prompt interactively again.
         remaining_steps = definition.steps[state.current_step_index :]
@@ -1180,63 +1224,130 @@ class WorkflowEngine:
 
         try:
             self._execute_steps(
-                remaining_steps, context, state, STEP_REGISTRY,
+                remaining_steps, context, scope, STEP_REGISTRY,
                 step_offset=step_offset,
             )
         except KeyboardInterrupt:
-            state.status = RunStatus.PAUSED
-            state.append_log({"event": "workflow_interrupted"})
-            state.save()
+            scope.status = RunStatus.PAUSED
+            scope.append_log({"event": "workflow_interrupted"})
+            scope.persist()
             return state
         except Exception as exc:
-            state.status = RunStatus.FAILED
-            state.error = str(exc)
-            state.append_log({"event": "resume_failed", "error": str(exc)})
-            state.save()
+            scope.status = RunStatus.FAILED
+            scope.error = str(exc)
+            scope.append_log({"event": "resume_failed", "error": str(exc)})
+            scope.persist()
             raise
 
-        if state.status == RunStatus.RUNNING:
-            state.status = RunStatus.COMPLETED
-        state.append_log({"event": "workflow_finished", "status": state.status.value})
-        state.save()
+        if scope.status == RunStatus.RUNNING:
+            scope.status = RunStatus.COMPLETED
+        scope.append_log({"event": "workflow_finished", "status": scope.status.value})
+        scope.persist()
         return state
 
     @staticmethod
     def _record_result(
-        context: StepContext, state: RunState, step_id: str, data: dict[str, Any]
+        context: StepContext, scope: ExecutionScope, step_id: str, data: dict[str, Any]
     ) -> None:
         """Record a step result into both the live context and persistent state.
 
-        ``record_step_result`` writes ``state.step_results`` under the run lock.
-        On a resume run ``context.steps`` *is* that same dict, so that locked
-        write is the only one needed; mirror into ``context.steps`` separately
-        only when it is a distinct object (a fresh run), to avoid an unlocked
-        mutation of the shared dict that could race a concurrent ``save()``.
+        ``scope.record_step_result`` writes ``scope.step_results`` under the run
+        lock. On a resume run ``context.steps`` *is* that same dict, so that
+        locked write is the only one needed; mirror into ``context.steps``
+        separately only when it is a distinct object (a fresh run), to avoid an
+        unlocked mutation of the shared dict that could race a concurrent
+        ``save()``.
         """
-        if context.steps is not state.step_results:
+        if context.steps is not scope.step_results:
             context.steps[step_id] = data
-        state.record_step_result(step_id, data)
+        scope.record_step_result(step_id, data)
+
+    def _build_root_scope(
+        self, state: RunState, definition: WorkflowDefinition
+    ) -> ExecutionScope:
+        """Build the root ``ExecutionScope`` wrapping *state*."""
+        scope = ExecutionScope(
+            scope_id=definition.id,
+            workflow_id=definition.id,
+            definition=definition,
+            inputs=state.inputs,
+            workflow_dir=state.workflow_dir,
+            step_results=state.step_results,
+            current_step_index=state.current_step_index,
+            current_step_id=state.current_step_id,
+            status=state.status,
+            error=state.error,
+            root_state=state,
+        )
+        scope.workflow_scopes = {
+            key: deserialize_scope(record, parent=scope, root_state=state)
+            for key, record in (state.workflow_scopes or {}).items()
+        }
+        return scope
+
+    @staticmethod
+    def _scope_or_wrap(target: Any) -> tuple[ExecutionScope, RunState | None]:
+        """Accept an ``ExecutionScope`` or wrap a bare ``RunState``.
+
+        The public entry points always pass an ``ExecutionScope``; this keeps
+        the historical private-method contract (a ``RunState``) working for
+        direct callers such as the fan-out concurrency tests.
+        """
+        if isinstance(target, ExecutionScope):
+            return target, None
+        state: RunState = target
+        scope = ExecutionScope(
+            scope_id=state.workflow_id,
+            workflow_id=state.workflow_id,
+            inputs=state.inputs,
+            workflow_dir=state.workflow_dir,
+            step_results=state.step_results,
+            current_step_index=state.current_step_index,
+            current_step_id=state.current_step_id,
+            status=state.status,
+            error=state.error,
+            root_state=state,
+        )
+        scope.workflow_scopes = {
+            key: deserialize_scope(record, parent=scope, root_state=state)
+            for key, record in (state.workflow_scopes or {}).items()
+        }
+        return scope, state
+
+    @staticmethod
+    def _sync_wrapped(state: RunState | None, scope: ExecutionScope) -> None:
+        """Copy a wrapped scope's scalar fields back into its ``RunState``."""
+        if state is None:
+            return
+        state.status = scope.status
+        state.error = scope.error
+        state.current_step_id = scope.current_step_id
+        state.current_step_index = scope.current_step_index
+        state.workflow_scopes = {
+            key: child._serialize()
+            for key, child in scope.workflow_scopes.items()
+        }
 
     def _execute_steps(
         self,
         steps: list[dict[str, Any]],
         context: StepContext,
-        state: RunState,
+        scope: ExecutionScope,
         registry: dict[str, Any],
         *,
         step_offset: int = 0,
     ) -> None:
-        """Execute a list of steps sequentially."""
+        """Execute a list of steps sequentially within *scope*."""
         for i, step_config in enumerate(steps):
             step_id = step_config.get("id", f"step-{i}")
             step_type = step_config.get("type", "command")
 
-            state.current_step_id = step_id
+            scope.current_step_id = step_id
             if step_offset >= 0:
-                state.current_step_index = step_offset + i
-            state.save()
+                scope.current_step_index = step_offset + i
+            scope.persist()
 
-            state.append_log(
+            scope.append_log(
                 {"event": "step_started", "step_id": step_id, "type": step_type}
             )
 
@@ -1249,19 +1360,27 @@ class WorkflowEngine:
 
             step_impl = registry.get(step_type)
             if not step_impl:
-                state.status = RunStatus.FAILED
-                state.error = f"Unknown step type: {step_type!r}"
-                state.append_log(
+                scope.status = RunStatus.FAILED
+                scope.error = f"Unknown step type: {step_type!r}"
+                scope.append_log(
                     {
                         "event": "step_failed",
                         "step_id": step_id,
                         "error": f"Unknown step type: {step_type!r}",
                     }
                 )
-                state.save()
+                scope.persist()
                 return
 
-            result: StepResult = step_impl.execute(step_config, context)
+            # Workflow composition is an engine facility: run the included
+            # subtree now, before recording the caller's step result. A bound
+            # invocation must bypass caller-side target resolution on reentry.
+            if step_type == "workflow":
+                result: StepResult = self._run_workflow_call(
+                    step_config, context, scope, registry, step_impl
+                )
+            else:
+                result = step_impl.execute(step_config, context)
 
             # Record step results — prefer resolved values from step output
             step_data = {
@@ -1285,9 +1404,18 @@ class WorkflowEngine:
                 step_data["integration_options"] = result.output[
                     "integration_options"
                 ]
-            self._record_result(context, state, step_id, step_data)
+            if step_type == "workflow":
+                # Commit the child's terminal status and the caller's step
+                # result in one locked, atomic write so a persisted completed
+                # child never lacks its caller result.
+                scope.record_and_save(
+                    context, step_id, step_data,
+                    complete_child=result.status == StepStatus.COMPLETED,
+                )
+            else:
+                self._record_result(context, scope, step_id, step_data)
 
-            state.append_log(
+            scope.append_log(
                 {
                     "event": "step_completed",
                     "step_id": step_id,
@@ -1297,8 +1425,8 @@ class WorkflowEngine:
 
             # Handle gate pauses
             if result.status == StepStatus.PAUSED:
-                state.status = RunStatus.PAUSED
-                state.save()
+                scope.status = RunStatus.PAUSED
+                scope.persist()
                 return
 
             # Handle failures
@@ -1308,15 +1436,15 @@ class WorkflowEngine:
                 # `continue_on_error` does NOT override them — that flag
                 # is for transient/expected step failures only.
                 if result.output.get("aborted"):
-                    state.status = RunStatus.ABORTED
-                    state.error = result.error
-                    state.append_log(
+                    scope.status = RunStatus.ABORTED
+                    scope.error = result.error
+                    scope.append_log(
                         {
                             "event": "workflow_aborted",
                             "step_id": step_id,
                         }
                     )
-                    state.save()
+                    scope.persist()
                     return
 
                 # `continue_on_error: true` lets the pipeline route
@@ -1341,26 +1469,26 @@ class WorkflowEngine:
                 # values like the string `"true"` silently change
                 # run semantics.
                 if step_config.get("continue_on_error") is True:
-                    state.append_log(
+                    scope.append_log(
                         {
                             "event": "step_continue_on_error",
                             "step_id": step_id,
                             "error": result.error,
                         }
                     )
-                    state.save()
+                    scope.persist()
                     continue
 
-                state.status = RunStatus.FAILED
-                state.error = result.error
-                state.append_log(
+                scope.status = RunStatus.FAILED
+                scope.error = result.error
+                scope.append_log(
                     {
                         "event": "step_failed",
                         "step_id": step_id,
                         "error": result.error,
                     }
                 )
-                state.save()
+                scope.persist()
                 return
 
             # Execute nested steps (from control flow)
@@ -1371,10 +1499,10 @@ class WorkflowEngine:
             # enhancement.
             if result.next_steps:
                 self._execute_steps(
-                    result.next_steps, context, state, registry,
+                    result.next_steps, context, scope, registry,
                     step_offset=-1,
                 )
-                if state.status in (
+                if scope.status in (
                     RunStatus.PAUSED,
                     RunStatus.FAILED,
                     RunStatus.ABORTED,
@@ -1413,10 +1541,10 @@ class WorkflowEngine:
                             base_id = orig or f"step-{ns_idx}"
                             ns_copy["id"] = f"{step_id}:{base_id}:{_loop_iter + 1}"
                             self._execute_steps(
-                                [ns_copy], context, state, registry,
+                                [ns_copy], context, scope, registry,
                                 step_offset=-1,
                             )
-                            if state.status in (
+                            if scope.status in (
                                 RunStatus.PAUSED,
                                 RunStatus.FAILED,
                                 RunStatus.ABORTED,
@@ -1424,7 +1552,7 @@ class WorkflowEngine:
                                 return
                             if orig and ns_copy["id"] in context.steps:
                                 self._record_result(
-                                    context, state, orig,
+                                    context, scope, orig,
                                     context.steps[ns_copy["id"]],
                                 )
 
@@ -1438,7 +1566,7 @@ class WorkflowEngine:
                 template = result.output.get("step_template", {})
                 if template and items:
                     fan_out_results = self._run_fan_out(
-                        items, template, step_id, context, state, registry,
+                        items, template, step_id, context, scope, registry,
                         result.output.get("max_concurrency", 1),
                     )
                     context.item = None
@@ -1448,8 +1576,8 @@ class WorkflowEngine:
                     # set_step_output updates the recorded dict under the run lock;
                     # context.steps[step_id] is that same object, so it reflects the
                     # change too — no separate (unlocked) context mutation needed.
-                    state.set_step_output(step_id, fan_out_output)
-                    if state.status in (
+                    scope.set_step_output(step_id, fan_out_output)
+                    if scope.status in (
                         RunStatus.PAUSED,
                         RunStatus.FAILED,
                         RunStatus.ABORTED,
@@ -1458,7 +1586,249 @@ class WorkflowEngine:
                 else:
                     # Empty items or no template — normalize output
                     result.output["results"] = []
-                    state.set_step_output(step_id, result.output)
+                    scope.set_step_output(step_id, result.output)
+
+    def _active_workflow_path(self, scope: ExecutionScope) -> list[str]:
+        """Return the active workflow-ID path from the root to *scope*."""
+        path: list[str] = []
+        node: ExecutionScope | None = scope
+        while node is not None:
+            path.append(node.workflow_id)
+            node = node.parent
+        path.reverse()
+        return path
+
+    def _bind_composed_inputs(
+        self,
+        step_config: dict[str, Any],
+        context: StepContext,
+        definition: WorkflowDefinition,
+        *,
+        caller_id: str,
+        provided: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Strictly bind a caller's input mapping to a target definition.
+
+        ``provided`` may carry already-evaluated values (the initial call); when
+        omitted, the caller's ``input`` mapping is evaluated against the current
+        caller context (the resume path).
+        """
+        if provided is None:
+            provided = evaluate_input_mapping(
+                step_config.get("input", {}), context
+            )
+        return bind_composed_inputs(
+            definition,
+            provided,
+            caller_id=caller_id,
+            workflow_id=definition.id,
+            resolve_default=self._resolve_default,
+        )
+
+    def _run_workflow_call(
+        self,
+        step_config: dict[str, Any],
+        context: StepContext,
+        scope: ExecutionScope,
+        registry: dict[str, Any],
+        step_impl: Any,
+    ) -> StepResult:
+        """Execute (or resume) a ``type: workflow`` call in a nested scope."""
+        effective_id = step_config.get("id", "workflow")
+        existing = scope.workflow_scopes.get(effective_id)
+
+        if existing is not None and existing.status == RunStatus.COMPLETED:
+            recorded = scope.step_results.get(effective_id, {})
+            output = recorded.get("output")
+            return StepResult(
+                status=StepStatus.COMPLETED,
+                output=dict(output) if isinstance(output, dict) else {},
+            )
+
+        if existing is not None:
+            # Incomplete (PAUSED/FAILED): reuse the bound target and definition
+            # snapshot. Only explicit root input updates re-evaluate the
+            # caller's mapping; otherwise retain the persisted child binding.
+            child_scope = existing
+            definition = child_scope.definition
+            if definition is None:  # pragma: no cover - defensive
+                return StepResult(
+                    status=StepStatus.FAILED,
+                    output={
+                        "workflow": child_scope.workflow_id,
+                        "status": RunStatus.FAILED.value,
+                    },
+                    error=(
+                        f"Workflow step {effective_id!r}: persisted scope has "
+                        "no definition snapshot."
+                    ),
+                )
+            if scope.root().rebind_inputs_on_resume:
+                try:
+                    child_scope.inputs = self._bind_composed_inputs(
+                        step_config,
+                        context,
+                        definition,
+                        caller_id=effective_id,
+                    )
+                except ValueError as exc:
+                    return StepResult(
+                        status=StepStatus.FAILED,
+                        output={
+                            "workflow": definition.id,
+                            "status": RunStatus.FAILED.value,
+                        },
+                        error=f"Workflow step {effective_id!r}: {exc}",
+                    )
+                child_scope.persist()
+            child_scope.status = RunStatus.RUNNING
+            child_scope.error = None
+            start = child_scope.current_step_index
+            child_context = child_scope.build_context(is_resume=True)
+            self._execute_steps(
+                definition.steps[start:],
+                child_context,
+                child_scope,
+                registry,
+                step_offset=start,
+            )
+            return self._aggregate_workflow_result(
+                child_scope, definition, effective_id
+            )
+
+        # Only a new invocation resolves the target and its definition. The
+        # stored scope is authoritative for completed and incomplete calls.
+        resolved: StepResult = step_impl.execute(step_config, context)
+        if resolved.status != StepStatus.COMPLETED:
+            return resolved
+
+        call = resolved.output
+        target_id = call.get("workflow")
+        definition = call.get("definition")
+        if not isinstance(target_id, str) or definition is None:
+            return StepResult(
+                status=StepStatus.FAILED,
+                output={
+                    "workflow": target_id,
+                    "status": RunStatus.FAILED.value,
+                },
+                error=(
+                    f"Workflow step {effective_id!r}: unresolved workflow call."
+                ),
+            )
+
+        try:
+            check_composition_path(
+                self._active_workflow_path(scope), target_id
+            )
+        except ValueError as exc:
+            return StepResult(
+                status=StepStatus.FAILED,
+                output={
+                    "workflow": target_id,
+                    "status": RunStatus.FAILED.value,
+                },
+                error=f"Workflow step {effective_id!r}: {exc}",
+            )
+
+        try:
+            bound_inputs = self._bind_composed_inputs(
+                step_config,
+                context,
+                definition,
+                caller_id=effective_id,
+                provided=call.get("inputs"),
+            )
+        except ValueError as exc:
+            return StepResult(
+                status=StepStatus.FAILED,
+                output={
+                    "workflow": target_id,
+                    "status": RunStatus.FAILED.value,
+                },
+                error=f"Workflow step {effective_id!r}: {exc}",
+            )
+
+        child_scope = ExecutionScope(
+            scope_id=effective_id,
+            workflow_id=target_id,
+            definition=definition,
+            inputs=bound_inputs,
+            workflow_dir=call.get("workflow_dir"),
+            status=RunStatus.RUNNING,
+            parent=scope,
+            root_state=scope.root().root_state,
+        )
+        scope.add_workflow_scope(effective_id, child_scope)
+        scope.persist()
+
+        child_context = child_scope.build_context(is_resume=False)
+        self._execute_steps(
+            definition.steps, child_context, child_scope, registry, step_offset=0
+        )
+        return self._aggregate_workflow_result(
+            child_scope, definition, effective_id
+        )
+
+    def _aggregate_workflow_result(
+        self,
+        child_scope: ExecutionScope,
+        definition: WorkflowDefinition,
+        effective_id: str,
+    ) -> StepResult:
+        """Map an included scope's terminal status to a caller step result."""
+        status = child_scope.status
+        # A successfully exhausted subtree stays RUNNING until the caller's
+        # result and its COMPLETED status are committed together under the lock.
+        if status in (RunStatus.RUNNING, RunStatus.COMPLETED):
+            output: dict[str, Any] = {
+                "workflow": definition.id,
+                "status": RunStatus.COMPLETED.value,
+            }
+            try:
+                output.update(evaluate_composed_outputs(definition, child_scope))
+            except Exception as exc:  # noqa: BLE001 - expression failures are step failures
+                error = (
+                    f"Workflow step {effective_id!r}: failed to evaluate outputs "
+                    f"for workflow {definition.id!r}: {exc}"
+                )
+                child_scope.status = RunStatus.FAILED
+                child_scope.error = error
+                return StepResult(
+                    status=StepStatus.FAILED,
+                    output={
+                        "workflow": definition.id,
+                        "status": RunStatus.FAILED.value,
+                    },
+                    error=error,
+                )
+            return StepResult(status=StepStatus.COMPLETED, output=output)
+        if status == RunStatus.PAUSED:
+            return StepResult(
+                status=StepStatus.PAUSED,
+                output={
+                    "workflow": definition.id,
+                    "status": RunStatus.PAUSED.value,
+                },
+            )
+        if status == RunStatus.ABORTED:
+            return StepResult(
+                status=StepStatus.FAILED,
+                output={
+                    "workflow": definition.id,
+                    "status": RunStatus.FAILED.value,
+                    "aborted": True,
+                },
+                error=child_scope.error,
+            )
+        return StepResult(
+            status=StepStatus.FAILED,
+            output={
+                "workflow": definition.id,
+                "status": RunStatus.FAILED.value,
+            },
+            error=child_scope.error,
+        )
 
     def _run_fan_out(
         self,
@@ -1466,7 +1836,7 @@ class WorkflowEngine:
         template: dict[str, Any],
         step_id: str,
         context: StepContext,
-        state: RunState,
+        scope: ExecutionScope,
         registry: dict[str, Any],
         max_concurrency: Any,
     ) -> list[Any]:
@@ -1492,7 +1862,9 @@ class WorkflowEngine:
         coerces to <= 1 runs sequentially, while a numeric string like ``"4"`` or
         a float like ``4.0`` is honored.
         """
+        scope, wrap_state = self._scope_or_wrap(scope)
         if not items:
+            self._sync_wrapped(wrap_state, scope)
             return []
 
         halting = (RunStatus.PAUSED, RunStatus.FAILED, RunStatus.ABORTED)
@@ -1516,7 +1888,7 @@ class WorkflowEngine:
             item_step = dict(template)
             item_step["id"] = item_id(idx)
             self._execute_steps(
-                [item_step], item_ctx, state, registry, step_offset=-1,
+                [item_step], item_ctx, scope, registry, step_offset=-1,
             )
             # Read back through the context that was actually executed against,
             # not the outer closure — clearer and robust if StepContext copying
@@ -1533,11 +1905,12 @@ class WorkflowEngine:
                 for item_idx, item_val in enumerate(items):
                     context.item = item_val
                     results.append(run_item(item_idx, context))
-                    if state.status in halting:
+                    if scope.status in halting:
                         break
             finally:
                 context.item = previous_item
                 context.inside_fan_out = previous_inside_fan_out
+            self._sync_wrapped(wrap_state, scope)
             return results
 
         # Concurrent path — bounded sliding window; results assembled in item order.
@@ -1570,7 +1943,7 @@ class WorkflowEngine:
                 # record_step_result (e.g. an unknown step type returns early).
                 # Every item runs the same template, so the shared run status is
                 # this item's own outcome; attribute the halt to it.
-                return state.status if state.status in halting else None
+                return scope.status if scope.status in halting else None
             status = rec.get("status")
             if status == StepStatus.PAUSED.value:
                 return RunStatus.PAUSED
@@ -1596,7 +1969,7 @@ class WorkflowEngine:
                 while (
                     next_submit < n
                     and len(futures) < workers
-                    and state.status not in halting
+                    and scope.status not in halting
                 ):
                     futures[next_submit] = pool.submit(run_isolated, next_submit)
                     next_submit += 1
@@ -1632,21 +2005,23 @@ class WorkflowEngine:
 
         if halt is not None:
             halted_at, halted_status = halt
-            # A later in-flight item may have overwritten state.status before the
+            # A later in-flight item may have overwritten scope.status before the
             # pool joined; restore the halting item's own outcome so the final run
             # status matches the sequential semantics.
-            state.status = halted_status
+            scope.status = halted_status
             # Restore the halting item's error so it matches the terminal
-            # status — a concurrent item may have overwritten state.error
+            # status — a concurrent item may have overwritten scope.error
             # before the pool joined. Assign unconditionally when a record
             # exists (even when the halting item's own error is falsy) so a
             # third-party step returning FAILED with no message never inherits
             # an unrelated concurrent item's error; this mirrors the sequential
-            # path, which sets state.error = result.error verbatim.
+            # path, which sets scope.error = result.error verbatim.
             halt_rec = context.steps.get(item_id(halted_at))
             if isinstance(halt_rec, dict):
-                state.error = halt_rec.get("error")
+                scope.error = halt_rec.get("error")
+            self._sync_wrapped(wrap_state, scope)
             return slots[: halted_at + 1]
+        self._sync_wrapped(wrap_state, scope)
         return slots[:collected]
 
     def _resolve_inputs(

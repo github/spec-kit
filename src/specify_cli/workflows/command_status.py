@@ -5,6 +5,29 @@ from __future__ import annotations
 from . import _commands as cli
 
 
+def _render_scopes(scopes: dict, indent: str) -> None:
+    """Render nested composition scopes indented in the human status view."""
+    colors = {
+        "completed": "green",
+        "failed": "red",
+        "aborted": "red",
+        "paused": "yellow",
+        "running": "blue",
+    }
+    for key, record in scopes.items():
+        if not isinstance(record, dict):
+            continue
+        s = record.get("status", "unknown")
+        sc = colors.get(s, "white")
+        cli.console.print(
+            f"{indent}[{sc}]●[/{sc}] {key}: {s} "
+            f"[dim]({record.get('workflow_id', '?')})[/dim]"
+        )
+        nested = record.get("workflow_scopes")
+        if isinstance(nested, dict) and nested:
+            _render_scopes(nested, indent + "  ")
+
+
 @cli.workflow_app.command("status")
 def workflow_status(
     run_id: str | None = cli.typer.Argument(
@@ -90,6 +113,10 @@ def workflow_status(
                     s, "white"
                 )
                 cli.console.print(f"    [{sc}]●[/{sc}] {step_id}: {s}")
+
+        if getattr(state, "workflow_scopes", None):
+            cli.console.print("\n  [bold]Workflow scopes:[/bold]")
+            _render_scopes(state.workflow_scopes, "    ")
     else:
         runs = engine.list_runs()
 

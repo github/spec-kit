@@ -34,7 +34,7 @@ Artifacts are the commands, templates, and scripts a project exposes, whichever 
 
 ## Workflows
 
-Workflows automate multi-step Spec-Driven Development processes into repeatable sequences. They chain commands, prompts, shell steps, and human checkpoints together, with support for conditional logic, loops, fan-out/fan-in, and the ability to pause and resume from the exact point of interruption.
+Workflows automate multi-step Spec-Driven Development processes into repeatable sequences. They chain commands, prompts, shell steps, and human checkpoints together, with support for conditional logic, loops, fan-out/fan-in, workflow composition (running another installed workflow as a scoped subtree via a `type: workflow` step), and the ability to pause and resume from the exact point of interruption.
 
 [Workflows reference →](workflows.md)
 
