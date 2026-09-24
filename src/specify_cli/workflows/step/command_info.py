@@ -6,6 +6,23 @@ from .. import _commands as cli
 from . import step_app
 
 
+def _format_source(installed_meta: dict) -> str:
+    """Render a registry entry's provenance as a human-facing source label.
+
+    Local and URL installs deliberately store no path/URL, so only the source
+    kind is shown.
+    """
+    source = installed_meta.get("source")
+    if source == "catalog":
+        catalog_name = installed_meta.get("catalog_name")
+        if catalog_name:
+            return f"catalog ({cli._escape_markup(str(catalog_name))})"
+        return "catalog"
+    if source in ("local", "url"):
+        return str(source)
+    return ""
+
+
 @step_app.command("info")
 def workflow_step_info(
     step_id: str = cli.typer.Argument(..., help="Step type ID"),
@@ -46,6 +63,9 @@ def workflow_step_info(
                 f"  Description: "
                 f"{cli._escape_markup(str(installed_meta['description']))}"
             )
+        source_label = _format_source(installed_meta)
+        if source_label:
+            cli.console.print(f"  Source:      {source_label}")
         cli.console.print("  [green]Installed[/green]")
         return
 
