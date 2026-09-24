@@ -121,6 +121,20 @@ def read_feature_json_feature_directory(repo_root: Path) -> str:
     return value if isinstance(value, str) else ""
 
 
+def _dir_has_entries(path: Path) -> bool:
+    """Whether path is a non-empty directory, treating an error as "no".
+
+    Mirrors core's _dir_has_entries: probing an optional doc directory must
+    never abort a resolution that is otherwise valid, which is also what the
+    bash (``ls -A 2>/dev/null``) and PowerShell (``-ErrorAction
+    SilentlyContinue``) twins do.
+    """
+    try:
+        return path.is_dir() and any(path.iterdir())
+    except OSError:
+        return False
+
+
 def persist_feature_json(repo_root: Path, feature_dir_value: str) -> None:
     """Write feature_directory to .specify/feature.json when it changed.
 
@@ -215,8 +229,7 @@ def main(argv: list[str]) -> int:
         docs.append("research.md")
     if (feature_dir / "data-model.md").is_file():
         docs.append("data-model.md")
-    contracts_dir = feature_dir / "contracts"
-    if contracts_dir.is_dir() and any(contracts_dir.iterdir()):
+    if _dir_has_entries(feature_dir / "contracts"):
         docs.append("contracts/")
     if (feature_dir / "quickstart.md").is_file():
         docs.append("quickstart.md")

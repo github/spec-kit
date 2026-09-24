@@ -823,6 +823,7 @@ class TestResolveTasksBashJsonEscape:
             odd.mkdir()
         except OSError:
             pytest.skip("filesystem rejects backslash in a path component")
+        (odd / "plan.md").write_text("# Plan\n", encoding="utf-8")
         (odd / "tasks.md").write_text("- [ ] T001 x\n", encoding="utf-8")
         (project / ".specify" / "feature.json").write_text(
             json.dumps({"feature_directory": "specs/we\\ird"}), encoding="utf-8"
@@ -1060,3 +1061,36 @@ class TestCoreResolutionParity:
         result = _run_twin(twin, project)
 
         assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits required")
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0, reason="root ignores mode bits"
+)
+@pytest.mark.parametrize("twin", _TWINS)
+class TestUnreadableContractsDirectory:
+    """An optional doc probe must never abort an otherwise valid resolution.
+
+    Core treats an unreadable ``contracts/`` as simply unavailable; the bash
+    and PowerShell twins suppress the error, and the Python twin has to catch
+    ``OSError`` rather than let it escape.
+    """
+
+    def test_resolution_survives_an_unreadable_contracts_dir(
+        self, tmp_path: Path, twin: str
+    ):
+        project = _make_feature_project(tmp_path)
+        contracts = project / "specs" / "001-demo" / "contracts"
+        contracts.mkdir()
+        (contracts / "api.yaml").write_text("openapi: 3.0.0\n", encoding="utf-8")
+        contracts.chmod(0o000)
+        try:
+            result = _run_twin(twin, project)
+        finally:
+            contracts.chmod(0o755)
+
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout)
+        # Unreadable, so it is simply omitted; tasks.md still resolves.
+        assert "contracts/" not in payload["AVAILABLE_DOCS"]
+        assert payload["AVAILABLE_DOCS"] == ["research.md", "tasks.md"]
