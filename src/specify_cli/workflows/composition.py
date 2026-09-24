@@ -1,7 +1,6 @@
 """Workflow composition — scoped subtree execution helpers.
 
-Implements the decisions recorded in
-``spec/workflow_composition/design_decisions.md``:
+Implements the workflow composition decisions:
 
 - reserved output names and the composition depth limit,
 - registry-backed, installed-and-enabled target resolution,

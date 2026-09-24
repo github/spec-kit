@@ -1,8 +1,7 @@
 """Tests for workflow composition (the built-in ``type: workflow`` step).
 
 Covers the composition helpers, engine scoped execution, strict input binding,
-persistence/resume, and CLI reporting. See
-``spec/workflow_composition/implementation_plan.md``.
+persistence/resume, and CLI reporting.
 """
 
 from __future__ import annotations
@@ -301,6 +300,10 @@ class TestScopeIsolation:
                         "workflow": "child",
                         "input": {"declared": "{{ inputs.shared }}"},
                     },
+                    _shell(
+                        "consume",
+                        "echo {{ steps.call.output.echoed | default('MISSING') }}",
+                    ),
                 ],
                 inputs={"shared": {"type": "string", "default": "secret"}},
             ),
@@ -321,6 +324,14 @@ class TestScopeIsolation:
         assert call_output["echoed"].strip() == "secret"
         # Only declared outputs + stable metadata cross the boundary.
         assert set(call_output) == {"workflow", "status", "echoed"}
+
+    def test_caller_can_consume_child_output_downstream(self, project_dir):
+        """The caller context must publish a completed child's output *before*
+        the next step runs, so a downstream expression can consume it."""
+        self._parent_and_child(project_dir)
+        state = _run(project_dir, "parent")
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["consume"]["output"]["stdout"].strip() == "secret"
 
 
 class TestPublicOutputShapes:

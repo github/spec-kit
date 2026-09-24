@@ -79,7 +79,7 @@ When a `gate` step pauses execution, the engine persists `current_step_index` an
 
 ## Step Types
 
-The engine ships with 12 built-in step types, each in its own subpackage under `src/specify_cli/workflows/step/`:
+The engine ships with 13 built-in step types, each in its own subpackage under `src/specify_cli/workflows/step/`:
 
 | Type Key | Class | Purpose | Returns `next_steps`? |
 |----------|-------|---------|-----------------------|
@@ -95,6 +95,7 @@ The engine ships with 12 built-in step types, each in its own subpackage under `
 | `do-while` | `DoWhileStep` | Loop, always runs body at least once | Yes (always) |
 | `fan-out` | `FanOutStep` | Dispatch per item over a collection | No (engine expands) |
 | `fan-in` | `FanInStep` | Aggregate results from fan-out | No |
+| `workflow` | `WorkflowStep` | Run an installed workflow as a scoped subtree | No |
 
 ## Step Registry
 

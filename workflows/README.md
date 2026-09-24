@@ -85,7 +85,7 @@ The bundled `speckit` workflow only declares `spec` (and optional
 
 ## Step Types
 
-Workflows support 12 built-in step types:
+Workflows support 13 built-in step types:
 
 ### Command Steps (default)
 
@@ -312,6 +312,28 @@ Aggregate results from fan-out steps:
   wait_for: [parallel-impl]
   output: {}
 ```
+
+### Workflow Steps
+
+Compose an installed workflow as a scoped subtree of the current run — a
+function call with one run state and one process. Values cross the boundary
+only through the target's declared `inputs` and `outputs`:
+
+```yaml
+- id: run-selected
+  type: workflow
+  workflow: "{{ inputs.target }}"   # installed, registered, and enabled
+  input:
+    report: "{{ inputs.report }}"
+```
+
+The `workflow` value must resolve to something the engine captures — a declared
+workflow input or a preceding step's captured output such as a `shell` step's
+`stdout`. A `prompt` step streams its output and returns an empty `stdout`, so
+it cannot drive `workflow` selection. The child receives only the bound declared
+inputs, and only its declared outputs (merged with `workflow` and `status`) are
+published back to the caller. See
+[Workflow composition](../docs/reference/workflows.md#workflow-composition-type-workflow).
 
 ## Error Handling
 
