@@ -5,6 +5,9 @@ handoffs:
     agent: speckit.tasks
     prompt: Break the plan into tasks
     send: true
+  - label: Generate Manual Test Guide
+    agent: speckit.manual-test
+    prompt: Generate a manual test guide for this feature
   - label: Create Checklist
     agent: speckit.checklist
     prompt: Create a checklist for the following domain...
@@ -108,6 +111,32 @@ Check if `.specify/extensions.yml` exists in the project root.
 ## Completion Report
 
 Command ends after Phase 1 design. Report branch, IMPL_PLAN path, and generated artifacts.
+
+After reporting the generated artifacts, present the following **optional next steps** to the user — list all of them, ask which they want to run, and wait for their response before proceeding:
+
+```
+✅ Plan complete. Generated artifacts:
+  - plan.md
+  - research.md
+  - data-model.md (if applicable)
+  - contracts/ (if applicable)
+  - quickstart.md
+
+Optional quality gates you can run before /speckit.tasks:
+
+1. /speckit.manual-test  — Generate a manual test guide (test.md) with step-by-step
+                            curl test cases for every endpoint, acceptance scenario,
+                            good case, bad case, and edge case. Recommended for any
+                            feature with HTTP APIs or user-facing flows.
+
+2. /speckit.checklist    — Generate a custom quality checklist to validate the plan's
+                            completeness, clarity, and spec alignment before implementation.
+
+3. /speckit.clarify      — Resolve any remaining ambiguities in the spec before tasking.
+
+Or skip straight to:
+   /speckit.tasks        — Generate the dependency-ordered implementation task breakdown.
+```
 
 ## Phases
 
