@@ -170,7 +170,11 @@ class CatalogEntry:
     def from_dict(cls, data: Any) -> "CatalogEntry":
         if not isinstance(data, dict):
             raise BundlerError("Each catalog entry must be a mapping.")
-        entry_id = str(data.get("id", "")).strip()
+        # ``_text`` here too: an ``id: null`` otherwise became the literal
+        # "None", which is truthy, so ``load_catalog_payload`` reported it as an
+        # id MISMATCH against the mapping key rather than the accurate
+        # missing-id error.
+        entry_id = _text(data.get("id"))
         # `or {}` would coerce a FALSY non-mapping (0, '', False, []) to {} before
         # the isinstance guard, silently accepting a corrupt catalog entry; only
         # an absent/None value means "not present".
