@@ -23,14 +23,23 @@ def extension_add(
     from_url: Optional[str] = typer.Option(None, "--from", help="Install from custom URL"),
     force: bool = typer.Option(False, "--force", help="Overwrite if already installed"),
     priority: int = typer.Option(10, "--priority", help="Resolution priority (lower = higher precedence, default 10)"),
+    version: Optional[str] = typer.Option(None, "--version", help="Install an exact version from a catalog"),
 ):
     """Install an extension."""
     from . import ExtensionManager, ExtensionCatalog, ExtensionError, ValidationError, CompatibilityError, REINSTALL_COMMAND
+
+    # Compatibility callers invoke this function directly, in which case
+    # Typer supplies its OptionInfo object instead of a parsed option value.
+    if not isinstance(version, str):
+        version = None
 
     project_root = _commands._require_specify_project()
     # Validate priority
     if priority < 1:
         console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
+        raise typer.Exit(1)
+    if version is not None and (not version.strip() or dev or from_url):
+        console.print("[red]Error:[/red] --version requires a catalog install (without --dev or --from).")
         raise typer.Exit(1)
 
     manager = ExtensionManager(project_root)
@@ -133,7 +142,10 @@ def extension_add(
 
             else:
                 # Try bundled extensions first (shipped with spec-kit)
-                bundled_path = _commands._locate_bundled_extension(extension)
+                bundled_path = (
+                    _commands._locate_bundled_extension(extension)
+                    if version is None else None
+                )
                 if bundled_path is not None:
                     manifest = manager.install_from_directory(
                         bundled_path, speckit_version, priority=priority, force=force
@@ -155,9 +167,46 @@ def extension_add(
                         console.print("  specify extension search")
                         raise typer.Exit(1)
 
+                    if version is not None:
+                        # Resolve within the winning catalog source. A missing
+                        # historical release must not fall through to a lower
+                        # priority (or discovery-only) catalog.
+                        selected = catalog.get_extension_info(ext_info["id"], version)
+                        if selected is None:
+                            console.print(
+                                f"[red]Error:[/red] Extension '{_escape_markup(str(ext_info['id']))}' "
+                                f"has no catalog release for version {_escape_markup(version)}."
+                            )
+                            raise typer.Exit(1)
+                        ext_info = selected
+                        if not ext_info.get("_install_allowed", True):
+                            console.print(
+                                f"[red]Error:[/red] Extension '{_escape_markup(str(ext_info['id']))}' "
+                                "is from a discovery-only catalog and cannot be installed."
+                            )
+                            raise typer.Exit(1)
+
                     # If catalog resolved a display name to an ID, check bundled again
                     resolved_id = ext_info['id']
-                    if resolved_id != extension:
+                    if version is not None and ext_info.get("bundled") and not ext_info.get("download_url"):
+                        from . import ExtensionManifest
+
+                        candidate = _commands._locate_bundled_extension(resolved_id)
+                        if candidate is not None:
+                            bundled_manifest = ExtensionManifest(candidate / "extension.yml")
+                            if bundled_manifest.version == version:
+                                bundled_path = candidate
+                                manifest = manager.install_from_directory(
+                                    bundled_path, speckit_version, priority=priority, force=force
+                                )
+                        if bundled_path is None:
+                            console.print(
+                                f"[red]Error:[/red] Bundled extension '{_escape_markup(resolved_id)}' "
+                                f"version {_escape_markup(version)} is not shipped with this Spec Kit release. "
+                                "Upgrade Spec Kit or choose an available catalog archive."
+                            )
+                            raise typer.Exit(1)
+                    if version is None and resolved_id != extension:
                         bundled_path = _commands._locate_bundled_extension(resolved_id)
                         if bundled_path is not None:
                             manifest = manager.install_from_directory(
@@ -206,7 +255,11 @@ def extension_add(
                         # Download extension archive (use the resolved catalog ID).
                         extension_id = ext_info['id']
                         console.print(f"Downloading {_escape_markup(str(ext_info['name']))} v{_escape_markup(str(ext_info.get('version', 'unknown')))}...")
-                        archive_path = catalog.download_extension(extension_id)
+                        archive_path = (
+                            catalog.download_extension_info(ext_info)
+                            if version is not None
+                            else catalog.download_extension(extension_id)
+                        )
 
                         try:
                             manifest = manager.install_from_zip(
@@ -215,6 +268,10 @@ def extension_add(
                                 priority=priority,
                                 force=force,
                                 catalog_name=ext_info.get("_catalog_name"),
+                                **(
+                                    {"expected_id": extension_id, "expected_version": version}
+                                    if version is not None else {}
+                                ),
                             )
                         finally:
                             archive_path.unlink(missing_ok=True)

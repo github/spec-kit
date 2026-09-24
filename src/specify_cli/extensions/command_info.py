@@ -14,9 +14,10 @@ from . import _commands
 @_commands.extension_app.command("info")
 def extension_info(
     extension: str = typer.Argument(help="Extension ID or name"),
+    versions: bool = typer.Option(False, "--versions", help="List catalog versions"),
 ):
     """Show detailed information about an extension."""
-    from . import ExtensionCatalog, ExtensionManager, normalize_priority
+    from . import ExtensionCatalog, ExtensionManager, ExtensionError, normalize_priority
 
     project_root = _commands._require_specify_project()
     catalog = ExtensionCatalog(project_root)
@@ -36,11 +37,35 @@ def extension_info(
     ext_info, catalog_error = _commands._resolve_catalog_extension(
         lookup_key, catalog, "info"
     )
+    # Direct compatibility callers receive Typer's OptionInfo default rather
+    # than a parsed bool; only the CLI's explicit True enables this view.
+    show_versions = versions is True
 
     # Case 1: Found in catalog - show full catalog info
     if ext_info:
+        if show_versions:
+            try:
+                available = catalog.get_extension_versions(ext_info["id"])
+            except ExtensionError as exc:
+                _commands.console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+                raise typer.Exit(1) from exc
+            _commands.console.print(
+                f"Catalog versions for {_escape_markup(str(ext_info['id']))}:"
+            )
+            for index, available_version in enumerate(available):
+                current = " (current)" if index == 0 else ""
+                _commands.console.print(f"  {_escape_markup(available_version)}{current}")
+            if not ext_info.get("_install_allowed", True):
+                _commands.console.print("[yellow]Discovery only; catalog installation is disabled.[/yellow]")
+            return
         _print_extension_info(ext_info, manager)
         return
+
+    if show_versions:
+        _commands.console.print(
+            f"[red]Error:[/red] No catalog versions found for {_escape_markup(extension)}."
+        )
+        raise typer.Exit(1)
 
     # Case 2: Installed locally but catalog lookup failed or not in catalog
     if resolved_installed_id:

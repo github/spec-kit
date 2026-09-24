@@ -2722,6 +2722,8 @@ class ExtensionManager:
         source_name: str | None = None,
         content_type: str | None = None,
         catalog_name: str | None = None,
+        expected_id: str | None = None,
+        expected_version: str | None = None,
     ) -> ExtensionManifest:
         """Install an extension from a supported archive.
 
@@ -2770,6 +2772,23 @@ class ExtensionManager:
 
             if not manifest_path.exists():
                 raise ValidationError("No extension.yml found in archive")
+
+            if expected_id is not None or expected_version is not None:
+                archive_manifest = ExtensionManifest(manifest_path)
+                if expected_id is not None and archive_manifest.id != expected_id:
+                    raise ValidationError(
+                        f"Downloaded extension declares ID '{archive_manifest.id}', "
+                        f"expected '{expected_id}'."
+                    )
+                if (
+                    expected_version is not None
+                    and pkg_version.Version(archive_manifest.version)
+                    != pkg_version.Version(expected_version)
+                ):
+                    raise ValidationError(
+                        f"Downloaded extension '{archive_manifest.id}' declares version "
+                        f"{archive_manifest.version}, expected {expected_version}."
+                    )
 
             # Install from extracted directory
             return self.install_from_directory(
@@ -2934,6 +2953,8 @@ class ExtensionManager:
         source_name: str | None = None,
         content_type: str | None = None,
         catalog_name: str | None = None,
+        expected_id: str | None = None,
+        expected_version: str | None = None,
     ) -> ExtensionManifest:
         """Backward-compatible wrapper for archive installation."""
         return self.install_from_archive(
@@ -2945,6 +2966,8 @@ class ExtensionManager:
             source_name=source_name,
             content_type=content_type,
             catalog_name=catalog_name,
+            expected_id=expected_id,
+            expected_version=expected_version,
         )
 
     def remove(self, extension_id: str, keep_config: bool = False) -> bool:
@@ -4336,13 +4359,16 @@ class ExtensionCatalog(CatalogStackBase):
 
         return results
 
-    def get_extension_info(self, extension_id: str) -> Optional[Dict[str, Any]]:
+    def get_extension_info(
+        self, extension_id: str, version: str | None = None
+    ) -> Optional[Dict[str, Any]]:
         """Get detailed information about a specific extension.
 
         Searches all active catalogs in priority order.
 
         Args:
             extension_id: ID of the extension
+            version: Exact catalog version, or ``None`` for the advertised current release
 
         Returns:
             Extension metadata (annotated with ``_catalog_name`` and
@@ -4351,8 +4377,19 @@ class ExtensionCatalog(CatalogStackBase):
         all_extensions = self._get_merged_extensions()
         for ext_data in all_extensions:
             if ext_data["id"] == extension_id:
-                return ext_data
+                from ._catalog_versions import select_release
+
+                return select_release(ext_data, version)
         return None
+
+    def get_extension_versions(self, extension_id: str) -> list[str]:
+        """List versions advertised by the winning catalog source."""
+        from ._catalog_versions import available_versions
+
+        for ext_data in self._get_merged_extensions():
+            if ext_data["id"] == extension_id:
+                return available_versions(ext_data)
+        return []
 
     def download_extension(
         self, extension_id: str, target_dir: Optional[Path] = None
@@ -4369,12 +4406,29 @@ class ExtensionCatalog(CatalogStackBase):
         Raises:
             ExtensionError: If extension not found or download fails
         """
-        import urllib.error
-
         # Get extension info from catalog
         ext_info = self.get_extension_info(extension_id)
         if not ext_info:
             raise ExtensionError(f"Extension '{extension_id}' not found in catalog")
+
+        return self.download_extension_info(ext_info, target_dir=target_dir)
+
+    def download_extension_info(
+        self, ext_info: Dict[str, Any], target_dir: Optional[Path] = None
+    ) -> Path:
+        """Download a selected release without looking up its ID again.
+
+        Exact-version callers pass the already-selected record so a catalog
+        change between lookup and download cannot substitute the current URL.
+        """
+        import urllib.error
+
+        extension_id = ext_info["id"]
+        if not ext_info.get("_install_allowed", True):
+            raise ExtensionError(
+                f"Extension '{extension_id}' is from a discovery-only catalog; "
+                "installation is not allowed."
+            )
 
         # Bundled extensions without a download URL must be installed locally
         if ext_info.get("bundled") and not ext_info.get("download_url"):
