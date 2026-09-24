@@ -517,13 +517,18 @@ def validate_serialized_scopes(scopes: Any) -> None:
 
     Raises ``ValueError`` on any malformed node so ``RunState.load`` can fail
     closed, mirroring its existing validation style.
+
+    Validation is deliberately *structural*: it checks the snapshot shapes the
+    engine relies on to slice and deserialize a scope, without consulting the
+    process-global step registry. ``RunState.load`` is reached by commands that
+    do not call ``load_custom_steps`` (for example ``workflow status``), so a
+    full ``validate_workflow`` pass would reject an otherwise valid run whose
+    composed child uses a project-installed custom step.
     """
-    from .engine import validate_workflow
-
-    _validate_scope_tree(scopes, validate_workflow, path="workflow_scopes")
+    _validate_scope_tree(scopes, path="workflow_scopes")
 
 
-def _validate_scope_tree(scopes: Any, validate_workflow: Any, *, path: str) -> None:
+def _validate_scope_tree(scopes: Any, *, path: str) -> None:
     if not isinstance(scopes, dict):
         msg = f"Invalid run state: '{path}' must be a JSON object"
         raise ValueError(msg)
@@ -536,14 +541,47 @@ def _validate_scope_tree(scopes: Any, validate_workflow: Any, *, path: str) -> N
                 f"Invalid run state: '{path}.{key}' must be a JSON object"
             )
             raise ValueError(msg)
-        _validate_scope_record(record, validate_workflow, path=f"{path}.{key}")
+        _validate_scope_record(record, path=f"{path}.{key}")
 
 
-def _validate_scope_record(
-    record: dict[str, Any], validate_workflow: Any, *, path: str
-) -> None:
-    from .engine import WorkflowDefinition
+def _validate_definition_shape(definition: dict[str, Any], *, path: str) -> None:
+    """Structural validation of a persisted definition snapshot.
 
+    Only the shapes the engine needs to safely deserialize and resume a scope
+    are required: a mapping ``workflow`` header, a list of step mappings each
+    carrying a non-empty string ``id``, and mapping ``inputs``/``outputs`` when
+    present. Step types are intentionally **not** restricted to the currently
+    registered implementations; see ``validate_serialized_scopes``.
+    """
+    header = definition.get("workflow")
+    if header is not None and not isinstance(header, dict):
+        msg = f"Invalid run state: '{path}.workflow' must be a JSON object"
+        raise ValueError(msg)
+
+    for key in ("inputs", "outputs"):
+        value = definition.get(key)
+        if value is not None and not isinstance(value, dict):
+            msg = f"Invalid run state: '{path}.{key}' must be a JSON object"
+            raise ValueError(msg)
+
+    steps = definition.get("steps")
+    if not isinstance(steps, list):
+        msg = f"Invalid run state: '{path}.steps' must be a list"
+        raise ValueError(msg)
+    for i, step in enumerate(steps):
+        if not isinstance(step, dict):
+            msg = f"Invalid run state: '{path}.steps[{i}]' must be a JSON object"
+            raise ValueError(msg)
+        step_id = step.get("id")
+        if not isinstance(step_id, str) or not step_id:
+            msg = (
+                f"Invalid run state: '{path}.steps[{i}].id' must be a "
+                "non-empty string"
+            )
+            raise ValueError(msg)
+
+
+def _validate_scope_record(record: dict[str, Any], *, path: str) -> None:
     workflow_id = record.get("workflow_id")
     if not isinstance(workflow_id, str) or not workflow_id:
         msg = f"Invalid run state: '{path}.workflow_id' must be a non-empty string"
@@ -585,14 +623,7 @@ def _validate_scope_record(
     if not isinstance(definition, dict):
         msg = f"Invalid run state: '{path}.definition' must be a JSON object"
         raise ValueError(msg)
-    parsed_definition = WorkflowDefinition(definition)
-    errors = validate_workflow(parsed_definition)
-    if errors:
-        msg = (
-            f"Invalid run state: '{path}.definition' is invalid: "
-            + " ".join(errors)
-        )
-        raise ValueError(msg)
+    _validate_definition_shape(definition, path=f"{path}.definition")
 
     # A nested scope resumes by slicing its persisted definition at
     # ``current_step_index``; an index at or beyond the step count would
@@ -600,16 +631,17 @@ def _validate_scope_record(
     # without running its remaining steps. Mirrors the root-run bound check in
     # ``WorkflowEngine.resume``, which ``RunState.load`` cannot apply until the
     # definition (and its step count) is known.
-    if index >= len(parsed_definition.steps):
+    steps = definition["steps"]
+    if index >= len(steps):
         msg = (
             f"Invalid run state: '{path}.current_step_index' ({index}) is "
             f"out of range for workflow {workflow_id!r} with "
-            f"{len(parsed_definition.steps)} step(s)"
+            f"{len(steps)} step(s)"
         )
         raise ValueError(msg)
 
     children = record.get("workflow_scopes", {})
-    _validate_scope_tree(children, validate_workflow, path=f"{path}.workflow_scopes")
+    _validate_scope_tree(children, path=f"{path}.workflow_scopes")
 
 
 __all__ = [

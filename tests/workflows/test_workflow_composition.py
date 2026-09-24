@@ -988,6 +988,85 @@ class TestPersistence:
         )
 
 
+class TestSerializedScopeValidation:
+    def _save_state_with_scope(self, project_dir, definition):
+        state = RunState(run_id="r", workflow_id="w", project_root=project_dir)
+        state.status = RunStatus.PAUSED
+        state.workflow_scopes = {
+            "c": {
+                "workflow_id": "child",
+                "invocation_id": "c",
+                "definition": definition,
+                "inputs": {},
+                "status": "paused",
+                "current_step_index": 0,
+                "step_results": {},
+                "workflow_scopes": {},
+            }
+        }
+        state.save()
+        return state
+
+    def test_load_allows_well_formed_unregistered_step_type(self, project_dir):
+        """Schema validation must not depend on the live step registry.
+
+        A composed child may use a project custom step that is not loaded in
+        this process (``workflow status`` never calls ``load_custom_steps``).
+        """
+        self._save_state_with_scope(
+            project_dir,
+            _workflow("child", [{"id": "s", "type": "not-registered"}]),
+        )
+        loaded = RunState.load("r", project_dir)
+        assert loaded.workflow_scopes["c"]["workflow_id"] == "child"
+
+    def test_load_rejects_non_list_steps(self, project_dir):
+        definition = _workflow("child", [])
+        definition["steps"] = {"id": "s"}
+        self._save_state_with_scope(project_dir, definition)
+        with pytest.raises(ValueError, match=r"\.steps' must be a list"):
+            RunState.load("r", project_dir)
+
+    def test_load_rejects_step_without_id(self, project_dir):
+        self._save_state_with_scope(
+            project_dir, _workflow("child", [{"type": "shell", "run": "true"}])
+        )
+        with pytest.raises(ValueError, match="non-empty string"):
+            RunState.load("r", project_dir)
+
+    def test_custom_step_scope_loads_without_registration(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.base import StepBase, StepResult
+
+        class _Custom(StepBase):
+            type_key = "temp-custom-step"
+
+            def execute(self, config, context):
+                return StepResult(output={"ok": True})
+
+        monkeypatch.setitem(STEP_REGISTRY, "temp-custom-step", _Custom())
+        _install(
+            project_dir,
+            "child",
+            _workflow("child", [{"id": "s", "type": "temp-custom-step"}]),
+        )
+        _install(
+            project_dir,
+            "parent",
+            _workflow("parent", [{"id": "c", "type": "workflow", "workflow": "child"}]),
+        )
+        state = _run(project_dir, "parent")
+        assert state.status == RunStatus.COMPLETED
+
+        # Simulate a fresh process that did not load project custom steps:
+        # `workflow status` must still be able to load the persisted run.
+        monkeypatch.delitem(STEP_REGISTRY, "temp-custom-step")
+        loaded = RunState.load(state.run_id, project_dir)
+        assert loaded.workflow_scopes["c"]["workflow_id"] == "child"
+
+
 class TestResume:
     def _paused_child(self, project_dir, child_steps, *, child_inputs=None, outputs=None):
         _install(
