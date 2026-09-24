@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-23T00:00:00Z",
+  "updated_at": "2026-09-24T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -323,6 +323,51 @@
       "stars": 0,
       "created_at": "2026-08-28T00:00:00Z",
       "updated_at": "2026-08-28T00:00:00Z"
+    },
+    "agentstandards": {
+      "name": "Agentstandards Architecture Council",
+      "id": "agentstandards",
+      "description": "Run a bounded, multi-vendor architecture council between Spec Kit planning and task generation.",
+      "author": "bbjwz",
+      "version": "0.1.0",
+      "download_url": "https://github.com/bbjwz/agentstandards/releases/download/v0.1.0/agentstandards-0.1.0.zip",
+      "sha256": "3291003d4d4d1f6ca32a0c1c2aa908a887d3ded2b69ce38deb09abc5daf89e90",
+      "repository": "https://github.com/bbjwz/agentstandards",
+      "homepage": "https://github.com/bbjwz/agentstandards",
+      "documentation": "https://github.com/bbjwz/agentstandards/blob/v0.1.0/README.md",
+      "changelog": "https://github.com/bbjwz/agentstandards/blob/v0.1.0/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.8,<2.0.0",
+        "tools": [
+          {
+            "name": "uv",
+            "required": true
+          },
+          {
+            "name": "codex",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 2
+      },
+      "tags": [
+        "architecture",
+        "multi-agent",
+        "multi-vendor",
+        "governance",
+        "codex"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-24T00:00:00Z",
+      "updated_at": "2026-09-24T00:00:00Z"
     },
     "analytics": {
       "name": "Analytics",
