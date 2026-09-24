@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
-from specify_cli.workflows.expressions import evaluate_expression
+from specify_cli.workflows.expressions import (
+    condition_has_malformed_expression_block,
+    evaluate_expression,
+    switch_expression_is_never_evaluated,
+)
 
 
 class SwitchStep(StepBase):
@@ -106,6 +110,34 @@ class SwitchStep(StepBase):
             errors.append(
                 f"Switch step {config.get('id', '?')!r} is missing "
                 f"'expression' field."
+            )
+        # Presence is not enough. `expression` goes through the same
+        # `evaluate_expression` as a condition, so one written without braces comes
+        # back as its own source text: `expression: inputs.mode` matches no case key,
+        # falls through to `default` on every run -- or dispatches nothing at all when
+        # there is no default -- and still reports COMPLETED. `if`, `while` and
+        # `do-while` already reject that shape on their `condition`; this is the same
+        # fault on the same evaluator, one step type over.
+        #
+        # A switch matches on strings, which moves both boundaries a condition has. A
+        # braceless literal is a valid case key -- `expression: review` dispatches the
+        # `review:` case -- so only text that opens with a namespace reference is
+        # flagged, not every string without braces. And a composite key such as
+        # `{{ inputs.a }}-{{ inputs.b }}` is legitimate here even though the same
+        # shape would be a fault in a boolean condition.
+        elif switch_expression_is_never_evaluated(config["expression"]):
+            errors.append(
+                f"Switch step {config.get('id', '?')!r}: 'expression' "
+                f"{config['expression']!r} has no usable '{{ }}' block, so it is "
+                "never evaluated: the literal text is matched against the case keys, "
+                "which falls through to 'default' on every run."
+            )
+        elif condition_has_malformed_expression_block(config["expression"]):
+            errors.append(
+                f"Switch step {config.get('id', '?')!r}: 'expression' "
+                f"{config['expression']!r} opens a '{{' the interpolator cannot "
+                "close, so it falls back to the first raw '}}' and matches on a "
+                "truncated expression instead of the one written."
             )
         # Every other control-flow step requires its branch payload: ``if``
         # requires ``then``, ``fan-out`` requires ``items`` and ``step``,
