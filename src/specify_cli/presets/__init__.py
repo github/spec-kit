@@ -37,6 +37,7 @@ from .._download_security import (
     safe_extract_archive,
 )
 from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
+from .._utils import relative_extension_path_violation
 from .._init_options import (
     MISSING_INIT_OPTIONS_FILE,
     is_ai_skills_enabled,
@@ -405,9 +406,11 @@ class PresetManifest:
 
         # Validate provides section
         provides = self.data["provides"]
-        if "templates" not in provides:
+        has_templates = "templates" in provides
+        has_instructions = "instructions" in provides
+        if not has_templates and not has_instructions:
             raise PresetValidationError(
-                "Preset must provide at least one template"
+                "Preset must provide at least one template or an instructions block"
             )
 
         # Validate templates. Guard the container and each entry's shape so a
@@ -422,12 +425,12 @@ class PresetManifest:
         # reports the accurate type error rather than the misleading "must
         # provide at least one template". An empty list still reports the
         # latter, since that genuinely is a list with no templates.
-        templates = provides["templates"]
-        if not isinstance(templates, list):
+        templates = provides.get("templates", [])
+        if has_templates and not isinstance(templates, list):
             raise PresetValidationError(
                 "Invalid provides.templates: expected a list"
             )
-        if not templates:
+        if has_templates and not templates:
             raise PresetValidationError(
                 "Preset must provide at least one template"
             )
@@ -519,6 +522,37 @@ class PresetManifest:
                     raise PresetValidationError(
                         f"Invalid template name '{tmpl['name']}': "
                         "must be lowercase alphanumeric with hyphens only"
+                    )
+
+        # Validate instructions (optional): each entry declares a markdown rule
+        # block that the opt-in agent-context extension composes into the
+        # always-on context file when this preset is enabled. Path-safety mirrors
+        # the template file checks above.
+        if has_instructions:
+            instructions = provides["instructions"]
+            if not isinstance(instructions, list):
+                raise PresetValidationError(
+                    "Invalid provides.instructions: expected a list"
+                )
+            if not instructions:
+                raise PresetValidationError(
+                    "provides.instructions must not be empty"
+                )
+            for entry in instructions:
+                if not isinstance(entry, dict):
+                    raise PresetValidationError(
+                        "Each entry in 'provides.instructions' must be a mapping"
+                    )
+                if "file" not in entry:
+                    raise PresetValidationError("Instruction entry missing 'file'")
+                reason = relative_extension_path_violation(entry["file"])
+                if reason:
+                    raise PresetValidationError(
+                        f"Invalid instruction file {entry['file']!r}: {reason}"
+                    )
+                if "description" in entry and not isinstance(entry["description"], str):
+                    raise PresetValidationError(
+                        "Instruction entry 'description' must be a string"
                     )
 
     @property
@@ -663,8 +697,13 @@ class PresetManifest:
 
     @property
     def templates(self) -> List[Dict[str, Any]]:
-        """Get list of provided templates."""
-        return self.data["provides"]["templates"]
+        """Get list of provided templates (may be empty for instructions-only presets)."""
+        return self.data["provides"].get("templates", [])
+
+    @property
+    def instructions(self) -> List[Dict[str, Any]]:
+        """Get list of provided always-on instruction blocks (may be empty)."""
+        return self.data["provides"].get("instructions", [])
 
     @property
     def tags(self) -> List[str]:
