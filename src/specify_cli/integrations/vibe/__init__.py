@@ -6,7 +6,6 @@ Vibe uses ``.vibe/skills/speckit-<name>/SKILL.md`` layout (enforced since v2.0.0
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
@@ -15,6 +14,7 @@ from typing import Any, Callable
 
 from ..base import IntegrationOption, SkillsIntegration
 from ..manifest import IntegrationManifest
+from ..._toml_string import escape_toml_basic
 from ..._utils import dump_frontmatter
 
 # Per-command frontmatter overrides for skills that should run in a forked
@@ -220,7 +220,7 @@ class VibeIntegration(SkillsIntegration):
     @staticmethod
     def _toml_quote(value: str) -> str:
         """Render a TOML basic string without exposing Vibe syntax to events."""
-        return json.dumps(value)
+        return escape_toml_basic(value)
 
     @staticmethod
     def _managed_hooks_pattern() -> re.Pattern[str]:

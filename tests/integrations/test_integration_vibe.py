@@ -171,6 +171,20 @@ class TestVibeTomlMerging:
         (hook,) = self._parse(tmp_path)["hooks"]
         assert "match" not in hook
 
+    def test_non_bmp_matcher_round_trips_through_toml(self, tmp_path):
+        """Vibe hook strings retain non-BMP Unicode rather than TOML-invalid surrogates."""
+        matcher = "Edit|😀"
+        self._install(tmp_path, {
+            "pre_tool_use": [{"command": "speckit.tdd.validate", "matcher": matcher}],
+        })
+        (hook,) = self._parse(tmp_path)["hooks"]
+        assert hook["match"] == f"re:{matcher}"
+
+    def test_toml_quote_round_trips_special_characters(self):
+        value = 'quote: " backslash: \\ newline: \n carriage: \r tab: \t nul: \x00 unit: \x1f del: \x7f'
+        quoted = VibeIntegration._toml_quote(value)
+        assert tomllib.loads(f"value = {quoted}\n")["value"] == value
+
     def test_unsupported_events_are_skipped(self, tmp_path, capsys):
         self._install(tmp_path, {
             "session_start": [{"command": "speckit.agent-context.update"}],

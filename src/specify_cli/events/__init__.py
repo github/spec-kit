@@ -1511,7 +1511,7 @@ def install_integration_events(
             native_timeout=lambda seconds: _native_timeout(integration, seconds),
             ensure_safe_destination=_ensure_safe_destination,
         ):
-            rel = str(config_path.relative_to(project_root))
+            rel = config_path.relative_to(project_root).as_posix()
             if rel not in manifest.files:
                 manifest.record_existing(rel)
             created.append(config_path)
