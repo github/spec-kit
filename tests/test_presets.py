@@ -12621,6 +12621,73 @@ class TestScriptChainReconciliation:
         # every invocation instead.
         assert "stub-pack" not in content
 
+    @pytest.mark.parametrize("reserved", ["common", "continuation-runner"])
+    def test_reserved_helper_names_are_refused(self, project_dir, reserved):
+        """A dispatcher named after a runtime helper would overwrite it."""
+        manager = PresetManager(project_dir)
+        with pytest.raises(PresetValidationError, match="reserved"):
+            manager._reconcile_script_chain(reserved)
+
+    def test_symlinked_specify_dir_is_not_written_through(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A symlinked ancestor must not redirect the dispatcher writes."""
+        outside = temp_dir / "outside"
+        (outside / "scripts" / "bash").mkdir(parents=True)
+        real_specify = project_dir / ".specify"
+        moved = temp_dir / "moved-specify"
+        real_specify.rename(moved)
+        try:
+            real_specify.symlink_to(outside, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            real_specify.mkdir()
+            pytest.skip("symlinks unavailable on this platform")
+        manager = PresetManager(project_dir)
+        with pytest.raises(ValueError, match="symlink"):
+            manager._reconcile_script_chain("linked")
+        assert list((outside / "scripts" / "bash").iterdir()) == []
+
+    def test_dispatcher_written_when_extension_layer_ends_chain(
+        self, project_dir, temp_dir, valid_pack_data, monkeypatch
+    ):
+        """An extension replace layer above a preset truncates the chain, but
+        the preset is still an active declaration and needs the dispatcher so
+        a later priority change is not inert."""
+        preset_file = (
+            project_dir / ".specify" / "presets" / "p1" / "scripts" / "shadowed.sh"
+        )
+        preset_file.parent.mkdir(parents=True)
+        preset_file.write_text("echo preset\n")
+        ext_file = temp_dir / "ext-shadowed.sh"
+        ext_file.write_text("echo ext\n")
+        monkeypatch.setattr(
+            PresetResolver, "resolve_script_chain", lambda self, name: [ext_file]
+        )
+        monkeypatch.setattr(
+            PresetResolver,
+            "collect_all_layers",
+            lambda self, name, kind: [
+                {"path": ext_file, "source": "extension", "strategy": "replace"},
+                {"path": preset_file, "source": "preset", "strategy": "replace"},
+            ],
+        )
+        PresetManager(project_dir)._reconcile_script_chain("shadowed")
+        canonical = self._canonical(project_dir, "shadowed")
+        assert "script continuation dispatcher" in canonical.read_text()
+
+    def test_python_module_entry_point_runs_cli(self):
+        """The dispatcher's ``python3 -m specify_cli`` fallback needs __main__."""
+        import subprocess
+        import sys
+
+        result = subprocess.run(
+            [sys.executable, "-m", "specify_cli", "preset", "script-chain", "--help"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        assert result.returncode == 0, result.stderr
+
     def test_remove_last_composing_preset_reverts_to_core_copy(
         self, project_dir, temp_dir, valid_pack_data
     ):

@@ -282,6 +282,10 @@ VALID_SCRIPT_STRATEGIES = {"replace", "wrap"}
 _SCRIPT_DISPATCHER_MARKER = "# speckit-generated: script continuation dispatcher"
 _SCRIPT_RUNNER_MARKER = "# speckit-generated: script continuation runner"
 _SCRIPT_RUNNER_NAME = "continuation-runner.sh"
+# Names the generated runtime relies on: a dispatcher for ``common`` would
+# overwrite the library every dispatcher sources, and one for
+# ``continuation-runner`` would overwrite the runner itself.
+_RESERVED_SCRIPT_NAMES = frozenset({"common", "continuation-runner"})
 
 _SCRIPT_CONTINUATION_DISPATCHER_TEMPLATE = """#!/usr/bin/env bash
 # speckit-generated: script continuation dispatcher
@@ -2483,38 +2487,46 @@ class PresetManager:
         no preset provides the script any more, the bundled core script is
         restored (or the generated dispatcher removed if there is no core).
         """
+        if script_name in _RESERVED_SCRIPT_NAMES:
+            raise PresetValidationError(
+                f"Script name '{script_name}' is reserved for the generated "
+                f"script continuation runtime and cannot be provided by a preset."
+            )
         resolver = PresetResolver(self.project_root)
         chain = resolver.resolve_script_chain(script_name)
         scripts_dir = self.project_root / ".specify" / "scripts" / "bash"
         canonical = scripts_dir / f"{script_name}.sh"
 
-        # Never write through symlinks: a link here could redirect the write
-        # outside the project.
-        for target in (self.project_root / ".specify" / "scripts", scripts_dir, canonical):
-            if target.is_symlink():
-                raise PresetValidationError(
-                    f"Refusing to write script through symlink: {target}"
-                )
+        # Validate every ancestor (not just the leaf): a symlinked ``.specify``
+        # would otherwise redirect the writes and the cleanup unlink outside
+        # the project.
+        _ensure_safe_shared_directory(self.project_root, scripts_dir)
+        _ensure_safe_shared_destination(self.project_root, canonical)
+        runner = scripts_dir / _SCRIPT_RUNNER_NAME
+        _ensure_safe_shared_destination(self.project_root, runner)
 
-        provided_by_preset = any(
-            self.project_root / ".specify" / "presets" in path.parents
-            or (self.project_root / ".specify" / "templates" / "overrides")
-            in path.parents
-            for path in chain
+        # Judge "provided by a preset" from every active declaration, not the
+        # truncated chain: an extension's replace layer can end the chain
+        # above a lower-priority preset, and a later set-priority or enable
+        # change must still find the dispatcher already in place.
+        preset_roots = (
+            self.project_root / ".specify" / "presets",
+            self.project_root / ".specify" / "templates" / "overrides",
+        )
+        provided_by_preset = bool(chain) and any(
+            root in layer["path"].parents
+            for layer in resolver.collect_all_layers(script_name, "script")
+            for root in preset_roots
         )
 
         if provided_by_preset:
-            scripts_dir.mkdir(parents=True, exist_ok=True)
-            runner = scripts_dir / _SCRIPT_RUNNER_NAME
-            runner.write_text(
-                _SCRIPT_CONTINUATION_RUNNER, encoding="utf-8", newline="\n"
-            )
-            canonical.write_text(
+            _write_shared_text(self.project_root, runner, _SCRIPT_CONTINUATION_RUNNER)
+            _write_shared_text(
+                self.project_root,
+                canonical,
                 _SCRIPT_CONTINUATION_DISPATCHER_TEMPLATE.format(
                     script_name=script_name, runner_name=_SCRIPT_RUNNER_NAME
                 ),
-                encoding="utf-8",
-                newline="\n",
             )
             if os.name != "nt":
                 for generated in (runner, canonical):
@@ -2523,8 +2535,9 @@ class PresetManager:
 
         # No preset layer left: restore core, or drop a stale generated stub.
         if chain:
-            canonical.parent.mkdir(parents=True, exist_ok=True)
-            canonical.write_text(chain[-1].read_text(encoding="utf-8"), encoding="utf-8")
+            _write_shared_text(
+                self.project_root, canonical, chain[-1].read_text(encoding="utf-8")
+            )
         elif canonical.is_file():
             first_line = canonical.read_text(encoding="utf-8").splitlines()[:2]
             if any(_SCRIPT_DISPATCHER_MARKER in line for line in first_line):
