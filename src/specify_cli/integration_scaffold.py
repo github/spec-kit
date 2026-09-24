@@ -223,8 +223,9 @@ def scaffold_integration(
     package_name = _package_name(clean_key)
     # A reserved Python keyword cannot name an importable package: the
     # generated ``integrations/<key>/`` would be unreachable by any import
-    # statement. Soft keywords (``match``, ``case``, ``_``) are deliberately
-    # NOT rejected -- they are contextual, and ``import match`` is valid.
+    # statement. Soft keywords that ``_clean_key`` admits (``match``,
+    # ``case``) are deliberately NOT rejected here -- they are contextual, and
+    # ``import match`` is valid.
     if keyword.iskeyword(package_name):
         raise ValueError(
             f"Integration key '{clean_key}' becomes the Python keyword "
