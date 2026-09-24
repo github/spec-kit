@@ -3569,14 +3569,15 @@
     "okf": {
       "name": "OKF Knowledge Bundle Generator",
       "id": "okf",
-      "description": "Generates and maintains an Open Knowledge Format (OKF v0.1) knowledge bundle from a source-code repository, mining git history for rationale and parking what it cannot verify as open questions.",
+      "description": "Generates and maintains an Open Knowledge Format (OKF v0.1) knowledge bundle from a source-code repository. Mines git history for the rationale behind the code, parks what it cannot establish as open questions rather than guessing, and verifies that the bundle's claims are actually supported by the repository.",
       "author": "Alex Punnen",
-      "version": "0.5.0",
-      "download_url": "https://github.com/alexcpn/speckit_okf/archive/refs/tags/v0.5.0.zip",
-      "repository": "https://github.com/alexcpn/speckit_okf",
-      "homepage": "https://github.com/alexcpn/speckit_okf",
-      "documentation": "https://github.com/alexcpn/speckit_okf/blob/main/README.md",
-      "changelog": "https://github.com/alexcpn/speckit_okf/blob/main/CHANGELOG.md",
+      "version": "0.9.2",
+      "download_url": "https://github.com/alexcpn/catalogify/releases/download/v0.9.2/speckit-okf-0.9.2.zip",
+      "sha256": "b426c135dc2d6c6bd11b286c70273f5ae28db5d2a2252acd9768cfb893b9b303",
+      "repository": "https://github.com/alexcpn/catalogify",
+      "homepage": "https://github.com/alexcpn/catalogify",
+      "documentation": "https://github.com/alexcpn/catalogify/blob/main/integrations/speckit/README.md",
+      "changelog": "https://github.com/alexcpn/catalogify/releases",
       "license": "MIT",
       "category": "docs",
       "effect": "read-write",
@@ -3599,7 +3600,7 @@
         ]
       },
       "provides": {
-        "commands": 4,
+        "commands": 5,
         "hooks": 0
       },
       "tags": [
@@ -3613,7 +3614,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-17T00:00:00Z",
-      "updated_at": "2026-09-08T00:00:00Z"
+      "updated_at": "2026-09-23T00:00:00Z"
     },
     "onboard": {
       "name": "Onboard",
