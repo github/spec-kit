@@ -7168,6 +7168,60 @@ steps:
         assert state.step_results["first"] == unrelated_result
         assert context.steps["first"] == unrelated_result
 
+    @pytest.mark.parametrize("max_concurrency", [1, 2])
+    def test_fan_out_reserved_id_collision_end_to_end(
+        self, project_dir, max_concurrency
+    ):
+        """End-to-end counterpart of the `..._never_clobbers_unrelated_step`
+        tests above: those build `StepContext(reserved_step_ids=...)` by
+        hand, so they would still pass if `execute()` stopped wiring
+        `_collect_reserved_step_ids(definition.steps)` into the run context.
+
+        This drives a real workflow through `engine.execute()`: an outside
+        step `leaf` runs first, then a fan-out whose template reuses the id
+        `leaf` (allowed -- template ids are exempt from global uniqueness
+        validation). The outside result must survive in both persisted
+        state and the live context, as seen by a later step reading
+        `steps.leaf`, on both the sequential (1) and concurrent (2) paths.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "fan-out-reserved-collision"
+  name: "Fan Out Reserved Collision"
+  version: "1.0.0"
+steps:
+  - id: leaf
+    type: shell
+    run: "echo outside"
+  - id: fan
+    type: fan-out
+    items: "{{{{ ['a', 'b', 'c'] }}}}"
+    max_concurrency: {max_concurrency}
+    step:
+      id: leaf
+      type: shell
+      run: "echo {{{{ item }}}}"
+  - id: after
+    type: shell
+    run: "echo {{{{ steps.leaf.output.stdout }}}}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["leaf"]["output"]["stdout"] == "outside\n"
+        for idx, item in enumerate(["a", "b", "c"]):
+            assert (
+                state.step_results[f"fan:leaf:{idx}"]["output"]["stdout"]
+                == f"{item}\n"
+            )
+        assert state.step_results["after"]["output"]["stdout"].strip() == "outside"
+
     def test_fan_out_namespaces_nested_descendant_steps(self, project_dir):
         """A step nested inside a fan-out template's `if`/`switch` branch
         must get a unique namespaced key per item, not just the template's
