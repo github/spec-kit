@@ -61,3 +61,47 @@ class TestWorkflowStepRichMarkup:
 
         assert result.exit_code == 1, result.output
         assert step_id in result.output
+
+    def test_info_prints_local_source(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.step.catalog import StepRegistry
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(
+            StepRegistry,
+            "get",
+            lambda _registry, step_id: {
+                "name": "Local Step",
+                "version": "1.0.0",
+                "source": "local",
+            },
+        )
+
+        result = CliRunner().invoke(app, ["workflow", "step", "info", "local-step"])
+
+        assert result.exit_code == 0, result.output
+        assert "Source:" in result.output
+        assert "local" in result.output
+
+    def test_info_prints_catalog_source_with_name(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.step.catalog import StepRegistry
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(
+            StepRegistry,
+            "get",
+            lambda _registry, step_id: {
+                "name": "Catalog Step",
+                "version": "1.0.0",
+                "source": "catalog",
+                "catalog_name": "default",
+            },
+        )
+
+        result = CliRunner().invoke(app, ["workflow", "step", "info", "catalog-step"])
+
+        assert result.exit_code == 0, result.output
+        assert "catalog (default)" in result.output
