@@ -1414,14 +1414,29 @@ class TestResume:
         child = resumed.workflow_scopes["c"]
         assert child["step_results"]["after"]["status"] == "completed"
 
-    def test_failed_call_retries_on_resume(self, project_dir):
-        marker = project_dir / "marker"
+    def test_failed_call_retries_on_resume(self, project_dir, monkeypatch):
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.base import StepBase, StepResult
+
+        calls = 0
+
+        class _FailOnce(StepBase):
+            type_key = "fail-once"
+
+            def execute(self, config, context):
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    return StepResult(status=StepStatus.FAILED, error="first attempt")
+                return StepResult(status=StepStatus.COMPLETED)
+
+        monkeypatch.setitem(STEP_REGISTRY, "fail-once", _FailOnce())
         _install(
             project_dir,
             "child",
             _workflow(
                 "child",
-                [_shell("x", f"test -f {marker} || {{ touch {marker}; exit 1; }}")],
+                [{"id": "x", "type": "fail-once"}],
             ),
         )
         _install(
@@ -1440,6 +1455,7 @@ class TestResume:
         resumed = engine.resume(state.run_id)
         assert resumed.status == RunStatus.COMPLETED
         assert resumed.workflow_scopes["c"]["status"] == "completed"
+        assert calls == 2
 
     def test_failed_output_evaluation_retries_on_resume(self, project_dir):
         marker = project_dir / "valid-json"
