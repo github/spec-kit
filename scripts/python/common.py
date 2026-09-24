@@ -414,6 +414,12 @@ class _DelegatedYAML:
     (or the deprecated SPECKIT_PYTHON alias) names one that has it (e.g. a
     `uv tool install` / `pipx` venv invisible to the bare `python3` a script
     is launched with). See #4443.
+
+    Only ``_preset_template_layer`` calls this, and only its
+    ``provides.templates`` fields are ever inspected, so the child drops
+    every other top-level manifest field (e.g. free-form ``metadata``)
+    before serializing: a valid, ignored YAML alias DAG there is otherwise
+    unrepresentable in JSON without exponential blow-up on the round trip.
     """
 
     YAMLError = _DelegatedYAMLError
@@ -448,12 +454,21 @@ class _DelegatedYAML:
                     "        finally:\n"
                     "            stack.discard(id(obj))\n"
                     "    return obj\n"
+                    "def _only_templates(data):\n"
+                    "    if not isinstance(data, dict):\n"
+                    "        return data\n"
+                    "    provides = data.get('provides')\n"
+                    "    if not isinstance(provides, dict):\n"
+                    "        return {k: v for k, v in data.items() if k == 'provides'}\n"
+                    "    if 'templates' not in provides:\n"
+                    "        return {'provides': {}}\n"
+                    "    return {'provides': {'templates': provides['templates']}}\n"
                     "try:\n"
                     "    data = yaml.safe_load(sys.stdin.read())\n"
                     "except yaml.YAMLError as exc:\n"
                     "    print(str(exc), file=sys.stderr)\n"
                     "    sys.exit(1)\n"
-                    "json.dump(_stringify_keys(data), sys.stdout, default=_default)",
+                    "json.dump(_stringify_keys(_only_templates(data)), sys.stdout, default=_default)",
                 ],
                 input=text,
                 capture_output=True,

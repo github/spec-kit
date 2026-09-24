@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ from tests.parity_helpers import (
     install_composition_stack,
     install_scripts,
     json_stdout,
+    make_python3_path_shim,
     make_repo,
     make_yaml_less_venv,
     ps_cmd,
@@ -709,13 +711,21 @@ def test_all_variants_fall_back_when_speckit_python_lacks_pyyaml(
     not a way to narrow it: falling through to a working PATH interpreter
     when the override lacks PyYAML must behave the same as if SPECKIT_PYTHON
     had never been set.
+
+    `clean_env()` preserves the host PATH, which may hold nothing but a
+    PyYAML-less system `python3` even when pytest itself was launched with a
+    PyYAML-equipped `.venv/bin/python`. A deterministic `python3` shim put
+    first on PATH keeps the fallback precondition true regardless of the
+    host environment.
     """
     repo, expected = _setup_repo(tmp_path)
 
     no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+    python3_shim = make_python3_path_shim(tmp_path / "python3-shim")
 
     env = clean_env()
     env["SPECKIT_PYTHON"] = str(no_yaml_exe)
+    env["PATH"] = f"{python3_shim}{os.pathsep}{env.get('PATH', '')}"
 
     results = [
         run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env),
@@ -1065,6 +1075,50 @@ def test_python_variant_delegates_manifest_with_shared_non_recursive_alias(
         "TEMPLATE_NAME": TEMPLATE,
         "TEMPLATE_CONTENT": expected,
     }
+
+
+@requires_bash
+def test_python_variant_delegates_manifest_with_exponential_alias_dag(
+    tmp_path: Path,
+) -> None:
+    """An ignored `metadata` value built from nested, non-recursive YAML
+    aliases (a DAG, not a cycle) must not make delegation blow up:
+    normalizing every occurrence of a shared reference independently turns
+    a document with O(depth) YAML nodes into an O(2**depth) JSON payload,
+    even though cycle detection alone lets it terminate. Restricting what
+    the child serializes to the `provides.templates` fields resolution
+    actually needs avoids expanding unused aliases like this one at all
+    (#4445)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    depth = 20
+    lines = ["x0: &x0 [a]"]
+    for i in range(1, depth):
+        lines.append(f"x{i}: &x{i} [*x{i - 1}, *x{i - 1}]")
+    lines.append(f"metadata: *x{depth - 1}")
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "\n".join(lines) + "\n" + manifest.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    start = time.monotonic()
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+    elapsed = time.monotonic() - start
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+    assert elapsed < 5, f"delegated parsing took {elapsed:.2f}s; expected well under the 10s child timeout"
 
 
 def test_python_variant_rejects_speckit_python_override_without_python_3(

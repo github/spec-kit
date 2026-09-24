@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -120,6 +121,56 @@ def make_yaml_less_venv(venv_dir: Path) -> Path:
     )
     assert probe.returncode != 0, "venv unexpectedly has PyYAML importable"
     return exe
+
+
+def _bash_posix_path(path: Path) -> str:
+    """Convert a Windows path to the POSIX form the available bash expects."""
+    resolved = str(path.resolve())
+    if os.name != "nt":
+        return resolved
+    converted = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            'command -v cygpath >/dev/null 2>&1 && cygpath -u "$1"',
+            "bash",
+            resolved,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if converted.returncode == 0 and converted.stdout.strip():
+        return converted.stdout.strip()
+    drive = path.drive.rstrip(":").lower()
+    posix = path.as_posix()
+    return f"/mnt/{drive}{posix[2:]}" if drive else posix
+
+
+def make_python3_path_shim(shim_dir: Path) -> Path:
+    """Create a deterministic ``python3`` shim that execs the current pytest
+    interpreter, so a test can put a guaranteed PyYAML-capable interpreter
+    first on PATH as the *default* ``python3`` a script finds via its
+    python3 -> python -> py -3 fallback chain (as opposed to the
+    SPECKIT_PYTHON(_EXECUTABLE) override, which names its interpreter
+    explicitly and never depends on PATH lookup).
+    """
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    python_exe = Path(sys.executable).resolve()
+
+    shell_shim = shim_dir / "python3"
+    shell_shim.write_text(
+        f"#!/usr/bin/env sh\nexec {shlex.quote(_bash_posix_path(python_exe))} \"$@\"\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    shell_shim.chmod(0o755)
+
+    if os.name == "nt":
+        cmd_shim = shim_dir / "python3.cmd"
+        cmd_shim.write_text(f'@echo off\r\n"{python_exe}" %*\r\n', encoding="utf-8")
+
+    return shim_dir
 
 
 def collation_range_locale() -> str | None:
