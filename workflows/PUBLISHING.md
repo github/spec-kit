@@ -228,15 +228,16 @@ git push origin add-your-workflow
 
 ## Verification Process
 
-After submission, maintainers will review:
+Maintainers check that:
 
 1. **Definition validation** — valid `workflow.yml`, correct schema
 2. **Step correctness** — all step types used correctly, no dangling references
 3. **Input design** — clear prompts, sensible defaults and enums
-4. **Security** — no malicious shell commands, safe operations
-5. **Documentation** — clear README explaining what the workflow does and when to use it
+4. **Documentation** — clear README explaining what the workflow does and when to use it
 
-Once verified, the workflow appears in `specify workflow search`.
+This is a check of the submission's **form and completeness**, not a security review — maintainers do not review, audit, endorse, or support the workflow's `shell` step content or other code it runs. Treat every workflow, including catalog-listed ones, as untrusted until you've read its `run` fields yourself (see [Security: shell steps execute arbitrary code](#security-shell-steps-execute-arbitrary-code)).
+
+Once these checks pass, the workflow appears in `specify workflow search`.
 
 ---
 
@@ -277,7 +278,7 @@ When releasing a new version:
 
 Workflow `shell` steps execute their `run` field through `/bin/sh` (POSIX) or the platform shell. There is no sandbox between the step and the user's machine: a malicious or buggy `run` block can read environment variables, modify files outside the project, exfiltrate data, or escalate privileges.
 
-Catalog-listed workflows are reviewed at submission time (see [Verification Process](#verification-process)), but you should still treat every install as code-execution from an untrusted source until you have read the `workflow.yml`:
+Catalog-listed workflows are checked for form and completeness only at submission time (see [Verification Process](#verification-process)), not for security — you should treat every install as code-execution from an untrusted source until you have read the `workflow.yml`:
 
 - **Before installing a workflow**, fetch the raw YAML and audit every `shell` step's `run` field directly. `specify workflow info <name>` only shows metadata (name, version, inputs, step IDs/types) — not the shell content that would actually execute.
 - **Constrain interpolated values, don't just quote them** in `run` blocks: expressions are spliced in as raw text with no automatic escaping, and there is no shell-escaping filter, so quoting is not a security boundary. Restrict `{{ inputs.something }}` substitutions to a fixed set with `enum`/an allowlist so a malicious input can't inject shell syntax; treat quoting only as correctness handling for already-constrained values.
