@@ -1,5 +1,9 @@
 ---
 description: "Auto-commit changes after a Spec Kit command completes"
+scripts:
+  sh: scripts/bash/auto-commit.sh
+  ps: scripts/powershell/auto-commit.ps1
+  py: scripts/python/auto_commit.py
 ---
 
 # Auto-Commit Changes
@@ -30,10 +34,11 @@ Determine the event name from the hook that triggered this command, then run the
 
 - **Bash**: `.specify/extensions/git/scripts/bash/auto-commit.sh <event_name> [--message-file <path>]`
 - **PowerShell**: `.specify/extensions/git/scripts/powershell/auto-commit.ps1 <event_name> [-MessageFile <path>]`
+- **Python**: `.specify/extensions/git/scripts/python/auto_commit.py <event_name>`
 
 Replace `<event_name>` with the actual hook event (e.g., `after_specify`, `before_plan`, `after_implement`). Only pass a generated message when `commit_style: conventional` is configured — first check `.specify/extensions/git/git-config.yml` for the value of `commit_style`:
 
-- If `conventional`: inspect the diff and generate a Conventional Commit message. **Do not interpolate the generated message directly into a shell command string** — its content is derived from repository changes and may contain characters (quotes, `$(...)`, backticks) that a shell would execute or that would break command quoting. Instead, write the message to a temporary file using your file-editing tool (not a shell `echo`/`printf`), then pass that file's path via `--message-file <path>` (Bash) or `-MessageFile <path>` (PowerShell).
+- If `conventional`: inspect the diff and generate a Conventional Commit message. **Do not interpolate the generated message directly into a shell command string** — its content is derived from repository changes and may contain characters (quotes, `$(...)`, backticks) that a shell would execute or that would break command quoting. Instead, write the message to a temporary file using your file-editing tool (not a shell `echo`/`printf`), then pass that file's path via `--message-file <path>` (Bash) or `-MessageFile <path>` (PowerShell). The Python script does not accept a message file; with `--script py` and `commit_style: conventional`, use the Bash or PowerShell variant for the message-file path, or set `commit_style: fixed`.
 - If `fixed` or absent: run the script with just `<event_name>`; it uses the configured/static message.
 
 ## Configuration
