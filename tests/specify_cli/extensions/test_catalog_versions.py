@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from io import BytesIO
 import hashlib
-from pathlib import Path
 import zipfile
+from io import BytesIO
+from pathlib import Path
 
 import pytest
 import yaml
@@ -20,12 +20,12 @@ from specify_cli.extensions import (
 )
 
 
-def _archive(tmp_path: Path, version: str) -> Path:
-    path = tmp_path / f"demo-{version}.zip"
+def _archive(tmp_path: Path, version: str, extension_id: str = "demo-history") -> Path:
+    path = tmp_path / f"{extension_id}-{version}.zip"
     manifest = {
         "schema_version": "1.0",
         "extension": {
-            "id": "demo-history",
+            "id": extension_id,
             "name": "Demo History",
             "version": version,
             "description": "Historical release test",
@@ -72,6 +72,18 @@ def _catalog(
         ExtensionCatalog, "_get_merged_extensions", lambda self: [entry]
     )
     return ExtensionCatalog(project)
+
+
+class _ArchiveResponse(BytesIO):
+    def __init__(self, data: bytes, url: str):
+        super().__init__(data)
+        self.url = url
+
+    def geturl(self):
+        return self.url
+
+    def getheader(self, _name):
+        return "application/zip"
 
 
 def test_legacy_entry_still_selects_its_current_release(tmp_path, monkeypatch):
@@ -171,16 +183,9 @@ def test_selected_release_download_uses_its_url_without_relookup(tmp_path, monke
     selected = catalog.get_extension_info("demo-history", "0.4.12")
     requested = []
 
-    class Response(BytesIO):
-        def geturl(self):
-            return requested[-1]
-
-        def getheader(self, _name):
-            return "application/zip"
-
     def open_url(url, **_kwargs):
         requested.append(url)
-        return Response(archive.read_bytes())
+        return _ArchiveResponse(archive.read_bytes(), url)
 
     monkeypatch.setattr(catalog, "_open_url", open_url)
     monkeypatch.setattr(
@@ -226,6 +231,94 @@ def test_exact_cli_install_rejects_wrong_archive_before_writing(tmp_path, monkey
     assert not (
         project / ".specify" / "extensions" / "demo-history" / "extension.yml"
     ).exists()
+
+
+def test_exact_cli_install_rejects_wrong_archive_id_before_writing(
+    tmp_path, monkeypatch
+):
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    old_archive = _archive(tmp_path, "0.4.12")
+    wrong_id_archive = _archive(tmp_path, "0.4.12", "another-extension")
+    _catalog(monkeypatch, project, _entry(old_archive))
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension_info",
+        lambda self, _info: wrong_id_archive,
+    )
+
+    result = CliRunner().invoke(
+        app, ["extension", "add", "demo-history", "--version", "0.4.12"]
+    )
+
+    assert result.exit_code == 1
+    assert "declares ID 'another-extension', expected 'demo-history'" in " ".join(
+        result.output.split()
+    )
+    assert not (project / ".specify" / "extensions" / "another-extension").exists()
+    assert not (project / ".specify" / "extensions" / "demo-history").exists()
+
+
+def test_exact_cli_install_rejects_wrong_historical_digest_before_writing(
+    tmp_path, monkeypatch
+):
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    old_archive = _archive(tmp_path, "0.4.12")
+    entry = _entry(old_archive)
+    entry["releases"]["0.4.12"]["sha256"] = "0" * 64
+    _catalog(monkeypatch, project, entry)
+    monkeypatch.chdir(project)
+    requested = []
+
+    def open_url(self, url, **_kwargs):
+        requested.append(url)
+        return _ArchiveResponse(old_archive.read_bytes(), url)
+
+    monkeypatch.setattr(ExtensionCatalog, "_open_url", open_url)
+
+    result = CliRunner().invoke(
+        app, ["extension", "add", "demo-history", "--version", "0.4.12"]
+    )
+
+    assert result.exit_code == 1
+    assert requested == ["https://example.com/demo-0.4.12.zip"]
+    assert "Integrity check failed for 'demo-history'" in " ".join(
+        result.output.split()
+    )
+    assert not (project / ".specify" / "extensions" / "demo-history").exists()
+
+
+def test_unqualified_cli_install_uses_current_release_with_history(
+    tmp_path, monkeypatch
+):
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    old_archive = _archive(tmp_path, "0.4.12")
+    current_archive = _archive(tmp_path, "0.5.1")
+    entry = _entry(old_archive)
+    entry["sha256"] = hashlib.sha256(current_archive.read_bytes()).hexdigest()
+    _catalog(monkeypatch, project, entry)
+    monkeypatch.chdir(project)
+    requested = []
+
+    def open_url(self, url, **_kwargs):
+        requested.append(url)
+        return _ArchiveResponse(current_archive.read_bytes(), url)
+
+    monkeypatch.setattr(ExtensionCatalog, "_open_url", open_url)
+
+    result = CliRunner().invoke(app, ["extension", "add", "demo-history"])
+
+    assert result.exit_code == 0, result.output
+    assert requested == ["https://example.com/demo-0.5.1.zip"]
+    installed = yaml.safe_load(
+        (
+            project / ".specify" / "extensions" / "demo-history" / "extension.yml"
+        ).read_text(encoding="utf-8")
+    )
+    assert installed["extension"]["version"] == "0.5.1"
 
 
 def test_exact_cli_install_historical_release(tmp_path, monkeypatch):
@@ -341,3 +434,44 @@ def test_exact_cli_does_not_bypass_discovery_policy_via_bundled_copy(
     assert not (
         project / ".specify" / "extensions" / "agent-context" / "extension.yml"
     ).exists()
+
+
+@pytest.mark.parametrize("matches_package", [True, False])
+def test_exact_cli_bundled_version_must_match_packaged_manifest(
+    tmp_path, monkeypatch, matches_package
+):
+    from specify_cli._assets import _locate_bundled_extension
+
+    bundled = _locate_bundled_extension("agent-context")
+    assert bundled is not None
+    packaged_version = ExtensionManifest(bundled / "extension.yml").version
+    requested_version = packaged_version if matches_package else "9999.0.0"
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    entry = {
+        "id": "agent-context",
+        "name": "Agent Context",
+        "version": requested_version,
+        "bundled": True,
+        "_catalog_name": "trusted",
+        "_install_allowed": True,
+    }
+    _catalog(monkeypatch, project, entry)
+    monkeypatch.chdir(project)
+
+    result = CliRunner().invoke(
+        app, ["extension", "add", "agent-context", "--version", requested_version]
+    )
+
+    installed_manifest = (
+        project / ".specify" / "extensions" / "agent-context" / "extension.yml"
+    )
+    if matches_package:
+        assert result.exit_code == 0, result.output
+        assert ExtensionManifest(installed_manifest).version == packaged_version
+    else:
+        assert result.exit_code == 1
+        assert f"version {requested_version} is not shipped" in " ".join(
+            result.output.split()
+        )
+        assert not installed_manifest.exists()
