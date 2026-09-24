@@ -22,7 +22,7 @@ from ._command_upgrade_layout import (
     _manifest_tracks_skill_layout,
 )
 from ._commands import integration_app
-from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _refresh_init_options_speckit_version, _register_extensions_for_agent, _register_presets_for_agent, _resolve_integration_options, _resolve_integration_script_type, _unregister_enabled_extension_commands_for_agent, _update_init_options_for_integration, _write_integration_json
+from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _refresh_init_options_speckit_version, _register_extensions_for_agent, _register_presets_for_agent, _resolve_integration_options, _resolve_integration_script_type, _resync_manifest_after_registration, _unregister_enabled_extension_commands_for_agent, _update_init_options_for_integration, _write_integration_json
 
 
 @integration_app.command("upgrade")
@@ -342,6 +342,14 @@ def integration_upgrade(
             project_root,
             key,
             continuing="The integration was upgraded, but installed presets may need re-registration.",
+        )
+        _resync_manifest_after_registration(
+            new_manifest,
+            key,
+            continuing=(
+                "The integration was upgraded, but the manifest may report "
+                "preset/extension overrides as modified files."
+            ),
         )
 
     name = (integration.config or {}).get("name", key)
