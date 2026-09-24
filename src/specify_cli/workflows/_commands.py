@@ -926,7 +926,17 @@ def _failed_step_error(state: Any) -> str | None:
 
 
 def _scope_current_step_id(record: dict[str, Any]) -> str | None:
-    """Step id a serialized scope rests on, derived from its snapshot index."""
+    """Step id a serialized scope rests on.
+
+    Prefers the persisted ``current_step_id``: it is the only accurate source
+    when a scope paused inside a nested control-flow body (``if``/``switch``/
+    loop), where the snapshot index still points at the enclosing step. Falls
+    back to deriving the id from that index for states written before the field
+    was persisted.
+    """
+    persisted = record.get("current_step_id")
+    if isinstance(persisted, str) and persisted:
+        return persisted
     index = record.get("current_step_index")
     definition = record.get("definition")
     steps = definition.get("steps") if isinstance(definition, dict) else None

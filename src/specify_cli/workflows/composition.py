@@ -417,6 +417,7 @@ class ExecutionScope:
             "inputs": self.inputs,
             "status": self.status.value,
             "current_step_index": self.current_step_index,
+            "current_step_id": self.current_step_id,
             "step_results": self.step_results,
             "workflow_scopes": {
                 key: child._serialize()
@@ -496,6 +497,7 @@ def deserialize_scope(
         workflow_dir=record.get("workflow_dir"),
         step_results=record.get("step_results", {}) or {},
         current_step_index=record.get("current_step_index", 0),
+        current_step_id=record.get("current_step_id"),
         status=RunStatus(record.get("status", RunStatus.RUNNING.value)),
         parent=parent,
         root_state=root_state,
@@ -609,6 +611,20 @@ def _validate_scope_record(record: dict[str, Any], *, path: str) -> None:
         msg = (
             f"Invalid run state: '{path}.current_step_index' must be a "
             f"non-negative integer, got {index!r}"
+        )
+        raise ValueError(msg)
+
+    # The step a scope rests on. It is *not* required to appear in
+    # ``definition.steps``: a scope paused inside a nested control-flow body
+    # (``if``/``switch``/loop) rests on a step that only exists in that body,
+    # while ``current_step_index`` still points at the enclosing step.
+    current_step_id = record.get("current_step_id")
+    if current_step_id is not None and (
+        not isinstance(current_step_id, str) or not current_step_id
+    ):
+        msg = (
+            f"Invalid run state: '{path}.current_step_id' must be a "
+            f"non-empty string or null, got {current_step_id!r}"
         )
         raise ValueError(msg)
 

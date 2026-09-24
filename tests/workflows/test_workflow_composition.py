@@ -1600,6 +1600,56 @@ class TestCliReporting:
         assert payload["gate"]["scope_path"] == ["c", "inner"]
         assert payload["gate"]["step_id"] == "g"
 
+    def test_gate_inside_nested_control_flow_reports_gate(self, project_dir):
+        """A gate inside an ``if`` body must be reported, not its enclosing step.
+
+        Nested control-flow bodies run with ``step_offset=-1``, so the scope's
+        snapshot index still points at the enclosing ``if`` while
+        ``current_step_id`` points at the gate. Deriving the id from the index
+        alone would surface the ``if`` step and hide the gate from JSON clients.
+        """
+        _install(
+            project_dir,
+            "child",
+            _workflow(
+                "child",
+                [
+                    {
+                        "id": "branch",
+                        "type": "if",
+                        "condition": "true",
+                        "then": [
+                            {
+                                "id": "g",
+                                "type": "gate",
+                                "message": "Nested control-flow ok?",
+                                "options": ["approve", "reject"],
+                            }
+                        ],
+                    }
+                ],
+            ),
+        )
+        _install(
+            project_dir,
+            "parent",
+            _workflow("parent", [{"id": "c", "type": "workflow", "workflow": "child"}]),
+        )
+        payload = json.loads(
+            self._invoke(project_dir, ["workflow", "run", "parent", "--json"]).stdout
+        )
+        assert payload["status"] == "paused"
+        assert payload["gate"] == {
+            "step_id": "g",
+            "message": "Nested control-flow ok?",
+            "options": ["approve", "reject"],
+            "choice": None,
+            "scope_path": ["c"],
+        }
+        # The scope's resting step id is persisted, not just derived on read.
+        loaded = RunState.load(payload["run_id"], project_dir)
+        assert loaded.workflow_scopes["c"]["current_step_id"] == "g"
+
     def test_run_json_payload_stable_without_scopes(self, project_dir):
         _install(project_dir, "plain", _workflow("plain", [_shell("x", "echo hi")]))
         result = self._invoke(project_dir, ["workflow", "run", "plain", "--json"])
