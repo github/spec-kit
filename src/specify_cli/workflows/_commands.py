@@ -925,6 +925,24 @@ def _failed_step_error(state: Any) -> str | None:
     return getattr(state, "error", None)
 
 
+def _scope_current_step_id(record: dict[str, Any]) -> str | None:
+    """Step id a serialized scope rests on, derived from its snapshot index."""
+    index = record.get("current_step_index")
+    definition = record.get("definition")
+    steps = definition.get("steps") if isinstance(definition, dict) else None
+    if (
+        isinstance(index, int)
+        and not isinstance(index, bool)
+        and isinstance(steps, list)
+        and 0 <= index < len(steps)
+        and isinstance(steps[index], dict)
+    ):
+        step_id = steps[index].get("id")
+        if isinstance(step_id, str):
+            return step_id
+    return None
+
+
 def _scope_summary(scopes: Any) -> list[dict[str, Any]]:
     """Compact nested-scope summary for the machine-readable payload."""
     summary: list[dict[str, Any]] = []
@@ -938,6 +956,7 @@ def _scope_summary(scopes: Any) -> list[dict[str, Any]]:
                 "invocation_id": key,
                 "workflow_id": record.get("workflow_id"),
                 "status": record.get("status"),
+                "current_step_id": _scope_current_step_id(record),
                 "scopes": _scope_summary(record.get("workflow_scopes")),
             }
         )
@@ -985,6 +1004,58 @@ def _is_gate_step(step: dict[str, Any]) -> bool:
     return isinstance(output, dict) and "on_reject" in output
 
 
+def _gate_details(step_id: str, output: Any) -> dict[str, Any]:
+    """Normalise a gate step's output into the stable JSON gate schema.
+
+    ``message``, ``options``, and ``choice`` may be non-string YAML literals in
+    an unvalidated workflow (``GateStep`` coerces none of them for the payload),
+    so all three are normalised: message → str, options → list[str] | None,
+    choice → str | None (None means no decision yet).
+    """
+    output = output if isinstance(output, dict) else {}
+    message = output.get("message")
+    choice = output.get("choice")
+    return {
+        "step_id": step_id,
+        "message": None if message is None else str(message),
+        "options": _normalize_gate_options(output.get("options")),
+        "choice": None if choice is None else str(choice),
+    }
+
+
+def _scope_gate(scopes: Any, path: list[str]) -> dict[str, Any] | None:
+    """Find the active gate inside a serialized scope tree.
+
+    A pause/abort inside a composed workflow leaves the *root* resting on the
+    ``workflow`` call, so the gate itself lives in a nested scope. Return its
+    detail augmented with the ``scope_path`` (invocation ids root → leaf) so an
+    orchestrator can drive a nested gate exactly as a top-level one.
+    """
+    if not isinstance(scopes, dict):
+        return None
+    for key, record in scopes.items():
+        if not isinstance(record, dict):
+            continue
+        child_path = [*path, key]
+        # A deeper paused scope is more specific; check descendants first.
+        nested = _scope_gate(record.get("workflow_scopes"), child_path)
+        if nested is not None:
+            return nested
+        if str(record.get("status")) not in ("paused", "aborted"):
+            continue
+        step_id = _scope_current_step_id(record)
+        step_results = record.get("step_results")
+        if step_id is None or not isinstance(step_results, dict):
+            continue
+        step = step_results.get(step_id)
+        if isinstance(step, dict) and _is_gate_step(step):
+            return {
+                **_gate_details(step_id, step.get("output")),
+                "scope_path": child_path,
+            }
+    return None
+
+
 def _gate_outcome(state: Any) -> dict[str, Any] | None:
     """Gate detail for the structured outcome, when the run rests at a gate.
 
@@ -1002,21 +1073,10 @@ def _gate_outcome(state: Any) -> dict[str, Any] | None:
     if getattr(state.status, "value", state.status) not in ("paused", "aborted"):
         return None
     step = (getattr(state, "step_results", None) or {}).get(state.current_step_id)
-    if not isinstance(step, dict) or not _is_gate_step(step):
-        return None
-    output = step.get("output") or {}
-    # `message`, `options`, and `choice` may be non-string YAML literals in an
-    # unvalidated workflow (GateStep coerces none of them for the payload), so
-    # normalise all three for a stable JSON schema: message → str, options →
-    # list[str] | None, choice → str | None (None means no decision yet).
-    message = output.get("message")
-    choice = output.get("choice")
-    return {
-        "step_id": state.current_step_id,
-        "message": None if message is None else str(message),
-        "options": _normalize_gate_options(output.get("options")),
-        "choice": None if choice is None else str(choice),
-    }
+    if isinstance(step, dict) and _is_gate_step(step):
+        return _gate_details(state.current_step_id, step.get("output"))
+    # Not a top-level gate: a composed workflow may be paused on a nested gate.
+    return _scope_gate(getattr(state, "workflow_scopes", None), [])
 
 
 def _normalize_gate_options(options: Any) -> list[str] | None:

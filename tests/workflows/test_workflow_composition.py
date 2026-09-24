@@ -1509,6 +1509,96 @@ class TestCliReporting:
         assert payload["status"] == "completed"
         assert payload["scopes"][0]["invocation_id"] == "c"
         assert payload["scopes"][0]["workflow_id"] == "child"
+        assert payload["scopes"][0]["current_step_id"] == "x"
+
+    def _install_paused_composed(self, project_dir):
+        _install(
+            project_dir,
+            "child",
+            _workflow(
+                "child",
+                [
+                    {
+                        "id": "g",
+                        "type": "gate",
+                        "message": "Nested ok?",
+                        "options": ["approve", "reject"],
+                    }
+                ],
+            ),
+        )
+        _install(
+            project_dir,
+            "parent",
+            _workflow("parent", [{"id": "c", "type": "workflow", "workflow": "child"}]),
+        )
+
+    def test_composed_pause_surfaces_nested_gate(self, project_dir):
+        """A pause inside a composed workflow must expose the nested gate.
+
+        ``_gate_outcome`` otherwise sees only the root ``workflow`` call step,
+        leaving orchestrators without the message/options/choice to drive it.
+        """
+        self._install_paused_composed(project_dir)
+        payload = json.loads(
+            self._invoke(project_dir, ["workflow", "run", "parent", "--json"]).stdout
+        )
+        assert payload["status"] == "paused"
+        assert payload["gate"] == {
+            "step_id": "g",
+            "message": "Nested ok?",
+            "options": ["approve", "reject"],
+            "choice": None,
+            "scope_path": ["c"],
+        }
+
+    def test_status_json_surfaces_nested_gate(self, project_dir):
+        self._install_paused_composed(project_dir)
+        run = json.loads(
+            self._invoke(project_dir, ["workflow", "run", "parent", "--json"]).stdout
+        )
+        payload = json.loads(
+            self._invoke(
+                project_dir, ["workflow", "status", run["run_id"], "--json"]
+            ).stdout
+        )
+        assert payload["gate"]["scope_path"] == ["c"]
+        assert payload["gate"]["step_id"] == "g"
+
+    def test_deeply_nested_gate_reports_scope_path(self, project_dir):
+        _install(
+            project_dir,
+            "leaf",
+            _workflow(
+                "leaf",
+                [
+                    {
+                        "id": "g",
+                        "type": "gate",
+                        "message": "Leaf?",
+                        "options": ["approve", "reject"],
+                    }
+                ],
+            ),
+        )
+        _install(
+            project_dir,
+            "mid",
+            _workflow(
+                "mid", [{"id": "inner", "type": "workflow", "workflow": "leaf"}]
+            ),
+        )
+        _install(
+            project_dir,
+            "parent",
+            _workflow("parent", [{"id": "c", "type": "workflow", "workflow": "mid"}]),
+        )
+        payload = json.loads(
+            self._invoke(project_dir, ["workflow", "run", "parent", "--json"]).stdout
+        )
+        assert payload["status"] == "paused"
+        assert payload["gate"]["scope_path"] == ["c", "inner"]
+        assert payload["gate"]["step_id"] == "g"
 
     def test_run_json_payload_stable_without_scopes(self, project_dir):
         _install(project_dir, "plain", _workflow("plain", [_shell("x", "echo hi")]))
