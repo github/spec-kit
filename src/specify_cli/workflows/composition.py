@@ -180,11 +180,15 @@ def validate_workflow_call_config(config: dict[str, Any]) -> list[str]:
             f"Workflow step {step_id!r}: 'input' must be a mapping."
         )
     elif isinstance(input_mapping, dict):
-        for key in input_mapping:
+        for key, value in input_mapping.items():
             if not isinstance(key, str):
                 errors.append(
                     f"Workflow step {step_id!r}: 'input' keys must be strings."
                 )
+                continue
+            error = _json_value_error(value, path=f"'input.{key}'")
+            if error:
+                errors.append(f"Workflow step {step_id!r}: {error}.")
     return errors
 
 
@@ -212,10 +216,17 @@ def evaluate_input_mapping(
             f"{type(mapping).__name__}."
         )
         raise ValueError(msg)
-    return {
-        name: evaluate_expression(value, context)
-        for name, value in mapping.items()
-    }
+    evaluated: dict[str, Any] = {}
+    for name, value in mapping.items():
+        if not isinstance(name, str):
+            msg = "'input' keys must be strings."
+            raise ValueError(msg)
+        resolved = evaluate_expression(value, context)
+        error = _json_value_error(resolved, path=f"Input {name!r}")
+        if error:
+            raise ValueError(f"{error}.")
+        evaluated[name] = resolved
+    return evaluated
 
 
 def bind_composed_inputs(
@@ -581,6 +592,7 @@ class ExecutionScope:
             "workflow_dir": self.workflow_dir,
             "inputs": self.inputs,
             "status": self.status.value,
+            "error": self.error,
             "current_step_index": self.current_step_index,
             "current_step_id": self.current_step_id,
             "step_results": self.step_results,
@@ -679,6 +691,7 @@ def deserialize_scope(
         current_step_index=record.get("current_step_index", 0),
         current_step_id=record.get("current_step_id"),
         status=RunStatus(record.get("status", RunStatus.RUNNING.value)),
+        error=record.get("error"),
         parent=parent,
         root_state=root_state,
     )
@@ -858,6 +871,14 @@ def _validate_scope_record(
     except ValueError:
         msg = f"Invalid run state: '{path}.status' is invalid: {status!r}"
         raise ValueError(msg) from None
+
+    error = record.get("error")
+    if error is not None and not isinstance(error, str):
+        msg = (
+            f"Invalid run state: '{path}.error' must be a string or null, "
+            f"got {error!r}"
+        )
+        raise ValueError(msg)
 
     definition = _resolve_scope_definition(record, run_dir=run_dir, path=path)
     _validate_definition_shape(definition, path=f"{path}.definition")

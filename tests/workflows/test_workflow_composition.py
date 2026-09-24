@@ -222,6 +222,18 @@ class TestWorkflowCallConfigValidation:
         )
         assert any("'input' must be a mapping" in e for e in errors)
 
+    def test_non_json_safe_input_value_rejected(self):
+        from datetime import date
+
+        errors = validate_workflow_call_config(
+            {
+                "id": "s",
+                "workflow": "bugfix",
+                "input": {"when": date(2026, 1, 1)},
+            }
+        )
+        assert any("not JSON-safe" in e for e in errors)
+
 
 class TestEvaluateInputMapping:
     def test_omitted_returns_empty(self):
@@ -242,6 +254,16 @@ class TestEvaluateInputMapping:
         assert evaluate_input_mapping(
             {"name": "{{ inputs.who }}", "literal": "x"}, context
         ) == {"name": "world", "literal": "x"}
+
+    def test_non_json_safe_value_rejected(self):
+        from datetime import date
+
+        with pytest.raises(ValueError, match="not JSON-safe"):
+            evaluate_input_mapping({"when": date(2026, 1, 1)}, StepContext())
+
+    def test_non_string_key_rejected(self):
+        with pytest.raises(ValueError, match="keys must be strings"):
+            evaluate_input_mapping({1: "x"}, StepContext())
 
 
 class TestCheckCompositionPath:
@@ -875,6 +897,50 @@ class TestRuntimeResolutionFailures:
         # runs on silently-discarded inputs.
         assert "c" not in state.workflow_scopes
 
+    def test_non_json_safe_input_mapping_persists_clean_failure(self, project_dir):
+        """Unsafe authored inputs must not crash recording the failure result.
+
+        ``_run`` intentionally bypasses definition validation, covering direct
+        engine callers that hand a YAML-native scalar to a workflow step.
+        """
+        from datetime import date
+
+        _install(
+            project_dir,
+            "child",
+            _workflow(
+                "child",
+                [_shell("x", "echo {{ inputs.who }}")],
+                inputs={"who": {"type": "string", "default": "world"}},
+            ),
+        )
+        _install(
+            project_dir,
+            "parent",
+            _workflow(
+                "parent",
+                [
+                    {
+                        "id": "c",
+                        "type": "workflow",
+                        "workflow": "child",
+                        "input": {"who": date(2026, 1, 1)},
+                        "continue_on_error": True,
+                    }
+                ],
+            ),
+        )
+        state = _run(project_dir, "parent")
+        result = state.step_results["c"]
+        assert state.status == RunStatus.COMPLETED
+        assert result["status"] == "failed"
+        assert "not JSON-safe" in result["error"]
+        assert result["input"] == {}
+        assert "c" not in state.workflow_scopes
+
+        loaded = RunState.load(state.run_id, project_dir)
+        assert loaded.step_results["c"]["input"] == {}
+
 
 class TestRecursionAndDepth:
     def test_cycle_rejected(self, project_dir):
@@ -1436,6 +1502,59 @@ class TestResume:
         resumed = engine.resume(state.run_id, {"verdict": "approve"})
         assert resumed.status == RunStatus.COMPLETED
         assert resumed.workflow_scopes["c"]["inputs"]["verdict"] == "approve"
+
+    def test_rebind_failure_marks_paused_child_failed(self, project_dir):
+        """A rejected resumed binding cannot leave a bypassed child paused."""
+        _install(
+            project_dir,
+            "child",
+            _workflow(
+                "child",
+                [{"id": "g", "type": "gate", "message": "ok?", "options": ["approve", "reject"]}],
+                inputs={
+                    "mode": {
+                        "type": "string",
+                        "default": "",
+                        "enum": ["approve", ""],
+                    }
+                },
+            ),
+        )
+        _install(
+            project_dir,
+            "parent",
+            _workflow(
+                "parent",
+                [
+                    {
+                        "id": "c",
+                        "type": "workflow",
+                        "workflow": "child",
+                        "input": {"mode": "{{ inputs.mode }}"},
+                        "continue_on_error": True,
+                    },
+                    _shell("after", "echo continued"),
+                ],
+                inputs={"mode": {"type": "string", "default": ""}},
+            ),
+        )
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(_definition(project_dir, "parent"), {})
+        assert state.status == RunStatus.PAUSED
+        assert state.workflow_scopes["c"]["status"] == "paused"
+
+        resumed = engine.resume(state.run_id, {"mode": "invalid"})
+        child = resumed.workflow_scopes["c"]
+        caller = resumed.step_results["c"]
+        assert resumed.status == RunStatus.COMPLETED
+        assert resumed.step_results["after"]["output"]["stdout"].strip() == "continued"
+        assert caller["status"] == "failed"
+        assert child["status"] == "failed"
+        assert child["error"] == caller["error"]
+
+        loaded = RunState.load(resumed.run_id, project_dir)
+        assert loaded.workflow_scopes["c"]["status"] == "failed"
+        assert loaded.workflow_scopes["c"]["error"] == caller["error"]
 
     def test_resume_without_input_updates_keeps_binding(self, project_dir):
         self._paused_child(

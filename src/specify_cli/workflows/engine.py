@@ -1384,6 +1384,16 @@ class WorkflowEngine:
                 result = step_impl.execute(step_config, context)
 
             # Record step results — prefer resolved values from step output
+            if step_type == "workflow" and result.status == StepStatus.FAILED:
+                # A failed workflow call may have rejected its authored input
+                # mapping before evaluation. Never fall back to that raw YAML
+                # value here: it can contain a non-JSON scalar (for example a
+                # date), which would make recording the failure crash.
+                recorded_input = result.output.get("input", {})
+            else:
+                recorded_input = result.output.get("input") or step_config.get(
+                    "input", {}
+                )
             step_data = {
                 "type": step_type,
                 "integration": result.output.get("integration")
@@ -1394,8 +1404,7 @@ class WorkflowEngine:
                 or context.default_model,
                 "options": result.output.get("options")
                 or step_config.get("options", {}),
-                "input": result.output.get("input")
-                or step_config.get("input", {}),
+                "input": recorded_input,
                 "output": result.output,
                 "status": result.status.value,
                 "error": result.error,
@@ -1673,13 +1682,19 @@ class WorkflowEngine:
                         caller_id=effective_id,
                     )
                 except ValueError as exc:
+                    error = f"Workflow step {effective_id!r}: {exc}"
+                    # The caller will record its failed workflow step through
+                    # record_and_save(), which atomically persists this failed
+                    # child state and the caller result together.
+                    child_scope.status = RunStatus.FAILED
+                    child_scope.error = error
                     return StepResult(
                         status=StepStatus.FAILED,
                         output={
                             "workflow": definition.id,
                             "status": RunStatus.FAILED.value,
                         },
-                        error=f"Workflow step {effective_id!r}: {exc}",
+                        error=error,
                     )
                 child_scope.persist()
             child_scope.status = RunStatus.RUNNING
