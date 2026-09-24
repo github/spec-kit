@@ -146,14 +146,25 @@ Requires `az login` to have been run beforehand.
 
 | Scheme | Header | Use for |
 |---|---|---|
-| `bearer` | `Authorization: Bearer <token>` | Repository / project / workspace access tokens (Bitbucket Cloud), HTTP access tokens (Bitbucket Data Center) |
-| `basic` | `Authorization: Basic base64(<username>:<token>)` | Atlassian API tokens (username = Atlassian account email). Bitbucket Cloud app passwords were removed by Atlassian on July 28, 2026 — use an API token or an access token instead. |
+| `bearer` | `Authorization: Bearer <token>` | Repository / project / workspace access tokens and Atlassian API tokens (Bitbucket Cloud, **`api.bitbucket.org` only** — see note below), HTTP access tokens (Bitbucket Data Center) |
+| `basic` | `Authorization: Basic base64(<username>:<token>)` | Atlassian API tokens (username = Atlassian account email) against `api.bitbucket.org`. Bitbucket Cloud app passwords were removed by Atlassian on July 28, 2026 — use an API token or an access token instead. |
+
+> **Host note:** Bitbucket Cloud splits its surface by host. `api.bitbucket.org`
+> accepts a Bearer access token or Basic-with-Atlassian-API-token on any
+> REST call, including fetching a catalog file via
+> `GET /2.0/repositories/<workspace>/<repo>/src/<ref>/<path>`. The plain
+> `bitbucket.org` web host (browser pages, `.../raw/...` links, `git clone`
+> over HTTPS) does **not** accept either of those — it authenticates
+> git-over-HTTPS with HTTP Basic using the literal username `x-token-auth`
+> and the access token as the password. Point catalog and `download_url`
+> entries at `api.bitbucket.org` (below) rather than `bitbucket.org/.../raw/...`
+> so the credentials in your `auth.json` actually apply.
 
 **Example — Bitbucket Cloud access token (recommended):**
 
 ```json
 {
-  "hosts": ["api.bitbucket.org", "bitbucket.org"],
+  "hosts": ["api.bitbucket.org"],
   "provider": "bitbucket",
   "auth": "bearer",
   "token_env": "BITBUCKET_ACCESS_TOKEN"
@@ -161,13 +172,16 @@ Requires `az login` to have been run beforehand.
 ```
 
 Create the token with the **Repositories: Read** scope on the repository
-(or project/workspace) that hosts your catalogs and archives.
+(or project/workspace) that hosts your catalogs and archives. Fetch a
+catalog file with this credential via
+`https://api.bitbucket.org/2.0/repositories/<workspace>/<repo>/src/<ref>/catalog.json`
+rather than a `bitbucket.org/.../raw/...` URL.
 
 **Example — Atlassian API token (Basic auth):**
 
 ```json
 {
-  "hosts": ["api.bitbucket.org", "bitbucket.org"],
+  "hosts": ["api.bitbucket.org"],
   "provider": "bitbucket",
   "auth": "basic",
   "username": "you@example.com",
