@@ -184,9 +184,24 @@ def validate_workflow_call_config(config: dict[str, Any]) -> list[str]:
 def evaluate_input_mapping(
     mapping: Any, context: StepContext
 ) -> dict[str, Any]:
-    """Evaluate a caller's ``input`` mapping once in the caller scope."""
-    if not isinstance(mapping, dict):
+    """Evaluate a caller's ``input`` mapping once in the caller scope.
+
+    ``mapping`` is the raw ``input`` value from the step config. Omitted or
+    explicitly null (``None``) means "no inputs". Any other non-mapping is
+    malformed: ``WorkflowEngine.execute`` may be handed an unvalidated
+    definition, so fail closed here rather than silently discarding the
+    caller's mapping and running the child with defaults. The same shape is
+    rejected at definition time by ``validate_workflow_call_config``; the
+    callers turn this ``ValueError`` into a failed workflow-step result.
+    """
+    if mapping is None:
         return {}
+    if not isinstance(mapping, dict):
+        msg = (
+            f"'input' must be a mapping or omitted, got "
+            f"{type(mapping).__name__}."
+        )
+        raise ValueError(msg)
     return {
         name: evaluate_expression(value, context)
         for name, value in mapping.items()

@@ -13,12 +13,13 @@ from threading import Event
 import pytest
 import yaml
 
-from specify_cli.workflows.base import RunStatus
+from specify_cli.workflows.base import RunStatus, StepContext
 from specify_cli.workflows.composition import (
     MAX_COMPOSITION_DEPTH,
     RESERVED_OUTPUT_NAMES,
     bind_composed_inputs,
     check_composition_path,
+    evaluate_input_mapping,
     validate_workflow_call_config,
 )
 from specify_cli.workflows.engine import (
@@ -159,6 +160,27 @@ class TestWorkflowCallConfigValidation:
             {"id": "s", "workflow": "bugfix", "input": ["x"]}
         )
         assert any("'input' must be a mapping" in e for e in errors)
+
+
+class TestEvaluateInputMapping:
+    def test_omitted_returns_empty(self):
+        assert evaluate_input_mapping({}, StepContext()) == {}
+
+    def test_explicit_null_returns_empty(self):
+        assert evaluate_input_mapping(None, StepContext()) == {}
+
+    @pytest.mark.parametrize("mapping", [["x"], "who", 5, True])
+    def test_non_mapping_rejected(self, mapping):
+        # An unvalidated definition can reach the engine; a malformed ``input``
+        # must fail rather than silently run the child with defaults.
+        with pytest.raises(ValueError, match="must be a mapping or omitted"):
+            evaluate_input_mapping(mapping, StepContext())
+
+    def test_values_evaluated_in_caller_scope(self):
+        context = StepContext(inputs={"who": "world"})
+        assert evaluate_input_mapping(
+            {"name": "{{ inputs.who }}", "literal": "x"}, context
+        ) == {"name": "world", "literal": "x"}
 
 
 class TestCheckCompositionPath:
@@ -703,6 +725,45 @@ class TestRuntimeResolutionFailures:
         state = _run(project_dir, "parent")
         assert state.step_results["c"]["status"] == "failed"
         assert "expected a string" in state.step_results["c"]["error"]
+
+    def test_malformed_input_mapping_fails_step(self, project_dir):
+        """A non-mapping ``input`` must fail, not run the child on defaults.
+
+        ``_run`` executes an unvalidated definition (as a direct engine caller
+        may), so the helper itself has to reject the malformed mapping.
+        """
+        _install(
+            project_dir,
+            "child",
+            _workflow(
+                "child",
+                [_shell("x", "echo {{ inputs.who }}")],
+                inputs={"who": {"type": "string", "default": "default-who"}},
+            ),
+        )
+        _install(
+            project_dir,
+            "parent",
+            _workflow(
+                "parent",
+                [
+                    {
+                        "id": "c",
+                        "type": "workflow",
+                        "workflow": "child",
+                        "input": ["not-a-mapping"],
+                        "continue_on_error": True,
+                    }
+                ],
+            ),
+        )
+        state = _run(project_dir, "parent")
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["c"]["status"] == "failed"
+        assert "must be a mapping or omitted" in state.step_results["c"]["error"]
+        # The guard fires before a child scope is created, so the child never
+        # runs on silently-discarded inputs.
+        assert "c" not in state.workflow_scopes
 
 
 class TestRecursionAndDepth:
