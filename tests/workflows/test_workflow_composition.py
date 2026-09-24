@@ -289,6 +289,32 @@ class TestLiteralAndRuntimeTargets:
         assert state.status == RunStatus.COMPLETED
         assert state.step_results["call"]["output"]["workflow"] == "child"
 
+    def test_runtime_target_from_echo_is_trimmed(self, project_dir):
+        """``echo`` adds a trailing newline; the resolved target is trimmed.
+
+        Dynamic selection must work with an ordinary ``echo child``, not only
+        with newline-free commands like ``printf child``.
+        """
+        _install(project_dir, "child", _workflow("child", [_shell("x", "echo hi")]))
+        _install(
+            project_dir,
+            "parent",
+            _workflow(
+                "parent",
+                [
+                    _shell("pick", "echo child"),
+                    {
+                        "id": "call",
+                        "type": "workflow",
+                        "workflow": "{{ steps.pick.output.stdout }}",
+                    },
+                ],
+            ),
+        )
+        state = _run(project_dir, "parent")
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["call"]["output"]["workflow"] == "child"
+
 
 class TestScopeIsolation:
     def _parent_and_child(self, project_dir):
