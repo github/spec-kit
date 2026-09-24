@@ -551,14 +551,15 @@ included workflow behaves like a function call: values cross the boundary only
 through its declared `inputs` and `outputs`.
 
 ```yaml
-steps:
-  - id: triage
-    type: prompt
-    prompt: "Select the workflow to run"
+inputs:
+  target:
+    type: string
+    required: true
 
+steps:
   - id: run-selected
     type: workflow
-    workflow: "{{ steps.triage.output.stdout }}"
+    workflow: "{{ inputs.target }}"
     input:
       report: "{{ inputs.report }}"
       slug: "{{ inputs.slug }}"
@@ -568,6 +569,11 @@ steps:
 | ---------- | -------- | ----------- |
 | `workflow` | yes      | Installed workflow ID, or an expression evaluated in the caller's scope. The resolved value must be a valid ID of a registered, installed, and enabled workflow. Literal IDs are validated at definition time. |
 | `input`    | no       | Mapping of the target's declared input names to values evaluated in the caller's scope. An undeclared name is rejected. Defaults, required, type, and enum rules apply. |
+
+The `workflow` expression must resolve to a value the engine captures: a
+declared workflow input or a preceding step's captured output (for example a
+`shell` step's `stdout`) both work. A `prompt` step streams its output to the
+agent and returns an empty `stdout`, so it cannot drive `workflow` selection.
 
 `type: workflow` is an engine facility (like `fan-out`), not a custom-step API.
 The engine owns the nested scope tree; custom steps still receive only a

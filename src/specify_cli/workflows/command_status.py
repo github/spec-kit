@@ -19,9 +19,14 @@ def _render_scopes(scopes: dict, indent: str) -> None:
             continue
         s = record.get("status", "unknown")
         sc = colors.get(s, "white")
+        # Scope keys are authored step IDs, and validation permits Rich markup
+        # characters such as ``[`` and ``]``; escape both interpolated values
+        # (as ``workflow run`` does) so a bracketed ID renders literally
+        # instead of being parsed as a style tag or raising ``MarkupError``.
         cli.console.print(
-            f"{indent}[{sc}]●[/{sc}] {key}: {s} "
-            f"[dim]({record.get('workflow_id', '?')})[/dim]"
+            f"{indent}[{sc}]●[/{sc}] {cli._escape_markup(str(key))}: {s} "
+            f"[dim]({cli._escape_markup(str(record.get('workflow_id', '?')))})"
+            f"[/dim]"
         )
         nested = record.get("workflow_scopes")
         if isinstance(nested, dict) and nested:

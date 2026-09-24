@@ -792,6 +792,28 @@ class TestPersistence:
         loaded = RunState.load("old", project_dir)
         assert loaded.workflow_scopes == {}
 
+    def test_load_rejects_out_of_range_nested_step_index(self, project_dir):
+        """A nested scope's index must stay within its persisted step count.
+
+        A malformed index would otherwise slice the child's remaining steps to
+        an empty list and let the scope silently complete on resume.
+        """
+        _install(project_dir, "child", _workflow("child", [_shell("x", "echo hi")]))
+        _install(
+            project_dir,
+            "parent",
+            _workflow("parent", [{"id": "c", "type": "workflow", "workflow": "child"}]),
+        )
+        state = _run(project_dir, "parent")
+        path = state.runs_dir / "state.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        scope = data["workflow_scopes"]["c"]
+        scope["current_step_index"] = len(scope["definition"]["steps"]) + 1
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="out of range"):
+            RunState.load(state.run_id, project_dir)
+
     def test_completion_handoff_is_atomic(self, project_dir, monkeypatch):
         """Every persisted snapshot with a COMPLETED child also has its caller result."""
         _install(project_dir, "child", _workflow("child", [_shell("x", "echo hi")]))
@@ -1226,8 +1248,8 @@ class TestRepeatedCalls:
 
 
 class TestCustomStepInsideScope:
-    def test_custom_step_sees_only_child_scope(self, project_dir):
-        from specify_cli.workflows import STEP_REGISTRY, _register_step
+    def test_custom_step_sees_only_child_scope(self, project_dir, monkeypatch):
+        from specify_cli.workflows import STEP_REGISTRY
         from specify_cli.workflows.base import StepBase, StepResult
 
         class _ScopeProbe(StepBase):
@@ -1241,8 +1263,10 @@ class TestCustomStepInsideScope:
                     }
                 )
 
-        if "scope-probe" not in STEP_REGISTRY:
-            _register_step(_ScopeProbe())
+        # Register through monkeypatch so the process-global registry is
+        # restored after the test instead of leaking a custom step into later
+        # tests (mirrors tests/specify_cli/bundles/test_references.py).
+        monkeypatch.setitem(STEP_REGISTRY, "scope-probe", _ScopeProbe())
 
         _install(
             project_dir,
@@ -1324,6 +1348,33 @@ class TestCliReporting:
         assert result.exit_code == 0, result.output
         assert "Workflow scopes" in result.stdout
         assert "c: completed" in result.stdout
+
+    def test_status_escapes_markup_in_scope_ids(self, project_dir):
+        """An authored step ID with Rich markup must not crash ``status``.
+
+        The nested scope key is a caller step ID, and validation permits
+        brackets, so ``[`` / ``]`` must be escaped rather than parsed as markup.
+        """
+        _install(project_dir, "leaf", _workflow("leaf", [_shell("x", "echo hi")]))
+        _install(
+            project_dir,
+            "mid",
+            _workflow(
+                "mid",
+                [{"id": "call[/red]", "type": "workflow", "workflow": "leaf"}],
+            ),
+        )
+        _install(
+            project_dir,
+            "parent",
+            _workflow("parent", [{"id": "c", "type": "workflow", "workflow": "mid"}]),
+        )
+        run = json.loads(
+            self._invoke(project_dir, ["workflow", "run", "parent", "--json"]).stdout
+        )
+        result = self._invoke(project_dir, ["workflow", "status", run["run_id"]])
+        assert result.exit_code == 0, result.output
+        assert "call[/red]: completed" in result.stdout
 
     def test_resume_input_forwards_through_parent_mapping(self, project_dir):
         _install(

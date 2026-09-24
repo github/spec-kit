@@ -571,11 +571,26 @@ def _validate_scope_record(
     if not isinstance(definition, dict):
         msg = f"Invalid run state: '{path}.definition' must be a JSON object"
         raise ValueError(msg)
-    errors = validate_workflow(WorkflowDefinition(definition))
+    parsed_definition = WorkflowDefinition(definition)
+    errors = validate_workflow(parsed_definition)
     if errors:
         msg = (
             f"Invalid run state: '{path}.definition' is invalid: "
             + " ".join(errors)
+        )
+        raise ValueError(msg)
+
+    # A nested scope resumes by slicing its persisted definition at
+    # ``current_step_index``; an index at or beyond the step count would
+    # otherwise yield an empty slice and let the scope silently complete
+    # without running its remaining steps. Mirrors the root-run bound check in
+    # ``WorkflowEngine.resume``, which ``RunState.load`` cannot apply until the
+    # definition (and its step count) is known.
+    if index >= len(parsed_definition.steps):
+        msg = (
+            f"Invalid run state: '{path}.current_step_index' ({index}) is "
+            f"out of range for workflow {workflow_id!r} with "
+            f"{len(parsed_definition.steps)} step(s)"
         )
         raise ValueError(msg)
 
