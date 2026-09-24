@@ -1840,7 +1840,7 @@ class WorkflowEngine:
                 status=StepStatus.FAILED,
                 output={
                     "workflow": definition.id,
-                    "status": RunStatus.FAILED.value,
+                    "status": RunStatus.ABORTED.value,
                     "aborted": True,
                 },
                 error=child_scope.error,

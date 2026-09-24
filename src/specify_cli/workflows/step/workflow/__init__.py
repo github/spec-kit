@@ -14,6 +14,7 @@ from typing import Any
 
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.composition import (
+    _json_value_error,
     evaluate_input_mapping,
     resolve_composed_workflow,
     validate_workflow_call_config,
@@ -25,6 +26,13 @@ class WorkflowStep(StepBase):
     """Compose an installed workflow into the current run."""
 
     type_key = "workflow"
+
+    @staticmethod
+    def _safe_target(value: Any) -> Any:
+        """Keep failure diagnostics safe for the JSON-backed run state."""
+        if _json_value_error(value, path="'workflow'") is None:
+            return value
+        return f"<{type(value).__name__}>"
 
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
         step_id = config.get("id", "?")
@@ -43,7 +51,10 @@ class WorkflowStep(StepBase):
             if not isinstance(target_expr, str):
                 return StepResult(
                     status=StepStatus.FAILED,
-                    output={"workflow": target_expr, "status": StepStatus.FAILED.value},
+                    output={
+                        "workflow": self._safe_target(target_expr),
+                        "status": StepStatus.FAILED.value,
+                    },
                     error=(
                         f"Workflow step {step_id!r}: 'workflow' must be a string."
                     ),
@@ -53,7 +64,10 @@ class WorkflowStep(StepBase):
             if not isinstance(target, str):
                 return StepResult(
                     status=StepStatus.FAILED,
-                    output={"workflow": target, "status": StepStatus.FAILED.value},
+                    output={
+                        "workflow": self._safe_target(target),
+                        "status": StepStatus.FAILED.value,
+                    },
                     error=(
                         f"Workflow step {step_id!r}: 'workflow' expression "
                         f"resolved to {type(target).__name__}, expected a string."
@@ -104,7 +118,7 @@ class WorkflowStep(StepBase):
             return StepResult(
                 status=StepStatus.FAILED,
                 output={
-                    "workflow": target,
+                    "workflow": self._safe_target(target),
                     "status": StepStatus.FAILED.value,
                 },
                 error=f"Workflow step {step_id!r}: {exc}",

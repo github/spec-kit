@@ -1047,12 +1047,12 @@ def _scope_gate(scopes: Any, path: list[str]) -> dict[str, Any] | None:
         if not isinstance(record, dict):
             continue
         child_path = [*path, key]
+        if str(record.get("status")) not in ("paused", "aborted"):
+            continue
         # A deeper paused scope is more specific; check descendants first.
         nested = _scope_gate(record.get("workflow_scopes"), child_path)
         if nested is not None:
             return nested
-        if str(record.get("status")) not in ("paused", "aborted"):
-            continue
         step_id = _scope_current_step_id(record)
         step_results = record.get("step_results")
         if step_id is None or not isinstance(step_results, dict):

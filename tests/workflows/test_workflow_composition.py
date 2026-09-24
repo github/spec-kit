@@ -155,6 +155,22 @@ class TestWorkflowOutputsValidation:
         errors = self._errors({"result": {"value": {1: "numeric"}}})
         assert any("non-string key" in e for e in errors)
 
+    @pytest.mark.parametrize("factory", [list, dict])
+    def test_circular_container_rejected(self, factory):
+        value = factory()
+        if isinstance(value, list):
+            value.append(value)
+        else:
+            value["self"] = value
+
+        errors = self._errors({"result": {"value": value}})
+
+        assert any("circular container" in error for error in errors)
+
+    def test_shared_acyclic_container_accepted(self):
+        shared = ["value"]
+        assert self._errors({"result": {"value": {"one": shared, "two": shared}}}) == []
+
 
 class TestComposedOutputPersistence:
     def test_non_json_safe_evaluated_output_fails_workflow_step(self, project_dir):
@@ -578,7 +594,10 @@ class TestPublicOutputShapes:
         )
         state = _run(project_dir, "parent")
         assert state.status == RunStatus.ABORTED
-        assert state.step_results["c"]["output"].get("aborted") is True
+        result = state.step_results["c"]
+        assert result["status"] == "failed"
+        assert result["output"]["status"] == "aborted"
+        assert result["output"].get("aborted") is True
 
 
 class TestContinueOnError:
@@ -940,6 +959,41 @@ class TestRuntimeResolutionFailures:
 
         loaded = RunState.load(state.run_id, project_dir)
         assert loaded.step_results["c"]["input"] == {}
+
+    def test_non_json_safe_dynamic_target_persists_clean_failure(
+        self, project_dir, monkeypatch
+    ):
+        """Invalid target diagnostics must not make the failed call unsaveable."""
+        from datetime import date
+
+        monkeypatch.setattr(
+            "specify_cli.workflows.step.workflow.evaluate_expression",
+            lambda *_: date(2026, 1, 1),
+        )
+        _install(
+            project_dir,
+            "parent",
+            _workflow(
+                "parent",
+                [
+                    {
+                        "id": "c",
+                        "type": "workflow",
+                        "workflow": "{{ inputs.target }}",
+                        "continue_on_error": True,
+                    }
+                ],
+            ),
+        )
+
+        state = _run(project_dir, "parent")
+        result = state.step_results["c"]
+
+        assert state.status == RunStatus.COMPLETED
+        assert result["status"] == "failed"
+        assert result["output"]["workflow"] == "<date>"
+        assert "expected a string" in result["error"]
+        assert RunState.load(state.run_id, project_dir).step_results["c"] == result
 
 
 class TestRecursionAndDepth:
@@ -1896,6 +1950,36 @@ class TestCliReporting:
         assert payload["status"] == "paused"
         assert payload["gate"]["scope_path"] == ["c", "inner"]
         assert payload["gate"]["step_id"] == "g"
+
+    def test_inactive_scope_cannot_report_a_stale_nested_gate(self):
+        from specify_cli.workflows._commands import _scope_gate
+
+        stale_gate = {
+            "status": "paused",
+            "current_step_id": "stale",
+            "step_results": {
+                "stale": {"type": "gate", "output": {"message": "Old gate"}}
+            },
+        }
+        active_gate = {
+            "status": "paused",
+            "current_step_id": "active",
+            "step_results": {
+                "active": {"type": "gate", "output": {"message": "Active gate"}}
+            },
+        }
+
+        gate = _scope_gate(
+            {
+                "completed": {"status": "completed", "workflow_scopes": {"old": stale_gate}},
+                "active": active_gate,
+            },
+            [],
+        )
+
+        assert gate is not None
+        assert gate["step_id"] == "active"
+        assert gate["scope_path"] == ["active"]
 
     def test_gate_inside_nested_control_flow_reports_gate(self, project_dir):
         """A gate inside an ``if`` body must be reported, not its enclosing step.

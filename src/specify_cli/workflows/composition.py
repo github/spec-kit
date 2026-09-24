@@ -290,7 +290,9 @@ def bind_composed_inputs(
 # -- Output evaluation ----------------------------------------------------
 
 
-def _json_value_error(value: Any, *, path: str) -> str | None:
+def _json_value_error(
+    value: Any, *, path: str, ancestors: set[int] | None = None
+) -> str | None:
     """Return why *value* cannot be persisted as strict JSON, if any.
 
     Workflow outputs are copied into ``step_results`` and written with
@@ -304,20 +306,31 @@ def _json_value_error(value: Any, *, path: str) -> str | None:
         if math.isfinite(value):
             return None
         return f"{path} must be a finite JSON number"
-    if isinstance(value, list):
-        for index, item in enumerate(value):
-            error = _json_value_error(item, path=f"{path}[{index}]")
-            if error:
-                return error
-        return None
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if not isinstance(key, str):
-                return f"{path} has a non-string key of type {type(key).__name__}"
-            error = _json_value_error(item, path=f"{path}.{key}")
-            if error:
-                return error
-        return None
+    if isinstance(value, (list, dict)):
+        ancestors = ancestors if ancestors is not None else set()
+        if id(value) in ancestors:
+            return f"{path} contains a circular container"
+        ancestors.add(id(value))
+        try:
+            if isinstance(value, list):
+                for index, item in enumerate(value):
+                    error = _json_value_error(
+                        item, path=f"{path}[{index}]", ancestors=ancestors
+                    )
+                    if error:
+                        return error
+                return None
+            for key, item in value.items():
+                if not isinstance(key, str):
+                    return f"{path} has a non-string key of type {type(key).__name__}"
+                error = _json_value_error(
+                    item, path=f"{path}.{key}", ancestors=ancestors
+                )
+                if error:
+                    return error
+            return None
+        finally:
+            ancestors.remove(id(value))
     return f"{path} is not JSON-safe (got {type(value).__name__})"
 
 
