@@ -146,12 +146,14 @@ Requires `az login` to have been run beforehand.
 
 | Scheme | Header | Use for |
 |---|---|---|
-| `bearer` | `Authorization: Bearer <token>` | Repository / project / workspace access tokens and Atlassian API tokens (Bitbucket Cloud, **`api.bitbucket.org` only** — see note below), HTTP access tokens (Bitbucket Data Center) |
+| `bearer` | `Authorization: Bearer <token>` | Repository / project / workspace access tokens, or Atlassian API tokens sent without the account email (Bitbucket Cloud, **`api.bitbucket.org` only** — see note below); HTTP access tokens (Bitbucket Data Center) |
 | `basic` | `Authorization: Basic base64(<username>:<token>)` | Atlassian API tokens (username = Atlassian account email) against `api.bitbucket.org`. Bitbucket Cloud app passwords were removed by Atlassian on July 28, 2026 — use an API token or an access token instead. |
 
 > **Host note:** Bitbucket Cloud splits its surface by host. `api.bitbucket.org`
-> accepts a Bearer access token or Basic-with-Atlassian-API-token on any
-> REST call, including fetching a catalog file via
+> accepts repository/project/workspace access tokens as Bearer, and
+> Atlassian API tokens either as Basic (with the account email as the
+> username) or as Bearer (no email needed), on any REST call, including
+> fetching a catalog file via
 > `GET /2.0/repositories/<workspace>/<repo>/src/<ref>/<path>`. The plain
 > `bitbucket.org` web host (browser pages, `.../raw/...` links, `git clone`
 > over HTTPS) does **not** accept either of those — it authenticates
