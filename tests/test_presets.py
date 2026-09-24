@@ -12479,6 +12479,36 @@ class TestResolveScriptChain:
         assert "layer-a" in str(chain_after[1])
 
 
+    def test_wrap_missing_core_script_placeholder_is_rejected(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        core = project_dir / ".specify" / "templates" / "scripts" / "bad-wrap.sh"
+        core.parent.mkdir(parents=True, exist_ok=True)
+        core.write_text("echo core\n")
+        pack_dir = _create_pack(
+            temp_dir, valid_pack_data, "bad-wrap-pack", "echo no placeholder\n",
+            strategy="wrap", template_type="script", template_name="bad-wrap",
+        )
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
+        with pytest.raises(PresetValidationError, match="CORE_SCRIPT"):
+            PresetResolver(project_dir).resolve_script_chain("bad-wrap")
+
+    def test_builtin_bash_script_is_found_as_core_base(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A wrap over a real built-in (scripts/bash/setup-plan.sh) must
+        resolve without a fabricated .specify/templates/scripts core."""
+        pack_dir = _create_pack(
+            temp_dir, valid_pack_data, "real-wrap", "echo a\n$CORE_SCRIPT\n",
+            strategy="wrap", template_type="script", template_name="setup-plan",
+        )
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
+        chain = PresetResolver(project_dir).resolve_script_chain("setup-plan")
+        assert len(chain) == 2
+        assert chain[1].name == "setup-plan.sh"
+        assert chain[1].parent.name == "bash"
+
+
 class TestScriptChainReconciliation:
     """Test PresetManager._reconcile_script_chain() (#4551).
 
@@ -12490,9 +12520,12 @@ class TestScriptChainReconciliation:
     def _canonical(self, project_dir, name):
         return project_dir / ".specify" / "scripts" / "bash" / f"{name}.sh"
 
-    def test_install_replace_script_copies_content_verbatim(
+    def test_install_replace_script_uses_dispatcher_and_resolves_override(
         self, project_dir, temp_dir, valid_pack_data
     ):
+        """Even a single-layer override gets the dispatcher, so a later
+        priority/enable change that makes it a multi-layer chain needs no
+        rewrite of the canonical file."""
         manager = PresetManager(project_dir)
         pack_dir = _create_pack(
             temp_dir,
@@ -12506,8 +12539,56 @@ class TestScriptChainReconciliation:
         manager.install_from_directory(pack_dir, "0.1.5")
 
         canonical = self._canonical(project_dir, "plain-override")
+        assert "speckit-generated: script continuation dispatcher" in canonical.read_text()
+        chain = PresetResolver(project_dir).resolve_script_chain("plain-override")
+        assert [p.read_text() for p in chain] == ["echo overridden\n"]
+
+    def test_install_writes_runner_next_to_dispatcher(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """The runner is generated, not shipped, so pre-existing projects get it."""
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir, valid_pack_data, "runner-pack", "echo x\n",
+            template_type="script", template_name="needs-runner",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+        runner = project_dir / ".specify" / "scripts" / "bash" / "continuation-runner.sh"
+        assert "script continuation runner" in runner.read_text()
+
+    def test_remove_only_provider_removes_generated_dispatcher(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir, valid_pack_data, "solo-pack", "echo x\n",
+            template_type="script", template_name="no-core-script",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+        canonical = self._canonical(project_dir, "no-core-script")
         assert canonical.is_file()
-        assert canonical.read_text() == "echo overridden\n"
+        manager.remove("solo-pack")
+        assert not canonical.exists()
+
+    def test_reconcile_refuses_symlinked_destination(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        import os
+        outside = temp_dir / "outside"
+        outside.mkdir()
+        scripts = project_dir / ".specify" / "scripts"
+        scripts.mkdir(parents=True)
+        try:
+            os.symlink(outside, scripts / "bash", target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks unavailable")
+        pack_dir = _create_pack(
+            temp_dir, valid_pack_data, "sym-pack", "echo x\n",
+            template_type="script", template_name="sym-script",
+        )
+        with pytest.warns(UserWarning, match="symlink"):
+            PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
+        assert list(outside.iterdir()) == []
 
     def test_install_wrap_script_writes_dispatcher_stub(
         self, project_dir, temp_dir, valid_pack_data
@@ -12532,7 +12613,7 @@ class TestScriptChainReconciliation:
 
         canonical = self._canonical(project_dir, "stub-target")
         content = canonical.read_text()
-        assert "specify preset script-chain \"stub-target\"" in content
+        assert 'preset script-chain "stub-target"' in content
         assert "SPECKIT_SCRIPT_CONTINUATION" in content
         assert "CORE_SCRIPT" in content
         # The dispatcher carries no stack-specific data (no reference to

@@ -23,7 +23,6 @@ from tests.conftest import requires_bash
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
-CONTINUATION_RUNNER_SH = PROJECT_ROOT / "scripts" / "bash" / "continuation-runner.sh"
 
 # The `specify` console script must be resolvable from the bash
 # subprocess's PATH, since the dispatcher shells out to `specify preset
@@ -48,10 +47,6 @@ def project_dir(tmp_path: Path) -> Path:
     (project / ".specify" / "templates" / "scripts").mkdir(parents=True)
     (project / ".specify" / "scripts" / "bash").mkdir(parents=True)
     shutil.copy(COMMON_SH, project / ".specify" / "scripts" / "bash" / "common.sh")
-    shutil.copy(
-        CONTINUATION_RUNNER_SH,
-        project / ".specify" / "scripts" / "bash" / "continuation-runner.sh",
-    )
     return project
 
 

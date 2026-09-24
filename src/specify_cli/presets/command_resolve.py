@@ -26,7 +26,7 @@ def preset_script_chain(
     one absolute path per line, with no other output.
     """
     from .. import _require_specify_project
-    from . import PresetResolver
+    from . import PresetResolver, PresetValidationError
 
     if re.fullmatch(r"[a-z0-9-]+", script_name) is None:
         typer.echo(
@@ -38,7 +38,11 @@ def preset_script_chain(
 
     project_root = _require_specify_project()
     resolver = PresetResolver(project_root)
-    chain = resolver.resolve_script_chain(script_name)
+    try:
+        chain = resolver.resolve_script_chain(script_name)
+    except PresetValidationError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1)
     if not chain:
         typer.echo(
             f"Error: could not resolve a script chain for '{script_name}'",
