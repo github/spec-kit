@@ -28,6 +28,11 @@ class WorkflowStep(StepBase):
 
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
         step_id = config.get("id", "?")
+        # Seed with the authored value so a failure *before* the target resolves
+        # still reports something; once it resolves, the except below reports
+        # the resolved id (matching the success and invalid-ID paths) instead of
+        # the ``{{ ... }}`` expression.
+        target: Any = config.get("workflow")
         try:
             from specify_cli.workflows.engine import _ID_PATTERN
             from specify_cli.workflows.overlay.schema import (
@@ -93,11 +98,13 @@ class WorkflowStep(StepBase):
             )
         except Exception as exc:  # noqa: BLE001
             # Runtime resolution failures become a failed step result so the
-            # caller's normal continue_on_error handling applies.
+            # caller's normal continue_on_error handling applies. Report the
+            # resolved ``target`` when it was reached, falling back to the
+            # authored value only for a failure before resolution.
             return StepResult(
                 status=StepStatus.FAILED,
                 output={
-                    "workflow": config.get("workflow"),
+                    "workflow": target,
                     "status": StepStatus.FAILED.value,
                 },
                 error=f"Workflow step {step_id!r}: {exc}",

@@ -13,7 +13,7 @@ from threading import Event
 import pytest
 import yaml
 
-from specify_cli.workflows.base import RunStatus, StepContext
+from specify_cli.workflows.base import RunStatus, StepContext, StepStatus
 from specify_cli.workflows.composition import (
     MAX_COMPOSITION_DEPTH,
     RESERVED_OUTPUT_NAMES,
@@ -127,6 +127,67 @@ class TestWorkflowOutputsValidation:
     def test_non_mapping_entry_rejected(self):
         errors = self._errors({"result": "x"})
         assert any("must be a mapping" in e for e in errors)
+
+    def test_non_json_safe_value_rejected(self):
+        # An unquoted YAML date is a valid scalar but not a string expression;
+        # accepting it would later crash json.dump on the declared output.
+        from datetime import date
+
+        errors = self._errors({"when": {"value": date(2026, 1, 1)}})
+        assert any("not JSON-safe" in e for e in errors)
+
+    @pytest.mark.parametrize(
+        "value",
+        [True, 42, 3.14, None, ["a", 1], {"ok": True, "items": [1, 2]}],
+    )
+    def test_json_safe_literal_values_accepted(self, value):
+        assert self._errors({"result": {"value": value}}) == []
+
+    def test_nested_non_json_safe_value_rejected(self):
+        from datetime import date
+
+        errors = self._errors(
+            {"result": {"value": {"when": [date(2026, 1, 1)]}}}
+        )
+        assert any("not JSON-safe" in e for e in errors)
+
+    def test_non_string_object_key_rejected(self):
+        errors = self._errors({"result": {"value": {1: "numeric"}}})
+        assert any("non-string key" in e for e in errors)
+
+
+class TestComposedOutputPersistence:
+    def test_non_json_safe_evaluated_output_fails_workflow_step(self, project_dir):
+        """Output persistence errors become a failed workflow-step result.
+
+        The aggregate boundary catches output evaluation failures so the caller
+        can still use normal ``continue_on_error`` handling instead of crashing
+        later in ``json.dump``. ``WorkflowEngine.execute`` accepts unvalidated
+        definitions, so retain the runtime guard in addition to validation.
+        """
+        from datetime import date
+
+        from specify_cli.workflows.composition import ExecutionScope
+
+        definition = WorkflowDefinition(
+            _workflow(
+                "child",
+                [_shell("s", "true")],
+                outputs={"when": {"value": date(2026, 1, 1)}},
+            )
+        )
+        scope = ExecutionScope(
+            scope_id="call",
+            workflow_id="child",
+            definition=definition,
+        )
+        result = WorkflowEngine(project_dir)._aggregate_workflow_result(
+            scope, definition, "call"
+        )
+
+        assert result.status == StepStatus.FAILED
+        assert scope.status == RunStatus.FAILED
+        assert "not JSON-safe" in (result.error or "")
 
 
 class TestWorkflowCallConfigValidation:
@@ -751,6 +812,29 @@ class TestRuntimeResolutionFailures:
         state = _run(project_dir, "parent")
         assert state.step_results["c"]["status"] == "failed"
         assert "expected a string" in state.step_results["c"]["error"]
+
+    def test_dynamic_target_failure_reports_resolved_id(self, project_dir):
+        """A post-resolution failure reports the resolved id, not the template."""
+        _install(
+            project_dir,
+            "parent",
+            _workflow(
+                "parent",
+                [
+                    _shell("pick", "echo missing-wf"),
+                    {
+                        "id": "c",
+                        "type": "workflow",
+                        "workflow": "{{ steps.pick.output.stdout }}",
+                        "continue_on_error": True,
+                    },
+                ],
+            ),
+        )
+        state = _run(project_dir, "parent")
+        assert state.step_results["c"]["status"] == "failed"
+        assert state.step_results["c"]["output"]["workflow"] == "missing-wf"
+        assert "not installed" in state.step_results["c"]["error"]
 
     def test_malformed_input_mapping_fails_step(self, project_dir):
         """A non-mapping ``input`` must fail, not run the child on defaults.

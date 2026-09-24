@@ -15,6 +15,7 @@ steps never see an ``ExecutionScope``.
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import re
 import tempfile
@@ -138,6 +139,10 @@ def validate_workflow_outputs(definition: WorkflowDefinition) -> list[str]:
             errors.append(
                 f"Output {name!r} must contain exactly the 'value' field."
             )
+        else:
+            error = _json_value_error(entry["value"], path="'value'")
+            if error:
+                errors.append(f"Output {name!r}: {error}.")
     return errors
 
 
@@ -274,6 +279,37 @@ def bind_composed_inputs(
 # -- Output evaluation ----------------------------------------------------
 
 
+def _json_value_error(value: Any, *, path: str) -> str | None:
+    """Return why *value* cannot be persisted as strict JSON, if any.
+
+    Workflow outputs are copied into ``step_results`` and written with
+    ``json.dump``. Reject values that would crash persistence or be silently
+    changed by JSON object-key coercion; valid JSON values retain their exact
+    type across the composition boundary.
+    """
+    if value is None or isinstance(value, (str, bool, int)):
+        return None
+    if isinstance(value, float):
+        if math.isfinite(value):
+            return None
+        return f"{path} must be a finite JSON number"
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            error = _json_value_error(item, path=f"{path}[{index}]")
+            if error:
+                return error
+        return None
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                return f"{path} has a non-string key of type {type(key).__name__}"
+            error = _json_value_error(item, path=f"{path}.{key}")
+            if error:
+                return error
+        return None
+    return f"{path} is not JSON-safe (got {type(value).__name__})"
+
+
 def evaluate_composed_outputs(
     definition: WorkflowDefinition, scope: ExecutionScope
 ) -> dict[str, Any]:
@@ -286,7 +322,11 @@ def evaluate_composed_outputs(
     for name, entry in outputs.items():
         if not isinstance(entry, dict) or "value" not in entry:
             continue
-        result[name] = evaluate_expression(entry["value"], context)
+        value = evaluate_expression(entry["value"], context)
+        error = _json_value_error(value, path=f"Output {name!r}")
+        if error:
+            raise ValueError(f"{error}.")
+        result[name] = value
     return result
 
 

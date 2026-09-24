@@ -555,6 +555,12 @@ inputs:
   target:
     type: string
     required: true
+  report:
+    type: string
+    default: ""
+  slug:
+    type: string
+    default: ""
 
 steps:
   - id: run-selected
@@ -640,8 +646,9 @@ already bound within a persisted run. `workflow resume --input` updates the
 **root** workflow's inputs; a composing workflow forwards them by mapping them
 into the child's declared inputs.
 
-Recursive composition is allowed, but cycles are rejected by path (`A -> B -> A`
-fails while `A -> B -> D` and `A -> C -> D` is a legal diamond). Composition is
+Nested composition is allowed: `A -> B -> D` and `A -> C -> D` are legal
+diamonds. A workflow may not appear twice on the active path — `A -> B -> A` is
+a cycle and is rejected, so bounded recursion is not supported. Composition is
 limited to 16 included levels; the root is depth 0 and entering depth 17 is
 rejected.
 
