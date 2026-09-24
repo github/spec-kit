@@ -1002,3 +1002,55 @@ class TestOverlayFilenameVsManifestId:
 
         with pytest.raises(typer.Exit):
             _find_overlay_file(project_dir, "wf", "lint")
+
+
+class TestOverlayManagementMatchesUppercaseExtension:
+    """Overlay management finds the same files the resolver loads."""
+
+    @pytest.mark.parametrize("filename", ["lint.YML", "lint.Yaml"])
+    def test_uppercase_extension_overlay_is_manageable(
+        self, project_dir, monkeypatch, filename
+    ):
+        """An overlay the resolver applies must be reachable by enable/disable/remove.
+
+        `ProjectOverlaySource.collect` matches the suffix case-insensitively, so
+        a `lint.YML` overlay is ACTIVE during resolution. `_find_overlay_file`
+        matched it case-sensitively, so the same overlay was reported "not
+        found" by every management command — applied, but impossible to manage.
+        """
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "echo"}],
+            },
+        )
+        ov_dir = project_dir / ".specify" / "workflows" / "overlays" / "wf"
+        ov_dir.mkdir(parents=True, exist_ok=True)
+        overlay = ov_dir / filename
+        overlay.write_text(
+            yaml.safe_dump(
+                {
+                    "id": "lint",
+                    "extends": "wf",
+                    "priority": 10,
+                    "edits": [{"remove": "a"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(app, ["workflow", "overlay", "disable", "wf", "lint"])
+        assert result.exit_code == 0, result.output
+        assert yaml.safe_load(overlay.read_text(encoding="utf-8"))["enabled"] is False
+
+        result = runner.invoke(app, ["workflow", "overlay", "enable", "wf", "lint"])
+        assert result.exit_code == 0, result.output
+        assert yaml.safe_load(overlay.read_text(encoding="utf-8"))["enabled"] is True
+
+        result = runner.invoke(app, ["workflow", "overlay", "remove", "wf", "lint"])
+        assert result.exit_code == 0, result.output
+        assert not overlay.exists()

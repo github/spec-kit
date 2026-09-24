@@ -112,7 +112,11 @@ def _find_overlay_file(project_root: Path, workflow_id: str, overlay_id: str) ->
         return None
     matches: list[Path] = []
     for path in entries:
-        if not path.is_file() or path.suffix not in (".yml", ".yaml"):
+        # Must match ``ProjectOverlaySource.collect`` exactly. With the loader
+        # lowercasing the suffix and this helper not, a ``<id>.YML`` overlay was
+        # ACTIVE during resolution yet reported "not found" by overlay
+        # enable / disable / remove -- applied, but impossible to manage.
+        if not path.is_file() or path.suffix.lower() not in (".yml", ".yaml"):
             continue
         if path.is_symlink():
             continue
