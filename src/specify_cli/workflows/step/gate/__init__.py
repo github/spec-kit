@@ -40,6 +40,13 @@ class GateStep(StepBase):
         message = config.get("message", "Review required.")
         if isinstance(message, str) and "{{" in message:
             message = evaluate_expression(message, context)
+        # A YAML-native scalar message (an unquoted ``2026-01-01`` parses to a
+        # ``datetime.date``) is legitimate config but not JSON-serializable, and
+        # the step output is persisted in state.json. Coerce any non-null,
+        # non-string message to text so a valid gate cannot crash the run at
+        # save time.
+        if message is not None and not isinstance(message, str):
+            message = str(message)
 
         options = config.get("options", ["approve", "reject"])
         on_reject = config.get("on_reject", "abort")

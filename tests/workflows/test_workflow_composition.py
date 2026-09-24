@@ -865,8 +865,16 @@ class TestPersistence:
         state_path = state.runs_dir / "state.json"
         data = json.loads(state_path.read_text(encoding="utf-8"))
         assert "workflow_scopes" in data
-        assert data["workflow_scopes"]["c"]["workflow_id"] == "child"
-        assert data["workflow_scopes"]["c"]["definition"]["workflow"]["id"] == "child"
+        scope = data["workflow_scopes"]["c"]
+        assert scope["workflow_id"] == "child"
+        # The resolved definition lives in an immutable YAML snapshot, not in
+        # the JSON state, so YAML-native scalars never reach json.dump.
+        assert "definition" not in scope
+        ref = scope["definition_snapshot"]
+        snapshot = yaml.safe_load(
+            (state.runs_dir / "snapshots" / ref).read_text(encoding="utf-8")
+        )
+        assert snapshot["workflow"]["id"] == "child"
 
     def test_load_defaults_when_absent(self, project_dir):
         state = RunState(run_id="r", workflow_id="w", project_root=project_dir)
@@ -906,11 +914,49 @@ class TestPersistence:
         path = state.runs_dir / "state.json"
         data = json.loads(path.read_text(encoding="utf-8"))
         scope = data["workflow_scopes"]["c"]
-        scope["current_step_index"] = len(scope["definition"]["steps"]) + 1
+        snapshot = yaml.safe_load(
+            (state.runs_dir / "snapshots" / scope["definition_snapshot"]).read_text(
+                encoding="utf-8"
+            )
+        )
+        scope["current_step_index"] = len(snapshot["steps"]) + 1
         path.write_text(json.dumps(data), encoding="utf-8")
 
         with pytest.raises(ValueError, match="out of range"):
             RunState.load(state.run_id, project_dir)
+
+    def test_yaml_native_scalar_in_composed_definition_persists(self, project_dir):
+        """A YAML-native date must not break composed-scope persistence.
+
+        PyYAML parses an unquoted ``2026-01-01`` to ``datetime.date``, which
+        ``json.dump`` cannot encode. The resolved definition is kept in a YAML
+        snapshot; the gate's persisted step output is coerced to text.
+        """
+        from datetime import date
+
+        _install(
+            project_dir,
+            "child",
+            _workflow(
+                "child",
+                [{"id": "review", "type": "gate", "message": date(2026, 1, 1)}],
+            ),
+        )
+        _install(
+            project_dir,
+            "parent",
+            _workflow("parent", [{"id": "c", "type": "workflow", "workflow": "child"}]),
+        )
+        state = _run(project_dir, "parent")
+        assert state.status == RunStatus.PAUSED
+        scope = state.workflow_scopes["c"]
+        snapshot = yaml.safe_load(
+            (state.runs_dir / "snapshots" / scope["definition_snapshot"]).read_text(
+                encoding="utf-8"
+            )
+        )
+        assert isinstance(snapshot["steps"][0]["message"], date)
+        assert scope["step_results"]["review"]["output"]["message"] == "2026-01-01"
 
     def test_completion_handoff_is_atomic(self, project_dir, monkeypatch):
         """Every persisted snapshot with a COMPLETED child also has its caller result."""
@@ -1032,6 +1078,54 @@ class TestSerializedScopeValidation:
             project_dir, _workflow("child", [{"type": "shell", "run": "true"}])
         )
         with pytest.raises(ValueError, match="non-empty string"):
+            RunState.load("r", project_dir)
+
+    def _save_state_with_snapshot_ref(self, project_dir, ref):
+        state = RunState(run_id="r", workflow_id="w", project_root=project_dir)
+        state.status = RunStatus.PAUSED
+        state.workflow_scopes = {
+            "c": {
+                "workflow_id": "child",
+                "invocation_id": "c",
+                "definition_snapshot": ref,
+                "inputs": {},
+                "status": "paused",
+                "current_step_index": 0,
+                "step_results": {},
+                "workflow_scopes": {},
+            }
+        }
+        state.save()
+        return state
+
+    def test_snapshot_definition_loads(self, project_dir):
+        snap_dir = (
+            project_dir / ".specify" / "workflows" / "runs" / "r" / "snapshots"
+        )
+        snap_dir.mkdir(parents=True, exist_ok=True)
+        (snap_dir / "child-abc123.yml").write_text(
+            yaml.safe_dump(
+                _workflow("child", [{"id": "s", "type": "shell", "run": "true"}])
+            ),
+            encoding="utf-8",
+        )
+        self._save_state_with_snapshot_ref(project_dir, "child-abc123.yml")
+        loaded = RunState.load("r", project_dir)
+        assert (
+            loaded.workflow_scopes["c"]["definition_snapshot"]
+            == "child-abc123.yml"
+        )
+
+    def test_load_rejects_missing_snapshot(self, project_dir):
+        self._save_state_with_snapshot_ref(project_dir, "child-deadbeef.yml")
+        with pytest.raises(ValueError, match="missing"):
+            RunState.load("r", project_dir)
+
+    def test_load_rejects_unsafe_snapshot_ref(self, project_dir):
+        self._save_state_with_snapshot_ref(project_dir, "../escape.yml")
+        with pytest.raises(
+            ValueError, match="Invalid definition snapshot reference"
+        ):
             RunState.load("r", project_dir)
 
     def test_custom_step_scope_loads_without_registration(

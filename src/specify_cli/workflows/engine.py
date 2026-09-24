@@ -38,6 +38,7 @@ from .composition import (
     evaluate_input_mapping,
     validate_serialized_scopes,
     validate_workflow_outputs,
+    write_definition_snapshot,
 )
 
 # -- Workflow Definition --------------------------------------------------
@@ -897,7 +898,7 @@ class RunState:
         # Nested composition scopes. Older state files predate the field, so a
         # missing key defaults to ``{}`` and those runs keep loading unchanged.
         workflow_scopes = state_data.get("workflow_scopes", {})
-        validate_serialized_scopes(workflow_scopes)
+        validate_serialized_scopes(workflow_scopes, run_dir=runs_dir)
 
         state = cls(
             run_id=state_data["run_id"],
@@ -1758,6 +1759,14 @@ class WorkflowEngine:
             status=RunStatus.RUNNING,
             parent=scope,
             root_state=scope.root().root_state,
+        )
+        # Persist the resolved definition as an immutable YAML snapshot before
+        # referencing it from state.json. YAML round-trips native scalars
+        # (dates, datetimes) that json.dump cannot encode; writing it first
+        # means a crash can only leave an unused snapshot, never a scope whose
+        # definition reference points at nothing.
+        child_scope.definition_ref = write_definition_snapshot(
+            child_scope, definition.data
         )
         scope.add_workflow_scope(effective_id, child_scope)
         scope.persist()

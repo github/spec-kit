@@ -630,12 +630,15 @@ overrides an abort or bypasses a pause.
 #### Resume and composition limits
 
 The resolved target, its composed definition snapshot (including overlays), and
-the validated inputs are persisted with the run. On resume the engine reuses the
-snapshot and resumes at the included scope's local step index; it does not
-re-resolve the target. Editing an installed workflow affects new invocations,
-not a scope already bound within a persisted run. `workflow resume --input`
-updates the **root** workflow's inputs; a composing workflow forwards them by
-mapping them into the child's declared inputs.
+the validated inputs are persisted with the run. The snapshot is written as an
+immutable YAML file under the run's `snapshots/` directory (so YAML-native
+values such as unquoted dates round-trip, unlike JSON), while `state.json`
+records only its reference. On resume the engine reuses the snapshot and
+resumes at the included scope's local step index; it does not re-resolve the
+target. Editing an installed workflow affects new invocations, not a scope
+already bound within a persisted run. `workflow resume --input` updates the
+**root** workflow's inputs; a composing workflow forwards them by mapping them
+into the child's declared inputs.
 
 Recursive composition is allowed, but cycles are rejected by path (`A -> B -> A`
 fails while `A -> B -> D` and `A -> C -> D` is a legal diamond). Composition is
@@ -751,6 +754,7 @@ Each workflow run persists its state at `.specify/workflows/runs/<run_id>/`:
 - `state.json` — current run state and step progress
 - `inputs.json` — resolved input values
 - `log.jsonl` — step-by-step execution log
+- `snapshots/*.yml` — immutable composed-child definition snapshots
 
 This enables `specify workflow resume` to continue from the exact step where a run was paused (e.g., at a gate) or failed.
 

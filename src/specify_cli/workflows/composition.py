@@ -14,10 +14,15 @@ steps never see an ``ExecutionScope``.
 
 from __future__ import annotations
 
+import hashlib
+import os
 import re
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+import yaml
 
 from .base import RunStatus, StepContext
 from .expressions import evaluate_expression
@@ -307,6 +312,125 @@ def check_composition_path(active_path: list[str], target: str) -> None:
         raise ValueError(msg)
 
 
+# -- Definition snapshots -------------------------------------------------
+#
+# A composed child's resolved definition is immutable for the life of its
+# invocation. Persisting it as a YAML file (instead of embedding the parsed
+# mapping in ``state.json``) keeps YAML-native scalars — dates, datetimes, etc.
+# — that ``json.dump`` cannot encode. Execution state (status, progress, step
+# results) stays in ``state.json`` so the single atomic write that ties a
+# completed child to its caller result is preserved.
+
+#: Directory under a run directory holding immutable definition snapshots.
+SNAPSHOT_DIRNAME = "snapshots"
+
+#: Snapshot file name: ``<workflow-id>-<digest>.yml``.
+_SNAPSHOT_REF_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]*\.yml$")
+
+
+def _invocation_path(scope: ExecutionScope) -> list[str]:
+    """Invocation ids from the root scope down to *scope*."""
+    parts: list[str] = []
+    node: ExecutionScope | None = scope
+    while node is not None:
+        parts.append(node.scope_id)
+        node = node.parent
+    return list(reversed(parts))
+
+
+def _snapshot_ref_for(scope: ExecutionScope) -> str:
+    """Deterministic, filesystem-safe snapshot name for *scope*.
+
+    Derived from the invocation path and the target workflow id rather than the
+    authored step id, so a step id containing ``/`` or ``:`` can never escape
+    the snapshots directory.
+    """
+    digest = hashlib.sha256(
+        "\x00".join(_invocation_path(scope)).encode("utf-8")
+    ).hexdigest()[:12]
+    return f"{scope.workflow_id}-{digest}.yml"
+
+
+def _definition_snapshot_path(run_dir: Path, ref: str) -> Path:
+    """Resolve a snapshot reference to a path inside *run_dir*/snapshots."""
+    if not isinstance(ref, str) or not _SNAPSHOT_REF_PATTERN.fullmatch(ref):
+        msg = f"Invalid definition snapshot reference: {ref!r}"
+        raise ValueError(msg)
+    snapshots_dir = (run_dir / SNAPSHOT_DIRNAME).resolve()
+    path = (snapshots_dir / ref).resolve()
+    if path.parent != snapshots_dir:
+        msg = f"Invalid definition snapshot reference: {ref!r}"
+        raise ValueError(msg)
+    return path
+
+
+def _read_definition_snapshot(run_dir: Path, ref: str) -> dict[str, Any]:
+    """Load a persisted definition snapshot, failing closed on any problem."""
+    path = _definition_snapshot_path(run_dir, ref)
+    if not path.is_file():
+        msg = f"Invalid run state: definition snapshot {ref!r} is missing"
+        raise ValueError(msg)
+    with open(path, encoding="utf-8") as f:
+        try:
+            data = yaml.safe_load(f)
+        except yaml.YAMLError as exc:
+            msg = (
+                f"Invalid run state: definition snapshot {ref!r} is not "
+                f"valid YAML: {exc}"
+            )
+            raise ValueError(msg) from exc
+    if not isinstance(data, dict):
+        msg = f"Invalid run state: definition snapshot {ref!r} must be a mapping"
+        raise ValueError(msg)
+    return data
+
+
+def _write_definition_snapshot(
+    run_dir: Path, ref: str, data: dict[str, Any]
+) -> None:
+    """Atomically write a definition snapshot (temp file + ``os.replace``)."""
+    path = _definition_snapshot_path(run_dir, ref)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(
+        dir=str(path.parent), prefix=f".{ref}.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f, sort_keys=False)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def write_definition_snapshot(
+    scope: ExecutionScope, data: dict[str, Any]
+) -> str | None:
+    """Write *data* as *scope*'s snapshot; return its reference (or ``None``).
+
+    Returns ``None`` for an unpersisted, in-memory scope (no root ``RunState``),
+    which keeps ``_serialize``'s embedded-definition fallback in play.
+    """
+    state = scope.root().root_state
+    if state is None:
+        return None
+    ref = _snapshot_ref_for(scope)
+    _write_definition_snapshot(state.runs_dir, ref, data)
+    return ref
+
+
+def _scope_definition_data(record: dict[str, Any], *, run_dir: Path) -> dict[str, Any]:
+    """Return a scope record's definition, from a snapshot or the legacy embed."""
+    ref = record.get("definition_snapshot")
+    if isinstance(ref, str) and ref:
+        return _read_definition_snapshot(run_dir, ref)
+    embedded = record.get("definition", {})
+    return embedded if isinstance(embedded, dict) else {}
+
+
 # -- Execution scope ------------------------------------------------------
 
 
@@ -322,6 +446,10 @@ class ExecutionScope:
     scope_id: str
     workflow_id: str
     definition: WorkflowDefinition | None = None
+    #: Persisted snapshot reference for :attr:`definition` (see the section
+    #: above). ``None`` means the definition is embedded in ``state.json``
+    #: (legacy states, or an in-memory scope with no run directory).
+    definition_ref: str | None = None
     inputs: dict[str, Any] = field(default_factory=dict)
     workflow_dir: str | None = None
     step_results: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -407,13 +535,10 @@ class ExecutionScope:
 
     def _serialize(self) -> dict[str, Any]:
         """Serialize this node and its descendants into plain JSON data."""
-        return {
+        record: dict[str, Any] = {
             "workflow_id": self.workflow_id,
             "invocation_id": self.scope_id,
             "workflow_dir": self.workflow_dir,
-            "definition": (
-                self.definition.data if self.definition is not None else {}
-            ),
             "inputs": self.inputs,
             "status": self.status.value,
             "current_step_index": self.current_step_index,
@@ -424,6 +549,18 @@ class ExecutionScope:
                 for key, child in self.workflow_scopes.items()
             },
         }
+        if self.definition_ref:
+            # Immutable definition lives in a YAML snapshot; state.json keeps
+            # only the reference, so YAML-native scalars never hit json.dump.
+            record["definition_snapshot"] = self.definition_ref
+        else:
+            # Legacy/pre-snapshot states, or an in-memory scope with no run
+            # directory: keep the embedded definition (already JSON-safe, since
+            # it was loaded from state.json or never persisted).
+            record["definition"] = (
+                self.definition.data if self.definition is not None else {}
+            )
+        return record
 
     def _sync_to_state(self, state: RunState) -> None:
         """Copy the root scope's live fields into *state* (lock held)."""
@@ -488,11 +625,14 @@ def deserialize_scope(
     """Rebuild a runtime ``ExecutionScope`` from a persisted record."""
     from .engine import WorkflowDefinition
 
-    definition = WorkflowDefinition(record.get("definition", {}))
+    definition = WorkflowDefinition(
+        _scope_definition_data(record, run_dir=root_state.runs_dir)
+    )
     scope = ExecutionScope(
         scope_id=record.get("invocation_id", ""),
         workflow_id=record.get("workflow_id", ""),
         definition=definition,
+        definition_ref=record.get("definition_snapshot"),
         inputs=record.get("inputs", {}) or {},
         workflow_dir=record.get("workflow_dir"),
         step_results=record.get("step_results", {}) or {},
@@ -514,23 +654,29 @@ def deserialize_scope(
 # -- Persisted-scope validation -------------------------------------------
 
 
-def validate_serialized_scopes(scopes: Any) -> None:
+def validate_serialized_scopes(
+    scopes: Any, *, run_dir: Path | None = None
+) -> None:
     """Validate a persisted ``workflow_scopes`` tree.
 
     Raises ``ValueError`` on any malformed node so ``RunState.load`` can fail
-    closed, mirroring its existing validation style.
+    closed, mirroring its existing validation style. ``run_dir`` locates the
+    per-run ``snapshots/`` directory so a scope's definition snapshot can be
+    loaded and structurally checked.
 
-    Validation is deliberately *structural*: it checks the snapshot shapes the
-    engine relies on to slice and deserialize a scope, without consulting the
+    Validation is deliberately *structural*: it checks the shapes the engine
+    relies on to slice and deserialize a scope, without consulting the
     process-global step registry. ``RunState.load`` is reached by commands that
     do not call ``load_custom_steps`` (for example ``workflow status``), so a
     full ``validate_workflow`` pass would reject an otherwise valid run whose
     composed child uses a project-installed custom step.
     """
-    _validate_scope_tree(scopes, path="workflow_scopes")
+    _validate_scope_tree(scopes, run_dir=run_dir, path="workflow_scopes")
 
 
-def _validate_scope_tree(scopes: Any, *, path: str) -> None:
+def _validate_scope_tree(
+    scopes: Any, *, run_dir: Path | None, path: str
+) -> None:
     if not isinstance(scopes, dict):
         msg = f"Invalid run state: '{path}' must be a JSON object"
         raise ValueError(msg)
@@ -543,7 +689,7 @@ def _validate_scope_tree(scopes: Any, *, path: str) -> None:
                 f"Invalid run state: '{path}.{key}' must be a JSON object"
             )
             raise ValueError(msg)
-        _validate_scope_record(record, path=f"{path}.{key}")
+        _validate_scope_record(record, run_dir=run_dir, path=f"{path}.{key}")
 
 
 def _validate_definition_shape(definition: dict[str, Any], *, path: str) -> None:
@@ -583,7 +729,45 @@ def _validate_definition_shape(definition: dict[str, Any], *, path: str) -> None
             raise ValueError(msg)
 
 
-def _validate_scope_record(record: dict[str, Any], *, path: str) -> None:
+def _resolve_scope_definition(
+    record: dict[str, Any], *, run_dir: Path | None, path: str
+) -> dict[str, Any]:
+    """Load a scope's definition from its snapshot, or the legacy embed.
+
+    Raises ``ValueError`` if neither is present or the snapshot cannot be read.
+    """
+    ref = record.get("definition_snapshot")
+    if ref is not None:
+        if not isinstance(ref, str) or not ref:
+            msg = (
+                f"Invalid run state: '{path}.definition_snapshot' must be a "
+                f"non-empty string, got {ref!r}"
+            )
+            raise ValueError(msg)
+        if run_dir is None:
+            msg = (
+                f"Invalid run state: '{path}.definition_snapshot' cannot be "
+                "resolved without a run directory"
+            )
+            raise ValueError(msg)
+        return _read_definition_snapshot(run_dir, ref)
+
+    definition = record.get("definition")
+    if definition is None:
+        msg = (
+            f"Invalid run state: '{path}' must carry either "
+            "'definition_snapshot' or 'definition'"
+        )
+        raise ValueError(msg)
+    if not isinstance(definition, dict):
+        msg = f"Invalid run state: '{path}.definition' must be a JSON object"
+        raise ValueError(msg)
+    return definition
+
+
+def _validate_scope_record(
+    record: dict[str, Any], *, run_dir: Path | None, path: str
+) -> None:
     workflow_id = record.get("workflow_id")
     if not isinstance(workflow_id, str) or not workflow_id:
         msg = f"Invalid run state: '{path}.workflow_id' must be a non-empty string"
@@ -635,10 +819,7 @@ def _validate_scope_record(record: dict[str, Any], *, path: str) -> None:
         msg = f"Invalid run state: '{path}.status' is invalid: {status!r}"
         raise ValueError(msg) from None
 
-    definition = record.get("definition", {})
-    if not isinstance(definition, dict):
-        msg = f"Invalid run state: '{path}.definition' must be a JSON object"
-        raise ValueError(msg)
+    definition = _resolve_scope_definition(record, run_dir=run_dir, path=path)
     _validate_definition_shape(definition, path=f"{path}.definition")
 
     # A nested scope resumes by slicing its persisted definition at
@@ -657,12 +838,13 @@ def _validate_scope_record(record: dict[str, Any], *, path: str) -> None:
         raise ValueError(msg)
 
     children = record.get("workflow_scopes", {})
-    _validate_scope_tree(children, path=f"{path}.workflow_scopes")
+    _validate_scope_tree(children, run_dir=run_dir, path=f"{path}.workflow_scopes")
 
 
 __all__ = [
     "MAX_COMPOSITION_DEPTH",
     "RESERVED_OUTPUT_NAMES",
+    "SNAPSHOT_DIRNAME",
     "ExecutionScope",
     "bind_composed_inputs",
     "check_composition_path",
@@ -673,4 +855,5 @@ __all__ = [
     "validate_serialized_scopes",
     "validate_workflow_call_config",
     "validate_workflow_outputs",
+    "write_definition_snapshot",
 ]
