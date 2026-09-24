@@ -5,9 +5,10 @@ Deliberately self-contained: the github extension owns this script so that
 ``speckit.github.taskstoissues`` keeps working when the core ``taskstoissues``
 command (and its ``check_prerequisites`` helper invocation) is deprecated and
 removed. It is a trimmed twin of core ``check_prerequisites.py`` -- it resolves
-the project root and the active feature directory, requires ``tasks.md``, and
-reports the optional design docs that sit next to it. It performs none of
-core's ``plan.md``/``spec.md`` gating and never writes ``.specify/feature.json``.
+the project root and the active feature directory, requires ``plan.md`` and
+``tasks.md`` exactly as core's ``--require-tasks --include-tasks`` invocation
+does, and reports the optional design docs that sit next to them. Core does not
+require ``spec.md`` for this command, so neither does this script.
 """
 
 from __future__ import annotations
@@ -120,6 +121,34 @@ def read_feature_json_feature_directory(repo_root: Path) -> str:
     return value if isinstance(value, str) else ""
 
 
+def persist_feature_json(repo_root: Path, feature_dir_value: str) -> None:
+    """Write feature_directory to .specify/feature.json when it changed.
+
+    Mirrors core's persist_feature_json, including the lexical prefix strip:
+    with a symlinked <repo>/specs, resolve() would escape the repo and persist
+    a machine-specific absolute path rather than the relative "specs/NNN-name"
+    the bash and PowerShell twins store.
+    """
+    value = feature_dir_value
+    relative = Path(value)
+    if relative.is_absolute():
+        try:
+            value = relative.relative_to(repo_root).as_posix()
+        except ValueError:
+            value = str(relative)
+
+    if read_feature_json_feature_directory(repo_root) == value:
+        return
+
+    specify_dir = repo_root / ".specify"
+    specify_dir.mkdir(parents=True, exist_ok=True)
+    (specify_dir / "feature.json").write_bytes(
+        (json.dumps({"feature_directory": value}, separators=(",", ":")) + "\n").encode(
+            "utf-8"
+        )
+    )
+
+
 def main(argv: list[str]) -> int:
     json_mode = False
     for arg in argv:
@@ -140,8 +169,12 @@ def main(argv: list[str]) -> int:
     # Resolve the feature directory. Priority:
     #   1. SPECIFY_FEATURE_DIRECTORY (explicit override)
     #   2. .specify/feature.json "feature_directory"
-    # Read-only by design: unlike core, this never persists feature.json (#3025).
+    # An override is persisted, exactly as core does, so a later run without
+    # the variable resolves to the same feature rather than reverting to the
+    # previous one and creating issues from the wrong task list.
     raw_feature_dir = os.environ.get("SPECIFY_FEATURE_DIRECTORY", "")
+    if raw_feature_dir:
+        persist_feature_json(repo_root, raw_feature_dir)
     if not raw_feature_dir:
         raw_feature_dir = read_feature_json_feature_directory(repo_root)
         if not raw_feature_dir:
@@ -159,6 +192,14 @@ def main(argv: list[str]) -> int:
             f"ERROR: Feature directory not found: {feature_dir}",
             "Run the Spec Kit specify command (e.g. /speckit.specify) first to "
             "create the feature structure.",
+        )
+
+    impl_plan = feature_dir / "plan.md"
+    if not impl_plan.is_file():
+        _die(
+            f"ERROR: plan.md not found in {feature_dir}",
+            "Run the Spec Kit plan command (e.g. /speckit.plan) first to "
+            "create the implementation plan.",
         )
 
     tasks = feature_dir / "tasks.md"

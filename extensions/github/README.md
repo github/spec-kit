@@ -62,7 +62,7 @@ The extension ships its own feature-resolution script in all three supported run
 | PowerShell | `scripts/powershell/resolve-tasks.ps1`   |
 | Python     | `scripts/python/resolve_tasks.py`        |
 
-Once installed they live under `.specify/extensions/github/scripts/`. The script is a trimmed twin of core's `check-prerequisites`: it resolves the project root and active feature directory, requires `tasks.md`, and reports the design docs alongside it. It performs none of core's `plan.md`/`spec.md` gating, and it never writes `.specify/feature.json`.
+Once installed they live under `.specify/extensions/github/scripts/`. The script is a trimmed twin of core's `check-prerequisites`: it resolves the project root and active feature directory, requires `plan.md` and `tasks.md`, and reports the design docs alongside them. It matches the invocation the core command makes (`--require-tasks --include-tasks`), so `spec.md` stays optional, and a `SPECIFY_FEATURE_DIRECTORY` override is persisted to `.specify/feature.json` the same way core persists it — a later run without the variable resolves to the same feature.
 
 ## Migrating from the core `taskstoissues` command
 
@@ -82,4 +82,4 @@ specify extension add github
 | ------------------------- | --------------------------------- |
 | `/speckit.taskstoissues`  | `/speckit.github.taskstoissues`   |
 
-Issue creation is unchanged: the same remote validation, the same deduplication across open and closed issues, the same issue titles, and the same hook contract. Feature resolution differs in one way: this extension does not require `plan.md` (see [Scripts](#scripts)), so it can run on a feature where the core command would stop. This extension does **not** register `speckit.taskstoissues` as an alias, so the two commands coexist without shadowing each other while the core command still exists.
+Behavior is unchanged: the same feature resolution, the same `plan.md` and `tasks.md` prerequisites, the same remote validation, the same deduplication across open and closed issues, the same issue titles, and the same hook contract. This extension does **not** register `speckit.taskstoissues` as an alias, so the two commands coexist without shadowing each other while the core command still exists.

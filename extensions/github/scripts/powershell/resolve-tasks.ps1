@@ -6,9 +6,10 @@
 # speckit.github.taskstoissues keeps working when the core taskstoissues
 # command (and its check-prerequisites helper invocation) is deprecated and
 # removed. It is a trimmed twin of core check-prerequisites.ps1 -- it resolves
-# the project root and the active feature directory, requires tasks.md, and
-# reports the optional design docs that sit next to it. It performs none of
-# core's plan.md/spec.md gating and never writes .specify/feature.json.
+# the project root and the active feature directory, requires plan.md and
+# tasks.md exactly as core's -RequireTasks -IncludeTasks invocation does, and
+# reports the optional design docs that sit next to them. Core does not require
+# spec.md for this command, so neither does this script.
 #
 # Usage: ./resolve-tasks.ps1 [-Json]
 #
@@ -102,15 +103,64 @@ function Get-ProjectRoot {
     exit 1
 }
 
+# Persist a feature_directory value to .specify/feature.json.
+# Writes only when the file is missing or the stored value differs.
+# Mirrors core's Save-FeatureJson (scripts/powershell/common.ps1).
+function Save-FeatureJson {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$FeatureDirectory
+    )
+
+    # Strip the repo root prefix when the value is absolute and under it.
+    # Case-insensitive on Windows only; elsewhere the filesystem is case-sensitive.
+    $prefix = $RepoRoot + [System.IO.Path]::DirectorySeparatorChar
+    if ($null -ne $IsWindows) { $onWin = $IsWindows } else { $onWin = $true }
+    if ($onWin) {
+        $cmp = [System.StringComparison]::OrdinalIgnoreCase
+    } else {
+        $cmp = [System.StringComparison]::Ordinal
+    }
+    if ($FeatureDirectory.StartsWith($prefix, $cmp)) {
+        $FeatureDirectory = $FeatureDirectory.Substring($prefix.Length)
+    }
+
+    $fjPath = Join-Path (Join-Path $RepoRoot '.specify') 'feature.json'
+
+    if (Test-Path -LiteralPath $fjPath -PathType Leaf) {
+        try {
+            $raw = [System.IO.File]::ReadAllText($fjPath, [System.Text.Encoding]::UTF8)
+            $cfg = $raw | ConvertFrom-Json
+            if ($cfg.feature_directory -eq $FeatureDirectory) {
+                return
+            }
+        } catch {
+            # File is corrupt or unreadable - overwrite it.
+        }
+    }
+
+    $specifyDir = Join-Path $RepoRoot '.specify'
+    if (-not (Test-Path -LiteralPath $specifyDir -PathType Container)) {
+        New-Item -ItemType Directory -Path $specifyDir -Force | Out-Null
+    }
+
+    $json = @{ feature_directory = $FeatureDirectory } | ConvertTo-Json -Compress
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($fjPath, $json, $utf8NoBom)
+}
+
 $repoRoot = Get-ProjectRoot
 
 # Resolve the feature directory. Priority:
 #   1. SPECIFY_FEATURE_DIRECTORY (explicit override)
 #   2. .specify/feature.json "feature_directory"
-# Read-only by design: unlike core, this never persists feature.json (#3025).
+# An override is persisted, exactly as core does, so a later run without the
+# variable resolves to the same feature rather than reverting to the previous
+# one and creating issues from the wrong task list.
 $featureJson = Join-Path $repoRoot '.specify/feature.json'
 if ($env:SPECIFY_FEATURE_DIRECTORY) {
     $featureDir = $env:SPECIFY_FEATURE_DIRECTORY
+    Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $env:SPECIFY_FEATURE_DIRECTORY
 } elseif (Test-Path -LiteralPath $featureJson -PathType Leaf) {
     # Read as UTF-8 explicitly: Windows PowerShell 5.1 otherwise decodes with
     # the legacy ANSI code page and mangles non-ASCII feature paths (#4359).
@@ -139,6 +189,13 @@ if (-not [System.IO.Path]::IsPathRooted($featureDir)) {
 if (-not (Test-Path -LiteralPath $featureDir -PathType Container)) {
     [Console]::Error.WriteLine("ERROR: Feature directory not found: $featureDir")
     [Console]::Error.WriteLine("Run the Spec Kit specify command (e.g. /speckit.specify) first to create the feature structure.")
+    exit 1
+}
+
+$implPlan = Join-Path $featureDir 'plan.md'
+if (-not (Test-Path -LiteralPath $implPlan -PathType Leaf)) {
+    [Console]::Error.WriteLine("ERROR: plan.md not found in $featureDir")
+    [Console]::Error.WriteLine("Run the Spec Kit plan command (e.g. /speckit.plan) first to create the implementation plan.")
     exit 1
 }
 

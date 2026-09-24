@@ -6,9 +6,10 @@
 # `speckit.github.taskstoissues` keeps working when the core `taskstoissues`
 # command (and its `check-prerequisites` helper invocation) is deprecated and
 # removed. It is a trimmed twin of core `check-prerequisites.sh` — it resolves
-# the project root and the active feature directory, requires tasks.md, and
-# reports the optional design docs that sit next to it. It performs none of
-# core's plan.md/spec.md gating and never writes .specify/feature.json.
+# the project root and the active feature directory, requires plan.md and
+# tasks.md exactly as core's `--require-tasks --include-tasks` invocation does,
+# and reports the optional design docs that sit next to them. Core does not
+# require spec.md for this command, so neither does this script.
 #
 # Usage: ./resolve-tasks.sh [--json]
 #
@@ -167,12 +168,43 @@ read_feature_json_feature_directory() {
 
 REPO_ROOT=$(get_repo_root) || exit 1
 
+# Persist a feature_directory value to .specify/feature.json.
+# Writes only when the file is missing or the stored value differs.
+# Mirrors core's _persist_feature_json (scripts/bash/common.sh).
+persist_feature_json() {
+    local repo_root="$1"
+    local feature_dir_value="$2"
+    local fj="$repo_root/.specify/feature.json"
+
+    # Strip repo_root prefix if the value is absolute and under repo_root.
+    if [[ "$feature_dir_value" == "$repo_root/"* ]]; then
+        feature_dir_value="${feature_dir_value#"$repo_root/"}"
+    fi
+
+    local current_val
+    current_val=$(read_feature_json_feature_directory "$repo_root")
+    if [[ "$current_val" == "$feature_dir_value" ]]; then
+        return 0
+    fi
+
+    mkdir -p "$repo_root/.specify"
+
+    if command -v jq >/dev/null 2>&1; then
+        jq -cn --arg fd "$feature_dir_value" '{feature_directory:$fd}' > "$fj"
+    else
+        printf '{"feature_directory":"%s"}\n' "$(json_escape "$feature_dir_value")" > "$fj"
+    fi
+}
+
 # Resolve the feature directory. Priority:
 #   1. SPECIFY_FEATURE_DIRECTORY (explicit override)
 #   2. .specify/feature.json "feature_directory"
-# Read-only by design: unlike core, this never persists feature.json (#3025).
+# An override is persisted, exactly as core does, so a later run without the
+# variable resolves to the same feature rather than reverting to the previous
+# one and creating issues from the wrong task list.
 if [[ -n "${SPECIFY_FEATURE_DIRECTORY:-}" ]]; then
     FEATURE_DIR="$SPECIFY_FEATURE_DIRECTORY"
+    persist_feature_json "$REPO_ROOT" "$SPECIFY_FEATURE_DIRECTORY"
 else
     FEATURE_DIR=$(read_feature_json_feature_directory "$REPO_ROOT")
     if [[ -z "$FEATURE_DIR" ]]; then
@@ -185,6 +217,13 @@ fi
 if [[ ! -d "$FEATURE_DIR" ]]; then
     echo "ERROR: Feature directory not found: $FEATURE_DIR" >&2
     echo "Run the Spec Kit specify command (e.g. /speckit.specify) first to create the feature structure." >&2
+    exit 1
+fi
+
+IMPL_PLAN="$FEATURE_DIR/plan.md"
+if [[ ! -f "$IMPL_PLAN" ]]; then
+    echo "ERROR: plan.md not found in $FEATURE_DIR" >&2
+    echo "Run the Spec Kit plan command (e.g. /speckit.plan) first to create the implementation plan." >&2
     exit 1
 fi
 

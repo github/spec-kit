@@ -538,6 +538,7 @@ def _make_feature_project(tmp_path: Path) -> Path:
     (project / ".specify" / "feature.json").write_text(
         json.dumps({"feature_directory": "specs/001-demo"}), encoding="utf-8"
     )
+    (feature / "plan.md").write_text("# Plan\n", encoding="utf-8")
     (feature / "tasks.md").write_text(
         "- [ ] T001 Create project structure\n", encoding="utf-8"
     )
@@ -611,6 +612,7 @@ class TestResolveTasksPython:
         (project / ".specify" / "feature.json").write_text(
             json.dumps({"feature_directory": "specs/001-功能"}), encoding="utf-8"
         )
+        (feature / "plan.md").write_text("# Plan\n", encoding="utf-8")
         (feature / "tasks.md").write_text("- [ ] T001 Task\n", encoding="utf-8")
 
         env = {**os.environ, "PYTHONIOENCODING": "cp1252"}
@@ -648,8 +650,8 @@ class TestResolveTasksPython:
         assert result.returncode == 0, result.stderr
         assert "✓ tasks.md" in result.stdout
 
-    def test_does_not_write_feature_json(self, tmp_path: Path):
-        """Resolution is read-only; it must not dirty the working tree."""
+    def test_does_not_write_feature_json_without_an_override(self, tmp_path: Path):
+        """Plain resolution stays read-only; only an override persists."""
         project = _make_feature_project(tmp_path)
         feature_json = project / ".specify" / "feature.json"
         before = feature_json.read_bytes()
@@ -896,6 +898,7 @@ def _run_twin(
 def _add_feature(project: Path, name: str) -> Path:
     feature = project / "specs" / name
     feature.mkdir(parents=True)
+    (feature / "plan.md").write_text("# Plan\n", encoding="utf-8")
     (feature / "tasks.md").write_text("- [ ] T001 Task\n", encoding="utf-8")
     return feature
 
@@ -1004,3 +1007,56 @@ class TestResolverOverrides:
         assert result.returncode == 1
         assert "SPECIFY_INIT_DIR is not a Spec Kit project" in result.stderr
         assert result.stdout.strip() == ""
+
+
+@pytest.mark.parametrize("twin", _TWINS)
+class TestCoreResolutionParity:
+    """Behaviours core's ``check-prerequisites`` has that this twin must keep.
+
+    Core resolves via ``check-prerequisites --require-tasks --include-tasks``,
+    which persists an override into ``feature.json`` and gates on ``plan.md``
+    before ``tasks.md``. Divergence here is not cosmetic: a lost override makes
+    the next run read a different feature's task list, and a missing plan gate
+    lets the command run where core would stop.
+    """
+
+    def test_override_persists_for_the_next_run(self, tmp_path: Path, twin: str):
+        """feature.json points at A, an override selects B, then B sticks."""
+        project = _make_feature_project(tmp_path)
+        _add_feature(project, "002-override")
+        feature_json = project / ".specify" / "feature.json"
+
+        first = _run_twin(
+            twin, project, SPECIFY_FEATURE_DIRECTORY="specs/002-override"
+        )
+        assert first.returncode == 0, first.stderr
+        assert Path(json.loads(first.stdout)["FEATURE_DIR"]).name == "002-override"
+
+        # Persisted as the relative path the other twins store, not absolute.
+        stored = json.loads(feature_json.read_text(encoding="utf-8"))
+        assert stored["feature_directory"] == "specs/002-override"
+
+        # Second run, no override: core selects B again, so this must too.
+        second = _run_twin(twin, project)
+        assert second.returncode == 0, second.stderr
+        assert Path(json.loads(second.stdout)["FEATURE_DIR"]).name == "002-override"
+
+    def test_missing_plan_md_is_rejected(self, tmp_path: Path, twin: str):
+        """Core stops without plan.md even when tasks.md is present."""
+        project = _make_feature_project(tmp_path)
+        (project / "specs" / "001-demo" / "plan.md").unlink()
+
+        result = _run_twin(twin, project)
+
+        assert result.returncode == 1
+        assert "plan.md not found" in result.stderr
+        assert result.stdout.strip() == ""
+
+    def test_spec_md_is_not_required(self, tmp_path: Path, twin: str):
+        """Core passes no --require-spec here, so spec.md stays optional."""
+        project = _make_feature_project(tmp_path)
+        assert not (project / "specs" / "001-demo" / "spec.md").exists()
+
+        result = _run_twin(twin, project)
+
+        assert result.returncode == 0, result.stderr
