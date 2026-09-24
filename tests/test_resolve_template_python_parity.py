@@ -1121,6 +1121,54 @@ def test_python_variant_delegates_manifest_with_exponential_alias_dag(
     assert elapsed < 5, f"delegated parsing took {elapsed:.2f}s; expected well under the 10s child timeout"
 
 
+@requires_bash
+def test_python_variant_delegates_manifest_with_exponential_alias_dag_in_entry(
+    tmp_path: Path,
+) -> None:
+    """An ignored per-entry field (e.g. `description`) built from nested,
+    non-recursive YAML aliases must not make delegation blow up either:
+    pruning unused top-level manifest fields alone still leaves every other
+    field of a `provides.templates` entry in place, so a DAG placed there
+    instead of in top-level `metadata` still turns into an O(2**depth) JSON
+    payload during normalization (#4445)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    depth = 24
+    lines = ["x0: &x0 [a]"]
+    for i in range(1, depth):
+        lines.append(f"x{i}: &x{i} [*x{i - 1}, *x{i - 1}]")
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "\n".join(lines) + "\n"
+        "provides:\n"
+        "  templates:\n"
+        "    - type: template\n"
+        f"      name: {TEMPLATE}\n"
+        f"      file: templates/{TEMPLATE}.md\n"
+        "      strategy: wrap\n"
+        f"      description: *x{depth - 1}\n",
+        encoding="utf-8",
+    )
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    start = time.monotonic()
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+    elapsed = time.monotonic() - start
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+    assert elapsed < 5, f"delegated parsing took {elapsed:.2f}s; expected well under the 10s child timeout"
+
+
 def test_python_variant_rejects_speckit_python_override_without_python_3(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

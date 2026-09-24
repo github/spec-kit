@@ -415,11 +415,13 @@ class _DelegatedYAML:
     `uv tool install` / `pipx` venv invisible to the bare `python3` a script
     is launched with). See #4443.
 
-    Only ``_preset_template_layer`` calls this, and only its
-    ``provides.templates`` fields are ever inspected, so the child drops
-    every other top-level manifest field (e.g. free-form ``metadata``)
-    before serializing: a valid, ignored YAML alias DAG there is otherwise
-    unrepresentable in JSON without exponential blow-up on the round trip.
+    Only ``_preset_template_layer`` calls this, and only the ``type``,
+    ``name``, ``file``, and ``strategy`` fields of each ``provides.templates``
+    entry are ever inspected, so the child drops every other top-level
+    manifest field (e.g. free-form ``metadata``) and every other per-entry
+    field (e.g. ``description``) before serializing: a valid, ignored YAML
+    alias DAG in either place is otherwise unrepresentable in JSON without
+    exponential blow-up on the round trip.
     """
 
     YAMLError = _DelegatedYAMLError
@@ -454,6 +456,14 @@ class _DelegatedYAML:
                     "        finally:\n"
                     "            stack.discard(id(obj))\n"
                     "    return obj\n"
+                    "def _only_entry_fields(entry):\n"
+                    "    if not isinstance(entry, dict):\n"
+                    "        return entry\n"
+                    "    return {\n"
+                    "        k: entry[k]\n"
+                    "        for k in ('type', 'name', 'file', 'strategy')\n"
+                    "        if k in entry\n"
+                    "    }\n"
                     "def _only_templates(data):\n"
                     "    if not isinstance(data, dict):\n"
                     "        return data\n"
@@ -462,7 +472,14 @@ class _DelegatedYAML:
                     "        return {k: v for k, v in data.items() if k == 'provides'}\n"
                     "    if 'templates' not in provides:\n"
                     "        return {'provides': {}}\n"
-                    "    return {'provides': {'templates': provides['templates']}}\n"
+                    "    templates = provides['templates']\n"
+                    "    if not isinstance(templates, list):\n"
+                    "        return {'provides': {'templates': templates}}\n"
+                    "    return {\n"
+                    "        'provides': {\n"
+                    "            'templates': [_only_entry_fields(e) for e in templates]\n"
+                    "        }\n"
+                    "    }\n"
                     "try:\n"
                     "    data = yaml.safe_load(sys.stdin.read())\n"
                     "except yaml.YAMLError as exc:\n"
