@@ -521,6 +521,10 @@ class ExecutionScope:
     current_step_id: str | None = None
     status: RunStatus = RunStatus.RUNNING
     error: str | None = None
+    # A workflow caller stages a terminal child transition here so its caller
+    # result can be recorded in the same locked state write.
+    pending_terminal_status: RunStatus | None = None
+    pending_terminal_error: str | None = None
     workflow_scopes: dict[str, ExecutionScope] = field(default_factory=dict)
     parent: ExecutionScope | None = None
     root_state: RunState | None = None
@@ -657,23 +661,37 @@ class ExecutionScope:
         *,
         complete_child: bool = False,
     ) -> None:
-        """Record a step result and complete its child in one locked write.
+        """Record a step result and finalize its child in one locked write.
 
-        Used for the workflow-call boundary so a persisted ``COMPLETED`` child
-        can never lack its caller-step result.
+        Used for the workflow-call boundary so a persisted terminal child can
+        never lack its caller-step result.
         """
         root = self.root()
         state = root.root_state
         if state is None:
-            if complete_child and step_id in self.workflow_scopes:
-                self.workflow_scopes[step_id].status = RunStatus.COMPLETED
+            child = self.workflow_scopes.get(step_id)
+            if child is not None:
+                if complete_child:
+                    child.status = RunStatus.COMPLETED
+                elif child.pending_terminal_status is not None:
+                    child.status = child.pending_terminal_status
+                    child.error = child.pending_terminal_error
+                    child.pending_terminal_status = None
+                    child.pending_terminal_error = None
             if context.steps is not self.step_results:
                 context.steps[step_id] = data
             self.step_results[step_id] = data
             return
         with state._lock:
-            if complete_child and step_id in self.workflow_scopes:
-                self.workflow_scopes[step_id].status = RunStatus.COMPLETED
+            child = self.workflow_scopes.get(step_id)
+            if child is not None:
+                if complete_child:
+                    child.status = RunStatus.COMPLETED
+                elif child.pending_terminal_status is not None:
+                    child.status = child.pending_terminal_status
+                    child.error = child.pending_terminal_error
+                    child.pending_terminal_status = None
+                    child.pending_terminal_error = None
             if context.steps is not self.step_results:
                 context.steps[step_id] = data
             self.step_results[step_id] = data

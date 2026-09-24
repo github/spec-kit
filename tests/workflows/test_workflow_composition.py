@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from threading import Event
+from threading import Event, Thread
 
 import pytest
 import yaml
@@ -1625,6 +1625,84 @@ class TestResume:
         loaded = RunState.load(resumed.run_id, project_dir)
         assert loaded.workflow_scopes["c"]["status"] == "failed"
         assert loaded.workflow_scopes["c"]["error"] == caller["error"]
+
+    def test_concurrent_save_cannot_persist_unpaired_rebind_failure(
+        self, project_dir, monkeypatch
+    ):
+        """A failed rebinding is committed with its caller result atomically."""
+        from specify_cli.workflows.composition import ExecutionScope
+
+        _install(
+            project_dir,
+            "child",
+            _workflow(
+                "child",
+                [
+                    {
+                        "id": "g",
+                        "type": "gate",
+                        "message": "ok?",
+                        "options": ["approve", "reject"],
+                    }
+                ],
+                inputs={
+                    "mode": {
+                        "type": "string",
+                        "default": "",
+                        "enum": ["approve", ""],
+                    }
+                },
+            ),
+        )
+        _install(
+            project_dir,
+            "parent",
+            _workflow(
+                "parent",
+                [
+                    {
+                        "id": "c",
+                        "type": "workflow",
+                        "workflow": "child",
+                        "input": {"mode": "{{ inputs.mode }}"},
+                        "continue_on_error": True,
+                    }
+                ],
+                inputs={"mode": {"type": "string", "default": ""}},
+            ),
+        )
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(_definition(project_dir, "parent"), {})
+        assert state.status == RunStatus.PAUSED
+
+        snapshots: list[dict] = []
+        real_record_and_save = ExecutionScope.record_and_save
+
+        def coordinated_handoff(self, context, step_id, data, **kwargs):
+            if step_id == "c":
+                worker = Thread(target=self.persist)
+                worker.start()
+                worker.join(timeout=5)
+                assert not worker.is_alive(), "concurrent save did not complete"
+                snapshots.append(
+                    json.loads(
+                        (self.root().root_state.runs_dir / "state.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                )
+            return real_record_and_save(self, context, step_id, data, **kwargs)
+
+        monkeypatch.setattr(ExecutionScope, "record_and_save", coordinated_handoff)
+        resumed = engine.resume(state.run_id, {"mode": "invalid"})
+
+        assert resumed.status == RunStatus.COMPLETED
+        assert len(snapshots) == 1
+        snapshot = snapshots[0]
+        assert snapshot["workflow_scopes"]["c"]["status"] == "paused"
+        assert snapshot["step_results"]["c"]["status"] == "paused"
+        assert resumed.workflow_scopes["c"]["status"] == "failed"
+        assert resumed.step_results["c"]["status"] == "failed"
 
     def test_resume_without_input_updates_keeps_binding(self, project_dir):
         self._paused_child(

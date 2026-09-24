@@ -1683,11 +1683,12 @@ class WorkflowEngine:
                     )
                 except ValueError as exc:
                     error = f"Workflow step {effective_id!r}: {exc}"
-                    # The caller will record its failed workflow step through
-                    # record_and_save(), which atomically persists this failed
-                    # child state and the caller result together.
-                    child_scope.status = RunStatus.FAILED
-                    child_scope.error = error
+                    # Stage, rather than mutate, the terminal child state. The
+                    # caller records both sides through record_and_save(), so a
+                    # concurrent fan-out save cannot persist one without the
+                    # other.
+                    child_scope.pending_terminal_status = RunStatus.FAILED
+                    child_scope.pending_terminal_error = error
                     return StepResult(
                         status=StepStatus.FAILED,
                         output={
