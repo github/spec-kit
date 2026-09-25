@@ -1017,10 +1017,9 @@ def _is_gate_step(step: dict[str, Any]) -> bool:
 def _gate_details(step_id: str, output: Any) -> dict[str, Any]:
     """Normalise a gate step's output into the stable JSON gate schema.
 
-    ``message``, ``options``, and ``choice`` may be non-string YAML literals in
-    an unvalidated workflow (``GateStep`` coerces none of them for the payload),
-    so all three are normalised: message → str, options → list[str] | None,
-    choice → str | None (None means no decision yet).
+    Unvalidated or legacy gate records may contain non-string values, so all
+    fields are normalised: message → str, options → list[str] | None, choice →
+    str | None (None means no decision yet).
     """
     output = output if isinstance(output, dict) else {}
     message = output.get("message")
