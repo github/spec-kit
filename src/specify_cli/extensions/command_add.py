@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 import typer
+from packaging.version import InvalidVersion, Version
 from rich.markup import escape as _escape_markup
 from rich.panel import Panel
 
@@ -194,7 +195,13 @@ def extension_add(
                         candidate = _commands._locate_bundled_extension(resolved_id)
                         if candidate is not None:
                             bundled_manifest = ExtensionManifest(candidate / "extension.yml")
-                            if bundled_manifest.version == version:
+                            try:
+                                packaged_matches = Version(bundled_manifest.version) == Version(
+                                    version
+                                )
+                            except InvalidVersion:
+                                packaged_matches = False
+                            if packaged_matches:
                                 bundled_path = candidate
                                 manifest = manager.install_from_directory(
                                     bundled_path, speckit_version, priority=priority, force=force

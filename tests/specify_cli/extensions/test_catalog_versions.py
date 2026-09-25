@@ -96,6 +96,7 @@ def test_legacy_entry_still_selects_its_current_release(tmp_path, monkeypatch):
 
     assert catalog.get_extension_info("legacy") == entry
     assert catalog.get_extension_info("legacy", "1.0.0") == entry
+    assert catalog.get_extension_info("legacy", "v1.0") == entry
     assert catalog.get_extension_info("legacy", "0.9.0") is None
     assert catalog.get_extension_versions("legacy") == ["1.0.0"]
 
@@ -119,6 +120,19 @@ def test_historical_release_selects_its_own_url_digest_and_requirements(
     assert "releases" not in old
     assert catalog.get_extension_info("demo-history", "0.3.0") is None
     assert catalog.get_extension_versions("demo-history") == ["0.5.1", "0.4.12"]
+
+
+def test_equivalent_version_spelling_preserves_advertised_release(
+    tmp_path, monkeypatch
+):
+    entry = _entry(_archive(tmp_path, "0.4.12"))
+    catalog = _catalog(monkeypatch, tmp_path, entry)
+
+    assert catalog.get_extension_info("demo-history", "v0.5.1") == entry
+    historical = catalog.get_extension_info("demo-history", "0.4.12.0")
+    assert historical["version"] == "0.4.12"
+    assert historical["download_url"] == entry["releases"]["0.4.12"]["download_url"]
+    assert catalog.get_extension_info("demo-history", "not-a-version") is None
 
 
 def test_requested_version_does_not_fall_through_to_lower_priority_catalog(
@@ -159,6 +173,7 @@ def test_requested_version_does_not_fall_through_to_lower_priority_catalog(
             }
         },
         {"0.5.1": {"download_url": "https://example.com/a.zip", "sha256": "a" * 64}},
+        {"0.5.1.0": {"download_url": "https://example.com/a.zip", "sha256": "a" * 64}},
         {"0.4.12": {"download_url": "https://example.com/a.zip"}},
         {
             "0.4.12": {
@@ -321,7 +336,8 @@ def test_unqualified_cli_install_uses_current_release_with_history(
     assert installed["extension"]["version"] == "0.5.1"
 
 
-def test_exact_cli_install_historical_release(tmp_path, monkeypatch):
+@pytest.mark.parametrize("requested_version", ["0.4.12", "v0.4.12"])
+def test_exact_cli_install_historical_release(tmp_path, monkeypatch, requested_version):
     project = tmp_path / "project"
     (project / ".specify").mkdir(parents=True)
     old_archive = _archive(tmp_path, "0.4.12")
@@ -332,7 +348,7 @@ def test_exact_cli_install_historical_release(tmp_path, monkeypatch):
     )
 
     result = CliRunner().invoke(
-        app, ["extension", "add", "demo-history", "--version", "0.4.12"]
+        app, ["extension", "add", "demo-history", "--version", requested_version]
     )
 
     assert result.exit_code == 0, result.output
@@ -360,6 +376,29 @@ def test_info_lists_versions_and_discovery_only_policy(tmp_path, monkeypatch):
     assert "0.5.1 (current)" in result.output
     assert "0.4.12" in result.output
     assert "Discovery only" in result.output
+
+
+def test_info_versions_preserves_catalog_failure(tmp_path, monkeypatch):
+    from specify_cli.extensions import _commands
+
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(
+        _commands,
+        "_resolve_catalog_extension",
+        lambda *_args: (None, ExtensionError("catalog fetch failed")),
+    )
+
+    result = CliRunner().invoke(
+        app, ["extension", "info", "demo-history", "--versions"]
+    )
+
+    assert result.exit_code == 1
+    assert "Could not query extension catalog: catalog fetch failed" in " ".join(
+        result.output.split()
+    )
+    assert "No catalog versions found" not in result.output
 
 
 def test_exact_cli_install_rejects_missing_version_in_winning_catalog(
@@ -436,22 +475,28 @@ def test_exact_cli_does_not_bypass_discovery_policy_via_bundled_copy(
     ).exists()
 
 
-@pytest.mark.parametrize("matches_package", [True, False])
+@pytest.mark.parametrize("version_case", ["exact", "equivalent", "mismatch"])
 def test_exact_cli_bundled_version_must_match_packaged_manifest(
-    tmp_path, monkeypatch, matches_package
+    tmp_path, monkeypatch, version_case
 ):
     from specify_cli._assets import _locate_bundled_extension
 
     bundled = _locate_bundled_extension("agent-context")
     assert bundled is not None
     packaged_version = ExtensionManifest(bundled / "extension.yml").version
-    requested_version = packaged_version if matches_package else "9999.0.0"
+    requested_version = {
+        "exact": packaged_version,
+        "equivalent": f"v{packaged_version}",
+        "mismatch": "9999.0.0",
+    }[version_case]
     project = tmp_path / "project"
     (project / ".specify").mkdir(parents=True)
     entry = {
         "id": "agent-context",
         "name": "Agent Context",
-        "version": requested_version,
+        "version": requested_version
+        if version_case == "mismatch"
+        else packaged_version,
         "bundled": True,
         "_catalog_name": "trusted",
         "_install_allowed": True,
@@ -466,7 +511,7 @@ def test_exact_cli_bundled_version_must_match_packaged_manifest(
     installed_manifest = (
         project / ".specify" / "extensions" / "agent-context" / "extension.yml"
     )
-    if matches_package:
+    if version_case != "mismatch":
         assert result.exit_code == 0, result.output
         assert ExtensionManifest(installed_manifest).version == packaged_version
     else:

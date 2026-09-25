@@ -93,6 +93,8 @@ specify extension info <name> --versions
 Shows detailed information about an installed or available extension, including its description, version, commands, and configuration.
 `--versions` lists the current and historical versions advertised by the
 winning catalog source; it labels discovery-only sources as non-installable.
+Equivalent PEP 440 version spellings (for example, `v1.0` and `1.0`) select
+the same release; the catalog's advertised spelling remains visible.
 
 Catalogs may keep the current release in the existing top-level fields and add
 historical releases in a `releases` mapping. Older single-version catalogs

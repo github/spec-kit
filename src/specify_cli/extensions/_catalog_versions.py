@@ -117,13 +117,28 @@ def select_release(entry: dict[str, Any], version: str | None) -> dict[str, Any]
     catalog or silently substituting the current release.
     """
     releases = _validated_releases(entry)
-    if version is None or version == entry.get("version"):
+    current = entry.get("version")
+    if version is None or version == current:
         return entry
-    record = releases.get(version)
-    if record is None:
+    try:
+        requested = Version(version)
+    except InvalidVersion:
         return None
-    common = {key: value for key, value in entry.items() if key not in _CURRENT_ONLY}
-    return {**common, **record, "version": version}
+    if isinstance(current, str):
+        try:
+            if requested == Version(current):
+                return entry
+        except InvalidVersion:
+            # Legacy entries without history are still selectable by exact
+            # spelling above, even if their version is not PEP 440 compliant.
+            pass
+    for advertised, record in releases.items():
+        if requested == Version(advertised):
+            common = {
+                key: value for key, value in entry.items() if key not in _CURRENT_ONLY
+            }
+            return {**common, **record, "version": advertised}
+    return None
 
 
 def available_versions(entry: dict[str, Any]) -> list[str]:

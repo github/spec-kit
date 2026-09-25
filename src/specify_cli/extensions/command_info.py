@@ -62,6 +62,11 @@ def extension_info(
         return
 
     if show_versions:
+        if catalog_error:
+            _commands.console.print(
+                f"[red]Error:[/red] Could not query extension catalog: {_escape_markup(str(catalog_error))}"
+            )
+            raise typer.Exit(1)
         _commands.console.print(
             f"[red]Error:[/red] No catalog versions found for {_escape_markup(extension)}."
         )
