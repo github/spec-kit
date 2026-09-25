@@ -20,6 +20,14 @@ From the root of an initialized Spec Kit project:
 specify extension add github
 ```
 
+The `generic` (bring your own agent) integration is an exception: it scaffolds
+core commands or skills under `--commands-dir`, but does not currently register
+extension add-ons in either layout. Installing `github` in a generic project
+installs its sources but does **not** create a
+`speckit.github.taskstoissues` command or skill. The core
+`speckit.taskstoissues` command remains available. See
+[integration-specific options](../../docs/reference/integrations.md#integration-specific-options).
+
 ## Removal
 
 ```bash
@@ -79,6 +87,11 @@ To migrate, install the extension and use the namespaced command instead:
 ```bash
 specify extension add github
 ```
+
+This migration is not yet available for the `generic` integration: its core
+command remains available, but extension add-ons do not register under its
+custom `--commands-dir`. Generic registration needs a separate fix before the
+core command can be removed for those projects.
 
 | Before                    | After                             |
 | ------------------------- | --------------------------------- |

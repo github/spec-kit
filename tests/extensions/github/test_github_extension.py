@@ -97,6 +97,12 @@ class TestExtensionLayout:
         assert "/speckit.taskstoissues" in text
         assert COMMAND_NAME in text
 
+    def test_readme_discloses_generic_registration_exception(self):
+        text = (EXT_DIR / "README.md").read_text(encoding="utf-8")
+        assert "`generic`" in text
+        assert "does **not** create" in text
+        assert "either layout" in text
+
     def test_command_file_exists(self):
         assert COMMAND_FILE.is_file()
 
@@ -183,6 +189,60 @@ class TestManifest:
 
 
 class TestExtensionInstall:
+    @pytest.mark.parametrize("skills_mode", [False, True], ids=["commands", "skills"])
+    def test_generic_installs_sources_without_registering_an_artifact(
+        self, tmp_path: Path, skills_mode: bool
+    ):
+        from specify_cli.extensions import ExtensionManager
+
+        project = tmp_path / "project"
+        (project / ".specify").mkdir(parents=True)
+        (project / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": "generic", "ai_skills": skills_mode, "script": "sh"}),
+            encoding="utf-8",
+        )
+        (project / ".specify" / "integration.json").write_text(
+            json.dumps(
+                {
+                    "integration": "generic",
+                    "default_integration": "generic",
+                    "installed_integrations": ["generic"],
+                    "integration_settings": {
+                        "generic": {
+                            "raw_options": "--commands-dir .myagent/commands"
+                            + (" --skills" if skills_mode else ""),
+                            "parsed_options": {
+                                "commands_dir": ".myagent/commands",
+                                "skills": skills_mode,
+                            },
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        commands_dir = project / ".myagent" / "commands"
+        commands_dir.mkdir(parents=True)
+
+        manager = ExtensionManager(project)
+        manager.install_from_directory(EXT_DIR, "0.9.0", register_commands=True)
+
+        assert manager.registry.is_installed("github")
+        assert (
+            project / ".specify" / "extensions" / "github" / "extension.yml"
+        ).is_file()
+        assert not (
+            commands_dir
+            / (
+                "speckit-github-taskstoissues/SKILL.md"
+                if skills_mode
+                else f"{COMMAND_NAME}.md"
+            )
+        ).exists()
+        assert not (
+            project / ".agents" / "skills" / "speckit-github-taskstoissues" / "SKILL.md"
+        ).exists()
+
     def test_install_copies_command_and_scripts(self, tmp_path: Path):
         from specify_cli.extensions import ExtensionManager
 
@@ -264,6 +324,11 @@ class TestExtensionInstall:
 
 
 class TestScriptPathResolution:
+    def test_registerable_integration_scope_excludes_generic(self):
+        from specify_cli.integrations import INTEGRATION_REGISTRY
+
+        assert set(SUPPORTED_AGENTS) == set(INTEGRATION_REGISTRY) - {"generic"}
+
     def test_frontmatter_uses_plain_extension_local_spelling(self):
         """No ``../../`` escape hatch back into core scripts."""
         scripts = _command_frontmatter()["scripts"]
@@ -326,14 +391,15 @@ class TestScriptPathResolution:
         assert ".specify/scripts/" not in content
 
     @pytest.mark.parametrize("agent", SUPPORTED_AGENTS)
-    def test_every_supported_integration_renders_the_command(
+    def test_every_registerable_integration_renders_the_command(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, agent: str
     ):
-        """Acceptance criterion: the command works for *every* integration.
+        """Acceptance criterion: the command works for every registerable integration.
 
         Covers both layouts in one sweep — command-file agents, skills-mode
         agents, and Hermes, which installs to ``~/.hermes/skills`` rather than
-        a project-local directory (hence the redirected home).
+        a project-local directory (hence the redirected home). Generic has no
+        static registrar config and does not register extension add-ons.
         """
         from specify_cli.extensions import CommandRegistrar, ExtensionManager
 

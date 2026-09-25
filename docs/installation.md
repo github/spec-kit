@@ -150,6 +150,10 @@ After initialization, you should see the following commands available in your co
 - `/speckit.taskstoissues` - Convert tasks to issues (moving to the bundled `github` extension as
   `/speckit.github.taskstoissues`; install it with `specify extension add github`)
 
+The `generic` integration scaffolds core commands or skills, but does not
+register extension add-ons; installing `github` there does not make its
+replacement command invokable. See the [GitHub extension's installation notes](../extensions/github/README.md#installation).
+
 Scripts are installed into a variant subdirectory matching the chosen script type:
 
 - `.specify/scripts/bash/` — contains `.sh` scripts (default on Linux/macOS)
