@@ -66,6 +66,7 @@ class RovodevIntegration(SkillsIntegration):
         output_json: bool = True,
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         """Build non-interactive ACLI args for RovoDev.
 

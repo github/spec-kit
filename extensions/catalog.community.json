@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-11T00:00:00Z",
+  "updated_at": "2026-09-24T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -8,8 +8,8 @@
       "id": "adrkit",
       "description": "Pulls the decisions governing this work into agent context, checks produced plans against them, and drafts an ADR from a plan artifact.",
       "author": "Mark Beacom (@mbeacom)",
-      "version": "0.1.2",
-      "download_url": "https://github.com/mbeacom/adrkit/releases/download/spec-kit-v0.1.2/adrkit.zip",
+      "version": "0.1.4",
+      "download_url": "https://github.com/mbeacom/adrkit/releases/download/spec-kit-v0.1.4/adrkit.zip",
       "repository": "https://github.com/mbeacom/adrkit",
       "homepage": "https://adrkit.dev",
       "documentation": "https://github.com/mbeacom/adrkit/blob/main/packages/adapters/spec-kit/README.md",
@@ -18,7 +18,7 @@
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.13.0,<0.16.0",
+        "speckit_version": ">=0.13.0,<1.1.0",
         "tools": [
           {
             "name": "adr",
@@ -42,7 +42,59 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-03T00:00:00Z",
-      "updated_at": "2026-08-03T00:00:00Z"
+      "updated_at": "2026-09-15T00:00:00Z"
+    },
+    "aee": {
+      "name": "Applied Epistemic Engineering",
+      "id": "aee",
+      "description": "Challenge claims, trace evidence, propagate uncertainty, and route epistemic failures across phases",
+      "author": "ElectroHire",
+      "version": "1.0.1",
+      "download_url": "https://github.com/electrohire/spec-kit-aee/archive/refs/tags/v1.0.1.zip",
+      "sha256": "691d860ffade54e2fb5dd17f34cc72784ad65ca23ff61281313bb4366d46d47b",
+      "repository": "https://github.com/electrohire/spec-kit-aee",
+      "homepage": "https://github.com/electrohire/spec-kit-aee",
+      "documentation": "https://github.com/electrohire/spec-kit-aee#readme",
+      "changelog": "https://github.com/electrohire/spec-kit-aee/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0",
+        "tools": [
+          {
+            "name": "python",
+            "version": ">=3.11",
+            "required": true
+          },
+          {
+            "name": "aee",
+            "version": ">=1.0.2,<2",
+            "required": true
+          },
+          {
+            "name": "spec-kit-evaluator",
+            "version": ">=1.0.0,<2",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 6,
+        "hooks": 5
+      },
+      "tags": [
+        "epistemics",
+        "evidence",
+        "provenance",
+        "uncertainty",
+        "governance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-15T00:00:00Z",
+      "updated_at": "2026-09-23T00:00:00Z"
     },
     "aide": {
       "name": "AI-Driven Engineering (AIDE)",
@@ -271,6 +323,51 @@
       "stars": 0,
       "created_at": "2026-08-28T00:00:00Z",
       "updated_at": "2026-08-28T00:00:00Z"
+    },
+    "agentstandards": {
+      "name": "Agentstandards Architecture Council",
+      "id": "agentstandards",
+      "description": "Run a bounded, multi-vendor architecture council between Spec Kit planning and task generation.",
+      "author": "bbjwz",
+      "version": "0.1.0",
+      "download_url": "https://github.com/bbjwz/agentstandards/releases/download/v0.1.0/agentstandards-0.1.0.zip",
+      "sha256": "3291003d4d4d1f6ca32a0c1c2aa908a887d3ded2b69ce38deb09abc5daf89e90",
+      "repository": "https://github.com/bbjwz/agentstandards",
+      "homepage": "https://github.com/bbjwz/agentstandards",
+      "documentation": "https://github.com/bbjwz/agentstandards/blob/v0.1.0/README.md",
+      "changelog": "https://github.com/bbjwz/agentstandards/blob/v0.1.0/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.8,<2.0.0",
+        "tools": [
+          {
+            "name": "uv",
+            "required": true
+          },
+          {
+            "name": "codex",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 2
+      },
+      "tags": [
+        "architecture",
+        "multi-agent",
+        "multi-vendor",
+        "governance",
+        "codex"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-24T00:00:00Z",
+      "updated_at": "2026-09-24T00:00:00Z"
     },
     "analytics": {
       "name": "Analytics",
@@ -1428,8 +1525,8 @@
       "id": "cosmosdb",
       "description": "Best-practice Azure Cosmos DB code generation and review for any AI coding agent",
       "author": "Theo van Kraay (maintained on behalf of the Azure Cosmos DB team; hosted in the AzureCosmosDB org)",
-      "version": "0.1.0",
-      "download_url": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb/archive/refs/tags/v0.1.0.zip",
+      "version": "0.2.0",
+      "download_url": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb/archive/refs/tags/v0.2.0.zip",
       "repository": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb",
       "homepage": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb",
       "documentation": "https://github.com/AzureCosmosDB/spec-kit-cosmosdb/blob/main/README.md",
@@ -1455,7 +1552,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-21T00:00:00Z",
-      "updated_at": "2026-08-21T00:00:00Z"
+      "updated_at": "2026-09-15T00:00:00Z"
     },
     "cost": {
       "name": "Cost Tracker",
@@ -1594,10 +1691,10 @@
     "docguard": {
       "name": "DocGuard — CDD Enforcement",
       "id": "docguard",
-      "description": "The only doc-integrity engine with an MCP server, SARIF/JUnit output, and a deterministic zero-LLM core. Validates, scores, and traces documentation against code — 27 validators, stable finding codes, adoption baseline for legacy repos, compliance-evidence reports, GitHub Action with PR annotations, spec-kit hooks. Pure Node.js, one pinned dep.",
+      "description": "Documentation integrity for AI-assisted repositories: lifecycle registry, drift validation, traceability, safe archival, SARIF/JUnit, MCP, GitHub Actions, and Spec Kit hooks.",
       "author": "raccioly",
-      "version": "0.34.9",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.34.9/spec-kit-docguard-v0.34.9.zip",
+      "version": "0.41.6",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.41.6/spec-kit-docguard-v0.41.6.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -1624,24 +1721,21 @@
         ]
       },
       "provides": {
-        "commands": 6,
-        "hooks": 3
+        "commands": 12,
+        "hooks": 5
       },
       "tags": [
         "documentation",
         "validation",
-        "quality",
-        "cdd",
         "traceability",
         "ai-agents",
-        "enforcement",
         "spec-kit"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-09-11T00:00:00Z"
+      "updated_at": "2026-09-18T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -1758,6 +1852,52 @@
       "stars": 0,
       "created_at": "2026-08-17T00:00:00Z",
       "updated_at": "2026-08-17T00:00:00Z"
+    },
+    "design": {
+      "name": "Spec Kit Design System",
+      "id": "design",
+      "description": "Give it an RFC. It runs the Spec Kit workflow and implements the change using your design system.",
+      "author": "artursopelnik",
+      "version": "0.1.0",
+      "download_url": "https://github.com/artursopelnik/spec-kit-design-system/archive/refs/tags/v0.1.0.zip",
+      "sha256": "787047d6a52399a7092f8bccca9268fc67f17de66723675fc83a9cd72604de4e",
+      "repository": "https://github.com/artursopelnik/spec-kit-design-system",
+      "homepage": "https://github.com/artursopelnik/spec-kit-design-system",
+      "documentation": "https://github.com/artursopelnik/spec-kit-design-system/blob/main/README.md",
+      "changelog": "https://github.com/artursopelnik/spec-kit-design-system/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0,<2.0.0",
+        "tools": [
+          {
+            "name": "python3",
+            "version": ">=3.9",
+            "required": true
+          },
+          {
+            "name": "bash",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 3
+      },
+      "tags": [
+        "design-system",
+        "design-tokens",
+        "accessibility",
+        "autonomous",
+        "reuse"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-23T00:00:00Z",
+      "updated_at": "2026-09-23T00:00:00Z"
     },
     "ears": {
       "name": "EARS Requirements Syntax",
@@ -2667,38 +2807,45 @@
       "updated_at": "2026-06-24T00:00:00Z"
     },
     "keel": {
-      "name": "Keel Discovery",
+      "name": "Keel Connect",
       "id": "keel",
-      "description": "Evidence-backed discovery upstream of /speckit.specify, plus round-trip drift auditing after implementation.",
+      "description": "Connect the local Keel runtime to Keel Cloud without leaving your agent.",
       "author": "Keel Discovery",
-      "version": "0.2.0",
-      "download_url": "https://github.com/keeldiscovery/spec-kit-keel/archive/refs/tags/v0.2.0.zip",
+      "version": "2.3.1",
+      "download_url": "https://github.com/keeldiscovery/spec-kit-keel/archive/refs/tags/v2.3.1.zip",
       "repository": "https://github.com/keeldiscovery/spec-kit-keel",
       "homepage": "https://keeldiscovery.com",
       "documentation": "https://github.com/keeldiscovery/spec-kit-keel/blob/main/README.md",
       "changelog": "https://github.com/keeldiscovery/spec-kit-keel/blob/main/CHANGELOG.md",
       "license": "Apache-2.0",
-      "category": "process",
-      "effect": "read-write",
+      "category": "integration",
+      "effect": "read-only",
       "requires": {
-        "speckit_version": ">=0.15.0"
+        "speckit_version": ">=1.0.0,<2.0.0",
+        "tools": [
+          {
+            "name": "python3",
+            "version": ">=3.9",
+            "required": true
+          }
+        ]
       },
       "provides": {
-        "commands": 6,
-        "hooks": 2
+        "commands": 2,
+        "hooks": 0
       },
       "tags": [
-        "discovery",
-        "evidence",
-        "customer-research",
-        "validation",
-        "traceability"
+        "keel",
+        "runtime",
+        "connect",
+        "agent",
+        "infrastructure"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-10T00:00:00Z",
-      "updated_at": "2026-08-17T00:00:00Z"
+      "updated_at": "2026-09-18T00:00:00Z"
     },
     "learn": {
       "name": "Learning Extension",
@@ -3467,14 +3614,15 @@
     "okf": {
       "name": "OKF Knowledge Bundle Generator",
       "id": "okf",
-      "description": "Generates and maintains an Open Knowledge Format (OKF v0.1) knowledge bundle from a source-code repository, mining git history for rationale and parking what it cannot verify as open questions.",
+      "description": "Generates and maintains an Open Knowledge Format (OKF v0.1) knowledge bundle from a source-code repository. Mines git history for the rationale behind the code, parks what it cannot establish as open questions rather than guessing, and verifies that the bundle's claims are actually supported by the repository.",
       "author": "Alex Punnen",
-      "version": "0.5.0",
-      "download_url": "https://github.com/alexcpn/speckit_okf/archive/refs/tags/v0.5.0.zip",
-      "repository": "https://github.com/alexcpn/speckit_okf",
-      "homepage": "https://github.com/alexcpn/speckit_okf",
-      "documentation": "https://github.com/alexcpn/speckit_okf/blob/main/README.md",
-      "changelog": "https://github.com/alexcpn/speckit_okf/blob/main/CHANGELOG.md",
+      "version": "0.9.2",
+      "download_url": "https://github.com/alexcpn/catalogify/releases/download/v0.9.2/speckit-okf-0.9.2.zip",
+      "sha256": "b426c135dc2d6c6bd11b286c70273f5ae28db5d2a2252acd9768cfb893b9b303",
+      "repository": "https://github.com/alexcpn/catalogify",
+      "homepage": "https://github.com/alexcpn/catalogify",
+      "documentation": "https://github.com/alexcpn/catalogify/blob/main/integrations/speckit/README.md",
+      "changelog": "https://github.com/alexcpn/catalogify/releases",
       "license": "MIT",
       "category": "docs",
       "effect": "read-write",
@@ -3497,7 +3645,7 @@
         ]
       },
       "provides": {
-        "commands": 4,
+        "commands": 5,
         "hooks": 0
       },
       "tags": [
@@ -3511,7 +3659,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-17T00:00:00Z",
-      "updated_at": "2026-09-08T00:00:00Z"
+      "updated_at": "2026-09-23T00:00:00Z"
     },
     "onboard": {
       "name": "Onboard",
@@ -3547,6 +3695,48 @@
       "stars": 0,
       "created_at": "2026-03-26T00:00:00Z",
       "updated_at": "2026-03-26T00:00:00Z"
+    },
+    "openup": {
+      "name": "OpenUP Governed Lifecycle",
+      "id": "openup",
+      "description": "Adds the OpenUP lifecycle to Spec Kit: phases, iterations, a seven-level WBS, an executable risk register, bi-directional traceability, and machine-checkable milestone gates.",
+      "author": "Aniket Gore",
+      "version": "0.1.0",
+      "download_url": "https://github.com/anvigo12/specup/releases/download/v0.1.0/openup-0.1.0.zip",
+      "sha256": "012e11f5949060d57bef2c5ea15772e4649fc92d723e171a85e6230fb87cb46f",
+      "repository": "https://github.com/anvigo12/specup",
+      "homepage": "https://github.com/anvigo12/specup",
+      "documentation": "https://github.com/anvigo12/specup/blob/main/docs/guide/using-specup.md",
+      "changelog": "",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0,<2.0.0",
+        "tools": [
+          {
+            "name": "python3",
+            "version": ">=3.10",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 9,
+        "hooks": 4
+      },
+      "tags": [
+        "governance",
+        "traceability",
+        "risk",
+        "lifecycle",
+        "openup"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-15T00:00:00Z",
+      "updated_at": "2026-09-15T00:00:00Z"
     },
     "optimize": {
       "name": "Optimize Extension",
@@ -3872,6 +4062,41 @@
       "created_at": "2026-04-10T00:00:00Z",
       "updated_at": "2026-04-10T00:00:00Z"
     },
+    "prepay-audit": {
+      "name": "AgentPay Pre-Pay Audit — Grade an endpoint before your agent pays it",
+      "id": "prepay-audit",
+      "description": "Audit a paid API before money moves: grade the endpoint's 402 terms, see what the live market actually charges, and confirm the wallet can complete the payment right now.",
+      "author": "AgentPay Team",
+      "version": "1.0.0",
+      "download_url": "https://github.com/shawnhvac/spec-kit-prepay-audit/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/shawnhvac/spec-kit-prepay-audit",
+      "homepage": "https://x402-agent-pay.com",
+      "documentation": "https://github.com/shawnhvac/spec-kit-prepay-audit#readme",
+      "changelog": "https://github.com/shawnhvac/spec-kit-prepay-audit/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "visibility",
+      "effect": "read-only",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "payments",
+        "x402",
+        "audit",
+        "api",
+        "usdc",
+        "base"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-16T00:00:00Z",
+      "updated_at": "2026-09-16T00:00:00Z"
+    },
     "presetify": {
       "name": "Presetify",
       "id": "presetify",
@@ -4122,12 +4347,12 @@
       "id": "ralph",
       "description": "Autonomous implementation loop using AI agent CLI",
       "author": "Rubiss",
-      "version": "1.2.1",
-      "download_url": "https://github.com/Rubiss-Projects/spec-kit-ralph/archive/refs/tags/v1.2.1.zip",
+      "version": "1.5.0",
+      "download_url": "https://github.com/Rubiss-Projects/spec-kit-ralph/archive/refs/tags/v1.5.0.zip",
       "repository": "https://github.com/Rubiss-Projects/spec-kit-ralph",
       "homepage": "https://github.com/Rubiss-Projects/spec-kit-ralph",
-      "documentation": "https://github.com/Rubiss-Projects/spec-kit-ralph/blob/main/README.md",
-      "changelog": "https://github.com/Rubiss-Projects/spec-kit-ralph/blob/main/CHANGELOG.md",
+      "documentation": "https://github.com/Rubiss-Projects/spec-kit-ralph/blob/v1.5.0/README.md",
+      "changelog": "https://github.com/Rubiss-Projects/spec-kit-ralph/blob/v1.5.0/CHANGELOG.md",
       "license": "MIT",
       "category": "code",
       "effect": "read-write",
@@ -4147,6 +4372,10 @@
             "required": false
           },
           {
+            "name": "opencode",
+            "required": false
+          },
+          {
             "name": "git",
             "required": true
           }
@@ -4162,13 +4391,14 @@
         "loop",
         "copilot",
         "codex",
-        "claude"
+        "claude",
+        "opencode"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-09T00:00:00Z",
-      "updated_at": "2026-07-06T00:00:00Z"
+      "updated_at": "2026-09-15T00:00:00Z"
     },
     "reconcile": {
       "name": "Reconcile Extension",
@@ -4868,8 +5098,9 @@
       "id": "specassay-check",
       "description": "Gate 2 refuses silent gaps and emits a trace-manifest (`trace-manifest.json`).",
       "author": "Rik Dryfoos",
-      "version": "0.4.12",
-      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.4.12/specassay-check-0.4.12.zip",
+      "version": "0.5.2",
+      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.2/specassay-check-0.5.2.zip",
+      "sha256": "f481c6794d0cffc6d532721c1acc378287ba291b3e74dbe1e54eef083d1e7a20",
       "repository": "https://github.com/rdryfoos/specassay",
       "homepage": "https://www.specassay.com",
       "documentation": "https://github.com/rdryfoos/specassay/blob/main/extensions/specassay-check/README.md",
@@ -4878,7 +5109,7 @@
       "category": "visibility",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.14.0",
+        "speckit_version": ">=0.14.0,<2.0.0",
         "tools": [
           {
             "name": "bash",
@@ -4892,7 +5123,7 @@
         ]
       },
       "provides": {
-        "commands": 2,
+        "commands": 5,
         "hooks": 1
       },
       "tags": [
@@ -4906,7 +5137,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-13T00:00:00Z",
-      "updated_at": "2026-08-21T00:00:00Z"
+      "updated_at": "2026-09-24T00:00:00Z"
     },
     "specjudge": {
       "name": "SpecJudge — right-size the model before you implement",
@@ -5215,17 +5446,17 @@
       "id": "status-report",
       "description": "Project status, feature progress, and next-action recommendations for spec-driven workflows.",
       "author": "Open-Agent-Tools",
-      "version": "1.2.5",
-      "download_url": "https://github.com/Open-Agent-Tools/spec-kit-status/archive/refs/tags/v1.2.5.zip",
+      "version": "1.4.2",
+      "download_url": "https://github.com/Open-Agent-Tools/spec-kit-status/archive/refs/tags/v1.4.2.zip",
       "repository": "https://github.com/Open-Agent-Tools/spec-kit-status",
       "homepage": "https://github.com/Open-Agent-Tools/spec-kit-status",
       "documentation": "https://github.com/Open-Agent-Tools/spec-kit-status/blob/main/README.md",
       "changelog": "https://github.com/Open-Agent-Tools/spec-kit-status/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "visibility",
-      "effect": "read-only",
+      "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=1.0.0"
       },
       "provides": {
         "commands": 1,
@@ -5240,7 +5471,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-08T15:05:14Z",
-      "updated_at": "2026-04-08T15:05:14Z"
+      "updated_at": "2026-09-14T00:00:00Z"
     },
     "superb": {
       "name": "Superpowers Bridge",
@@ -5654,6 +5885,60 @@
       "created_at": "2026-04-25T00:00:00Z",
       "updated_at": "2026-04-25T00:00:00Z"
     },
+    "threatspec": {
+      "name": "ThreatSpec — Threat Modeling & Security Traceability",
+      "id": "threatspec",
+      "description": "STRIDE and AI/ML threat modeling with threat-to-test traceability and security convergence",
+      "author": "hupe1980",
+      "version": "0.1.0",
+      "download_url": "https://github.com/hupe1980/spec-kit-threatspec/archive/refs/tags/v0.1.0.zip",
+      "sha256": "6003b667e01e51a4637e4b6c2f2cea644674449f5bd2e7ed9301d3459a5a9c40",
+      "repository": "https://github.com/hupe1980/spec-kit-threatspec",
+      "homepage": "https://github.com/hupe1980/spec-kit-threatspec",
+      "documentation": "https://github.com/hupe1980/spec-kit-threatspec/blob/main/README.md",
+      "changelog": "https://github.com/hupe1980/spec-kit-threatspec/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0",
+        "tools": [
+          {
+            "name": "python",
+            "version": ">=3.8",
+            "required": true
+          },
+          {
+            "name": "pyyaml",
+            "required": true
+          },
+          {
+            "name": "uv",
+            "required": false
+          },
+          {
+            "name": "jsonschema",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 7
+      },
+      "tags": [
+        "security",
+        "threat-modeling",
+        "llm",
+        "agentic",
+        "traceability"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-23T00:00:00Z",
+      "updated_at": "2026-09-23T00:00:00Z"
+    },
     "tldr": {
       "name": "Spec Kit TLDR",
       "id": "tldr",
@@ -5970,21 +6255,21 @@
       "id": "verify-tasks",
       "description": "Detect phantom completions: tasks marked [X] in tasks.md with no real implementation.",
       "author": "Dave Sharpe",
-      "version": "1.0.0",
-      "download_url": "https://github.com/datastone-inc/spec-kit-verify-tasks/archive/refs/tags/v1.0.0.zip",
+      "version": "1.2.0",
+      "download_url": "https://github.com/datastone-inc/spec-kit-verify-tasks/archive/refs/tags/v1.2.0.zip",
       "repository": "https://github.com/datastone-inc/spec-kit-verify-tasks",
       "homepage": "https://github.com/datastone-inc/spec-kit-verify-tasks",
-      "documentation": "https://github.com/datastone-inc/spec-kit-verify-tasks/blob/main/README.md",
-      "changelog": "https://github.com/datastone-inc/spec-kit-verify-tasks/blob/main/CHANGELOG.md",
+      "documentation": "https://github.com/datastone-inc/spec-kit-verify-tasks/blob/master/README.md",
+      "changelog": "https://github.com/datastone-inc/spec-kit-verify-tasks/blob/master/CHANGELOG.md",
       "license": "MIT",
       "category": "code",
-      "effect": "read-only",
+      "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=0.12.17"
       },
       "provides": {
         "commands": 1,
-        "hooks": 1
+        "hooks": 2
       },
       "tags": [
         "verification",
@@ -5996,7 +6281,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-16T00:00:00Z",
-      "updated_at": "2026-03-16T00:00:00Z"
+      "updated_at": "2026-09-17T00:00:00Z"
     },
     "version-guard": {
       "name": "Version Guard",

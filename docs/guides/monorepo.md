@@ -9,6 +9,12 @@ Root resolution already prefers the **nearest** `.specify/` over the Git
 toplevel, so commands run from inside a member project resolve to that project,
 not the repo root.
 
+Repository layout is separate from interface design. When projects interact,
+use [Contract-Driven Development](contract-driven-development.md) to define
+the agreement between them, with one authoritative owner per contract. Projects
+in the same repository can reference that contract directly; projects in
+separate repositories can consume a versioned artifact or synchronized copy.
+
 ## Layout
 
 ```text

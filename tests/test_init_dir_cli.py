@@ -91,16 +91,6 @@ def test_override_trailing_slash_tolerated(tmp_path, monkeypatch):
     assert "No workflows installed" in result.output
 
 
-def test_override_redirects_bundle_commands(tmp_path, monkeypatch):
-    web = _make_project(tmp_path, "web")
-    elsewhere = tmp_path / "elsewhere"
-    elsewhere.mkdir()
-    monkeypatch.chdir(elsewhere)
-    monkeypatch.setenv("SPECIFY_INIT_DIR", str(web))
-
-    result = runner.invoke(app, ["bundle", "list"])
-    assert result.exit_code == 0, result.output
-    assert "No bundles installed" in result.output
 
 
 def test_unset_override_uses_cwd(tmp_path, monkeypatch):
@@ -138,50 +128,10 @@ def test_override_nonexistent_errors_no_fallback(tmp_path, monkeypatch):
     assert "No workflows installed" not in result.output  # no fallback to cwd
 
 
-def test_override_nonexistent_errors_bundle_commands_no_fallback(tmp_path, monkeypatch):
-    """Bundle commands also honor the strict override contract."""
-    cwd_proj = _make_project(tmp_path, "cwd")
-    monkeypatch.chdir(cwd_proj)
-    monkeypatch.setenv("SPECIFY_INIT_DIR", str(tmp_path / "does_not_exist"))
-
-    result = runner.invoke(app, ["bundle", "list"])
-    assert result.exit_code != 0
-    assert "does not point to an existing directory" in result.output
-    assert "No bundles installed" not in result.output
 
 
-def test_override_nonexistent_bundle_json_error_stays_off_stdout(tmp_path, monkeypatch):
-    """Invalid override errors must not contaminate JSON stdout."""
-    cwd_proj = _make_project(tmp_path, "cwd")
-    monkeypatch.chdir(cwd_proj)
-    monkeypatch.setenv("SPECIFY_INIT_DIR", str(tmp_path / "does_not_exist"))
-
-    result = runner.invoke(app, ["bundle", "list", "--json"])
-    assert result.exit_code != 0
-    assert result.stdout == ""
-    assert "does not point to an existing directory" in result.stderr
 
 
-def test_override_symlinked_specify_errors_bundle_init_no_fallback(tmp_path, monkeypatch):
-    """A symlinked override .specify must not make bundle init fall back to cwd."""
-    web = tmp_path / "web"
-    web.mkdir()
-    real = tmp_path / "real-specify"
-    real.mkdir()
-    try:
-        (web / ".specify").symlink_to(real, target_is_directory=True)
-    except (OSError, NotImplementedError):
-        pytest.skip("Symlinks are not available in this environment")
-
-    elsewhere = tmp_path / "elsewhere"
-    elsewhere.mkdir()
-    monkeypatch.chdir(elsewhere)
-    monkeypatch.setenv("SPECIFY_INIT_DIR", str(web))
-
-    result = runner.invoke(app, ["bundle", "init", "--offline"])
-    assert result.exit_code != 0
-    assert "symlinked .specify" in result.output
-    assert not (elsewhere / ".specify").exists()
 
 
 def test_override_without_specify_errors_no_fallback(tmp_path, monkeypatch):

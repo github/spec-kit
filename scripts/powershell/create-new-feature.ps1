@@ -185,6 +185,10 @@ if ($ShortName) {
     $branchSuffix = Get-BranchName -Description $featureDesc
 }
 
+if (-not $branchSuffix) {
+    [Console]::Error.WriteLine("[specify] Warning: Feature name is empty after removing unsupported characters. Use -ShortName with ASCII letters or digits (for example, user-auth).")
+}
+
 # Treat an explicit empty string as omitted, matching the bash and Python twins.
 $hasNumber = $PSBoundParameters.ContainsKey('Number') -and $Number -ne ''
 
@@ -292,8 +296,11 @@ if (-not $DryRun) {
         }
     }
 
-    # Persist to .specify/feature.json so downstream commands can find the feature
-    Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $featureDir
+    # Persist to .specify/feature.json so downstream commands can find the
+    # feature, unless the orchestrator opted out via SPECIFY_FEATURE_NO_PERSIST (#4129).
+    if ($env:SPECIFY_FEATURE_NO_PERSIST -ne '1' -and $env:SPECIFY_FEATURE_NO_PERSIST -ne 'true') {
+        Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $featureDir
+    }
 
     # Set environment variables for the current session
     $env:SPECIFY_FEATURE = $branchName

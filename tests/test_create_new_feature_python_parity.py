@@ -57,6 +57,60 @@ def repo_pair(tmp_path: Path) -> tuple[Path, Path]:
     return _setup_repo(tmp_path, "proj-a"), _setup_repo(tmp_path, "proj-b")
 
 
+@pytest.mark.parametrize(
+    "variant",
+    [
+        pytest.param("bash", marks=requires_bash),
+        "python",
+        pytest.param(
+            "powershell",
+            marks=pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available"),
+        ),
+    ],
+)
+@pytest.mark.parametrize("dry_run", [False, True])
+@pytest.mark.parametrize(
+    "description,short_name,suffix,warns",
+    [
+        ("添加用户", None, "", True),
+        ("добавить", None, "", True),
+        ("!!! ??? ***", None, "", True),
+        ("添加用户", "user-auth", "user-auth", False),
+        ("Add users", "用户", "", True),
+        ("Add user authentication", None, "user-authentication", False),
+    ],
+)
+def test_empty_feature_name_warning(
+    repo: Path,
+    variant: str,
+    dry_run: bool,
+    description: str,
+    short_name: str | None,
+    suffix: str,
+    warns: bool,
+) -> None:
+    """Report unusable names without changing JSON or feature creation (#4574)."""
+    powershell = variant == "powershell"
+    args = ["-Json" if powershell else "--json"]
+    if dry_run:
+        args.append("-DryRun" if powershell else "--dry-run")
+    if short_name is not None:
+        args.extend(["-ShortName" if powershell else "--short-name", short_name])
+    args.append(description)
+    command = {"bash": bash_cmd, "python": py_cmd, "powershell": ps_cmd}[variant]
+    result = run(command(repo, SCRIPT, *args), repo)
+
+    assert result.returncode == 0, result.stderr
+    output = json_stdout(result)
+    assert output["BRANCH_NAME"] == f"001-{suffix}"
+    warning = "Feature name is empty after removing unsupported characters"
+    assert result.stderr.count(warning) == int(warns)
+    if warns:
+        assert ("-ShortName" if powershell else "--short-name") in result.stderr
+        assert "ASCII letters or digits" in result.stderr
+    assert (repo / "specs" / f"001-{suffix}" / "spec.md").exists() is not dry_run
+
+
 def _run_all_variants_allow_existing(
     repo: Path, *, number: str, short_name: str
 ):

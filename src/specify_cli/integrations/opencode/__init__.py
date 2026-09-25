@@ -1,6 +1,7 @@
 """opencode integration."""
 
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 from ..base import MarkdownIntegration
@@ -8,6 +9,7 @@ from ..base import MarkdownIntegration
 
 class OpencodeIntegration(MarkdownIntegration):
     key = "opencode"
+    multi_install_safe = True
     config = {
         "name": "opencode",
         "folder": ".opencode/",
@@ -48,6 +50,7 @@ class OpencodeIntegration(MarkdownIntegration):
         output_json: bool = True,
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         self.validate_runtime_config(integration_args, integration_options)
         args = [self._resolve_executable(), "run"]

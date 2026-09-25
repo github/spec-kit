@@ -1,6 +1,7 @@
 #!/usr/bin/env pwsh
 # Common PowerShell functions analogous to common.sh
 
+
 # Find repository root by searching upward for .specify directory
 # This is the primary marker for spec-kit projects
 function Find-SpecifyRoot {
@@ -166,6 +167,12 @@ function Get-FeaturePathsEnv {
         [switch]$ReturnNullOnError
     )
 
+    # SPECIFY_FEATURE_NO_PERSIST is the environment-level equivalent of -NoPersist,
+    # letting an orchestrator (multi-agent runner, CI matrix) guarantee that no
+    # script invocation in the process tree writes .specify/feature.json, even
+    # scripts that don't pass -NoPersist themselves (#4128).
+    $noPersist = [bool]$NoPersist -or $env:SPECIFY_FEATURE_NO_PERSIST -eq '1' -or $env:SPECIFY_FEATURE_NO_PERSIST -eq 'true'
+
     $repoRoot = Get-RepoRoot -ReturnNullOnError:$ReturnNullOnError
     if (-not $repoRoot) { return $null }
     $currentBranch = Get-CurrentBranch
@@ -183,7 +190,7 @@ function Get-FeaturePathsEnv {
         }
         # Persist to feature.json so future sessions without the env var still
         # work - unless the caller opted out for read-only resolution (#3025).
-        if (-not $NoPersist) {
+        if (-not $noPersist) {
             Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $env:SPECIFY_FEATURE_DIRECTORY
         }
     } elseif (Test-Path $featureJson) {

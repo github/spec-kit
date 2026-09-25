@@ -13,7 +13,8 @@
 
 <p align="center">
     <strong>English</strong> ·
-    <a href="./README.zh-CN.md">简体中文</a>
+    <a href="./README.zh-CN.md">简体中文</a> ·
+    <a href="./README.ja.md">日本語</a>
 </p>
 
 Spec Kit is an open source toolkit that gives AI coding agents structured
@@ -182,6 +183,22 @@ Use project-local overrides for one-off template changes.
 - [SDD philosophy](https://github.github.io/spec-kit/concepts/sdd.html), [full methodology](./spec-driven.md), and [evolving existing specs](https://github.github.io/spec-kit/guides/evolving-specs.html)
 - [Video overview](https://github.github.io/spec-kit/quickstart.html#video-overview) and [project history](https://github.github.io/spec-kit/history.html)
 - [How Spec Kit uses Spec Kit](./CONTRIBUTING.md#does-spec-kit-use-spec-kit)
+
+## Star history
+
+<p align="center">
+    <a href="https://www.star-history.com/#github/spec-kit&Date">
+        <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=github%2Fspec-kit&type=Date&theme=dark"/>
+            <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=github%2Fspec-kit&type=Date"/>
+            <img src="https://api.star-history.com/svg?repos=github%2Fspec-kit&type=Date" alt="Spec Kit star history chart"/>
+        </picture>
+    </a>
+</p>
+
+<p align="center">
+    <em>Thanks to everyone who helps Spec Kit shine.</em>
+</p>
 
 <a id="-support"></a>
 

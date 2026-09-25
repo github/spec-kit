@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import re
 import shlex
 import sys
@@ -264,6 +265,13 @@ def main(argv: list[str] | None = None) -> int:
     else:
         branch_suffix = _generate_branch_name(args.description)
 
+    if not branch_suffix:
+        print(
+            "[specify] Warning: Feature name is empty after removing unsupported characters. "
+            "Use --short-name with ASCII letters or digits (for example, user-auth).",
+            file=sys.stderr,
+        )
+
     branch_number = args.branch_number
     if args.use_timestamp and branch_number:
         print(
@@ -406,8 +414,10 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 spec_file.touch()
 
-        # Persist to .specify/feature.json so downstream commands can find the feature.
-        persist_feature_json(repo_root, f"specs/{branch_name}")
+        # Persist to .specify/feature.json so downstream commands can find the
+        # feature, unless the orchestrator opted out via SPECIFY_FEATURE_NO_PERSIST (#4129).
+        if os.environ.get("SPECIFY_FEATURE_NO_PERSIST", "") not in ("1", "true"):
+            persist_feature_json(repo_root, f"specs/{branch_name}")
 
         # Inform the user how to set feature state in their own shell.
         feature_assignment, directory_assignment = _persistence_assignments(

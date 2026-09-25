@@ -532,13 +532,17 @@ specify workflow catalog remove <index>
 
 ## Repository Layout
 
-```
+```text
 workflows/
 ├── ARCHITECTURE.md                         # Internal architecture documentation
 ├── PUBLISHING.md                           # Guide for submitting workflows to the catalog
 ├── README.md                               # This file
 ├── catalog.json                            # Official workflow catalog
 ├── catalog.community.json                  # Community workflow catalog
-└── speckit/                                # Built-in SDD cycle workflow
+├── speckit/                                # Built-in SDD cycle workflow
+│   └── workflow.yml
+├── bugfix/                                 # Built-in bug-fixing pipeline
+│   └── workflow.yml
+└── assess/                                 # Built-in idea-assessment pipeline
     └── workflow.yml
 ```
