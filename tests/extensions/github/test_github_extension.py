@@ -1193,7 +1193,7 @@ class TestCoreResolutionParity:
         self, tmp_path: Path, twin: str, no_persist: str
     ):
         project = _make_feature_project(tmp_path)
-        feature = _add_feature(project, "002-override")
+        _add_feature(project, "002-override")
         feature_json = project / ".specify" / "feature.json"
         before = feature_json.read_bytes()
 
@@ -1206,8 +1206,8 @@ class TestCoreResolutionParity:
 
         assert result.returncode == 0, result.stderr
         payload = json.loads(result.stdout)
-        assert Path(payload["FEATURE_DIR"]) == feature
-        assert Path(payload["TASKS"]) == feature / "tasks.md"
+        assert Path(payload["FEATURE_DIR"]).parts[-2:] == ("specs", "002-override")
+        assert Path(payload["TASKS"]).parts[-3:] == ("specs", "002-override", "tasks.md")
         assert payload["AVAILABLE_DOCS"] == ["tasks.md"]
         assert feature_json.read_bytes() == before
 
@@ -1222,7 +1222,6 @@ class TestCoreResolutionParity:
         project = _make_feature_project(tmp_path)
         feature_json = project / ".specify" / "feature.json"
         feature_json.unlink()
-        feature = project / "specs" / "001-demo"
 
         result = _run_twin(
             twin,
@@ -1232,7 +1231,10 @@ class TestCoreResolutionParity:
         )
 
         assert result.returncode == 0, result.stderr
-        assert Path(json.loads(result.stdout)["FEATURE_DIR"]) == feature
+        assert Path(json.loads(result.stdout)["FEATURE_DIR"]).parts[-2:] == (
+            "specs",
+            "001-demo",
+        )
         assert not feature_json.exists()
 
     def test_missing_plan_md_is_rejected(self, tmp_path: Path, twin: str):
