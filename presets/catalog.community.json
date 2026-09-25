@@ -524,9 +524,10 @@
       "description": "Manages language-aware intake-series order, typed dependencies, lifecycle, and authority-neutral next-candidate selection.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/archive/refs/tags/v0.2.3.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/archive/refs/tags/v0.2.6.zip",
+      "sha256": "d800feee907971beca4e151a75a4e4eeb9179c5772017e72cebb581022282ad6",
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/blob/v0.2.3/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/blob/v0.2.6/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
@@ -541,10 +542,10 @@
         "sequencing",
         "governance",
         "dag",
-        "model-routing"
+        "lifecycle"
       ],
       "created_at": "2026-07-27T00:00:00Z",
-      "updated_at": "2026-08-20T00:00:00Z"
+      "updated_at": "2026-09-25T00:00:00Z"
     },
     "inventory-alignment": {
       "name": "Inventory Alignment",
