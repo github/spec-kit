@@ -26,7 +26,12 @@ import yaml
 
 from specify_cli import _locate_bundled_extension
 from tests.conftest import requires_bash
-from tests.parity_helpers import HAS_POWERSHELL, POWERSHELL_EXE
+from tests.parity_helpers import (
+    HAS_POWERSHELL,
+    HAS_PWSH,
+    POWERSHELL_EXE,
+    WINDOWS_POWERSHELL,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -696,6 +701,66 @@ def _run_py(project: Path) -> subprocess.CompletedProcess:
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
 class TestResolveTasksPowerShellParity:
     """The PowerShell twin must agree with the Python twin."""
+
+    @pytest.mark.parametrize(
+        "exe",
+        [
+            pytest.param(
+                "pwsh",
+                marks=pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available"),
+                id="pwsh",
+            ),
+            pytest.param(
+                WINDOWS_POWERSHELL,
+                marks=pytest.mark.skipif(
+                    not WINDOWS_POWERSHELL, reason="Windows PowerShell 5.1 not available"
+                ),
+                id="windows-powershell-5.1",
+            ),
+        ],
+    )
+    def test_reads_bomless_utf8_feature_json(self, tmp_path: Path, exe: str | None):
+        """The vendored resolver must decode non-ASCII paths on Windows PS 5.1."""
+        assert exe is not None
+        project = _make_feature_project(tmp_path)
+        feature = _add_feature(project, "002-后台信息架构")
+        feature_json = project / ".specify" / "feature.json"
+        raw = json.dumps(
+            {"feature_directory": "specs/002-后台信息架构"}, ensure_ascii=False
+        ).encode("utf-8")
+        assert raw.startswith(b"{") and "后台信息架构".encode("utf-8") in raw
+        feature_json.write_bytes(raw)
+
+        # Write the PowerShell result as UTF-8 inside the process so the
+        # Windows console code page cannot alter a correct Unicode path.
+        output = tmp_path / "resolved.json"
+        env = {
+            **_resolver_env(),
+            "SPECKIT_RESOLVER_SCRIPT": str(PS_SCRIPT),
+            "SPECKIT_RESOLVER_OUTPUT": str(output),
+        }
+        result = subprocess.run(
+            [
+                exe,
+                "-NoProfile",
+                "-Command",
+                "$payload = & $env:SPECKIT_RESOLVER_SCRIPT -Json; "
+                "[System.IO.File]::WriteAllText("
+                "$env:SPECKIT_RESOLVER_OUTPUT, [string]$payload, "
+                "(New-Object System.Text.UTF8Encoding($false)))",
+            ],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert output.is_file(), result.stderr
+        payload = json.loads(output.read_text(encoding="utf-8"))
+        assert payload["FEATURE_DIR"] == str(feature)
+        assert payload["TASKS"] == str(feature / "tasks.md")
+        assert payload["AVAILABLE_DOCS"] == ["tasks.md"]
 
     def test_json_output_matches_python(self, tmp_path: Path):
         project = _make_feature_project(tmp_path)
