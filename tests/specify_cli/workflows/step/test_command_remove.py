@@ -7,7 +7,6 @@ import os
 import pytest
 
 
-
 class TestWorkflowStepRemoveCLI:
     """Test the 'specify workflow step remove' CLI command edge cases."""
 
@@ -17,6 +16,7 @@ class TestWorkflowStepRemoveCLI:
         This covers the case where the registry was reset due to corruption.
         """
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         monkeypatch.chdir(project_dir)
@@ -40,6 +40,7 @@ class TestWorkflowStepRemoveCLI:
     def test_remove_not_installed(self, project_dir, monkeypatch):
         """step remove fails cleanly when neither directory nor registry entry exist."""
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         monkeypatch.chdir(project_dir)
@@ -53,6 +54,7 @@ class TestWorkflowStepRemoveCLI:
     def test_remove_registered_step(self, project_dir, monkeypatch):
         """step remove works normally when both directory and registry entry exist."""
         from typer.testing import CliRunner
+
         from specify_cli import app
         from specify_cli.workflows.step.catalog import StepRegistry
 
@@ -79,6 +81,7 @@ class TestWorkflowStepRemoveCLI:
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_remove_rejects_symlinked_steps_base_dir(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         monkeypatch.chdir(project_dir)

@@ -11,6 +11,7 @@ to surface it.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import stat
@@ -66,10 +67,71 @@ _WINDOWS_RESERVED_NAMES: frozenset[str] = frozenset(
 )
 
 _WINDOWS_INVALID_CHARS: frozenset[str] = frozenset('<>:"|?*')
+_SOURCES: frozenset[str] = frozenset({"catalog", "local", "url"})
 
 
 class StepInstallError(Exception):
     """User-facing step package install/validation failure."""
+
+
+@contextlib.contextmanager
+def _step_install_transaction(project_root: Path):
+    """Serialize step directory swaps with their registry updates."""
+    from ...shared_infra import _ensure_safe_shared_directory
+
+    lock_dir = Path(project_root) / ".specify"
+    try:
+        _ensure_safe_shared_directory(
+            Path(project_root), lock_dir, context="step install lock directory"
+        )
+    except ValueError as exc:
+        raise StepInstallError(str(exc)) from exc
+    lock_file = lock_dir / ".step-install.lock"
+    if lock_file.is_symlink():
+        raise StepInstallError(f"Refusing to use symlinked step install lock: {lock_file}")
+
+    flags = os.O_RDWR | os.O_CREAT
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(lock_file, flags, 0o600)
+    except OSError as exc:
+        raise StepInstallError(f"Failed to open step install lock: {exc}") from exc
+    try:
+        if lock_file.is_symlink():
+            raise StepInstallError(
+                f"Refusing to use symlinked step install lock: {lock_file}"
+            )
+        if os.name == "nt":
+            import errno
+            import msvcrt
+            import time
+
+            if os.fstat(fd).st_size == 0:
+                os.write(fd, b"\0")
+            while True:
+                os.lseek(fd, 0, os.SEEK_SET)
+                try:
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as exc:
+                    if exc.errno not in (errno.EACCES, errno.EDEADLK):
+                        raise
+                    time.sleep(0.05)
+        else:
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    except StepInstallError:
+        raise
+    except OSError as exc:
+        raise StepInstallError(f"Failed to lock step installation: {exc}") from exc
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -396,19 +458,51 @@ def _build_entry(
     catalog_name: str,
     catalog_metadata: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
+    if source not in _SOURCES:
+        raise StepInstallError(
+            "Step install source must be one of: catalog, local, url"
+        )
+    if source == "catalog" and not isinstance(catalog_name, str):
+        raise StepInstallError("Catalog step install requires a string catalog name")
+    if catalog_metadata is not None and not isinstance(catalog_metadata, Mapping):
+        raise StepInstallError("Catalog step metadata must be a mapping")
     catalog_metadata = catalog_metadata or {}
+
+    def _string_value(metadata: Mapping[str, Any], field: str) -> str | None:
+        value = metadata.get(field)
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise StepInstallError(
+                f"step metadata '{field}' must be a string when present"
+            )
+        return value
+
+    type_key = _string_value(step_meta, "type_key")
+    if not type_key:
+        raise StepInstallError("step.yml missing 'step.type_key' field")
+    package_values = {
+        field: _string_value(step_meta, field)
+        for field in ("name", "version", "description", "author")
+    }
+    catalog_values = {
+        field: _string_value(catalog_metadata, field)
+        for field in ("name", "version", "description", "author")
+    }
     entry: dict[str, Any] = {
-        "name": catalog_metadata.get("name")
-        or step_meta.get("name")
-        or step_id,
-        "version": catalog_metadata.get("version")
-        or step_meta.get("version")
-        or "0.0.0",
-        "description": catalog_metadata.get(
-            "description", step_meta.get("description", "")
+        "name": catalog_values["name"] or package_values["name"] or step_id,
+        "version": catalog_values["version"] or package_values["version"] or "0.0.0",
+        "description": (
+            catalog_values["description"]
+            if catalog_values["description"] is not None
+            else package_values["description"] or ""
         ),
-        "author": catalog_metadata.get("author", step_meta.get("author", "")),
-        "type_key": step_meta["type_key"],
+        "author": (
+            catalog_values["author"]
+            if catalog_values["author"] is not None
+            else package_values["author"] or ""
+        ),
+        "type_key": type_key,
         "source": source,
     }
     if source == "catalog":
@@ -451,18 +545,44 @@ def _copy_package_tree(source_dir: Path, target_dir: Path) -> None:
             if stat.S_ISDIR(mode):
                 _copy(Path(entry.path), target)
             elif stat.S_ISREG(mode):
-                try:
-                    shutil.copyfile(entry.path, target)
-                except OSError as exc:
-                    raise StepInstallError(
-                        f"Failed to stage step package: {exc}"
-                    ) from exc
+                _copy_regular_file(entry.path, target, mode)
             else:
                 raise StepInstallError(
                     f"Step package contains unsupported file: {entry.path}"
                 )
 
     _copy(source_dir, target_dir)
+
+
+def _copy_regular_file(source: str, target: Path, expected_mode: int) -> None:
+    """Copy an inspected regular file without following a late symlink swap."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(source, flags)
+    except OSError as exc:
+        raise StepInstallError(f"Failed to stage step package: {exc}") from exc
+    try:
+        opened = os.fstat(fd)
+        source_state = os.stat(source, follow_symlinks=False)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or not stat.S_ISREG(source_state.st_mode)
+            or opened.st_dev != source_state.st_dev
+            or opened.st_ino != source_state.st_ino
+            or stat.S_IFMT(source_state.st_mode) != stat.S_IFMT(expected_mode)
+        ):
+            raise StepInstallError(
+                f"Step package file changed while staging: {source}"
+            )
+        with os.fdopen(fd, "rb", closefd=False) as source_file, target.open("xb") as target_file:
+            shutil.copyfileobj(source_file, target_file)
+    except OSError as exc:
+        raise StepInstallError(f"Failed to stage step package: {exc}") from exc
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
 
 
 def _replace_install(
@@ -478,6 +598,11 @@ def _replace_install(
     from .catalog import StepValidationError
 
     if step_dir.exists():
+        if not force:
+            raise StepInstallError(
+                f"Step directory already exists at '{step_dir}'. Remove it manually "
+                f"or use: [cyan]specify workflow step remove {step_id}[/cyan]"
+            )
         # --force replacement: the replacement is fully staged and validated,
         # so it is safe to remove the previous installation now.
         try:
@@ -518,7 +643,14 @@ def _replace_install(
     except (StepValidationError, OSError, TypeError, ValueError) as exc:
         # Fresh install: roll back the just-published directory so the system
         # is not left with an unregistered step package on disk.
-        shutil.rmtree(step_dir, ignore_errors=True)
+        try:
+            shutil.rmtree(step_dir)
+        except OSError as cleanup_exc:
+            raise StepInstallError(
+                f"Failed to update the step registry for '{step_id}': {exc}. "
+                f"The unregistered package remains at '{step_dir}' because rollback "
+                f"failed: {cleanup_exc}. Remove it manually before reinstalling."
+            ) from exc
         raise StepInstallError(str(exc)) from exc
 
 
@@ -572,10 +704,11 @@ def install_step_package(
     registry = StepRegistry(project_root)
     _check_duplicate(registry, step_id, step_dir, force=force)
 
-    step_meta = validate_step_package(package_dir, step_id)
-    entry = _build_entry(
+    # Validate source and all caller-controlled metadata before creating any
+    # project directories. The staged metadata is used for the final entry.
+    _build_entry(
         step_id,
-        step_meta,
+        validate_step_package(package_dir, step_id),
         source=source,
         catalog_name=catalog_name,
         catalog_metadata=catalog_metadata,
@@ -590,23 +723,105 @@ def install_step_package(
         raise StepInstallError(f"Failed to create staging directory: {exc}") from exc
 
     staged_dir = work_dir / "staged"
+    committed = False
     try:
         _copy_package_tree(package_dir, staged_dir)
         # Re-validate the complete staged copy: the source may have changed
         # while it was copied.
-        validate_step_package(staged_dir, step_id)
-        # Recheck the destination immediately before commit (TOCTOU).
-        _reject_unsafe_destination(step_dir)
-        _check_duplicate(registry, step_id, step_dir, force=force)
-        _replace_install(
-            step_dir,
-            staged_dir,
-            registry,
+        staged_meta = validate_step_package(staged_dir, step_id)
+        entry = _build_entry(
             step_id,
-            entry,
-            force=force,
+            staged_meta,
+            source=source,
+            catalog_name=catalog_name,
+            catalog_metadata=catalog_metadata,
         )
+        # Serialize destination and registry changes. Source downloads/copying
+        # stay outside the lock, but all state that can conflict is reloaded and
+        # checked again immediately before publication.
+        with _step_install_transaction(project_root):
+            locked_base_dir = resolve_steps_base_dir(project_root)
+            if locked_base_dir != steps_base_dir:
+                raise StepInstallError(
+                    "Step directory changed while staging; reinstall from the original source"
+                )
+            step_dir = _resolve_step_dir(locked_base_dir, step_id)
+            _reject_unsafe_destination(step_dir)
+            _reject_builtin_collision(step_id)
+            registry = StepRegistry(project_root)
+            _check_duplicate(registry, step_id, step_dir, force=force)
+            _replace_install(
+                step_dir,
+                staged_dir,
+                registry,
+                step_id,
+                entry,
+                force=force,
+            )
+            committed = True
     finally:
-        shutil.rmtree(work_dir, ignore_errors=True)
+        try:
+            shutil.rmtree(work_dir)
+        except OSError as cleanup_exc:
+            # The staged directory is private and cannot be loaded as a step,
+            # but callers still need an actionable residual-path diagnostic.
+            if work_dir.exists() and not committed and os.sys.exc_info()[0] is None:
+                raise StepInstallError(
+                    f"Failed to remove staging directory '{work_dir}': {cleanup_exc}"
+                ) from cleanup_exc
 
     return entry
+
+
+def remove_step_package(project_root: Path, step_id: str) -> tuple[Path | None, bool]:
+    """Remove one custom step under the same transaction as installation.
+
+    The returned directory is staged after the registry removal has committed;
+    the second value identifies a removed orphan. Callers can delete the staged
+    directory best-effort without changing the successful result.
+    """
+    from .catalog import StepRegistry, StepValidationError
+
+    validate_step_id(step_id)
+    with _step_install_transaction(project_root):
+        steps_base_dir = resolve_steps_base_dir(project_root)
+        step_dir = _resolve_step_dir(steps_base_dir, step_id)
+        _reject_unsafe_destination(step_dir)
+        registry = StepRegistry(project_root)
+        in_registry = registry.is_installed(step_id)
+        if not in_registry and not step_dir.exists():
+            raise StepInstallError(f"Step type '{step_id}' is not installed")
+
+        staged_dir: Path | None = None
+        if step_dir.exists():
+            try:
+                staged_dir = Path(
+                    tempfile.mkdtemp(
+                        prefix=f".{step_id}.removing-", dir=steps_base_dir
+                    )
+                )
+                staged_dir.rmdir()
+                os.replace(step_dir, staged_dir)
+            except OSError as exc:
+                raise StepInstallError(
+                    f"Failed to stage step directory '{step_dir}' for removal: {exc}"
+                ) from exc
+
+        if not in_registry:
+            return staged_dir, True
+        try:
+            registry.remove(step_id)
+        except (StepValidationError, OSError, TypeError, ValueError) as exc:
+            if staged_dir is not None:
+                try:
+                    os.replace(staged_dir, step_dir)
+                except OSError as restore_exc:
+                    raise StepInstallError(
+                        f"Failed to update the step registry for '{step_id}': {exc}. "
+                        f"The package remains staged at '{staged_dir}' because restore "
+                        f"failed: {restore_exc}."
+                    ) from exc
+            raise StepInstallError(
+                f"Failed to update the step registry for '{step_id}': {exc}"
+            ) from exc
+        return staged_dir, False
