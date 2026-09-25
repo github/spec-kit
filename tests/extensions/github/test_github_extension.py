@@ -905,6 +905,84 @@ def _add_feature(project: Path, name: str) -> Path:
 
 
 @pytest.mark.parametrize("twin", _TWINS)
+@pytest.mark.parametrize(
+    "integration,separator",
+    [(None, None), ("copilot", "."), ("forge", "-"), ("cline", "-")],
+    ids=["unconfigured", "dot", "forge", "cline"],
+)
+class TestResolverPrerequisiteHints:
+    @pytest.fixture
+    def project(
+        self, tmp_path: Path, integration: str | None, separator: str | None
+    ) -> Path:
+        project = _make_feature_project(tmp_path)
+        if integration is not None:
+            (project / ".specify" / "integration.json").write_text(
+                json.dumps(
+                    {
+                        "integration": integration,
+                        "default_integration": integration,
+                        "installed_integrations": [integration],
+                        "integration_settings": {
+                            integration: {"invoke_separator": separator}
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+        return project
+
+    @pytest.mark.parametrize(
+        "missing,error,hint",
+        [
+            (
+                "feature",
+                "Feature directory not found",
+                "Run the Spec Kit specify command first to create the feature structure.",
+            ),
+            (
+                "plan.md",
+                "plan.md not found",
+                "Run the Spec Kit plan command first to create the implementation plan.",
+            ),
+            (
+                "tasks.md",
+                "tasks.md not found",
+                "Run the Spec Kit tasks command first to create the task list.",
+            ),
+        ],
+        ids=["missing-feature", "missing-plan", "missing-tasks"],
+    )
+    def test_missing_prerequisite_has_a_syntax_neutral_hint(
+        self, project: Path, twin: str, missing: str, error: str, hint: str
+    ):
+        if missing == "feature":
+            (project / ".specify" / "feature.json").write_text(
+                json.dumps({"feature_directory": "specs/does-not-exist"}),
+                encoding="utf-8",
+            )
+        else:
+            (project / "specs" / "001-demo" / missing).unlink()
+
+        result = _run_twin(twin, project)
+
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert f"ERROR: {error}" in result.stderr
+        assert result.stderr.splitlines()[-1] == hint
+
+    def test_complete_feature_still_resolves(self, project: Path, twin: str):
+        result = _run_twin(twin, project)
+
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
+        payload = json.loads(result.stdout)
+        assert Path(payload["FEATURE_DIR"]).parts[-2:] == ("specs", "001-demo")
+        assert Path(payload["TASKS"]).parts[-3:] == ("specs", "001-demo", "tasks.md")
+        assert payload["AVAILABLE_DOCS"] == ["research.md", "tasks.md"]
+
+
+@pytest.mark.parametrize("twin", _TWINS)
 class TestResolverOverrides:
     """``SPECIFY_INIT_DIR`` and ``SPECIFY_FEATURE_DIRECTORY``, per twin.
 

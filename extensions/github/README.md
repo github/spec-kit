@@ -64,6 +64,8 @@ The extension ships its own feature-resolution script in all three supported run
 
 Once installed they live under `.specify/extensions/github/scripts/`. The script is a trimmed twin of core's `check-prerequisites`: it resolves the project root and active feature directory, requires `plan.md` and `tasks.md`, and reports the design docs alongside them. It matches the invocation the core command makes (`--require-tasks --include-tasks`), so `spec.md` stays optional, and a `SPECIFY_FEATURE_DIRECTORY` override is persisted to `.specify/feature.json` the same way core persists it — a later run without the variable resolves to the same feature.
 
+Prerequisite errors name the Spec Kit command without assuming an integration's invocation syntax. Use the syntax described under [Commands](#commands) for your integration.
+
 ## Migrating from the core `taskstoissues` command
 
 Spec Kit is moving GitHub issue tracking out of core in three stages:

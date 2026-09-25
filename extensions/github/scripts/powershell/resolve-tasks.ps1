@@ -188,21 +188,21 @@ if (-not [System.IO.Path]::IsPathRooted($featureDir)) {
 
 if (-not (Test-Path -LiteralPath $featureDir -PathType Container)) {
     [Console]::Error.WriteLine("ERROR: Feature directory not found: $featureDir")
-    [Console]::Error.WriteLine("Run the Spec Kit specify command (e.g. /speckit.specify) first to create the feature structure.")
+    [Console]::Error.WriteLine("Run the Spec Kit specify command first to create the feature structure.")
     exit 1
 }
 
 $implPlan = Join-Path $featureDir 'plan.md'
 if (-not (Test-Path -LiteralPath $implPlan -PathType Leaf)) {
     [Console]::Error.WriteLine("ERROR: plan.md not found in $featureDir")
-    [Console]::Error.WriteLine("Run the Spec Kit plan command (e.g. /speckit.plan) first to create the implementation plan.")
+    [Console]::Error.WriteLine("Run the Spec Kit plan command first to create the implementation plan.")
     exit 1
 }
 
 $tasks = Join-Path $featureDir 'tasks.md'
 if (-not (Test-Path -LiteralPath $tasks -PathType Leaf)) {
     [Console]::Error.WriteLine("ERROR: tasks.md not found in $featureDir")
-    [Console]::Error.WriteLine("Run the Spec Kit tasks command (e.g. /speckit.tasks) first to create the task list.")
+    [Console]::Error.WriteLine("Run the Spec Kit tasks command first to create the task list.")
     exit 1
 }
 

@@ -204,7 +204,7 @@ def main(argv: list[str]) -> int:
     if not feature_dir.is_dir():
         _die(
             f"ERROR: Feature directory not found: {feature_dir}",
-            "Run the Spec Kit specify command (e.g. /speckit.specify) first to "
+            "Run the Spec Kit specify command first to "
             "create the feature structure.",
         )
 
@@ -212,7 +212,7 @@ def main(argv: list[str]) -> int:
     if not impl_plan.is_file():
         _die(
             f"ERROR: plan.md not found in {feature_dir}",
-            "Run the Spec Kit plan command (e.g. /speckit.plan) first to "
+            "Run the Spec Kit plan command first to "
             "create the implementation plan.",
         )
 
@@ -220,7 +220,7 @@ def main(argv: list[str]) -> int:
     if not tasks.is_file():
         _die(
             f"ERROR: tasks.md not found in {feature_dir}",
-            "Run the Spec Kit tasks command (e.g. /speckit.tasks) first to "
+            "Run the Spec Kit tasks command first to "
             "create the task list.",
         )
 

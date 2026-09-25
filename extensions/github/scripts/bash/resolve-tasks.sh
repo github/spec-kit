@@ -216,21 +216,21 @@ fi
 
 if [[ ! -d "$FEATURE_DIR" ]]; then
     echo "ERROR: Feature directory not found: $FEATURE_DIR" >&2
-    echo "Run the Spec Kit specify command (e.g. /speckit.specify) first to create the feature structure." >&2
+    echo "Run the Spec Kit specify command first to create the feature structure." >&2
     exit 1
 fi
 
 IMPL_PLAN="$FEATURE_DIR/plan.md"
 if [[ ! -f "$IMPL_PLAN" ]]; then
     echo "ERROR: plan.md not found in $FEATURE_DIR" >&2
-    echo "Run the Spec Kit plan command (e.g. /speckit.plan) first to create the implementation plan." >&2
+    echo "Run the Spec Kit plan command first to create the implementation plan." >&2
     exit 1
 fi
 
 TASKS="$FEATURE_DIR/tasks.md"
 if [[ ! -f "$TASKS" ]]; then
     echo "ERROR: tasks.md not found in $FEATURE_DIR" >&2
-    echo "Run the Spec Kit tasks command (e.g. /speckit.tasks) first to create the task list." >&2
+    echo "Run the Spec Kit tasks command first to create the task list." >&2
     exit 1
 fi
 
