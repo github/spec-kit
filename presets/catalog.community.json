@@ -464,7 +464,7 @@
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-intake-review-governance",
       "download_url": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/archive/refs/tags/v0.2.3.zip",
-      "sha256": "a97d3b3039587d391cd214296d5cfd1cb7665aff76630c08a87879091ddcc1d1"
+      "sha256": "a97d3b3039587d391cd214296d5cfd1cb7665aff76630c08a87879091ddcc1d1",
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-review-governance",
       "documentation": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/blob/v0.2.3/README.md",
       "license": "MIT",
