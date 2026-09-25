@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -386,64 +389,228 @@ def _validate_manifest_template_entry(entry: object) -> None:
         )
 
 
+class _DelegatedYAMLError(Exception):
+    """Raised when a SPECKIT_PYTHON-delegated manifest parse fails."""
+
+
+class _NonNativeYAMLValue:
+    """Marker for a YAML value with no native JSON equivalent (e.g. a date).
+
+    Preserves the fact that native ``yaml.safe_load`` would not have produced
+    a string/int/etc. here, so callers validating field types (e.g. that
+    ``file`` is a string) reject it the same way the in-process parser would,
+    instead of silently accepting a stringified value.
+    """
+
+    def __repr__(self) -> str:
+        return "<non-native YAML value>"
+
+
+_NON_NATIVE_MARKER_KEY = "$speckit_non_native"
+_DELEGATED_YAML_TIMEOUT_SECONDS = 120
+_YAML_RUNTIME_UNRESOLVED = object()
+_UV_YAML_COMMAND = (
+    "uv",
+    "run",
+    "--isolated",
+    "--no-project",
+    "--with",
+    "pyyaml==6.0.3",
+    "python",
+)
+
+
+def _delegated_yaml_object_hook(obj: dict) -> object:
+    if len(obj) == 1 and obj.get(_NON_NATIVE_MARKER_KEY) is True:
+        return _NonNativeYAMLValue()
+    return obj
+
+
+class _DelegatedYAML:
+    """``yaml.safe_load`` proxy that shells out to a PyYAML-capable Python.
+
+    Used when this interpreter lacks PyYAML but another validated command can
+    provide it, including an isolated uv environment. See #4443.
+    """
+
+    YAMLError = _DelegatedYAMLError
+
+    def __init__(self, python_command: Sequence[str]) -> None:
+        self._python_command = tuple(python_command)
+
+    def safe_load(self, text: str) -> object:
+        child_env = dict(
+            os.environ,
+            PYTHONIOENCODING="utf-8",
+            PYTHONSAFEPATH="1",
+            PYTHONUTF8="1",
+        )
+        if self._python_command[1:] == _UV_YAML_COMMAND[1:]:
+            child_env.pop("PYTHONPATH", None)
+        delegated_parser = (
+            "import sys, json, yaml\n"
+            "def _default(value):\n"
+            f"    return {{'{_NON_NATIVE_MARKER_KEY}': True}}\n"
+            "def _stringify_keys(obj, stack=None):\n"
+            "    if stack is None:\n"
+            "        stack = set()\n"
+            "    if isinstance(obj, (dict, list, tuple)):\n"
+            "        if id(obj) in stack:\n"
+            f"            return {{'{_NON_NATIVE_MARKER_KEY}': True}}\n"
+            "        stack.add(id(obj))\n"
+            "        try:\n"
+            "            if isinstance(obj, dict):\n"
+            "                return {\n"
+            "                    (k if isinstance(k, (str, int, float, bool)) or k is None else str(k)): _stringify_keys(v, stack)\n"
+            "                    for k, v in obj.items()\n"
+            "                }\n"
+            "            return [_stringify_keys(v, stack) for v in obj]\n"
+            "        finally:\n"
+            "            stack.discard(id(obj))\n"
+            "    return obj\n"
+            "try:\n"
+            "    data = yaml.safe_load(sys.stdin.read())\n"
+            "except yaml.YAMLError as exc:\n"
+            "    print(str(exc), file=sys.stderr)\n"
+            "    sys.exit(1)\n"
+            "json.dump(_stringify_keys(data), sys.stdout, default=_default)"
+        )
+        try:
+            proc = subprocess.run(
+                [*self._python_command, "-c", delegated_parser],
+                input=text,
+                capture_output=True,
+                encoding="utf-8",
+                env=child_env,
+                timeout=_DELEGATED_YAML_TIMEOUT_SECONDS,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise _DelegatedYAMLError(
+                f"Python could not parse the manifest: {exc}"
+            ) from exc
+        if proc.returncode != 0:
+            raise _DelegatedYAMLError(
+                proc.stderr.strip() or "Python could not parse the manifest"
+            )
+        try:
+            return json.loads(proc.stdout, object_hook=_delegated_yaml_object_hook)
+        except json.JSONDecodeError as exc:
+            raise _DelegatedYAMLError(
+                f"Python returned invalid JSON: {exc}"
+            ) from exc
+
+
+# SPECKIT_YAML_RUNTIME_FALLBACK=1
+def _import_yaml() -> object | None:
+    """Import PyYAML or delegate to the first validated Python command."""
+    try:
+        import yaml
+
+        return yaml
+    except ImportError:
+        pass
+
+    candidates: list[tuple[str, ...]] = []
+    python_override = os.environ.get("SPECKIT_PYTHON")
+    if python_override:
+        candidates.append((python_override,))
+    for executable in ("python3", "python"):
+        resolved = shutil.which(executable)
+        if resolved:
+            candidates.append((resolved,))
+    py_launcher = shutil.which("py")
+    if py_launcher:
+        candidates.append((py_launcher, "-3"))
+    uv_executable = shutil.which("uv")
+    if uv_executable:
+        candidates.append((uv_executable, *_UV_YAML_COMMAND[1:]))
+
+    seen: set[tuple[str, ...]] = set()
+    for command in candidates:
+        if command in seen:
+            continue
+        seen.add(command)
+        probe_env = dict(
+            os.environ,
+            PYTHONIOENCODING="utf-8",
+            PYTHONSAFEPATH="1",
+            PYTHONUTF8="1",
+        )
+        if command[1:] == _UV_YAML_COMMAND[1:]:
+            probe_env.pop("PYTHONPATH", None)
+        try:
+            probe = subprocess.run(
+                [
+                    *command,
+                    "-c",
+                    "import sys, yaml\nraise SystemExit(sys.version_info.major != 3)",
+                ],
+                capture_output=True,
+                env=probe_env,
+                timeout=_DELEGATED_YAML_TIMEOUT_SECONDS,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if probe.returncode == 0:
+            return _DelegatedYAML(command)
+    return None
+
+
 def _preset_template_layer(
-    preset_dir: Path, template_name: str
+    preset_dir: Path,
+    template_name: str,
+    yaml_runtime: object = _YAML_RUNTIME_UNRESOLVED,
 ) -> tuple[Path, str] | None:
     """Return the preset template path and composition strategy."""
     manifest_path = preset_dir / "preset.yml"
     conventional = _conventional_template(preset_dir, template_name)
 
-    try:
-        import yaml
-    except ImportError as exc:
-        if manifest_path.is_file():
-            raise TemplateResolutionError(
-                "PyYAML is required to resolve preset template composition"
-            ) from exc
+    if not manifest_path.is_file():
         return (conventional, "replace") if conventional is not None else None
 
-    if manifest_path.is_file():
-        try:
-            manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-            if not isinstance(manifest, dict):
-                raise ValueError("manifest root must be a mapping")
-            if "provides" not in manifest:
-                raise ValueError("manifest missing provides section")
-            provides = manifest["provides"]
-            if not isinstance(provides, dict):
-                raise ValueError("manifest provides must be a mapping")
-            if "templates" not in provides:
-                raise ValueError("manifest provides missing templates")
-            templates = provides["templates"]
-            if not isinstance(templates, list):
-                raise ValueError("manifest templates must be a list")
-            if not templates:
-                raise ValueError("manifest must provide at least one template")
-            for entry in templates:
-                _validate_manifest_template_entry(entry)
-            for entry in templates:
-                if (
-                    entry.get("name") != template_name
-                    or entry.get("type", "template") != "template"
-                ):
-                    continue
-                file_value = entry.get("file", "")
-                strategy = entry.get("strategy", "replace")
-                relative = Path(file_value)
-                if (
-                    not relative
-                    or relative.is_absolute()
-                    or ".." in relative.parts
-                ):
-                    return None
-                candidate = preset_dir / relative
-                if not candidate.is_file():
-                    return None
-                return candidate, strategy.lower()
-        except (OSError, UnicodeError, ValueError, yaml.YAMLError) as exc:
-            raise TemplateResolutionError(
-                f"Failed to parse preset manifest {manifest_path}: {exc}"
-            ) from exc
+    yaml = _import_yaml() if yaml_runtime is _YAML_RUNTIME_UNRESOLVED else yaml_runtime
+    if yaml is None:
+        raise TemplateResolutionError(
+            "PyYAML is required to resolve preset template composition"
+        )
+
+    try:
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict):
+            raise ValueError("manifest root must be a mapping")
+        if "provides" not in manifest:
+            raise ValueError("manifest missing provides section")
+        provides = manifest["provides"]
+        if not isinstance(provides, dict):
+            raise ValueError("manifest provides must be a mapping")
+        if "templates" not in provides:
+            raise ValueError("manifest provides missing templates")
+        templates = provides["templates"]
+        if not isinstance(templates, list):
+            raise ValueError("manifest templates must be a list")
+        if not templates:
+            raise ValueError("manifest must provide at least one template")
+        for entry in templates:
+            _validate_manifest_template_entry(entry)
+        for entry in templates:
+            if (
+                entry.get("name") != template_name
+                or entry.get("type", "template") != "template"
+            ):
+                continue
+            file_value = entry.get("file", "")
+            strategy = entry.get("strategy", "replace")
+            relative = Path(file_value)
+            if not relative or relative.is_absolute() or ".." in relative.parts:
+                return None
+            candidate = preset_dir / relative
+            if not candidate.is_file():
+                return None
+            return candidate, strategy.lower()
+    except (OSError, UnicodeError, ValueError, yaml.YAMLError) as exc:
+        raise TemplateResolutionError(
+            f"Failed to parse preset manifest {manifest_path}: {exc}"
+        ) from exc
 
     return (conventional, "replace") if conventional is not None else None
 
@@ -493,8 +660,19 @@ def resolve_template_content(template_name: str, repo_root: Path) -> str | None:
         return compose_from_base()
 
     presets_dir = repo_root / ".specify" / "presets"
+    yaml_runtime: object = _YAML_RUNTIME_UNRESOLVED
     for preset_id in _sorted_preset_ids(presets_dir):
-        layer = _preset_template_layer(presets_dir / preset_id, template_name)
+        preset_dir = presets_dir / preset_id
+        if (
+            yaml_runtime is _YAML_RUNTIME_UNRESOLVED
+            and (preset_dir / "preset.yml").is_file()
+        ):
+            yaml_runtime = _import_yaml()
+        layer = _preset_template_layer(
+            preset_dir,
+            template_name,
+            yaml_runtime,
+        )
         if layer is not None:
             layers.append(layer)
             if layer[1] == "replace":

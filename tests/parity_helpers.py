@@ -79,7 +79,124 @@ def clean_env() -> dict[str, str]:
     for key in list(env):
         if key.startswith("SPECIFY_"):
             env.pop(key)
+    # A --without-pip venv still honors an inherited PYTHONPATH, so leaving
+    # this set could make a "no-PyYAML" test interpreter import PyYAML
+    # anyway, silently skipping the delegated-parsing path under test.
+    env.pop("PYTHONPATH", None)
+    # Tests exercising SPECKIT_PYTHON set it explicitly; an ambient value in
+    # the host environment would otherwise silently override the "unset"
+    # baseline for every other test.
+    env.pop("SPECKIT_PYTHON", None)
     return env
+
+
+def venv_python3_exe(venv_dir: Path) -> Path:
+    """Path to the python3 executable of a venv created with ``--without-pip``."""
+    if os.name == "nt":
+        return venv_dir / "Scripts" / "python.exe"
+    return venv_dir / "bin" / "python3"
+
+
+def make_yaml_less_venv(venv_dir: Path) -> Path:
+    """Create a ``--without-pip`` venv and return its python3 executable.
+
+    Asserts the interpreter cannot actually import PyYAML, since it could
+    otherwise be visible via an inherited ``PYTHONPATH`` despite
+    ``--without-pip``, silently invalidating tests that assume it lacks one.
+    """
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(venv_dir)],
+        check=True,
+        capture_output=True,
+    )
+    exe = venv_python3_exe(venv_dir)
+    assert exe.is_file()
+    probe = subprocess.run(
+        [str(exe), "-c", "import yaml"],
+        capture_output=True,
+        env=clean_env(),
+        check=False,
+    )
+    assert probe.returncode != 0, "venv unexpectedly has PyYAML importable"
+    return exe
+
+
+def make_python_candidate_shims(bin_dir: Path, python_executable: Path) -> None:
+    """Shadow python3, python, and py with one known interpreter."""
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    runner = bin_dir / "python_candidate_runner.py"
+    runner.write_text(
+        "import os\n"
+        "import sys\n"
+        "args = sys.argv[1:]\n"
+        "if args[:1] == ['-3']:\n"
+        "    args = args[1:]\n"
+        f"python_executable = {str(python_executable)!r}\n"
+        "os.execv(python_executable, [python_executable, *args])\n",
+        encoding="utf-8",
+    )
+    for name in ("python3", "python", "py"):
+        shim = bin_dir / name
+        shim.write_text(
+            f'#!/bin/sh\nexec "{sys.executable}" "{runner}" "$@"\n',
+            encoding="utf-8",
+        )
+        shim.chmod(0o755)
+        if os.name == "nt":
+            (bin_dir / f"{name}.cmd").write_text(
+                f'@"{sys.executable}" "{runner}" %*\r\n',
+                encoding="utf-8",
+            )
+
+
+def make_fake_uv(
+    bin_dir: Path,
+    log_file: Path,
+    *,
+    fail: bool = False,
+) -> None:
+    """Install a uv stub that validates the pinned fallback argv."""
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    runner = bin_dir / "fake_uv_runner.py"
+    runner.write_text(
+        "import json\n"
+        "import os\n"
+        "import sys\n"
+        "from pathlib import Path\n"
+        "expected = [\n"
+        "    'run', '--isolated', '--no-project', '--with',\n"
+        "    'pyyaml==6.0.3', 'python',\n"
+        "]\n"
+        "args = sys.argv[1:]\n"
+        "if args[:len(expected)] != expected:\n"
+        "    print(f'unexpected uv arguments: {args!r}', file=sys.stderr)\n"
+        "    raise SystemExit(64)\n"
+        "if os.environ.get('PYTHONPATH'):\n"
+        "    print('uv fallback inherited PYTHONPATH', file=sys.stderr)\n"
+        "    raise SystemExit(65)\n"
+        "if os.environ.get('PYTHONSAFEPATH') != '1':\n"
+        "    print('uv fallback did not enable PYTHONSAFEPATH', file=sys.stderr)\n"
+        "    raise SystemExit(66)\n"
+        f"log_file = Path({str(log_file)!r})\n"
+        "with log_file.open('a', encoding='utf-8') as stream:\n"
+        "    stream.write(json.dumps(args[:len(expected)]) + '\\n')\n"
+        f"if {fail!r}:\n"
+        "    raise SystemExit(42)\n"
+        f"python_executable = {sys.executable!r}\n"
+        "os.execv(python_executable, [python_executable, *args[len(expected):]])\n",
+        encoding="utf-8",
+    )
+    shim = bin_dir / "uv"
+    shim.write_text(
+        f'#!/bin/sh\nexec "{sys.executable}" "{runner}" "$@"\n',
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    if os.name == "nt":
+        (bin_dir / "uv.cmd").write_text(
+            f'@"{sys.executable}" "{runner}" %*\r\n',
+            encoding="utf-8",
+        )
 
 
 def collation_range_locale() -> str | None:
