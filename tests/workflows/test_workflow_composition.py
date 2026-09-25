@@ -641,6 +641,110 @@ class TestPublicOutputShapes:
 
 
 class TestContinueOnError:
+    def test_child_expression_failure_uses_call_boundary_on_execute(self, project_dir):
+        """Expression errors inside a child obey the caller's recovery policy."""
+        _install(
+            project_dir,
+            "child",
+            _workflow(
+                "child",
+                [
+                    _shell("source", "printf not-json"),
+                    {
+                        "id": "parse",
+                        "type": "if",
+                        "condition": "{{ steps.source.output.stdout | from_json }}",
+                        "then": [_shell("after-parse", "echo unreachable")],
+                    },
+                ],
+            ),
+        )
+        _install(
+            project_dir,
+            "parent",
+            _workflow(
+                "parent",
+                [
+                    {
+                        "id": "c",
+                        "type": "workflow",
+                        "workflow": "child",
+                        "continue_on_error": True,
+                    },
+                    _shell("after", "echo recovered"),
+                ],
+            ),
+        )
+
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(_definition(project_dir, "parent"), {})
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["c"]["status"] == "failed"
+        assert state.workflow_scopes["c"]["status"] == "failed"
+        assert "from_json: invalid JSON" in state.step_results["c"]["error"]
+        assert state.step_results["after"]["output"]["stdout"].strip() == "recovered"
+
+    def test_child_expression_failure_uses_call_boundary_on_resume(self, project_dir):
+        _install(
+            project_dir,
+            "child",
+            _workflow(
+                "child",
+                [
+                    {
+                        "id": "gate",
+                        "type": "gate",
+                        "message": "continue?",
+                        "options": ["approve", "reject"],
+                        "verdict_input": "verdict",
+                    },
+                    _shell("source", "printf not-json"),
+                    {
+                        "id": "parse",
+                        "type": "if",
+                        "condition": "{{ steps.source.output.stdout | from_json }}",
+                        "then": [_shell("after-parse", "echo unreachable")],
+                    },
+                ],
+                inputs={
+                    "verdict": {
+                        "type": "string",
+                        "default": "",
+                        "enum": ["", "approve", "reject"],
+                    }
+                },
+            ),
+        )
+        _install(
+            project_dir,
+            "parent",
+            _workflow(
+                "parent",
+                [
+                    {
+                        "id": "c",
+                        "type": "workflow",
+                        "workflow": "child",
+                        "input": {"verdict": "{{ inputs.verdict }}"},
+                        "continue_on_error": True,
+                    },
+                    _shell("after", "echo recovered"),
+                ],
+                inputs={"verdict": {"type": "string", "default": ""}},
+            ),
+        )
+
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(_definition(project_dir, "parent"), {})
+        assert state.status == RunStatus.PAUSED
+
+        resumed = engine.resume(state.run_id, {"verdict": "approve"})
+        assert resumed.status == RunStatus.COMPLETED
+        assert resumed.step_results["c"]["status"] == "failed"
+        assert resumed.workflow_scopes["c"]["status"] == "failed"
+        assert "from_json: invalid JSON" in resumed.step_results["c"]["error"]
+        assert resumed.step_results["after"]["output"]["stdout"].strip() == "recovered"
+
     @pytest.mark.parametrize("continue_on_error", [False, True])
     def test_output_evaluation_failure_uses_call_boundary(
         self, project_dir, continue_on_error
@@ -1829,6 +1933,203 @@ class TestResume:
 
 
 class TestRepeatedCalls:
+    def test_nested_if_workflow_calls_have_distinct_loop_invocations(self, project_dir):
+        _install(
+            project_dir,
+            "child",
+            _workflow(
+                "child",
+                [_shell("capture", "echo {{ inputs.value }}")],
+                inputs={"value": {"type": "string", "required": True}},
+            ),
+        )
+        _install(
+            project_dir,
+            "parent",
+            _workflow(
+                "parent",
+                [
+                    {
+                        "id": "loop",
+                        "type": "while",
+                        "condition": "{{ true }}",
+                        "max_iterations": 3,
+                        "steps": [
+                            {
+                                "id": "branch",
+                                "type": "if",
+                                "condition": "{{ true }}",
+                                "then": [
+                                    {
+                                        "id": "call",
+                                        "type": "workflow",
+                                        "workflow": "child",
+                                        "input": {"value": "{{ inputs.value }}"},
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+                inputs={"value": {"type": "string", "default": "loop"}},
+            ),
+        )
+
+        state = _run(project_dir, "parent")
+        assert state.status == RunStatus.COMPLETED
+        children = [
+            child
+            for child in state.workflow_scopes.values()
+            if child["workflow_id"] == "child"
+        ]
+        assert len(children) == 3
+        assert all(child["inputs"] == {"value": "loop"} for child in children)
+
+    def test_nested_if_workflow_calls_have_distinct_fan_out_invocations(self, project_dir):
+        _install(
+            project_dir,
+            "child",
+            _workflow(
+                "child",
+                [_shell("capture", "echo {{ inputs.value }}")],
+                inputs={"value": {"type": "string", "required": True}},
+            ),
+        )
+        _install(
+            project_dir,
+            "parent",
+            _workflow(
+                "parent",
+                [
+                    {
+                        "id": "spread",
+                        "type": "fan-out",
+                        "items": ["a", "b", "c"],
+                        "step": {
+                            "id": "branch",
+                            "type": "if",
+                            "condition": "{{ true }}",
+                            "then": [
+                                {
+                                    "id": "call",
+                                    "type": "workflow",
+                                    "workflow": "child",
+                                    "input": {"value": "{{ item }}"},
+                                }
+                            ],
+                        },
+                    }
+                ],
+            ),
+        )
+
+        state = _run(project_dir, "parent")
+        assert state.status == RunStatus.COMPLETED
+        children = [
+            child
+            for child in state.workflow_scopes.values()
+            if child["workflow_id"] == "child"
+        ]
+        assert {child["inputs"]["value"] for child in children} == {"a", "b", "c"}
+
+    def test_aborted_child_is_not_restarted_when_resuming_fan_out(self, project_dir):
+        _install(
+            project_dir,
+            "child",
+            _workflow(
+                "child",
+                [
+                    {
+                        "id": "choose",
+                        "type": "if",
+                        "condition": "{{ inputs.kind == 'pause' }}",
+                        "then": [
+                            {
+                                "id": "pause-gate",
+                                "type": "gate",
+                                "message": "continue?",
+                                "options": ["approve", "reject"],
+                                "on_reject": "abort",
+                                "verdict_input": "resume",
+                            }
+                        ],
+                        "else": [
+                            {
+                                "id": "abort-gate",
+                                "type": "gate",
+                                "message": "continue?",
+                                "options": ["approve", "reject"],
+                                "on_reject": "abort",
+                                "verdict_input": "verdict",
+                            }
+                        ],
+                    },
+                    _shell("after-gate", "echo should-not-run"),
+                ],
+                inputs={
+                    "kind": {"type": "string", "required": True},
+                    "verdict": {
+                        "type": "string",
+                        "default": "reject",
+                        "enum": ["", "approve", "reject"],
+                    },
+                    "resume": {
+                        "type": "string",
+                        "default": "",
+                        "enum": ["", "approve", "reject"],
+                    },
+                },
+            ),
+        )
+        _install(
+            project_dir,
+            "parent",
+            _workflow(
+                "parent",
+                [
+                    {
+                        "id": "spread",
+                        "type": "fan-out",
+                        "items": ["pause", "abort"],
+                        "max_concurrency": 2,
+                        "step": {
+                            "id": "call",
+                            "type": "workflow",
+                            "workflow": "child",
+                            "input": {
+                                "kind": "{{ item }}",
+                                "verdict": "{{ inputs.verdict }}",
+                                "resume": "{{ inputs.resume }}",
+                            },
+                        },
+                    }
+                ],
+                inputs={
+                    "verdict": {"type": "string", "default": "reject"},
+                    "resume": {"type": "string", "default": ""},
+                },
+            ),
+        )
+
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(_definition(project_dir, "parent"), {})
+        assert state.status == RunStatus.PAUSED
+        aborted = next(
+            child
+            for child in state.workflow_scopes.values()
+            if child["status"] == "aborted"
+        )
+        assert "after-gate" not in aborted["step_results"]
+
+        resumed = engine.resume(state.run_id, {"resume": "approve"})
+        assert resumed.status == RunStatus.ABORTED
+        aborted = next(
+            child
+            for child in resumed.workflow_scopes.values()
+            if child["status"] == "aborted"
+        )
+        assert "after-gate" not in aborted["step_results"]
+
     def test_fan_out_scopes_are_distinct(self, project_dir):
         _install(
             project_dir,

@@ -672,6 +672,7 @@ class ExecutionScope:
         data: dict[str, Any],
         *,
         complete_child: bool = False,
+        child_scope_id: str | None = None,
     ) -> None:
         """Record a step result and finalize its child in one locked write.
 
@@ -681,7 +682,7 @@ class ExecutionScope:
         root = self.root()
         state = root.root_state
         if state is None:
-            child = self.workflow_scopes.get(step_id)
+            child = self.workflow_scopes.get(child_scope_id or step_id)
             if child is not None:
                 if complete_child:
                     child.status = RunStatus.COMPLETED
@@ -695,7 +696,7 @@ class ExecutionScope:
             self.step_results[step_id] = data
             return
         with state._lock:
-            child = self.workflow_scopes.get(step_id)
+            child = self.workflow_scopes.get(child_scope_id or step_id)
             if child is not None:
                 if complete_child:
                     child.status = RunStatus.COMPLETED

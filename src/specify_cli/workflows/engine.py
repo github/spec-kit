@@ -1337,6 +1337,7 @@ class WorkflowEngine:
         registry: dict[str, Any],
         *,
         step_offset: int = 0,
+        invocation_path: tuple[str, ...] = (),
     ) -> None:
         """Execute a list of steps sequentially within *scope*."""
         for i, step_config in enumerate(steps):
@@ -1378,7 +1379,7 @@ class WorkflowEngine:
             # invocation must bypass caller-side target resolution on reentry.
             if step_type == "workflow":
                 result: StepResult = self._run_workflow_call(
-                    step_config, context, scope, registry, step_impl
+                    step_config, context, scope, registry, step_impl, invocation_path
                 )
             else:
                 result = step_impl.execute(step_config, context)
@@ -1421,6 +1422,7 @@ class WorkflowEngine:
                 scope.record_and_save(
                     context, step_id, step_data,
                     complete_child=result.status == StepStatus.COMPLETED,
+                    child_scope_id=":".join([*invocation_path, step_id]),
                 )
             else:
                 self._record_result(context, scope, step_id, step_data)
@@ -1508,9 +1510,13 @@ class WorkflowEngine:
             # A step-path stack for exact nested resume is a future
             # enhancement.
             if result.next_steps:
+                nested_path = (*invocation_path, str(step_id))
+                if step_type in ("while", "do-while"):
+                    nested_path = (*invocation_path, f"{step_id}:0")
                 self._execute_steps(
                     result.next_steps, context, scope, registry,
                     step_offset=-1,
+                    invocation_path=nested_path,
                 )
                 if scope.status in (
                     RunStatus.PAUSED,
@@ -1553,6 +1559,10 @@ class WorkflowEngine:
                             self._execute_steps(
                                 [ns_copy], context, scope, registry,
                                 step_offset=-1,
+                                invocation_path=(
+                                    *invocation_path,
+                                    f"{step_id}:{_loop_iter + 1}",
+                                ),
                             )
                             if scope.status in (
                                 RunStatus.PAUSED,
@@ -1577,7 +1587,7 @@ class WorkflowEngine:
                 if template and items:
                     fan_out_results = self._run_fan_out(
                         items, template, step_id, context, scope, registry,
-                        result.output.get("max_concurrency", 1),
+                        result.output.get("max_concurrency", 1), invocation_path,
                     )
                     context.item = None
                     # Preserve original output and add collected results
@@ -1642,17 +1652,45 @@ class WorkflowEngine:
         scope: ExecutionScope,
         registry: dict[str, Any],
         step_impl: Any,
+        invocation_path: tuple[str, ...],
     ) -> StepResult:
         """Execute (or resume) a ``type: workflow`` call in a nested scope."""
-        effective_id = step_config.get("id", "workflow")
+        step_id = step_config.get("id", "workflow")
+        effective_id = ":".join([*invocation_path, step_id])
         existing = scope.workflow_scopes.get(effective_id)
 
         if existing is not None and existing.status == RunStatus.COMPLETED:
-            recorded = scope.step_results.get(effective_id, {})
-            output = recorded.get("output")
-            return StepResult(
-                status=StepStatus.COMPLETED,
-                output=dict(output) if isinstance(output, dict) else {},
+            if existing.definition is None:  # pragma: no cover - defensive
+                return StepResult(
+                    status=StepStatus.FAILED,
+                    output={
+                        "workflow": existing.workflow_id,
+                        "status": RunStatus.FAILED.value,
+                    },
+                    error=(
+                        f"Workflow step {effective_id!r}: persisted scope has "
+                        "no definition snapshot."
+                    ),
+                )
+            return self._aggregate_workflow_result(
+                existing, existing.definition, effective_id
+            )
+
+        if existing is not None and existing.status == RunStatus.ABORTED:
+            if existing.definition is None:  # pragma: no cover - defensive
+                return StepResult(
+                    status=StepStatus.FAILED,
+                    output={
+                        "workflow": existing.workflow_id,
+                        "status": RunStatus.FAILED.value,
+                    },
+                    error=(
+                        f"Workflow step {effective_id!r}: persisted scope has "
+                        "no definition snapshot."
+                    ),
+                )
+            return self._aggregate_workflow_result(
+                existing, existing.definition, effective_id
             )
 
         if existing is not None:
@@ -1702,13 +1740,29 @@ class WorkflowEngine:
             child_scope.error = None
             start = child_scope.current_step_index
             child_context = child_scope.build_context(is_resume=True)
-            self._execute_steps(
-                definition.steps[start:],
-                child_context,
-                child_scope,
-                registry,
-                step_offset=start,
-            )
+            try:
+                self._execute_steps(
+                    definition.steps[start:],
+                    child_context,
+                    child_scope,
+                    registry,
+                    step_offset=start,
+                )
+            except Exception as exc:  # noqa: BLE001 - isolate child runtime failures
+                error = (
+                    f"Workflow step {effective_id!r}: workflow "
+                    f"{definition.id!r} failed: {exc}"
+                )
+                child_scope.pending_terminal_status = RunStatus.FAILED
+                child_scope.pending_terminal_error = error
+                return StepResult(
+                    status=StepStatus.FAILED,
+                    output={
+                        "workflow": definition.id,
+                        "status": RunStatus.FAILED.value,
+                    },
+                    error=error,
+                )
             return self._aggregate_workflow_result(
                 child_scope, definition, effective_id
             )
@@ -1788,9 +1842,25 @@ class WorkflowEngine:
         scope.persist()
 
         child_context = child_scope.build_context(is_resume=False)
-        self._execute_steps(
-            definition.steps, child_context, child_scope, registry, step_offset=0
-        )
+        try:
+            self._execute_steps(
+                definition.steps, child_context, child_scope, registry, step_offset=0
+            )
+        except Exception as exc:  # noqa: BLE001 - isolate child runtime failures
+            error = (
+                f"Workflow step {effective_id!r}: workflow "
+                f"{definition.id!r} failed: {exc}"
+            )
+            child_scope.pending_terminal_status = RunStatus.FAILED
+            child_scope.pending_terminal_error = error
+            return StepResult(
+                status=StepStatus.FAILED,
+                output={
+                    "workflow": definition.id,
+                    "status": RunStatus.FAILED.value,
+                },
+                error=error,
+            )
         return self._aggregate_workflow_result(
             child_scope, definition, effective_id
         )
@@ -1864,6 +1934,7 @@ class WorkflowEngine:
         scope: ExecutionScope,
         registry: dict[str, Any],
         max_concurrency: Any,
+        invocation_path: tuple[str, ...] = (),
     ) -> list[Any]:
         """Run a fan-out template once per item; return per-item outputs in item order.
 
@@ -1913,7 +1984,12 @@ class WorkflowEngine:
             item_step = dict(template)
             item_step["id"] = item_id(idx)
             self._execute_steps(
-                [item_step], item_ctx, scope, registry, step_offset=-1,
+                [item_step],
+                item_ctx,
+                scope,
+                registry,
+                step_offset=-1,
+                invocation_path=invocation_path,
             )
             # Read back through the context that was actually executed against,
             # not the outer closure — clearer and robust if StepContext copying
