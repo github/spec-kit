@@ -1,6 +1,6 @@
 # Reference
 
-The Specify CLI (`specify`) manages the full lifecycle of Spec-Driven Development — from project initialization to workflow automation. This section is the detailed reference for the CLI's commands and primitives, plus the agentic `/speckit.*` processes your coding agent runs.
+The Specify CLI (`specify`) manages the full lifecycle of Spec-Driven Development — from project initialization to workflow automation. This section is the detailed reference for the CLI's commands and primitives, plus the agentic `/speckit-*` processes your coding agent runs.
 
 ## Core Commands
 
@@ -48,14 +48,14 @@ Bundles compose existing extensions, presets, workflows, and steps into a single
 
 The sections above cover primitives managed by the `specify` CLI. The following
 are independent processes your coding agent runs, not terminal commands. The
-references use `/speckit.*` notation; see
+references use GitHub Copilot's default `/speckit-*` notation; see
 [Command invocation](integrations.md#command-invocation) for your agent's syntax.
 For guided examples, start with [SDD](../quickstart.md),
 [bug fixing](../guides/bugfix.md), or [idea assessment](../guides/assessment.md).
 
 ### Agentic SDD
 
-The `/speckit.*` slash commands that drive the core Spec-Driven Development process your coding agent runs step by step: constitution, specify, clarify, plan, checklist, tasks, analyze, implement, and converge. Run them in order, adding the clarify/checklist/analyze quality gates for anything with meaningful ambiguity.
+The `/speckit-*` slash commands that drive the core Spec-Driven Development process your coding agent runs step by step: constitution, specify, clarify, plan, checklist, tasks, analyze, implement, and converge. Run them in order, adding the clarify/checklist/analyze quality gates for anything with meaningful ambiguity.
 
 [Agentic SDD reference →](agentic-sdd.md)
 
