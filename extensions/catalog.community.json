@@ -5776,7 +5776,6 @@
       "tags": [
         "testing",
         "playwright",
-        "validation",
         "acceptance",
         "e2e",
         "csv"
