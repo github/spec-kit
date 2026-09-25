@@ -7,11 +7,11 @@ import os
 import pytest
 
 
-
 class TestWorkflowStepAddCLI:
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_add_rejects_symlinked_steps_base_dir(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
+
         from specify_cli import app
         from specify_cli.workflows.step.catalog import StepCatalog
 
@@ -40,13 +40,14 @@ class TestWorkflowStepAddCLI:
 
     def test_add_rejects_oversized_step_response(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
+
         from specify_cli import app
-        from specify_cli.workflows import _commands as wf_commands
-        from specify_cli.workflows.step.catalog import StepCatalog
         from specify_cli.authentication import http as auth_http
+        from specify_cli.workflows.step import command_add
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         monkeypatch.chdir(project_dir)
-        monkeypatch.setattr(wf_commands, "_MAX_WORKFLOW_YAML_BYTES", 100)
+        monkeypatch.setattr(command_add, "_MAX_STEP_CATALOG_RESPONSE_BYTES", 100)
         monkeypatch.setattr(
             StepCatalog,
             "get_step_info",
@@ -96,7 +97,7 @@ class TestWorkflowStepAddCLI:
 
         assert result.exit_code != 0
         assert (
-            "responseexceedsthe100-byteworkflowsizelimit"
+            "steppackageresponse'exceedsmaximumsizeof100bytes"
             in "".join(result.output.split())
         )
         assert not (
@@ -118,9 +119,10 @@ class TestWorkflowStepAddCLI:
         genuinely empty document, so it must be distinguished (via
         ``yaml.compose``) and rejected too, rather than defaulting to {}."""
         from typer.testing import CliRunner
+
         from specify_cli import app
-        from specify_cli.workflows.step.catalog import StepCatalog
         from specify_cli.authentication import http as auth_http
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         monkeypatch.chdir(project_dir)
         monkeypatch.setattr(
@@ -441,9 +443,10 @@ class TestWorkflowStepAddCLI:
 
     def test_add_rejects_non_string_extra_files_key(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
+
         from specify_cli import app
-        from specify_cli.workflows.step.catalog import StepCatalog
         from specify_cli.authentication import http as auth_http
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         monkeypatch.chdir(project_dir)
 
@@ -505,9 +508,10 @@ class TestWorkflowStepAddCLI:
         self, project_dir, monkeypatch, rel_path, expected
     ):
         from typer.testing import CliRunner
+
         from specify_cli import app
-        from specify_cli.workflows.step.catalog import StepCatalog
         from specify_cli.authentication import http as auth_http
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         monkeypatch.chdir(project_dir)
 
@@ -556,9 +560,10 @@ class TestWorkflowStepAddCLI:
 
     def test_add_rejects_non_string_extra_files_url(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
+
         from specify_cli import app
-        from specify_cli.workflows.step.catalog import StepCatalog
         from specify_cli.authentication import http as auth_http
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         monkeypatch.chdir(project_dir)
 
@@ -692,6 +697,7 @@ def _valid_archive_files(type_key="my-step"):
 class TestWorkflowStepAddSources:
     def test_dev_installs_and_loads(self, project_dir, tmp_path, monkeypatch):
         from typer.testing import CliRunner
+
         from specify_cli import app
         from specify_cli.workflows import STEP_REGISTRY, load_custom_steps
 
@@ -715,6 +721,7 @@ class TestWorkflowStepAddSources:
 
     def test_dev_install_list_and_remove(self, project_dir, tmp_path, monkeypatch):
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         package = _write_package(tmp_path, type_key="dev-step")
@@ -739,6 +746,7 @@ class TestWorkflowStepAddSources:
 
     def test_dev_rejects_missing_init(self, project_dir, tmp_path, monkeypatch):
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         package = _write_package(tmp_path, type_key="dev-step")
@@ -755,6 +763,7 @@ class TestWorkflowStepAddSources:
         if not hasattr(os, "symlink"):
             pytest.skip("symlinks are unavailable")
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         package = _write_package(tmp_path, type_key="dev-step")
@@ -770,6 +779,7 @@ class TestWorkflowStepAddSources:
 
     def test_dev_and_from_are_mutually_exclusive(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         monkeypatch.chdir(project_dir)
@@ -792,6 +802,7 @@ class TestWorkflowStepAddSources:
     @pytest.mark.parametrize("option", ["--dev", "--from"])
     def test_empty_source_value_rejected(self, project_dir, monkeypatch, option):
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         monkeypatch.chdir(project_dir)
@@ -802,6 +813,7 @@ class TestWorkflowStepAddSources:
 
     def test_force_replaces_installed_package(self, project_dir, tmp_path, monkeypatch):
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         package = _write_package(tmp_path, type_key="dev-step", init_body="# old\n")
@@ -834,6 +846,7 @@ class TestWorkflowStepAddSources:
 
     def test_force_replaces_orphaned_directory(self, project_dir, tmp_path, monkeypatch):
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         orphan = (
@@ -858,6 +871,7 @@ class TestWorkflowStepAddSources:
     ):
         import typer
         from typer.testing import CliRunner
+
         from specify_cli import app
         from specify_cli.authentication import http as auth_http
 
@@ -900,6 +914,7 @@ class TestWorkflowStepAddSources:
     ):
         import typer
         from typer.testing import CliRunner
+
         from specify_cli import app
         from specify_cli.authentication import http as auth_http
 
@@ -924,6 +939,7 @@ class TestWorkflowStepAddSources:
 
     def test_from_rejects_non_https(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         monkeypatch.chdir(project_dir)
@@ -943,6 +959,7 @@ class TestWorkflowStepAddSources:
 
     def test_from_rejects_malformed_url(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         monkeypatch.chdir(project_dir)
@@ -963,6 +980,7 @@ class TestWorkflowStepAddSources:
     def test_from_rejects_redirect_to_non_https(self, project_dir, monkeypatch):
         import typer
         from typer.testing import CliRunner
+
         from specify_cli import app
         from specify_cli.authentication import http as auth_http
 
@@ -993,6 +1011,7 @@ class TestWorkflowStepAddSources:
     def test_from_rejects_non_archive_body(self, project_dir, monkeypatch):
         import typer
         from typer.testing import CliRunner
+
         from specify_cli import app
         from specify_cli.authentication import http as auth_http
 
@@ -1025,6 +1044,7 @@ class TestWorkflowStepAddSources:
     ):
         import typer
         from typer.testing import CliRunner
+
         from specify_cli import app
         from specify_cli.authentication import http as auth_http
 
@@ -1058,11 +1078,69 @@ class TestWorkflowStepAddSources:
         assert result.exit_code != 0
         assert "exactly one top-level" in result.output
 
+    def test_from_rejects_original_url_format_mismatch_after_redirect(
+        self, project_dir, monkeypatch
+    ):
+        import typer
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.authentication import http as auth_http
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(typer, "confirm", lambda *a, **k: True)
+        body = _make_tar_gz(_valid_archive_files())
+        monkeypatch.setattr(
+            auth_http,
+            "open_url",
+            lambda url, timeout=30, redirect_validator=None, extra_headers=None: (
+                _ArchiveResponse("https://example.com/download", body, None)
+            ),
+        )
+
+        result = CliRunner().invoke(
+            app, ["workflow", "step", "add", "my-step", "--from", "https://example.com/pkg.zip"]
+        )
+
+        assert result.exit_code != 0
+        assert "Archive format mismatch" in result.output
+
+    def test_from_escapes_installed_name(self, project_dir, monkeypatch):
+        import typer
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.authentication import http as auth_http
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(typer, "confirm", lambda *a, **k: True)
+        body = _make_zip(
+            {
+                "step.yml": "step:\n  type_key: my-step\n  name: '[/]'\n",
+                "__init__.py": "# init\n",
+            }
+        )
+        monkeypatch.setattr(
+            auth_http,
+            "open_url",
+            lambda url, timeout=30, redirect_validator=None, extra_headers=None: (
+                _ArchiveResponse(url, body, "application/zip")
+            ),
+        )
+
+        result = CliRunner().invoke(
+            app, ["workflow", "step", "add", "my-step", "--from", "https://example.com/pkg.zip"]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "[/]" in result.output
+
     def test_from_denied_when_already_installed_errors_before_prompt(
         self, project_dir, tmp_path, monkeypatch
     ):
         import typer
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         package = _write_package(tmp_path, type_key="my-step")
@@ -1139,6 +1217,7 @@ class DevStep(StepBase):
         self, project_dir, tmp_path, monkeypatch
     ):
         from typer.testing import CliRunner
+
         from specify_cli import app
         from specify_cli.workflows import load_custom_steps
 

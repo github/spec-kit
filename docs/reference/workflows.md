@@ -652,12 +652,18 @@ Every source is validated identically before anything is committed:
   directory are rejected — including inside excluded directories.
 - `.git`, `__pycache__`, and `.DS_Store` entries are excluded from the copy and
   from the limits.
-- A package may contain at most **512 files** and **50 MiB** in total.
-- `__init__.py` is **not imported** during installation; it is loaded only when
-  the step runs.
+- The installed-package policy permits at most **512 retained files** and
+  **50 MiB** of retained content. Excluded entries do not consume this budget.
+- Archive URLs also pass transport/extraction safety limits before package
+  validation: at most 512 archive entries, 50 MiB downloaded or extracted, and
+  10 MiB per archive member. Catalog files have a 50 MiB per-response bound.
+- Installation validates and copies the package but does **not** import or
+  execute `__init__.py`. Installed custom step modules are loaded during startup
+  of `workflow add`, `workflow run`, and `workflow resume`, before any particular
+  custom step necessarily executes.
 
-> **Security note:** Installing a custom step runs its Python with **your**
-> privileges. Only install step packages from sources you trust.
+> **Security note:** Loading a custom step runs its Python with **your**
+> privileges. Only install and retain step packages from sources you trust.
 
 #### Listing, running, and removing
 

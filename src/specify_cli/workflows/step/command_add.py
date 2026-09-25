@@ -14,6 +14,8 @@ from .. import _commands as cli
 from . import _helpers as step_helpers
 from . import step_app
 
+_MAX_STEP_CATALOG_RESPONSE_BYTES = 50 * 1024 * 1024
+
 
 def _cleanup_download_tmp_path(tmp_path: cli.Path | None) -> None:
     """Best-effort unlink of a partially-downloaded step archive temp file.
@@ -35,7 +37,11 @@ def _cleanup_download_tmp_path(tmp_path: cli.Path | None) -> None:
 
 def _print_installed(step_id: str, entry: dict) -> None:
     step_name = entry.get("name") or step_id
-    cli.console.print(f"[green]✓[/green] Step type '{step_name}' ({step_id}) installed")
+    cli.console.print(
+        "[green]✓[/green] Step type "
+        f"'{cli._escape_markup(str(step_name))}' "
+        f"({cli._escape_markup(str(step_id))}) installed"
+    )
     cli.console.print(
         "  Use [cyan]specify workflow step list[/cyan] to verify the installation."
     )
@@ -126,6 +132,8 @@ def _install_from_url(
     download_url = from_url
     extra_headers = None
     tmp_path: cli.Path | None = None
+    extract_tmp: tempfile.TemporaryDirectory[str] | None = None
+    committed = False
     try:
         resolved_url = _resolve_gh_asset(
             from_url,
@@ -154,15 +162,29 @@ def _install_from_url(
                 if hasattr(resp, "getheader")
                 else None
             )
-            archive_format = (
-                cli.archive_format_from_name(final_url)
-                or cli.archive_format_from_name(from_url)
-                or cli.archive_format_from_content_type(content_type)
-            )
+            declarations = [
+                ("requested URL", from_url, cli.archive_format_from_name(from_url)),
+                ("final URL", final_url, cli.archive_format_from_name(final_url)),
+                (
+                    "Content-Type",
+                    content_type or "",
+                    cli.archive_format_from_content_type(content_type),
+                ),
+            ]
+            recognized = [item for item in declarations if item[2] is not None]
+            archive_format = recognized[0][2] if recognized else None
             if archive_format is None:
                 raise installer.StepInstallError(
                     "URL does not reference a supported archive "
                     "(.zip, .tar.gz, or .tgz)"
+                )
+            if any(item[2] != archive_format for item in recognized):
+                details = ", ".join(
+                    f"{label} declares {declared}"
+                    for label, _value, declared in recognized
+                )
+                raise installer.StepInstallError(
+                    f"Archive format mismatch: {cli._escape_markup(details)}"
                 )
             downloaded = cli.read_response_limited(
                 resp,
@@ -176,15 +198,16 @@ def _install_from_url(
             tmp_path = cli.Path(tmp.name)
             tmp.write(downloaded)
 
-        with tempfile.TemporaryDirectory(
-            prefix="speckit-step-archive-"
-        ) as extract_dir:
-            extracted_root = cli.Path(extract_dir)
+        extract_tmp = tempfile.TemporaryDirectory(prefix="speckit-step-archive-")
+        extracted_root = cli.Path(extract_tmp.name)
+        try:
             # safe_extract_archive re-detects and confirms the archive bytes.
             cli.safe_extract_archive(
                 tmp_path,
                 extracted_root,
-                source_name=final_url,
+                source_name=next(
+                    value for _label, value, declared in recognized if declared is not None
+                ),
                 content_type=content_type,
             )
             package_root = installer.resolve_package_root(extracted_root)
@@ -195,6 +218,22 @@ def _install_from_url(
                 source="url",
                 force=force,
             )
+            committed = True
+        finally:
+            try:
+                extract_tmp.cleanup()
+            except OSError as cleanup_exc:
+                if committed:
+                    cli.console.print(
+                        "[yellow]Warning:[/yellow] Could not remove temporary step "
+                        f"archive directory: {cli._escape_markup(str(cleanup_exc))} "
+                        f"(path: {cli._escape_markup(extract_tmp.name)})"
+                    )
+                elif __import__("sys").exc_info()[0] is None:
+                    raise installer.StepInstallError(
+                        "Failed to remove temporary step archive directory: "
+                        f"{cleanup_exc}"
+                    ) from cleanup_exc
     except cli.typer.Exit:
         raise
     except installer.StepInstallError:
@@ -322,10 +361,17 @@ def _install_from_catalog(project_root: cli.Path, step_id: str, *, force: bool) 
             final_url = resp.geturl()
             if not cli.is_https_or_localhost_http(final_url):
                 raise ValueError(f"Redirect to non-HTTPS URL: {final_url}")
-            return cli._read_response_within_limit(resp)
+            return cli.read_response_limited(
+                resp,
+                max_bytes=_MAX_STEP_CATALOG_RESPONSE_BYTES,
+                error_type=ValueError,
+                label="step package response",
+            )
 
-    with tempfile.TemporaryDirectory(prefix="speckit-step-package-") as package_tmp:
-        package_dir = cli.Path(package_tmp)
+    package_tmp = tempfile.TemporaryDirectory(prefix="speckit-step-package-")
+    package_dir = cli.Path(package_tmp.name)
+    committed = False
+    try:
         try:
             step_yml_content = _safe_fetch(step_yml_url)
             init_py_content = _safe_fetch(init_url)
@@ -408,6 +454,22 @@ def _install_from_catalog(project_root: cli.Path, step_id: str, *, force: bool) 
             catalog_metadata=info,
             force=force,
         )
+        committed = True
+    finally:
+        try:
+            package_tmp.cleanup()
+        except OSError as cleanup_exc:
+            if committed:
+                cli.console.print(
+                    "[yellow]Warning:[/yellow] Could not remove temporary step "
+                    f"package directory: {cli._escape_markup(str(cleanup_exc))} "
+                    f"(path: {cli._escape_markup(package_tmp.name)})"
+                )
+            elif __import__("sys").exc_info()[0] is None:
+                raise installer.StepInstallError(
+                    "Failed to remove temporary step package directory: "
+                    f"{cleanup_exc}"
+                ) from cleanup_exc
 
     _print_installed(step_id, entry)
 

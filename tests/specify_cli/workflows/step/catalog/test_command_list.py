@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 
-
-
-
 class TestWorkflowCliAlignment:
     """CLI alignment with extension/preset commands (#2342)."""
 
     def test_step_catalog_list_escapes_rich_markup(self, project_dir, monkeypatch):
         """User-editable step-catalog name/url/description must not be parsed as Rich markup."""
         from typer.testing import CliRunner
+
         from specify_cli import app
         from specify_cli.workflows.step.catalog import StepCatalog
 

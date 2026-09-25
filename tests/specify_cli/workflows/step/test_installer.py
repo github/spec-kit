@@ -388,6 +388,38 @@ def test_catalog_provenance_shape(tmp_path, project_dir):
     assert entry["author"] == "author"
 
 
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("name", "2026-09-24"),
+        ("version", "2026-09-24"),
+        ("description", "2026-09-24"),
+        ("author", "2026-09-24"),
+    ],
+)
+def test_rejects_non_string_persisted_metadata_before_publication(
+    tmp_path, project_dir, field, value
+):
+    pkg = _write_package(tmp_path / "pkg")
+    (pkg / "step.yml").write_text(
+        f"step:\n  type_key: my-step\n  {field}: {value}\n", encoding="utf-8"
+    )
+
+    with pytest.raises(installer.StepInstallError, match="must be a string"):
+        installer.install_step_package(project_dir, "my-step", pkg, source="local")
+
+    assert not (_steps_dir(project_dir) / "my-step").exists()
+
+
+def test_rejects_unknown_source_before_creating_steps_dir(tmp_path, project_dir):
+    pkg = _write_package(tmp_path / "pkg")
+
+    with pytest.raises(installer.StepInstallError, match="source"):
+        installer.install_step_package(project_dir, "my-step", pkg, source="unknown")
+
+    assert not _steps_dir(project_dir).exists()
+
+
 # ---------------------------------------------------------------------------
 # Failure handling
 # ---------------------------------------------------------------------------
@@ -449,6 +481,22 @@ def test_staging_validation_failure_preserves_old_install(
     ) == "# old\n"
 
 
+def test_uses_metadata_from_staged_copy(tmp_path, project_dir, monkeypatch):
+    pkg = _write_package(tmp_path / "pkg")
+    original_copy = installer._copy_package_tree
+
+    def _copy_then_change(source, target):
+        original_copy(source, target)
+        (target / "step.yml").write_text(
+            "step:\n  type_key: my-step\n  name: Staged Name\n", encoding="utf-8"
+        )
+
+    monkeypatch.setattr(installer, "_copy_package_tree", _copy_then_change)
+    entry = installer.install_step_package(project_dir, "my-step", pkg, source="local")
+
+    assert entry["name"] == "Staged Name"
+
+
 def test_force_registry_failure_warns_reinstall(
     tmp_path, project_dir, monkeypatch
 ):
@@ -468,6 +516,10 @@ def test_force_registry_failure_warns_reinstall(
             project_dir, "my-step", new_pkg, source="local", force=True
         )
     assert "reinstall" in str(exc.value).lower()
+    # The previous install stays registered even though its metadata was not
+    # updated, so the message must not claim it is unregistered.
+    assert "not registered" not in str(exc.value).lower()
+    assert StepRegistry(project_dir).is_installed("my-step")
     assert (_steps_dir(project_dir) / "my-step" / "__init__.py").read_text(
         encoding="utf-8"
     ) == "# new\n"
@@ -543,6 +595,134 @@ def test_no_backup_artifacts_after_force(tmp_path, project_dir):
 
     names = sorted(path.name for path in _steps_dir(project_dir).iterdir())
     assert names == ["my-step", "step-registry.json"]
+
+
+def _install_race_setup(tmp_path, project_dir, monkeypatch, *, force_b):
+    """Drive two concurrent installs against the install lock.
+
+    Installer A is paused inside the locked critical section while installer B
+    is guaranteed to be blocked on the lock (its ``fcntl.flock`` attempt has
+    been observed). The caller resumes A via the returned ``release_a`` event,
+    then joins both threads and inspects ``outcomes``.
+    """
+    import fcntl
+    import threading
+
+    pkg_a = _write_package(tmp_path / "pkg-a", init_body="# a\n")
+    pkg_b = _write_package(tmp_path / "pkg-b", init_body="# b\n")
+
+    class Race:
+        a_inside = threading.Event()
+        release_a = threading.Event()
+        b_attempted_lock = threading.Event()
+        b_inside_replace = threading.Event()
+        outcomes: dict[str, Exception | None] = {}
+        thread_a = None
+        thread_b = None
+
+    race = Race()
+    real_replace = installer._replace_install
+    real_flock = fcntl.flock
+
+    def _replace(step_dir, staged_dir, registry, step_id, entry, *, force):
+        if threading.current_thread().name == "installer-a":
+            race.a_inside.set()
+            if not race.release_a.wait(10):
+                raise AssertionError("installer A was never released")
+        else:
+            race.b_inside_replace.set()
+        return real_replace(
+            step_dir, staged_dir, registry, step_id, entry, force=force
+        )
+
+    def _flock(fd, operation):
+        if (
+            threading.current_thread().name == "installer-b"
+            and operation == fcntl.LOCK_EX
+        ):
+            race.b_attempted_lock.set()
+        return real_flock(fd, operation)
+
+    monkeypatch.setattr(installer, "_replace_install", _replace)
+    monkeypatch.setattr(fcntl, "flock", _flock)
+
+    def _install(label, pkg, force):
+        try:
+            installer.install_step_package(
+                project_dir, "my-step", pkg, source="local", force=force
+            )
+        except Exception as exc:  # noqa: BLE001 - recorded for assertions
+            race.outcomes[label] = exc
+        else:
+            race.outcomes[label] = None
+
+    race.thread_a = threading.Thread(
+        target=_install, args=("a", pkg_a, False), name="installer-a", daemon=True
+    )
+    race.thread_b = threading.Thread(
+        target=_install, args=("b", pkg_b, force_b), name="installer-b", daemon=True
+    )
+
+    race.thread_a.start()
+    assert race.a_inside.wait(10), "installer A never reached the critical section"
+    race.thread_b.start()
+    assert race.b_attempted_lock.wait(10), "installer B never attempted the lock"
+    return race
+
+
+def _finish_race(race):
+    race.release_a.set()
+    race.thread_a.join(timeout=10)
+    race.thread_b.join(timeout=10)
+    assert not race.thread_a.is_alive()
+    assert not race.thread_b.is_alive()
+
+
+def test_install_lock_blocks_concurrent_duplicate(tmp_path, project_dir, monkeypatch):
+    """A second install of the same id waits for the lock and sees A's commit.
+
+    B can never enter the swap while A holds it; once A commits, B reloads the
+    registry inside the lock and fails as a duplicate instead of overwriting.
+    """
+    if os.name == "nt":
+        pytest.skip("fcntl.flock is POSIX-only")
+
+    race = _install_race_setup(tmp_path, project_dir, monkeypatch, force_b=False)
+    # A holds the lock, so B cannot have reached the directory swap.
+    assert not race.b_inside_replace.is_set()
+
+    _finish_race(race)
+
+    assert race.outcomes["a"] is None
+    assert isinstance(race.outcomes["b"], installer.StepInstallError)
+    assert "already installed" in str(race.outcomes["b"])
+    # B never swapped, so A's install is intact.
+    assert not race.b_inside_replace.is_set()
+    assert (_steps_dir(project_dir) / "my-step" / "__init__.py").read_text(
+        encoding="utf-8"
+    ) == "# a\n"
+    assert _registry_entry(project_dir, "my-step")["source"] == "local"
+
+
+def test_install_lock_serializes_force_replace(tmp_path, project_dir, monkeypatch):
+    """A forced install swaps only after the lock is released by the first."""
+    if os.name == "nt":
+        pytest.skip("fcntl.flock is POSIX-only")
+
+    race = _install_race_setup(tmp_path, project_dir, monkeypatch, force_b=True)
+    # B is blocked on the lock and has not swapped A's package yet.
+    assert not race.b_inside_replace.is_set()
+
+    _finish_race(race)
+
+    assert race.outcomes["a"] is None
+    assert race.outcomes["b"] is None
+    # B reached the swap only after A committed, and its package won.
+    assert race.b_inside_replace.is_set()
+    assert (_steps_dir(project_dir) / "my-step" / "__init__.py").read_text(
+        encoding="utf-8"
+    ) == "# b\n"
+    assert _registry_entry(project_dir, "my-step")["type_key"] == "my-step"
 
 
 def test_loader_does_not_discover_staging_package(project_dir):
