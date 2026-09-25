@@ -3277,6 +3277,73 @@ class TestExtensionManager:
         assert backup_file.exists()
         assert backup_file.read_text() == "test: config"
 
+    def test_remove_rejects_unsafe_registry_id(self, project_dir):
+        """A tampered registry entry must not reach path construction.
+
+        The registry file is user-editable JSON; an id like ``../outside``
+        would otherwise let ``remove()`` build a deletion target outside
+        ``.specify/extensions``.
+        """
+        manager = ExtensionManager(project_dir)
+        unsafe_id = "../outside-target"
+        manager.registry.add(unsafe_id, {"version": "1.0.0"})
+        assert manager.registry.is_installed(unsafe_id)
+
+        outside_target = project_dir / ".specify" / "outside-target"
+        outside_target.mkdir()
+        (outside_target / "keep.txt").write_text("do not delete")
+
+        result = manager.remove(unsafe_id)
+
+        assert result is False
+        assert outside_target.exists()
+        assert (outside_target / "keep.txt").exists()
+        # Refused before the registry entry was mutated.
+        assert manager.registry.is_installed(unsafe_id)
+
+    def test_remove_refuses_symlinked_extension_dir(self, project_dir):
+        """A symlinked extension directory must fail explicitly, not be deleted."""
+        manager = ExtensionManager(project_dir)
+        manager.registry.add("test-ext", {"version": "1.0.0"})
+
+        real_target = project_dir.parent / "real-target"
+        real_target.mkdir()
+        (real_target / "important.txt").write_text("do not delete")
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        ext_dir.symlink_to(real_target, target_is_directory=True)
+
+        result = manager.remove("test-ext")
+
+        assert result is False
+        assert real_target.exists()
+        assert (real_target / "important.txt").exists()
+        assert ext_dir.is_symlink()
+        assert manager.registry.is_installed("test-ext")
+
+    def test_remove_refuses_symlinked_backup_dir(self, extension_dir, project_dir):
+        """Config backups must not be redirected through a symlinked destination."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("test: config")
+
+        backup_root = project_dir / ".specify" / "extensions" / ".backup"
+        backup_root.mkdir(parents=True, exist_ok=True)
+        outside_target = project_dir.parent / "outside-backup"
+        outside_target.mkdir()
+        (backup_root / "test-ext").symlink_to(outside_target, target_is_directory=True)
+
+        result = manager.remove("test-ext", keep_config=False)
+
+        assert result is False
+        assert ext_dir.exists()
+        assert config_file.exists()
+        assert not (outside_target / "test-ext-config.yml").exists()
+        assert manager.registry.is_installed("test-ext")
+
 
 # ===== CommandRegistrar Tests =====
 

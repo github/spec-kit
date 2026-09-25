@@ -640,6 +640,17 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         if not self.registry.is_installed(pack_id):
             return False
 
+        # A registered pack_id is trusted only as far as the registry file
+        # itself is trustworthy; validate it as a single, well-formed path
+        # component before it is used to construct the removal target, and
+        # refuse a target that is not a real directory (e.g. a symlink
+        # planted to redirect the deletion elsewhere).
+        if not PresetResolver._is_safe_registry_id(pack_id):
+            return False
+        pack_dir = self.presets_dir / pack_id
+        if pack_dir.exists() and (pack_dir.is_symlink() or not pack_dir.is_dir()):
+            return False
+
         metadata = self.registry.get(pack_id)
         # Restore original skills when preset is removed
         registered_skills = metadata.get("registered_skills", []) if metadata else []
@@ -668,7 +679,6 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 fallback_agent=fallback_agent,
             )
         registered_commands = metadata.get("registered_commands", {}) if metadata else {}
-        pack_dir = self.presets_dir / pack_id
 
         # Record which historical agents this preset's registered_commands
         # actually targeted, *before* any filtering below, so post-removal
