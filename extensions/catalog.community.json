@@ -5764,6 +5764,7 @@
         "tools": [
           {
             "name": "playwright",
+            "version": ">0.0.10",
             "required": true
           }
         ]
