@@ -335,6 +335,7 @@ When an installed workflow is refreshed or reinstalled, project overlays in `.sp
 - An overlay that targets a step id that does not exist in the base workflow will raise a validation error when the workflow is resolved.
 - Overlays cannot target steps added by other overlays.
 - Overlays cannot add new inputs or change the input schema of the base workflow.
+
 ## Update Workflows
 
 ```bash

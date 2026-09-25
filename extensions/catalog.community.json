@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-23T00:00:00Z",
+  "updated_at": "2026-09-24T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -323,6 +323,51 @@
       "stars": 0,
       "created_at": "2026-08-28T00:00:00Z",
       "updated_at": "2026-08-28T00:00:00Z"
+    },
+    "agentstandards": {
+      "name": "Agentstandards Architecture Council",
+      "id": "agentstandards",
+      "description": "Run a bounded, multi-vendor architecture council between Spec Kit planning and task generation.",
+      "author": "bbjwz",
+      "version": "0.1.0",
+      "download_url": "https://github.com/bbjwz/agentstandards/releases/download/v0.1.0/agentstandards-0.1.0.zip",
+      "sha256": "3291003d4d4d1f6ca32a0c1c2aa908a887d3ded2b69ce38deb09abc5daf89e90",
+      "repository": "https://github.com/bbjwz/agentstandards",
+      "homepage": "https://github.com/bbjwz/agentstandards",
+      "documentation": "https://github.com/bbjwz/agentstandards/blob/v0.1.0/README.md",
+      "changelog": "https://github.com/bbjwz/agentstandards/blob/v0.1.0/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.8,<2.0.0",
+        "tools": [
+          {
+            "name": "uv",
+            "required": true
+          },
+          {
+            "name": "codex",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 2
+      },
+      "tags": [
+        "architecture",
+        "multi-agent",
+        "multi-vendor",
+        "governance",
+        "codex"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-24T00:00:00Z",
+      "updated_at": "2026-09-24T00:00:00Z"
     },
     "analytics": {
       "name": "Analytics",
@@ -3569,14 +3614,15 @@
     "okf": {
       "name": "OKF Knowledge Bundle Generator",
       "id": "okf",
-      "description": "Generates and maintains an Open Knowledge Format (OKF v0.1) knowledge bundle from a source-code repository, mining git history for rationale and parking what it cannot verify as open questions.",
+      "description": "Generates and maintains an Open Knowledge Format (OKF v0.1) knowledge bundle from a source-code repository. Mines git history for the rationale behind the code, parks what it cannot establish as open questions rather than guessing, and verifies that the bundle's claims are actually supported by the repository.",
       "author": "Alex Punnen",
-      "version": "0.5.0",
-      "download_url": "https://github.com/alexcpn/speckit_okf/archive/refs/tags/v0.5.0.zip",
-      "repository": "https://github.com/alexcpn/speckit_okf",
-      "homepage": "https://github.com/alexcpn/speckit_okf",
-      "documentation": "https://github.com/alexcpn/speckit_okf/blob/main/README.md",
-      "changelog": "https://github.com/alexcpn/speckit_okf/blob/main/CHANGELOG.md",
+      "version": "0.9.2",
+      "download_url": "https://github.com/alexcpn/catalogify/releases/download/v0.9.2/speckit-okf-0.9.2.zip",
+      "sha256": "b426c135dc2d6c6bd11b286c70273f5ae28db5d2a2252acd9768cfb893b9b303",
+      "repository": "https://github.com/alexcpn/catalogify",
+      "homepage": "https://github.com/alexcpn/catalogify",
+      "documentation": "https://github.com/alexcpn/catalogify/blob/main/integrations/speckit/README.md",
+      "changelog": "https://github.com/alexcpn/catalogify/releases",
       "license": "MIT",
       "category": "docs",
       "effect": "read-write",
@@ -3599,7 +3645,7 @@
         ]
       },
       "provides": {
-        "commands": 4,
+        "commands": 5,
         "hooks": 0
       },
       "tags": [
@@ -3613,7 +3659,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-17T00:00:00Z",
-      "updated_at": "2026-09-08T00:00:00Z"
+      "updated_at": "2026-09-23T00:00:00Z"
     },
     "onboard": {
       "name": "Onboard",
@@ -5052,9 +5098,9 @@
       "id": "specassay-check",
       "description": "Gate 2 refuses silent gaps and emits a trace-manifest (`trace-manifest.json`).",
       "author": "Rik Dryfoos",
-      "version": "0.5.1",
-      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.1/specassay-check-0.5.1.zip",
-      "sha256": "874728251c850e84d71f7a94dbdc326073703a8b408690d87a62b68d43dc6eff",
+      "version": "0.5.2",
+      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.2/specassay-check-0.5.2.zip",
+      "sha256": "f481c6794d0cffc6d532721c1acc378287ba291b3e74dbe1e54eef083d1e7a20",
       "repository": "https://github.com/rdryfoos/specassay",
       "homepage": "https://www.specassay.com",
       "documentation": "https://github.com/rdryfoos/specassay/blob/main/extensions/specassay-check/README.md",
@@ -5091,7 +5137,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-13T00:00:00Z",
-      "updated_at": "2026-09-23T00:00:00Z"
+      "updated_at": "2026-09-24T00:00:00Z"
     },
     "specjudge": {
       "name": "SpecJudge — right-size the model before you implement",

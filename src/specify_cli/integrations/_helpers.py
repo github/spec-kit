@@ -479,6 +479,60 @@ def _register_presets_for_agent(
         )
 
 
+def _resync_manifest_after_registration(
+    new_manifest: Any,
+    agent_key: str,
+    *,
+    continuing: str,
+) -> None:
+    """Refresh tracked-file hashes after extensions/presets re-registration.
+
+    ``_register_extensions_for_agent`` / ``_register_presets_for_agent`` run
+    after ``new_manifest`` is saved and can overwrite files it already
+    tracks (e.g. a preset overriding a core command rendered as a skill).
+    Nothing else touches the project between the manifest save and these
+    calls, so any tracked file whose bytes now differ was changed by our own
+    registration step, not by the user — re-hash it and persist the refresh
+    so ``check_modified()`` doesn't misreport a legitimate override as
+    tampering (see #4696).
+
+    Best-effort: registration itself is best-effort, so a failure here must
+    not abort the surrounding upgrade/use/switch transaction.
+    """
+    try:
+        changed = False
+        for rel in new_manifest.files:
+            abs_path = new_manifest.project_root / rel
+            try:
+                if abs_path.is_symlink() or not abs_path.is_file():
+                    continue
+                new_manifest.record_existing(rel)
+                changed = True
+            except (ValueError, OSError) as file_err:
+                from .. import _print_cli_warning
+
+                _print_cli_warning(
+                    "resync manifest hash for",
+                    "file",
+                    str(rel),
+                    file_err,
+                    continuing="Continuing with the remaining files.",
+                )
+                continue
+        if changed:
+            new_manifest.save()
+    except Exception as resync_err:
+        from .. import _print_cli_warning
+
+        _print_cli_warning(
+            "resync manifest hashes for",
+            "integration",
+            agent_key,
+            resync_err,
+            continuing=continuing,
+        )
+
+
 def _unregister_presets_for_agent(
     project_root: Path,
     agent_key: str,
