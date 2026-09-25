@@ -1012,6 +1012,50 @@ class TestPresetManager:
         result = manager.remove("nonexistent")
         assert result is False
 
+    def test_remove_rejects_unsafe_registry_id(self, project_dir):
+        """A tampered registry entry must not reach path construction.
+
+        The registry file is user-editable JSON; an id like ``../outside``
+        would otherwise let ``remove()`` build a deletion target outside
+        ``.specify/presets``.
+        """
+        manager = PresetManager(project_dir)
+        unsafe_id = "../outside-target"
+        manager.registry.add(unsafe_id, {"version": "1.0.0"})
+        assert manager.registry.is_installed(unsafe_id)
+
+        outside_target = project_dir / ".specify" / "outside-target"
+        outside_target.mkdir()
+        (outside_target / "keep.txt").write_text("do not delete")
+
+        result = manager.remove(unsafe_id)
+
+        assert result is False
+        assert outside_target.exists()
+        assert (outside_target / "keep.txt").exists()
+        # Refused before the registry entry was mutated.
+        assert manager.registry.is_installed(unsafe_id)
+
+    def test_remove_refuses_symlinked_preset_dir(self, project_dir):
+        """A symlinked preset directory must fail explicitly, not be deleted."""
+        manager = PresetManager(project_dir)
+        manager.registry.add("test-pack", {"version": "1.0.0"})
+
+        real_target = project_dir.parent / "real-target"
+        real_target.mkdir()
+        (real_target / "important.txt").write_text("do not delete")
+
+        pack_dir = project_dir / ".specify" / "presets" / "test-pack"
+        pack_dir.symlink_to(real_target, target_is_directory=True)
+
+        result = manager.remove("test-pack")
+
+        assert result is False
+        assert real_target.exists()
+        assert (real_target / "important.txt").exists()
+        assert pack_dir.is_symlink()
+        assert manager.registry.is_installed("test-pack")
+
     def test_list_installed(self, project_dir, pack_dir):
         """Test listing installed packs."""
         manager = PresetManager(project_dir)
