@@ -71,7 +71,7 @@
       "download_url": "https://github.com/bbjwz/agentstandards/releases/download/v0.1.1/agentstandards-gate-0.1.1.zip",
       "sha256": "9b61a7fffbe8f0de61ab44ac20844b24e60dc543882240d826423e48fa5bd9bb",
       "homepage": "https://github.com/bbjwz/agentstandards",
-      "documentation": "https://github.com/bbjwz/agentstandards/blob/v0.1.1/README.md",
+      "documentation": "https://github.com/bbjwz/agentstandards/blob/v0.1.1/presets/agentstandards-gate/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=1.0.8,<2.0.0",
