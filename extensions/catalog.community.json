@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-23T00:00:00Z",
+  "updated_at": "2026-09-24T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -47,10 +47,11 @@
     "aee": {
       "name": "Applied Epistemic Engineering",
       "id": "aee",
-      "description": "Challenges claims, traces evidence, propagates uncertainty, and routes epistemic failures between Spec Kit phases.",
+      "description": "Challenge claims, trace evidence, propagate uncertainty, and route epistemic failures across phases",
       "author": "ElectroHire",
-      "version": "1.0.0",
-      "download_url": "https://github.com/electrohire/spec-kit-aee/archive/refs/tags/v1.0.0.zip",
+      "version": "1.0.1",
+      "download_url": "https://github.com/electrohire/spec-kit-aee/archive/refs/tags/v1.0.1.zip",
+      "sha256": "691d860ffade54e2fb5dd17f34cc72784ad65ca23ff61281313bb4366d46d47b",
       "repository": "https://github.com/electrohire/spec-kit-aee",
       "homepage": "https://github.com/electrohire/spec-kit-aee",
       "documentation": "https://github.com/electrohire/spec-kit-aee#readme",
@@ -62,8 +63,18 @@
         "speckit_version": ">=1.0.0",
         "tools": [
           {
+            "name": "python",
+            "version": ">=3.11",
+            "required": true
+          },
+          {
             "name": "aee",
-            "version": ">=1.0.0",
+            "version": ">=1.0.2,<2",
+            "required": true
+          },
+          {
+            "name": "spec-kit-evaluator",
+            "version": ">=1.0.0,<2",
             "required": true
           }
         ]
@@ -83,7 +94,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-09-15T00:00:00Z",
-      "updated_at": "2026-09-15T00:00:00Z"
+      "updated_at": "2026-09-23T00:00:00Z"
     },
     "aide": {
       "name": "AI-Driven Engineering (AIDE)",
@@ -312,6 +323,51 @@
       "stars": 0,
       "created_at": "2026-08-28T00:00:00Z",
       "updated_at": "2026-08-28T00:00:00Z"
+    },
+    "agentstandards": {
+      "name": "Agentstandards Architecture Council",
+      "id": "agentstandards",
+      "description": "Run a bounded, multi-vendor architecture council between Spec Kit planning and task generation.",
+      "author": "bbjwz",
+      "version": "0.1.0",
+      "download_url": "https://github.com/bbjwz/agentstandards/releases/download/v0.1.0/agentstandards-0.1.0.zip",
+      "sha256": "3291003d4d4d1f6ca32a0c1c2aa908a887d3ded2b69ce38deb09abc5daf89e90",
+      "repository": "https://github.com/bbjwz/agentstandards",
+      "homepage": "https://github.com/bbjwz/agentstandards",
+      "documentation": "https://github.com/bbjwz/agentstandards/blob/v0.1.0/README.md",
+      "changelog": "https://github.com/bbjwz/agentstandards/blob/v0.1.0/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.8,<2.0.0",
+        "tools": [
+          {
+            "name": "uv",
+            "required": true
+          },
+          {
+            "name": "codex",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 2
+      },
+      "tags": [
+        "architecture",
+        "multi-agent",
+        "multi-vendor",
+        "governance",
+        "codex"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-24T00:00:00Z",
+      "updated_at": "2026-09-24T00:00:00Z"
     },
     "analytics": {
       "name": "Analytics",
@@ -1796,6 +1852,52 @@
       "stars": 0,
       "created_at": "2026-08-17T00:00:00Z",
       "updated_at": "2026-08-17T00:00:00Z"
+    },
+    "design": {
+      "name": "Spec Kit Design System",
+      "id": "design",
+      "description": "Give it an RFC. It runs the Spec Kit workflow and implements the change using your design system.",
+      "author": "artursopelnik",
+      "version": "0.1.0",
+      "download_url": "https://github.com/artursopelnik/spec-kit-design-system/archive/refs/tags/v0.1.0.zip",
+      "sha256": "787047d6a52399a7092f8bccca9268fc67f17de66723675fc83a9cd72604de4e",
+      "repository": "https://github.com/artursopelnik/spec-kit-design-system",
+      "homepage": "https://github.com/artursopelnik/spec-kit-design-system",
+      "documentation": "https://github.com/artursopelnik/spec-kit-design-system/blob/main/README.md",
+      "changelog": "https://github.com/artursopelnik/spec-kit-design-system/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0,<2.0.0",
+        "tools": [
+          {
+            "name": "python3",
+            "version": ">=3.9",
+            "required": true
+          },
+          {
+            "name": "bash",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 3
+      },
+      "tags": [
+        "design-system",
+        "design-tokens",
+        "accessibility",
+        "autonomous",
+        "reuse"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-23T00:00:00Z",
+      "updated_at": "2026-09-23T00:00:00Z"
     },
     "ears": {
       "name": "EARS Requirements Syntax",
@@ -3512,14 +3614,15 @@
     "okf": {
       "name": "OKF Knowledge Bundle Generator",
       "id": "okf",
-      "description": "Generates and maintains an Open Knowledge Format (OKF v0.1) knowledge bundle from a source-code repository, mining git history for rationale and parking what it cannot verify as open questions.",
+      "description": "Generates and maintains an Open Knowledge Format (OKF v0.1) knowledge bundle from a source-code repository. Mines git history for the rationale behind the code, parks what it cannot establish as open questions rather than guessing, and verifies that the bundle's claims are actually supported by the repository.",
       "author": "Alex Punnen",
-      "version": "0.5.0",
-      "download_url": "https://github.com/alexcpn/speckit_okf/archive/refs/tags/v0.5.0.zip",
-      "repository": "https://github.com/alexcpn/speckit_okf",
-      "homepage": "https://github.com/alexcpn/speckit_okf",
-      "documentation": "https://github.com/alexcpn/speckit_okf/blob/main/README.md",
-      "changelog": "https://github.com/alexcpn/speckit_okf/blob/main/CHANGELOG.md",
+      "version": "0.9.2",
+      "download_url": "https://github.com/alexcpn/catalogify/releases/download/v0.9.2/speckit-okf-0.9.2.zip",
+      "sha256": "b426c135dc2d6c6bd11b286c70273f5ae28db5d2a2252acd9768cfb893b9b303",
+      "repository": "https://github.com/alexcpn/catalogify",
+      "homepage": "https://github.com/alexcpn/catalogify",
+      "documentation": "https://github.com/alexcpn/catalogify/blob/main/integrations/speckit/README.md",
+      "changelog": "https://github.com/alexcpn/catalogify/releases",
       "license": "MIT",
       "category": "docs",
       "effect": "read-write",
@@ -3542,7 +3645,7 @@
         ]
       },
       "provides": {
-        "commands": 4,
+        "commands": 5,
         "hooks": 0
       },
       "tags": [
@@ -3556,7 +3659,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-17T00:00:00Z",
-      "updated_at": "2026-09-08T00:00:00Z"
+      "updated_at": "2026-09-23T00:00:00Z"
     },
     "onboard": {
       "name": "Onboard",
@@ -4995,8 +5098,9 @@
       "id": "specassay-check",
       "description": "Gate 2 refuses silent gaps and emits a trace-manifest (`trace-manifest.json`).",
       "author": "Rik Dryfoos",
-      "version": "0.4.12",
-      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.4.12/specassay-check-0.4.12.zip",
+      "version": "0.5.2",
+      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.2/specassay-check-0.5.2.zip",
+      "sha256": "f481c6794d0cffc6d532721c1acc378287ba291b3e74dbe1e54eef083d1e7a20",
       "repository": "https://github.com/rdryfoos/specassay",
       "homepage": "https://www.specassay.com",
       "documentation": "https://github.com/rdryfoos/specassay/blob/main/extensions/specassay-check/README.md",
@@ -5005,7 +5109,7 @@
       "category": "visibility",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.14.0",
+        "speckit_version": ">=0.14.0,<2.0.0",
         "tools": [
           {
             "name": "bash",
@@ -5019,7 +5123,7 @@
         ]
       },
       "provides": {
-        "commands": 2,
+        "commands": 5,
         "hooks": 1
       },
       "tags": [
@@ -5033,7 +5137,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-13T00:00:00Z",
-      "updated_at": "2026-08-21T00:00:00Z"
+      "updated_at": "2026-09-24T00:00:00Z"
     },
     "specjudge": {
       "name": "SpecJudge — right-size the model before you implement",

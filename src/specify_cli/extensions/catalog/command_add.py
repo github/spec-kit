@@ -60,9 +60,27 @@ def catalog_add(
     safe_name = _escape_markup(name)
     safe_url = _escape_markup(url)
 
+    entry = {
+        "name": name,
+        "url": url,
+        "priority": priority,
+        "install_allowed": install_allowed,
+        "description": description,
+    }
+
     # Check for duplicate name
     for existing in catalogs:
         if isinstance(existing, dict) and existing.get("name") == name:
+            if all(
+                existing.get(field) == entry[field]
+                for field in (
+                    "url",
+                    "priority",
+                    "install_allowed",
+                    "description",
+                )
+            ):
+                return
             _commands.console.print(
                 f"[yellow]Warning:[/yellow] A catalog named '{safe_name}' already exists."
             )
@@ -71,13 +89,7 @@ def catalog_add(
             )
             raise typer.Exit(1)
 
-    catalogs.append({
-        "name": name,
-        "url": url,
-        "priority": priority,
-        "install_allowed": install_allowed,
-        "description": description,
-    })
+    catalogs.append(entry)
 
     config["catalogs"] = catalogs
     config_path.write_text(

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-23T00:00:00Z",
+  "updated_at": "2026-09-25T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -429,13 +429,14 @@
     "intake-authoring-governance": {
       "name": "Intake Authoring Governance",
       "id": "intake-authoring-governance",
-      "version": "0.3.1",
+      "version": "0.3.4",
       "description": "Governs traceable intake CRUD, language-aware requirements collections, bounded public HTTPS sources, and explicitly approved single or series authoring.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/archive/refs/tags/v0.3.1.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/archive/refs/tags/v0.3.4.zip",
+      "sha256": "b08c1128756f7fc56de8deb98f9e1cb859b5f76063b39843e395aaed2b440214",
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/blob/v0.3.1/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/blob/v0.3.4/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
@@ -443,7 +444,7 @@
       "provides": {
         "templates": 13,
         "commands": 5,
-        "scripts": 7
+        "scripts": 9
       },
       "tags": [
         "intake",
@@ -453,18 +454,19 @@
         "migration"
       ],
       "created_at": "2026-07-22T00:00:00Z",
-      "updated_at": "2026-08-14T00:00:00Z"
+      "updated_at": "2026-09-23T00:00:00Z"
     },
     "intake-review-governance": {
       "name": "Intake Review Governance",
       "id": "intake-review-governance",
-      "version": "0.2.1",
+      "version": "0.2.3",
       "description": "Reviews single, series, campaign, and language-aware requirements collections before Spec Kit execution.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-intake-review-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/archive/refs/tags/v0.2.1.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/archive/refs/tags/v0.2.3.zip",
+      "sha256": "a97d3b3039587d391cd214296d5cfd1cb7665aff76630c08a87879091ddcc1d1",
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-review-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/blob/v0.2.1/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/blob/v0.2.3/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
@@ -482,7 +484,7 @@
         "quality-gate"
       ],
       "created_at": "2026-07-21T00:00:00Z",
-      "updated_at": "2026-08-17T00:00:00Z"
+      "updated_at": "2026-09-25T00:00:00Z"
     },
     "intake-sequencing-governance": {
       "name": "Intake Sequencing Governance",
@@ -805,6 +807,35 @@
         "experimental"
       ]
     },
+    "project-statistics-governance": {
+      "name": "Project Statistics Governance",
+      "id": "project-statistics-governance",
+      "version": "0.1.0",
+      "description": "Reproducible Git-bound project transparency with offline measurements, explicit write authority and opt-in reference estimates; no AI productivity claims.",
+      "author": "Thorsten Hindermann",
+      "repository": "https://github.com/hindermath/spec-kit-preset-project-statistics-governance",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-project-statistics-governance/archive/refs/tags/v0.1.0.zip",
+      "sha256": "d8ad7d5eef920f50b629121b64ba8123c22ec4f6dadd14da5cd826d1c50f420a",
+      "homepage": "https://github.com/hindermath/spec-kit-preset-project-statistics-governance",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-project-statistics-governance/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.12.8"
+      },
+      "provides": {
+        "templates": 4,
+        "commands": 3,
+        "scripts": 2
+      },
+      "tags": [
+        "project-statistics",
+        "reproducibility",
+        "governance",
+        "accessibility"
+      ],
+      "created_at": "2026-09-23T00:00:00Z",
+      "updated_at": "2026-09-23T00:00:00Z"
+    },
     "screenwriting": {
       "name": "Screenwriting",
       "id": "screenwriting",
@@ -957,16 +988,17 @@
     "specassay": {
       "name": "SpecAssay",
       "id": "specassay",
-      "version": "0.4.12",
+      "version": "0.5.2",
       "description": "Appends durable-ID, Carries, and SpecAssay vocabulary onto Spec Kit spec, tasks, and constitution templates.",
       "author": "Rik Dryfoos",
       "repository": "https://github.com/rdryfoos/specassay",
-      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.4.12/specassay-preset-0.4.12.zip",
+      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.2/specassay-preset-0.5.2.zip",
+      "sha256": "9920daf8b7ebe2d5e0d5e723409719afeaaa7c59788a6f3ecda67e2f7543d0b9",
       "homepage": "https://github.com/rdryfoos/specassay",
       "documentation": "https://github.com/rdryfoos/specassay/blob/main/presets/specassay/README.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=0.14.0"
+        "speckit_version": ">=0.14.0,<2.0.0"
       },
       "provides": {
         "templates": 3,
@@ -979,7 +1011,7 @@
         "sdd"
       ],
       "created_at": "2026-08-14T00:00:00Z",
-      "updated_at": "2026-08-21T00:00:00Z"
+      "updated_at": "2026-09-24T00:00:00Z"
     },
     "test-first-governance": {
       "name": "Test-First Governance",

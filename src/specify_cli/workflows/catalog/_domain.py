@@ -714,10 +714,12 @@ class WorkflowCatalog:
             for e in entries
         ]
 
-    def add_catalog(self, url: str, name: str | None = None) -> None:
+    def add_catalog(self, url: str, name: str | None = None) -> str:
         """Add a catalog source to the project-level config."""
+        url = url.strip()
         self._validate_catalog_url(url)
         config_path = self.project_root / ".specify" / "workflow-catalogs.yml"
+        normalized_name = str(name).strip() if name is not None else ""
 
         data: dict[str, Any] = {"catalogs": []}
         if config_path.exists():
@@ -741,8 +743,16 @@ class WorkflowCatalog:
                 "Catalog config 'catalogs' must be a list."
             )
         # Check for duplicate URL (guard against non-dict entries)
-        for cat in catalogs:
-            if isinstance(cat, dict) and cat.get("url") == url:
+        for idx, cat in enumerate(catalogs):
+            if (
+                isinstance(cat, dict)
+                and str(cat.get("url", "")).strip() == url
+            ):
+                generated_name = f"catalog-{idx + 1}"
+                existing_name = str(cat.get("name") or generated_name).strip()
+                if not normalized_name or existing_name == normalized_name:
+                    self._load_catalog_config(config_path)
+                    return "unchanged"
                 raise WorkflowValidationError(
                     f"Catalog URL already configured: {url}"
                 )
@@ -768,7 +778,7 @@ class WorkflowCatalog:
         )
         catalogs.append(
             {
-                "name": name or f"catalog-{len(catalogs) + 1}",
+                "name": normalized_name or f"catalog-{len(catalogs) + 1}",
                 "url": url,
                 "priority": max_priority + 1,
                 "install_allowed": True,
@@ -785,6 +795,7 @@ class WorkflowCatalog:
             raise WorkflowValidationError(
                 f"Failed to write catalog config {config_path}: {exc}"
             ) from exc
+        return "added"
 
     def remove_catalog(self, index: int) -> str:
         """Remove a catalog source by index (0-based). Returns the removed name."""

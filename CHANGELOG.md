@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.0.11] - 2026-09-24
+
+### Changed
+
+- feat: make catalog add idempotent across all catalog families (#4505) (#4543)
+- [extension] Update SpecAssay Check extension to v0.5.1 (#4703)
+- Add Spec Kit Design System extension to community catalog (#4707)
+- [extension] Update Applied Epistemic Engineering extension to v1.0.1 (#4699)
+- fix(integrations): remove duplicate Forge dispatch override (#4714)
+- fix(deps): drop platformdirs, which is never imported (#4675)
+- [preset] Update SpecAssay preset to v0.5.1 (#4706)
+- docs: add Japanese (日本語) README (#4560)
+- fix(integrations): drop invalid --model/--output-format flags from Forge dispatch (#4667)
+- fix: ensure idempotent project-relative path rewriting in CommandRegistrar (#4553)
+- feat(scripts): add SPECIFY_FEATURE_NO_PERSIST env var to suppress feature.json writes (#4128) (#4129)
+- Add Project Statistics Governance preset to community catalog (#4704)
+- [extension] Add ThreatSpec extension to community catalog (#4701)
+- fix(integrations): dispatch Forge via prompt flag only (#4668)
+- [preset] Add Database Standards preset to community catalog (#4702)
+- Add NIEM Information Exchanges preset to community catalog (#4698)
+- docs: add Spec Kit Workflow Cockpit to community friends (#4606) (#4630)
+- fix: restore community archive validation and compare submitted checksums (#4689)
+- chore: refactor root command adapters (#4687)
+- chore: release 1.0.10, begin 1.0.11.dev0 development (#4686)
+
 ## [1.0.10] - 2026-09-22
 
 ### Changed

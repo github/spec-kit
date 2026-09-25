@@ -92,6 +92,35 @@ class ForgeIntegration(MarkdownIntegration):
     }
     invoke_separator = "-"
 
+    def build_exec_args(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
+    ) -> list[str] | None:
+        """Build CLI arguments for non-interactive ``forge`` execution.
+
+        ``MarkdownIntegration``'s default appends ``--model`` and
+        ``--output-format``, neither of which exists in the Forge CLI (see
+        issue #4666) — a dispatched step exits 2 at argument parsing
+        whenever either flag ends up appended (a configured ``model``, or
+        ``output_json=True``). Forge only accepts ``-p/--prompt``; ``model``
+        is deliberately dropped rather than remapped, since Forge selects it
+        out of band via ``forge config set model`` and its ``--agent`` flag
+        selects an agent ID, not a model.
+        """
+        self.validate_runtime_config(integration_args, integration_options)
+        args = [self._resolve_executable()]
+        # Forge's global flags parse before -p, so extra args go first
+        # (matches opencode / goose / codex / cursor-agent ordering).
+        self._apply_extra_args_env_var(args)
+        args.extend(["-p", prompt])
+        return args
+
     def build_command_invocation(self, command_name: str, args: str = "") -> str:
         """Forge installs hyphenated slash-commands (``/speckit-<name>``), so the
         dispatch invocation must match. The inherited MarkdownIntegration default
@@ -103,36 +132,6 @@ class ForgeIntegration(MarkdownIntegration):
         if args:
             invocation = f"{invocation} {args}"
         return invocation
-
-    def build_exec_args(
-        self,
-        prompt: str,
-        *,
-        model: str | None = None,
-        output_json: bool = True,
-        integration_args: Sequence[str] | None = None,
-        integration_options: Mapping[str, Any] | None = None,
-        project_root: Path | None = None,
-    ) -> list[str] | None:
-        self.validate_runtime_config(integration_args, integration_options)
-        args = [self._resolve_executable()]
-        # Operator-injected extra args go before -p: Forge parses its global
-        # flags ahead of the prompt flag, matching the opencode/goose/codex
-        # ordering.
-        self._apply_extra_args_env_var(args)
-
-        args.extend(["-p", prompt])
-
-        # `model` is deliberately dropped: Forge has no model-selection flag.
-        # Model choice is a persisted setting (`forge config set model`), and
-        # `--agent` takes an agent ID rather than a model identifier, so
-        # forwarding the caller's model onto it would silently select the
-        # wrong thing.
-        #
-        # `output_json` is likewise dropped: Forge has no `--output-format`.
-        # Its machine-readable `--porcelain` exists only on certain
-        # subcommands, not on the top-level prompt invocation.
-        return args
 
     def setup(
         self,
