@@ -1010,6 +1010,7 @@ def register(app: typer.Typer) -> None:
         zcode_skill_mode = selected_ai == "zcode" and _is_skills_integration
         claude_skill_mode = selected_ai == "claude" and _is_skills_integration
         kimi_skill_mode = selected_ai == "kimi"
+        mcode_skill_mode = selected_ai == "mcode" and _is_skills_integration
         agy_skill_mode = selected_ai == "agy" and _is_skills_integration
         trae_skill_mode = selected_ai == "trae"
         cursor_agent_skill_mode = (
@@ -1029,6 +1030,7 @@ def register(app: typer.Typer) -> None:
             or zcode_skill_mode
             or claude_skill_mode
             or kimi_skill_mode
+            or mcode_skill_mode
             or agy_skill_mode
             or trae_skill_mode
             or cursor_agent_skill_mode
@@ -1089,6 +1091,11 @@ def register(app: typer.Typer) -> None:
         if bob_skill_mode:
             steps_lines.append(
                 f"{step_num}. Start Bob in this project directory; spec-kit skills were installed to [cyan].bob/skills[/cyan]"
+            )
+            step_num += 1
+        if mcode_skill_mode:
+            steps_lines.append(
+                f"{step_num}. Start MiniMax Code in this project directory; spec-kit skills were installed to [cyan].minimax/skills[/cyan]"
             )
             step_num += 1
         usage_label = "skills" if native_skill_mode else "slash commands"

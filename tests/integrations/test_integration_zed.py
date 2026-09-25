@@ -143,6 +143,8 @@ class TestSlashSkillsSets:
             ("devin", False, "/speckit-plan"),
             ("grok", True, "/speckit-plan"),
             ("grok", False, "/speckit-plan"),
+            ("mcode", True, "/speckit-plan"),
+            ("mcode", False, "/speckit-plan"),
             ("qodercli", True, "/speckit-plan"),
             ("qodercli", False, "/speckit-plan"),
             ("trae", True, "/speckit-plan"),
