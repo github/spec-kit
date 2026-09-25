@@ -5,6 +5,7 @@ Covers:
 - Registry mechanics (_register, get_provider, duplicate/empty-key guards)
 - GitHubAuth — bearer headers
 - AzureDevOpsAuth — basic-pat, bearer, azure-cli, azure-ad headers
+- BitbucketAuth — bearer and basic (username:token) headers
 - Host matching (find_entries_for_url)
 - open_url — config-driven auth with fallthrough and redirect stripping
 - build_request — single-shot request construction
@@ -23,6 +24,7 @@ import pytest
 from specify_cli.authentication import AUTH_REGISTRY, _register, get_provider
 from specify_cli.authentication.azure_devops import AzureDevOpsAuth
 from specify_cli.authentication.base import AuthProvider
+from specify_cli.authentication.bitbucket import BitbucketAuth
 from specify_cli.authentication.config import (
     AuthConfigEntry,
     find_entries_for_url,
@@ -127,6 +129,108 @@ class TestLoadAuthConfig:
         assert len(entries) == 1
         assert entries[0].provider == "azure-devops"
         assert entries[0].auth == "basic-pat"
+
+    def test_valid_bitbucket_bearer_config(self, tmp_path):
+        cfg = tmp_path / "auth.json"
+        cfg.write_text(json.dumps({
+            "providers": [{
+                "hosts": ["api.bitbucket.org", "bitbucket.org"],
+                "provider": "bitbucket",
+                "auth": "bearer",
+                "token_env": "BITBUCKET_ACCESS_TOKEN",
+            }]
+        }))
+        entries = load_auth_config(cfg)
+        assert len(entries) == 1
+        assert entries[0].provider == "bitbucket"
+        assert entries[0].auth == "bearer"
+        assert entries[0].username is None
+
+    def test_valid_bitbucket_basic_config(self, tmp_path):
+        cfg = tmp_path / "auth.json"
+        cfg.write_text(json.dumps({
+            "providers": [{
+                "hosts": ["api.bitbucket.org"],
+                "provider": "bitbucket",
+                "auth": "basic",
+                "username": "  you@example.com  ",
+                "token_env": "ATLASSIAN_API_TOKEN",
+            }]
+        }))
+        entries = load_auth_config(cfg)
+        assert entries[0].auth == "basic"
+        # Stored normalized, matching token_env/tenant_id handling.
+        assert entries[0].username == "you@example.com"
+
+    def test_username_field_is_appended_after_azure_fields(self):
+        # `username` was added to AuthConfigEntry after the Azure AD fields so
+        # a positional construction written before it existed still maps its
+        # sixth argument to tenant_id (not to username).
+        entry = AuthConfigEntry(
+            ("dev.azure.com",), "azure-devops", "azure-ad",
+            None, None, "tid", "cid", "SECRET",
+        )
+        assert entry.tenant_id == "tid"
+        assert entry.client_id == "cid"
+        assert entry.client_secret_env == "SECRET"
+        assert entry.username is None
+
+    def test_basic_without_username_raises(self, tmp_path):
+        cfg = tmp_path / "auth.json"
+        cfg.write_text(json.dumps({
+            "providers": [{
+                "hosts": ["api.bitbucket.org"],
+                "provider": "bitbucket",
+                "auth": "basic",
+                "token_env": "ATLASSIAN_API_TOKEN",
+            }]
+        }))
+        with pytest.raises(ValueError, match="requires 'username'"):
+            load_auth_config(cfg)
+
+    def test_basic_without_token_raises(self, tmp_path):
+        cfg = tmp_path / "auth.json"
+        cfg.write_text(json.dumps({
+            "providers": [{
+                "hosts": ["api.bitbucket.org"],
+                "provider": "bitbucket",
+                "auth": "basic",
+                "username": "you@example.com",
+            }]
+        }))
+        with pytest.raises(ValueError, match="requires 'token' or 'token_env'"):
+            load_auth_config(cfg)
+
+    def test_username_with_colon_raises(self, tmp_path):
+        # RFC 7617 forbids ':' in the user-id; the server would split on the
+        # first colon and authenticate as the wrong user.
+        cfg = tmp_path / "auth.json"
+        cfg.write_text(json.dumps({
+            "providers": [{
+                "hosts": ["api.bitbucket.org"],
+                "provider": "bitbucket",
+                "auth": "basic",
+                "username": "user:name",
+                "token_env": "ATLASSIAN_API_TOKEN",
+            }]
+        }))
+        with pytest.raises(ValueError, match="must not contain ':'"):
+            load_auth_config(cfg)
+
+    @pytest.mark.parametrize("username", ["", "   ", 42, False])
+    def test_invalid_username_raises(self, tmp_path, username):
+        cfg = tmp_path / "auth.json"
+        cfg.write_text(json.dumps({
+            "providers": [{
+                "hosts": ["api.bitbucket.org"],
+                "provider": "bitbucket",
+                "auth": "basic",
+                "username": username,
+                "token_env": "ATLASSIAN_API_TOKEN",
+            }]
+        }))
+        with pytest.raises(ValueError, match="username"):
+            load_auth_config(cfg)
 
     def test_inline_token(self, tmp_path):
         cfg = tmp_path / "auth.json"
@@ -447,6 +551,12 @@ class TestAuthRegistry:
 
     def test_get_provider_returns_azure_devops(self):
         assert isinstance(get_provider("azure-devops"), AzureDevOpsAuth)
+
+    def test_bitbucket_registered(self):
+        assert "bitbucket" in AUTH_REGISTRY
+
+    def test_get_provider_returns_bitbucket(self):
+        assert isinstance(get_provider("bitbucket"), BitbucketAuth)
 
     def test_get_provider_unknown_returns_none(self):
         assert get_provider("does-not-exist") is None
@@ -827,6 +937,123 @@ class TestAzureDevOpsAuth:
 
 
 # ---------------------------------------------------------------------------
+# BitbucketAuth
+# ---------------------------------------------------------------------------
+
+
+def _bitbucket_basic_entry(
+    username: str | None = "you@example.com",
+    token: str | None = None,
+    token_env: str | None = "ATLASSIAN_API_TOKEN",
+) -> AuthConfigEntry:
+    """Build a Bitbucket basic config entry."""
+    return AuthConfigEntry(
+        hosts=("api.bitbucket.org", "bitbucket.org"),
+        provider="bitbucket",
+        auth="basic",
+        token=token,
+        token_env=token_env if token is None else None,
+        username=username,
+    )
+
+
+class TestBitbucketAuth:
+    def test_bearer_headers(self):
+        headers = BitbucketAuth().auth_headers("bb-token", "bearer")
+        assert headers == {"Authorization": "Bearer bb-token"}
+
+    def test_basic_headers_encode_credential_verbatim(self):
+        # For "basic", resolve_token has already combined username:secret;
+        # auth_headers must encode that credential as-is.
+        headers = BitbucketAuth().auth_headers("you@example.com:api-tok", "basic")
+        expected = base64.b64encode(b"you@example.com:api-tok").decode("ascii")
+        assert headers == {"Authorization": f"Basic {expected}"}
+
+    def test_basic_headers_encode_non_ascii_as_utf8(self):
+        # Deliberately UTF-8 (unlike AzureDevOpsAuth's ASCII encode) so a
+        # non-ASCII username or secret does not raise UnicodeEncodeError.
+        credential = "zoë@example.com:pässwörd"
+        headers = BitbucketAuth().auth_headers(credential, "basic")
+        expected = base64.b64encode(credential.encode("utf-8")).decode("ascii")
+        assert headers == {"Authorization": f"Basic {expected}"}
+
+    def test_basic_headers_reject_bare_secret(self):
+        # Guards the resolve_token -> auth_headers contract: a raw secret
+        # would otherwise become a valid-looking header with an empty user.
+        with pytest.raises(ValueError, match="<username>:<secret>"):
+            BitbucketAuth().auth_headers("just-a-secret", "basic")
+
+    @pytest.mark.parametrize("credential", [":secret", "user:", ":"])
+    def test_basic_headers_reject_empty_half(self, credential):
+        # A colon alone is not enough: ":secret" is exactly the empty-user
+        # credential the guard exists to block, and "user:" has no secret.
+        with pytest.raises(ValueError, match="both parts non-empty"):
+            BitbucketAuth().auth_headers(credential, "basic")
+
+    def test_basic_headers_preserve_colons_inside_secret(self):
+        # Only the first colon separates the halves; a secret containing ':'
+        # must be encoded intact.
+        credential = "you@example.com:se:cr:et"
+        headers = BitbucketAuth().auth_headers(credential, "basic")
+        expected = base64.b64encode(credential.encode("utf-8")).decode("ascii")
+        assert headers == {"Authorization": f"Basic {expected}"}
+
+    def test_unsupported_scheme_raises(self):
+        with pytest.raises(ValueError, match="does not support auth scheme"):
+            BitbucketAuth().auth_headers("tok", "basic-pat")
+
+    def test_resolve_token_bearer_from_env(self, monkeypatch):
+        monkeypatch.setenv("BITBUCKET_ACCESS_TOKEN", "bb-secret")
+        entry = AuthConfigEntry(
+            hosts=("api.bitbucket.org",),
+            provider="bitbucket",
+            auth="bearer",
+            token_env="BITBUCKET_ACCESS_TOKEN",
+        )
+        assert BitbucketAuth().resolve_token(entry) == "bb-secret"
+
+    def test_resolve_token_basic_combines_username_and_secret(self, monkeypatch):
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "api-tok")
+        entry = _bitbucket_basic_entry()
+        assert BitbucketAuth().resolve_token(entry) == "you@example.com:api-tok"
+
+    def test_resolve_token_basic_inline_token(self):
+        entry = _bitbucket_basic_entry(token="inline-tok")
+        assert BitbucketAuth().resolve_token(entry) == "you@example.com:inline-tok"
+
+    def test_resolve_token_basic_missing_username_returns_none(self, monkeypatch):
+        # Config validation requires username, but a directly-constructed
+        # entry must not yield a malformed ":<secret>" credential.
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "api-tok")
+        entry = _bitbucket_basic_entry(username=None)
+        assert BitbucketAuth().resolve_token(entry) is None
+
+    def test_resolve_token_basic_blank_username_returns_none(self, monkeypatch):
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "api-tok")
+        entry = _bitbucket_basic_entry(username="   ")
+        assert BitbucketAuth().resolve_token(entry) is None
+
+    def test_resolve_token_basic_colon_username_returns_none(self, monkeypatch):
+        # load_auth_config rejects this, but a directly-constructed entry
+        # must not yield "user:name:<secret>", which a server parses as
+        # user "user" (RFC 7617 §2).
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "api-tok")
+        entry = _bitbucket_basic_entry(username="user:name")
+        assert BitbucketAuth().resolve_token(entry) is None
+
+    def test_resolve_token_basic_missing_secret_returns_none(self, monkeypatch):
+        monkeypatch.delenv("ATLASSIAN_API_TOKEN", raising=False)
+        entry = _bitbucket_basic_entry()
+        assert BitbucketAuth().resolve_token(entry) is None
+
+    def test_key(self):
+        assert BitbucketAuth().key == "bitbucket"
+
+    def test_supported_schemes(self):
+        assert BitbucketAuth().supported_auth_schemes == ("bearer", "basic")
+
+
+# ---------------------------------------------------------------------------
 # open_url / build_request — positive tests
 # ---------------------------------------------------------------------------
 
@@ -842,6 +1069,16 @@ class TestAuthenticatedHttp:
         self._set_config(monkeypatch, [_github_entry()])
         req = build_request("https://github.com/org/repo")
         assert req.get_header("Authorization") == "Bearer my-token"
+
+    def test_build_request_attaches_bitbucket_basic_auth(self, monkeypatch):
+        from specify_cli.authentication.http import build_request
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "api-tok")
+        self._set_config(monkeypatch, [_bitbucket_basic_entry()])
+        req = build_request(
+            "https://api.bitbucket.org/2.0/repositories/ws/repo/downloads/x.tar.gz"
+        )
+        expected = base64.b64encode(b"you@example.com:api-tok").decode("ascii")
+        assert req.get_header("Authorization") == f"Basic {expected}"
 
     def test_build_request_no_auth_for_non_matching_host(self, monkeypatch):
         from specify_cli.authentication.http import build_request
