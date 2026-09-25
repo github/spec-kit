@@ -124,8 +124,14 @@ def make_yaml_less_venv(venv_dir: Path) -> Path:
 
 
 def _bash_posix_path(path: Path) -> str:
-    """Convert a Windows path to the POSIX form the available bash expects."""
-    resolved = str(path.resolve())
+    """Convert a Windows path to the POSIX form the available bash expects.
+
+    Uses ``abspath`` rather than ``Path.resolve()``: the caller may pass a
+    venv's python3, which is typically a symlink, and resolving it would
+    exec the underlying base interpreter from outside the venv directory,
+    silently dropping that venv's site-packages isolation.
+    """
+    resolved = os.path.abspath(path)
     if os.name != "nt":
         return resolved
     converted = subprocess.run(
@@ -147,16 +153,24 @@ def _bash_posix_path(path: Path) -> str:
     return f"/mnt/{drive}{posix[2:]}" if drive else posix
 
 
-def make_python3_path_shim(shim_dir: Path) -> Path:
-    """Create a deterministic ``python3`` shim that execs the current pytest
-    interpreter, so a test can put a guaranteed PyYAML-capable interpreter
-    first on PATH as the *default* ``python3`` a script finds via its
-    python3 -> python -> py -3 fallback chain (as opposed to the
+def make_python3_path_shim(shim_dir: Path, target: Path | str | None = None) -> Path:
+    """Create a deterministic ``python3`` shim that execs ``target`` (the
+    current pytest interpreter by default), so a test can put a guaranteed
+    interpreter first on PATH as the *default* ``python3`` a script finds via
+    its python3 -> python -> py -3 fallback chain (as opposed to the
     SPECKIT_PYTHON(_EXECUTABLE) override, which names its interpreter
     explicitly and never depends on PATH lookup).
+
+    A venv's own bin/Scripts directory is not enough on Windows: it provides
+    ``python.exe``, not ``python3``, so it never actually shadows a PATH
+    lookup for ``python3``. This shim exists precisely to fill that gap.
     """
     shim_dir.mkdir(parents=True, exist_ok=True)
-    python_exe = Path(sys.executable).resolve()
+    # Deliberately not .resolve(): a venv's python3 is typically a symlink,
+    # and following it to the underlying base interpreter would exec it
+    # from outside the venv directory, which drops pyvenv.cfg discovery and
+    # silently regains/loses that venv's site-packages (e.g. PyYAML).
+    python_exe = Path(target if target is not None else sys.executable).absolute()
 
     shell_shim = shim_dir / "python3"
     shell_shim.write_text(

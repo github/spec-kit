@@ -664,13 +664,17 @@ def test_all_variants_honor_speckit_python_override_when_yaml_missing(
     repo, expected = _setup_repo(tmp_path)
 
     no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
-    no_yaml_bin = no_yaml_exe.parent
+    no_yaml_python3_shim = make_python3_path_shim(
+        tmp_path / "no-yaml-python3-shim", no_yaml_exe
+    )
 
     py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
 
     baseline_env = clean_env()
     baseline_env.pop("SPECKIT_PYTHON", None)
-    baseline_env["PATH"] = f"{no_yaml_bin}{os.pathsep}{baseline_env.get('PATH', '')}"
+    baseline_env["PATH"] = (
+        f"{no_yaml_python3_shim}{os.pathsep}{baseline_env.get('PATH', '')}"
+    )
     baseline_results = [
         run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, baseline_env),
         run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, baseline_env),
@@ -1166,6 +1170,90 @@ def test_python_variant_delegates_manifest_with_exponential_alias_dag_in_entry(
         "TEMPLATE_NAME": TEMPLATE,
         "TEMPLATE_CONTENT": expected,
     }
+    assert elapsed < 5, f"delegated parsing took {elapsed:.2f}s; expected well under the 10s child timeout"
+
+
+@requires_bash
+def test_python_variant_rejects_malformed_templates_container_with_exponential_alias_dag(
+    tmp_path: Path,
+) -> None:
+    """A malformed `provides.templates` value (not a list) must be rejected
+    immediately, even when it's built from nested, non-recursive YAML
+    aliases: the in-process parser already fails on the isinstance check
+    without inspecting the value's contents, so delegation must replace it
+    with the non-native marker up front instead of copying it through
+    `_stringify_keys`, which would otherwise turn an O(depth) aliased DAG
+    into an O(2**depth) JSON payload before the check ever runs (#4445)."""
+    repo, _ = _setup_repo(tmp_path)
+
+    depth = 24
+    lines = ["x0: &x0 [a]"]
+    for i in range(1, depth):
+        lines.append(f"x{i}: &x{i} [*x{i - 1}, *x{i - 1}]")
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "\n".join(lines) + "\n"
+        "provides:\n"
+        f"  templates: *x{depth - 1}\n",
+        encoding="utf-8",
+    )
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    start = time.monotonic()
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+    elapsed = time.monotonic() - start
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert elapsed < 5, f"delegated parsing took {elapsed:.2f}s; expected well under the 10s child timeout"
+
+
+@requires_bash
+def test_python_variant_rejects_malformed_template_entry_field_with_exponential_alias_dag(
+    tmp_path: Path,
+) -> None:
+    """A `provides.templates` entry field that fails the "must be a string"
+    check must be rejected immediately even when it's built from nested,
+    non-recursive YAML aliases: `_only_entry_fields` used to copy a
+    wrong-typed field value through unchanged, so `_stringify_keys` still
+    expanded the aliased DAG into an exponential JSON payload before the
+    later isinstance check could reject it (#4445)."""
+    repo, _ = _setup_repo(tmp_path)
+
+    depth = 24
+    lines = ["x0: &x0 [a]"]
+    for i in range(1, depth):
+        lines.append(f"x{i}: &x{i} [*x{i - 1}, *x{i - 1}]")
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "\n".join(lines) + "\n"
+        "provides:\n"
+        "  templates:\n"
+        "    - type: template\n"
+        f"      name: {TEMPLATE}\n"
+        f"      file: *x{depth - 1}\n",
+        encoding="utf-8",
+    )
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    start = time.monotonic()
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+    elapsed = time.monotonic() - start
+
+    assert result.returncode != 0
+    assert result.stdout == ""
     assert elapsed < 5, f"delegated parsing took {elapsed:.2f}s; expected well under the 10s child timeout"
 
 
