@@ -5,15 +5,17 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
+import tempfile
 import time
 from dataclasses import dataclass
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from ...._download_security import (
-    MAX_JSON_CATALOG_BYTES as MAX_JSON_CATALOG_BYTES,
     read_response_limited,
 )
 
@@ -111,48 +113,104 @@ class StepRegistry:
         return default_registry
 
     def save(self) -> None:
-        """Persist registry to disk.
-
-        Raises ``StepValidationError`` with a clear message on filesystem
-        errors (read-only fs, permission denied, ...) so callers can surface
-        a clean error to the user rather than an unhandled ``OSError``.
-        """
+        """Persist registry atomically without truncating an existing file."""
         if self._has_symlinked_parent() or self.registry_path.is_symlink():
             raise StepValidationError(
                 "Refusing to write step registry through a symlinked path."
             )
+        fd = -1
+        tmp: str | None = None
         try:
             self.steps_dir.mkdir(parents=True, exist_ok=True)
-            with open(self.registry_path, "w", encoding="utf-8") as f:
+            fd, tmp = tempfile.mkstemp(
+                dir=str(self.registry_path.parent),
+                prefix=f".{self.registry_path.name}.",
+                suffix=".tmp",
+            )
+            # Keep the exclusive descriptor open while writing and checking the
+            # path so a replaced temporary file can never be committed.
+            with os.fdopen(os.dup(fd), "w", encoding="utf-8") as f:
                 json.dump(self.data, f, indent=2)
-        except OSError as exc:
+                f.flush()
+                os.fsync(f.fileno())
+            try:
+                if self.registry_path.exists():
+                    existing = self.registry_path.stat(follow_symlinks=False)
+                    if stat.S_ISREG(existing.st_mode) and hasattr(os, "fchmod"):
+                        os.fchmod(fd, stat.S_IMODE(existing.st_mode))
+                    if stat.S_ISREG(existing.st_mode) and hasattr(os, "fchown"):
+                        try:
+                            os.fchown(fd, existing.st_uid, existing.st_gid)
+                        except PermissionError:
+                            pass
+            except OSError:
+                # Persisting valid data is more important than preserving mode
+                # or ownership metadata when that best-effort operation fails.
+                pass
+            staged = os.stat(tmp, follow_symlinks=False)
+            opened = os.fstat(fd)
+            if (
+                not stat.S_ISREG(staged.st_mode)
+                or staged.st_dev != opened.st_dev
+                or staged.st_ino != opened.st_ino
+            ):
+                raise OSError("Staged step registry changed before commit")
+            os.close(fd)
+            fd = -1
+            os.replace(tmp, self.registry_path)
+            tmp = None
+        except (OSError, TypeError, ValueError) as exc:
             raise StepValidationError(
                 f"Failed to write step registry at {self.registry_path}: {exc}"
             ) from exc
+        finally:
+            if fd >= 0:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            if tmp is not None:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
 
     def add(self, step_id: str, metadata: dict[str, Any]) -> None:
         """Add or update an installed step entry."""
         import copy
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         raw_existing = self.data["steps"].get(step_id)
+        had_entry = step_id in self.data["steps"]
         # Corrupted-but-parseable registries may hold non-dict entries; treat
         # them as absent rather than crashing on existing.get() (mirrors
         # WorkflowRegistry.add).
         existing = raw_existing if isinstance(raw_existing, dict) else {}
         metadata_to_store = copy.deepcopy(metadata)
         metadata_to_store["installed_at"] = existing.get(
-            "installed_at", datetime.now(timezone.utc).isoformat()
+            "installed_at", datetime.now(UTC).isoformat()
         )
-        metadata_to_store["updated_at"] = datetime.now(timezone.utc).isoformat()
+        metadata_to_store["updated_at"] = datetime.now(UTC).isoformat()
         self.data["steps"][step_id] = metadata_to_store
-        self.save()
+        try:
+            self.save()
+        except (StepValidationError, TypeError, ValueError):
+            if had_entry:
+                self.data["steps"][step_id] = raw_existing
+            else:
+                del self.data["steps"][step_id]
+            raise
 
     def remove(self, step_id: str) -> bool:
         """Remove an installed step entry. Returns True if found."""
         if step_id in self.data["steps"]:
+            removed_entry = self.data["steps"][step_id]
             del self.data["steps"][step_id]
-            self.save()
+            try:
+                self.save()
+            except (StepValidationError, TypeError, ValueError):
+                self.data["steps"][step_id] = removed_entry
+                raise
             return True
         return False
 
@@ -420,6 +478,7 @@ class StepCatalog:
                 pass
 
         from urllib.parse import urlparse
+
         from specify_cli.authentication.http import open_url as _open_url
 
         def _validate_url(url: str) -> None:
