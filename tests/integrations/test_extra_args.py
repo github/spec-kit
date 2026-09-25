@@ -639,6 +639,45 @@ def test_executable_env_var_copilot_unset_uses_platform_default(monkeypatch):
     assert args[0] == _copilot_executable()
 
 
+def test_copilot_executable_windows_prefers_exe_on_path(monkeypatch):
+    """On Windows, `_copilot_executable()` must detect a `copilot.exe`
+    install rather than assuming the npm `copilot.cmd` shim (#4755)."""
+    import shutil
+
+    from specify_cli.integrations.copilot import _copilot_executable
+
+    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setattr(
+        shutil, "which", lambda name: r"C:\tools\copilot.exe" if name == "copilot.exe" else None
+    )
+    assert _copilot_executable() == "copilot.exe"
+
+
+def test_copilot_executable_windows_falls_back_to_cmd_shim(monkeypatch):
+    """A Windows install exposing only `copilot.cmd` (npm shim) still works."""
+    import shutil
+
+    from specify_cli.integrations.copilot import _copilot_executable
+
+    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setattr(
+        shutil, "which", lambda name: r"C:\tools\copilot.cmd" if name == "copilot.cmd" else None
+    )
+    assert _copilot_executable() == "copilot.cmd"
+
+
+def test_copilot_executable_windows_nothing_on_path_keeps_historical_default(monkeypatch):
+    """Nothing found on PATH keeps the historical `copilot.cmd` default so
+    the resulting error still names the previously expected executable."""
+    import shutil
+
+    from specify_cli.integrations.copilot import _copilot_executable
+
+    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    assert _copilot_executable() == "copilot.cmd"
+
+
 def test_executable_env_var_copilot_dispatch_command(monkeypatch):
     """CopilotIntegration.dispatch_command honours the executable env var."""
     import subprocess

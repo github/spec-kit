@@ -49,11 +49,22 @@ _COPILOT_CORE_COMMANDS = {
 def _copilot_executable() -> str:
     """Return the executable name for Copilot CLI on this platform.
 
-    On Windows, subprocess invocation is reliable with `copilot.cmd`.
+    On Windows, the Copilot CLI may be installed as `copilot.exe` (e.g. a
+    standalone installer, winget, scoop) or as a `copilot.cmd` npm shim.
+    Probe `PATH` for whichever is actually present instead of assuming the
+    npm-style shim.
     """
-    if os.name == "nt":
-        return "copilot.cmd"
-    return "copilot"
+    if os.name != "nt":
+        return "copilot"
+
+    for candidate in ("copilot.exe", "copilot.cmd", "copilot"):
+        if shutil.which(candidate):
+            return candidate
+
+    # Nothing found on PATH — keep the historical default so the
+    # resulting "command not found" error still references the
+    # previously expected name.
+    return "copilot.cmd"
 
 
 def _allow_all() -> bool:
