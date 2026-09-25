@@ -97,6 +97,8 @@ Re-resolves a bundle and **refreshes** its components through each primitive's u
 
 > **Pin enforcement is install-time only.** Idempotency checks are id-based, not version-aware: a component that is already present is skipped during `install` without comparing its on-disk version to the manifest pin. Version pins are therefore guaranteed to be applied only when the bundler actually installs a component for the first time or refreshes it. Run `specify bundle update <bundle_id>` for catalog bundles or `specify bundle install <path> --refresh` for local sources to re-apply owned components at their pinned versions.
 
+**Pinned releases are retrieved by pin, not by the catalog's current listing.** When a component's catalog entry has moved to a newer version, extensions and presets are not installed at the newer advertised release: the bundler derives the pinned release's download URL from the catalog entry's own `download_url` (same host, HTTPS-validated) and retrieves that pinned release. The catalog's SHA-256 digest covers only the advertised release, so a retrieved pinned release is verified against no digest. When the pinned release cannot be identified from the catalog's download URL, or cannot be retrieved, the install fails with an error that names both the pinned and the advertised versions.
+
 ## Remove a Bundle
 
 ```bash
