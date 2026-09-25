@@ -249,6 +249,25 @@ the domain has the same name as that CLI namespace. The nested directory is
 reserved for `test_command_<name>.py` suites that exercise its actual
 subcommands.
 
+When a domain implementation is split into private modules, mirror those
+boundaries in its tests, dropping the source module's leading underscore:
+
+| Preset implementation | Mirrored test under `tests/specify_cli/presets/` |
+| --- | --- |
+| `_manifest.py` | `test_manifest.py` |
+| `_registry.py` | `test_registry.py` |
+| `_catalog.py` | `test_catalog.py` |
+| `_resolver.py` | `test_resolver.py` |
+| `_manager.py` | `test_manager.py` |
+| `_manager_commands.py` | `test_manager_commands.py` |
+| `_manager_skills.py` | `test_manager_skills.py` |
+
+`test_manager_commands.py` exercises domain command-artifact behavior, not a
+registered CLI handler. The `test_command_*.py` suites continue to cover the
+CLI surface. `test_catalog.py` belongs at the parent preset package level;
+`catalog/test_command_*.py` covers the nested catalog CLI. Package export
+compatibility is covered separately by `test_domain_exports.py`.
+
 Not every test is a command test, even when it belongs in the mirrored package
 tree:
 
@@ -264,6 +283,10 @@ tree:
 
 Moving tests must preserve coverage rather than duplicating it. Run both the
 new command-focused suites and the legacy suites from which tests were moved.
+For domain splits, also run all new domain suites and any remaining cross-domain
+tests in the legacy file. Compare full-suite collection before and after the
+move: the count must not decrease, and every existing parametrized test case
+must remain represented. A matching total alone does not prove preservation.
 
 ## Reference layout
 

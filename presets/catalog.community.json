@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-24T00:00:00Z",
+  "updated_at": "2026-09-25T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -60,6 +60,37 @@
       ],
       "created_at": "2026-04-27T00:00:00Z",
       "updated_at": "2026-08-13T00:00:00Z"
+    },
+    "agentstandards-gate": {
+      "name": "Agentstandards Task Gate",
+      "id": "agentstandards-gate",
+      "version": "0.1.1",
+      "description": "Hard-blocks Spec Kit task generation until the persisted multi-vendor architecture gate is READY.",
+      "author": "bbjwz",
+      "repository": "https://github.com/bbjwz/agentstandards",
+      "download_url": "https://github.com/bbjwz/agentstandards/releases/download/v0.1.1/agentstandards-gate-0.1.1.zip",
+      "sha256": "9b61a7fffbe8f0de61ab44ac20844b24e60dc543882240d826423e48fa5bd9bb",
+      "homepage": "https://github.com/bbjwz/agentstandards",
+      "documentation": "https://github.com/bbjwz/agentstandards/blob/v0.1.1/presets/agentstandards-gate/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=1.0.8,<2.0.0",
+        "extensions": [
+          "agentstandards"
+        ]
+      },
+      "provides": {
+        "templates": 0,
+        "commands": 1
+      },
+      "tags": [
+        "architecture",
+        "gate",
+        "multi-vendor",
+        "tasks"
+      ],
+      "created_at": "2026-09-25T00:00:00Z",
+      "updated_at": "2026-09-25T00:00:00Z"
     },
     "aide-in-place": {
       "name": "AIDE In-Place Migration",
@@ -459,13 +490,14 @@
     "intake-review-governance": {
       "name": "Intake Review Governance",
       "id": "intake-review-governance",
-      "version": "0.2.1",
+      "version": "0.2.3",
       "description": "Reviews single, series, campaign, and language-aware requirements collections before Spec Kit execution.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-intake-review-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/archive/refs/tags/v0.2.1.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/archive/refs/tags/v0.2.3.zip",
+      "sha256": "a97d3b3039587d391cd214296d5cfd1cb7665aff76630c08a87879091ddcc1d1",
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-review-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/blob/v0.2.1/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/blob/v0.2.3/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
@@ -483,7 +515,7 @@
         "quality-gate"
       ],
       "created_at": "2026-07-21T00:00:00Z",
-      "updated_at": "2026-08-17T00:00:00Z"
+      "updated_at": "2026-09-25T00:00:00Z"
     },
     "intake-sequencing-governance": {
       "name": "Intake Sequencing Governance",

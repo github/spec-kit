@@ -1,4 +1,4 @@
-"""Load shared fixtures for mirrored preset command tests."""
+"""Load shared fixtures for mirrored preset domain and command tests."""
 
 from __future__ import annotations
 
