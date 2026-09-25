@@ -15,6 +15,7 @@ import io
 import json
 import tarfile
 import shutil
+import sys
 import zipfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -12569,6 +12570,29 @@ class TestScriptChainReconciliation:
         assert canonical.is_file()
         manager.remove("solo-pack")
         assert not canonical.exists()
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX execute bits")
+    def test_remove_last_provider_restores_executable_core_script(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """Frontmatter runs the canonical path directly, so the restored core
+        script must stay executable after the dispatcher is replaced."""
+        core_script = (
+            project_dir / ".specify" / "templates" / "scripts" / "exec-restore.sh"
+        )
+        core_script.parent.mkdir(parents=True, exist_ok=True)
+        core_script.write_text("echo core\n")
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir, valid_pack_data, "exec-pack", "echo x\n",
+            strategy="wrap", template_type="script", template_name="exec-restore",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+        manager.remove("exec-pack")
+
+        canonical = self._canonical(project_dir, "exec-restore")
+        assert canonical.read_text() == "echo core\n"
+        assert canonical.stat().st_mode & 0o111
 
     def test_reconcile_refuses_symlinked_destination(
         self, project_dir, temp_dir, valid_pack_data

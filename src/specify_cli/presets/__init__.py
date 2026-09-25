@@ -2538,6 +2538,10 @@ class PresetManager:
             _write_shared_text(
                 self.project_root, canonical, chain[-1].read_text(encoding="utf-8")
             )
+            # Command frontmatter executes this path directly, and
+            # _write_shared_text writes 0644.
+            if os.name != "nt":
+                canonical.chmod(canonical.stat().st_mode | 0o111)
         elif canonical.is_file():
             first_line = canonical.read_text(encoding="utf-8").splitlines()[:2]
             if any(_SCRIPT_DISPATCHER_MARKER in line for line in first_line):
