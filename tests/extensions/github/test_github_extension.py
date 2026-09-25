@@ -667,6 +667,7 @@ def _resolver_env() -> dict[str, str]:
     env = dict(os.environ)
     env.pop("SPECIFY_FEATURE_DIRECTORY", None)
     env.pop("SPECIFY_INIT_DIR", None)
+    env.pop("SPECIFY_FEATURE_NO_PERSIST", None)
     return env
 
 
@@ -1094,9 +1095,11 @@ class TestCoreResolutionParity:
 
     Core resolves via ``check-prerequisites --require-tasks --include-tasks``,
     which persists an override into ``feature.json`` and gates on ``plan.md``
-    before ``tasks.md``. Divergence here is not cosmetic: a lost override makes
-    the next run read a different feature's task list, and a missing plan gate
-    lets the command run where core would stop.
+    before ``tasks.md``. The process-wide ``SPECIFY_FEATURE_NO_PERSIST`` opt-out
+    must suppress that write without changing which feature is resolved.
+    Divergence here is not cosmetic: a lost override makes the next run read a
+    different feature's task list, and a missing plan gate lets the command
+    run where core would stop.
     """
 
     def test_override_persists_for_the_next_run(self, tmp_path: Path, twin: str):
@@ -1119,6 +1122,53 @@ class TestCoreResolutionParity:
         second = _run_twin(twin, project)
         assert second.returncode == 0, second.stderr
         assert Path(json.loads(second.stdout)["FEATURE_DIR"]).name == "002-override"
+
+    @pytest.mark.parametrize("no_persist", ["1", "true"])
+    def test_no_persist_preserves_existing_pin(
+        self, tmp_path: Path, twin: str, no_persist: str
+    ):
+        project = _make_feature_project(tmp_path)
+        feature = _add_feature(project, "002-override")
+        feature_json = project / ".specify" / "feature.json"
+        before = feature_json.read_bytes()
+
+        result = _run_twin(
+            twin,
+            project,
+            SPECIFY_FEATURE_DIRECTORY="specs/002-override",
+            SPECIFY_FEATURE_NO_PERSIST=no_persist,
+        )
+
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout)
+        assert Path(payload["FEATURE_DIR"]) == feature
+        assert Path(payload["TASKS"]) == feature / "tasks.md"
+        assert payload["AVAILABLE_DOCS"] == ["tasks.md"]
+        assert feature_json.read_bytes() == before
+
+        second = _run_twin(twin, project)
+        assert second.returncode == 0, second.stderr
+        assert Path(json.loads(second.stdout)["FEATURE_DIR"]).name == "001-demo"
+
+    @pytest.mark.parametrize("no_persist", ["1", "true"])
+    def test_no_persist_does_not_create_feature_json(
+        self, tmp_path: Path, twin: str, no_persist: str
+    ):
+        project = _make_feature_project(tmp_path)
+        feature_json = project / ".specify" / "feature.json"
+        feature_json.unlink()
+        feature = project / "specs" / "001-demo"
+
+        result = _run_twin(
+            twin,
+            project,
+            SPECIFY_FEATURE_DIRECTORY="specs/001-demo",
+            SPECIFY_FEATURE_NO_PERSIST=no_persist,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert Path(json.loads(result.stdout)["FEATURE_DIR"]) == feature
+        assert not feature_json.exists()
 
     def test_missing_plan_md_is_rejected(self, tmp_path: Path, twin: str):
         """Core stops without plan.md even when tasks.md is present."""

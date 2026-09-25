@@ -183,11 +183,13 @@ def main(argv: list[str]) -> int:
     # Resolve the feature directory. Priority:
     #   1. SPECIFY_FEATURE_DIRECTORY (explicit override)
     #   2. .specify/feature.json "feature_directory"
-    # An override is persisted, exactly as core does, so a later run without
-    # the variable resolves to the same feature rather than reverting to the
-    # previous one and creating issues from the wrong task list.
+    # An override is persisted, exactly as core does, unless the orchestrator
+    # sets SPECIFY_FEATURE_NO_PERSIST to keep the shared feature.json unchanged.
     raw_feature_dir = os.environ.get("SPECIFY_FEATURE_DIRECTORY", "")
-    if raw_feature_dir:
+    if raw_feature_dir and os.environ.get("SPECIFY_FEATURE_NO_PERSIST", "") not in (
+        "1",
+        "true",
+    ):
         persist_feature_json(repo_root, raw_feature_dir)
     if not raw_feature_dir:
         raw_feature_dir = read_feature_json_feature_directory(repo_root)

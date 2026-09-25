@@ -199,12 +199,13 @@ persist_feature_json() {
 # Resolve the feature directory. Priority:
 #   1. SPECIFY_FEATURE_DIRECTORY (explicit override)
 #   2. .specify/feature.json "feature_directory"
-# An override is persisted, exactly as core does, so a later run without the
-# variable resolves to the same feature rather than reverting to the previous
-# one and creating issues from the wrong task list.
+# An override is persisted, exactly as core does, unless the orchestrator sets
+# SPECIFY_FEATURE_NO_PERSIST to keep the shared feature.json unchanged.
 if [[ -n "${SPECIFY_FEATURE_DIRECTORY:-}" ]]; then
     FEATURE_DIR="$SPECIFY_FEATURE_DIRECTORY"
-    persist_feature_json "$REPO_ROOT" "$SPECIFY_FEATURE_DIRECTORY"
+    if [[ "${SPECIFY_FEATURE_NO_PERSIST:-}" != "1" && "${SPECIFY_FEATURE_NO_PERSIST:-}" != "true" ]]; then
+        persist_feature_json "$REPO_ROOT" "$SPECIFY_FEATURE_DIRECTORY"
+    fi
 else
     FEATURE_DIR=$(read_feature_json_feature_directory "$REPO_ROOT")
     if [[ -z "$FEATURE_DIR" ]]; then

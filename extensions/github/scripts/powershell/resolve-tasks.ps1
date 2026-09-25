@@ -154,13 +154,14 @@ $repoRoot = Get-ProjectRoot
 # Resolve the feature directory. Priority:
 #   1. SPECIFY_FEATURE_DIRECTORY (explicit override)
 #   2. .specify/feature.json "feature_directory"
-# An override is persisted, exactly as core does, so a later run without the
-# variable resolves to the same feature rather than reverting to the previous
-# one and creating issues from the wrong task list.
+# An override is persisted, exactly as core does, unless the orchestrator sets
+# SPECIFY_FEATURE_NO_PERSIST to keep the shared feature.json unchanged.
 $featureJson = Join-Path $repoRoot '.specify/feature.json'
 if ($env:SPECIFY_FEATURE_DIRECTORY) {
     $featureDir = $env:SPECIFY_FEATURE_DIRECTORY
-    Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $env:SPECIFY_FEATURE_DIRECTORY
+    if ($env:SPECIFY_FEATURE_NO_PERSIST -ne '1' -and $env:SPECIFY_FEATURE_NO_PERSIST -ne 'true') {
+        Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $env:SPECIFY_FEATURE_DIRECTORY
+    }
 } elseif (Test-Path -LiteralPath $featureJson -PathType Leaf) {
     # Read as UTF-8 explicitly: Windows PowerShell 5.1 otherwise decodes with
     # the legacy ANSI code page and mangles non-ASCII feature paths (#4359).
