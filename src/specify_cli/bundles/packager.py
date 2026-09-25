@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +24,11 @@ EXCLUDE_NAMES = {".git", "__pycache__", ".DS_Store"}
 
 # Fixed member timestamp (zip epoch) for reproducible, byte-stable artifacts.
 _FIXED_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
+
+# Maximum size (in bytes) for any individual file added to the archive.
+# This prevents a single oversized asset from exhausting memory during
+# compression or transmission.
+MAX_ZIP_MEMBER_BYTES = 10 * 1024 * 1024  # 10 MiB
 
 
 @dataclass
@@ -76,28 +82,80 @@ def build_bundle(
         rf"^{re.escape(manifest.bundle.id)}-"
         r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\.zip$"
     )
-    files = _collect_files(
-        bundle_dir, skip=artifact_path, skip_dir=skip_dir, artifact_re=artifact_re
+    # A leftover mkstemp staging file (<id>-<version>-<random>.tmp) from a
+    # previous killed build may sit inside out_dir — which defaults to the
+    # bundle source tree — and must never be re-packaged as a member.
+    staging_re = re.compile(
+        rf"^{re.escape(manifest.bundle.id)}-"
+        r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?"
+        r"-[0-9A-Za-z_]+\.tmp$"
     )
-    with zipfile.ZipFile(artifact_path, "w", zipfile.ZIP_DEFLATED) as archive:
-        for file_path in files:
-            # Confinement: every packaged file must live under bundle_dir.
-            ensure_within(bundle_dir, file_path)
-            arcname = file_path.relative_to(bundle_dir).as_posix()
-            # Fixed timestamp so identical inputs yield a byte-for-byte
-            # identical artifact (reproducible builds).
-            info = zipfile.ZipInfo(filename=arcname, date_time=_FIXED_TIMESTAMP)
-            info.compress_type = zipfile.ZIP_DEFLATED
-            # Reproducible, normalized permissions: preserve executability so
-            # bundled scripts (e.g. extension hook scripts) stay runnable after
-            # extraction, but collapse to two canonical modes (0755 when any
-            # execute bit is set on the source, otherwise 0644) so identical
-            # inputs yield a byte-for-byte identical artifact.
-            with file_path.open("rb") as fh:
-                st = os.fstat(fh.fileno())
-                mode = 0o755 if st.st_mode & 0o111 else 0o644
-                info.external_attr = mode << 16
-                archive.writestr(info, fh.read())
+    files = _collect_files(
+        bundle_dir,
+        skip=artifact_path,
+        skip_dir=skip_dir,
+        artifact_re=artifact_re,
+        staging_re=staging_re,
+    )
+
+    # Build into a temporary sibling and atomically replace the final path only
+    # after every member passes validation.  This prevents a partial/corrupt
+    # archive from being left at the final output path if a member exceeds the
+    # size limit or another error occurs mid-build.
+    tmp_fd, tmp_path_str = tempfile.mkstemp(
+        suffix=".tmp", prefix=f"{manifest.bundle.id}-{manifest.bundle.version}-", dir=str(out_dir)
+    )
+    tmp_path = Path(tmp_path_str)
+    try:
+        with os.fdopen(tmp_fd, "wb") as tmp_fh, zipfile.ZipFile(tmp_fh, "w", zipfile.ZIP_DEFLATED) as archive:
+            for file_path in files:
+                # Confinement: every packaged file must live under bundle_dir.
+                ensure_within(bundle_dir, file_path)
+                arcname = file_path.relative_to(bundle_dir).as_posix()
+                # Fixed timestamp so identical inputs yield a byte-for-byte
+                # identical artifact (reproducible builds).
+                info = zipfile.ZipInfo(filename=arcname, date_time=_FIXED_TIMESTAMP)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                # Reproducible, normalized permissions: preserve executability so
+                # bundled scripts (e.g. extension hook scripts) stay runnable after
+                # extraction, but collapse to two canonical modes (0755 when any
+                # execute bit is set on the source, otherwise 0644) so identical
+                # inputs yield a byte-for-byte identical artifact.
+                with file_path.open("rb") as fh:
+                    st = os.fstat(fh.fileno())
+                    mode = 0o755 if st.st_mode & 0o111 else 0o644
+                    info.external_attr = mode << 16
+                    # Fast metadata rejection: skip files whose size exceeds the
+                    # limit before touching the read path.  Then also bound the
+                    # actual read so a TOCTOU race (file appended after fstat)
+                    # cannot bypass the limit.
+                    if st.st_size > MAX_ZIP_MEMBER_BYTES:
+                        raise BundlerError(
+                            f"Bundle file {arcname} exceeds {MAX_ZIP_MEMBER_BYTES}-byte limit"
+                        )
+                    content = fh.read(MAX_ZIP_MEMBER_BYTES + 1)
+                    if len(content) > MAX_ZIP_MEMBER_BYTES:
+                        raise BundlerError(
+                            f"Bundle file {arcname} exceeds {MAX_ZIP_MEMBER_BYTES}-byte limit"
+                        )
+                    archive.writestr(info, content)
+
+        # All members written successfully — atomically replace the final path.
+        # mkstemp() creates the staging file 0600 (owner-only) and os.replace()
+        # preserves that mode, which would silently publish every rebuild as an
+        # unreadable-to-others archive (a direct ZipFile(path, "w") write used
+        # to produce 0666 & ~umask).  Set an intentional mode first: a rebuild
+        # keeps the existing artifact's mode so publishing pipelines that
+        # chmod'd it are not overridden; a fresh build gets 0644.
+        if artifact_path.exists():
+            os.chmod(tmp_path, artifact_path.stat().st_mode & 0o777)
+        else:
+            os.chmod(tmp_path, 0o644)
+        os.replace(tmp_path, artifact_path)
+    except BaseException:
+        # Clean up the temporary file on any failure (exception, interrupt, etc.)
+        tmp_path.unlink(missing_ok=True)
+        raise
 
     return BuildResult(artifact_path=artifact_path, file_count=len(files))
 
@@ -115,6 +173,7 @@ def _collect_files(
     skip: Path,
     skip_dir: Path | None = None,
     artifact_re: re.Pattern[str] | None = None,
+    staging_re: re.Pattern[str] | None = None,
 ) -> list[Path]:
     collected: list[Path] = []
     # followlinks=False so a symlinked directory is never descended into,
@@ -139,6 +198,9 @@ def _collect_files(
                 continue
             if artifact_re is not None and artifact_re.match(name):
                 # A prior build artifact for this bundle — never re-package it.
+                continue
+            if staging_re is not None and staging_re.match(name):
+                # A leftover packager staging file — never re-package it.
                 continue
             if path.is_symlink():
                 # Skip symlinked files to avoid escaping the bundle directory.
