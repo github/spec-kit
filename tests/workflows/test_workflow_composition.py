@@ -20,6 +20,7 @@ from specify_cli.workflows.composition import (
     bind_composed_inputs,
     check_composition_path,
     evaluate_input_mapping,
+    resolve_composed_workflow,
     validate_workflow_call_config,
 )
 from specify_cli.workflows.engine import (
@@ -388,12 +389,8 @@ class TestLiteralAndRuntimeTargets:
         assert state.status == RunStatus.COMPLETED
         assert state.step_results["call"]["output"]["workflow"] == "child"
 
-    def test_runtime_target_from_echo_is_trimmed(self, project_dir):
-        """``echo`` adds a trailing newline; the resolved target is trimmed.
-
-        Dynamic selection must work with an ordinary ``echo child``, not only
-        with newline-free commands like ``printf child``.
-        """
+    def test_runtime_target_from_echo_requires_exact_id(self, project_dir):
+        """A dynamic target is not normalized before installed-ID matching."""
         _install(project_dir, "child", _workflow("child", [_shell("x", "echo hi")]))
         _install(
             project_dir,
@@ -406,13 +403,23 @@ class TestLiteralAndRuntimeTargets:
                         "id": "call",
                         "type": "workflow",
                         "workflow": "{{ steps.pick.output.stdout }}",
+                        "continue_on_error": True,
                     },
                 ],
             ),
         )
         state = _run(project_dir, "parent")
         assert state.status == RunStatus.COMPLETED
-        assert state.step_results["call"]["output"]["workflow"] == "child"
+        result = state.step_results["call"]
+        assert result["status"] == "failed"
+        assert result["output"]["workflow"] == "child\n"
+        assert "not a valid workflow ID" in result["error"]
+
+    def test_registry_key_must_match_resolved_definition_id(self, project_dir):
+        _install(project_dir, "child", _workflow("other", [_shell("x", "echo hi")]))
+
+        with pytest.raises(ValueError, match="registry entry 'child'.*ID 'other'"):
+            resolve_composed_workflow(project_dir, "child")
 
 
 class TestScopeIsolation:
@@ -479,6 +486,39 @@ class TestScopeIsolation:
         state = _run(project_dir, "parent")
         assert state.status == RunStatus.COMPLETED
         assert state.step_results["consume"]["output"]["stdout"].strip() == "secret"
+
+
+class TestScopeLogging:
+    def test_nested_events_include_their_scope_path(self, project_dir):
+        _install(project_dir, "child", _workflow("child", [_shell("build", "echo child")]))
+        _install(
+            project_dir,
+            "parent",
+            _workflow(
+                "parent",
+                [
+                    _shell("build", "echo parent"),
+                    {"id": "call", "type": "workflow", "workflow": "child"},
+                ],
+            ),
+        )
+
+        state = _run(project_dir, "parent")
+        entries = [
+            json.loads(line)
+            for line in (state.runs_dir / "log.jsonl").read_text(encoding="utf-8").splitlines()
+        ]
+        started = [
+            entry
+            for entry in entries
+            if entry["event"] == "step_started" and entry["step_id"] == "build"
+        ]
+
+        assert len(started) == 2
+        root_entry = next(entry for entry in started if "scope_path" not in entry)
+        child_entry = next(entry for entry in started if entry.get("scope_path") == ["call"])
+        assert root_entry["step_id"] == child_entry["step_id"] == "build"
+        assert child_entry["workflow_id"] == "child"
 
 
 class TestPublicOutputShapes:
@@ -862,7 +902,7 @@ class TestRuntimeResolutionFailures:
             _workflow(
                 "parent",
                 [
-                    _shell("pick", "echo missing-wf"),
+                    _shell("pick", "printf missing-wf"),
                     {
                         "id": "c",
                         "type": "workflow",

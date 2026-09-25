@@ -580,8 +580,10 @@ The `workflow` expression must resolve to a value the engine captures: a
 declared workflow input or a preceding step's captured output (for example a
 `shell` step's `stdout`) both work. A `prompt` step streams its output to the
 agent and returns an empty `stdout`, so it cannot drive `workflow` selection.
-A dynamically resolved string is whitespace-trimmed before ID validation, so a
-`shell` step using `echo child` selects `child` despite the trailing newline.
+The resolved value must exactly match the installed workflow ID; it is not
+trimmed, case-normalized, or otherwise transformed. A shell-driven selection
+must therefore emit only the ID, for example `printf child` rather than
+`echo child` (which includes a trailing newline).
 
 `type: workflow` is an engine facility (like `fan-out`), not a custom-step API.
 The engine owns the nested scope tree; custom steps still receive only a

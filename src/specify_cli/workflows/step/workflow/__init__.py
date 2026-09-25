@@ -73,11 +73,6 @@ class WorkflowStep(StepBase):
                         f"resolved to {type(target).__name__}, expected a string."
                     ),
                 )
-            # A dynamic target is usually a step's captured stdout, which keeps
-            # its trailing newline (``echo child`` -> ``\"child\\n\"``) and would
-            # otherwise fail ID validation. Trim surrounding whitespace; literal
-            # targets are already pattern-safe, so this is a no-op for them.
-            target = target.strip()
             if (
                 not _ID_PATTERN.fullmatch(target)
                 or target in _RESERVED_WORKFLOW_IDS

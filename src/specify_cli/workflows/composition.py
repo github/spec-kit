@@ -110,6 +110,12 @@ def resolve_composed_workflow(
             f"Workflow {workflow_id!r} is invalid: " + " ".join(errors)
         )
         raise ValueError(msg)
+    if definition.id != workflow_id:
+        msg = (
+            f"Workflow registry entry {workflow_id!r} resolves to a definition "
+            f"with ID {definition.id!r}."
+        )
+        raise ValueError(msg)
     return definition
 
 
@@ -576,6 +582,12 @@ class ExecutionScope:
         """Delegate logging to the root run state."""
         state = self.root().root_state
         if state is not None:
+            if self.parent is not None:
+                entry = {
+                    **entry,
+                    "scope_path": _invocation_path(self)[1:],
+                    "workflow_id": self.workflow_id,
+                }
             state.append_log(entry)
 
     def build_context(self, *, is_resume: bool = False) -> StepContext:
