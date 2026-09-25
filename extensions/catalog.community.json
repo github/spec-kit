@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-24T00:00:00Z",
+  "updated_at": "2026-09-25T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -5743,6 +5743,48 @@
       "stars": 0,
       "created_at": "2026-05-20T00:00:00Z",
       "updated_at": "2026-05-20T00:00:00Z"
+    },
+    "test-by": {
+      "name": "Test Validation",
+      "id": "test-by",
+      "description": "Validate acceptance scenarios and run CSV-driven E2E tests against a live app via Playwright",
+      "author": "Andrei Stsepaniuk",
+      "version": "1.2.0",
+      "download_url": "https://github.com/andstepanuk/speckit-test-validate/archive/refs/tags/v1.2.0.zip",
+      "sha256": "a3c3f5f4d4c37598e9e7aae5f51472cfe31829a42c9e450046f3f7f189d1e777",
+      "repository": "https://github.com/andstepanuk/speckit-test-validate",
+      "homepage": "https://github.com/andstepanuk/speckit-test-validate",
+      "documentation": "https://github.com/andstepanuk/speckit-test-validate/tree/main/docs",
+      "changelog": "https://github.com/andstepanuk/speckit-test-validate/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "playwright",
+            "version": ">0.0.10",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "testing",
+        "playwright",
+        "acceptance",
+        "e2e",
+        "csv"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-25T00:00:00Z",
+      "updated_at": "2026-09-25T00:00:00Z"
     },
     "test-coverage-drift-control": {
       "name": "Test Coverage Drift Control",
