@@ -111,6 +111,7 @@ Create internal representations (do not include raw artifacts in output):
 - **User story/action inventory**: Discrete user actions with acceptance criteria
 - **Task coverage mapping**: Map each task to one or more requirements or stories (inference by keyword / explicit reference patterns like IDs or key phrases)
 - **Constitution rule set**: Extract principle names and MUST/SHOULD normative statements
+- **Closed-vocabulary inventory**: Record explicitly named finite sets (for example statuses, roles, categories, or enum-like value lists), their members, and each location where they are declared
 
 ### 4. Detection Passes (Token-Efficient Analysis)
 
@@ -150,6 +151,14 @@ Focus on high-signal findings. Limit to 50 findings total; aggregate remainder i
 - Task ordering contradictions (e.g., integration tasks before foundational setup tasks without dependency note)
 - Conflicting requirements (e.g., one requires Next.js while other specifies Vue)
 
+#### G. Closed Vocabulary Consistency
+
+- Find explicitly named finite sets that are enumerated in more than one artifact or section
+- Compare repeated declarations after normalizing case, quoting, and presentation order while preserving the actual member names
+- Flag declarations of the same named set when members are missing, added, or renamed, and report both locations plus the symmetric difference
+- Treat an explicitly identified subset as intentional when the artifact states the subset relationship; otherwise report the divergence as a warning rather than assuming it is an error
+- Do not infer closed vocabularies from unrelated prose or unnamed example lists
+
 ### 5. Severity Assignment
 
 Use this heuristic to prioritize findings:
@@ -187,6 +196,7 @@ Output a Markdown report (no file writes) with the following structure:
 - Coverage % (requirements with >=1 task)
 - Ambiguity Count
 - Duplication Count
+- Closed Vocabulary Mismatch Count
 - Critical Issues Count
 
 ### 7. Provide Next Actions
